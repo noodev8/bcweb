@@ -36,6 +36,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
+const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
@@ -75,7 +76,7 @@ router.post('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', groupid, next_review: nextReviewIso });
   } catch (err) {
-    console.error('[pricing-park] error:', err.message);
+    logger.error('[pricing-park] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to set review' });
   }
 });

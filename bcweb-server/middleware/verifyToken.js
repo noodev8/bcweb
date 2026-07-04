@@ -23,6 +23,7 @@ Auth failures return HTTP 200 with return_code UNAUTHORIZED (API-RULES: never se
 const jwt = require('jsonwebtoken');
 const config = require('../config/config');
 const { query } = require('../database');
+const logger = require('../utils/logger');
 
 // Pull "Bearer <token>" out of the Authorization header. Returns the token string, or null if absent/malformed.
 function extractBearer(req) {
@@ -65,7 +66,7 @@ async function verifyToken(req, res, next) {
     req.user = user; // { id, display_name } — used by write routes for changed_by
     return next();
   } catch (err) {
-    console.error('[verifyToken] error:', err.message);
+    logger.error('[verifyToken] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Authentication check failed' });
   }
 }
@@ -78,7 +79,7 @@ async function optionalAuth(req, res, next) {
       const user = await resolveUser(token);
       if (user) req.user = user;
     } catch (err) {
-      console.error('[optionalAuth] error:', err.message);
+      logger.error('[optionalAuth] error:', err.message);
     }
   }
   return next();

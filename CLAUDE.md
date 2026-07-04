@@ -9,8 +9,8 @@ A **modular internal platform** for Brookfield Comfort (UK footwear e-commerce �
 ## Structure — two apps in one repo
 
 ```
-brookfield-server/   Express API — owns the Postgres connection and ALL SQL. Runs on a VPS (PM2).
-brookfield-web/      Next.js 15 (App Router, src/app, TS, Tailwind 3) front end. Deploys to Vercel.
+bcweb-server/   Express API — owns the Postgres connection and ALL SQL. Runs on a VPS (PM2).
+bcweb-web/      Next.js 15 (App Router, src/app, TS, Tailwind 3) front end. Deploys to Vercel.
 docs/                API-RULES.md (conventions, authoritative), deploy.txt
 ```
 
@@ -19,10 +19,10 @@ The web app **never** connects to Postgres — only the server does. Web → HTT
 ## Run locally (Windows)
 
 ```
-# API on :3020 — reads brookfield-server/.env (DB_* + JWT_SECRET)
-cd brookfield-server && npm run dev
-# Web on :3000 — reads brookfield-web/.env (NEXT_PUBLIC_API_URL)
-cd brookfield-web && npm run dev
+# API on :3020 — reads bcweb-server/.env (DB_* + JWT_SECRET)
+cd bcweb-server && npm run dev
+# Web on :3000 — reads bcweb-web/.env (NEXT_PUBLIC_API_URL)
+cd bcweb-web && npm run dev
 ```
 Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <password> Andreas`.
 Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, public URL behind the app login).

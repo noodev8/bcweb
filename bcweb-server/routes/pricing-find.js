@@ -32,6 +32,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
@@ -62,7 +63,7 @@ router.get('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', results });
   } catch (err) {
-    console.error('[pricing-find] error:', err.message);
+    logger.error('[pricing-find] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Search failed' });
   }
 });

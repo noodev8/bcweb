@@ -19,6 +19,7 @@ Schema landmines this codebase must respect (see CLAUDE.md) — enforced in the 
 */
 
 const { Pool } = require('pg');
+const logger = require('./utils/logger');
 
 // -------------------------------------------------------------------------------------------------------------------------------
 // The one shared connection pool. Built entirely from environment variables — no hard-coded credentials (API-RULES / CLAUDE.md).
@@ -37,7 +38,7 @@ const pool = new Pool({
 
 // Surface unexpected pool-level errors (e.g. a backend connection dropped) instead of crashing silently.
 pool.on('error', (err) => {
-  console.error('[database] Unexpected idle client error:', err.message);
+  logger.error('[database] Unexpected idle client error:', err.message);
 });
 
 /*

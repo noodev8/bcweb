@@ -1,0 +1,125 @@
+Project: bcweb
+
+
+Open project_detail.xls for the PORT and git repo 
+
+== Set up the domain
+one.com
+login as noodev8@gmail.com
+DNS Settings
+DNS - A Record
+bcweb.noodev8.com (217.154.35.5)
+ping bcweb.noodev8.com
+Should return the IP, then timeout
+If so, CTRL C to exit. We are ready with the domain
+
+
+== NGINX
+Putty
+
+Update the BELOW text with PORT and DOMAIN
+
+server {
+    listen 80;
+    server_name bcweb.noodev8.com;
+
+    location / {
+        proxy_pass http://localhost:3020; # YOUR PORT
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Allow JSON content
+        default_type application/json;
+    }
+}
+
+sudo nano /etc/nginx/sites-available/bcweb.noodev8.com
+
+-- Enable and reload
+sudo ln -sf /etc/nginx/sites-available/bcweb.noodev8.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+-- Add SSL
+sudo certbot --nginx -d bcweb.noodev8.com
+SSL Done!
+
+
+
+== Set Up VPS Folder
+Create new folder for the project
+cd /apps
+git clone git@github.com:noodev8/bcweb.git
+
+== Set Up Prod Folder
+cd /apps/production
+mkdir bcweb-server
+
+== Copy server to prod
+cd /apps/production/bcweb-server
+rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
+npm install
+
+
+== Set Up production .env file
+CORS is driven by CLIENT_URL, which already accepts a comma-separated list (server.js:
+  (process.env.CLIENT_URL || 'http://localhost:3000').split(',')  ), so no code change is needed.
+
+Copy windows contents from .env to clipboard
+nano .env
+Paste and update details
+# CORS Configuration (comma-separated: local dev + the Vercel origin)
+CLIENT_URL=http://localhost:3000,https://bcweb.vercel.app
+
+# Environment
+NODE_ENV=production
+
+CTRL O, CTRL X
+
+
+== Test and set up pm2
+Test it runs manually
+node server.js
+pm2 start server.js --name bcweb-prod
+pm2 save
+
+
+
+== Prepare update batch
+cd /apps/bcweb/
+git pull
+rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
+cd /apps/production/bcweb-server
+npm install
+pm2 restart server.js --name bcweb-prod
+
+Try the above and then copy it as a separate deploy.txt in docs of project
+
+
+== Deploy to Vercel
+Get vercel ignore file from previous project and put in project root
+Edit ignore fle for bcweb
+Commit and push
+
+https://vercel.com/andreas-projects-c5960f84
+log in as noodev8@gmail.com
+Add New
+Project
+Import from Git
+Edit route directory to bcweb-web
+Deploy
+
+Adjust CORS XXXX .env for Vercel to
+e.g. venuemanager-lilac.vercel.app
+
+Update Vercel .env settings
+NEXT_PUBLIC_API_URL			https://bcweb.noodev8.com
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME	dnrevr0pi
+NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET	bcweb
+
+
+Done !
+

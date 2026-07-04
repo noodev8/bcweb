@@ -1,5 +1,5 @@
 {
-  "name": "brookfield-server",
+  "name": "bcweb-server",
   "version": "1.0.0",
   "description": "Brookfield Comfort internal platform - Express API (Shopify Pricing module v1)",
   "main": "server.js",

@@ -19,6 +19,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const apiLogger = require('./utils/apiLogger');
+const logger = require('./utils/logger');
 
 const app = express();
 
@@ -78,5 +79,5 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3020;
 app.listen(PORT, () => {
-  console.log(`[server] Brookfield API listening on port ${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
+  logger.info(`[server] Brookfield API listening on port ${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
 });

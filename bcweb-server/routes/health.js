@@ -24,6 +24,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const logger = require('../utils/logger');
 
 router.get('/', async (req, res) => {
   try {
@@ -31,7 +32,7 @@ router.get('/', async (req, res) => {
     const result = await query('SELECT NOW() AS now');
     return res.json({ return_code: 'SUCCESS', db_time: result.rows[0].now });
   } catch (err) {
-    console.error('[health] DB check failed:', err.message);
+    logger.error('[health] DB check failed:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Database connectivity check failed' });
   }
 });

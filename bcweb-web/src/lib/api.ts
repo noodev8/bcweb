@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Module: src/lib/api.ts
 =======================================================================================================================================
-Purpose: The single axios instance + typed client functions for talking to the brookfield-server API. Implements the API-RULES
+Purpose: The single axios instance + typed client functions for talking to the bcweb-server API. Implements the API-RULES
          frontend contract exactly:
            - Every server response is HTTP 200 with a `return_code`. So we branch on return_code, NOT on HTTP status.
            - Client functions NEVER throw on API-level errors (non-SUCCESS return_code). They return a structured

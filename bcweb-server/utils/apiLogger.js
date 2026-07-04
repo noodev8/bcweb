@@ -10,6 +10,8 @@ Usage (in server.js): app.use(apiLogger);  — it wraps res.json so it can see t
 =======================================================================================================================================
 */
 
+const logger = require('./logger');
+
 // Express middleware. We hook res.json (the method every route uses to send the return_code envelope) so we can log the
 // return_code and elapsed time exactly when the response is sent — no manual logging call needed in each route.
 function apiLogger(req, res, next) {
@@ -21,7 +23,7 @@ function apiLogger(req, res, next) {
     // req.user is populated by verifyToken for authenticated routes; undefined for /login and /health.
     const who = req.user ? `user#${req.user.id}` : 'anon';
     const code = body && body.return_code ? body.return_code : 'NO_RETURN_CODE';
-    console.log(`[api] ${req.method} ${req.originalUrl} ${who} -> ${code} (${ms}ms)`);
+    logger.info(`[api] ${req.method} ${req.originalUrl} ${who} -> ${code} (${ms}ms)`);
     return originalJson(body);
   };
 

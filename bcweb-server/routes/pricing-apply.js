@@ -55,6 +55,7 @@ const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
@@ -161,7 +162,7 @@ router.post('/', async (req, res) => {
       warnings
     });
   } catch (err) {
-    console.error('[pricing-apply] error:', err.message);
+    logger.error('[pricing-apply] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to apply price' });
   }
 });

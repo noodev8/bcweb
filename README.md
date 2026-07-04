@@ -5,8 +5,8 @@ A modular internal platform for Brookfield Comfort (UK footwear e-commerce). Log
 ## Layout
 
 ```
-brookfield-server/   Express API — owns the Postgres connection and all SQL. Runs on a VPS (PM2).
-brookfield-web/      Next.js 15 (App Router, TS, Tailwind) front end. Deploys to Vercel.
+bcweb-server/   Express API — owns the Postgres connection and all SQL. Runs on a VPS (PM2).
+bcweb-web/      Next.js 15 (App Router, TS, Tailwind) front end. Deploys to Vercel.
 docs/                API-RULES.md (house style), deploy.txt
 ```
 
@@ -20,11 +20,11 @@ Flow: **segment → triage (top sellers, 30d, in-stock, un-parked) → drill-dow
 ## Run locally (Windows)
 
 ```
-# API (port 3020) — reads brookfield-server/.env (DB_* + JWT_SECRET)
-cd brookfield-server && npm install && node scripts/seed-user.js andreas <password> Andreas && npm run dev
+# API (port 3020) — reads bcweb-server/.env (DB_* + JWT_SECRET)
+cd bcweb-server && npm install && node scripts/seed-user.js andreas <password> Andreas && npm run dev
 
-# Web (port 3000) — reads brookfield-web/.env (NEXT_PUBLIC_API_URL)
-cd brookfield-web && npm install && npm run dev
+# Web (port 3000) — reads bcweb-web/.env (NEXT_PUBLIC_API_URL)
+cd bcweb-web && npm install && npm run dev
 ```
 
 Then open http://localhost:3000/login. Deployment: see `docs/deploy.txt`.

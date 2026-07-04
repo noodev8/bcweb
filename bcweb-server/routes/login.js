@@ -34,6 +34,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { query } = require('../database');
 const config = require('../config/config');
+const logger = require('../utils/logger');
 
 router.post('/', async (req, res) => {
   try {
@@ -66,7 +67,7 @@ router.post('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', token, display_name: user.display_name });
   } catch (err) {
-    console.error('[login] error:', err.message);
+    logger.error('[login] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Login failed' });
   }
 });

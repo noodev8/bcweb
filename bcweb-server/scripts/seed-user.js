@@ -10,7 +10,7 @@ Purpose: One-off setup script for the app login. It:
 The JWT will carry only the user's id; the display_name inserted here is what lands in price_change_log.changed_by on every price
 change. Default display_name is "Andreas" (CLAUDE.md).
 
-Usage (from brookfield-server/):
+Usage (from bcweb-server/):
   node scripts/seed-user.js <username> <password> [displayName]
   npm run seed -- <username> <password> [displayName]
 Examples:

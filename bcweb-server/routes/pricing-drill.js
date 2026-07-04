@@ -55,6 +55,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
@@ -183,7 +184,7 @@ router.get('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', header, timeline, sizes, days });
   } catch (err) {
-    console.error('[pricing-drill] error:', err.message);
+    logger.error('[pricing-drill] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load style detail' });
   }
 });

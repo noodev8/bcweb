@@ -12,7 +12,7 @@ No secrets are hard-coded. If JWT_SECRET is missing we fail loudly at startup ra
 
 // Fail fast at boot if the signing secret is absent — a server that signs JWTs with an undefined secret is a security hole.
 if (!process.env.JWT_SECRET) {
-  throw new Error('[config] JWT_SECRET is not set. Add it to brookfield-server/.env before starting the server.');
+  throw new Error('[config] JWT_SECRET is not set. Add it to bcweb-server/.env before starting the server.');
 }
 
 module.exports = {

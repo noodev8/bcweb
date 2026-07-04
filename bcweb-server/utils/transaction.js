@@ -15,6 +15,7 @@ client (not the shared query() helper) so they share the transaction.
 */
 
 const { pool } = require('../database');
+const logger = require('./logger');
 
 /*
  * withTransaction(callback)
@@ -33,7 +34,7 @@ async function withTransaction(callback) {
     try {
       await client.query('ROLLBACK');
     } catch (rollbackErr) {
-      console.error('[transaction] ROLLBACK failed:', rollbackErr.message);
+      logger.error('[transaction] ROLLBACK failed:', rollbackErr.message);
     }
     throw err;
   } finally {

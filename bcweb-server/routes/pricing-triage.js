@@ -41,6 +41,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
@@ -93,7 +94,7 @@ router.get('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', segment, days, rows });
   } catch (err) {
-    console.error('[pricing-triage] error:', err.message);
+    logger.error('[pricing-triage] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load triage list' });
   }
 });
