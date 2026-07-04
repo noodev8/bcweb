@@ -1,0 +1,7 @@
+pm2 log management
+
+        pm2 install pm2-logrotate
+        pm2 set pm2-logrotate:max_size 10M       # rotate a log once it reaches 10 MB
+        pm2 set pm2-logrotate:retain 14          # keep 14 rotated files, delete older
+        pm2 set pm2-logrotate:compress true      # gzip rotated logs
+    (Caps total log usage at roughly 140 MB across both streams, compressed. Adjust retain/max_size to taste.)

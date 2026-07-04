@@ -36,7 +36,10 @@ server {
     }
 }
 
+
+-- Create the above file
 sudo nano /etc/nginx/sites-available/bcweb.noodev8.com
+
 
 -- Enable and reload
 sudo ln -sf /etc/nginx/sites-available/bcweb.noodev8.com /etc/nginx/sites-enabled/

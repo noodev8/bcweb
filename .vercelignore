@@ -1,0 +1,7 @@
+# Exclude non-web directories when deploying from root
+bcweb-flutter/
+bcweb-server/
+docs/
+*.mp4
+*.mov
+*.avi
