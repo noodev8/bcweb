@@ -1,0 +1,3 @@
+== Note to Andreas. Only use the below when sure
+claude --dangerously-skip-permissions
+

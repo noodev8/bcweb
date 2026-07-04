@@ -98,6 +98,10 @@ venv/
 .claude/
 .codex/
 
+# Project-scoped MCP config — holds the live DB password in its connection string. Never commit.
+# Recreate on each machine from docs/postgres-mcp-setup.md.
+.mcp.json
+
 # Screenshot files (help files)
 screenshot*.*
 
