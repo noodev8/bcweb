@@ -1,0 +1,68 @@
+=======================================================================================================================================
+Brookfield Comfort — Platform Deployment (Shopify Pricing module, v1)
+=======================================================================================================================================
+Two apps, deployed separately (CLAUDE.md):
+  - brookfield-server  -> VPS, run under PM2 (owns the DB connection; production Postgres)
+  - brookfield-web     -> Vercel (public URL, gated by the app login)
+
+The web talks to the server over HTTP only; it never touches Postgres directly.
+
+---------------------------------------------------------------------------------------------------------------------------------------
+SECRETS (never commit, never rsync)
+---------------------------------------------------------------------------------------------------------------------------------------
+brookfield-server/.env holds: DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD (same values as C:\scripts\.env),
+JWT_SECRET (a long random string), JWT_EXPIRES_IN, BCRYPT_ROUNDS, PORT, CLIENT_URL.
+The VPS keeps its own .env; it is excluded from rsync/git below. Generate a fresh JWT_SECRET on the VPS, e.g.:
+  node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+
+=======================================================================================================================================
+SERVER  ->  VPS (PM2)
+=======================================================================================================================================
+-- putty (brookfield)
+cd /apps/brookfield/
+git pull
+rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='docs' \
+  /apps/brookfield/brookfield-server/ /apps/production/brookfield-server/
+cd /apps/production/brookfield-server
+npm install
+pm2 restart server.js --name brookfield_prod
+
+Notes:
+  - First deploy only: create /apps/production/brookfield-server/.env with the DB_* creds + a fresh JWT_SECRET, set
+    CLIENT_URL to the Vercel web origin (comma-separate if more than one), and set PORT (default 3020). Open that PORT / point
+    the reverse proxy at it.
+  - First deploy only: seed the first app user (CLAUDE.md) — creates the app_users table if absent:
+        node scripts/seed-user.js <username> <password> Andreas
+    Re-run with the same username to reset a password.
+  - First deploy only: enable PM2 log rotation so the API's per-request logs can't fill the VPS disk. PM2 redirects each app's
+    stdout/stderr to ~/.pm2/logs/*.log, which grow unbounded by default. This installs a rotator (applies to ALL pm2 apps on the
+    box, runs once):
+        pm2 install pm2-logrotate
+        pm2 set pm2-logrotate:max_size 10M       # rotate a log once it reaches 10 MB
+        pm2 set pm2-logrotate:retain 14          # keep 14 rotated files, delete older
+        pm2 set pm2-logrotate:compress true      # gzip rotated logs
+    (Caps total log usage at roughly 140 MB across both streams, compressed. Adjust retain/max_size to taste.)
+  - Health check after restart:  curl http://localhost:<PORT>/health   -> {"return_code":"SUCCESS","db_time":...}
+  - Logs:  pm2 logs brookfield_prod   (every request is logged: METHOD path user -> RETURN_CODE (ms))
+  - The nightly Shopify sync (external, not part of this app) consumes skusummary.shopifychange=1 — this tool only sets it.
+
+=======================================================================================================================================
+WEB  ->  Vercel  (public URL, behind the app login)
+=======================================================================================================================================
+cd brookfield-web
+vercel --prod
+
+Vercel project env:
+  - NEXT_PUBLIC_API_URL = https://<the VPS server URL>     (must be reachable from browsers; https)
+  - After setting/changing env vars, redeploy so the value is inlined into the client bundle.
+
+CORS: the server's CLIENT_URL must include the exact Vercel origin (e.g. https://brookfield-web.vercel.app). If you use a custom
+domain, add it too (comma-separated).
+
+=======================================================================================================================================
+LOCAL DEV (Windows)
+=======================================================================================================================================
+Server:  cd brookfield-server && npm install && npm run dev     (nodemon, port 3020; reads brookfield-server/.env)
+Web:     cd brookfield-web    && npm install && npm run dev      (port 3000; reads brookfield-web/.env -> NEXT_PUBLIC_API_URL)
+Seed:    cd brookfield-server && node scripts/seed-user.js andreas <password> Andreas
+Login at http://localhost:3000/login.

@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Platform-wide base. Neutral, dense, utilitarian — this is an internal ops tool, not a marketing site. */
+html, body {
+  height: 100%;
+}
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}

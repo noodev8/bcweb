@@ -1,0 +1,107 @@
+# =========================================
+# General (Windows/macOS/IDEs)
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*.swo
+*.tmp
+*.lock
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Excel temporary files
+~$*.xlsx
+~$*.xls
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# =========================================
+# Node.js & Frontend (Vite/React)
+node_modules/
+logs/
+dist/
+dist-ssr/
+.cache/
+.next/
+out/
+*.local
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================================
+# Flutter (splitdine_flutter)
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+
+# iOS
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/Debug.xcconfig
+ios/Flutter/Release.xcconfig
+ios/Flutter/ephemeral/
+ios/.symlinks/
+ios/Pods/
+ios/Podfile
+ios/Podfile.lock
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+ios/Runner.xcodeproj/project.pbxproj
+DerivedData/
+
+# macOS
+macos/Flutter/Flutter-Debug.xcconfig
+macos/Flutter/Flutter-Release.xcconfig
+macos/Flutter/ephemeral/
+macos/Pods/
+macos/Podfile
+macos/Podfile.lock
+
+# Android
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/*.iml
+android/app/google-services.json
+android/app/key.properties
+android/key.jks
+**/android/app/.cxx/
+
+# Python environment
+venv/
+
+# Claude and Codex Code settings
+.claude/
+.codex/
+
+# Screenshot files (help files)
+screenshot*.*
+
+# Windows reserved device names
+nul
+
+.vercel
