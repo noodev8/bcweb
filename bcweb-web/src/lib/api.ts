@@ -110,9 +110,9 @@ export interface ProductSize { code: string; barcode: string | null; sizeDisplay
 export interface ProductLookups {
   brands: string[]; colours: string[]; productTypes: string[]; segments: string[]; genders: string[]; seasons: string[];
 }
-// Editable attribute/enum fields (edit Stage 1). Mirrors the POST /product-update payload (minus groupid).
+// Editable header fields. Mirrors the POST /product-update payload (minus groupid).
 export interface ProductEditFields {
-  brand: string; colour: string; segment: string; season: string; gender: string; producttype: string;
+  brand: string; colour: string; segment: string; season: string; gender: string; producttype: string; title: string;
 }
 export interface ProductDetail {
   groupid: string;
@@ -196,6 +196,14 @@ export function updateProduct(groupid: string, fields: ProductEditFields) {
   return request<{ groupid: string; saved: ProductEditFields }>(
     { url: '/product-update', method: 'POST', data: { groupid, ...fields } },
     (b) => ({ groupid: b.groupid, saved: b.saved as ProductEditFields })
+  );
+}
+
+// Save the size list (skumap). Client sends the full desired list in order; server reconciles (reorder/update/insert/delete).
+export function updateProductSizes(groupid: string, sizes: { code: string; sizeDisplay: string; barcode: string }[]) {
+  return request<{ groupid: string; sizes: ProductSize[] }>(
+    { url: '/product-sizes', method: 'POST', data: { groupid, sizes } },
+    (b) => ({ groupid: b.groupid, sizes: b.sizes || [] })
   );
 }
 

@@ -1,0 +1,635 @@
+String		ls_brand, ls_colour, ls_title, ls_value, ls_newhandlevalues
+String		ls_producttype, ls_gender, ls_cost, ls_rrp
+String		ls_handlecode, ls_handle, ls_newhandle, ls_summarycost
+String		ls_lefthandle, ls_righthandle, ls_date, ls_supplier, ls_find, ls_optionsize, ls_uksize, ls_code
+String		ls_imagename, ls_workstation, ls_season, ls_skuvalues, ls_sku, ls_digit, ls_fbafee, ls_asin
+String		ls_size, ls_barcode, ls_filename, ls_shopifyprice, ls_barcode2
+String		ls_price, ls_currentstatus, ls_minprice, ls_maxprice
+String		ls_selectedtag, ls_hardmin
+String		ls_segment
+Integer	li_tax, li_handlecount, li_pos, li_skuok, li_dash1, li_dash2, li_itemcount, li_deleted, li_duplicate, li_noshopify, li_new
+Integer	li_tagcount, li_shopify
+Long		ll_newsummaryrow, ll_sharedfound, ll_found, ll_newrow, ll_count, ll_newattributerow, ll_row, ll_titlefound
+Long		ll_startfind, ll_newtitlerow
+Datetime	ldt_null
+
+
+ls_newhandlevalues = "01234567890abcdefghijklmnopqrstuvwxyz-"
+ls_skuvalues = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ls_date = string(today(),"YYYYMMDD HH:MM:SS")
+ls_fbafee = Profilestring("C:\BrookfieldComfort\brookfield.ini","general","avgfbafee","2.24")
+as_groupid = Upper(as_groupid)
+SetNull(ldt_null)
+
+// Get Values
+ls_brand = ddlb_brand.text
+ls_colour = ddlb_colour.text
+ls_producttype = ddlb_producttype.text
+ls_gender = ddlb_gender.text
+ls_rrp = sle_rrp.text
+ls_title = sle_title.text
+ls_season = ddlb_season.text
+ls_summarycost = sle_cost.text
+ls_minprice = sle_minprice.text
+ls_maxprice = sle_maxprice.text
+ls_shopifyprice = sle_price.text
+is_currentrrp = ls_rrp
+ls_segment = ddlb_segment.text
+
+//ls_birknarrow = sle_birknarrow.text
+//ls_birkregular = sle_birkregular.text
+
+
+IF cbx_tax.checked = True THEN
+	li_tax = 1
+END IF
+IF cbx_shopifyonoff.checked = True THEN
+	li_shopify = 1
+ELSE
+	li_shopify = 0
+END IF
+
+/**************************************************************************************************************
+* VALIDATE
+**************************************************************************************************************/
+IF as_groupid = "" OR as_groupid = " " THEN
+	Messagebox("Error","Require Group ID")
+	Return -1
+END IF
+IF ls_brand = "" OR ls_brand = " " THEN
+	Messagebox("Error","Require Brand")
+	Return -1
+END IF
+IF ls_colour = "" OR ls_colour = " " THEN
+	Messagebox("Error","Require Colour")
+	Return -1
+END IF
+IF ls_producttype = "" OR ls_producttype = " " THEN
+	Messagebox("Error","Require Product Type")
+	Return -1
+END IF
+IF ls_gender = "" OR ls_gender = " " THEN
+	Messagebox("Error","Require Gender")
+	Return -1
+END IF
+IF Real(ls_rrp) = 0 THEN
+	Messagebox("Error","Require RRP")
+	Return -1
+END IF
+IF Real(ls_summarycost) = 0 THEN
+	Messagebox("Error","Require Cost")
+	Return -1
+END IF
+IF dw_sizelist.rowcount() = 0 THEN
+	Messagebox("Error","Require Sizes")
+	Return -1
+END IF
+IF Pos(ls_title,"<") > 0 OR Pos(ls_title,"<") > 0 THEN
+	Messagebox("Error","< > are not allowed in the title")
+	Return -1
+END IF
+IF Pos(ls_title,"/") > 0 OR Pos(ls_title,"\") > 0 THEN
+	Messagebox("Error","/ \ are not allowed in the title")
+	Return -1
+END IF	
+
+IF Real(ls_rrp) < Real(ls_cost) THEN
+	Messagebox("Error","RRP is less than cost")
+	Return -1
+END IF
+IF ls_season = "" OR ls_season = " " THEN
+	Messagebox("Error","Require Season")
+	Return -1
+END IF
+IF Real(ls_minprice) = 0 THEN
+	ls_minprice = "0"
+END IF
+IF Real(ls_maxprice) = 0 THEN
+	ls_maxprice = ls_rrp
+END IF
+IF Real(ls_shopifyprice) = 0 THEN
+	ls_shopifyprice = ls_rrp
+END IF
+
+FOR ll_count = 1 TO dw_sizelist.rowcount()
+	ls_code = dw_sizelist.getitemstring(ll_count,"code")
+	ls_size = dw_sizelist.getitemstring(ll_count,"size")
+	ls_uksize = dw_sizelist.getitemstring(ll_count,"uksize")
+	ls_cost = dw_sizelist.getitemstring(ll_count,"cost")
+	ls_price = dw_sizelist.getitemstring(ll_count,"price")
+	ls_barcode = dw_sizelist.getitemstring(ll_count,"barcode")
+
+	IF Real(ls_cost) = 0 THEN
+		Messagebox("Error","Require Cost")
+		Return -1
+	END IF
+	IF Real(ls_price) = 0 THEN
+		Messagebox("Error","Require Price")
+		Return -1
+	END IF
+	IF ls_code = "" OR isNULL(ls_code) THEN
+		Messagebox("Error","Invalid Code")
+		Return -1
+	END IF
+	IF Right(ls_code,1) = "-" THEN
+		Messagebox("Error","Invalid Code")
+		Return -1
+	END IF
+	IF Pos(ls_code," ") > 0 THEN
+		Messagebox("Error","Space not allowed in code")
+		Return -1		
+	END IF
+
+	IF ls_size = "" OR isNULL(ls_size) OR ls_size = " " OR Trim(ls_size) = "UK" THEN
+		Messagebox("Error","Invalid Size")
+		Return -1
+	END IF
+	IF Pos(ls_code,"<") > 0 OR Pos(ls_code,"<") > 0 THEN
+		Messagebox("Error","< > are not allowed in the code")
+		Return -1
+	END IF	
+	IF Pos(ls_size,"<") > 0 OR Pos(ls_size,"<") > 0 THEN
+		Messagebox("Error","< > are not allowed in the size")
+		Return -1
+	END IF	
+	IF ls_uksize = "" OR isNULL(ls_uksize) OR (Trim(ls_uksize) = "UK") THEN
+		Messagebox("Error","Invalid UK Size")
+		Return -1
+	END IF
+	
+	ll_startfind = 1
+	li_duplicate = 0
+	DO
+		ls_find = "code = '"+ls_code+"'"
+		ll_found = dw_sizelist.find(ls_find,ll_startfind,dw_sizelist.rowcount())
+		IF ll_found > 0 THEN
+			li_duplicate = li_duplicate + 1
+			IF li_duplicate > 1 THEN
+				Messagebox("Error","Duplicate code not allowed")
+				Return -1
+			END IF
+		END IF
+	
+		ll_startfind = ll_found + 1
+		IF ll_startfind > dw_sizelist.rowcount() THEN
+			Exit
+		END IF
+	LOOP UNTIL ll_found = 0
+
+	IF ls_barcode <> "" AND NOT isNULL(ls_barcode) THEN
+		ll_startfind = 1
+		li_duplicate = 0
+		DO
+			ls_find = "barcode = '"+ls_barcode+"'"
+			ll_found = dw_sizelist.find(ls_find,ll_startfind,dw_sizelist.rowcount())
+			IF ll_found > 0 THEN
+				li_duplicate = li_duplicate + 1
+				IF li_duplicate > 1 THEN
+					Messagebox("Error","Duplicate barcode not allowed")
+					Return -1
+				END IF
+			END IF
+		
+			ll_startfind = ll_found + 1
+			IF ll_startfind > dw_sizelist.rowcount() THEN
+				Exit
+			END IF
+		LOOP UNTIL ll_found = 0
+	END IF
+NEXT
+
+/*******************************************************************************************************/
+
+// Determine Supplier
+ls_find = "brand = '"+ls_brand+"'"
+ll_found = gdb_brand.find(ls_find,1,gdb_brand.rowcount())
+IF ll_found > 0 THEN
+	ls_supplier = gdb_brand.getitemstring(ll_found,"supplier")
+ELSE
+	ls_supplier = ls_brand
+END IF
+
+// Image
+ls_imagename = Mid(sle_imagename.text,1,200)
+
+
+
+
+/**************************************************************************************************************
+* LOAD NEW
+**************************************************************************************************************/
+
+dw_sizelist.setredraw(False)
+
+// Check if NEW or UPDATE
+ls_find = "upper(groupid) = '"+as_groupid+"'"
+ll_found = gdb_skusummary.find(ls_find,1,gdb_skusummary.rowcount())
+IF ll_found = 0 THEN
+	// NEW
+	li_new = 1
+	
+	// Generate Handle
+	ls_handle = Trim(ls_title) + "-" + as_groupid
+	ls_handle = Lower(ls_handle)
+	ls_newhandle = ""
+	
+	FOR li_handlecount = 1 TO Len(ls_handle)
+		ls_value = Mid(ls_handle,li_handlecount,1)
+		IF Pos(ls_newhandlevalues,ls_value) > 0 THEN
+			ls_newhandle = ls_newhandle + ls_value
+		ELSE
+			ls_newhandle = ls_newhandle + "-"
+		END IF
+	NEXT
+	IF Right(ls_handle,1) = "-" THEN
+		ls_handle = Mid(ls_handle,1,Len(ls_handle)-1)
+	END IF
+	ls_handle = Trim(Mid(ls_newhandle,1,300))
+	
+	// Find double --
+	DO
+		li_pos = Pos(ls_handle,"--",1)
+		IF li_pos > 0 THEN
+			ls_lefthandle = Mid(ls_handle,1,li_pos -1)
+			ls_righthandle = Mid(ls_handle,li_pos + 1,Len(ls_handle))
+			ls_handle = ls_lefthandle + ls_righthandle
+		END IF					
+	LOOP UNTIL li_pos = 0
+
+	
+	// Check if handle exists
+	ls_find = "handle = '"+ls_handle+"'"
+	ll_found = gdb_skusummary.find(ls_find,1,gdb_skusummary.rowcount())
+	IF ll_found > 0 THEN
+		Messagebox("Error","Handle already in use. Slightly modify the title.")
+		Return -1
+	END IF
+
+	IF ls_maxprice = "RRP" THEN
+		// OK
+	ELSE
+		ls_maxprice = String(Real(ls_maxprice) ,"0.00")
+	END IF
+
+	// New SKUSummary	
+	ll_newsummaryrow = gdb_skusummary.insertrow(0)
+	gdb_skusummary.setitem(ll_newsummaryrow,"groupid",as_groupid)
+	gdb_skusummary.setitem(ll_newsummaryrow,"updated",ls_date)
+	gdb_skusummary.setitem(ll_newsummaryrow,"created",ls_date)
+	gdb_skusummary.setitem(ll_newsummaryrow,"brand",ls_brand)
+	gdb_skusummary.setitem(ll_newsummaryrow,"colour",ls_colour)
+	gdb_skusummary.setitem(ll_newsummaryrow,"colourmap",ls_colour)	
+	gdb_skusummary.setitem(ll_newsummaryrow,"handle",ls_handle)
+	gdb_skusummary.setitem(ll_newsummaryrow,"rrp",String(Real(ls_rrp) ,"0.00"))
+	gdb_skusummary.setitem(ll_newsummaryrow,"shopifyprice",String(Real(ls_shopifyprice) ,"0.00"))	
+	gdb_skusummary.setitem(ll_newsummaryrow,"minshopifyprice",String(Real(ls_minprice) ,"0.00"))	
+	gdb_skusummary.setitem(ll_newsummaryrow,"maxshopifyprice","RRP")
+	gdb_skusummary.setitem(ll_newsummaryrow,"supplier",ls_supplier)
+	gdb_skusummary.setitem(ll_newsummaryrow,"imagename",ls_imagename)
+	gdb_skusummary.setitem(ll_newsummaryrow,"season",ls_season)
+	gdb_skusummary.setitem(ll_newsummaryrow,"shopify",li_shopify)	
+	gdb_skusummary.setitem(ll_newsummaryrow,"googlestatus",1)
+	gdb_skusummary.setitem(ll_newsummaryrow,"googlecampaign","standard")
+	gdb_skusummary.setitem(ll_newsummaryrow,"cost",String(Real(ls_summarycost) ,"0.00"))	
+	gdb_skusummary.setitem(ll_newsummaryrow,"tax",li_tax)	
+	//gdb_skusummary.setitem(ll_newsummaryrow,"regular_groupid",ls_birkregular)
+	//gdb_skusummary.setitem(ll_newsummaryrow,"narrow_groupid",ls_birknarrow)
+	gdb_skusummary.setitem(ll_newsummaryrow,"segment",ls_segment)
+
+	// Set fixed shop label - Crocs are set to Shop
+	IF Upper(ls_brand) = "CROCS" THEN
+		gdb_skusummary.setitem(ll_newsummaryrow,"custom_label_0","L4")
+	END IF
+
+
+		
+	// New Title
+	ll_newtitlerow = gdb_title.insertrow(0)
+	gdb_title.setitem(ll_newtitlerow,"updated",ls_date)
+	gdb_title.setitem(ll_newtitlerow,"shopifytitle",ls_title)
+	gdb_title.setitem(ll_newtitlerow,"googletitle",ls_title)
+	gdb_title.setitem(ll_newtitlerow,"googletitleb","-")	
+	gdb_title.setitem(ll_newtitlerow,"groupid",as_groupid)
+		
+	
+	// New Attribute
+	ll_newattributerow = gdb_attributes.insertrow(0)
+	gdb_attributes.setitem(ll_newattributerow,"groupid",as_groupid)
+	gdb_attributes.setitem(ll_newattributerow,"updated",ls_date)
+	gdb_attributes.setitem(ll_newattributerow,"gender",ls_gender)
+	gdb_attributes.setitem(ll_newattributerow,"producttype",ls_producttype)
+
+//	FOR ll_count = 1 TO dw_fulltaglist.rowcount()
+//		IF dw_fulltaglist.isselected(ll_count) = True THEN
+//			ls_selectedtag = dw_fulltaglist.getitemstring(ll_count,"tag")
+//			FOR li_tagcount = 1 TO 10
+//				IF gdb_attributes.getitemstring(ll_newattributerow,"tag"+string(li_tagcount)) = "" OR isNULL(gdb_attributes.getitemstring(ll_newattributerow,"tag"+string(li_tagcount))) THEN
+//					gdb_attributes.setitem(ll_newattributerow,"tag"+string(li_tagcount),ls_selectedtag)
+//					Exit
+//				END IF
+//			NEXT
+//		END IF
+//	NEXT
+	
+	
+	
+	
+	// New SKUMap
+	FOR ll_count = 1 TO dw_sizelist.rowcount()
+		ls_barcode2 = ""
+		ls_barcode = ""
+		ls_code = dw_sizelist.getitemstring(ll_count,"code")
+		ls_size = Trim(dw_sizelist.getitemstring(ll_count,"size"))
+		ls_optionsize = String(ll_count+100) + "--" + ls_size
+		ls_uksize = dw_sizelist.getitemstring(ll_count,"uksize")
+		ls_barcode = dw_sizelist.getitemstring(ll_count,"barcode")
+		IF ls_barcode <> "" AND NOT IsNULL(ls_barcode) THEN
+			ls_barcode = ls_barcode + "B"
+		END IF
+		ls_barcode2 = dw_sizelist.getitemstring(ll_count,"barcode2")
+		IF ls_barcode2 <> "" AND NOT IsNULL(ls_barcode2) THEN
+			ls_barcode2 = ls_barcode2 + "B"
+		END IF
+		ls_cost = dw_sizelist.getitemstring(ll_count,"cost")
+		ls_price = dw_sizelist.getitemstring(ll_count,"price")
+	
+		// SKUMAP
+		ll_newrow = gdb_skumap.insertrow(0)
+		gdb_skumap.setitem(ll_newrow,"updated",ls_date)
+		gdb_skumap.setitem(ll_newrow,"sku","")
+		gdb_skumap.setitem(ll_newrow,"groupid",as_groupid)
+		gdb_skumap.setitem(ll_newrow,"optionsize",ls_optionsize)
+		gdb_skumap.setitem(ll_newrow,"ean",ls_barcode)
+		gdb_skumap.setitem(ll_newrow,"search2",ls_barcode2)
+		gdb_skumap.setitem(ll_newrow,"uksize",ls_uksize)
+		gdb_skumap.setitem(ll_newrow,"supplier",ls_supplier)
+		gdb_skumap.setitem(ll_newrow,"code",ls_code)
+		gdb_skumap.setitem(ll_newrow,"googleid",ls_code)
+		gdb_skumap.setitem(ll_newrow,"cost",String(Real(ls_cost) ,"0.00"))
+		gdb_skumap.setitem(ll_newrow,"amzminprice",String((Real(ls_rrp) * .20) ,"0.00"))
+		gdb_skumap.setitem(ll_newrow,"amzmaxprice",String(Real(ls_rrp) ,"0.00"))		
+		gdb_skumap.setitem(ll_newrow,"amzprice",String(Real(ls_rrp) ,"0.00"))
+		//gdb_skumap.setitem(ll_newrow,"tax",li_tax)
+		gdb_skumap.setitem(ll_newrow,"fba",ls_fbafee)
+		gdb_skumap.setitem(ll_newrow,"deleted",0)
+		gdb_skumap.setitem(ll_newrow,"googlestatus",1)
+		gdb_skumap.setitem(ll_newrow,"googlecampaign","00")
+		gdb_skumap.setitem(ll_newrow,"status","0")
+		gdb_skumap.setitem(ll_newrow,"pricestatus",0)
+		gdb_skumap.setitem(ll_newrow,"amzperformance",0)		
+		gdb_skumap.setitem(ll_newrow,"amz365",0)	
+		gdb_skumap.setitem(ll_newrow,"shp365",0)
+	NEXT
+END IF
+
+
+
+/**************************************************************************************************************
+* UPDATE EXISTING
+**************************************************************************************************************/
+IF li_new = 0 THEN
+
+	// Check hard min
+	ls_hardmin = w_main.wf_checkhardmin(as_groupid)
+	IF Real(ls_minprice) < Real(ls_hardmin) THEN ls_minprice = ls_hardmin
+
+	IF ls_maxprice = "RRP" THEN
+		// OK
+	ELSE
+		ls_maxprice = String(Real(ls_maxprice) ,"0.00")
+	END IF
+	
+	// SKUSummary	
+	gdb_skusummary.setitem(ll_found,"updated",ls_date)
+	gdb_skusummary.setitem(ll_found,"brand",ls_brand)
+	gdb_skusummary.setitem(ll_found,"imagename",ls_imagename)	
+	gdb_skusummary.setitem(ll_found,"supplier",ls_supplier)	
+	gdb_skusummary.setitem(ll_found,"colour",ls_colour)
+	gdb_skusummary.setitem(ll_found,"colourmap",ls_colour)
+	gdb_skusummary.setitem(ll_found,"supplier",ls_supplier)
+	gdb_skusummary.setitem(ll_found,"season",ls_season)
+	gdb_skusummary.setitem(ll_found,"rrp",String(Real(ls_rrp) ,"0.00"))
+	gdb_skusummary.setitem(ll_found,"shopifyprice",String(Real(ls_shopifyprice) ,"0.00"))	
+	gdb_skusummary.setitem(ll_found,"minshopifyprice",String(Real(ls_minprice) ,"0.00"))	
+	gdb_skusummary.setitem(ll_found,"maxshopifyprice",ls_maxprice)
+	gdb_skusummary.setitem(ll_found,"cost",String(Real(ls_summarycost) ,"0.00"))	
+	gdb_skusummary.setitem(ll_found,"shopify",li_shopify)
+	gdb_skusummary.setitem(ll_found,"tax",li_tax)
+	//gdb_skusummary.setitem(ll_found,"regular_groupid",ls_birkregular)
+	//gdb_skusummary.setitem(ll_found,"narrow_groupid",ls_birknarrow)
+	gdb_skusummary.setitem(ll_found,"segment",ls_segment)
+
+	// Title
+	ls_find = "upper(groupid) = '"+upper(as_groupid)+"'"
+	ll_found = gdb_title.find(ls_find,1,gdb_title.rowcount())
+	IF ll_found > 0 THEN
+		// OK
+		gdb_title.setitem(ll_found,"updated",ls_date)
+		gdb_title.setitem(ll_found,"shopifytitle",Trim(ls_title))
+		gdb_title.setitem(ll_found,"groupid",as_groupid)
+		IF is_originaltitle <> ls_title THEN
+			gdb_title.setitem(ll_found,"last_shopify_sync",ldt_null)
+		END IF
+		
+	ELSE
+		ll_found = gdb_title.insertrow(0)
+	END IF
+	
+	gdb_title.setitem(ll_found,"updated",ls_date)
+	gdb_title.setitem(ll_found,"shopifytitle",ls_title)
+	gdb_title.setitem(ll_found,"groupid",as_groupid)
+	
+	// ATTRIBUTES
+	ls_find = "upper(groupid) = '"+as_groupid+"'"
+	ll_found = gdb_attributes.find(ls_find,1,gdb_attributes.rowcount())
+	IF ll_found > 0 THEN
+		// OK
+	ELSE
+		ll_found = gdb_attributes.insertrow(0)
+	END IF
+
+	gdb_attributes.setitem(ll_found,"groupid",as_groupid)
+	gdb_attributes.setitem(ll_found,"updated",ls_date)
+	gdb_attributes.setitem(ll_found,"gender",ls_gender)
+	gdb_attributes.setitem(ll_found,"producttype",ls_producttype)		
+
+
+	// Tags
+	gdb_attributes.setitem(ll_found,"tag1","")
+	gdb_attributes.setitem(ll_found,"tag2","")
+	gdb_attributes.setitem(ll_found,"tag3","")
+	gdb_attributes.setitem(ll_found,"tag4","")
+	gdb_attributes.setitem(ll_found,"tag5","")
+	gdb_attributes.setitem(ll_found,"tag6","")
+	gdb_attributes.setitem(ll_found,"tag7","")
+	gdb_attributes.setitem(ll_found,"tag8","")
+	gdb_attributes.setitem(ll_found,"tag9","")
+	gdb_attributes.setitem(ll_found,"tag10","")
+	
+//	FOR ll_count = 1 TO dw_fulltaglist.rowcount()
+//		IF dw_fulltaglist.isselected(ll_count) = True THEN
+//			ls_selectedtag = dw_fulltaglist.getitemstring(ll_count,"tag")
+//			FOR li_tagcount = 1 TO 10
+//				IF gdb_attributes.getitemstring(ll_found,"tag"+string(li_tagcount)) = "" THEN
+//					gdb_attributes.setitem(ll_found,"tag"+string(li_tagcount),ls_selectedtag)
+//					Exit
+//				END IF
+//			NEXT
+//		END IF
+//	NEXT
+
+
+	// DETAIL ITEMS
+	FOR ll_count = 1 TO dw_sizelist.rowcount()
+		ls_barcode = ""
+		ls_barcode2 = ""
+		ls_code = dw_sizelist.getitemstring(ll_count,"code")
+		ls_uksize = dw_sizelist.getitemstring(ll_count,"uksize")
+		ls_optionsize = 	dw_sizelist.getitemstring(ll_count,"size")
+		ls_barcode = dw_sizelist.getitemstring(ll_count,"barcode")
+		ls_barcode2 = dw_sizelist.getitemstring(ll_count,"barcode2")
+		ls_cost = dw_sizelist.getitemstring(ll_count,"cost")
+		ls_price = dw_sizelist.getitemstring(ll_count,"price")
+		//li_tax = dw_sizelist.getitemnumber(ll_count,"tax")
+		li_deleted = dw_sizelist.getitemnumber(ll_count,"deleted")
+		ls_optionsize = String(ll_count+100) + "--" + ls_optionsize
+
+		IF isNULL(li_deleted) THEN li_deleted = 0
+		
+		IF isNULL(ls_barcode) OR ls_barcode = "" THEN
+			ls_barcode = ""
+		ELSE
+			ls_barcode = ls_barcode + "B"			
+		END IF
+		IF isNULL(ls_barcode2) OR ls_barcode2 = "" THEN
+			ls_barcode2 = ""
+		ELSE
+			ls_barcode2 = ls_barcode2 + "B"			
+		END IF
+
+		//ls_find = "Upper(code) = '"+Upper(ls_code)+"' AND deleted = 0"
+		ls_find = "Upper(code) = '"+Upper(ls_code)+"'"
+		ll_found = gdb_skumap.find(ls_find,1,gdb_skumap.rowcount())
+		
+		IF ll_found > 0 THEN
+			IF li_deleted = 1 THEN
+				gdb_skumap.deleterow(ll_found)
+			ELSE
+				ls_currentstatus = gdb_skumap.getitemstring(ll_found,"status")				
+				gdb_skumap.setitem(ll_found,"ean",ls_barcode)
+				gdb_skumap.setitem(ll_found,"uksize",ls_uksize)
+				gdb_skumap.setitem(ll_found,"optionsize",ls_optionsize)
+				//gdb_skumap.setitem(ll_found,"tax",li_tax)
+				gdb_skumap.setitem(ll_found,"deleted",li_deleted)			
+				gdb_skumap.setitem(ll_found,"updated",ls_date)				
+				gdb_skumap.setitem(ll_found,"supplier",ls_supplier)
+				gdb_skumap.setitem(ll_found,"search2",ls_barcode2)				
+			END IF
+		ELSE
+			// NEW SIZE
+			ls_code = dw_sizelist.getitemstring(ll_count,"code")
+			ls_size = Trim(dw_sizelist.getitemstring(ll_count,"size"))
+			ls_optionsize = String(ll_count+100) + "--" + ls_size
+			ls_uksize = dw_sizelist.getitemstring(ll_count,"uksize")
+			ls_barcode = dw_sizelist.getitemstring(ll_count,"barcode")
+			ls_barcode2 = dw_sizelist.getitemstring(ll_count,"barcode2")			
+			ls_price = dw_sizelist.getitemstring(ll_count,"price")			
+
+			IF isNULL(ls_barcode) OR ls_barcode = "" THEN
+				ls_barcode = ""
+			ELSE
+				ls_barcode = ls_barcode + "B"			
+			END IF
+			IF isNULL(ls_barcode2) OR ls_barcode2 = "" THEN
+				ls_barcode = ""
+			ELSE
+				ls_barcode = ls_barcode + "B"			
+			END IF
+
+			ll_newrow = gdb_skumap.insertrow(0)
+			gdb_skumap.setitem(ll_newrow,"updated",ls_date)
+			gdb_skumap.setitem(ll_newrow,"sku","")
+			gdb_skumap.setitem(ll_newrow,"groupid",as_groupid)
+			gdb_skumap.setitem(ll_newrow,"optionsize",ls_optionsize)
+			gdb_skumap.setitem(ll_newrow,"ean",ls_barcode)
+			gdb_skumap.setitem(ll_newrow,"search2",ls_barcode2)			
+			gdb_skumap.setitem(ll_newrow,"uksize",ls_uksize)
+			gdb_skumap.setitem(ll_newrow,"supplier",ls_supplier)
+			gdb_skumap.setitem(ll_newrow,"code",ls_code)
+			gdb_skumap.setitem(ll_newrow,"googleid",ls_code)
+			gdb_skumap.setitem(ll_newrow,"cost",String(Real(ls_cost) ,"0.00"))
+			gdb_skumap.setitem(ll_newrow,"amzprice",String(Real(ls_price) ,"0.00"))
+			gdb_skumap.setitem(ll_newrow,"amzminprice",String((Real(ls_rrp) * .70) ,"0.00"))
+			gdb_skumap.setitem(ll_newrow,"amzmaxprice",String(Real(ls_rrp) ,"0.00"))
+			//gdb_skumap.setitem(ll_newrow,"tax",li_tax)
+			gdb_skumap.setitem(ll_newrow,"fba",ls_fbafee)
+			gdb_skumap.setitem(ll_newrow,"deleted",0)
+			gdb_skumap.setitem(ll_newrow,"googlestatus",1)
+			gdb_skumap.setitem(ll_newrow,"googlecampaign","00")			
+			gdb_skumap.setitem(ll_newrow,"status","1")
+			gdb_skumap.setitem(ll_newrow,"pricestatus",0)
+			gdb_skumap.setitem(ll_newrow,"amzperformance",0)		
+			gdb_skumap.setitem(ll_newrow,"amz365",0)	
+			gdb_skumap.setitem(ll_newrow,"shp365",0)			
+		END IF
+	NEXT
+END IF
+
+
+/*************************************************************************
+* Update AMZ Stock report
+*************************************************************************/
+IF ii_rrpchanged = 1 THEN
+	ls_rrp = sle_rrp.text
+END IF
+
+
+
+
+
+dw_sizelist.setredraw(True)
+
+// Save Data
+//w_main.wf_connectcheckdb(1)
+CONNECT USING SQLCA;
+gdb_skusummary.settransobject(SQLCA)
+gdb_skusummary.update()
+gdb_skumap.settransobject(SQLCA)
+gdb_skumap.update()
+gdb_attributes.settransobject(SQLCA)
+gdb_attributes.update()
+gdb_title.settransobject(SQLCA)
+gdb_title.update()
+
+gi_skusummarychanged = 0
+
+// Update AMZ Stock report
+IF ii_rrpchanged = 1 THEN
+	ls_rrp = sle_rrp.text
+	UPDATE amzstockreport SET rrp = :ls_rrp WHERE groupid = :as_groupid USING SQLCA;
+	ii_rrpchanged = 0
+END IF
+IF ii_seasonchanged = 1 THEN
+	ls_season = ddlb_season.text
+	IF ls_season = "Summer" THEN ls_season = "SS"
+	IF ls_season = "Winter" THEN ls_season = "AW"
+	IF ls_season = "Any" THEN ls_season = "Any"
+	IF ls_season <> " " AND ls_season <> "" THEN		
+		UPDATE amzstockreport SET season = :ls_season WHERE groupid = :as_groupid USING SQLCA;
+		ii_seasonchanged = 0
+	END IF
+END IF
+
+
+DISCONNECT USING SQLCA;
+
+
+//w_main.uo_replenish.dw_amzstockdisplay.reset()
+
+IF li_noshopify = 1 THEN
+	Return 1
+ELSE
+	Return 0
+END IF
+
+Return 0

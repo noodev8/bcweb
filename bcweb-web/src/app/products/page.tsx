@@ -19,6 +19,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import SizeEditor from '@/components/SizeEditor';
 import {
   searchProducts, getProduct, getProductLookups, updateProduct,
   ProductRow, ProductDetail, ProductLookups, ProductEditFields,
@@ -61,12 +62,38 @@ function EditSelect({
   );
 }
 
-// Pull the editable attribute/enum fields out of a loaded product (null -> '' so they bind to <select> cleanly).
+// Pull the editable header fields out of a loaded product (null -> '' so they bind to inputs cleanly).
 function fieldsFromDetail(d: ProductDetail): ProductEditFields {
   return {
     brand: d.brand ?? '', colour: d.colour ?? '', segment: d.segment ?? '',
-    season: d.season ?? '', gender: d.gender ?? '', producttype: d.producttype ?? '',
+    season: d.season ?? '', gender: d.gender ?? '', producttype: d.producttype ?? '', title: d.title ?? '',
   };
+}
+
+// Generate a Shopify title from the current dropdown values — a port of the legacy PowerBuilder routine. It emits editable
+// placeholders (<Any detail>, <Narrow/Regular> Fit) for the user to fill in. groupid/segment/season are intentionally NOT used.
+// Rules: Birkenstock has no gender but gets the "<Narrow/Regular> Fit" width reminder; non-Birkenstock prepends the gender unless
+// Unisex; product type "<Other>" drops the type from the title. Output is whitespace-normalised to single spaces (the legacy code
+// had a double space in one branch, and empty fields could otherwise leave stray spaces).
+function generateTitle(f: ProductEditFields): string {
+  const { brand, colour, producttype, gender } = f;
+  const isOther = producttype.toUpperCase() === '<OTHER>';
+  const isBirk = brand.toUpperCase() === 'BIRKENSTOCK';
+  const isUnisex = gender.toUpperCase() === 'UNISEX';
+
+  let raw: string;
+  if (isOther) {
+    if (isBirk) raw = `${brand} <Any detail> ${colour} <Narrow/Regular> Fit`;
+    else if (isUnisex) raw = `${brand} <Any detail> ${colour}`;
+    else raw = `${gender} ${brand} <Any detail> ${colour}`;
+  } else if (isBirk) {
+    raw = `${brand} <Any detail> ${producttype} ${colour} <Narrow/Regular> Fit`;
+  } else if (isUnisex) {
+    raw = `${brand} <Any detail> ${producttype} ${colour}`;
+  } else {
+    raw = `${gender} ${brand} <Any detail> ${producttype} ${colour}`;
+  }
+  return raw.replace(/\s+/g, ' ').trim();
 }
 
 // Product image lives on our image server, keyed by the bare filename in skusummary.imagename.
@@ -137,6 +164,12 @@ export default function ProductsPage() {
   // Update one field in the form and clear the "Saved" flash (so it doesn't linger over fresh edits).
   function setField(k: keyof ProductEditFields, v: string) {
     setEdit((prev) => (prev ? { ...prev, [k]: v } : prev));
+    setSaveOk(false);
+  }
+
+  // Fill the title from the current brand/colour/product-type/gender selections (the legacy "generate" button).
+  function onGenerateTitle() {
+    setEdit((prev) => (prev ? { ...prev, title: generateTitle(prev) } : prev));
     setSaveOk(false);
   }
 
@@ -291,7 +324,6 @@ export default function ProductsPage() {
                 <div className="mb-4 flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
                   <div className="min-w-0">
                     <div className="font-mono text-lg font-semibold text-slate-900">{detail.groupid}</div>
-                    <div className="mt-0.5 text-sm text-slate-500">{detail.title || <span className="text-slate-400">No title</span>}</div>
                     <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
                       {detail.imagename || 'No image name'}
                     </div>
@@ -299,9 +331,31 @@ export default function ProductsPage() {
                   <ProductImage key={detail.groupid} imagename={detail.imagename} />
                 </div>
 
-                {/* Attributes — edit Stage 1: editable dropdowns + SAVE. Width/Material stay read-only (no legacy control yet). */}
+                {/* Editable header fields + SAVE. Width/Material stay read-only (no legacy control yet). */}
                 {edit && (
                   <div>
+                    {/* Shopify Title — free text with a Generate button that emits the legacy placeholder template. */}
+                    <div className="mb-3">
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={edit.title}
+                          onChange={(e) => setField('title', e.target.value)}
+                          placeholder="Product title"
+                          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={onGenerateTitle}
+                          title="Generate from Brand / Product Type / Colour / Gender"
+                          className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Generate
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-400">After generating, replace the &lt;…&gt; placeholders (detail, and Narrow/Regular fit for Birkenstock).</p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                       <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
                       <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
@@ -309,8 +363,6 @@ export default function ProductsPage() {
                       <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
                       <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
                       <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
-                      <Field label="Width" value={detail.width} />
-                      <Field label="Material" value={detail.material} />
                     </div>
 
                     {/* Save bar for the attribute fields. */}
@@ -346,39 +398,12 @@ export default function ProductsPage() {
                   <Field label="Shopify" value={flag(detail.shopify)} />
                 </div>
 
-                {/* Sizes (skumap) — Code / Barcode / Size Display. UK size omitted until we need it. */}
+                {/* Sizes (skumap) — editable: barcode + size display, with add / remove / reorder. */}
                 <div className="mt-4 border-t border-slate-100 pt-4">
-                  <div className="mb-2 flex items-baseline justify-between">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">Sizes</h3>
-                    <span className="text-xs text-slate-400">{detail.sizes.length} variant{detail.sizes.length === 1 ? '' : 's'}</span>
-                  </div>
-                  {detail.sizes.length === 0 ? (
-                    <p className="text-sm text-slate-400">No sizes on record.</p>
-                  ) : (
-                    <div className="overflow-hidden rounded-md border border-slate-200">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                          <tr>
-                            <th className="px-3 py-2 font-medium">Code</th>
-                            <th className="px-3 py-2 font-medium">Barcode</th>
-                            <th className="px-3 py-2 font-medium">Size Display</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {detail.sizes.map((s) => (
-                            <tr key={s.code} className="hover:bg-slate-50">
-                              <td className="px-3 py-1.5 font-mono text-xs text-slate-700">{s.code}</td>
-                              <td className="px-3 py-1.5 font-mono text-xs text-slate-600">{s.barcode || <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-1.5 text-slate-700">{s.sizeDisplay || <span className="text-slate-300">—</span>}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                  <SizeEditor key={detail.groupid} groupid={detail.groupid} sizes={detail.sizes} />
                 </div>
 
-                <p className="mt-4 text-xs text-slate-400">Price, title and sizes are read-only here — those arrive in later stages.</p>
+                <p className="mt-4 text-xs text-slate-400">Price is read-only here — it will go through the pricing route in a later stage.</p>
               </div>
             )}
           </div>

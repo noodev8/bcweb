@@ -3,12 +3,14 @@
 API Route: product_update
 =======================================================================================================================================
 Method: POST
-Purpose: Edit Stage 1 — save the product's ATTRIBUTE/ENUM fields only. These span two tables, so the write is atomic (withTransaction):
+Purpose: Save the product's header ATTRIBUTE fields. These span three tables, so the write is atomic (withTransaction):
            - skusummary: brand, colour, segment, season   (+ `updated` audit stamp)
            - attributes: gender, producttype              (+ `updated`); INSERTs a row if the product has none yet
+           - title:      shopifytitle                      (+ `updated`); INSERTs a row if the product has none yet
          Deliberately NOT in scope here (own stages, different rules): price/cost/rrp/tax (price goes through the pricing W1 route with
-         shopifychange + price_change_log), shopify title, width/material, sizes. So this route does NOT touch shopifychange or write a
-         price log — it's a plain catalogue-attribute edit.
+         shopifychange + price_change_log), width/material, sizes. So this route does NOT touch shopifychange or write a price log — it's
+         a plain catalogue-attribute edit. NOTE (open decision): colour/producttype/title all feed the Shopify listing but we do NOT set
+         shopifychange here, so the nightly sync won't push these edits yet — revisit when catalogue edits should trigger a sync.
 
          Values are stored as trimmed strings as-is (the legacy data is free-form and lookup tables can be incomplete, e.g. brand
          'Lazy Dogz' isn't in the brand table), so we don't reject off-list values. `updated` is written in the legacy
@@ -22,14 +24,15 @@ Request Payload:
   "segment":     "EVA-SEG",        // string, optional
   "season":      "Summer",         // string, optional
   "gender":      "Unisex",         // string, optional -> attributes
-  "producttype": "Sandals"         // string, optional -> attributes
+  "producttype": "Sandals",        // string, optional -> attributes
+  "title":       "Birkenstock ..." // string, optional -> title.shopifytitle
 }
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "groupid": "0128221-GIZEH",
-  "saved": { "brand": "...", "colour": "...", "segment": "...", "season": "...", "gender": "...", "producttype": "..." }
+  "saved": { "brand": "...", "colour": "...", "segment": "...", "season": "...", "gender": "...", "producttype": "...", "title": "..." }
 }
 =======================================================================================================================================
 Return Codes:
@@ -67,6 +70,7 @@ router.post('/', async (req, res) => {
     const season = (body.season || '').trim();
     const gender = (body.gender || '').trim();
     const producttype = (body.producttype || '').trim();
+    const title = (body.title || '').trim();
 
     await withTransaction(async (client) => {
       // 1) skusummary header fields. RETURNING confirms the product exists; 0 rows -> abort the whole unit (rollback) as NOT_FOUND.
@@ -96,12 +100,26 @@ router.post('/', async (req, res) => {
           VALUES ($1, $2, $3, ${UPDATED_EXPR})
         `, [groupid, gender, producttype]);
       }
+
+      // 3) title.shopifytitle (own table). Same UPDATE-or-INSERT; INSERT only the real columns if the product has no title row.
+      const t = await client.query(`
+        UPDATE title
+           SET shopifytitle = $2, updated = ${UPDATED_EXPR}
+         WHERE groupid = $1
+      `, [groupid, title]);
+
+      if (t.rowCount === 0) {
+        await client.query(`
+          INSERT INTO title (groupid, shopifytitle, updated)
+          VALUES ($1, $2, ${UPDATED_EXPR})
+        `, [groupid, title]);
+      }
     });
 
     return res.json({
       return_code: 'SUCCESS',
       groupid,
-      saved: { brand, colour, segment, season, gender, producttype },
+      saved: { brand, colour, segment, season, gender, producttype, title },
     });
   } catch (err) {
     if (err && err.code === 'NOT_FOUND') {

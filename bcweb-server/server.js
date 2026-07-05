@@ -76,7 +76,8 @@ app.use('/pricing-park', require('./routes/pricing-park'));
 app.use('/product-search', require('./routes/product-search'));    // Stage 1: search
 app.use('/product-get', require('./routes/product-get'));          // Stage 2a: load one product's header
 app.use('/product-lookups', require('./routes/product-lookups'));  // edit Stage 1: dropdown option lists
-app.use('/product-update', require('./routes/product-update'));    // edit Stage 1: save attribute/enum fields
+app.use('/product-update', require('./routes/product-update'));    // edit: save header attribute/enum fields + title
+app.use('/product-sizes', require('./routes/product-sizes'));      // edit: save the size list (skumap)
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
