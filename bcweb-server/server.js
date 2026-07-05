@@ -73,8 +73,10 @@ app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-park', require('./routes/pricing-park'));
 
 // Add / Modify Product module (all routes require verifyToken, applied inside each router).
-app.use('/product-search', require('./routes/product-search'));  // Stage 1: search
-app.use('/product-get', require('./routes/product-get'));        // Stage 2a: load one product's header
+app.use('/product-search', require('./routes/product-search'));    // Stage 1: search
+app.use('/product-get', require('./routes/product-get'));          // Stage 2a: load one product's header
+app.use('/product-lookups', require('./routes/product-lookups'));  // edit Stage 1: dropdown option lists
+app.use('/product-update', require('./routes/product-update'));    // edit Stage 1: save attribute/enum fields
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

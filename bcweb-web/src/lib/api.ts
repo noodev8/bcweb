@@ -107,6 +107,13 @@ export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; sizes
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
 export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; }
+export interface ProductLookups {
+  brands: string[]; colours: string[]; productTypes: string[]; segments: string[]; genders: string[]; seasons: string[];
+}
+// Editable attribute/enum fields (edit Stage 1). Mirrors the POST /product-update payload (minus groupid).
+export interface ProductEditFields {
+  brand: string; colour: string; segment: string; season: string; gender: string; producttype: string;
+}
 export interface ProductDetail {
   groupid: string;
   brand: string | null; colour: string | null; segment: string | null; season: string | null;
@@ -176,6 +183,19 @@ export function getProduct(groupid: string) {
   return request<ProductDetail>(
     { url: '/product-get', method: 'GET', params: { groupid } },
     (b) => ({ ...b.product, sizes: b.sizes || [] }) as ProductDetail
+  );
+}
+
+// Edit Stage 1 — dropdown option lists for the attribute fields.
+export function getProductLookups() {
+  return request<ProductLookups>({ url: '/product-lookups', method: 'GET' }, (b) => b.lookups as ProductLookups);
+}
+
+// Edit Stage 1 — save the attribute/enum fields (brand, colour, segment, season -> skusummary; gender, producttype -> attributes).
+export function updateProduct(groupid: string, fields: ProductEditFields) {
+  return request<{ groupid: string; saved: ProductEditFields }>(
+    { url: '/product-update', method: 'POST', data: { groupid, ...fields } },
+    (b) => ({ groupid: b.groupid, saved: b.saved as ProductEditFields })
   );
 }
 
