@@ -63,6 +63,9 @@ export interface ApiResult<T> {
 // Core request helper. Runs the call, then translates the return_code envelope into an ApiResult. Never throws for API errors;
 // only network/timeout failures land in the catch and become a NETWORK_ERROR result (we choose to surface, not rethrow, so pages
 // have one uniform shape to handle — matching the "let the caller decide" philosophy without red console noise).
+// The response body is untyped JSON (the return_code envelope + arbitrary data fields), so `any` here is deliberate: each caller's
+// `pick` narrows it to a typed shape. This is the one sanctioned `any` in the client, hence the scoped disable.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): Promise<ApiResult<T>> {
   try {
     const res = await api.request({ ...config });
@@ -71,8 +74,8 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
       return { success: true, data: pick(body), return_code: 'SUCCESS' };
     }
     return { success: false, error: body.message || 'Request failed', return_code: body.return_code || 'UNKNOWN' };
-  } catch (err: any) {
-    // Genuine network failure (server down, DNS, timeout). No return_code envelope available.
+  } catch {
+    // Genuine network failure (server down, DNS, timeout). No return_code envelope available (and we don't need the error object).
     return { success: false, error: 'Network error - please check your connection', return_code: 'NETWORK_ERROR' };
   }
 }
@@ -102,6 +105,18 @@ export interface TimelineRow {
 export interface SizeRow { size: string; qty: number; }
 export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; sizes: SizeRow[]; days: number; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
+export interface ProductRow { groupid: string; title: string | null; }
+export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; }
+export interface ProductDetail {
+  groupid: string;
+  brand: string | null; colour: string | null; segment: string | null; season: string | null;
+  width: string | null; material: string | null; gender: string | null; producttype: string | null;
+  imagename: string | null;
+  title: string | null;
+  cost: number | null; rrp: number | null; price: number | null;
+  tax: boolean; shopify: boolean;
+  sizes: ProductSize[];   // one row per variant (skumap)
+}
 export interface LoginData { token: string; display_name: string; }
 export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string; warnings: string[]; }
 export interface ParkData { groupid: string; next_review: string; }
@@ -144,6 +159,24 @@ export function getDrill(groupid: string, days?: number) {
 
 export function findProducts(term: string) {
   return request<FindRow[]>({ url: '/pricing-find', method: 'GET', params: { term } }, (b) => b.results || []);
+}
+
+// Add / Modify Product — Stage 1 search. Matches a groupid fragment against skusummary; results come back in groupid sort order.
+// `limited` is true when the server trimmed the set (more matches exist) so the page can prompt the user to narrow the search.
+export function searchProducts(term: string) {
+  return request<{ results: ProductRow[]; limited: boolean }>(
+    { url: '/product-search', method: 'GET', params: { term } },
+    (b) => ({ results: b.results || [], limited: !!b.limited })
+  );
+}
+
+// Add / Modify Product — Stage 2a. Load one product's full header (skusummary + title + attributes) for the edit panel. Read-only.
+export function getProduct(groupid: string) {
+  // Server returns the header (product) and sizes separately; fold them into one ProductDetail for the caller.
+  return request<ProductDetail>(
+    { url: '/product-get', method: 'GET', params: { groupid } },
+    (b) => ({ ...b.product, sizes: b.sizes || [] }) as ProductDetail
+  );
 }
 
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number) {

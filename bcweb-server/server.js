@@ -72,6 +72,10 @@ app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-park', require('./routes/pricing-park'));
 
+// Add / Modify Product module (all routes require verifyToken, applied inside each router).
+app.use('/product-search', require('./routes/product-search'));  // Stage 1: search
+app.use('/product-get', require('./routes/product-get'));        // Stage 2a: load one product's header
+
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
   res.json({ return_code: 'NOT_FOUND', message: `No such endpoint: ${req.method} ${req.originalUrl}` });

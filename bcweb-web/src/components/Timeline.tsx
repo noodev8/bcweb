@@ -17,7 +17,7 @@ import { TimelineRow } from '@/lib/api';
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
   // iso is YYYY-MM-DD; render as DD MMM for compactness.
-  const [y, m, d] = iso.split('-').map(Number);
+  const [, m, d] = iso.split('-').map(Number);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${d} ${months[m - 1]}`;
 }

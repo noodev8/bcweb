@@ -12,7 +12,7 @@ Purpose: The platform module menu (CLAUDE.md). A tile grid. Shopify Pricing is t
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
-  CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon,
+  CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -30,6 +30,15 @@ export default function DashboardPage() {
           description="Review demand and set Shopify prices, segment by segment."
           href="/pricing"
           icon={CurrencyPoundIcon}
+          live
+        />
+
+        {/* Add / Modify Product — Stage 1 (search). */}
+        <ModuleTile
+          title="Add / Modify Product"
+          description="Find an existing product to edit, or create a new one."
+          href="/products"
+          icon={TagIcon}
           live
         />
 

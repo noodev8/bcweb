@@ -38,7 +38,7 @@ async function resolveUser(token) {
   let payload;
   try {
     payload = jwt.verify(token, config.jwt.secret); // throws on bad signature or expiry
-  } catch (err) {
+  } catch {
     return null;
   }
   if (!payload || !payload.id) return null;
