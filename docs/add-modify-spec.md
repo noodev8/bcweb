@@ -1,82 +1,115 @@
 # Add / Modify Product — Working Spec (DRAFT)
 
-> Scratch spec for the new "Add / Modify" module. Built in stages; **thrown away when done.**
-> Reference only: `docs/current-add-modify.png` (legacy PowerBuilder screen — we are free to redesign).
+> Scratch spec + progress log for the "Add / Modify" module. Built in stages; **thrown away when done.**
+> References: `docs/current-add-modify.png` (legacy PowerBuilder screen) and `docs/add-modify-save-powerbuilder.txt`
+> (the legacy SAVE code — authoritative for how new/updated products are written).
+
+---
+
+## 0. STATUS & NEXT UP  (read this first)
+
+**Where we are:** the *edit an existing product* flow is functionally complete and committed on `main`
+(up to commit `0d3d6f7`). You can search a groupid, load it master-detail, and edit + save the header
+attributes, the title (with Generate), and the full size list.
+
+**⚠ Deploy:** everything is **local only**. The 5 new endpoints below need a **VPS/PM2 deploy**
+(`docs/deploy.txt`) before the Vercel front end can use them.
+
+**Next up (not built), in suggested order:**
+1. **Price edit** — Cost, RRP, Tax on `skusummary`; **Shopify price must go through the pricing W1
+   route** (`pricing-apply`: `shopifychange=1` + `price_change_log`, bounds, review period) per the owner.
+   Legacy price handling (min/max shopify price, `maxshopifyprice='RRP'` default, RRP≥cost validation) is
+   in the PB save reference. This is the one edit stage with real write rules — treat carefully.
+2. **New-product creation** — the LOAD-NEW half of the PB save (ref lines ~218–383): generate the `handle`
+   (slugify `title-groupid`, keep only `[0-9a-z-]`, collapse `--`, uniqueness check), then INSERT across
+   `skusummary` + `title` + `attributes` + `skumap` with the legacy defaults. The `/products` search already
+   surfaces "no match → create" as the entry point.
+3. **Remaining legacy controls** (smaller): Winner block → `skusummary.shopify` (Shopify on/off) + Win/Lose;
+   Image actions (Update Images, Set Image Name); Copy button (clone to a new groupid); price-change Log view.
+4. **Downstream (later):** Shopify flat-file CSV export, Amazon upload file.
+
+**Open decisions to resolve when relevant:**
+- **shopifychange on catalogue edits:** colour/producttype/title feed the Shopify listing, but `product-update`
+  / `product-sizes` do NOT set `shopifychange`, so the nightly sync won't push them. Decide if/when catalogue
+  edits should flag a sync.
+- **Required-field validation:** the PB save *requires* brand/colour/producttype/gender/rrp/cost/season and
+  per-size cost/price. Our edit endpoints are permissive (no required fields). Decide whether to enforce —
+  especially important for new-product creation.
+- **UK size** is hidden (existing rows preserved, new sizes get blank `uksize`). Bring back / auto-derive when needed.
+- New sizes get a blank per-size `shopifyprice` (legacy didn't set it either).
+
+---
 
 ## 1. Purpose
 
-Find & edit existing products, and load brand-new products. A "product" = one **groupid** (a
-style/colour), with N size variants. Downstream (later stages): generate Shopify flat-file CSV and
-Amazon upload file.
+Find & edit existing products, and load brand-new products. A "product" = one **groupid** (a style/colour),
+with N size variants.
 
 ## 2. Data model (confirmed from live DB — `brookfield_prod`)
 
-One product spans several tables, all keyed on `groupid`:
+One product spans four tables, all keyed on `groupid` (title & attributes verified 1:1 on groupid):
 
-| Table | Grain | Key columns this screen touches |
+| Table | Grain | Columns this screen touches |
 |-------|-------|--------------------------------|
-| `skusummary` | 1 row / product | brand, colour, colourmap, segment, season, width, material, tax, cost, rrp, shopifyprice, minshopifyprice, maxshopifyprice, imagename, shopify (0/1), regular_groupid, narrow_groupid |
-| `skumap` | 1 row / size variant | code, optionsize, uksize, eurosize, ean, sku, status, deleted |
-| `title` | 1 row / product | shopifytitle, googletitle, googletitleb |
-| `attributes` | 1 row / product | gender, producttype, tag1..tag10, alt (⚠ table has a junk schema — dozens of stray `information_schema`-style columns; real columns are just these) |
+| `skusummary` | 1 / product | brand, colour, colourmap, segment, season, width, material, tax, cost, rrp, shopifyprice, minshopifyprice, maxshopifyprice, imagename, shopify (0/1), supplier |
+| `skumap` | 1 / size variant | code, optionsize, uksize, ean, cost, amz* prices, deleted, status, fba, supplier, … |
+| `title` | 1 / product | shopifytitle, googletitle, googletitleb, last_shopify_sync |
+| `attributes` | 1 / product | gender, producttype, tag1..tag10, alt (⚠ junk schema — dozens of stray `information_schema`-style columns; only these are real) |
 
-Lookup/reference tables present: `brand`, `category`, `producttype`, `segment_notes`.
+Lookup tables: `brand` (brand, supplier), `colour` (colour), `producttype` (producttype). Also `category`, `segment_notes`.
 
 **Landmines (in addition to CLAUDE.md):**
-- Price/number columns on `skusummary` **and** `skumap` are `character varying` — read via `safeNumeric`, write as strings.
-- `attributes` is a polluted table — only write the real columns, never `SELECT *`-derive schema from it.
-- Size code = `groupid` + `-` + 2 size chars (EU). e.g. `0128221-GIZEH-35`.
-- `optionsize` format seen: `"101--35 EU / 2.5 UK"` (an ordering prefix `101--` + a display string). Needs confirming.
+- Price/number columns on `skusummary` **and** `skumap` are `character varying` — read via `safeNumeric`, write as 2dp strings.
+- `attributes` is a polluted table — only write the real columns, never `SELECT *` / derive schema from it.
+- Size code = `groupid` + `-` + EU size (e.g. `0128221-GIZEH-35`). Code is locked (never rewritten on edit).
+- `optionsize` = `"<seq+100>--<display>"` (e.g. `101--35 EU / 2.5 UK`). The `<seq>` prefix IS the sort order;
+  the save renumbers it by row position. **Confirmed** across all 1994 rows.
+- `ean` carries a **trailing `B`** (legacy Excel guard — see memory `ean-trailing-b`): strip for display, re-append on write.
+- `updated` stamp format = `YYYYMMDD HH24:MI:SS`, Europe/London wall-clock.
 
 ## 3. Reference values (live DB)
 
-- **brand** (16): Birkenstock, Cipriata, Dek, Free Spirit, Goor, Grafters, Lazy Dogz, Lunar, Mod Comfys, R21, Remonte, Rieker, Roamers, Scimitar, Skechers, Strive
-- **season** (3): Any, Summer, Winter
-- **width** (2): Narrow, Regular
-- **material** (8): Birko-Flor, Cork Latex, Cotton, EVA, Leather, Patent, Shearling, Vegan
-- **colour** (17): Beige, Black, Blue, Brown, Gold, Green, Grey, Navy, Nude, Pink, Purple, Red, Silver, Tan, Taupe, White, Yellow
-- **segment** (~30): EVA-SEG, ARIZONA-GENERAL, GIZEH-SEG, … (free-ish tag)
-- **gender / producttype**: live in `attributes` (e.g. Unisex / Sandals)
+- **brand** lookup (16): Birkenstock, Cipriata, Dek, Free Spirit, Goor, Grafters, Lazy Dogz, Lunar, Mod Comfys, R21, Remonte, Rieker, Roamers, Scimitar, Skechers, Strive
+- **colour** lookup (17): Beige, Black, Blue, Brown, Gold, Green, Grey, Navy, Nude, Pink, Purple, Red, Silver, Tan, Taupe, White, Yellow
+- **producttype** lookup (5): `<Other>`, Boots, Sandals, Shoes, Trainers
+- **segment**: DISTINCT `skusummary.segment` (~29), alphabetical
+- **gender** (fixed): Womens, Mens, Unisex · **season** (fixed): Summer, Winter, Any
+- Lookup tables can be incomplete vs live data → the UI folds a product's current off-list value into its dropdown.
 
-## 4. Legacy screen breakdown (what each control does)
+## 4. Title generation (CONFIRMED — from PB code)
 
-- **GROUP ID** box + **Copy** + **CHECK** → search; results list below (matching groupids). Select → load.
-- Dropdowns: Brand, Colour, Product Type, Gender, Segment. **Shopify Title** (editable) + generate (`<`) button.
-- Season dropdown; Cost, RRP, Price; Tax checkbox; "AMZ Highest"; Log button.
-- Image: thumbnail, Update Images, Set Image Name, imagename text + generate (`<`) button.
-- Size grid: Code / Barcode(ean) / Size Display / UK Size; Add Row, Delete Row, Up, Down.
-- Winner block: Win/Lose, SHOPIFY, STANDARD; Shopify checkbox.
-- SAVE.
+Ported faithfully in `generateTitle` (web). Uses **brand / colour / producttype / gender only** (NOT groupid/segment/season).
+Emits editable placeholders `<Any detail>` (the model/detail the user fills in) and, for Birkenstock, `<Narrow/Regular> Fit`.
+Rules: Birkenstock → no gender, add the width-fit reminder; non-Birkenstock → prepend gender unless Unisex;
+producttype `<Other>` → drop the type. Output normalised to single spaces.
+(Earlier guess that the model came from the groupid suffix was **wrong** — it's a manual placeholder.)
 
-## 5. Title generation rule (as described — TO CONFIRM)
+## 5. Endpoints built (this module)
 
-Pattern: `Gender - Brand - <details> - Colour`.
-- Birkenstock: **omit gender**, append `"<Width> Fit"`.
-- Example: `Birkenstock Gizeh EVA Sandals White Regular Fit`
-  = Brand `Birkenstock` + Model `Gizeh` + Material `EVA` + ProductType `Sandals` + Colour `White` + `Regular Fit`.
-- ⚠ "Model" (`Gizeh`) appears to come from the groupid suffix after `-`. Needs confirming.
+- `GET  /product-search?term=` — search `skusummary.groupid` (ILIKE), groupid order, cap 25 + `limited` flag.
+- `GET  /product-get?groupid=` — header (skusummary + title + attributes) **+ `sizes[]`** from skumap (2nd fixed query).
+- `GET  /product-lookups` — dropdown option lists (brand/colour/producttype tables; distinct segments; fixed gender/season).
+- `POST /product-update` — atomic save of header attributes + title: skusummary(brand,colour,segment,season) +
+  attributes(gender,producttype) + title(shopifytitle), each UPDATE-or-INSERT. Does NOT touch shopifychange/price log.
+- `POST /product-sizes` — atomic reconcile of skumap to the submitted list: renumber `optionsize` by position;
+  UPDATE existing by code; INSERT new (`code=groupid-<size>`) with legacy scaffold seeded from product cost + RRP;
+  HARD DELETE removed codes. Barcode → `ean`+`B`. Validates ≥1 size, non-blank code/display, no dup code/barcode.
 
-## 6. Staging plan
+Web: `app/products/page.tsx` (master-detail + header edit) and `components/SizeEditor.tsx` (size grid).
+Client fns in `lib/api.ts`. Dashboard tile "Add / Modify Product" → `/products`.
 
-- **Stage 1 — Search. ✅ BUILT.** Search `skusummary.groupid` (ILIKE), list matches in groupid sort order. No match = the cue to create (creation deferred to a later stage). Delivered:
-  - Server: `GET /product-search?term=` (`routes/product-search.js`, registered in `server.js`). Returns `{ groupid, title }[]`, ordered by groupid, LIMIT 50. Smoke-tested: auth-guard, list, empty, MISSING_FIELDS.
-  - Web: dashboard tile "Add / Modify Product" → `/products` (`app/products/page.tsx`); `searchProducts()` + `ProductRow` in `lib/api.ts`.
-  - ⚠ Deploy: server change needs a VPS/PM2 push before it's live for the Vercel front end (`docs/deploy.txt`).
-- **Stage 2a — Load & display header. ✅ BUILT.** Master-detail: results list stays left, click a row → header loads right (read-only). Confirmed navigation = keep-the-search; scope = display-only first (save is Stage 2b). Delivered:
-  - Server: `GET /product-get?groupid=` (`routes/product-get.js`, registered). One query LEFT JOINing skusummary + title + attributes (all verified 1:1 on groupid); prices via `safeNumeric`; tax/shopify 0/1→bool. Smoke-tested: SUCCESS, NOT_FOUND, MISSING_FIELDS.
-  - Web: `/products` reworked into master-detail; `getProduct()` + `ProductDetail` in `lib/api.ts`. Fields shown: Brand, Colour, Product Type, Gender, Segment, Season, Width, Material, Cost, RRP, Price, Tax, Shopify + title header.
-- **Edit Stage 1 — attribute/enum fields editable + SAVE. ✅ BUILT.** Editable dropdowns: Brand, Colour, Product Type, Gender, Segment, Season. Width/Material stay read-only (no legacy control). Delivered:
-  - Server: `GET /product-lookups` (brand/colour/producttype tables; segments = DISTINCT skusummary.segment; genders Womens/Mens/Unisex, seasons Summer/Winter/Any — both fixed lists). `POST /product-update` — atomic `withTransaction`: UPDATE skusummary (brand,colour,segment,season) + UPDATE-or-INSERT attributes (gender,producttype); `updated` stamped `YYYYMMDD HH24:MI:SS` Europe/London; does NOT touch shopifychange/price log (attributes only).
-  - Web: master-detail panel; off-list current value folded into each dropdown; dirty-tracking + Save/Reset; success/error inline.
-  - Verified: lookups, MISSING_FIELDS, NOT_FOUND via HTTP; write SQL via manual BEGIN..ROLLBACK on a live product (restored, nothing committed).
-- **Edit Stage 2 — Title + generate. ✅ BUILT.** Editable Shopify Title (`title.shopifytitle`) folded into the same atomic `product-update` (now writes 3 tables: skusummary + attributes + title, each UPDATE-or-INSERT). **Generate** button ports the legacy PowerBuilder routine faithfully: emits placeholder template (`<Any detail>`, and `<Narrow/Regular> Fit` for Birkenstock), prepends gender unless Unisex, drops type when producttype=`<Other>`; uses brand/colour/producttype/gender only (NOT groupid/segment/season). Output whitespace-normalised to single spaces (the original had a double-space quirk; also trims stray spaces from empty fields). Verified: generator branches + title write via BEGIN..ROLLBACK.
-- **Edit Stage 3 — Sizes editable. ✅ BUILT.** `POST /product-sizes` reconciles skumap to the submitted list (in order): renumber `optionsize` = `(pos+100)--<sizeDisplay>`; UPDATE existing by code (ean + optionsize); INSERT new (code=`groupid-<size>`) with legacy scaffold seeded from product cost + RRP (amzprice/max=RRP, amzmin=RRP*.70, fba from sibling/2.24, status='1'); HARD DELETE removed codes (owner decisions). Barcode stored as `ean`+`B`. Validations: ≥1 size, non-blank code (no spaces) + display, no dup code/barcode. Web: `SizeEditor` component — inline edit barcode + size display (code locked), Add (type EU size)/Remove/Up-Down reorder, own Save/Reset + dirty-tracking. UK size still hidden (existing preserved, new = blank). Verified via BEGIN..ROLLBACK: reorder/edit/add/delete + scaffold seeding, restored.
-- **Later edit stages (NOT started):** Price/Cost/RRP/Tax (via pricing W1 route — shopifychange + price_change_log), Sizes (skumap add/edit/reorder). Open Q: changing colour/producttype/title feeds the Shopify listing but currently doesn't set shopifychange — decide if/when catalogue edits should flag a sync.
-- **Stage 3 (display) — Sizes. ✅ BUILT.** Read-only size table on the detail panel: Code / Barcode / Size Display (UK size deliberately omitted until needed). Loaded as part of `product-get` (2nd fixed query on `skumap`, returned as `sizes[]`). Transforms (validated 100% consistent across 1994 rows): Barcode = `ean` minus trailing `B` (blank→null); Size Display = `optionsize` minus `^[0-9]+--` prefix; ordered by that numeric prefix; `deleted=0` filter. Add/edit/reorder is a later stage.
-- Stage 4: Title & imagename generation.
-- Stage 5: Winner flags, images.
-- Stage 6+: Shopify flat-file CSV, Amazon upload file.
+## 6. Stage log
 
-## 7. Open questions
+- **Stage 1 — Search.** ✅ `product-search` + `/products` search screen + dashboard tile.
+- **Stage 2a — Load & display header (read-only).** ✅ `product-get` + master-detail panel + image (next/image).
+- **Stage 2b/Edit-1 — Header attributes editable + SAVE.** ✅ Brand/Colour/Product Type/Gender/Segment/Season dropdowns; `product-lookups` + `product-update`.
+- **Edit-2 — Title + Generate.** ✅ Title folded into `product-update`; Generate button (PB port); "Title" label; Width/Material removed from UI.
+- **Edit-3 — Sizes editable.** ✅ `product-sizes` reconcile + `SizeEditor` (edit barcode/display, add/remove/reorder). Size Display font aligned.
 
-(see chat — to be folded in as answered)
+All writes verified against a live product via manual `BEGIN..ROLLBACK` (nothing committed), per CLAUDE.md.
+
+## 7. Testing note
+
+Write paths are exercised with a throwaway Node script using the server pool inside `BEGIN..ROLLBACK`
+(see how prior stages were tested). HTTP smoke tests use a temp seeded user, deleted afterwards.
+The API points at the LIVE prod DB — never commit a test write to a real product.
