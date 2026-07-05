@@ -12,8 +12,9 @@
 (up to commit `0d3d6f7`). You can search a groupid, load it master-detail, and edit + save the header
 attributes, the title (with Generate), and the full size list.
 
-**⚠ Deploy:** everything is **local only**. The 5 new endpoints below need a **VPS/PM2 deploy**
-(`docs/deploy.txt`) before the Vercel front end can use them.
+**Deploy (reminder, no action now):** web (Vercel) and server (VPS/PM2) deploy separately — when you do
+deploy, the server step is manual (`docs/deploy.txt`), so don't ship the front end without it or the new
+endpoints will 404 in production.
 
 **Next up (not built), in suggested order:**
 1. **Price edit** — Cost, RRP, Tax on `skusummary`; **Shopify price must go through the pricing W1
