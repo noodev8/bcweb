@@ -14,20 +14,30 @@ Purpose: Editable size list for a product (skumap). Barcode and Size Display are
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { updateProductSizes, ProductSize } from '@/lib/api';
+import { sizeTemplate, lookupTemplateSize } from '@/lib/sizeTemplates';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface Row { code: string; sizeDisplay: string; barcode: string; }
+interface Row { code: string; sizeDisplay: string; barcode: string; uksize: string; }
 
-// Map API sizes (barcode may be null) into editable rows (barcode as '').
+// Map API sizes (nulls -> '') into editable rows.
 function toRows(sizes: ProductSize[]): Row[] {
-  return sizes.map((s) => ({ code: s.code, sizeDisplay: s.sizeDisplay || '', barcode: s.barcode || '' }));
+  return sizes.map((s) => ({ code: s.code, sizeDisplay: s.sizeDisplay || '', barcode: s.barcode || '', uksize: s.uksize || '' }));
+}
+// The standard run for this brand+gender as editable rows (code = groupid-<suffix>, uksize from the template, barcode blank).
+function templateRows(groupid: string, brand?: string, gender?: string): Row[] {
+  return sizeTemplate(brand || '', gender || '').map((t) => ({
+    code: `${groupid}-${t.codeSuffix}`, sizeDisplay: t.size, uksize: t.uksize, barcode: '',
+  }));
 }
 // Stable key of the meaningful content, for dirty-checking (order matters).
-const rowsKey = (rows: Row[]) => JSON.stringify(rows.map((r) => [r.code, r.sizeDisplay, r.barcode]));
+const rowsKey = (rows: Row[]) => JSON.stringify(rows.map((r) => [r.code, r.sizeDisplay, r.barcode, r.uksize]));
 
-export default function SizeEditor({ groupid, sizes }: { groupid: string; sizes: ProductSize[] }) {
+export default function SizeEditor({ groupid, sizes, brand, gender }: { groupid: string; sizes: ProductSize[]; brand?: string; gender?: string }) {
   const { logout } = useAuth();
-  const [rows, setRows] = useState<Row[]>(() => toRows(sizes));
+  // Auto-fill: a product with NO sizes (e.g. just created) starts pre-populated with the brand/gender template so there's one less
+  // step — the user reviews/tweaks and Saves. A product that already has sizes loads them as-is. Baseline stays the LOADED state
+  // (empty for a new product), so an auto-filled grid shows as unsaved until the user saves it.
+  const [rows, setRows] = useState<Row[]>(() => (sizes.length > 0 ? toRows(sizes) : templateRows(groupid, brand, gender)));
   const [baseline, setBaseline] = useState<string>(() => rowsKey(toRows(sizes)));
   const [newSize, setNewSize] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
@@ -39,7 +49,7 @@ export default function SizeEditor({ groupid, sizes }: { groupid: string; sizes:
 
   function touch() { setSaveOk(false); }
 
-  function setCell(i: number, key: 'sizeDisplay' | 'barcode', v: string) {
+  function setCell(i: number, key: 'sizeDisplay' | 'barcode' | 'uksize', v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: v } : r)));
     touch();
   }
@@ -64,8 +74,10 @@ export default function SizeEditor({ groupid, sizes }: { groupid: string; sizes:
     if (/\s/.test(size)) { setAddError('Size cannot contain spaces'); return; }
     const code = `${groupid}-${size}`;
     if (rows.some((r) => r.code === code)) { setAddError(`Size ${size} already exists`); return; }
-    // Seed Size Display with the typed size; the user can expand it (e.g. "42 EU / 8 UK"). Barcode starts blank.
-    setRows((prev) => [...prev, { code, sizeDisplay: size, barcode: '' }]);
+    // If the typed size is part of this brand/gender's standard run, borrow its full display + UK size (brand-accurate EU→UK), so a
+    // manual add matches the auto-fill. Otherwise fall back to the typed size with a blank UK size for the user to fill. Barcode blank.
+    const tpl = lookupTemplateSize(brand || '', gender || '', size);
+    setRows((prev) => [...prev, { code, sizeDisplay: tpl ? tpl.size : size, barcode: '', uksize: tpl ? tpl.uksize : '' }]);
     setNewSize('');
     touch();
   }
@@ -74,7 +86,7 @@ export default function SizeEditor({ groupid, sizes }: { groupid: string; sizes:
     setSaving(true);
     setSaveError(null);
     setSaveOk(false);
-    const res = await updateProductSizes(groupid, rows.map((r) => ({ code: r.code, sizeDisplay: r.sizeDisplay, barcode: r.barcode })));
+    const res = await updateProductSizes(groupid, rows.map((r) => ({ code: r.code, sizeDisplay: r.sizeDisplay, barcode: r.barcode, uksize: r.uksize })));
     if (res.success && res.data) {
       const saved = toRows(res.data.sizes);
       setRows(saved);
@@ -104,21 +116,27 @@ export default function SizeEditor({ groupid, sizes }: { groupid: string; sizes:
               <th className="px-3 py-2 font-medium">Code</th>
               <th className="px-3 py-2 font-medium">Barcode</th>
               <th className="px-3 py-2 font-medium">Size Display</th>
+              <th className="px-3 py-2 font-medium">UK Size</th>
               <th className="px-3 py-2 text-right font-medium">Order</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
-              <tr><td colSpan={4} className="px-3 py-3 text-slate-400">No sizes — add one below.</td></tr>
+              <tr><td colSpan={5} className="px-3 py-3 text-slate-400">No sizes — add one below.</td></tr>
             )}
             {rows.map((r, i) => (
               <tr key={r.code} className="align-middle">
                 <td className="px-3 py-1.5 font-mono text-xs text-slate-500">{r.code}</td>
                 <td className="px-3 py-1.5">
-                  <input value={r.barcode} onChange={(e) => setCell(i, 'barcode', e.target.value)} placeholder="—" className={inputCls} />
+                  {/* Barcode is a numeric EAN — strip any non-digit as the user types. */}
+                  <input value={r.barcode} onChange={(e) => setCell(i, 'barcode', e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="—" className={inputCls} />
                 </td>
                 <td className="px-3 py-1.5">
                   <input value={r.sizeDisplay} onChange={(e) => setCell(i, 'sizeDisplay', e.target.value)} placeholder="e.g. 42 EU / 8 UK" className={inputCls} />
+                </td>
+                <td className="px-3 py-1.5">
+                  {/* UK size feeds the Google Merchant feed (size / size_system=UK). Keep the " UK" suffix (e.g. "4 UK"); the feed strips it. */}
+                  <input value={r.uksize} onChange={(e) => setCell(i, 'uksize', e.target.value)} placeholder="e.g. 8 UK" className={inputCls} />
                 </td>
                 <td className="px-3 py-1.5">
                   <div className="flex items-center justify-end gap-0.5">

@@ -10,7 +10,8 @@ Purpose: Save the size list for a product (skumap). The client sends the FULL de
            - BARCODE: stored in `ean` with a trailing 'B' appended (blank stays blank) — the legacy Excel-guard marker.
            - EXISTING row (matched by `code`): UPDATE ean + optionsize (+ updated). code/groupid never change (code is locked).
            - NEW size (code not in skumap): INSERT with the legacy scaffold, seeding cost from the product's cost and the Amazon
-             price fields from RRP (owner decision), so a new size behaves like its siblings. uksize left blank for now.
+             price fields from RRP (owner decision), so a new size behaves like its siblings. uksize is written (feeds the Google
+             Merchant feed) — from the client (blank allowed).
            - REMOVED (a live code no longer in the list): HARD DELETE (owner decision, matches legacy deleterow).
          Only barcode + size display are editable; code is derived (groupid-<size>) on the client for new rows. Requires auth.
 =======================================================================================================================================
@@ -18,8 +19,8 @@ Request Payload:
 {
   "groupid": "0128221-GIZEH",
   "sizes": [                                   // full list, in display order
-    { "code": "0128221-GIZEH-35", "sizeDisplay": "35 EU / 2.5 UK", "barcode": "" },
-    { "code": "0128221-GIZEH-36", "sizeDisplay": "36 EU / 3.5 UK", "barcode": "4052001424459" }
+    { "code": "0128221-GIZEH-35", "sizeDisplay": "35 EU / 2.5 UK", "barcode": "", "uksize": "2.5 UK" },
+    { "code": "0128221-GIZEH-36", "sizeDisplay": "36 EU / 3.5 UK", "barcode": "4052001424459", "uksize": "3.5 UK" }
   ]
 }
 
@@ -69,6 +70,8 @@ router.post('/', async (req, res) => {
       code: (s && s.code ? String(s.code) : '').trim(),
       sizeDisplay: (s && s.sizeDisplay ? String(s.sizeDisplay) : '').trim(),
       barcode: (s && s.barcode ? String(s.barcode) : '').trim(),
+      // uksize feeds the Google Merchant feed (size / size_system=UK). Optional (blank allowed), stored as-is.
+      uksize: (s && s.uksize ? String(s.uksize) : '').trim(),
     }));
 
     if (sizes.length === 0) {
@@ -127,9 +130,9 @@ router.post('/', async (req, res) => {
 
         if (existing.has(s.code)) {
           await client.query(`
-            UPDATE skumap SET ean = $2, optionsize = $3, updated = ${UPDATED_EXPR}
-             WHERE groupid = $1 AND code = $4
-          `, [groupid, ean, optionsize, s.code]);
+            UPDATE skumap SET ean = $2, optionsize = $3, uksize = $4, updated = ${UPDATED_EXPR}
+             WHERE groupid = $1 AND code = $5
+          `, [groupid, ean, optionsize, s.uksize, s.code]);
         } else {
           // NEW size — legacy scaffold, seeded from the product (cost) and RRP (amazon prices).
           await client.query(`
@@ -138,11 +141,11 @@ router.post('/', async (req, res) => {
               cost, amzprice, amzminprice, amzmaxprice, fba, deleted, googlestatus, googlecampaign,
               status, pricestatus, amzperformance, amz365, shp365
             ) VALUES (
-              ${UPDATED_EXPR}, '', $1, $2, $3, '', '', $4, $5, $5,
+              ${UPDATED_EXPR}, '', $1, $2, $3, '', $11, $4, $5, $5,
               $6, $7, $8, $9, $10, 0, 1, '00',
               '1', 0, 0, 0, 0
             )
-          `, [groupid, optionsize, ean, supplier, s.code, costStr, amzPrice, amzMin, amzMax, fba]);
+          `, [groupid, optionsize, ean, supplier, s.code, costStr, amzPrice, amzMin, amzMax, fba, s.uksize]);
         }
       }
 
@@ -155,7 +158,7 @@ router.post('/', async (req, res) => {
     });
 
     // Echo the normalised list back (barcode without the 'B') so the client can reset its baseline.
-    const outSizes = sizes.map((s) => ({ code: s.code, barcode: s.barcode || null, sizeDisplay: s.sizeDisplay }));
+    const outSizes = sizes.map((s) => ({ code: s.code, barcode: s.barcode || null, sizeDisplay: s.sizeDisplay, uksize: s.uksize || null }));
     return res.json({ return_code: 'SUCCESS', groupid, sizes: outSizes });
   } catch (err) {
     if (err && err.code === 'NOT_FOUND') {

@@ -106,7 +106,7 @@ export interface SizeRow { size: string; qty: number; }
 export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; sizes: SizeRow[]; days: number; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
-export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; }
+export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; uksize: string | null; }
 export interface ProductLookups {
   brands: string[]; colours: string[]; productTypes: string[]; segments: string[]; genders: string[]; seasons: string[];
 }
@@ -191,6 +191,15 @@ export function getProductLookups() {
   return request<ProductLookups>({ url: '/product-lookups', method: 'GET' }, (b) => b.lookups as ProductLookups);
 }
 
+// Create a brand-new product (header basics). Sends the same fields as an edit; server rejects if the groupid already exists or the
+// generated handle clashes (return_code ALREADY_EXISTS / HANDLE_TAKEN). On success returns the (upper-cased) groupid + its handle.
+export function createProduct(groupid: string, fields: ProductEditFields) {
+  return request<{ groupid: string; handle: string }>(
+    { url: '/product-create', method: 'POST', data: { groupid, ...fields } },
+    (b) => ({ groupid: b.groupid, handle: b.handle })
+  );
+}
+
 // Edit Stage 1 — save the attribute/enum fields (brand, colour, segment, season -> skusummary; gender, producttype -> attributes).
 export function updateProduct(groupid: string, fields: ProductEditFields) {
   return request<{ groupid: string; saved: ProductEditFields }>(
@@ -199,8 +208,36 @@ export function updateProduct(groupid: string, fields: ProductEditFields) {
   );
 }
 
+// Upload/replace a product's main image (multipart). The server converts it to 800x800 JPEG, SFTPs it to the image host, and updates
+// skusummary.imagename — returning the new filename + public URL. `title` (the on-screen title) seeds the SEO filename server-side.
+// NOTE: Content-Type is set to multipart/form-data so axios keeps the FormData intact (the shared instance defaults to JSON) and adds
+// the multipart boundary itself.
+export interface ProductImageData { groupid: string; imagename: string; url: string; }
+export function uploadProductImage(groupid: string, file: File, title?: string) {
+  const form = new FormData();
+  form.append('image', file);
+  form.append('groupid', groupid);
+  if (title) form.append('title', title);
+  return request<ProductImageData>(
+    { url: '/product-image', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' } },
+    (b) => ({ groupid: b.groupid, imagename: b.imagename, url: b.url })
+  );
+}
+
+// Save the price fields (cost, rrp, tax, base shopify price) on skusummary. Enforces legacy rules server-side (cost>0, rrp>0, rrp>=cost).
+// Does NOT set shopifychange or write a price log — this is catalogue price maintenance, not the harvest workflow. Returns the numbers
+// actually written (shopify price defaults to rrp if left blank).
+export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; shopifyPrice: string; }
+export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
+export function updateProductPrice(groupid: string, fields: ProductPriceFields) {
+  return request<{ groupid: string; saved: ProductPriceSaved }>(
+    { url: '/product-price', method: 'POST', data: { groupid, ...fields } },
+    (b) => ({ groupid: b.groupid, saved: b.saved as ProductPriceSaved })
+  );
+}
+
 // Save the size list (skumap). Client sends the full desired list in order; server reconciles (reorder/update/insert/delete).
-export function updateProductSizes(groupid: string, sizes: { code: string; sizeDisplay: string; barcode: string }[]) {
+export function updateProductSizes(groupid: string, sizes: { code: string; sizeDisplay: string; barcode: string; uksize: string }[]) {
   return request<{ groupid: string; sizes: ProductSize[] }>(
     { url: '/product-sizes', method: 'POST', data: { groupid, sizes } },
     (b) => ({ groupid: b.groupid, sizes: b.sizes || [] })

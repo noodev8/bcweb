@@ -1,6 +1,11 @@
+== Putty Server
 cd /apps/bcweb/
 git pull
 rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
 cd /apps/production/bcweb-server
 npm install
 pm2 restart server.js --name bcweb-prod
+
+
+== Vercel
+cd C:\bcweb && vercel --prod

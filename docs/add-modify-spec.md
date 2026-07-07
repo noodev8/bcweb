@@ -10,33 +10,41 @@
 
 **Where we are:** the *edit an existing product* flow is functionally complete and committed on `main`
 (up to commit `0d3d6f7`). You can search a groupid, load it master-detail, and edit + save the header
-attributes, the title (with Generate), and the full size list.
+attributes, the title (with Generate), and the full size list. **New-product creation** has a start-simple
+cut in progress (see Next up #1): searching a groupid that doesn't exist offers a create form that writes
+the header basics (`skusummary`+`title`+`attributes`) via `POST /product-create`; sizes are added afterwards.
 
 **Deploy (reminder, no action now):** web (Vercel) and server (VPS/PM2) deploy separately — when you do
 deploy, the server step is manual (`docs/deploy.txt`), so don't ship the front end without it or the new
 endpoints will 404 in production.
 
+**Done since the edit flow:** new-product creation *(start cut)* — `POST /product-create` inserts the header basics for a brand-new
+groupid (`skusummary`+`title`+`attributes`, legacy defaults, generated unique `handle`); the `/products` "no match → create" empty
+state is a create form. Price edit *(start cut)* — `POST /product-price` (Cost/RRP/Tax + base `shopifyprice`; see #below and the Price
+edit note in the Stage log). Title placeholders (`<…>`) are rejected on all title saves.
+
 **Next up (not built), in suggested order:**
-1. **Price edit** — Cost, RRP, Tax on `skusummary`; **Shopify price must go through the pricing W1
-   route** (`pricing-apply`: `shopifychange=1` + `price_change_log`, bounds, review period) per the owner.
-   Legacy price handling (min/max shopify price, `maxshopifyprice='RRP'` default, RRP≥cost validation) is
-   in the PB save reference. This is the one edit stage with real write rules — treat carefully.
-2. **New-product creation** — the LOAD-NEW half of the PB save (ref lines ~218–383): generate the `handle`
-   (slugify `title-groupid`, keep only `[0-9a-z-]`, collapse `--`, uniqueness check), then INSERT across
-   `skusummary` + `title` + `attributes` + `skumap` with the legacy defaults. The `/products` search already
-   surfaces "no match → create" as the entry point.
-3. **Remaining legacy controls** (smaller): Winner block → `skusummary.shopify` (Shopify on/off) + Win/Lose;
-   Image actions (Update Images, Set Image Name); Copy button (clone to a new groupid); price-change Log view.
-4. **Downstream (later):** Shopify flat-file CSV export, Amazon upload file.
+1. **Finish new-product creation:** the required-field rules the PB save enforces (brand/colour/producttype/gender/season, ≥1 size).
+   (Sizes can now be generated in the editor via the brand/gender template — optionally auto-offer it right after create.)
+2. **Shopify on/off toggle** (Winner block) → `skusummary.shopify` — AND the unpriced-product guard (block enabling Shopify when the
+   live price ≤ 0; see open decisions). Win/Lose flag lives here too.
+3. **Price edit — remaining:** min/max shopify price (`maxshopifyprice='RRP'` convention), and the direct Shopify API push (the deferred
+   "address when ready" piece — `product-price` currently stores the value without pushing).
+4. **Remaining legacy controls** (smaller): Copy button (clone to a new groupid); price-change Log view. (Image upload is done — a
+   pure "rename the file without re-uploading" op isn't built; changing the title + re-uploading regenerates the name and deletes the old.)
+5. **Downstream (later):** Shopify flat-file CSV export, Amazon upload file.
 
 **Open decisions to resolve when relevant:**
-- **shopifychange on catalogue edits:** colour/producttype/title feed the Shopify listing, but `product-update`
-  / `product-sizes` do NOT set `shopifychange`, so the nightly sync won't push them. Decide if/when catalogue
-  edits should flag a sync.
+- **Unpriced new products vs Shopify:** `product-create` seeds price columns to `'0.00'`/`'RRP'` placeholders and sets `shopify=0`
+  (OFF), so a new style is safe *until someone turns Shopify on*. The gap: enable Shopify + forget to price → it could sync at 0.00.
+  Add a guard where Shopify gets enabled (or at the sync) that blocks a live price ≤ 0. Build alongside the price stage / shopify-on toggle.
+- **Title placeholders:** DONE — `product-create` and `product-update` reject a title containing `<` or `>` (`INVALID_TITLE`), so the
+  generated `<Any detail>` / `<Narrow/Regular> Fit` placeholders can't be saved. (Client also blocks before the call.)
 - **Required-field validation:** the PB save *requires* brand/colour/producttype/gender/rrp/cost/season and
   per-size cost/price. Our edit endpoints are permissive (no required fields). Decide whether to enforce —
   especially important for new-product creation.
-- **UK size** is hidden (existing rows preserved, new sizes get blank `uksize`). Bring back / auto-derive when needed.
+- **UK size** — RESTORED end-to-end (needed by the Google Merchant feed). New/edited sizes carry `uksize`; the brand/gender templates
+  supply it, it's an editable grid column, and a **manual add derives UK size from the template** by code suffix (blank if off-run).
 - New sizes get a blank per-size `shopifyprice` (legacy didn't set it either).
 
 ---
@@ -66,7 +74,10 @@ Lookup tables: `brand` (brand, supplier), `colour` (colour), `producttype` (prod
 - `optionsize` = `"<seq+100>--<display>"` (e.g. `101--35 EU / 2.5 UK`). The `<seq>` prefix IS the sort order;
   the save renumbers it by row position. **Confirmed** across all 1994 rows.
 - `ean` carries a **trailing `B`** (legacy Excel guard — see memory `ean-trailing-b`): strip for display, re-append on write.
-- `updated` stamp format = `YYYYMMDD HH24:MI:SS`, Europe/London wall-clock.
+- `updated` stamp format = `YYYYMMDD HH24:MI:SS`, Europe/London wall-clock. New: `skusummary.created_at timestamptz DEFAULT now()`
+  (proper date, going forward; existing rows NULL) — see CLAUDE.md.
+- **Price lives only in `skusummary`** for our purposes (cost/rrp/shopifyprice). `skumap` still has `cost`/`amz*price` columns and
+  `product-sizes` seeds them on new-size insert, but nothing in our app reads them back — legacy Amazon scaffolding, effectively unused.
 
 ## 3. Reference values (live DB)
 
@@ -90,6 +101,11 @@ producttype `<Other>` → drop the type. Output normalised to single spaces.
 - `GET  /product-search?term=` — search `skusummary.groupid` (ILIKE), groupid order, cap 25 + `limited` flag.
 - `GET  /product-get?groupid=` — header (skusummary + title + attributes) **+ `sizes[]`** from skumap (2nd fixed query).
 - `GET  /product-lookups` — dropdown option lists (brand/colour/producttype tables; distinct segments; fixed gender/season).
+- `POST /product-create` — create a brand-new groupid: rejects if it already exists; generates a unique `handle`;
+  INSERTs skusummary + title + attributes with legacy defaults (no sizes yet). Same header fields as product-update.
+- `POST /product-image` — multipart upload; sharp → 800×800 white-padded JPEG → SFTP to one.com → set `imagename` (+ delete old on rename).
+- `POST /product-price` — save price fields on skusummary: cost, rrp, tax, shopifyprice (2dp strings). Enforces cost>0/rrp>0/rrp≥cost;
+  Shopify price defaults to rrp if blank. Does NOT set shopifychange or write a price log. `PriceEditor.tsx` on the client.
 - `POST /product-update` — atomic save of header attributes + title: skusummary(brand,colour,segment,season) +
   attributes(gender,producttype) + title(shopifytitle), each UPDATE-or-INSERT. Does NOT touch shopifychange/price log.
 - `POST /product-sizes` — atomic reconcile of skumap to the submitted list: renumber `optionsize` by position;
@@ -106,6 +122,16 @@ Client fns in `lib/api.ts`. Dashboard tile "Add / Modify Product" → `/products
 - **Stage 2b/Edit-1 — Header attributes editable + SAVE.** ✅ Brand/Colour/Product Type/Gender/Segment/Season dropdowns; `product-lookups` + `product-update`.
 - **Edit-2 — Title + Generate.** ✅ Title folded into `product-update`; Generate button (PB port); "Title" label; Width/Material removed from UI.
 - **Edit-3 — Sizes editable.** ✅ `product-sizes` reconcile + `SizeEditor` (edit barcode/display, add/remove/reorder). Size Display font aligned.
+- **Create-1 — New product (basics).** ✅ `product-create` (header INSERT + handle) + create form on the "no match" empty state. Sizes/price come after via existing editors/stages.
+- **Price-1 — Price edit.** ✅ `product-price` (cost/rrp/tax/shopifyprice, legacy validation, no shopifychange/log) + `PriceEditor` in the detail panel.
+- **Image-1 — Main image upload.** ✅ `POST /product-image` (multipart): sharp converts any jpg/png/webp to a clean 800×800 white-padded
+  JPEG, SFTPs it to one.com (`utils/sftp.js`, remoteDir `/webroots/5fc50976` = image root, verified 200), sets `skusummary.imagename`,
+  then deletes the previous file (one image per product). SEO filename from title+groupid + a **per-upload version token** (`utils/imageName.js`)
+  so every upload is a unique URL — **one.com has a CDN in front, so same-name overwrites would serve stale**; versioning sidesteps it.
+  `ImageUploader.tsx` (file-picker, no cropper) in the detail header. New server deps: `sharp`, `multer`, `ssh2-sftp-client`. New `.env`:
+  `ONECOM_SFTP_HOST/PORT/USERNAME/PASSWORD/REMOTE_DIR`. Google gets the image via the merchant feed's `image_link` (no separate push).
+  Verified end-to-end except the endpoint→SFTP→DB combo on a real product (skipped: the delete-old step would remove a live product's real image). **Prod VPS `.env` still needs the `ONECOM_SFTP_*` keys + password (deploy excludes .env).**
+- **Sizes-2 — Auto-fill default sizes + UK size.** ✅ `lib/sizeTemplates.ts` (brand+gender → standard run, PB port). SizeEditor now **auto-fills** the grid from the template when a product has no sizes (no button); user reviews/edits and Saves via `product-sizes`. **`uksize` brought back end-to-end** (`product-get` returns it, `product-sizes` writes it on insert+update, SizeEditor has an editable UK Size column, templates populate it) — it feeds the Google Merchant feed (`scripts/merchant-feed/merchant_feed.py`: `size` = `uksize` minus " UK", `size_system=UK`). `created_at timestamptz` added to skusummary; `product-create` sets it.
 
 All writes verified against a live product via manual `BEGIN..ROLLBACK` (nothing committed), per CLAUDE.md.
 

@@ -10,24 +10,26 @@ Purpose: Entry screen for the Add / Modify Product module. Master-detail:
          finds nothing, that empty state is the cue to create a new product (creation arrives in a later stage).
 
          Edit Stage 1: the attribute/enum fields are editable dropdowns with a SAVE (POST /product-update): brand, colour, product type,
-         gender, segment, season. Everything else (price, title, width/material, sizes) stays read-only for now — price will go through
-         the pricing W1 route (shopifychange + log), title/sizes are their own later stages.
+         gender, segment, season. Title and sizes are editable too (own save endpoints); price stays read-only for now (its own later stage).
+
+         Create: when a search finds nothing, the empty state becomes a "create new product" form (same header fields) that writes the
+         basics for a brand-new groupid via POST /product-create, then loads it into the normal edit panel to carry on (sizes, price, …).
 =======================================================================================================================================
 */
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import SizeEditor from '@/components/SizeEditor';
+import PriceEditor from '@/components/PriceEditor';
+import ImageUploader from '@/components/ImageUploader';
 import {
-  searchProducts, getProduct, getProductLookups, updateProduct,
+  searchProducts, getProduct, getProductLookups, updateProduct, createProduct,
   ProductRow, ProductDetail, ProductLookups, ProductEditFields,
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Small read-only field: a label above a value styled to look like a (disabled) input, so the layout already reads as the eventual
-// edit form. money()/flag() format the legacy values consistently.
+// Small read-only field: a label above a value styled to look like a (disabled) input. flag() formats the legacy 0/1 values.
 function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div>
@@ -38,7 +40,6 @@ function Field({ label, value, mono }: { label: string; value: React.ReactNode; 
     </div>
   );
 }
-const money = (n: number | null) => (n === null ? null : `£${n.toFixed(2)}`);
 const flag = (b: boolean) => (b ? 'Yes' : 'No');
 
 // Editable dropdown for an attribute field. Includes a blank option (clear), and — crucially — folds the CURRENT value into the list
@@ -96,29 +97,147 @@ function generateTitle(f: ProductEditFields): string {
   return raw.replace(/\s+/g, ' ').trim();
 }
 
-// Product image lives on our image server, keyed by the bare filename in skusummary.imagename.
-const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
+// A blank set of editable header fields — the starting point for a brand-new product.
+const emptyFields: ProductEditFields = {
+  brand: '', colour: '', segment: '', season: '', gender: '', producttype: '', title: '',
+};
 
-// Renders the product image with a graceful fallback: no filename, or a load failure (missing file), shows a placeholder instead of
-// a broken-image icon. Keyed by groupid at the call site so the failed-state resets when you switch products.
-function ProductImage({ imagename }: { imagename: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const box = 'flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white';
-  if (!imagename || failed) {
-    return <div className={box + ' text-center text-[11px] text-slate-400'}>{imagename ? 'Image not found' : 'No image'}</div>;
+// Sensible gender/season defaults per product type, applied when the user picks a Product Type on a NEW product (the common case is
+// Womens, and the season tracks the footwear type). Only these types have a default; anything else leaves gender/season untouched.
+const PRODUCT_TYPE_DEFAULTS: Record<string, { gender: string; season: string }> = {
+  Sandals: { gender: 'Womens', season: 'Summer' },
+  Boots: { gender: 'Womens', season: 'Winter' },
+  Shoes: { gender: 'Womens', season: 'Any' },
+};
+
+// Create-a-new-product form. Shown in place of the "no match" dead-end: the searched term seeds the Group ID (editable, upper-cased),
+// and the same header dropdowns + title/Generate as the edit panel let the user fill the basics. On success it hands the new groupid
+// back to the page, which loads it into the normal edit panel to carry on (sizes, price, …). Price/sizes are deliberately NOT here —
+// this writes only the header basics (POST /product-create). onUnauthorized bubbles an expired session up to the page's logout.
+function NewProductForm({
+  initialGroupid, lookups, onCreated, onUnauthorized,
+}: {
+  initialGroupid: string;
+  lookups: ProductLookups | null;
+  onCreated: (groupid: string, title: string) => void;
+  onUnauthorized: () => void;
+}) {
+  const [groupid, setGroupid] = useState(initialGroupid.toUpperCase());
+  const [fields, setFields] = useState<ProductEditFields>({ ...emptyFields });
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Live "does this Group ID already exist?" check. The field is editable (the search term may be a fragment/typo), so we guard
+  // against pointing a NEW product at an existing key: create is an INSERT and the server rejects a clash, but we check here too so
+  // the user finds out immediately (Create is blocked) instead of after clicking.
+  const [exists, setExists] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    const gid = groupid.trim().toUpperCase();
+    if (!gid) { setExists(false); setChecking(false); return; }
+    let cancelled = false;
+    setChecking(true);
+    // Debounce so we don't hit the API on every keystroke. getProduct succeeds iff the groupid exists.
+    const t = setTimeout(async () => {
+      const res = await getProduct(gid);
+      if (cancelled) return;
+      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
+      setExists(res.success);
+      setChecking(false);
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [groupid, onUnauthorized]);
+
+  const set = (k: keyof ProductEditFields, v: string) => { setFields((p) => ({ ...p, [k]: v })); setError(null); };
+
+  // Picking a Product Type also seeds the gender/season defaults for that type (Womens + a season that fits the footwear).
+  const setProductType = (v: string) => {
+    const d = PRODUCT_TYPE_DEFAULTS[v];
+    setFields((p) => (d ? { ...p, producttype: v, gender: d.gender, season: d.season } : { ...p, producttype: v }));
+    setError(null);
+  };
+
+  async function onCreate() {
+    const gid = groupid.trim().toUpperCase();
+    if (!gid) { setError('Group ID is required'); return; }
+    if (exists) { setError('That Group ID already exists — use Search to edit it'); return; }
+    if (/[<>]/.test(fields.title)) { setError('Title still has <…> placeholders — fill them in before saving'); return; }
+    setCreating(true);
+    setError(null);
+    const res = await createProduct(gid, fields);
+    if (res.success && res.data) {
+      onCreated(res.data.groupid, fields.title);
+      return; // page swaps this form out for the loaded product
+    }
+    if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
+    setError(res.error || 'Create failed');
+    setCreating(false);
   }
+
   return (
-    <div className={'relative ' + box}>
-      {/* next/image with `fill` so it fits the fixed 112px box; host is whitelisted in next.config.js. object-contain letterboxes
-          non-square product shots. onError falls back to the placeholder above (e.g. filename points at a missing file). */}
-      <Image
-        src={IMAGE_BASE + encodeURIComponent(imagename)}
-        alt=""
-        fill
-        sizes="112px"
-        onError={() => setFailed(true)}
-        className="object-contain"
-      />
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 border-b border-slate-100 pb-3">
+        <h2 className="text-sm font-semibold text-slate-900">Create a new product</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          No product matched your search — fill in the basics to add a new one. Sizes and price come after, once it&apos;s created.
+        </p>
+      </div>
+
+      {/* Group ID — pre-filled from the search term, still editable (it becomes the product key, upper-cased). */}
+      <div className="mb-3">
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Group ID</label>
+        <input
+          value={groupid}
+          onChange={(e) => { setGroupid(e.target.value.toUpperCase()); setError(null); }}
+          placeholder="e.g. 0128999-NEWSTYLE"
+          className={'w-full rounded-md border px-3 py-2 font-mono text-sm uppercase text-slate-800 focus:outline-none focus:ring-1 ' +
+            (exists ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500')}
+        />
+        {exists && (
+          <p className="mt-1 text-xs text-red-600">This Group ID already exists — use Search to edit it (a new product can&apos;t reuse a key).</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <EditSelect label="Brand" value={fields.brand} options={lookups?.brands || []} onChange={(v) => set('brand', v)} />
+        <EditSelect label="Colour" value={fields.colour} options={lookups?.colours || []} onChange={(v) => set('colour', v)} />
+        <EditSelect label="Product Type" value={fields.producttype} options={lookups?.productTypes || []} onChange={setProductType} />
+        <EditSelect label="Gender" value={fields.gender} options={lookups?.genders || []} onChange={(v) => set('gender', v)} />
+        <EditSelect label="Segment" value={fields.segment} options={lookups?.segments || []} onChange={(v) => set('segment', v)} mono />
+        <EditSelect label="Season" value={fields.season} options={lookups?.seasons || []} onChange={(v) => set('season', v)} />
+      </div>
+
+      {/* Title + Generate — comes AFTER the fields, since Generate builds the title from them. */}
+      <div className="mt-3">
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
+        <div className="flex gap-2">
+          <input
+            value={fields.title}
+            onChange={(e) => set('title', e.target.value)}
+            placeholder="Product title"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          />
+          <button
+            type="button"
+            onClick={() => set('title', generateTitle(fields))}
+            title="Generate from Brand / Product Type / Colour / Gender"
+            className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Generate
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={onCreate}
+          disabled={creating || checking || exists || !groupid.trim()}
+          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {creating ? 'Creating…' : 'Create product'}
+        </button>
+        {error && <span className="text-xs text-red-600">{error}</span>}
+      </div>
     </div>
   );
 }
@@ -175,6 +294,7 @@ export default function ProductsPage() {
 
   async function onSave() {
     if (!detail || !edit) return;
+    if (/[<>]/.test(edit.title)) { setSaveError('Title still has <…> placeholders — fill them in before saving'); return; }
     setSaving(true);
     setSaveError(null);
     setSaveOk(false);
@@ -220,6 +340,20 @@ export default function ProductsPage() {
     setLastTerm(q);
     setSearched(true);
     setLoading(false);
+
+    // Convenience: if the search pinned down exactly one product, load it straight away (skip the extra click).
+    if (res.success && res.data && res.data.results.length === 1) {
+      onSelect(res.data.results[0].groupid);
+    }
+  }
+
+  // A new product was just created: drop it into the (now single-row) results list and load it into the detail panel so the user
+  // carries straight on with the normal edit flow (sizes, price, …). The product now exists, so getProduct in onSelect will find it.
+  async function onCreated(groupid: string, title: string) {
+    setResults([{ groupid, title: title || null }]);
+    setLimited(false);
+    setError(null);
+    await onSelect(groupid);
   }
 
   async function onSelect(groupid: string) {
@@ -269,14 +403,15 @@ export default function ProductsPage() {
       {loading && <p className="text-sm text-slate-400">Searching…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {/* No match -> the cue to create a new product (creation arrives in a later stage). */}
+      {/* No match -> the cue to create a new product: the empty state IS the create form, seeded with the searched Group ID. */}
       {searched && !loading && !error && results.length === 0 && (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
-          <p className="text-sm text-slate-600">
-            No product found for <span className="font-mono font-medium text-slate-800">{lastTerm}</span>.
-          </p>
-          <p className="mt-1 text-xs text-slate-400">Creating a new product from here arrives in a later stage.</p>
-        </div>
+        <NewProductForm
+          key={lastTerm}
+          initialGroupid={lastTerm}
+          lookups={lookups}
+          onCreated={onCreated}
+          onUnauthorized={logout}
+        />
       )}
 
       {limited && !loading && (
@@ -328,14 +463,30 @@ export default function ProductsPage() {
                       {detail.imagename || 'No image name'}
                     </div>
                   </div>
-                  <ProductImage key={detail.groupid} imagename={detail.imagename} />
+                  {/* Main image + upload/replace. Uses the on-screen title (edit form) to seed the SEO filename server-side. */}
+                  <ImageUploader
+                    key={detail.groupid}
+                    groupid={detail.groupid}
+                    imagename={detail.imagename}
+                    title={edit?.title ?? detail.title ?? ''}
+                    onUploaded={(imagename) => setDetail((prev) => (prev ? { ...prev, imagename } : prev))}
+                  />
                 </div>
 
                 {/* Editable header fields + SAVE. Width/Material stay read-only (no legacy control yet). */}
                 {edit && (
                   <div>
-                    {/* Shopify Title — free text with a Generate button that emits the legacy placeholder template. */}
-                    <div className="mb-3">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
+                      <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
+                      <EditSelect label="Product Type" value={edit.producttype} options={lookups?.productTypes || []} onChange={(v) => setField('producttype', v)} />
+                      <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
+                      <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
+                      <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
+                    </div>
+
+                    {/* Shopify Title — comes AFTER the fields, since Generate builds the title from them. */}
+                    <div className="mt-3">
                       <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
                       <div className="flex gap-2">
                         <input
@@ -354,15 +505,6 @@ export default function ProductsPage() {
                         </button>
                       </div>
                       <p className="mt-1 text-[11px] text-slate-400">After generating, replace the &lt;…&gt; placeholders (detail, and Narrow/Regular fit for Birkenstock).</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
-                      <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
-                      <EditSelect label="Product Type" value={edit.producttype} options={lookups?.productTypes || []} onChange={(v) => setField('producttype', v)} />
-                      <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
-                      <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
-                      <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
                     </div>
 
                     {/* Save bar for the attribute fields. */}
@@ -389,21 +531,33 @@ export default function ProductsPage() {
                   </div>
                 )}
 
-                {/* Pricing + flags */}
-                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-5">
-                  <Field label="Cost" value={money(detail.cost)} />
-                  <Field label="RRP" value={money(detail.rrp)} />
-                  <Field label="Price" value={money(detail.price)} />
-                  <Field label="Tax" value={flag(detail.tax)} />
-                  <Field label="Shopify" value={flag(detail.shopify)} />
+                {/* Price (skusummary) — editable: Cost / RRP / Shopify Price / Tax. Shopify on/off flag stays read-only (own control). */}
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <PriceEditor
+                    key={detail.groupid}
+                    groupid={detail.groupid}
+                    cost={detail.cost}
+                    rrp={detail.rrp}
+                    price={detail.price}
+                    tax={detail.tax}
+                    onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price, tax: s.tax } : prev))}
+                  />
+                  <div className="mt-3">
+                    <Field label="Shopify" value={flag(detail.shopify)} />
+                  </div>
                 </div>
 
                 {/* Sizes (skumap) — editable: barcode + size display, with add / remove / reorder. */}
                 <div className="mt-4 border-t border-slate-100 pt-4">
-                  <SizeEditor key={detail.groupid} groupid={detail.groupid} sizes={detail.sizes} />
+                  {/* brand/gender feed the "Generate sizes" template — use the live edit selections so it reflects the current choice. */}
+                  <SizeEditor
+                    key={detail.groupid}
+                    groupid={detail.groupid}
+                    sizes={detail.sizes}
+                    brand={edit?.brand ?? detail.brand ?? ''}
+                    gender={edit?.gender ?? detail.gender ?? ''}
+                  />
                 </div>
-
-                <p className="mt-4 text-xs text-slate-400">Price is read-only here — it will go through the pricing route in a later stage.</p>
               </div>
             )}
           </div>

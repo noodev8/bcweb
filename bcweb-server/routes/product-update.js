@@ -7,10 +7,8 @@ Purpose: Save the product's header ATTRIBUTE fields. These span three tables, so
            - skusummary: brand, colour, segment, season   (+ `updated` audit stamp)
            - attributes: gender, producttype              (+ `updated`); INSERTs a row if the product has none yet
            - title:      shopifytitle                      (+ `updated`); INSERTs a row if the product has none yet
-         Deliberately NOT in scope here (own stages, different rules): price/cost/rrp/tax (price goes through the pricing W1 route with
-         shopifychange + price_change_log), width/material, sizes. So this route does NOT touch shopifychange or write a price log — it's
-         a plain catalogue-attribute edit. NOTE (open decision): colour/producttype/title all feed the Shopify listing but we do NOT set
-         shopifychange here, so the nightly sync won't push these edits yet — revisit when catalogue edits should trigger a sync.
+         Deliberately NOT in scope here (own stages, different rules): price/cost/rrp/tax, width/material, sizes. So this route is a
+         plain catalogue-attribute edit — it does not touch price or write a price log.
 
          Values are stored as trimmed strings as-is (the legacy data is free-form and lookup tables can be incomplete, e.g. brand
          'Lazy Dogz' isn't in the brand table), so we don't reject off-list values. `updated` is written in the legacy
@@ -38,6 +36,7 @@ Success Response:
 Return Codes:
 "SUCCESS"
 "MISSING_FIELDS"
+"INVALID_TITLE"    // title still contains <…> placeholders
 "NOT_FOUND"
 "UNAUTHORIZED"
 "SERVER_ERROR"
@@ -71,6 +70,12 @@ router.post('/', async (req, res) => {
     const gender = (body.gender || '').trim();
     const producttype = (body.producttype || '').trim();
     const title = (body.title || '').trim();
+
+    // Reject a title that still carries the generated placeholders (e.g. "<Any detail>", "<Narrow/Regular> Fit"). '<' or '>' must
+    // never reach the Shopify listing — the user has to fill them in first. (Legacy PB save blocked '<' '>' in the title too.)
+    if (/[<>]/.test(title)) {
+      return res.json({ return_code: 'INVALID_TITLE', message: 'Title still contains <…> placeholders — fill them in before saving' });
+    }
 
     await withTransaction(async (client) => {
       // 1) skusummary header fields. RETURNING confirms the product exists; 0 rows -> abort the whole unit (rollback) as NOT_FOUND.

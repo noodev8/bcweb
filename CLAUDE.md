@@ -54,6 +54,7 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, public 
 - **`localstock` holds in-stock rows only** — a sold-out size has no row. For the full size range use **`skumap`** (one row per variant; size = `RIGHT(code,2)`), LEFT JOIN the sellable stock, default 0.
 - **Size = `RIGHT(code,2)`** (EU size, by design).
 - **`skusummary.colour` is an overloaded segmentation tag** (e.g. "Mocha" filed under "Brown") — ambiguous. Use `title.shopifytitle` for a human-readable name.
+- **Dates:** legacy `created`/`updated` on `skusummary` (and `updated` on other tables) are TEXT (`'YYYYMMDD HH24:MI:SS'`, Europe/London). A proper **`skusummary.created_at timestamptz DEFAULT now()`** was added for going-forward use — new inserts get it; the 272 pre-existing rows are NULL (not backfilled). Prefer `created_at` for real date logic; keep writing the legacy text stamps too for compatibility.
 
 ## Conventions (full detail in docs/API-RULES.md)
 

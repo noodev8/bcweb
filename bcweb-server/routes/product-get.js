@@ -35,9 +35,9 @@ Success Response:
     "tax": true,                        // skusummary.tax 1/0 -> bool
     "shopify": true                     // skusummary.shopify 1/0 -> bool
   },
-  "sizes": [                            // from skumap, one per variant, in legacy size order (UK size omitted for now)
-    { "code": "0128221-GIZEH-35", "barcode": null, "sizeDisplay": "35 EU / 2.5 UK" },
-    { "code": "0128221-GIZEH-36", "barcode": "4052001424459", "sizeDisplay": "36 EU / 3.5 UK" }
+  "sizes": [                            // from skumap, one per variant, in legacy size order
+    { "code": "0128221-GIZEH-35", "barcode": null, "sizeDisplay": "35 EU / 2.5 UK", "uksize": "2.5 UK" },
+    { "code": "0128221-GIZEH-36", "barcode": "4052001424459", "sizeDisplay": "36 EU / 3.5 UK", "uksize": "3.5 UK" }
     // ...
   ]
 }
@@ -103,12 +103,14 @@ router.get('/', async (req, res) => {
     // a JOIN would multiply the header row by the number of sizes. Two derived columns, both validated as 100% consistent in the data:
     //   - Barcode:      ean has a trailing 'B' marker in every non-blank row -> strip it; blank ean -> null.
     //   - Size Display: optionsize always starts with an "<seq>--" ordering prefix (e.g. '101--35 EU / 2.5 UK') -> strip the prefix.
-    // Ordered by that numeric sequence prefix = the legacy screen's size order. (UK size deliberately omitted until we need it.)
+    //   - uksize: returned as-is (feeds the Google Merchant feed's size field).
+    // Ordered by that numeric sequence prefix = the legacy screen's size order.
     const sizeResult = await query(`
       SELECT
         code,
         NULLIF(regexp_replace(ean, 'B$', ''), '')        AS barcode,
-        regexp_replace(optionsize, '^[0-9]+--', '')      AS sizedisplay
+        regexp_replace(optionsize, '^[0-9]+--', '')      AS sizedisplay,
+        uksize
       FROM skumap
       WHERE groupid = $1 AND COALESCE(deleted, 0) = 0
       ORDER BY (split_part(optionsize, '--', 1))::int
@@ -117,7 +119,9 @@ router.get('/', async (req, res) => {
     const sizes = sizeResult.rows.map((s) => ({
       code: s.code,
       barcode: s.barcode || null,
-      sizeDisplay: s.sizedisplay || null
+      sizeDisplay: s.sizedisplay || null,
+      // uksize feeds the Google Merchant feed (size / size_system=UK) — carried through so new sizes can populate it.
+      uksize: s.uksize || null
     }));
 
     const r = result.rows[0];

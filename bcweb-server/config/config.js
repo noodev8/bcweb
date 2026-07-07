@@ -18,9 +18,21 @@ if (!process.env.JWT_SECRET) {
 module.exports = {
   jwt: {
     secret: process.env.JWT_SECRET,
-    // Token lifetime. CLAUDE.md default is 12h. jsonwebtoken accepts the raw string (e.g. "12h").
-    expiresIn: process.env.JWT_EXPIRES_IN || '12h'
+    // Token lifetime. jsonwebtoken accepts the raw string (e.g. "30d"). Default bumped to 30d so dev/testing sessions don't
+    // expire mid-work (CLAUDE.md originally specced 12h — set JWT_EXPIRES_IN in .env to tighten it back down for production).
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d'
   },
   // bcrypt cost factor for hashing passwords in seed-user.js / login comparison timing.
-  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10)
+  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
+
+  // one.com SFTP — where product images are pushed (this host backs images.brookfieldcomfort.com, which the site + Google feed read).
+  // Not validated at boot (the image feature is optional); utils/sftp.js checks these are present when it actually connects, and the
+  // product-image route surfaces a clear error if they're missing. REMOTE_DIR is the directory that maps to the image host root.
+  onecom: {
+    host: process.env.ONECOM_SFTP_HOST || '',
+    port: parseInt(process.env.ONECOM_SFTP_PORT || '22', 10),
+    username: process.env.ONECOM_SFTP_USERNAME || '',
+    password: process.env.ONECOM_SFTP_PASSWORD || '',
+    remoteDir: process.env.ONECOM_SFTP_REMOTE_DIR || ''
+  }
 };
