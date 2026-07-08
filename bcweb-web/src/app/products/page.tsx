@@ -17,7 +17,7 @@ Purpose: Entry screen for the Add / Modify Product module. Master-detail:
 =======================================================================================================================================
 */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import SizeEditor from '@/components/SizeEditor';
@@ -85,6 +85,40 @@ function generateTitle(f: ProductEditFields): string {
     raw = `${gender} ${brand} <Any detail> ${producttype} ${colour}`;
   }
   return raw.replace(/\s+/g, ' ').trim();
+}
+
+// The three sections of the detail panel, in scroll order. Drives the sticky in-panel nav (jump + active highlight). The ids double
+// as scroll anchors on the matching <section> wrappers (each carries scroll-mt so it lands below the pinned nav, not under it).
+const SECTIONS = [
+  { id: 'sec-core', label: 'Core' },
+  { id: 'sec-pricing', label: 'Pricing' },
+  { id: 'sec-sizing', label: 'Sizing' },
+] as const;
+
+// Longest shared Group ID prefix across the results, trimmed back to a clean token boundary (the last '-' or '_'), so the result pills
+// can show just the distinguishing tail (e.g. "BEIGE", "BLACKSOLE") with the shared part lifted out as a caption. Returns '' when there
+// isn't a meaningful shared prefix (mixed results, or a single hit) — the pills then show the full groupid.
+function commonGroupPrefix(rows: ProductRow[]): string {
+  if (rows.length < 2) return '';
+  let p = rows[0].groupid;
+  for (const r of rows) {
+    while (p && !r.groupid.startsWith(p)) p = p.slice(0, -1);
+    if (!p) break;
+  }
+  const idx = Math.max(p.lastIndexOf('-'), p.lastIndexOf('_'));
+  const prefix = idx >= 0 ? p.slice(0, idx + 1) : '';
+  return prefix.length >= 4 ? prefix : '';
+}
+
+// Section divider/header inside the detail panel. Bigger/darker than the child components' own grey field-group captions, so the three
+// sections read as distinct bands. `hint` is an optional right-aligned note (e.g. a caveat or count).
+function SectionHeader({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="mb-4 flex items-baseline justify-between gap-3 border-b border-slate-200 pb-2">
+      <h2 className="text-base font-semibold text-slate-800">{children}</h2>
+      {hint && <span className="shrink-0 text-xs text-slate-400">{hint}</span>}
+    </div>
+  );
 }
 
 // A blank set of editable header fields — the starting point for a brand-new product.
@@ -165,16 +199,16 @@ function NewProductForm({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 border-b border-slate-100 pb-3">
-        <h2 className="text-sm font-semibold text-slate-900">Create a new product</h2>
+        <h2 className="text-base font-semibold text-slate-900">Create a new product</h2>
         <p className="mt-1 text-xs text-slate-400">
           No product matched your search — fill in the basics to add a new one. Sizes and price come after, once it&apos;s created.
         </p>
       </div>
 
-      {/* Group ID — pre-filled from the search term, still editable (it becomes the product key, upper-cased). */}
-      <div className="mb-3">
+      {/* Group ID — pre-filled from the search term, still editable (it becomes the product key, upper-cased). Capped: a key is short. */}
+      <div className="mb-4 max-w-md">
         <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Group ID</label>
         <input
           value={groupid}
@@ -188,7 +222,8 @@ function NewProductForm({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Attributes spread to one row on wide screens, matching the edit screen's Core section. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <EditSelect label="Brand" value={fields.brand} options={lookups?.brands || []} onChange={(v) => set('brand', v)} />
         <EditSelect label="Colour" value={fields.colour} options={lookups?.colours || []} onChange={(v) => set('colour', v)} />
         <EditSelect label="Product Type" value={fields.producttype} options={lookups?.productTypes || []} onChange={setProductType} />
@@ -197,8 +232,8 @@ function NewProductForm({
         <EditSelect label="Season" value={fields.season} options={lookups?.seasons || []} onChange={(v) => set('season', v)} />
       </div>
 
-      {/* Title + Generate — comes AFTER the fields, since Generate builds the title from them. */}
-      <div className="mt-3">
+      {/* Title + Generate — comes AFTER the fields, since Generate builds the title from them. Capped so it doesn't stretch. */}
+      <div className="mt-4 max-w-3xl">
         <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
         <div className="flex gap-2">
           <input
@@ -259,8 +294,41 @@ export default function ProductsPage() {
   const [saveOk, setSaveOk] = useState(false);
   const [shopifyPush, setShopifyPush] = useState<ShopifyPushResult | null>(null);  // Shopify re-push outcome for the attribute save
 
+  // ---- Section nav (right panel) -------------------------------------------------------------------------------------------------
+  // Which of the three sections is currently in view — highlights the matching sticky-nav button. Updated by an IntersectionObserver.
+  const [activeSec, setActiveSec] = useState<string>(SECTIONS[0].id);
+
   // Are there unsaved edits? (compare current form to the loaded baseline)
   const dirty = !!edit && !!baseline && JSON.stringify(edit) !== JSON.stringify(baseline);
+
+  // Track the section nearest the top of the viewport as the user scrolls, so the sticky nav reflects where they are. Re-runs when a
+  // new product loads (the sections mount fresh). The rootMargin pulls the trigger line down past the pinned nav (~top) and treats a
+  // section as "active" while its start sits in the upper ~45% of the viewport.
+  useEffect(() => {
+    if (!detail) return;
+    const els = SECTIONS.map((s) => document.getElementById(s.id)).filter((e): e is HTMLElement => !!e);
+    if (els.length === 0) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveSec(visible[0].target.id);
+      },
+      { rootMargin: '-72px 0px -55% 0px', threshold: 0 },
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [detail]);
+
+  // Jump to a section from the nav. scroll-mt on each <section> offsets the landing point so it clears the pinned nav.
+  function scrollToSection(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveSec(id);
+  }
+
+  // Shared prefix for the result pills (see commonGroupPrefix) — computed each render; results are capped at 25 so this is cheap.
+  const groupPrefix = commonGroupPrefix(results);
 
   // Load the dropdown option lists once. If this fails (non-auth), the selects still work with each product's current value.
   useEffect(() => {
@@ -377,9 +445,9 @@ export default function ProductsPage() {
   }
 
   return (
-    <AppShell title="Add / Modify Product" backHref="/dashboard" backLabel="Dashboard">
-      {/* Search bar */}
-      <form onSubmit={onSearch} className="mb-5 flex gap-2">
+    <AppShell title="Add / Modify Product" backHref="/dashboard" backLabel="Dashboard" wide>
+      {/* Search bar — capped so it stays a comfortable target on the full-width canvas instead of stretching across the browser. */}
+      <form onSubmit={onSearch} className="mb-5 flex max-w-3xl gap-2">
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input
@@ -400,15 +468,18 @@ export default function ProductsPage() {
       {loading && <p className="text-sm text-slate-400">Searching…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {/* No match -> the cue to create a new product: the empty state IS the create form, seeded with the searched Group ID. */}
+      {/* No match -> the cue to create a new product: the empty state IS the create form, seeded with the searched Group ID. Capped
+          width — a create form doesn't benefit from the full-width canvas. */}
       {searched && !loading && !error && results.length === 0 && (
-        <NewProductForm
-          key={lastTerm}
-          initialGroupid={lastTerm}
-          lookups={lookups}
-          onCreated={onCreated}
-          onUnauthorized={logout}
-        />
+        <div className="mx-auto max-w-5xl">
+          <NewProductForm
+            key={lastTerm}
+            initialGroupid={lastTerm}
+            lookups={lookups}
+            onCreated={onCreated}
+            onUnauthorized={logout}
+          />
+        </div>
       )}
 
       {limited && !loading && (
@@ -417,31 +488,39 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Master-detail: results list stays on the left; the picked product's fields fill the right. */}
+      {/* Results as a wrapping pill bar across the top — frees the whole width for the detail below, and colourways of a model read
+          naturally as chips. The shared groupid prefix is lifted into a caption so the chips can stay short without losing context. */}
       {results.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* LEFT — results list */}
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:col-span-1">
-            <ul className="divide-y divide-slate-100">
+        <>
+          <div className="mb-6">
+            {groupPrefix && (
+              <div className="mb-2 font-mono text-xs text-slate-400">{groupPrefix}<span className="text-slate-300">…</span></div>
+            )}
+            <div className="flex flex-wrap gap-2">
               {results.map((r) => {
                 const active = r.groupid === selected;
+                const label = groupPrefix ? r.groupid.slice(groupPrefix.length) : r.groupid;
                 return (
-                  <li key={r.groupid}>
-                    <button
-                      onClick={() => onSelect(r.groupid)}
-                      className={'block w-full px-3 py-2 text-left hover:bg-slate-50 ' + (active ? 'bg-brand-50' : '')}
-                    >
-                      <span className={'block font-mono text-xs ' + (active ? 'text-brand-700' : 'text-slate-700')}>{r.groupid}</span>
-                      <span className="block truncate text-xs text-slate-400">{r.title || '—'}</span>
-                    </button>
-                  </li>
+                  <button
+                    key={r.groupid}
+                    onClick={() => onSelect(r.groupid)}
+                    title={r.title || r.groupid}
+                    className={
+                      'rounded-full border px-3 py-1.5 font-mono text-xs transition-colors ' +
+                      (active
+                        ? 'border-brand-600 bg-brand-600 text-white'
+                        : 'border-slate-300 bg-white text-slate-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700')
+                    }
+                  >
+                    {label || r.groupid}
+                  </button>
                 );
               })}
-            </ul>
+            </div>
           </div>
 
-          {/* RIGHT — detail panel */}
-          <div className="lg:col-span-2">
+          {/* Detail — a single centered column (balanced margins), one scroll with the sticky section nav. */}
+          <div className="mx-auto max-w-5xl">
             {!selected && (
               <div className="flex h-full min-h-[12rem] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
                 Select a product to view its details
@@ -451,127 +530,159 @@ export default function ProductsPage() {
             {selected && detailError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{detailError}</div>}
 
             {detail && !detailLoading && (
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                {/* Header: the key + generated title on the left, product image on the right (as on the legacy screen). */}
-                <div className="mb-4 flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
-                  <div className="min-w-0">
-                    <div className="font-mono text-lg font-semibold text-slate-900">{detail.groupid}</div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
-                      {detail.imagename || 'No image name'}
-                    </div>
-                  </div>
-                  {/* Main image + upload/replace. Uses the on-screen title (edit form) to seed the SEO filename server-side. */}
-                  <ImageUploader
-                    key={detail.groupid}
-                    groupid={detail.groupid}
-                    imagename={detail.imagename}
-                    title={edit?.title ?? detail.title ?? ''}
-                    onUploaded={(imagename) => setDetail((prev) => (prev ? { ...prev, imagename } : prev))}
-                  />
-                </div>
+              <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                {/* Sticky in-panel nav — jump between the three sections and see which one you're in as you scroll the long panel. The
+                    group id rides along on the right so you always know which product you're editing once the header has scrolled off. */}
+                <nav className="sticky top-0 z-20 flex items-center gap-1 rounded-t-lg border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur">
+                  {SECTIONS.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => scrollToSection(s.id)}
+                      className={
+                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors ' +
+                        (activeSec === s.id ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700')
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                  <span className="ml-auto truncate pl-3 font-mono text-xs text-slate-400">{detail.groupid}</span>
+                </nav>
 
-                {/* Editable header fields + SAVE. Width/Material stay read-only (no legacy control yet). */}
-                {edit && (
-                  <div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
-                      <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
-                      <EditSelect label="Product Type" value={edit.producttype} options={lookups?.productTypes || []} onChange={(v) => setField('producttype', v)} />
-                      <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
-                      <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
-                      <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
-                    </div>
-
-                    {/* Shopify Title — comes AFTER the fields, since Generate builds the title from them. */}
-                    <div className="mt-3">
-                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
-                      <div className="flex gap-2">
-                        <input
-                          value={edit.title}
-                          onChange={(e) => setField('title', e.target.value)}
-                          placeholder="Product title"
-                          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={onGenerateTitle}
-                          title="Generate from Brand / Product Type / Colour / Gender"
-                          className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Generate
-                        </button>
+                <div className="p-4 lg:p-5">
+                  {/* Header: the key + image name on the left, product image on the right (as on the legacy screen). */}
+                  <div className="mb-6 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="font-mono text-lg font-semibold text-slate-900">{detail.groupid}</div>
+                      <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
+                        {detail.imagename || 'No image name'}
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-400">After generating, replace the &lt;…&gt; placeholders (detail, and Narrow/Regular fit for Birkenstock).</p>
                     </div>
-
-                    {/* Save bar for the attribute fields. */}
-                    <div className="mt-3 flex items-center gap-3">
-                      <button
-                        onClick={onSave}
-                        disabled={!dirty || saving}
-                        className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        {saving ? 'Saving…' : 'Save changes'}
-                      </button>
-                      {dirty && !saving && (
-                        <button
-                          onClick={() => { setEdit(baseline); setSaveError(null); setSaveOk(false); }}
-                          className="text-xs text-slate-500 hover:text-slate-700"
-                        >
-                          Reset
-                        </button>
-                      )}
-                      {!dirty && !saving && !saveOk && <span className="text-xs text-slate-400">No unsaved changes</span>}
-                      {saveOk && !dirty && <span className="text-xs font-medium text-green-600">Saved.</span>}
-                      {saveOk && !dirty && <ShopifyPushNote result={shopifyPush} />}
-                      {saveError && <span className="text-xs text-red-600">{saveError}</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Price (skusummary) — editable: Cost / RRP / Shopify Price / Tax. Shopify on/off flag stays read-only (own control). */}
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  <PriceEditor
-                    key={detail.groupid}
-                    groupid={detail.groupid}
-                    cost={detail.cost}
-                    rrp={detail.rrp}
-                    price={detail.price}
-                    tax={detail.tax}
-                    onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price, tax: s.tax } : prev))}
-                  />
-                  <div className="mt-3 border-t border-slate-100 pt-3">
-                    <ShopifyToggle
+                    {/* Main image + upload/replace. Uses the on-screen title (edit form) to seed the SEO filename server-side. */}
+                    <ImageUploader
                       key={detail.groupid}
                       groupid={detail.groupid}
-                      shopify={detail.shopify}
-                      price={detail.price}
-                      sizesCount={detail.sizes.length}
-                      onChanged={(shopify) => setDetail((prev) => (prev ? { ...prev, shopify } : prev))}
+                      imagename={detail.imagename}
+                      title={edit?.title ?? detail.title ?? ''}
+                      onUploaded={(imagename) => setDetail((prev) => (prev ? { ...prev, imagename } : prev))}
                     />
                   </div>
-                  {/* Amazon upload file — builds the Seller Central .xlsm for this product (downstream, separate from Shopify). */}
-                  <div className="mt-3 border-t border-slate-100 pt-3">
-                    <AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} />
-                  </div>
-                </div>
 
-                {/* Sizes (skumap) — editable: barcode + size display, with add / remove / reorder. */}
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  {/* brand/gender feed the "Generate sizes" template — use the live edit selections so it reflects the current choice. */}
-                  <SizeEditor
-                    key={detail.groupid}
-                    groupid={detail.groupid}
-                    sizes={detail.sizes}
-                    brand={edit?.brand ?? detail.brand ?? ''}
-                    gender={edit?.gender ?? detail.gender ?? ''}
-                    onSaved={(sizes) => setDetail((prev) => (prev ? { ...prev, sizes } : prev))}
-                  />
+                  {/* ── CORE ── editable header attributes + title + SAVE. Attributes spread to one row on wide screens; the title is
+                      capped so it doesn't stretch across the full canvas. */}
+                  <section id="sec-core" className="scroll-mt-24">
+                    <SectionHeader>Core details</SectionHeader>
+                    {edit && (
+                      <div>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                          <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
+                          <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
+                          <EditSelect label="Product Type" value={edit.producttype} options={lookups?.productTypes || []} onChange={(v) => setField('producttype', v)} />
+                          <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
+                          <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
+                          <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
+                        </div>
+
+                        {/* Shopify Title — comes AFTER the fields, since Generate builds the title from them. */}
+                        <div className="mt-4 max-w-3xl">
+                          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Title</label>
+                          <div className="flex gap-2">
+                            <input
+                              value={edit.title}
+                              onChange={(e) => setField('title', e.target.value)}
+                              placeholder="Product title"
+                              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={onGenerateTitle}
+                              title="Generate from Brand / Product Type / Colour / Gender"
+                              className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Generate
+                            </button>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-400">After generating, replace the &lt;…&gt; placeholders (detail, and Narrow/Regular fit for Birkenstock).</p>
+                        </div>
+
+                        {/* Save bar for the attribute fields. */}
+                        <div className="mt-4 flex items-center gap-3">
+                          <button
+                            onClick={onSave}
+                            disabled={!dirty || saving}
+                            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            {saving ? 'Saving…' : 'Save changes'}
+                          </button>
+                          {dirty && !saving && (
+                            <button
+                              onClick={() => { setEdit(baseline); setSaveError(null); setSaveOk(false); }}
+                              className="text-xs text-slate-500 hover:text-slate-700"
+                            >
+                              Reset
+                            </button>
+                          )}
+                          {!dirty && !saving && !saveOk && <span className="text-xs text-slate-400">No unsaved changes</span>}
+                          {saveOk && !dirty && <span className="text-xs font-medium text-green-600">Saved.</span>}
+                          {saveOk && !dirty && <ShopifyPushNote result={shopifyPush} />}
+                          {saveError && <span className="text-xs text-red-600">{saveError}</span>}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── PRICING ── price fields + the Shopify on/off + Amazon export live together as the "publish this product" group.
+                      Capped width: money fields and toggles don't want the full canvas. */}
+                  <section id="sec-pricing" className="mt-10 scroll-mt-24">
+                    <SectionHeader>Pricing</SectionHeader>
+                    <div className="max-w-3xl">
+                      <PriceEditor
+                        key={detail.groupid}
+                        groupid={detail.groupid}
+                        cost={detail.cost}
+                        rrp={detail.rrp}
+                        price={detail.price}
+                        tax={detail.tax}
+                        onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price, tax: s.tax } : prev))}
+                      />
+                      <div className="mt-4 border-t border-slate-100 pt-4">
+                        <ShopifyToggle
+                          key={detail.groupid}
+                          groupid={detail.groupid}
+                          shopify={detail.shopify}
+                          price={detail.price}
+                          sizesCount={detail.sizes.length}
+                          onChanged={(shopify) => setDetail((prev) => (prev ? { ...prev, shopify } : prev))}
+                        />
+                      </div>
+                      {/* Amazon upload file — builds the Seller Central .xlsm for this product (downstream, separate from Shopify). */}
+                      <div className="mt-4 border-t border-slate-100 pt-4">
+                        <AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* ── SIZING ── the size grid gets more room than the forms (5 columns), capped so cells stay tidy on ultra-wide. */}
+                  <section id="sec-sizing" className="mt-10 scroll-mt-24">
+                    <SectionHeader>Sizing</SectionHeader>
+                    <div>
+                      {/* brand/gender feed the "Generate sizes" template — use the live edit selections so it reflects the current choice. */}
+                      <SizeEditor
+                        key={detail.groupid}
+                        groupid={detail.groupid}
+                        sizes={detail.sizes}
+                        brand={edit?.brand ?? detail.brand ?? ''}
+                        gender={edit?.gender ?? detail.gender ?? ''}
+                        onSaved={(sizes) => setDetail((prev) => (prev ? { ...prev, sizes } : prev))}
+                      />
+                    </div>
+                  </section>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
     </AppShell>
   );

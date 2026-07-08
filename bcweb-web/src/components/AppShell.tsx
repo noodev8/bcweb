@@ -22,9 +22,13 @@ interface AppShellProps {
   title?: string;
   backHref?: string;     // when set, shows a single back arrow linking here
   backLabel?: string;
+  // Data-dense screens (e.g. Add / Modify) opt into a full-width canvas: the content fills the browser (edge padding only) with a
+  // generous soft ceiling (~2560px) so ordinary laptop/FHD/QHD monitors are unaffected and only true ultra-wides get a gentle cap.
+  // Default (unset) keeps the comfortable reading measure used by the dashboard and pricing screens.
+  wide?: boolean;
 }
 
-export default function AppShell({ children, title, backHref, backLabel }: AppShellProps) {
+export default function AppShell({ children, title, backHref, backLabel, wide }: AppShellProps) {
   const router = useRouter();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
 
@@ -37,11 +41,15 @@ export default function AppShell({ children, title, backHref, backLabel }: AppSh
     return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
 
+  // One shared container so the header, sub-header and main all align to the same width — narrow reading measure by default, or the
+  // full-width-with-soft-ceiling canvas when `wide` is set. (px only here; each site adds its own vertical padding.)
+  const container = wide ? 'mx-auto w-full max-w-[2560px] px-4 lg:px-8' : 'mx-auto max-w-5xl px-4';
+
   return (
     <div className="min-h-screen">
       {/* Platform header — shared by every module. */}
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className={container + ' flex items-center justify-between py-3'}>
           <Link href="/dashboard" className="flex items-center gap-2">
             <span className="text-lg font-semibold tracking-tight text-slate-900">Brookfield Comfort</span>
             <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Platform</span>
@@ -60,7 +68,7 @@ export default function AppShell({ children, title, backHref, backLabel }: AppSh
 
       {/* Optional page sub-header (back link + title). */}
       {(title || backHref) && (
-        <div className="mx-auto max-w-5xl px-4 pt-6">
+        <div className={container + ' pt-6'}>
           {backHref && (
             <Link href={backHref} className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
               <ArrowLeftIcon className="h-4 w-4" /> {backLabel || 'Back'}
@@ -70,7 +78,7 @@ export default function AppShell({ children, title, backHref, backLabel }: AppSh
         </div>
       )}
 
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className={container + ' py-6'}>{children}</main>
     </div>
   );
 }
