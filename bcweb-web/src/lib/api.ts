@@ -224,15 +224,33 @@ export function uploadProductImage(groupid: string, file: File, title?: string) 
   );
 }
 
-// Save the price fields (cost, rrp, tax, base shopify price) on skusummary. Enforces legacy rules server-side (cost>0, rrp>0, rrp>=cost).
-// Does NOT set shopifychange or write a price log — this is catalogue price maintenance, not the harvest workflow. Returns the numbers
-// actually written (shopify price defaults to rrp if left blank).
+// Save the price fields (cost, rrp, tax, base shopify price) on skusummary. Enforces legacy rules server-side (cost>0, rrp>0, rrp>=cost)
+// and pushes live to Shopify (Admin API) when the product is on. Logs a price_change_log ('SHP') row whenever the Shopify price actually
+// changes; `extras.note` (optional) rides on that row, `extras.reviewDays` (optional int >= 1) parks the style until today+N. Returns the
+// numbers actually written (shopify price defaults to rrp if left blank), whether a log row was written, and the review date (if any).
 export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; shopifyPrice: string; }
+export interface ProductPriceExtras { reviewDays?: number | null; note?: string; }
 export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
-export function updateProductPrice(groupid: string, fields: ProductPriceFields) {
-  return request<{ groupid: string; saved: ProductPriceSaved; shopify?: ShopifyPushResult }>(
-    { url: '/product-price', method: 'POST', data: { groupid, ...fields } },
-    (b) => ({ groupid: b.groupid, saved: b.saved as ProductPriceSaved, shopify: b.shopify })
+export function updateProductPrice(groupid: string, fields: ProductPriceFields, extras?: ProductPriceExtras) {
+  return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; shopify?: ShopifyPushResult }>(
+    {
+      url: '/product-price',
+      method: 'POST',
+      data: {
+        groupid,
+        ...fields,
+        // Only send the extras that are actually set, so an unused review/note never reaches the server as a stray value.
+        ...(extras?.reviewDays != null ? { reviewDays: extras.reviewDays } : {}),
+        ...(extras?.note ? { note: extras.note } : {}),
+      },
+    },
+    (b) => ({
+      groupid: b.groupid,
+      saved: b.saved as ProductPriceSaved,
+      logged: Boolean(b.logged),
+      next_review: (b.next_review ?? null) as string | null,
+      shopify: b.shopify,
+    })
   );
 }
 
