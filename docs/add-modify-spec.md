@@ -32,7 +32,7 @@ edit note in the Stage log). Title placeholders (`<…>`) are rejected on all ti
    "address when ready" piece — `product-price` currently stores the value without pushing).
 4. **Remaining legacy controls** (smaller): Copy button (clone to a new groupid); price-change Log view. (Image upload is done — a
    pure "rename the file without re-uploading" op isn't built; changing the title + re-uploading regenerates the name and deletes the old.)
-5. **Downstream (later):** Shopify flat-file CSV export, Amazon upload file.
+5. **Downstream (later):** Amazon upload file.
 
 **Open decisions to resolve when relevant:**
 - **Unpriced new products vs Shopify:** `product-create` seeds price columns to `'0.00'`/`'RRP'` placeholders and sets `shopify=0`

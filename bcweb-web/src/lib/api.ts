@@ -202,9 +202,9 @@ export function createProduct(groupid: string, fields: ProductEditFields) {
 
 // Edit Stage 1 — save the attribute/enum fields (brand, colour, segment, season -> skusummary; gender, producttype -> attributes).
 export function updateProduct(groupid: string, fields: ProductEditFields) {
-  return request<{ groupid: string; saved: ProductEditFields }>(
+  return request<{ groupid: string; saved: ProductEditFields; shopify?: ShopifyPushResult }>(
     { url: '/product-update', method: 'POST', data: { groupid, ...fields } },
-    (b) => ({ groupid: b.groupid, saved: b.saved as ProductEditFields })
+    (b) => ({ groupid: b.groupid, saved: b.saved as ProductEditFields, shopify: b.shopify })
   );
 }
 
@@ -212,7 +212,7 @@ export function updateProduct(groupid: string, fields: ProductEditFields) {
 // skusummary.imagename — returning the new filename + public URL. `title` (the on-screen title) seeds the SEO filename server-side.
 // NOTE: Content-Type is set to multipart/form-data so axios keeps the FormData intact (the shared instance defaults to JSON) and adds
 // the multipart boundary itself.
-export interface ProductImageData { groupid: string; imagename: string; url: string; }
+export interface ProductImageData { groupid: string; imagename: string; url: string; shopify?: ShopifyPushResult; }
 export function uploadProductImage(groupid: string, file: File, title?: string) {
   const form = new FormData();
   form.append('image', file);
@@ -220,7 +220,7 @@ export function uploadProductImage(groupid: string, file: File, title?: string) 
   if (title) form.append('title', title);
   return request<ProductImageData>(
     { url: '/product-image', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' } },
-    (b) => ({ groupid: b.groupid, imagename: b.imagename, url: b.url })
+    (b) => ({ groupid: b.groupid, imagename: b.imagename, url: b.url, shopify: b.shopify })
   );
 }
 
@@ -230,17 +230,35 @@ export function uploadProductImage(groupid: string, file: File, title?: string) 
 export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; shopifyPrice: string; }
 export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
 export function updateProductPrice(groupid: string, fields: ProductPriceFields) {
-  return request<{ groupid: string; saved: ProductPriceSaved }>(
+  return request<{ groupid: string; saved: ProductPriceSaved; shopify?: ShopifyPushResult }>(
     { url: '/product-price', method: 'POST', data: { groupid, ...fields } },
-    (b) => ({ groupid: b.groupid, saved: b.saved as ProductPriceSaved })
+    (b) => ({ groupid: b.groupid, saved: b.saved as ProductPriceSaved, shopify: b.shopify })
   );
 }
 
 // Save the size list (skumap). Client sends the full desired list in order; server reconciles (reorder/update/insert/delete).
 export function updateProductSizes(groupid: string, sizes: { code: string; sizeDisplay: string; barcode: string; uksize: string }[]) {
-  return request<{ groupid: string; sizes: ProductSize[] }>(
+  return request<{ groupid: string; sizes: ProductSize[]; shopify?: ShopifyPushResult }>(
     { url: '/product-sizes', method: 'POST', data: { groupid, sizes } },
-    (b) => ({ groupid: b.groupid, sizes: b.sizes || [] })
+    (b) => ({ groupid: b.groupid, sizes: b.sizes || [], shopify: b.shopify })
+  );
+}
+
+// Toggle a product's Shopify listing on/off. Turning ON pushes the product to Shopify via the Admin API (create-or-update) and, only
+// if that push succeeds, sets shopify=1; the response carries `push` (what happened on Shopify). Turning OFF just clears the flag
+// (non-destructive — it does not unpublish). `status` lets a caller create as a DRAFT for testing; omitted -> server default ACTIVE.
+// Non-SUCCESS return_codes the caller should surface: PRICE_REQUIRED, NO_SIZES, SHOPIFY_NOT_CONFIGURED, SHOPIFY_PUSH_FAILED,
+// SHOPIFY_USER_ERRORS, NOT_FOUND.
+export interface ShopifyPushData { productId: string; handle: string; variantCount: number; isNew: boolean; }
+export interface ShopifyToggleData { groupid: string; shopify: boolean; push?: ShopifyPushData; }
+
+// Outcome of the automatic "re-push to Shopify on save" that the edit routes (update/price/sizes/image) run when a product is live.
+// null/absent means "not live or Shopify off — nothing pushed"; pushed=false means the DB save succeeded but the Shopify push failed.
+export interface ShopifyPushResult { pushed: boolean; isNew?: boolean; variantCount?: number; error?: string; message?: string; }
+export function setProductShopify(groupid: string, shopify: boolean, status?: 'ACTIVE' | 'DRAFT') {
+  return request<ShopifyToggleData>(
+    { url: '/product-shopify', method: 'POST', data: { groupid, shopify, ...(status ? { status } : {}) } },
+    (b) => ({ groupid: b.groupid, shopify: b.shopify, push: b.push })
   );
 }
 

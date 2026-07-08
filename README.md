@@ -15,7 +15,7 @@ The web app talks to the API over HTTP only — it never connects to Postgres di
 ## The Shopify Pricing module
 
 The job: squeeze maximum margin from stock in hand (Birkenstock can't be restocked on demand).
-Flow: **segment → triage (top sellers, 30d, in-stock, un-parked) → drill-down (price vs pace over time) → set price + required review cooldown.** Writes update the DB and set `shopifychange = 1`; an existing external nightly job pushes changed prices to Shopify (this tool never calls the Shopify API). See `CLAUDE.md` for the full domain summary, write rules, and schema landmines.
+Flow: **segment → triage (top sellers, 30d, in-stock, un-parked) → drill-down (price vs pace over time) → set price + required review cooldown.** Writes update the DB and log the change. See `CLAUDE.md` for the full domain summary, write rules, and schema landmines.
 
 ## Run locally (Windows)
 

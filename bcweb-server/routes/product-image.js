@@ -55,6 +55,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { imageFilename } = require('../utils/imageName');
 const { putImage, deleteImage } = require('../utils/sftp');
 const logger = require('../utils/logger');
+const shopify = require('../utils/shopify');
 
 const UPDATED_EXPR = `to_char(now() AT TIME ZONE 'Europe/London', 'YYYYMMDD HH24:MI:SS')`;
 const PUBLIC_BASE = 'https://images.brookfieldcomfort.com/';
@@ -139,7 +140,10 @@ router.post('/', verifyToken, (req, res) => {
         catch (delErr) { logger.error(`[product-image] could not delete old image ${oldName}:`, delErr.message); }
       }
 
-      return res.json({ return_code: 'SUCCESS', groupid, imagename: newName, url: PUBLIC_BASE + newName });
+      // If the product is live on Shopify, re-push so the new image reaches the store (best-effort — never fails the upload).
+      const shopifyResult = await shopify.pushIfLive(groupid);
+
+      return res.json({ return_code: 'SUCCESS', groupid, imagename: newName, url: PUBLIC_BASE + newName, shopify: shopifyResult });
     } catch (err) {
       logger.error('[product-image] error:', err.message);
       return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to process image' });

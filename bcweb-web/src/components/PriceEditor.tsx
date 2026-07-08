@@ -13,8 +13,9 @@ Purpose: Editable price block for a product (skusummary): Cost, RRP, Tax, and th
 */
 
 import { useState } from 'react';
-import { updateProductPrice, ProductPriceSaved } from '@/lib/api';
+import { updateProductPrice, ProductPriceSaved, ShopifyPushResult } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import ShopifyPushNote from '@/components/ShopifyPushNote';
 
 interface Props {
   groupid: string;
@@ -58,12 +59,14 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [push, setPush] = useState<ShopifyPushResult | null>(null);   // Shopify re-push outcome, when the product is live
 
   const dirty = JSON.stringify(form) !== baseline;
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((p) => ({ ...p, [k]: v }));
     setOk(false);
+    setPush(null);
   }
   // When RRP is entered, default the Shopify price to it if none set yet (blank or 0) — matches the legacy save. On blur so it doesn't
   // fight the user mid-type. Once a real Shopify price exists it's left alone.
@@ -77,6 +80,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setForm({ cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax });
     setError(null);
     setOk(false);
+    setPush(null);
   }
 
   async function onSave() {
@@ -90,6 +94,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setSaving(true);
     setError(null);
     setOk(false);
+    setPush(null);
     const res = await updateProductPrice(groupid, form);
     if (res.success && res.data) {
       const s = res.data.saved;
@@ -97,6 +102,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
       setForm(next);
       setBaseline(JSON.stringify(next));
       setOk(true);
+      setPush(res.data.shopify ?? null);
       onSaved?.(s);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -141,6 +147,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
         )}
         {!dirty && !saving && !ok && <span className="text-xs text-slate-400">No unsaved changes</span>}
         {ok && !dirty && <span className="text-xs font-medium text-green-600">Saved.</span>}
+        {ok && !dirty && <ShopifyPushNote result={push} />}
         {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </div>

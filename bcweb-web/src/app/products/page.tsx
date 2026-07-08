@@ -23,24 +23,13 @@ import AppShell from '@/components/AppShell';
 import SizeEditor from '@/components/SizeEditor';
 import PriceEditor from '@/components/PriceEditor';
 import ImageUploader from '@/components/ImageUploader';
+import ShopifyToggle from '@/components/ShopifyToggle';
+import ShopifyPushNote from '@/components/ShopifyPushNote';
 import {
   searchProducts, getProduct, getProductLookups, updateProduct, createProduct,
-  ProductRow, ProductDetail, ProductLookups, ProductEditFields,
+  ProductRow, ProductDetail, ProductLookups, ProductEditFields, ShopifyPushResult,
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-
-// Small read-only field: a label above a value styled to look like a (disabled) input. flag() formats the legacy 0/1 values.
-function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">{label}</label>
-      <div className={'rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 ' + (mono ? 'font-mono' : '')}>
-        {value === null || value === undefined || value === '' ? <span className="text-slate-400">—</span> : value}
-      </div>
-    </div>
-  );
-}
-const flag = (b: boolean) => (b ? 'Yes' : 'No');
 
 // Editable dropdown for an attribute field. Includes a blank option (clear), and — crucially — folds the CURRENT value into the list
 // if it isn't in the lookup (e.g. brand 'Lazy Dogz' exists on products but not in the brand table), so editing never silently drops it.
@@ -267,6 +256,7 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
+  const [shopifyPush, setShopifyPush] = useState<ShopifyPushResult | null>(null);  // Shopify re-push outcome for the attribute save
 
   // Are there unsaved edits? (compare current form to the loaded baseline)
   const dirty = !!edit && !!baseline && JSON.stringify(edit) !== JSON.stringify(baseline);
@@ -284,12 +274,14 @@ export default function ProductsPage() {
   function setField(k: keyof ProductEditFields, v: string) {
     setEdit((prev) => (prev ? { ...prev, [k]: v } : prev));
     setSaveOk(false);
+    setShopifyPush(null);
   }
 
   // Fill the title from the current brand/colour/product-type/gender selections (the legacy "generate" button).
   function onGenerateTitle() {
     setEdit((prev) => (prev ? { ...prev, title: generateTitle(prev) } : prev));
     setSaveOk(false);
+    setShopifyPush(null);
   }
 
   async function onSave() {
@@ -298,6 +290,7 @@ export default function ProductsPage() {
     setSaving(true);
     setSaveError(null);
     setSaveOk(false);
+    setShopifyPush(null);
     const res = await updateProduct(detail.groupid, edit);
     if (res.success && res.data) {
       const saved = res.data.saved;
@@ -306,6 +299,7 @@ export default function ProductsPage() {
       // Keep every other field of the loaded product; just fold the saved attribute values back in so the panel stays consistent.
       setDetail((prev) => (prev ? { ...prev, ...saved } : prev));
       setSaveOk(true);
+      setShopifyPush(res.data.shopify ?? null);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setSaveError(res.error || 'Save failed');
@@ -337,6 +331,7 @@ export default function ProductsPage() {
     setBaseline(null);
     setSaveError(null);
     setSaveOk(false);
+    setShopifyPush(null);
     setLastTerm(q);
     setSearched(true);
     setLoading(false);
@@ -364,6 +359,7 @@ export default function ProductsPage() {
     setBaseline(null);
     setSaveError(null);
     setSaveOk(false);
+    setShopifyPush(null);
     setDetailLoading(true);
     const res = await getProduct(groupid);
     if (res.success && res.data) {
@@ -526,6 +522,7 @@ export default function ProductsPage() {
                       )}
                       {!dirty && !saving && !saveOk && <span className="text-xs text-slate-400">No unsaved changes</span>}
                       {saveOk && !dirty && <span className="text-xs font-medium text-green-600">Saved.</span>}
+                      {saveOk && !dirty && <ShopifyPushNote result={shopifyPush} />}
                       {saveError && <span className="text-xs text-red-600">{saveError}</span>}
                     </div>
                   </div>
@@ -542,8 +539,15 @@ export default function ProductsPage() {
                     tax={detail.tax}
                     onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price, tax: s.tax } : prev))}
                   />
-                  <div className="mt-3">
-                    <Field label="Shopify" value={flag(detail.shopify)} />
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <ShopifyToggle
+                      key={detail.groupid}
+                      groupid={detail.groupid}
+                      shopify={detail.shopify}
+                      price={detail.price}
+                      sizesCount={detail.sizes.length}
+                      onChanged={(shopify) => setDetail((prev) => (prev ? { ...prev, shopify } : prev))}
+                    />
                   </div>
                 </div>
 
@@ -556,6 +560,7 @@ export default function ProductsPage() {
                     sizes={detail.sizes}
                     brand={edit?.brand ?? detail.brand ?? ''}
                     gender={edit?.gender ?? detail.gender ?? ''}
+                    onSaved={(sizes) => setDetail((prev) => (prev ? { ...prev, sizes } : prev))}
                   />
                 </div>
               </div>

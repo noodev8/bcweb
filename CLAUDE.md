@@ -44,7 +44,7 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, public 
 
 ## Writes (must be exact — wrap each in `withTransaction`)
 
-- **W1 — apply price:** reject if `reviewDays` missing or `< 1`. Bounds (server-side, never trust client): **block** `< cost` or `< minshopifyprice`; **allow-but-flag** `> maxshopifyprice` or `> rrp`. Then, atomically: `UPDATE skusummary SET shopifyprice=$price_string, shopifychange=1, next_shopify_price_review=CURRENT_DATE+$reviewDays` **and** `INSERT price_change_log (groupid,'SHP',old,new,NULL,'',changed_by)`. `shopifychange=1` is what the **external nightly Shopify sync** consumes — never skip it. This tool never calls the Shopify API.
+- **W1 — apply price:** reject if `reviewDays` missing or `< 1`. Bounds (server-side, never trust client): **block** `< cost` or `< minshopifyprice`; **allow-but-flag** `> maxshopifyprice` or `> rrp`. Then, atomically: `UPDATE skusummary SET shopifyprice=$price_string, shopifychange=1, next_shopify_price_review=CURRENT_DATE+$reviewDays` **and** `INSERT price_change_log (groupid,'SHP',old,new,NULL,'',changed_by)`.
 - **W2 — park only:** `UPDATE skusummary SET next_shopify_price_review=CURRENT_DATE+$reviewDays`. No price change, no log row, `shopifychange` untouched.
 
 ## Schema landmines (legacy DB — respect these)

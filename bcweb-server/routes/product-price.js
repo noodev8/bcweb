@@ -47,6 +47,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
+const shopify = require('../utils/shopify');
 
 router.use(verifyToken);
 
@@ -113,10 +114,14 @@ router.post('/', async (req, res) => {
       }
     });
 
+    // If the product is live on Shopify, re-push so the new price/compareAtPrice reaches the store (best-effort — never fails the save).
+    const shopifyResult = await shopify.pushIfLive(groupid);
+
     return res.json({
       return_code: 'SUCCESS',
       groupid,
       saved: { cost: costNum, rrp: rrpNum, tax: tax === 1, price: priceNum },
+      shopify: shopifyResult,
     });
   } catch (err) {
     if (err && err.code === 'NOT_FOUND') {

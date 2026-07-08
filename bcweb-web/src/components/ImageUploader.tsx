@@ -15,8 +15,9 @@ Purpose: The main product image: shows the current image (from images.brookfield
 import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline';
-import { uploadProductImage } from '@/lib/api';
+import { uploadProductImage, ShopifyPushResult } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import ShopifyPushNote from '@/components/ShopifyPushNote';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 
@@ -34,6 +35,7 @@ export default function ImageUploader({
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);      // image failed to load (missing file)
   const [bust, setBust] = useState(0);              // cache-buster, bumped after each successful upload
+  const [push, setPush] = useState<ShopifyPushResult | null>(null);  // Shopify re-push outcome, when the product is live
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -41,10 +43,12 @@ export default function ImageUploader({
     if (!file) return;
     setUploading(true);
     setError(null);
+    setPush(null);
     const res = await uploadProductImage(groupid, file, title);
     if (res.success && res.data) {
       setFailed(false);
       setBust((b) => b + 1);
+      setPush(res.data.shopify ?? null);
       onUploaded(res.data.imagename);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -78,6 +82,7 @@ export default function ImageUploader({
         {uploading ? 'Uploading…' : imagename ? 'Replace image' : 'Upload image'}
       </button>
       {error && <span className="max-w-[10rem] text-right text-[11px] text-red-600">{error}</span>}
+      {!error && <ShopifyPushNote result={push} />}
     </div>
   );
 }

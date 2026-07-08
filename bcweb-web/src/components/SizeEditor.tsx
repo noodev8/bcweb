@@ -13,9 +13,10 @@ Purpose: Editable size list for a product (skumap). Barcode and Size Display are
 
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { updateProductSizes, ProductSize } from '@/lib/api';
+import { updateProductSizes, ProductSize, ShopifyPushResult } from '@/lib/api';
 import { sizeTemplate, lookupTemplateSize } from '@/lib/sizeTemplates';
 import { useAuth } from '@/contexts/AuthContext';
+import ShopifyPushNote from '@/components/ShopifyPushNote';
 
 interface Row { code: string; sizeDisplay: string; barcode: string; uksize: string; }
 
@@ -32,7 +33,7 @@ function templateRows(groupid: string, brand?: string, gender?: string): Row[] {
 // Stable key of the meaningful content, for dirty-checking (order matters).
 const rowsKey = (rows: Row[]) => JSON.stringify(rows.map((r) => [r.code, r.sizeDisplay, r.barcode, r.uksize]));
 
-export default function SizeEditor({ groupid, sizes, brand, gender }: { groupid: string; sizes: ProductSize[]; brand?: string; gender?: string }) {
+export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: { groupid: string; sizes: ProductSize[]; brand?: string; gender?: string; onSaved?: (sizes: ProductSize[]) => void }) {
   const { logout } = useAuth();
   // Auto-fill: a product with NO sizes (e.g. just created) starts pre-populated with the brand/gender template so there's one less
   // step — the user reviews/tweaks and Saves. A product that already has sizes loads them as-is. Baseline stays the LOADED state
@@ -44,10 +45,11 @@ export default function SizeEditor({ groupid, sizes, brand, gender }: { groupid:
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
+  const [push, setPush] = useState<ShopifyPushResult | null>(null);   // Shopify re-push outcome, when the product is live
 
   const dirty = rowsKey(rows) !== baseline;
 
-  function touch() { setSaveOk(false); }
+  function touch() { setSaveOk(false); setPush(null); }
 
   function setCell(i: number, key: 'sizeDisplay' | 'barcode' | 'uksize', v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: v } : r)));
@@ -86,12 +88,17 @@ export default function SizeEditor({ groupid, sizes, brand, gender }: { groupid:
     setSaving(true);
     setSaveError(null);
     setSaveOk(false);
+    setPush(null);
     const res = await updateProductSizes(groupid, rows.map((r) => ({ code: r.code, sizeDisplay: r.sizeDisplay, barcode: r.barcode, uksize: r.uksize })));
     if (res.success && res.data) {
       const saved = toRows(res.data.sizes);
       setRows(saved);
       setBaseline(rowsKey(saved));
       setSaveOk(true);
+      setPush(res.data.shopify ?? null);
+      // Report the saved list up so the parent's detail.sizes is current — the Shopify toggle reads sizesCount from it, so without
+      // this a freshly-created product (loaded with no sizes) would still refuse "Turn on" after you saved a size list.
+      onSaved?.(res.data.sizes);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setSaveError(res.error || 'Failed to save sizes');
@@ -176,12 +183,13 @@ export default function SizeEditor({ groupid, sizes, brand, gender }: { groupid:
           {saving ? 'Saving…' : 'Save sizes'}
         </button>
         {dirty && !saving && (
-          <button onClick={() => { setRows(toRows(sizes)); setBaseline(rowsKey(toRows(sizes))); setSaveError(null); setSaveOk(false); setAddError(null); }} className="text-xs text-slate-500 hover:text-slate-700">
+          <button onClick={() => { setRows(toRows(sizes)); setBaseline(rowsKey(toRows(sizes))); setSaveError(null); setSaveOk(false); setPush(null); setAddError(null); }} className="text-xs text-slate-500 hover:text-slate-700">
             Reset
           </button>
         )}
         {!dirty && !saving && !saveOk && <span className="text-xs text-slate-400">No unsaved changes</span>}
         {saveOk && !dirty && <span className="text-xs font-medium text-green-600">Saved.</span>}
+        {saveOk && !dirty && <ShopifyPushNote result={push} />}
         {saveError && <span className="text-xs text-red-600">{saveError}</span>}
       </div>
     </div>

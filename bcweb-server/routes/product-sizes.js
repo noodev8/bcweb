@@ -47,6 +47,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
+const shopify = require('../utils/shopify');
 
 router.use(verifyToken);
 
@@ -157,9 +158,13 @@ router.post('/', async (req, res) => {
       }
     });
 
+    // Save committed — the DB is the source of truth. If the product is live on Shopify, re-push so the variant list matches (added
+    // sizes appear, removed ones drop). Best-effort: a Shopify hiccup never fails/undoes the size save (see pushIfLive).
+    const shopifyResult = await shopify.pushIfLive(groupid);
+
     // Echo the normalised list back (barcode without the 'B') so the client can reset its baseline.
     const outSizes = sizes.map((s) => ({ code: s.code, barcode: s.barcode || null, sizeDisplay: s.sizeDisplay, uksize: s.uksize || null }));
-    return res.json({ return_code: 'SUCCESS', groupid, sizes: outSizes });
+    return res.json({ return_code: 'SUCCESS', groupid, sizes: outSizes, shopify: shopifyResult });
   } catch (err) {
     if (err && err.code === 'NOT_FOUND') {
       return res.json({ return_code: 'NOT_FOUND', message: 'Product not found' });

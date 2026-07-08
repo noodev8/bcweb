@@ -34,5 +34,17 @@ module.exports = {
     username: process.env.ONECOM_SFTP_USERNAME || '',
     password: process.env.ONECOM_SFTP_PASSWORD || '',
     remoteDir: process.env.ONECOM_SFTP_REMOTE_DIR || ''
+  },
+
+  // Shopify Admin API — the Add/Modify product push (utils/shopify.js). Like onecom above, this is an OPTIONAL feature: not validated
+  // at boot (a server with no Shopify creds still runs and serves pricing). utils/shopify.js checks these are present when it actually
+  // makes a call, and the calling route surfaces SHOPIFY_NOT_CONFIGURED rather than a confusing fetch error. Same custom-app token the
+  // Python sync scripts use (C:\scripts\.env). locationId is only needed if/when we set inventory (deferred — stock stays with the
+  // existing inventory script for now). apiVersion defaults to the version those scripts pin.
+  shopify: {
+    shop: process.env.SHOPIFY_SHOP || '',
+    apiVersion: process.env.SHOPIFY_API_VERSION || '2025-04',
+    accessToken: process.env.SHOPIFY_ACCESS_TOKEN || '',
+    locationId: process.env.SHOPIFY_LOCATION_ID || ''
   }
 };
