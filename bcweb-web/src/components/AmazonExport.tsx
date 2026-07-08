@@ -54,9 +54,10 @@ export default function AmazonExport({ groupid, sizesCount }: Props) {
     if (res.success && res.data) {
       const d = res.data;
       downloadBase64(d.filename, d.file);
-      const parts = [`${d.variants} size${d.variants === 1 ? '' : 's'} written`];
-      if (d.skipped) parts.push(`${d.skipped} already on Amazon skipped`);
-      setNote(`Downloaded ${d.filename} · ${parts.join(' · ')}`);
+      // "added" = sizes written to the file; "skipped" = sizes left out (already on Amazon, OR no barcode) — so we don't claim a reason.
+      const parts = [`${d.variants} added`];
+      if (d.skipped) parts.push(`${d.skipped} skipped`);
+      setNote(`Downloaded ${d.filename} · ${parts.join(', ')}`);
     } else if (res.return_code === 'UNAUTHORIZED') {
       logout();
       return;
