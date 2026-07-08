@@ -9,3 +9,14 @@ pm2 restart server.js --name bcweb-prod
 
 == Vercel
 cd C:\bcweb && vercel --prod
+
+
+== Python (Amazon upload file feature) -- ASK CLAUDE FOR HELP WHEN DEPLOYING THIS
+The "Amazon upload file" button (POST /product-amazon) shells out to a Python helper:
+  bcweb-server/scripts/amz-product/amz_upload_single.py  (+ SHOES.xlsm template beside it)
+The VPS is otherwise pure Node, so this needs a one-time setup on the server:
+  - Python 3 installed and on PATH (or set PYTHON_BIN in the prod .env to the interpreter path)
+  - pip packages: openpyxl, psycopg2 (or psycopg2-binary), python-dotenv
+  - the scripts/amz-product/ folder must survive the rsync (it does today -- only 'docs' etc. are excluded)
+  - the helper reads DB creds from bcweb-server/.env (already present in prod)
+When you deploy this the first time, ask Claude to help wire up the Python env + verify the button end-to-end.

@@ -109,3 +109,7 @@ screenshot*.*
 nul
 
 .vercel
+
+# Python bytecode (Amazon upload helper)
+__pycache__/
+*.pyc

@@ -82,7 +82,7 @@ router.post('/', async (req, res) => {
       // 1) skusummary header fields. RETURNING confirms the product exists; 0 rows -> abort the whole unit (rollback) as NOT_FOUND.
       const ss = await client.query(`
         UPDATE skusummary
-           SET brand = $2, colour = $3, segment = $4, season = $5, updated = ${UPDATED_EXPR}
+           SET brand = $2, colour = $3, segment = $4, season = $5, updated = ${UPDATED_EXPR}, updated_date = now()
          WHERE groupid = $1
          RETURNING groupid
       `, [groupid, brand, colour, segment, season]);

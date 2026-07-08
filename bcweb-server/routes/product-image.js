@@ -131,7 +131,7 @@ router.post('/', verifyToken, (req, res) => {
 
       // Point the product at the new file.
       await withTransaction(async (client) => {
-        await client.query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR} WHERE groupid = $1`, [groupid, newName]);
+        await client.query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid, newName]);
       });
 
       // Best-effort: remove the previous file if the name changed (don't fail the request over cleanup).

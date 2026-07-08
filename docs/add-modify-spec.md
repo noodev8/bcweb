@@ -32,7 +32,8 @@ edit note in the Stage log). Title placeholders (`<…>`) are rejected on all ti
    "address when ready" piece — `product-price` currently stores the value without pushing).
 4. **Remaining legacy controls** (smaller): Copy button (clone to a new groupid); price-change Log view. (Image upload is done — a
    pure "rename the file without re-uploading" op isn't built; changing the title + re-uploading regenerates the name and deletes the old.)
-5. **Downstream (later):** Amazon upload file.
+5. ~~**Downstream (later):** Amazon upload file.~~ ✅ DONE — `POST /product-amazon` + `AmazonExport.tsx` button in the detail panel
+   (see Stage log "Amazon-1").
 
 **Open decisions to resolve when relevant:**
 - **Unpriced new products vs Shopify:** `product-create` seeds price columns to `'0.00'`/`'RRP'` placeholders and sets `shopify=0`
@@ -132,6 +133,17 @@ Client fns in `lib/api.ts`. Dashboard tile "Add / Modify Product" → `/products
   `ONECOM_SFTP_HOST/PORT/USERNAME/PASSWORD/REMOTE_DIR`. Google gets the image via the merchant feed's `image_link` (no separate push).
   Verified end-to-end except the endpoint→SFTP→DB combo on a real product (skipped: the delete-old step would remove a live product's real image). **Prod VPS `.env` still needs the `ONECOM_SFTP_*` keys + password (deploy excludes .env).**
 - **Sizes-2 — Auto-fill default sizes + UK size.** ✅ `lib/sizeTemplates.ts` (brand+gender → standard run, PB port). SizeEditor now **auto-fills** the grid from the template when a product has no sizes (no button); user reviews/edits and Saves via `product-sizes`. **`uksize` brought back end-to-end** (`product-get` returns it, `product-sizes` writes it on insert+update, SizeEditor has an editable UK Size column, templates populate it) — it feeds the Google Merchant feed (`scripts/merchant-feed/merchant_feed.py`: `size` = `uksize` minus " UK", `size_system=UK`). `created_at timestamptz` added to skusummary; `product-create` sets it.
+
+- **Amazon-1 — Amazon upload file.** ✅ `POST /product-amazon {groupid}` produces the Seller Central upload file (AMZ-Upload.xlsm) for
+  ONE product and returns it base64-encoded in the standard envelope; `AmazonExport.tsx` (button under the Shopify toggle) decodes it to a
+  browser download. The file is a macro-enabled .xlsm built by injecting rows into the SHOES.xlsm category template — Amazon only accepts
+  it because of that embedded VBA/settings, and no Node Excel lib preserves it, so the route **shells out to Python**:
+  `bcweb-server/scripts/amz-product/amz_upload_single.py` (a single-groupid port of the operator's `C:\scripts\amz-product\amz_upload.py`,
+  using openpyxl keep_vba). The template `SHOES.xlsm` is committed alongside it. **DB writes mirror the batch script exactly (owner-confirmed):**
+  it stamps `skumap` (sku=`code-YYMM`, status='1', updated) for the variants written and skips any variant already in `amzfeed` — so a
+  re-click doesn't duplicate. Env: optional `PYTHON_BIN` (default `python`); the helper reads DB creds from `bcweb-server/.env`.
+  **VPS deploy needs Python 3 + `openpyxl`/`psycopg2`/`python-dotenv` installed and the template present** (the server is otherwise pure Node).
+  Verified end-to-end via a throwaway `ZZTEST-AMZ` product (created, generated, skumap-stamp confirmed, then deleted) — no live product touched.
 
 All writes verified against a live product via manual `BEGIN..ROLLBACK` (nothing committed), per CLAUDE.md.
 

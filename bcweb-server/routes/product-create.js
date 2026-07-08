@@ -129,11 +129,11 @@ router.post('/', async (req, res) => {
         INSERT INTO skusummary (
           groupid, brand, colour, colourmap, segment, season, supplier, imagename, handle,
           rrp, shopifyprice, minshopifyprice, maxshopifyprice, cost,
-          tax, shopify, googlestatus, googlecampaign, created, updated, created_at
+          tax, shopify, googlestatus, googlecampaign, created, updated, created_at, updated_date
         ) VALUES (
           $1, $2, $3, $3, $4, $5, $6, '', $7,
           '0.00', '0.00', '0.00', 'RRP', '0.00',
-          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now()
+          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
         )
       `, [groupid, brand, colour, segment, season, supplier, handle]);
 

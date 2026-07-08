@@ -25,6 +25,7 @@ import PriceEditor from '@/components/PriceEditor';
 import ImageUploader from '@/components/ImageUploader';
 import ShopifyToggle from '@/components/ShopifyToggle';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
+import AmazonExport from '@/components/AmazonExport';
 import {
   searchProducts, getProduct, getProductLookups, updateProduct, createProduct,
   ProductRow, ProductDetail, ProductLookups, ProductEditFields, ShopifyPushResult,
@@ -548,6 +549,10 @@ export default function ProductsPage() {
                       sizesCount={detail.sizes.length}
                       onChanged={(shopify) => setDetail((prev) => (prev ? { ...prev, shopify } : prev))}
                     />
+                  </div>
+                  {/* Amazon upload file — builds the Seller Central .xlsm for this product (downstream, separate from Shopify). */}
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} />
                   </div>
                 </div>
 

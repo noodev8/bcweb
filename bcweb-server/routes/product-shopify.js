@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
     // DISABLE — flag only, non-destructive.
     // -------------------------------------------------------------------------------------------------------------------------------
     if (body.shopify === false) {
-      await query(`UPDATE skusummary SET shopify = 0, updated = ${UPDATED_EXPR} WHERE groupid = $1`, [groupid]);
+      await query(`UPDATE skusummary SET shopify = 0, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid]);
       return res.json({ return_code: 'SUCCESS', groupid, shopify: false });
     }
 
@@ -111,7 +111,7 @@ router.post('/', async (req, res) => {
 
     // Push succeeded — now mark it live. (Tiny window if this UPDATE fails: product is live but flag off; re-enabling finds the
     // existing product via handle, updates without duplicating, and sets the flag.)
-    await query(`UPDATE skusummary SET shopify = 1, updated = ${UPDATED_EXPR} WHERE groupid = $1`, [groupid]);
+    await query(`UPDATE skusummary SET shopify = 1, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid]);
 
     return res.json({ return_code: 'SUCCESS', groupid, shopify: true, push });
   } catch (err) {

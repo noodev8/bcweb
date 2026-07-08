@@ -104,7 +104,7 @@ router.post('/', async (req, res) => {
       // shopifychange is deliberately NOT set (owner decision — store value only). No price_change_log row here either.
       const upd = await client.query(`
         UPDATE skusummary
-           SET cost = $2, rrp = $3, shopifyprice = $4, tax = $5, updated = ${UPDATED_EXPR}
+           SET cost = $2, rrp = $3, shopifyprice = $4, tax = $5, updated = ${UPDATED_EXPR}, updated_date = now()
          WHERE groupid = $1
          RETURNING groupid
       `, [groupid, costStr, rrpStr, priceStr, tax]);

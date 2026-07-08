@@ -262,6 +262,23 @@ export function setProductShopify(groupid: string, shopify: boolean, status?: 'A
   );
 }
 
+// Produce the Amazon Seller Central upload file (.xlsm) for one product. The server shells out to a Python helper that injects rows
+// into the SHOES.xlsm template and returns the file base64-encoded (kept in the standard envelope). Side effect (mirrors the batch
+// script): stamps skumap sku/status and skips variants already on Amazon. Caller decodes `file` to a Blob to trigger a download.
+// Non-SUCCESS codes to surface: NOT_FOUND, NO_BRAND, INVALID_RRP, NO_SIZES, NO_ROWS, GENERATE_FAILED.
+export interface AmazonUploadData {
+  groupid: string; filename: string; variants: number; skipped: number; skumapUpdated: number; file: string;
+}
+export function generateAmazonUpload(groupid: string) {
+  return request<AmazonUploadData>(
+    { url: '/product-amazon', method: 'POST', data: { groupid } },
+    (b) => ({
+      groupid: b.groupid, filename: b.filename, variants: b.variants,
+      skipped: b.skipped, skumapUpdated: b.skumapUpdated, file: b.file,
+    })
+  );
+}
+
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number) {
   return request<ApplyData>(
     { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays } },

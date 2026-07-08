@@ -82,6 +82,7 @@ app.use('/product-price', require('./routes/product-price'));      // edit: save
 app.use('/product-sizes', require('./routes/product-sizes'));      // edit: save the size list (skumap) + re-push if live on Shopify
 app.use('/product-image', require('./routes/product-image'));     // edit: upload/convert/SFTP the main image + set imagename
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
+app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
