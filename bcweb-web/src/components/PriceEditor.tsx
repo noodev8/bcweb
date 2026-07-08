@@ -93,9 +93,15 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setSavedInfo(null);
   }
 
-  // Single-select chips: click the selected one again to clear (back to no review).
+  // Single-select day chip.
   function pickReview(d: number) {
-    setReviewDays((cur) => (cur === d ? null : d));
+    setReviewDays(d);
+    setOk(false);
+    setSavedInfo(null);
+  }
+  // Explicit "None" — no review period (leaves next_shopify_price_review untouched on save).
+  function setReviewNone() {
+    setReviewDays(null);
     setOk(false);
     setSavedInfo(null);
   }
@@ -198,6 +204,17 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
             Review in <span className="normal-case text-slate-400">(optional — hides from pricing triage until then)</span>
           </label>
           <div className="flex flex-wrap items-center gap-1.5">
+            {/* Explicit None (no review) — selected by default; clears any chosen period. */}
+            <button
+              type="button"
+              onClick={() => setReviewNone()}
+              className={
+                'rounded-full border px-3 py-1 text-xs ' +
+                (reviewDays === null ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+              }
+            >
+              None
+            </button>
             {REVIEW_CHIPS.map((d) => {
               const isSel = reviewDays === d;
               return (
@@ -214,7 +231,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
                 </button>
               );
             })}
-            <span className="text-xs text-slate-400">days{reviewDays !== null ? '' : ' · none'}</span>
+            <span className="text-xs text-slate-400">days</span>
           </div>
         </div>
       </div>
