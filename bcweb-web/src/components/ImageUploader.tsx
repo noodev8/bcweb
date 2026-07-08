@@ -57,7 +57,7 @@ export default function ImageUploader({
     setUploading(false);
   }
 
-  const box = 'flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white';
+  const box = 'flex h-44 w-44 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white';
   const src = imagename && !failed ? `${IMAGE_BASE}${encodeURIComponent(imagename)}${bust ? `?v=${bust}` : ''}` : null;
 
   return (
@@ -65,7 +65,7 @@ export default function ImageUploader({
       {src ? (
         <div className={'relative ' + box}>
           {/* key on bust so next/image re-fetches after an overwrite. Host is whitelisted in next.config.js. */}
-          <Image key={bust} src={src} alt="" fill sizes="112px" onError={() => setFailed(true)} className="object-contain" />
+          <Image key={bust} src={src} alt="" fill sizes="176px" onError={() => setFailed(true)} className="object-contain" />
         </div>
       ) : (
         <div className={box + ' text-center text-[11px] text-slate-400'}>{imagename ? 'Image not found' : 'No image'}</div>

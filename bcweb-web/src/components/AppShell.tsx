@@ -22,13 +22,9 @@ interface AppShellProps {
   title?: string;
   backHref?: string;     // when set, shows a single back arrow linking here
   backLabel?: string;
-  // Data-dense screens (e.g. Add / Modify) opt into a full-width canvas: the content fills the browser (edge padding only) with a
-  // generous soft ceiling (~2560px) so ordinary laptop/FHD/QHD monitors are unaffected and only true ultra-wides get a gentle cap.
-  // Default (unset) keeps the comfortable reading measure used by the dashboard and pricing screens.
-  wide?: boolean;
 }
 
-export default function AppShell({ children, title, backHref, backLabel, wide }: AppShellProps) {
+export default function AppShell({ children, title, backHref, backLabel }: AppShellProps) {
   const router = useRouter();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
 
@@ -41,9 +37,9 @@ export default function AppShell({ children, title, backHref, backLabel, wide }:
     return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
 
-  // One shared container so the header, sub-header and main all align to the same width — narrow reading measure by default, or the
-  // full-width-with-soft-ceiling canvas when `wide` is set. (px only here; each site adds its own vertical padding.)
-  const container = wide ? 'mx-auto w-full max-w-[2560px] px-4 lg:px-8' : 'mx-auto max-w-5xl px-4';
+  // One shared container so the header, sub-header and main all align to the same width across every module — a single comfortable
+  // reading-measure column. (px only here; each site adds its own vertical padding.)
+  const container = 'mx-auto max-w-5xl px-4';
 
   return (
     <div className="min-h-screen">

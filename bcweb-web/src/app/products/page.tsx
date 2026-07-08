@@ -222,8 +222,8 @@ function NewProductForm({
         )}
       </div>
 
-      {/* Attributes spread to one row on wide screens, matching the edit screen's Core section. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      {/* Attributes in a 3-across grid, matching the edit screen's Core section. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <EditSelect label="Brand" value={fields.brand} options={lookups?.brands || []} onChange={(v) => set('brand', v)} />
         <EditSelect label="Colour" value={fields.colour} options={lookups?.colours || []} onChange={(v) => set('colour', v)} />
         <EditSelect label="Product Type" value={fields.producttype} options={lookups?.productTypes || []} onChange={setProductType} />
@@ -445,9 +445,10 @@ export default function ProductsPage() {
   }
 
   return (
-    <AppShell title="Add / Modify Product" backHref="/dashboard" backLabel="Dashboard" wide>
-      {/* Search bar — capped so it stays a comfortable target on the full-width canvas instead of stretching across the browser. */}
-      <form onSubmit={onSearch} className="mb-5 flex max-w-3xl gap-2">
+    <AppShell title="Add / Modify Product" backHref="/dashboard" backLabel="Dashboard">
+      {/* Search bar — fills the shared max-w-5xl column (same as the Pricing "Find a product" bar), so it lines up with the header,
+          the results and the detail panel below. */}
+      <form onSubmit={onSearch} className="mb-5 flex gap-2">
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input
@@ -468,18 +469,15 @@ export default function ProductsPage() {
       {loading && <p className="text-sm text-slate-400">Searching…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {/* No match -> the cue to create a new product: the empty state IS the create form, seeded with the searched Group ID. Capped
-          width — a create form doesn't benefit from the full-width canvas. */}
+      {/* No match -> the cue to create a new product: the empty state IS the create form, seeded with the searched Group ID. */}
       {searched && !loading && !error && results.length === 0 && (
-        <div className="mx-auto max-w-5xl">
-          <NewProductForm
-            key={lastTerm}
-            initialGroupid={lastTerm}
-            lookups={lookups}
-            onCreated={onCreated}
-            onUnauthorized={logout}
-          />
-        </div>
+        <NewProductForm
+          key={lastTerm}
+          initialGroupid={lastTerm}
+          lookups={lookups}
+          onCreated={onCreated}
+          onUnauthorized={logout}
+        />
       )}
 
       {limited && !loading && (
@@ -488,8 +486,8 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Results as a wrapping pill bar across the top — frees the whole width for the detail below, and colourways of a model read
-          naturally as chips. The shared groupid prefix is lifted into a caption so the chips can stay short without losing context. */}
+      {/* Results as a wrapping pill bar across the top of the column — colourways of a model read naturally as chips. The shared
+          groupid prefix is lifted into a caption so the chips can stay short without losing context. */}
       {results.length > 0 && (
         <>
           <div className="mb-6">
@@ -519,8 +517,8 @@ export default function ProductsPage() {
             </div>
           </div>
 
-          {/* Detail — a single centered column (balanced margins), one scroll with the sticky section nav. */}
-          <div className="mx-auto max-w-5xl">
+          {/* Detail — one scroll with the sticky section nav, within the shared page column. */}
+          <div>
             {!selected && (
               <div className="flex h-full min-h-[12rem] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
                 Select a product to view its details
@@ -530,10 +528,10 @@ export default function ProductsPage() {
             {selected && detailError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{detailError}</div>}
 
             {detail && !detailLoading && (
-              <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                {/* Sticky in-panel nav — jump between the three sections and see which one you're in as you scroll the long panel. The
-                    group id rides along on the right so you always know which product you're editing once the header has scrolled off. */}
-                <nav className="sticky top-0 z-20 flex items-center gap-1 rounded-t-lg border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur">
+              <div className="space-y-4">
+                {/* Sticky in-panel nav — its own bar above the cards; jump between the three sections and see which one you're in as you
+                    scroll. The group id rides along on the right so you always know which product you're editing once it scrolls off. */}
+                <nav className="sticky top-0 z-20 flex items-center gap-1 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
                   {SECTIONS.map((s) => (
                     <button
                       key={s.id}
@@ -550,9 +548,9 @@ export default function ProductsPage() {
                   <span className="ml-auto truncate pl-3 font-mono text-xs text-slate-400">{detail.groupid}</span>
                 </nav>
 
-                <div className="p-4 lg:p-5">
-                  {/* Header: the key + image name on the left, product image on the right (as on the legacy screen). */}
-                  <div className="mb-6 flex items-start justify-between gap-4">
+                <div className="space-y-4">
+                  {/* Identity card — the key + image name on the left, product image on the right (as on the legacy screen). */}
+                  <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <div className="min-w-0">
                       <div className="font-mono text-lg font-semibold text-slate-900">{detail.groupid}</div>
                       <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
@@ -569,13 +567,13 @@ export default function ProductsPage() {
                     />
                   </div>
 
-                  {/* ── CORE ── editable header attributes + title + SAVE. Attributes spread to one row on wide screens; the title is
-                      capped so it doesn't stretch across the full canvas. */}
-                  <section id="sec-core" className="scroll-mt-24">
+                  {/* ── CORE ── editable header attributes + title + SAVE. Attributes in a 3-across grid; the title is capped so it
+                      doesn't stretch the full column width. */}
+                  <section id="sec-core" className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <SectionHeader>Core details</SectionHeader>
                     {edit && (
                       <div>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                           <EditSelect label="Brand" value={edit.brand} options={lookups?.brands || []} onChange={(v) => setField('brand', v)} />
                           <EditSelect label="Colour" value={edit.colour} options={lookups?.colours || []} onChange={(v) => setField('colour', v)} />
                           <EditSelect label="Product Type" value={edit.producttype} options={lookups?.productTypes || []} onChange={(v) => setField('producttype', v)} />
@@ -633,8 +631,8 @@ export default function ProductsPage() {
                   </section>
 
                   {/* ── PRICING ── price fields + the Shopify on/off + Amazon export live together as the "publish this product" group.
-                      Capped width: money fields and toggles don't want the full canvas. */}
-                  <section id="sec-pricing" className="mt-10 scroll-mt-24">
+                      Capped width: money fields and toggles don't want the full column width. */}
+                  <section id="sec-pricing" className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <SectionHeader>Pricing</SectionHeader>
                     <div className="max-w-3xl">
                       <PriceEditor
@@ -663,8 +661,8 @@ export default function ProductsPage() {
                     </div>
                   </section>
 
-                  {/* ── SIZING ── the size grid gets more room than the forms (5 columns), capped so cells stay tidy on ultra-wide. */}
-                  <section id="sec-sizing" className="mt-10 scroll-mt-24">
+                  {/* ── SIZING ── the size grid gets more room than the forms (5 columns), within the shared page column. */}
+                  <section id="sec-sizing" className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <SectionHeader>Sizing</SectionHeader>
                     <div>
                       {/* brand/gender feed the "Generate sizes" template — use the live edit selections so it reflects the current choice. */}
