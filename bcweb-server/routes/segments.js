@@ -16,6 +16,8 @@ channels (SHP + AMZ + …) — a segment's total worth, not just its Shopify sli
 of units sell there. GP% = (revenue − COGS)/revenue, COGS = SUM(qty × skusummary.cost). Cost is a legacy VARCHAR → safeNumeric.
 
 Due state per area (spec §4): from segment_area_state.next_review_date vs CURRENT_DATE —
+  off    (grey)  = off = true (operator flagged this area N/A for this segment, e.g. EVA-SEG on Amazon) — checked first,
+                   independent of the date, so a stale next_review_date underneath doesn't leak through
   never  (grey)  = next_review_date IS NULL (never worked)
   overdue(red)   = next_review_date < today            → daysOverdue = today − next_review_date
   due-soon(amber)= due within AMBER_DAYS (incl. today)
@@ -102,6 +104,7 @@ router.get('/', async (req, res) => {
       SELECT s.name AS segment, a.name AS area, a.sort,
              st.cadence_days,
              st.next_review_date,
+             st.off,
              (CURRENT_DATE - st.next_review_date) AS days_over,
              lw.worked_by AS last_worked_by,
              lw.worked_at AS last_worked_at
@@ -130,7 +133,7 @@ router.get('/', async (req, res) => {
       bySegment.get(c.segment).areas.push({
         area: c.area,
         cadenceDays: c.cadence_days,
-        dueState: classifyDue(daysOver),
+        dueState: classifyDue(daysOver, c.off),
         daysOverdue: daysOver !== null && daysOver > 0 ? daysOver : 0,
         nextReview: isoDate(c.next_review_date),
         lastWorkedBy: c.last_worked_by || null,

@@ -18,6 +18,7 @@ import AppShell from '@/components/AppShell';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
 import { getTriage, getLosers, getAll, TriageRow, LoserRow, AllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { getActionedCount } from '@/lib/sessionCounter';
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function SegmentPage() {
@@ -70,6 +71,10 @@ function SegmentContent() {
   const [all, setAll] = useState<AllRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Session-only "actioned" count for this segment (bumped by the drill page on a successful apply/park). Winners is a live top-10
+  // that refills as you clear it, so this exists purely to make one sitting feel bounded — re-read on every mount, i.e. every time
+  // you return here from the drill page.
+  const [actioned, setActioned] = useState(0);
 
   // Fetch all three lists up front so each tab can show a count. Cached for the life of the page.
   useEffect(() => {
@@ -85,6 +90,8 @@ function SegmentContent() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
+
+  useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openStyle(groupid: string) {
     const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}`;
@@ -118,7 +125,14 @@ function SegmentContent() {
       )}
 
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
-        <WinnersTable rows={winners} onOpen={openStyle} />
+        <>
+          {actioned > 0 && (
+            <p className="mb-2 text-xs text-slate-400">
+              {actioned} actioned this session — the list refills from the segment as you go, so it always shows the current top {winners.length}.
+            </p>
+          )}
+          <WinnersTable rows={winners} onOpen={openStyle} />
+        </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
         <LosersTable rows={losers} onOpen={openStyle} />

@@ -6,8 +6,9 @@ Purpose: Shared helpers for the Segments review clocks, used by both GET /segmen
          can never drift on how a clock is classified or how a date is formatted.
 
   - AMBER_DAYS: how many days before a review date a clock turns amber ("due-soon"). Fixed for v1 (spec §7, tunable).
-  - classifyDue(daysOver): map days_over = (CURRENT_DATE − next_review_date) to a state. +ve = overdue, 0 = due today,
-    −ve = days remaining, null = never worked.
+  - classifyDue(daysOver, off): map days_over = (CURRENT_DATE − next_review_date) to a state. off=true short-circuits to 'off'
+    regardless of the date (an operator decision that this area doesn't apply to this segment, e.g. EVA-SEG on Amazon — not
+    derived from the date, so it's checked first). Otherwise: +ve = overdue, 0 = due today, −ve = days remaining, null = never worked.
   - isoDate(d): format a pg DATE as 'YYYY-MM-DD' from LOCAL components. IMPORTANT: do NOT use Date.toISOString() for DATE columns —
     node-postgres parses a date as local midnight, and toISOString() converts to UTC, which under BST (Europe/London, +1) shifts the
     day back by one. Timestamps (timestamptz, an actual instant) are fine with toISOString(); only bare DATEs need this.
@@ -17,7 +18,8 @@ Purpose: Shared helpers for the Segments review clocks, used by both GET /segmen
 // A clock flips amber this many days before its review date (spec §7 — tunable; fixed for v1).
 const AMBER_DAYS = 3;
 
-function classifyDue(daysOver) {
+function classifyDue(daysOver, off) {
+  if (off) return 'off';
   if (daysOver === null) return 'never';
   if (daysOver > 0) return 'overdue';
   if (daysOver >= -AMBER_DAYS) return 'due-soon';

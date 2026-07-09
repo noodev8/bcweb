@@ -50,7 +50,7 @@ export default function SegmentsHeatmap() {
     const arr = [...rows];
     if (sortMode === 'overdue') arr.sort((a, b) => worstDueScore(b) - worstDueScore(a) || b.revenue30 - a.revenue30);
     else arr.sort((a, b) => b.revenue30 - a.revenue30);
-    return onlyDue ? arr.filter((r) => r.areas.some((a) => a.dueState !== 'ok')) : arr;
+    return onlyDue ? arr.filter((r) => r.areas.some((a) => a.dueState !== 'ok' && a.dueState !== 'off')) : arr;
   }, [rows, sortMode, onlyDue]);
 
   // A Shopify cell drops into the existing triage; any other area opens the segment detail (where it can be marked worked).
@@ -96,6 +96,7 @@ export default function SegmentsHeatmap() {
           <Legend tone="bg-amber-100 text-amber-700 border-amber-200" label="Due soon" />
           <Legend tone="bg-green-100 text-green-700 border-green-200" label="OK" />
           <Legend tone="bg-slate-100 text-slate-400 border-slate-200" label="Never" />
+          <Legend tone="bg-slate-200 text-slate-500 border-slate-300 border-dashed" label="Off" />
         </div>
       </div>
 

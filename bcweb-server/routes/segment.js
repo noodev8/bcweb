@@ -95,7 +95,7 @@ router.get('/', async (req, res) => {
 
       // Per-area clocks + last-worked (same shape as the overview), for this one segment.
       query(`
-        SELECT a.name AS area, a.sort, st.cadence_days, st.next_review_date,
+        SELECT a.name AS area, a.sort, st.cadence_days, st.next_review_date, st.off,
                (CURRENT_DATE - st.next_review_date) AS days_over,
                lw.worked_by AS last_worked_by, lw.worked_at AS last_worked_at
         FROM segment_area_state st
@@ -129,7 +129,7 @@ router.get('/', async (req, res) => {
       return {
         area: c.area,
         cadenceDays: c.cadence_days,
-        dueState: classifyDue(daysOver),
+        dueState: classifyDue(daysOver, c.off),
         daysOverdue: daysOver !== null && daysOver > 0 ? daysOver : 0,
         nextReview: isoDate(c.next_review_date),
         lastWorkedBy: c.last_worked_by || null,

@@ -119,13 +119,14 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
   const [open, setOpen] = useState(false);
   const [reviewDays, setReviewDays] = useState<number | null>(null);
   const [note, setNote] = useState('');
+  const [off, setOff] = useState(cell.dueState === 'off');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const isShopify = cell.area.toLowerCase() === 'shopify';
 
   async function save() {
     setSaving(true); setErr(null);
-    const res = await logSegmentWork(segment, cell.area, reviewDays, note.trim() || undefined);
+    const res = await logSegmentWork(segment, cell.area, off ? null : reviewDays, note.trim() || undefined, off);
     setSaving(false);
     if (res.success) { setOpen(false); setReviewDays(null); setNote(''); onWorked(); }
     else setErr(res.error || 'Failed to save');
@@ -152,7 +153,7 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
             onClick={() => setOpen((o) => !o)}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            {open ? 'Cancel' : 'Mark worked'}
+            {open ? 'Cancel' : 'Update'}
           </button>
         </div>
       </div>
@@ -170,26 +171,42 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
             className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
 
-          <div className="mb-1 text-sm font-medium text-slate-700">
-            Next review <span className="font-normal text-slate-400">(optional — when this area is due again)</span>
-          </div>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setReviewDays(null)}
-              className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === null ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-            >
-              None
-            </button>
-            {SEGMENT_REVIEW_CHIPS.map((c) => (
-              <button
-                key={c.days}
-                onClick={() => setReviewDays(c.days)}
-                className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === c.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          <label className="mb-4 flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={off}
+              onChange={(e) => setOff(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              Not applicable to this segment <span className="font-normal text-slate-400">(e.g. not sold on {cell.area} — hides this area from review)</span>
+            </span>
+          </label>
+
+          {!off && (
+            <>
+              <div className="mb-1 text-sm font-medium text-slate-700">
+                Next review <span className="font-normal text-slate-400">(optional — when this area is due again)</span>
+              </div>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setReviewDays(null)}
+                  className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === null ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
+                >
+                  None
+                </button>
+                {SEGMENT_REVIEW_CHIPS.map((c) => (
+                  <button
+                    key={c.days}
+                    onClick={() => setReviewDays(c.days)}
+                    className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === c.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           {err && <div className="mb-3 text-xs text-red-600">{err}</div>}
 
@@ -198,7 +215,7 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
             disabled={saving}
             className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : reviewDays === null ? 'Log work' : 'Log work + set review'}
+            {saving ? 'Saving…' : off ? 'Mark not applicable' : reviewDays === null ? 'Log work' : 'Log work + set review'}
           </button>
         </div>
       )}

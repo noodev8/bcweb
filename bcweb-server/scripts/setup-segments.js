@@ -6,7 +6,7 @@ Purpose: One-off / re-runnable setup for the Segments module — steps 1 & 2 of 
   1. Ensures the three registry tables exist (CREATE TABLE IF NOT EXISTS — safe to re-run):
        - `segment`             — stable id per segment (name = skusummary.segment join key).           [step 1]
        - `area`                — the work areas (Shopify / Amazon / Remove …); grows over time.         [step 2]
-       - `segment_area_state`  — one review clock per (segment, area): cadence_days + next_review_date. [step 2]
+       - `segment_area_state`  — one review clock per (segment, area): cadence_days + next_review_date + off. [step 2]
        - `segment_worklog`     — one row per work event (who/when/note); source of "last worked".       [step 3 read / step 5 writes]
   2. Seeds the three starting areas (ON CONFLICT DO NOTHING — never clobbers later cadence/sort edits).
   3. Runs the reconcile once: mirrors `segment` from DISTINCT skusummary.segment AND seeds a clock row for every
@@ -53,6 +53,7 @@ const STATE_BODY = `
   area_id           INT NOT NULL REFERENCES area(id),
   cadence_days      INT NOT NULL,
   next_review_date  DATE,
+  off               BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY (segment_id, area_id)`;
 
 // Append-only work log. `worked_by` is the operator's display_name (resolved server-side on write, spec §5). One row per work event.
@@ -77,6 +78,10 @@ async function createSchema(run, temp) {
   await run(P(temp, 'segment', SEGMENT_BODY));
   await run(P(temp, 'area', AREA_BODY));
   await run(P(temp, 'segment_area_state', STATE_BODY));
+  if (!temp) {
+    // Additive migration for a segment_area_state created before the "off" (N/A) flag existed. IF NOT EXISTS -> safe to re-run.
+    await run('ALTER TABLE segment_area_state ADD COLUMN IF NOT EXISTS off BOOLEAN NOT NULL DEFAULT false');
+  }
   await run(P(temp, 'segment_worklog', WORKLOG_BODY));
   await run(SEED_AREAS);
 }
