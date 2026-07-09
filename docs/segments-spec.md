@@ -15,7 +15,16 @@
 reads `GET /segments` + `GET /segment?name=`; writes `POST /segment-work` (log + optional review) and `POST /segment-rename`
 (rewrite skusummary.segment + registry name atomically). Rename's carry-across (clocks + worklog survive because the id is stable)
 proven via BEGIN..ROLLBACK; all error/guard paths checked over HTTP; all test data cleaned (worklog + review dates back to empty).
-**Next up: the WEB/UI — the heatmap screen (spec §3) that consumes these endpoints. No front end exists yet.**
+**WEB/UI DONE** (2026-07-09): heatmap overview `/segments` (Segment×Area grid, importance gutter, Revenue/Most-overdue sort,
+"Only what's due" filter, coloured clickable cells; Shopify cell → `/pricing/[segment]`, others + name → detail) and detail
+`/segments/[name]` (header stats, per-area clocks with a "Mark worked" form = optional note + review pills None/1w/2w/1m/2m/3m/6m,
+work-log history, rename control). New: `src/lib/segmentUi.ts` (tones/labels/chips/sort), `src/lib/api.ts` (4 client fns + types),
+dashboard "Segments" tile. Typechecks + lints clean; all three routes compile + serve 200 in Next dev. NOT visually click-tested
+(Chrome extension wasn't connected) and NOT yet committed at time of writing / not deployed.
+
+**Next up: nothing required — module is feature-complete.** Optional follow-ups: (a) deploy server to VPS + web to Vercel; (b) heat
+🔥 fast-follow (spec §7); (c) the pricing-apply→segment auto-log tie-in (spec §6-D, still not wired — working Shopify via triage
+does not yet advance the segment's Shopify clock; for now use "Mark worked").
 
 **Steps 1–4 committed** (`79d723c`). **Step 5 not yet committed; nothing deployed to VPS.** Step-5 files: `routes/segment-work.js`,
 `routes/segment-rename.js`, `server.js` (two more mounts). Earlier files: `routes/segments.js`, `routes/segment.js`,
