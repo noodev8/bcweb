@@ -13,7 +13,8 @@ Purpose: Keep Google Merchant Center's price in step with a Shopify Pricing appl
          precedent: shell out to Python where a working, tested implementation already exists.
 
          Best-effort by design, exactly like shopify.pushIfLive: NEVER throws, so a Google hiccup can't fail or roll back a DB write
-         that already committed. A groupid can map to MANY googleids (one per skumap size/variant) — the helper loops over all of them.
+         that already committed. A groupid can map to MANY googleids (one per skumap size/variant) — the helper pushes all of them in
+         a single Content API custombatch call (one HTTP round-trip, not one per size).
 =======================================================================================================================================
 */
 

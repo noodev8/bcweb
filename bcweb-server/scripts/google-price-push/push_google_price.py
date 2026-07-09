@@ -7,9 +7,11 @@ Pricing "Apply" (W1). Without this, Google Shopping/ads would keep showing the o
 the next nightly C:\\scripts\\merchant-feed\\merchant_feed.py --upload cron run, since that
 script is the only thing that regenerates and re-uploads the feed.
 
-A groupid can map to MULTIPLE Google product ids (skumap.googleid, one per size/variant), so
-this loops over every active, google-eligible size and pushes each one via the Content API v2.1
-products.update call (price + salePrice, both set to the new shopifyprice — mirrors
+A groupid can map to MULTIPLE Google product ids (skumap.googleid, one per size/variant). A
+first version pushed each one with its own products.update call, but that's N sequential HTTP
+round-trips to Google for one Apply (noticeably slow for a style with many sizes) — so this
+instead sends all of them in a SINGLE products.custombatch call (one HTTP request, method
+"update" per entry), each setting price + salePrice to the new shopifyprice (mirrors
 merchant_feed.py, which always feeds price=rrp, sale_price=shopifyprice).
 
 Loads DB creds + the Google service-account JSON from the SERVER's .env (bcweb-server/.env),
@@ -105,17 +107,26 @@ def fetch_targets(conn, groupid):
         return cur.fetchall()
 
 
-def push_price(service, merchant_id, google_id, price):
-    """One Content API products.update call — price and salePrice both set to the new Shopify price, GBP (mirrors price_update.py)."""
-    body = {
-        "price": {"value": price, "currency": "GBP"},
-        "salePrice": {"value": price, "currency": "GBP"},
-    }
-    service.products().update(
-        merchantId=merchant_id,
-        productId=f"online:en:GB:{google_id}",
-        body=body,
-    ).execute()
+def push_prices_batch(service, merchant_id, google_ids, price):
+    """
+    One Content API products.custombatch call covering every google_id — price and salePrice both set to the new Shopify
+    price, GBP (mirrors price_update.py's per-item body). batchId is just the list index; the response echoes it back so we
+    can map each result to its google_id regardless of the order Google returns them in.
+    """
+    entries = [
+        {
+            "batchId": i,
+            "merchantId": merchant_id,
+            "method": "update",
+            "productId": f"online:en:GB:{google_id}",
+            "product": {
+                "price": {"value": price, "currency": "GBP"},
+                "salePrice": {"value": price, "currency": "GBP"},
+            },
+        }
+        for i, google_id in enumerate(google_ids)
+    ]
+    return service.products().custombatch(body={"entries": entries}).execute()
 
 
 def main():
@@ -152,14 +163,21 @@ def main():
 
     service, merchant_id = get_google_service()
 
+    google_ids = [google_id for google_id, _ in targets]
+    try:
+        response = push_prices_batch(service, merchant_id, google_ids, price)
+    except Exception as e:
+        # The batch REQUEST itself failed (auth/network/schema issue) — none of the entries were attempted.
+        fail("GOOGLE_PUSH_FAILED", f"Content API batch request failed: {e}")
+
     updated = 0
     errors = []
-    for google_id, _ in targets:
-        try:
-            push_price(service, merchant_id, google_id, price)
+    for entry in response.get("entries", []):
+        google_id = google_ids[entry["batchId"]] if 0 <= entry.get("batchId", -1) < len(google_ids) else "?"
+        if "errors" in entry:
+            errors.append(f"{google_id}: {entry['errors'].get('message', 'unknown error')}")
+        else:
             updated += 1
-        except Exception as e:
-            errors.append(f"{google_id}: {e}")
 
     print(json.dumps({
         "groupid": groupid,
