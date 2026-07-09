@@ -63,6 +63,10 @@ const loginLimiter = rateLimit({
 app.use('/health', require('./routes/health'));
 app.use('/login', loginLimiter, require('./routes/login'));
 
+// Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
+app.use('/segments', require('./routes/segments'));
+app.use('/segment', require('./routes/segment'));   // detail read: header stats + per-area clocks + recent work-log (lazy)
+
 // Pricing routes (all require verifyToken, applied inside each router).
 app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
