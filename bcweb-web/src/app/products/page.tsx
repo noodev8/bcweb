@@ -26,6 +26,7 @@ import ImageUploader from '@/components/ImageUploader';
 import ShopifyToggle from '@/components/ShopifyToggle';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 import AmazonExport from '@/components/AmazonExport';
+import CopyButton from '@/components/CopyButton';
 import {
   searchProducts, getProduct, getProductLookups, updateProduct, createProduct,
   ProductRow, ProductDetail, ProductLookups, ProductEditFields, ShopifyPushResult,
@@ -552,7 +553,10 @@ export default function ProductsPage() {
                   {/* Identity card — the key + image name on the left, product image on the right (as on the legacy screen). */}
                   <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <div className="min-w-0">
-                      <div className="font-mono text-lg font-semibold text-slate-900">{detail.groupid}</div>
+                      <div className="flex items-center gap-1 font-mono text-lg font-semibold text-slate-900">
+                        {detail.groupid}
+                        <CopyButton value={detail.groupid} label={detail.groupid} />
+                      </div>
                       <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
                         {detail.imagename || 'No image name'}
                       </div>

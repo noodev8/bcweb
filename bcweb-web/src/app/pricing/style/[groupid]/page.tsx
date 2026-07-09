@@ -147,7 +147,7 @@ function DrillContent() {
   }
 
   return (
-    <AppShell title={data?.header.title || groupid} subtitle={groupid} backHref={backTo} backLabel={backLabel}>
+    <AppShell title={data?.header.title || groupid} subtitle={groupid} subtitleCopy backHref={backTo} backLabel={backLabel}>
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
@@ -192,12 +192,14 @@ function DrillContent() {
             <Timeline rows={data.timeline} />
           </section>
 
+          {/* Recent sales first — the one checked most, so it sits above the other two dropdowns. */}
+          <SalesList key={`sales-${reloadKey}`} groupid={groupid} />
+
           {/* Size curve (collapsible) */}
           <SizeCurve sizes={data.sizes} />
 
           {/* Reference reports (collapsible, lazy — fetch on open). Keyed on reloadKey so a write re-fetches them with the change. */}
           <PriceHistory key={`hist-${reloadKey}`} groupid={groupid} />
-          <SalesList key={`sales-${reloadKey}`} groupid={groupid} />
         </div>
       )}
     </AppShell>

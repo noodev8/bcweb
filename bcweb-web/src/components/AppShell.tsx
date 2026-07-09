@@ -16,16 +16,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
+import CopyButton from '@/components/CopyButton';
 
 interface AppShellProps {
   children: ReactNode;
   title?: string;
   subtitle?: string;     // optional line under the title (e.g. the style's groupid) — the page's key identifier
+  subtitleCopy?: boolean; // when true, shows a copy-icon next to the subtitle that copies it verbatim (e.g. to search elsewhere)
   backHref?: string;     // when set, shows a single back arrow linking here
   backLabel?: string;
 }
 
-export default function AppShell({ children, title, subtitle, backHref, backLabel }: AppShellProps) {
+export default function AppShell({ children, title, subtitle, subtitleCopy, backHref, backLabel }: AppShellProps) {
   const router = useRouter();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
 
@@ -72,7 +74,12 @@ export default function AppShell({ children, title, subtitle, backHref, backLabe
             </Link>
           )}
           {title && <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>}
-          {subtitle && <p className="mt-0.5 font-mono text-sm text-slate-500">{subtitle}</p>}
+          {subtitle && (
+            <p className="mt-0.5 flex items-center gap-1 font-mono text-sm text-slate-500">
+              {subtitle}
+              {subtitleCopy && <CopyButton value={subtitle} label={subtitle} />}
+            </p>
+          )}
         </div>
       )}
 
