@@ -18,6 +18,10 @@ Purpose: Save the price fields on skusummary for the Add / Modify Product module
              which parks the style out of the pricing triage/losers lists until then — the same column the harvest workflow uses. Unlike
              W1, here it is OPTIONAL: omitted/blank leaves the column untouched. It is independent of the price change (you can park
              without changing the price).
+           - GOOGLE: right after the Shopify push, also re-pushes the price to Google Merchant Center's Content API if the product is
+             live there (`utils/googleMerchant.js → pushIfLive`), same as `pricing-apply.js` (W1) — otherwise Google Shopping/ads would
+             show the old price until the next nightly `C:\scripts\merchant-feed\merchant_feed.py --upload` cron run. Best-effort, never
+             fails the save.
 
          Money columns on skusummary are legacy VARCHAR, so we WRITE 2dp strings (e.g. '39.95'), never numbers (CLAUDE.md). Tax is the
          legacy 0/1 integer flag. `updated` uses the legacy 'YYYYMMDD HH24:MI:SS' Europe/London format. Single-row write, still wrapped
@@ -40,7 +44,9 @@ Success Response:
   "groupid": "0128221-GIZEH",
   "saved": { "cost": 18.75, "rrp": 45.00, "tax": true, "price": 39.95 },  // numbers actually written (price is the 2dp value)
   "logged": true,                 // true if a price_change_log row was written (i.e. the Shopify price changed)
-  "next_review": "2026-07-22"     // next_shopify_price_review after the write (YYYY-MM-DD), or null if none set
+  "next_review": "2026-07-22",    // next_shopify_price_review after the write (YYYY-MM-DD), or null if none set
+  "shopify": { "pushed": true, "isNew": false, "variantCount": 11 },  // direct Shopify push outcome; null if not live
+  "google": { "pushed": true, "updated": 11, "failed": 0, "total": 11 }  // direct Google Merchant push outcome; null if not applicable
 }
 =======================================================================================================================================
 Return Codes:
@@ -61,6 +67,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
+const googleMerchant = require('../utils/googleMerchant');
 
 router.use(verifyToken);
 
@@ -180,6 +187,10 @@ router.post('/', async (req, res) => {
     // If the product is live on Shopify, re-push so the new price/compareAtPrice reaches the store (best-effort — never fails the save).
     const shopifyResult = await shopify.pushIfLive(groupid);
 
+    // Same for Google: if the product is live there too, push the new price to Merchant Center's Content API right now (best-effort —
+    // never fails the save), so it doesn't wait on the nightly merchant_feed.py --upload cron (mirrors pricing-apply.js, W1).
+    const googleResult = await googleMerchant.pushIfLive(groupid);
+
     return res.json({
       return_code: 'SUCCESS',
       groupid,
@@ -187,6 +198,7 @@ router.post('/', async (req, res) => {
       logged,
       next_review: nextReviewIso,
       shopify: shopifyResult,
+      google: googleResult,
     });
   } catch (err) {
     if (err && err.code === 'NOT_FOUND') {

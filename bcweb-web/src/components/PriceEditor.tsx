@@ -4,7 +4,8 @@
 Component: PriceEditor
 =======================================================================================================================================
 Purpose: Editable price block for a product (skusummary): Cost, RRP, Tax, and the base Shopify price. Saves via POST /product-price,
-         which enforces the legacy rules (Cost > 0, RRP > 0, RRP >= Cost) and pushes live to Shopify (Admin API) when the product is on.
+         which enforces the legacy rules (Cost > 0, RRP > 0, RRP >= Cost) and pushes live to Shopify (Admin API) and, if also live on
+         Google, to Google Merchant Center's Content API — both when the product is on that channel.
 
          Two optional, light-touch extras borrowed from the pricing (harvest) screen — never required, so the normal "type price, save"
          flow is unchanged:
@@ -19,9 +20,10 @@ Purpose: Editable price block for a product (skusummary): Cost, RRP, Tax, and th
 */
 
 import { useState } from 'react';
-import { updateProductPrice, ProductPriceSaved, ShopifyPushResult } from '@/lib/api';
+import { updateProductPrice, ProductPriceSaved, ShopifyPushResult, GooglePushResult } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
+import GooglePushNote from '@/components/GooglePushNote';
 
 // Same review options as the pricing screen's PriceSetter (kept in sync deliberately).
 const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
@@ -69,6 +71,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [push, setPush] = useState<ShopifyPushResult | null>(null);   // Shopify re-push outcome, when the product is live
+  const [googlePush, setGooglePush] = useState<GooglePushResult | null>(null);   // Google Merchant re-push outcome, when live there
   const [savedInfo, setSavedInfo] = useState<{ logged: boolean; nextReview: string | null } | null>(null);
   // Optional extras (see header). reviewDays null = no review chosen; note '' = none.
   const [reviewDays, setReviewDays] = useState<number | null>(null);
@@ -90,6 +93,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setForm((p) => ({ ...p, [k]: v }));
     setOk(false);
     setPush(null);
+    setGooglePush(null);
     setSavedInfo(null);
   }
 
@@ -120,6 +124,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setError(null);
     setOk(false);
     setPush(null);
+    setGooglePush(null);
     setSavedInfo(null);
   }
 
@@ -135,6 +140,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
     setError(null);
     setOk(false);
     setPush(null);
+    setGooglePush(null);
     setSavedInfo(null);
     // Only attach the note when the price actually changed (server only logs — and so only keeps a note — on a change).
     const res = await updateProductPrice(groupid, form, {
@@ -150,6 +156,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
       setNote('');
       setOk(true);
       setPush(res.data.shopify ?? null);
+      setGooglePush(res.data.google ?? null);
       setSavedInfo({ logged: res.data.logged, nextReview: res.data.next_review });
       onSaved?.(s);
     } else {
@@ -179,7 +186,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
         </div>
       </div>
 
-      <p className="mt-1 text-[11px] text-slate-400">Leave Shopify Price blank to default it to RRP. If the product is live on Shopify, saving pushes the new price to the store.</p>
+      <p className="mt-1 text-[11px] text-slate-400">Leave Shopify Price blank to default it to RRP. If the product is live on Shopify and/or Google, saving pushes the new price there immediately.</p>
 
       {/* Optional extras — Note (audit) + Review (park). Both optional; the normal flow ignores them. */}
       <div className="mt-3 space-y-3 rounded-md border border-slate-100 bg-slate-50/60 p-3">
@@ -257,6 +264,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
           </span>
         )}
         {ok && !dirty && <ShopifyPushNote result={push} />}
+        {ok && !dirty && <GooglePushNote result={googlePush} />}
         {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </div>

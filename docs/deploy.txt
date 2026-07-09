@@ -20,3 +20,17 @@ The VPS is otherwise pure Node, so this needs a one-time setup on the server:
   - the scripts/amz-product/ folder must survive the rsync (it does today -- only 'docs' etc. are excluded)
   - the helper reads DB creds from bcweb-server/.env (already present in prod)
 When you deploy this the first time, ask Claude to help wire up the Python env + verify the button end-to-end.
+
+
+== Python (Google Merchant real-time price push) -- ASK CLAUDE FOR HELP WHEN DEPLOYING THIS
+Applying a Shopify Pricing price (POST /pricing-apply, W1) shells out to a second Python helper so Google Merchant Center's price
+doesn't lag a full day behind the price change (the feed otherwise only refreshes via the nightly C:\scripts\merchant-feed\
+merchant_feed.py --upload cron):
+  bcweb-server/scripts/google-price-push/push_google_price.py
+Uses the SAME PYTHON_BIN / interpreter as the Amazon upload feature above, so if that's already set up the only extra step is:
+  - pip packages: google-api-python-client, google-auth (installing google-api-python-client pulls in google-auth-httplib2 etc. too)
+  - GOOGLE_MERCHANT_ID and GOOGLE_MERCHANT_CREDENTIALS_JSON must be present in the prod bcweb-server/.env (same service-account
+    credential C:\scripts\price_update.py already uses -- copy it over, same pattern as SHOPIFY_ACCESS_TOKEN)
+  - the scripts/google-price-push/ folder must survive the rsync (only 'docs' etc. are excluded today)
+This push is best-effort -- a failure here never blocks or rolls back the price already saved to the DB, and the nightly feed run
+is still the eventual fallback. Ask Claude to help verify it end-to-end the first time you deploy this.

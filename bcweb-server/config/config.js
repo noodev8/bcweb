@@ -46,5 +46,14 @@ module.exports = {
     apiVersion: process.env.SHOPIFY_API_VERSION || '2025-04',
     accessToken: process.env.SHOPIFY_ACCESS_TOKEN || '',
     locationId: process.env.SHOPIFY_LOCATION_ID || ''
+  },
+
+  // Google Merchant Center Content API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
+  // Google Shopping/ads would show the old price until the next nightly C:\scripts\merchant-feed\merchant_feed.py --upload cron run.
+  // Same service-account credential the (currently cron-disabled, --no-google) C:\scripts\price_update.py already uses. Optional
+  // feature like onecom/shopify above: not validated at boot; utils/googleMerchant.js checks these are present before it does anything.
+  google: {
+    merchantId: process.env.GOOGLE_MERCHANT_ID || '',
+    credentialsJson: process.env.GOOGLE_MERCHANT_CREDENTIALS_JSON || ''
   }
 };

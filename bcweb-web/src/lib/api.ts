@@ -135,7 +135,7 @@ export interface ProductDetail {
   sizes: ProductSize[];   // one row per variant (skumap)
 }
 export interface LoginData { token: string; display_name: string; }
-export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; }
+export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; google?: GooglePushResult | null; }
 export interface ParkData { groupid: string; next_review: string; }
 
 // =============================================================================================================================
@@ -266,7 +266,7 @@ export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; s
 export interface ProductPriceExtras { reviewDays?: number | null; note?: string; }
 export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
 export function updateProductPrice(groupid: string, fields: ProductPriceFields, extras?: ProductPriceExtras) {
-  return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; shopify?: ShopifyPushResult }>(
+  return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; shopify?: ShopifyPushResult; google?: GooglePushResult }>(
     {
       url: '/product-price',
       method: 'POST',
@@ -284,6 +284,7 @@ export function updateProductPrice(groupid: string, fields: ProductPriceFields, 
       logged: Boolean(b.logged),
       next_review: (b.next_review ?? null) as string | null,
       shopify: b.shopify,
+      google: b.google,
     })
   );
 }
@@ -307,6 +308,13 @@ export interface ShopifyToggleData { groupid: string; shopify: boolean; push?: S
 // Outcome of the automatic "re-push to Shopify on save" that the edit routes (update/price/sizes/image) run when a product is live.
 // null/absent means "not live or Shopify off — nothing pushed"; pushed=false means the DB save succeeded but the Shopify push failed.
 export interface ShopifyPushResult { pushed: boolean; isNew?: boolean; variantCount?: number; error?: string; message?: string; }
+
+// Outcome of the automatic "re-push price to Google Merchant Center on save" that pricing-apply and product-price run when a product
+// is live on Google. null/absent means "not live on Google, Google not configured, or no googleid yet — nothing pushed"; pushed=false
+// means the DB save stands but the whole push failed (updated/failed/total cover PARTIAL success — a groupid can have several
+// googleids, one per size). Unlike Shopify, a failed Google push isn't urgent to retry — the nightly merchant_feed.py --upload cron
+// is still an eventual fallback.
+export interface GooglePushResult { pushed: boolean; updated?: number; failed?: number; total?: number; error?: string; message?: string; }
 export function setProductShopify(groupid: string, shopify: boolean, status?: 'ACTIVE' | 'DRAFT') {
   return request<ShopifyToggleData>(
     { url: '/product-shopify', method: 'POST', data: { groupid, shopify, ...(status ? { status } : {}) } },
@@ -335,7 +343,7 @@ export function generateAmazonUpload(groupid: string) {
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number | null, note?: string) {
   return request<ApplyData>(
     { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays, note } },
-    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null })
+    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null, google: b.google ?? null })
   );
 }
 
@@ -349,7 +357,7 @@ export function parkStyle(groupid: string, reviewDays: number) {
 // =============================================================================================================================
 // Segments module — the review/attention layer over the pricing tools (docs/segments-spec.md).
 // =============================================================================================================================
-export type DueState = 'never' | 'overdue' | 'due-soon' | 'ok';
+export type DueState = 'never' | 'overdue' | 'due-soon' | 'ok' | 'off';
 
 // One clock cell = one work area (Shopify / Amazon / Remove …) of one segment. Shared by the overview grid and the detail page.
 export interface SegmentAreaCell {
@@ -400,14 +408,15 @@ export function getSegmentDetail(name: string, opts?: { days?: number; limit?: n
   );
 }
 
-// W-seg-1: log a work event against one area, optionally setting that clock's review date. reviewDays null = "None" (log only).
-export function logSegmentWork(name: string, area: string, reviewDays: number | null, note?: string) {
-  return request<{ name: string; area: string; workedBy: string; workedAt: string | null; nextReview: string | null }>(
+// W-seg-1: log a work event against one area, optionally setting that clock's review date and/or its "off" (N/A) flag.
+// reviewDays null = "None" (leave the clock untouched). off undefined = leave the flag untouched.
+export function logSegmentWork(name: string, area: string, reviewDays: number | null, note?: string, off?: boolean) {
+  return request<{ name: string; area: string; workedBy: string; workedAt: string | null; nextReview: string | null; off: boolean }>(
     {
       url: '/segment-work', method: 'POST',
-      data: { name, area, ...(reviewDays != null ? { reviewDays } : {}), ...(note ? { note } : {}) },
+      data: { name, area, ...(reviewDays != null ? { reviewDays } : {}), ...(note ? { note } : {}), ...(off !== undefined ? { off } : {}) },
     },
-    (b) => ({ name: b.name, area: b.area, workedBy: b.workedBy, workedAt: b.workedAt, nextReview: b.nextReview })
+    (b) => ({ name: b.name, area: b.area, workedBy: b.workedBy, workedAt: b.workedAt, nextReview: b.nextReview, off: !!b.off })
   );
 }
 

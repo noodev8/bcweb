@@ -23,6 +23,7 @@ import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { bumpActionedCount } from '@/lib/sessionCounter';
 
 // useSearchParams (below) must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function DrillPage() {
@@ -53,6 +54,13 @@ function DrillContent() {
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
     const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
     return `${seg} · ${modeLabel}`;
+  })();
+
+  // Segment name (if we came from a segment list), used to key the session "actioned" counter — null for a deep-link/search origin.
+  const backSegment = (() => {
+    if (!backTo || backTo === '/pricing' || backTo.startsWith('/pricing/find')) return null;
+    const [path] = backTo.split('?');
+    return decodeURIComponent(path.replace('/pricing/', ''));
   })();
 
   const [data, setData] = useState<DrillData | null>(null);
@@ -102,11 +110,18 @@ function DrillContent() {
         setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Shopify${push.message ? `: ${push.message}` : ''}. Press Apply again to retry.` });
         return;
       }
+      // Google Merchant push, unlike Shopify, is non-urgent to retry — the nightly merchant_feed.py --upload cron is still an eventual
+      // fallback — so a failure here is just folded into the success notice rather than blocking the flow.
+      const googlePush = res.data.google;
+      const googleNote = googlePush
+        ? (googlePush.pushed ? ' Sent to Google.' : ` But it did NOT reach Google Merchant${googlePush.message ? `: ${googlePush.message}` : ''} (tonight's feed run will still catch it).`)
+        : '';
       // Success. Stay on the page (no auto-return): show a persistent confirmation, then refresh the drill in place and remount the
       // setter + reports (reloadKey) so the new price, timeline and price-history reflect the change. The user returns via the button.
       // push.pushed === true -> sent to the store; push == null -> style not live on Shopify (nothing to push).
       const pushedNote = push && push.pushed ? ' Sent to Shopify.' : '';
-      setNotice({ kind: 'ok', text: `Applied £${res.data.new_price}.${pushedNote}${reviewMsg}${warn}` });
+      setNotice({ kind: 'ok', text: `Applied £${res.data.new_price}.${pushedNote}${googleNote}${reviewMsg}${warn}` });
+      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {
@@ -122,6 +137,7 @@ function DrillContent() {
     setApplying(false);
     if (res.success && res.data) {
       setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged).` });
+      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {

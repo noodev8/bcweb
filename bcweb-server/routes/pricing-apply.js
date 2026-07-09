@@ -20,6 +20,10 @@ Rules enforced here:
     (utils/shopify.js -> pushIfLive), exactly like the Add/Modify module's product-price route. Setting the nightly-sync flag too
     would double-push (once now, once overnight). The push is best-effort and runs AFTER the DB write commits (owner decision:
     "pure direct push" — on failure we surface it in the response and the operator re-Applies; there is no nightly fallback).
+  - Same reasoning applies to Google: right after the Shopify push, this route also pushes the new price to Google Merchant Center's
+    Content API (utils/googleMerchant.js -> pushIfLive), so Google Shopping/ads doesn't show a stale price until the next nightly
+    C:\scripts\merchant-feed\merchant_feed.py --upload cron run. Best-effort, never blocks/rolls back the DB write; only fires when
+    the style is live on Google (skusummary.googlestatus=1 AND shopify=1) and Google creds are configured.
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
 =======================================================================================================================================
@@ -39,10 +43,15 @@ Success Response:
   "old_price": 36.95,             // previous numeric price (null if none)
   "next_review": "2026-07-11",    // CURRENT_DATE + reviewDays, or null when review was None / left untouched
   "warnings": ["ABOVE_RRP"],       // any non-blocking flags (ABOVE_RRP); [] if none
-  "shopify": { "pushed": true, "isNew": false, "variantCount": 11 }  // direct Shopify push outcome (see below); null if not live
+  "shopify": { "pushed": true, "isNew": false, "variantCount": 11 },  // direct Shopify push outcome (see below); null if not live
+  "google": { "pushed": true, "updated": 11, "failed": 0, "total": 11 }  // direct Google Merchant push outcome (see below); null if not applicable
 }
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
 { pushed:true, ... } = the new price reached Shopify; { pushed:false, error, message } = DB save stands but the push failed (retry Apply).
+Google push outcome (`google` field): null = not live on Google (skusummary.googlestatus != 1), Google not configured, or no googleid
+assigned to any size yet — nothing pushed; { pushed:true, updated, failed, total } = ran (a groupid can have multiple googleids, one per
+size — failed/total > 0 means some sizes' pushes errored, but the DB price stands either way); { pushed:false, error, message } = the whole
+run failed (retry Apply — no automatic fallback; the nightly feed will still pick it up eventually).
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -64,6 +73,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
+const googleMerchant = require('../utils/googleMerchant');
 
 router.use(verifyToken);
 
@@ -169,6 +179,10 @@ router.post('/', async (req, res) => {
     // Owner decision: no shopifychange fallback — a failure is surfaced here and the operator re-Applies (productSet is idempotent).
     const shopifyResult = await shopify.pushIfLive(groupid);
 
+    // Push the new price to Google Merchant Center NOW too (best-effort, same timing/semantics as the Shopify push above). Without
+    // this, Google Shopping/ads would show the old price until the next nightly merchant_feed.py --upload cron run (utils/googleMerchant.js).
+    const googleResult = await googleMerchant.pushIfLive(groupid);
+
     return res.json({
       return_code: 'SUCCESS',
       groupid,
@@ -176,7 +190,8 @@ router.post('/', async (req, res) => {
       old_price: oldPrice,
       next_review: nextReviewIso,
       warnings,
-      shopify: shopifyResult
+      shopify: shopifyResult,
+      google: googleResult
     });
   } catch (err) {
     logger.error('[pricing-apply] error:', err.message);
