@@ -23,6 +23,11 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+// Exactly one reverse proxy (nginx) sits between the internet and this process on the VPS, adding X-Forwarded-For. Trust exactly
+// that one hop (not `true`/all hops) so req.ip resolves to the real client IP for rate-limiting, without letting a client spoof
+// extra X-Forwarded-For entries to fake a different origin IP. Locally (no proxy) this setting is inert.
+app.set('trust proxy', 1);
+
 // -------------------------------------------------------------------------------------------------------------------------------
 // Security & parsing middleware
 // -------------------------------------------------------------------------------------------------------------------------------
