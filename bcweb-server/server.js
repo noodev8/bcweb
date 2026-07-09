@@ -67,10 +67,13 @@ app.use('/login', loginLimiter, require('./routes/login'));
 app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
 app.use('/pricing-losers', require('./routes/pricing-losers'));
+app.use('/pricing-all', require('./routes/pricing-all'));           // ALL: the whole segment (unfiltered), recently-changed first
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-park', require('./routes/pricing-park'));
+app.use('/pricing-history', require('./routes/pricing-history')); // drill report: recent Shopify price changes (audit log, lazy)
+app.use('/pricing-sales', require('./routes/pricing-sales'));     // drill report: recent raw Shopify sales w/ sold price (lazy)
 
 // Add / Modify Product module (all routes require verifyToken, applied inside each router).
 app.use('/product-search', require('./routes/product-search'));    // Stage 1: search

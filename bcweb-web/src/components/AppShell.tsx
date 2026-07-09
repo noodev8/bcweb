@@ -20,11 +20,12 @@ import { useAuth } from '@/contexts/AuthContext';
 interface AppShellProps {
   children: ReactNode;
   title?: string;
+  subtitle?: string;     // optional line under the title (e.g. the style's groupid) — the page's key identifier
   backHref?: string;     // when set, shows a single back arrow linking here
   backLabel?: string;
 }
 
-export default function AppShell({ children, title, backHref, backLabel }: AppShellProps) {
+export default function AppShell({ children, title, subtitle, backHref, backLabel }: AppShellProps) {
   const router = useRouter();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
 
@@ -71,6 +72,7 @@ export default function AppShell({ children, title, backHref, backLabel }: AppSh
             </Link>
           )}
           {title && <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>}
+          {subtitle && <p className="mt-0.5 font-mono text-sm text-slate-500">{subtitle}</p>}
         </div>
       )}
 

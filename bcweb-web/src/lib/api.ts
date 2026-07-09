@@ -91,6 +91,11 @@ export interface LoserRow {
   cover_weeks: number | null;   // weeks-to-clear at 90d pace; null when dead (no sales in window)
   is_dead: boolean;             // true = 0 sales in the window
 }
+// ALL: the whole segment, unfiltered, most-recently-changed first. last_change/next_review are YYYY-MM-DD or null.
+export interface AllRow {
+  groupid: string; title: string | null; price: number | null; stock: number;
+  last_change: string | null; next_review: string | null;
+}
 export interface DrillHeader {
   groupid: string; title: string | null;
   now: number | null; cost: number | null; rrp: number | null; minp: number | null; maxp: number | null;
@@ -104,6 +109,11 @@ export interface TimelineRow {
 }
 export interface SizeRow { size: string; qty: number; }
 export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; sizes: SizeRow[]; days: number; }
+// Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
+export interface PriceHistoryRow { change_date: string | null; old_price: number | null; new_price: number | null; note: string; changed_by: string | null; }
+export interface PriceHistoryData { rows: PriceHistoryRow[]; limit: number; truncated: boolean; }
+export interface SaleRow { solddate: string | null; ordertime: string | null; size: string | null; qty: number; soldprice: number | null; }
+export interface SalesData { rows: SaleRow[]; limit: number; truncated: boolean; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
 export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; uksize: string | null; }
@@ -125,7 +135,7 @@ export interface ProductDetail {
   sizes: ProductSize[];   // one row per variant (skumap)
 }
 export interface LoginData { token: string; display_name: string; }
-export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string; warnings: string[]; }
+export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; }
 export interface ParkData { groupid: string; next_review: string; }
 
 // =============================================================================================================================
@@ -157,6 +167,14 @@ export function getLosers(segment: string, days?: number, limit?: number, coverW
   );
 }
 
+// ALL list for a segment — every style, unfiltered, most-recently-changed first (browse/lookup view).
+export function getAll(segment: string) {
+  return request<{ segment: string; rows: AllRow[] }>(
+    { url: '/pricing-all', method: 'GET', params: { segment } },
+    (b) => ({ segment: b.segment, rows: b.rows || [] })
+  );
+}
+
 export function getDrill(groupid: string, days?: number) {
   return request<DrillData>(
     { url: '/pricing-drill', method: 'GET', params: { groupid, days } },
@@ -166,6 +184,22 @@ export function getDrill(groupid: string, days?: number) {
 
 export function findProducts(term: string) {
   return request<FindRow[]>({ url: '/pricing-find', method: 'GET', params: { term } }, (b) => b.results || []);
+}
+
+// Drill report: recent Shopify price changes for a style (audit log). Lazy — called when the "Price history" section is opened.
+export function getPriceHistory(groupid: string, limit?: number) {
+  return request<PriceHistoryData>(
+    { url: '/pricing-history', method: 'GET', params: { groupid, limit } },
+    (b) => ({ rows: b.rows || [], limit: b.limit, truncated: !!b.truncated })
+  );
+}
+
+// Drill report: recent raw Shopify sales for a style, each with its sold price. Lazy — called when the "Recent sales" section is opened.
+export function getSales(groupid: string, limit?: number) {
+  return request<SalesData>(
+    { url: '/pricing-sales', method: 'GET', params: { groupid, limit } },
+    (b) => ({ rows: b.rows || [], limit: b.limit, truncated: !!b.truncated })
+  );
 }
 
 // Add / Modify Product — Stage 1 search. Matches a groupid fragment against skusummary; results come back in groupid sort order.
@@ -297,10 +331,11 @@ export function generateAmazonUpload(groupid: string) {
   );
 }
 
-export function applyPrice(groupid: string, newPrice: number, reviewDays: number) {
+// reviewDays null = "None" (leave the review date untouched). note optional -> price_change_log.reason_notes.
+export function applyPrice(groupid: string, newPrice: number, reviewDays: number | null, note?: string) {
   return request<ApplyData>(
-    { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays } },
-    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [] })
+    { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays, note } },
+    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null })
   );
 }
 

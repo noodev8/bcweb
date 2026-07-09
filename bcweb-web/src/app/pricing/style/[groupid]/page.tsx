@@ -18,6 +18,8 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import Timeline from '@/components/Timeline';
 import SizeCurve from '@/components/SizeCurve';
+import PriceHistory from '@/components/PriceHistory';
+import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,8 +50,9 @@ function DrillContent() {
     if (backTo.startsWith('/pricing/find')) return 'Search';
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/pricing/', ''));
-    const isLosers = /(^|&)mode=losers(&|$)/.test(qs);
-    return `${seg} · ${isLosers ? 'Losers' : 'Winners'}`;
+    const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
+    const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
+    return `${seg} · ${modeLabel}`;
   })();
 
   const [data, setData] = useState<DrillData | null>(null);
@@ -57,9 +60,14 @@ function DrillContent() {
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Bumped after a successful write to remount the setter + the lazy reports so they pick up the fresh data (new current price, an
+  // empty setter, and a re-fetch of the price-history/sales reports that now include the change).
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent=true is used for the post-write in-place refresh: it updates the data without the full-page "Loading…" flash (the existing
+  // content stays put while the fresh drill loads underneath).
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const res = await getDrill(groupid);
     if (res.success && res.data) {
       setData(res.data);
@@ -68,7 +76,7 @@ function DrillContent() {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setError(res.error || 'Failed to load style');
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [groupid, logout]);
 
   useEffect(() => { load(); }, [load]);
@@ -78,15 +86,29 @@ function DrillContent() {
     router.push(backTo);
   }
 
-  async function handleApply(newPrice: number, reviewDays: number) {
+  async function handleApply(newPrice: number, reviewDays: number | null, note: string) {
     setApplying(true);
     setNotice(null);
-    const res = await applyPrice(groupid, newPrice, reviewDays);
+    const res = await applyPrice(groupid, newPrice, reviewDays, note);
     setApplying(false);
     if (res.success && res.data) {
       const warn = res.data.warnings.length ? ` (flagged: ${res.data.warnings.join(', ')})` : '';
-      setNotice({ kind: 'ok', text: `Applied £${res.data.new_price}. Next review ${res.data.next_review}.${warn} Returning to the list…` });
-      setTimeout(goBackToList, 1200);
+      // Review may be None now — phrase accordingly (null = the review date was left untouched).
+      const reviewMsg = res.data.next_review ? ` Next review ${res.data.next_review}.` : ' No review set.';
+      const push = res.data.shopify;
+      // Live-product push failed: the DB price + review are saved, but the store didn't update. Keep the user here WITHOUT refreshing
+      // (leave the setter as-is) so they can press Apply again — the push is idempotent, so re-applying safely retries it.
+      if (push && push.pushed === false) {
+        setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Shopify${push.message ? `: ${push.message}` : ''}. Press Apply again to retry.` });
+        return;
+      }
+      // Success. Stay on the page (no auto-return): show a persistent confirmation, then refresh the drill in place and remount the
+      // setter + reports (reloadKey) so the new price, timeline and price-history reflect the change. The user returns via the button.
+      // push.pushed === true -> sent to the store; push == null -> style not live on Shopify (nothing to push).
+      const pushedNote = push && push.pushed ? ' Sent to Shopify.' : '';
+      setNotice({ kind: 'ok', text: `Applied £${res.data.new_price}.${pushedNote}${reviewMsg}${warn}` });
+      await load(true);
+      setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setNotice({ kind: 'err', text: res.error || 'Failed to apply price' });
@@ -99,8 +121,9 @@ function DrillContent() {
     const res = await parkStyle(groupid, reviewDays);
     setApplying(false);
     if (res.success && res.data) {
-      setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged). Returning to the list…` });
-      setTimeout(goBackToList, 1200);
+      setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged).` });
+      await load(true);
+      setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setNotice({ kind: 'err', text: res.error || 'Failed to set review' });
@@ -108,29 +131,44 @@ function DrillContent() {
   }
 
   return (
-    <AppShell title={data?.header.title || groupid} backHref={backTo} backLabel={backLabel}>
+    <AppShell title={data?.header.title || groupid} subtitle={groupid} backHref={backTo} backLabel={backLabel}>
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       {data && (
         <div className="space-y-6">
-          {/* Header block */}
-          <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-4 lg:grid-cols-6">
-            <Stat label="Now" value={money(data.header.now)} strong />
-            <Stat label="Cost" value={money(data.header.cost)} />
-            <Stat label="RRP" value={money(data.header.rrp)} />
-            <Stat label="Stock" value={data.header.stock.toString()} />
-            <Stat label="Margin" value={money(data.header.margin)} />
-            <Stat label="Margin %" value={data.header.margin_pct !== null ? `${data.header.margin_pct}%` : '—'} />
-          </div>
+          {data.header.next_review && (
+            <div className="text-xs text-slate-400">Parked until {data.header.next_review}</div>
+          )}
 
-          <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-            <span className="font-mono">{groupid}</span>
-            {data.header.colour && <span>· {data.header.colour}</span>}
-            {data.header.width && <span>· {data.header.width}</span>}
-            {data.header.season && <span>· {data.header.season}</span>}
-            {data.header.next_review && <span>· parked until {data.header.next_review}</span>}
-          </div>
+          {/* Notice — on success it carries a prominent "Back to list" button so the user returns when ready (no auto-nav). */}
+          {notice && (
+            <div className={'flex flex-wrap items-center justify-between gap-3 rounded-md px-3 py-2 text-sm ' + (notice.kind === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+              <span>{notice.text}</span>
+              {notice.kind === 'ok' && (
+                <button
+                  onClick={goBackToList}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                >
+                  ← Back to {backLabel}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Set-price control — kept high so the action is reachable without scrolling past the supporting reports below. */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Set price &amp; review</h2>
+            <PriceSetter
+              key={reloadKey}
+              header={data.header}
+              sizes={data.sizes}
+              applying={applying}
+              onApply={handleApply}
+              onPark={handlePark}
+              onCancel={() => router.push(backTo)}
+            />
+          </section>
 
           {/* Timeline */}
           <section>
@@ -141,39 +179,11 @@ function DrillContent() {
           {/* Size curve (collapsible) */}
           <SizeCurve sizes={data.sizes} />
 
-          {/* Notice */}
-          {notice && (
-            <div className={'rounded-md px-3 py-2 text-sm ' + (notice.kind === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
-              {notice.text}
-            </div>
-          )}
-
-          {/* Set-price control */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Set price &amp; review</h2>
-            <PriceSetter
-              header={data.header}
-              applying={applying}
-              onApply={handleApply}
-              onPark={handlePark}
-              onCancel={() => router.push(backTo)}
-            />
-          </section>
+          {/* Reference reports (collapsible, lazy — fetch on open). Keyed on reloadKey so a write re-fetches them with the change. */}
+          <PriceHistory key={`hist-${reloadKey}`} groupid={groupid} />
+          <SalesList key={`sales-${reloadKey}`} groupid={groupid} />
         </div>
       )}
     </AppShell>
-  );
-}
-
-function money(v: number | null): string {
-  return v !== null ? `£${v.toFixed(2)}` : '—';
-}
-
-function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
-      <div className={'mt-0.5 ' + (strong ? 'text-xl font-semibold text-slate-900' : 'text-base text-slate-700')}>{value}</div>
-    </div>
   );
 }

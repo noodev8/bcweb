@@ -40,11 +40,11 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, public 
    - **Size curve** is a guardrail before a **cut** (don't misread a sold-out core, e.g. 38/39 gone, as dead demand). Show ALL sizes with 0 for sold-out.
 3. **Set price + review:** user sets a new price AND a review period together. Suggested defaults by move: raise ~7d, cut ~14d, hold ~30d (suggest, let them change).
 
-**Review cooldown (`next_shopify_price_review`, a date):** while it's a future date the style is hidden from triage. **A price change REQUIRES a review period** (no silent default). `changed_by` = the logged-in user's display name. `reason_code` is left NULL and `reason_notes` blank by design.
+**Review cooldown (`next_shopify_price_review`, a date):** while it's a future date the style is hidden from triage. A review period is **optional** on a price change (owner decision — a "None" chip, mirroring the Add/Modify price editor): pick a period to park the style, or None to leave the review date untouched. `changed_by` = the logged-in user's display name. `reason_code` is left NULL; `reason_notes` carries an **optional** free-text note from the operator (blank if none).
 
 ## Writes (must be exact — wrap each in `withTransaction`)
 
-- **W1 — apply price:** reject if `reviewDays` missing or `< 1`. Bounds (server-side, never trust client): **block** `< cost` or `< minshopifyprice`; **allow-but-flag** `> maxshopifyprice` or `> rrp`. Then, atomically: `UPDATE skusummary SET shopifyprice=$price_string, shopifychange=1, next_shopify_price_review=CURRENT_DATE+$reviewDays` **and** `INSERT price_change_log (groupid,'SHP',old,new,NULL,'',changed_by)`.
+- **W1 — apply price:** `reviewDays` is **optional** (if supplied must be an integer `>= 1`; omitted/None = leave the review date untouched). Bounds (server-side, never trust client): **block** `< cost`; **allow-but-flag** `> rrp`. (The `minshopifyprice`/`maxshopifyprice` bounds were removed per owner — unused.) Then, atomically: `UPDATE skusummary SET shopifyprice=$price_string[, next_shopify_price_review=CURRENT_DATE+$reviewDays]` (the review clause only when a period was given) **and** `INSERT price_change_log (groupid,'SHP',old,new,NULL,$note,changed_by)` (`$note` = optional operator note, else ''). **Do NOT set `shopifychange`** — after the transaction commits, W1 pushes the new price to Shopify **immediately** via the Admin API (`utils/shopify.js → pushIfLive`, same as the Add/Modify module). Setting the nightly-sync flag too would double-push. The push is best-effort (never rolls back the DB write); on failure the response carries `shopify:{pushed:false,…}` and the operator re-Applies (`productSet` is idempotent). No nightly fallback (owner decision: "pure direct push").
 - **W2 — park only:** `UPDATE skusummary SET next_shopify_price_review=CURRENT_DATE+$reviewDays`. No price change, no log row, `shopifychange` untouched.
 
 ## Schema landmines (legacy DB — respect these)
@@ -67,7 +67,7 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, public 
 
 ## Endpoints
 
-`POST /login` · `GET /pricing-segments` · `GET /pricing-triage?segment&days?&limit?` (WINNERS) · `GET /pricing-losers?segment&days?&limit?&coverWeeks?` (LOSERS) · `GET /pricing-drill?groupid&days?` · `GET /pricing-find?term` · `POST /pricing-apply {groupid,newPrice,reviewDays}` (W1) · `POST /pricing-park {groupid,reviewDays}` (W2) · `GET /health`. All except login/health require `verifyToken`.
+`POST /login` · `GET /pricing-segments` · `GET /pricing-triage?segment&days?&limit?` (WINNERS) · `GET /pricing-losers?segment&days?&limit?&coverWeeks?` (LOSERS) · `GET /pricing-drill?groupid&days?` · `GET /pricing-history?groupid&limit?` (drill report: recent price-change log, most-recent-N, lazy) · `GET /pricing-sales?groupid&limit?` (drill report: recent raw sales w/ sold price, most-recent-N, lazy) · `GET /pricing-find?term` · `POST /pricing-apply {groupid,newPrice,reviewDays}` (W1) · `POST /pricing-park {groupid,reviewDays}` (W2) · `GET /health`. All except login/health require `verifyToken`.
 
 ## Working notes / cautions
 
