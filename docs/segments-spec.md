@@ -9,16 +9,18 @@
 
 ## 0. STATUS & NEXT UP  (read this first)
 
-**Where we are:** **steps 1–4 are DONE** (2026-07-09). Four tables live on prod: `segment` (29 active),
+**Where we are:** **steps 1–5 (the whole backend) are DONE** (2026-07-09). Four tables live on prod: `segment` (29 active),
 `area` (Shopify/Amazon/Remove, sort 1/2/3, default cadence 30/30/91d), `segment_area_state` (87 clocks = 29×3), and
-`segment_worklog` (empty until step-5 writes). Two read endpoints built, wired in server.js, and verified over HTTP (dev user):
-`GET /segments` (overview grid) and `GET /segment?name=` (detail: header stats incl. live stock/styles + per-area clocks +
-recent work-log, lazy/truncated like pricing-history). All due-state branches + the worklog/last-worked join proven end-to-end
-(temp rows inserted, read back, then deleted — table confirmed empty). **Next up: step 5 — writes (`POST /segment-work`, `POST /segment-rename`).**
+`segment_worklog`. Six endpoints built, wired in server.js, verified over HTTP (dev user):
+reads `GET /segments` + `GET /segment?name=`; writes `POST /segment-work` (log + optional review) and `POST /segment-rename`
+(rewrite skusummary.segment + registry name atomically). Rename's carry-across (clocks + worklog survive because the id is stable)
+proven via BEGIN..ROLLBACK; all error/guard paths checked over HTTP; all test data cleaned (worklog + review dates back to empty).
+**Next up: the WEB/UI — the heatmap screen (spec §3) that consumes these endpoints. No front end exists yet.**
 
-**Code not yet committed to git or deployed to VPS.** New/changed server files: `routes/segments.js`, `routes/segment.js`,
-`utils/segmentReconcile.js`, `utils/segmentDue.js` (shared AMBER_DAYS/classify/isoDate — the isoDate avoids a BST UTC day-shift on
-DATE columns), `scripts/setup-segments.js`, `server.js` (two mounts). No web/UI yet — the heatmap screen consumes these later.
+**Steps 1–4 committed** (`79d723c`). **Step 5 not yet committed; nothing deployed to VPS.** Step-5 files: `routes/segment-work.js`,
+`routes/segment-rename.js`, `server.js` (two more mounts). Earlier files: `routes/segments.js`, `routes/segment.js`,
+`utils/segmentReconcile.js`, `utils/segmentDue.js` (shared AMBER_DAYS/classify/isoDate — isoDate avoids a BST UTC day-shift on DATE
+columns), `scripts/setup-segments.js`.
 
 **Prod/deploy note:** all four tables were created directly on the prod DB from local (creds point at prod). The VPS server
 deploy doesn't create them — they exist. If the DB is ever rebuilt, re-run `node scripts/setup-segments.js` (idempotent).
@@ -32,7 +34,7 @@ Files added by step 1: `utils/segmentReconcile.js` (the reconcile, reusable by t
 2. ✅ **Areas + clocks** — the `area` table (seeded Shopify / Amazon / Remove) and `segment_area_state` (cadence + next_review); reconcile seeds a clock per active segment×area (§4, §6-A). *Done, live on prod.*
 3. ✅ **Overview read** — `GET /segments` returning the heatmap grid (rev/GP + per-area due state + last-worked), reconcile-first (§5). Also created `segment_worklog` (empty). *Done; server code needs VPS deploy.*
 4. ✅ **Detail read** — `GET /segment?name=` (header stats incl. stock/styles + per-area clocks + lazy work-log history), plus shared `utils/segmentDue.js` (§5). *Done; server code needs VPS deploy.*
-5. **Writes** — `POST /segment-work` (log + set review) and `POST /segment-rename`. (§6)
+5. ✅ **Writes** — `POST /segment-work` (log + optional review, own tables) and `POST /segment-rename` (skusummary + registry, atomic, id-stable so history carries across) (§6). *Done; server code needs VPS deploy.*
 6. **Fast-follow — heat** — the 🔥 velocity signal once the structure is proven (§3, deliberately deferred).
 
 **Deploy (reminder, no action now):** web (Vercel) and server (VPS/PM2) deploy separately; the server step
@@ -139,6 +141,9 @@ Four small new objects:
 | `segment_worklog` | 1 / work event | `id` PK, `segment_id` FK, `area_id` FK, `worked_by` text (display name, resolved server-side), `worked_at timestamptz default now()`, `note` text |
 
 Notes / landmines:
+- **`skusummary.segment` is `character varying(20)`** — so a segment name can be at most 20 chars. `segment-rename` rejects a longer
+  `newName` up front (`NAME_TOO_LONG`) rather than letting the UPDATE throw mid-transaction. `segment.name` is TEXT but effectively
+  capped at 20 by this. (Discovered when a 21-char test name overflowed.)
 - **`segment.name` mirrors the DISTINCT list** — the reconcile step (§6-A) is the only thing that inserts/
   deactivates rows; don't hand-edit. Case/whitespace of the string must match skusummary exactly (it's the join key back to membership).
 - **Cadence is per `(segment, area)`** but seeded from `area.default_cadence_days` and/or the segment's chosen

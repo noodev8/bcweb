@@ -66,6 +66,8 @@ app.use('/login', loginLimiter, require('./routes/login'));
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));
 app.use('/segment', require('./routes/segment'));   // detail read: header stats + per-area clocks + recent work-log (lazy)
+app.use('/segment-work', require('./routes/segment-work'));     // W-seg-1: log a work event + optionally set that area's review clock
+app.use('/segment-rename', require('./routes/segment-rename')); // W-seg-2: rewrite skusummary.segment + registry name atomically
 
 // Pricing routes (all require verifyToken, applied inside each router).
 app.use('/pricing-segments', require('./routes/pricing-segments'));
