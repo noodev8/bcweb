@@ -1,15 +1,31 @@
 == Putty Server
 cd /apps/bcweb/
 git pull
-rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
+rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' --exclude='venv' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
 cd /apps/production/bcweb-server
 npm install
 pm2 restart server.js --name bcweb-prod
 
 
 == Vercel
-cd C:\bcweb && vercel --prod
+cd C:\bcweb
+vercel --prod
 
+
+
+
+
+
+
+
+
+
+==== EXTRA Server deploys done once
+
+NOTE: the venv below lives only on the production box (/apps/production/bcweb-server/venv), never in the
+git-tracked source at /apps/bcweb/bcweb-server. The rsync in the main deploy step above now excludes 'venv'
+so --delete doesn't wipe it on every deploy -- it did exactly this once (2026-07-10), breaking the Google
+Merchant push until the venv was recreated. Don't remove that --exclude.
 
 == Python (Amazon upload file feature) -- ASK CLAUDE FOR HELP WHEN DEPLOYING THIS
 The "Amazon upload file" button (POST /product-amazon) shells out to a Python helper:
