@@ -18,8 +18,8 @@ of units sell there. GP% = (revenue − COGS)/revenue, COGS = SUM(qty × skusumm
 Due state per area (spec §4): from segment_area_state.next_review_date vs CURRENT_DATE —
   off    (grey)  = off = true (operator flagged this area N/A for this segment, e.g. EVA-SEG on Amazon) — checked first,
                    independent of the date, so a stale next_review_date underneath doesn't leak through
-  never  (grey)  = next_review_date IS NULL (never worked)
-  overdue(red)   = next_review_date < today            → daysOverdue = today − next_review_date
+  overdue(red)   = next_review_date < today OR next_review_date IS NULL (never worked → straight to overdue, no separate
+                   "never" state) → daysOverdue = today − next_review_date, or 0 when never worked (no baseline date)
   due-soon(amber)= due within AMBER_DAYS (incl. today)
   ok     (green) = further out
 Last-worked (who/when) is the most recent segment_worklog row for that (segment, area).
@@ -40,8 +40,8 @@ Success Response:
       "gpPct": 44,
       "heat": null,
       "areas": [
-        { "area": "Shopify", "cadenceDays": 30, "dueState": "never", "daysOverdue": 0,
-          "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },
+        { "area": "Shopify", "cadenceDays": 30, "dueState": "overdue", "daysOverdue": 0,
+          "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },   // never worked → overdue, daysOverdue 0
         ...  // ordered by area.sort
       ]
     },

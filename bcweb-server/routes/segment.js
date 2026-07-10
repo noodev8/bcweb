@@ -29,8 +29,8 @@ Success Response:
   "active": true,
   "days": 30,
   "stats": { "revenue30": 9314.74, "gpPct": 44, "stock": 812, "styles": 37, "heat": null },
-  "areas": [ { "area": "Shopify", "cadenceDays": 30, "dueState": "never", "daysOverdue": 0,
-               "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null }, ... ],   // ordered by area.sort
+  "areas": [ { "area": "Shopify", "cadenceDays": 30, "dueState": "overdue", "daysOverdue": 0,
+               "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null }, ... ],   // never worked → overdue; ordered by area.sort
   "worklog": [ { "area": "Shopify", "workedBy": "Andreas", "workedAt": "2026-07-09T10:11:12.000Z", "note": "harvest" }, ... ],
   "limit": 20,
   "truncated": false

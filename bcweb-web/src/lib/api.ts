@@ -413,7 +413,8 @@ export function parkStyle(groupid: string, reviewDays: number) {
 // =============================================================================================================================
 // Segments module — the review/attention layer over the pricing tools (docs/segments-spec.md).
 // =============================================================================================================================
-export type DueState = 'never' | 'overdue' | 'due-soon' | 'ok' | 'off';
+// No 'never' state — a never-worked area is reported as 'overdue' (with daysOverdue 0), so it reads as "needs attention now".
+export type DueState = 'overdue' | 'due-soon' | 'ok' | 'off';
 
 // One clock cell = one work area (Shopify / Amazon / Remove …) of one segment. Shared by the overview grid and the detail page.
 export interface SegmentAreaCell {
