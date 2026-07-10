@@ -96,6 +96,33 @@ export interface AllRow {
   groupid: string; title: string | null; price: number | null; stock: number;
   last_change: string | null; next_review: string | null;
 }
+// --- Amazon Pricing module (SKU-grain; read side) ---------------------------------------------------------------------------
+export type AmzTier = 'green' | 'amber' | 'white';
+export type AmzAction = 'creep' | 'drop' | 'revert' | 'hold';
+export interface AmzSuggestion { tier: AmzTier; action: AmzAction; target: number | null; why: string; }
+// One chip: a managed segment with an attention badge (🟢+🟡) and 90d performance context. The "All" chip is summed client-side.
+export interface AmzSegmentRow {
+  segment: string; sku_count: number; attention_count: number; green: number; amber: number;
+  units_90d: number; profit_90d: number | null; last_sold: string | null;
+}
+// One SKU row in the list — raw signals + the suggested move.
+export interface AmzSkuRow {
+  code: string; amz_sku: string; groupid: string; segment: string; size: string; title: string | null;
+  current_price: number | null; cost: number | null; rrp: number | null; fbafee: number | null;
+  fba_live: number; fba_inbound: number;
+  sold_7d: number; sold_14d: number; returns_14d: number; return_rate: number;
+  days_since_sale: number | null; days_since_change: number | null; last_direction: string | null; last_sold: string | null;
+  suggestion: AmzSuggestion;
+}
+export interface AmzSkuCounts { green: number; amber: number; white: number; total: number; }
+// Drill (dig-deeper) for one SKU — lazy-loaded when a row is expanded.
+export interface AmzWeek { week_start: string; units: number; returns: number; avg_price: number | null; profit: number; }
+export interface AmzHistoryRow { log_date: string; old_price: number | null; new_price: number | null; direction: string; notes: string; }
+export interface AmzBand { price: number | null; units: number; first: string; last: string; }
+export interface AmzSkuDetail { code: string; weeks: AmzWeek[]; history: AmzHistoryRow[]; bands: AmzBand[]; }
+// Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the generated upload file, not this call.
+export interface AmzApplyResult { code: string; new_price: number; old_price: number | null; warnings: string[]; }
+
 export interface DrillHeader {
   groupid: string; title: string | null;
   now: number | null; cost: number | null; rrp: number | null; minp: number | null; maxp: number | null;
@@ -172,6 +199,35 @@ export function getAll(segment: string) {
   return request<{ segment: string; rows: AllRow[] }>(
     { url: '/pricing-all', method: 'GET', params: { segment } },
     (b) => ({ segment: b.segment, rows: b.rows || [] })
+  );
+}
+
+// Amazon Pricing — segment chips (managed segments + attention badge + 90d context). "All" is summed client-side.
+export function getAmzSegments() {
+  return request<AmzSegmentRow[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.rows || []);
+}
+
+// Amazon Pricing — the SKU list for a segment (omit / 'all' for every managed SKU), each row with a suggested move.
+export function getAmzSkus(segment?: string) {
+  return request<{ segment: string | null; counts: AmzSkuCounts; rows: AmzSkuRow[] }>(
+    { url: '/amz-skus', method: 'GET', params: { segment } },
+    (b) => ({ segment: b.segment, counts: b.counts, rows: b.rows || [] })
+  );
+}
+
+// Amazon Pricing — the dig-deeper drill for one SKU (6-week velocity + price history + price bands). Lazy: called on row expand.
+export function getAmzSku(code: string, limit?: number) {
+  return request<AmzSkuDetail>(
+    { url: '/amz-sku', method: 'GET', params: { code, limit } },
+    (b) => ({ code: b.code, weeks: b.weeks || [], history: b.history || [], bands: b.bands || [] })
+  );
+}
+
+// Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; does not change the live Amazon price on its own.
+export function applyAmzPrice(code: string, newPrice: number, note?: string) {
+  return request<AmzApplyResult>(
+    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note } },
+    (b) => ({ code: b.code, new_price: b.new_price, old_price: b.old_price, warnings: b.warnings || [] })
   );
 }
 

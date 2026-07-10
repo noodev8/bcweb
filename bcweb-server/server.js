@@ -98,6 +98,15 @@ app.use('/product-image', require('./routes/product-image'));     // edit: uploa
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
 app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
 
+// Amazon Pricing module (SKU-grain; read side. All routes require verifyToken, applied inside each router).
+app.use('/amz-segments', require('./routes/amz-segments'));  // chips: managed segments + attention badge + 90d performance context
+app.use('/amz-skus', require('./routes/amz-skus'));          // the SKU list for a segment (or all) with a suggested move per row
+app.use('/amz-sku', require('./routes/amz-sku'));            // drill (lazy): one SKU's 6-week velocity + price-change history + price bands
+app.use('/amz-apply', require('./routes/amz-apply'));       // W-A1: record a new Amazon price (amz_price_log only; never writes amzfeed)
+// NOTE: /amz-pending + /amz-upload-file (phantom-diff basket) are written but NOT mounted — live data showed the phantom model
+// surfaces months-old mismatches, not just this session's changes (see docs/amz-pricing-spec.md §3). The basket is session-scoped
+// client-side for now; a persistent basket needs an explicit amz_price_log.uploaded_at flag (deferred decision).
+
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
   res.json({ return_code: 'NOT_FOUND', message: `No such endpoint: ${req.method} ${req.originalUrl}` });
