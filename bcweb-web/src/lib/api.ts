@@ -96,32 +96,50 @@ export interface AllRow {
   groupid: string; title: string | null; price: number | null; stock: number;
   last_change: string | null; next_review: string | null;
 }
-// --- Amazon Pricing module (SKU-grain; read side) ---------------------------------------------------------------------------
-export type AmzTier = 'green' | 'amber' | 'white';
-export type AmzAction = 'creep' | 'drop' | 'revert' | 'hold';
-export interface AmzSuggestion { tier: AmzTier; action: AmzAction; target: number | null; why: string; }
-// One chip: a managed segment with an attention badge (🟢+🟡) and 90d performance context. The "All" chip is summed client-side.
-export interface AmzSegmentRow {
-  segment: string; sku_count: number; attention_count: number; green: number; amber: number;
-  units_90d: number; profit_90d: number | null; last_sold: string | null;
+// --- Amazon Pricing module (SKU-grain; mirrors the Shopify flow — segment picker -> WINNERS|LOSERS -> per-SKU drill) -----------
+// Stage 0: one managed segment (has live amzfeed SKUs) + its SKU count.
+export interface AmzSegment { segment: string; skus: number; }
+// Stage 1 WINNERS: top in-stock SKUs by units sold in the window (candidates to price UP / harvest).
+export interface AmzWinnerRow {
+  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
+  price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
 }
-// One SKU row in the list — raw signals + the suggested move.
-export interface AmzSkuRow {
-  code: string; amz_sku: string; groupid: string; segment: string; size: string; title: string | null;
-  current_price: number | null; cost: number | null; rrp: number | null; fbafee: number | null;
+// Stage 1 LOSERS: dead (no sale in 14d) / slow (cover >= coverWeeks) FBA stock at risk (candidates to price DOWN / cut).
+export interface AmzLoserRow {
+  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
+  price: number | null; fba: number; u30: number; u90: number; u14: number;
+  cover_weeks: number | null;   // weeks-to-clear at the cover-window pace; null when no sales in the window
+  is_dead: boolean;             // true = no Amazon sale in the last 14 days
+  last_sold: string | null; days_since_sale: number | null;
+}
+// Stage 1 ALL: every managed SKU in the segment, most-recently-changed first (browse/lookup view).
+export interface AmzAllRow {
+  code: string; groupid: string; size: string; title: string | null;
+  price: number | null; fba: number; last_change: string | null; last_sold: string | null;
+}
+// Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
+export interface AmzDrillHeader {
+  code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
+  price: number | null; cost: number | null; fbafee: number | null; rrp: number | null;
+  floor: number | null;                 // cost + FBA fee (breakeven)
+  margin: number | null; margin_pct: number | null;
   fba_live: number; fba_inbound: number;
-  sold_7d: number; sold_14d: number; returns_14d: number; return_rate: number;
-  days_since_sale: number | null; days_since_change: number | null; last_direction: string | null; last_sold: string | null;
-  suggestion: AmzSuggestion;
 }
-export interface AmzSkuCounts { green: number; amber: number; white: number; total: number; }
-// Drill (dig-deeper) for one SKU — lazy-loaded when a row is expanded.
-export interface AmzWeek { week_start: string; units: number; returns: number; avg_price: number | null; profit: number; }
-export interface AmzHistoryRow { log_date: string; old_price: number | null; new_price: number | null; direction: string; notes: string; }
+export interface AmzWeek { week_start: string; units: number; avg_price: number | null; profit: number; }
 export interface AmzBand { price: number | null; units: number; first: string; last: string; }
-export interface AmzSkuDetail { code: string; weeks: AmzWeek[]; history: AmzHistoryRow[]; bands: AmzBand[]; }
-// Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the generated upload file, not this call.
-export interface AmzApplyResult { code: string; new_price: number; old_price: number | null; warnings: string[]; }
+export interface AmzDrillData { header: AmzDrillHeader; weeks: AmzWeek[]; bands: AmzBand[]; }
+// Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
+export interface AmzHistoryRow { log_date: string; old_price: number | null; new_price: number | null; direction: string; notes: string; changed_by: string | null; }
+export interface AmzHistoryData { rows: AmzHistoryRow[]; limit: number; truncated: boolean; }
+export interface AmzSaleRow { solddate: string | null; size: string | null; qty: number; soldprice: number | null; }
+export interface AmzSalesData { rows: AmzSaleRow[]; limit: number; truncated: boolean; }
+export interface AmzFindRow {
+  code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
+  price: number | null; fba: number;
+}
+// Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the client-built upload file, not this call.
+// amz_sku + rrp let the session basket build that file straight from this response.
+export interface AmzApplyResult { code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; warnings: string[]; }
 
 export interface DrillHeader {
   groupid: string; title: string | null;
@@ -202,32 +220,70 @@ export function getAll(segment: string) {
   );
 }
 
-// Amazon Pricing — segment chips (managed segments + attention badge + 90d context). "All" is summed client-side.
+// Amazon Pricing — Stage 0: the segment picker (managed segments + SKU count). Mirrors getSegments().
 export function getAmzSegments() {
-  return request<AmzSegmentRow[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.rows || []);
+  return request<AmzSegment[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
-// Amazon Pricing — the SKU list for a segment (omit / 'all' for every managed SKU), each row with a suggested move.
-export function getAmzSkus(segment?: string) {
-  return request<{ segment: string | null; counts: AmzSkuCounts; rows: AmzSkuRow[] }>(
-    { url: '/amz-skus', method: 'GET', params: { segment } },
-    (b) => ({ segment: b.segment, counts: b.counts, rows: b.rows || [] })
+// Amazon Pricing — Stage 1 WINNERS: top in-stock SKUs by units sold in `days` (default 30). Mirrors getTriage().
+export function getAmzWinners(segment: string, days?: number, limit?: number) {
+  return request<{ segment: string; days: number; rows: AmzWinnerRow[] }>(
+    { url: '/amz-winners', method: 'GET', params: { segment, days, limit } },
+    (b) => ({ segment: b.segment, days: b.days, rows: b.rows || [] })
   );
 }
 
-// Amazon Pricing — the dig-deeper drill for one SKU (6-week velocity + price history + price bands). Lazy: called on row expand.
-export function getAmzSku(code: string, limit?: number) {
-  return request<AmzSkuDetail>(
-    { url: '/amz-sku', method: 'GET', params: { code, limit } },
-    (b) => ({ code: b.code, weeks: b.weeks || [], history: b.history || [], bands: b.bands || [] })
+// Amazon Pricing — Stage 1 LOSERS: dead/slow FBA stock at risk. Mirrors getLosers().
+export function getAmzLosers(segment: string, days?: number, limit?: number, coverWeeks?: number) {
+  return request<{ segment: string; days: number; coverWeeks: number; rows: AmzLoserRow[] }>(
+    { url: '/amz-losers', method: 'GET', params: { segment, days, limit, coverWeeks } },
+    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, rows: b.rows || [] })
   );
 }
 
-// Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; does not change the live Amazon price on its own.
+// Amazon Pricing — Stage 1 ALL: every managed SKU in the segment, most-recently-changed first. Mirrors getAll().
+export function getAmzAll(segment: string) {
+  return request<{ segment: string; rows: AmzAllRow[] }>(
+    { url: '/amz-all', method: 'GET', params: { segment } },
+    (b) => ({ segment: b.segment, rows: b.rows || [] })
+  );
+}
+
+// Amazon Pricing — Stage 2 drill: one SKU's header + 6-week velocity + 60d price bands. Mirrors getDrill().
+export function getAmzDrill(code: string) {
+  return request<AmzDrillData>(
+    { url: '/amz-drill', method: 'GET', params: { code } },
+    (b) => ({ header: b.header, weeks: b.weeks || [], bands: b.bands || [] })
+  );
+}
+
+// Amazon Pricing — drill report (lazy): recent amz_price_log changes for one SKU. Mirrors getPriceHistory().
+export function getAmzHistory(code: string, limit?: number) {
+  return request<AmzHistoryData>(
+    { url: '/amz-history', method: 'GET', params: { code, limit } },
+    (b) => ({ rows: b.rows || [], limit: b.limit, truncated: !!b.truncated })
+  );
+}
+
+// Amazon Pricing — drill report (lazy): recent raw Amazon sales (incl. returns) for one SKU. Mirrors getSales().
+export function getAmzSales(code: string, limit?: number) {
+  return request<AmzSalesData>(
+    { url: '/amz-sales', method: 'GET', params: { code, limit } },
+    (b) => ({ rows: b.rows || [], limit: b.limit, truncated: !!b.truncated })
+  );
+}
+
+// Amazon Pricing — direct SKU search across all managed segments. Mirrors findProducts().
+export function findAmzSkus(term: string) {
+  return request<AmzFindRow[]>({ url: '/amz-find', method: 'GET', params: { term } }, (b) => b.results || []);
+}
+
+// Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; the price reaches Amazon via the client upload file, not
+// this call. Returns amz_sku + rrp so the session basket can build that file straight from the response.
 export function applyAmzPrice(code: string, newPrice: number, note?: string) {
   return request<AmzApplyResult>(
     { url: '/amz-apply', method: 'POST', data: { code, newPrice, note } },
-    (b) => ({ code: b.code, new_price: b.new_price, old_price: b.old_price, warnings: b.warnings || [] })
+    (b) => ({ code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, warnings: b.warnings || [] })
   );
 }
 

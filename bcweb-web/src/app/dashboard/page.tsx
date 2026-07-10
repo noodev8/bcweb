@@ -51,11 +51,17 @@ export default function DashboardPage() {
           live
         />
 
+        {/* Amazon Pricing — SKU-grain, mirrors the Shopify Pricing flow (segment -> WINNERS|LOSERS -> per-SKU drill). Applies queue
+            into a one-file Seller Central upload (no live push, no review/park). See docs/amz-pricing-spec.md. */}
+        <ModuleTile
+          title="Amazon Pricing"
+          description="Review demand and set Amazon/FBA prices, segment by segment."
+          href="/amz"
+          icon={BuildingStorefrontIcon}
+          live
+        />
+
         {/* Placeholders — modular growth path, not built in v1. */}
-        {/* Amazon Pricing: a full screen was built + felt (routes/amz-*, src/app/amz) but PARKED 2026-07-10 — Amazon pricing is a
-            judgment-dense, low-volume, knowledge-compounding job that the conversational AI flow does better than a rules screen.
-            Code kept in the repo, unlinked. See docs/amz-pricing-spec.md §0. */}
-        <ModuleTile title="Amazon Pricing" description="Pricing for the Amazon / FBA channel." icon={BuildingStorefrontIcon} />
         <ModuleTile title="Inventory" description="Stock levels, allocation and incoming." icon={ArchiveBoxIcon} />
         <ModuleTile title="Orders" description="Order search and fulfilment status." icon={ShoppingCartIcon} />
         <ModuleTile title="Analytics" description="Sales and margin reporting." icon={ChartBarIcon} />

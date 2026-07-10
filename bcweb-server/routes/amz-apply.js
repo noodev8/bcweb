@@ -4,8 +4,9 @@ API Route: amz_apply
 =======================================================================================================================================
 Method: POST
 Purpose: The Amazon Pricing write (W-A1, docs/amz-pricing-spec.md §4) — record a new Amazon price for ONE SKU. Deliberately smaller
-         than the Shopify apply: it does NOT change any live price by itself. It writes a single amz_price_log row; the price only
-         actually reaches Amazon when the operator downloads the one-file upload (/amz-upload-file) and uploads it to Seller Central.
+         than the Shopify apply: it does NOT change any live price by itself. It writes a single amz_price_log row (the audit trail) and
+         returns the SKU + new price + RRP; the price only actually reaches Amazon when the operator downloads the one-file Seller Central
+         upload (built client-side in the module's session basket from these apply responses) and uploads it. No live push, ever.
 
 Rules enforced here (never trust the client):
   - BLOCK  newPrice < hard-floor (cost + FBA fee)      -> PRICE_BELOW_FLOOR   (breakeven; can't knowingly sell at a loss)
@@ -16,15 +17,17 @@ Rules enforced here (never trust the client):
   - NEVER write amzfeed (it is refreshed nightly from Amazon — any write is clobbered; hard rule from AMZ_PRICING.md).
   - The optional `note` carries the operator's rationale (the row's suggestion "why" is a good default the client can pass). Capped.
 
-Schema note: amz_price_log has no `changed_by` column yet (schema is id, log_date, code, old_price, new_price, notes). Per the spec
-(§4/§6) recording who applied a change wants that column added; until then this route resolves the operator from the token but does not
-persist it. Adding `changed_by text` + one extra INSERT column is the intended follow-up.
+Schema note: amz_price_log is (id, log_date, code, old_price, new_price, notes, changed_by). `changed_by` was added 2026-07-10 (nullable
+text) so this route now persists the operator (req.user.display_name, resolved by verifyToken) — matching the Shopify price_change_log
+convention. `old_price` is NOT NULL, so when the live amzprice reads back NULL (junk/blank VARCHAR) we log the new price as old_price
+(a zero-delta 'flat' row) rather than violate the constraint; the response still returns the true old_price (null when unknown).
 =======================================================================================================================================
 Request Payload:
 { "code": "FLE030-IVES-WHITE-05", "newPrice": 39.79, "note": "creep 0.50 — 14u/7d" }   // note optional
 
 Success Response:
-{ "return_code": "SUCCESS", "code": "...", "new_price": 39.79, "old_price": 39.29, "warnings": ["ABOVE_RRP"] }  // warnings [] if none
+{ "return_code": "SUCCESS", "code": "...", "amz_sku": "AD-0XF8D-48L", "new_price": 39.79, "old_price": 39.29, "rrp": 45.00,
+  "warnings": ["ABOVE_RRP"] }  // warnings [] if none. amz_sku + rrp let the client basket build the upload file from this response.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "MISSING_FIELDS" · "INVALID_PRICE" · "PRICE_BELOW_FLOOR" · "NOT_FOUND" · "UNAUTHORIZED" · "SERVER_ERROR"
@@ -61,9 +64,12 @@ router.post('/', async (req, res) => {
 
     const note = (body.note === undefined || body.note === null ? '' : String(body.note)).trim().slice(0, 500);
 
-    // Load the SKU's live price (for old_price) + economics for the floor. amzfeed is FBA/Amazon truth; cost/rrp on skusummary.
+    // Load the SKU's live price (for old_price) + economics for the floor, plus the Amazon SKU + RRP so the response carries everything
+    // the client's upload basket needs to build the Seller Central file (amz_sku, new_price, RRP) without a second round-trip.
+    // amzfeed is FBA/Amazon truth; cost/rrp on skusummary.
     const cur = await query(`
-      SELECT ${safeNumeric('a.amzprice')} AS live_price,
+      SELECT a.sku AS amz_sku,
+             ${safeNumeric('a.amzprice')} AS live_price,
              ${safeNumeric('a.fbafee')}   AS fbafee,
              ${safeNumeric('sk.cost')}    AS cost,
              ${safeNumeric('sk.rrp')}     AS rrp
@@ -93,15 +99,22 @@ router.post('/', async (req, res) => {
     const warnings = [];
     if (rrp !== null && rounded > rrp) warnings.push('ABOVE_RRP');
 
+    // old_price is NOT NULL on amz_price_log, but the live amzprice can read back NULL (a junk/blank VARCHAR that safeNumeric couldn't
+    // parse). Guard it: log the new price as old_price in that case (a zero-delta 'flat' audit row) rather than 500 on the constraint or
+    // fabricate a false delta. The RESPONSE keeps the true oldPrice (null when unknown) so the UI/basket shows "—" for the prior price.
+    const oldForLog = oldPrice !== null ? oldPrice : rounded;
+    // changed_by = the logged-in operator, resolved server-side by verifyToken from the token's id — never sent by the client (CLAUDE.md).
+    const changedBy = req.user.display_name;
+
     // Single INSERT, wrapped for consistency with the platform's write convention (utils/transaction.js).
     await withTransaction(async (client) => {
       await client.query(
-        `INSERT INTO amz_price_log (code, old_price, new_price, notes) VALUES ($1, $2, $3, $4)`,
-        [code, oldPrice, rounded, note]
+        `INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by) VALUES ($1, $2, $3, $4, $5)`,
+        [code, oldForLog, rounded, note, changedBy]
       );
     });
 
-    return res.json({ return_code: 'SUCCESS', code, new_price: rounded, old_price: oldPrice, warnings });
+    return res.json({ return_code: 'SUCCESS', code, amz_sku: row.amz_sku, new_price: rounded, old_price: oldPrice, rrp, warnings });
   } catch (err) {
     logger.error('[amz-apply] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to apply Amazon price' });

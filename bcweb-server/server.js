@@ -98,14 +98,18 @@ app.use('/product-image', require('./routes/product-image'));     // edit: uploa
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
 app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
 
-// Amazon Pricing module (SKU-grain; read side. All routes require verifyToken, applied inside each router).
-app.use('/amz-segments', require('./routes/amz-segments'));  // chips: managed segments + attention badge + 90d performance context
-app.use('/amz-skus', require('./routes/amz-skus'));          // the SKU list for a segment (or all) with a suggested move per row
-app.use('/amz-sku', require('./routes/amz-sku'));            // drill (lazy): one SKU's 6-week velocity + price-change history + price bands
-app.use('/amz-apply', require('./routes/amz-apply'));       // W-A1: record a new Amazon price (amz_price_log only; never writes amzfeed)
-// NOTE: /amz-pending + /amz-upload-file (phantom-diff basket) are written but NOT mounted — live data showed the phantom model
-// surfaces months-old mismatches, not just this session's changes (see docs/amz-pricing-spec.md §3). The basket is session-scoped
-// client-side for now; a persistent basket needs an explicit amz_price_log.uploaded_at flag (deferred decision).
+// Amazon Pricing module (SKU-grain; mirrors the Shopify Pricing flow — segment picker -> WINNERS|LOSERS lists -> per-SKU drill).
+// Read side + the one write. All routes require verifyToken, applied inside each router. Amazon has no park/review concept and no live
+// price push: a price change is logged to amz_price_log and reaches Amazon via the client-built one-file Seller Central upload.
+app.use('/amz-segments', require('./routes/amz-segments'));  // Stage 0: segment picker (managed segments + SKU count)
+app.use('/amz-winners', require('./routes/amz-winners'));    // Stage 1: WINNERS — top in-stock SKUs by units sold (price up / harvest)
+app.use('/amz-losers', require('./routes/amz-losers'));      // Stage 1: LOSERS — dead/slow FBA stock at risk (price down / cut)
+app.use('/amz-all', require('./routes/amz-all'));            // Stage 1: ALL — every managed SKU in the segment (browse/lookup)
+app.use('/amz-drill', require('./routes/amz-drill'));        // Stage 2: one SKU's header + 6-week velocity + 60d price bands
+app.use('/amz-history', require('./routes/amz-history'));    // drill report (lazy): recent amz_price_log changes for the SKU
+app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (lazy): recent raw Amazon sales (incl. returns) for the SKU
+app.use('/amz-find', require('./routes/amz-find'));          // direct SKU search across all managed segments
+app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price (amz_price_log only; never writes amzfeed)
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

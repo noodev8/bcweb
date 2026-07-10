@@ -16,6 +16,56 @@ first; treat them as the source of truth for *what a good price move is*.
 
 ## 0. STATUS & NEXT UP  (read this first)
 
+**✅ REBUILT 2026-07-10 as v2 — "mirror the Shopify Pricing flow" (owner's call, supersedes the parked v1 below).** The
+judgment-heavy auto-suggest screen (v1) was thrown away; Amazon Pricing is now a faithful **structural mirror of the
+Shopify Pricing module**, just SKU-grain. Same shape: segment picker → a segment page with the prominent **WINNERS |
+LOSERS** switch (+ an ALL browse tab) → a **per-SKU drill/decision page**. No classifier, no green/amber/white — the
+lists are ranked and the human decides on the drill (exactly like Shopify). The parked-v1 record (§0 old, §2, §3, §5)
+is kept below for history but is **no longer how it works** — trust this note + §1/§4/§6 for the domain/data facts.
+
+**What's built (server, all validated against live prod):**
+- `GET /amz-segments` — segment picker: managed segments (have `amzfeed` rows) + SKU count. *(rewritten — the old
+  attention/classifier version is gone.)*
+- `GET /amz-winners?segment&days?&limit?` — mirror of `pricing-triage`: top **in-stock** SKUs by units sold in the
+  window (default **30d**), price-**up**/harvest candidates.
+- `GET /amz-losers?segment&days?&limit?&coverWeeks?` — mirror of `pricing-losers`: **DEAD** (no AMZ sale in **14d**)
+  or **SLOW** (`cover = amzlive × days/7 / u_win ≥ coverWeeks`, default **16**) FBA stock at risk; dead cluster first,
+  then most FBA stock. Windows are **Amazon-native (faster)** by owner's choice — 14d dead is aggressive and tunable.
+- `GET /amz-all?segment` — mirror of `pricing-all`: every managed SKU, most-recently-changed first.
+- `GET /amz-drill?code` — mirror of `pricing-drill`: header (price/cost/FBA-fee/RRP/floor/**net margin** = price−cost−fee/
+  FBA stock/amz_sku) + 6-week velocity + 60d price bands.
+- `GET /amz-history?code` / `GET /amz-sales?code` — lazy drill reports (mirror `pricing-history`/`pricing-sales`);
+  sales includes returns (qty<0), a real Amazon pricing signal.
+- `GET /amz-find?term` — SKU search across segments (mirror `pricing-find`).
+- `POST /amz-apply {code, newPrice, note?}` — W-A1 unchanged (audit `amz_price_log` only, never `amzfeed`), now also
+  returns `amz_sku`+`rrp` so the client basket builds the upload file from the response.
+- **Deleted:** `routes/amz-skus.js`, `routes/amz-sku.js`, `routes/amz-pending.js`, `routes/amz-upload-file.js`,
+  `utils/amzSuggest.js`, `utils/amzSkuState.js`, `utils/amzPending.js` (classifier + phantom-diff basket, all gone).
+
+**What's built (web, `tsc` clean):** pages `src/app/amz/{page,[segment]/page,sku/[code]/page,find/page}.tsx` +
+`layout.tsx`, mirroring the Shopify pages one-for-one. The **upload basket** is a **session client-side** context
+(`src/contexts/AmzBasketContext.tsx`, provider in the module layout) so it survives navigation between list and drill;
+a hard refresh empties it (owner's choice — no `uploaded_at` column, no server pending set). `AmzBasketBar` shows the
+**Download upload file (N)** button on every /amz page. Apply on the drill → `POST /amz-apply` (audit) **and** queue into
+the basket; the file (tab-separated `sku ⇥ price ⇥ (min blank) ⇥ RRP`) is built client-side on download. Reused Shopify
+components: `AppShell`, `ListModeSwitcher` (gained one optional `allDescription` prop), the money/date helpers, the
+`api.ts` client pattern. Dashboard tile flipped **live → /amz**.
+
+**`changed_by` added (2026-07-10):** `amz_price_log` gained a nullable `changed_by text` column (idempotent `ADD COLUMN IF NOT
+EXISTS`, run on live prod). `POST /amz-apply` now persists the operator (`req.user.display_name`, resolved by verifyToken —
+never client-sent), matching the Shopify `price_change_log` convention; `GET /amz-history` returns it and the drill's Price-history
+report shows a "By" column (null for legacy rows). Also hardened `old_price` (NOT NULL): when the live amzprice reads back NULL
+(junk VARCHAR), the audit row logs new-as-old (a 'flat' row) instead of violating the constraint.
+
+**Not done / notes:** not click-tested in the running app yet; params table (§6) still not built — the lists don't need
+it (they're ranked, not classified), so it may never be needed now the classifier is gone; `coverWeeks`/the 14d dead window
+are the obvious tuning knobs after live use.
+
+---
+
+<details>
+<summary><b>⛔ v1 (PARKED, superseded by the v2 rebuild above) — kept for history</b></summary>
+
 **⛔ PARKED 2026-07-10 — decision tool shelved, not deployed, dashboard tile reverted to "coming soon".** After
 building and *feeling* the whole thing (segments/list/drill/write/basket), the owner's call: **Amazon pricing is
 better done as a conversational AI flow than as a rules screen.** It's judgment-dense (season vs price, returns =
@@ -120,6 +170,8 @@ step-band refinements need the params table.
 
 **Deploy (reminder, no action now):** web (Vercel) and server (VPS/PM2) deploy separately; the server step is
 manual (`docs/deploy.txt`). If §6's params table is added, run its DDL on the prod DB as part of the deploy.
+
+</details>
 
 ---
 

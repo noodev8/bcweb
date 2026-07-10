@@ -20,9 +20,14 @@ interface ListModeSwitcherProps {
   winnersCount?: number | null;
   losersCount?: number | null;
   allCount?: number | null;
+  // Descriptor beside the "All styles" button. Defaults to the Shopify wording; the Amazon module passes its own (no "parked" concept).
+  allDescription?: string;
 }
 
-export default function ListModeSwitcher({ mode, onChange, winnersCount, losersCount, allCount }: ListModeSwitcherProps) {
+export default function ListModeSwitcher({
+  mode, onChange, winnersCount, losersCount, allCount,
+  allDescription = 'the whole segment — incl. parked & out of stock, most-recently-changed first',
+}: ListModeSwitcherProps) {
   return (
     <div className="mb-6 space-y-3">
       {/* The two OPPOSITE jobs — the primary decision (CLAUDE.md). */}
@@ -70,7 +75,7 @@ export default function ListModeSwitcher({ mode, onChange, winnersCount, losersC
           </span>
         )}
         <span className={'ml-1 truncate text-xs ' + (mode === 'all' ? 'text-slate-500' : 'text-slate-400')}>
-          the whole segment — incl. parked &amp; out of stock, most-recently-changed first
+          {allDescription}
         </span>
       </button>
     </div>
