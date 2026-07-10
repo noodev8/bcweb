@@ -1,0 +1,64 @@
+String		ls_find
+Long		ll_findstart, ll_found
+Integer	li_qty, li_arrived, li_lineqty
+
+// Deafult ALL
+ls_find = "shopifysku = '"+as_code+"'"
+as_type = Lower(as_type)
+
+IF as_type = "customerpick" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype = 1 AND localstock > 0"
+END IF
+IF as_type = "nocustomer" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype <> 1"
+END IF
+IF as_type = "amazon" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND (ordertype = 3 OR ordertype = 5)"
+END IF
+IF as_type = "local" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND (ordertype = 2 OR ordertype = 4)"
+END IF
+IF as_type = "customer" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype = 1"
+END IF
+IF as_type = "order" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND (ordertype = 2 OR ordertype = 3)"
+END IF
+IF as_type = "localorder" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype = 2"
+END IF
+IF as_type = "amzorder" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype = 3"
+END IF
+IF as_type = "amzpick" THEN
+	ls_find = "shopifysku = '"+as_code+"' AND ordertype = 5"
+END IF
+
+
+
+
+// Check any current orders
+ll_findstart = 1
+li_qty = 0
+DO
+	ll_found = gdb_orderstatus.find(ls_find,ll_findstart,gdb_orderstatus.rowcount())
+
+	IF ll_found > 0 THEN
+		li_arrived = gdb_orderstatus.getitemnumber(ll_found,"arrived")
+		li_lineqty = gdb_orderstatus.getitemnumber(ll_found,"qty")
+		
+		li_lineqty = li_lineqty - li_arrived
+		li_qty = li_qty + li_lineqty
+		//li_qty = li_qty + gdb_orderstatus.getitemnumber(ll_found,"qty")
+		
+		ll_findstart = ll_found + 1
+		IF ll_findstart > gdb_orderstatus.rowcount() THEN
+			Exit
+		END IF
+	END IF
+	
+LOOP UNTIL ll_found = 0
+
+IF isNULL(li_qty) THEN li_qty = 0
+
+Return li_qty

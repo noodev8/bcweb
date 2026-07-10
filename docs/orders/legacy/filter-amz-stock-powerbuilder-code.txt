@@ -1,0 +1,682 @@
+Integer		li_filenum, li_found, li_prevshelf, li_amzlive, li_amzstock, li_return, li_roi, li_localstock, li_localsold, li_ukd, li_incoming
+Integer		li_minlocal, li_inamazon, li_amzsold, li_amzreturn, li_amztotal, li_totalstock
+Integer		li_qty, li_currentstock, li_status, li_netsold, li_shopify, li_pfgstock, li_pfgtotal
+Integer		li_inamazon1, li_inamazon2, li_soldfrom, li_soldto, li_localstockfrom, li_localstockto, li_karen
+Integer		li_amztotalfrom, li_amztotalto, li_pos1, li_pos2, li_pos3, li_amzsold7, li_amzstatus
+Integer		li_stockdays, li_calcdone, li_ukdstock, li_birkstock, li_localreserve, li_localorder, li_dayssold
+Integer		li_fbatotal, li_fbalive, li_amzpick, li_amzorder, li_localamazon
+String			ls_ordernum, ls_amzminprice, ls_roi, ls_shopifyprice, ls_shopifyminprice
+String			ls_chosensupplier, ls_sku, ls_supplier, ls_status, ls_groupid, ls_barcode
+String			ls_titledetail, ls_code, ls_find, ls_brand, ls_fulltitle, ls_notes, ls_season
+String			ls_floor, ls_msp, ls_amzprice, ls_soldprice, ls_amzsoldprice, ls_created
+String			ls_profit, ls_value, ls_fnsku, ls_rrp, ls_line, ls_cost, ls_fbafee
+String			ls_amzperformance, ls_season1, ls_season2, ls_season3, ls_reportgroupdisplay
+String			ls_profitfrom, ls_profitto, ls_filtersupplier, ls_search, ls_asin, ls_amzmaxprice, ls_shopifymaxprice
+String			ls_reportgroup_a, ls_reportgroup_b, ls_reportgroup_c, ls_reportgroup_d, ls_discount
+String			ls_amzreportfind, ls_amzreturnrate, ls_buybox, ls_createddisplay, ls_amzfeatureprice, ls_amzdiscount
+String			ls_discountlimit, ls_statussearch, ls_amzstorage
+Integer		li_requested, li_arrived, li_pos4
+Long			ll_suppliercount, ll_count, ll_row, ll_found, ll_soldvalue, ll_startfind
+Long			ll_filereturn, ll_return, ll_countfoundstart, ll_countfound, ll_amzreportfound, ll_amzrank
+Long			ll_activecount, ll_amztotalcount, ll_amzlivecount, ll_total, ll_newrow, ll_selectedrow, ll_findstart, ll_birkfound
+Real			lr_value, lr_soldvalue, lr_profit, lr_roi, lr_floor, lr_fbafee, lr_perc, lr_amzreturnrate, lr_dailysales
+Real			lr_feereturns
+Date			ldt_amzorderdate
+
+
+/***************************
+* Constant
+***************************/
+//lr_fbareturnfee = 1.97
+//ls_fbaavgstoragefee = "0.19"
+
+
+ls_search = Trim(sle_input.text)
+IF as_filtertype ="text" AND len(ls_search) = 0 THEN
+	Return 0
+END IF
+
+IF as_filtertype ="text" AND len(ls_search) < 3 THEN
+	Messagebox("Search","Need 3 or more characters")
+	Return 0
+END IF
+
+IF cb_back.visible = True THEN
+	Messagebox("Filter Back","Press back before filtering")
+	Return 0
+END IF
+
+ls_statussearch = ""
+IF Left(Upper(ls_search ),6) = "STATUS" THEN
+	ls_statussearch = Trim(Mid(ls_search,7,Len(ls_search)))
+END IF
+IF Left(Upper(ls_search ),6) = "FILTER" THEN
+	ls_statussearch = Trim(Mid(ls_search,7,Len(ls_search)))
+END IF
+
+
+ii_amtrendmode = 0
+
+// Get Full Data
+IF ids_amzstock.rowcount() = 0 THEN
+	/***********************************************************************************
+	* LOAD Report Data - Used if using file instead of DB
+	***********************************************************************************/
+	ll_row = 0
+	li_FileNum = FileOpen(gs_dropbox + "datafiles\" + "amzstockreport.csv", LineMode!,Read!,Shared!)
+	
+	DO
+		ll_row = ll_row + 1
+		ll_filereturn = FileReadEx(li_FileNum, ls_line)
+	
+		IF ll_row < 2 THEN
+			Continue
+		END IF
+		
+		IF ll_filereturn > 0 THEN
+			ll_return = ids_amzstock.importstring(csv!,ls_line)		
+		END IF
+		
+	LOOP UNTIL ll_filereturn < 0
+	
+	// Close File Read
+	FileClose(li_FileNum)
+END IF
+
+
+//IF as_filtertype ="text" THEN
+//	dw_supplierlist.selectrow(0,False)
+//END IF
+
+// Get Supplier Choice
+//ll_selectedrow = dw_supplierlist.getselectedrow(0)
+//IF ll_selectedrow = 0 THEN
+//	// Keep all
+	ls_filtersupplier = ""
+//ELSE
+//	ls_filtersupplier = dw_supplierlist.getitemstring(ll_selectedrow,"supplier")
+//END IF
+
+
+//w_main.uo_pricer.dw_amzpricedisplay.setredraw(False)
+dw_amzstockdisplay.setredraw(False)
+dw_amzstockdisplay.reset()
+
+// Connect to database to get latest data
+CONNECT USING SQLCA;
+gdb_localstock.settransobject(SQLCA)
+gdb_skumap.settransobject(SQLCA)
+gdb_skusummary.settransobject(SQLCA)
+gdb_orderstatus.settransobject(SQLCA)
+gdb_orderstatus.retrieve()
+gdb_localstock.retrieve()
+gdb_skumap.retrieve()
+gdb_skusummary.retrieve()
+DISCONNECT USING SQLCA;
+
+
+FOR ll_count = 1 TO gdb_skumap.rowcount()
+	// Reset
+	ls_supplier = ""
+	li_localstock = 0
+	li_pfgstock = 0
+	li_amztotal = 0
+	li_amzlive = 0
+	li_netsold = 0
+	li_amzsold = 0
+	li_amzsold7 = 0
+	li_stockdays = 0
+	li_return = 0
+	li_localreserve = 0
+	ls_amzreturnrate  = ""
+	ls_profit = ""
+	ls_rrp = ""
+	ls_amzprice = ""
+	ls_amzprice = ""
+	ls_soldprice = ""
+	ls_floor = ""
+	ls_roi = ""
+	ls_amzminprice = ""
+	ls_amzmaxprice = ""
+	ls_shopifymaxprice = ""	
+	ls_shopifyminprice = ""	
+	ls_season = ""
+	ls_notes = ""
+	ls_fnsku = ""
+	ls_asin = ""
+	ls_soldprice = ""
+	ls_cost = ""
+	li_shopify = 0
+	ls_shopifyprice = ""
+	ls_shopifyprice = ""
+	li_inamazon = 0
+	li_ukd = 0
+	ls_createddisplay = ""
+	ls_barcode = ""
+	ls_amzperformance = ""
+	ls_asin = ""
+	ls_reportgroupdisplay = ""
+	ls_buybox = ""
+	li_ukdstock = 0
+	li_amzstatus = 0
+	li_fbalive = 0
+	li_fbatotal = 0
+	li_amzpick = 0
+	li_amzorder = 0
+
+	ls_sku = gdb_skumap.getitemstring(ll_count,"sku")
+	ls_code = gdb_skumap.getitemstring(ll_count,"code")
+	ls_groupid = gdb_skumap.getitemstring(ll_count,"groupid")
+	ls_barcode = gdb_skumap.getitemstring(ll_count,"ean")
+	ls_status = gdb_skumap.getitemstring(ll_count,"status")
+	ls_amzminprice = gdb_skumap.getitemstring(ll_count,"amzminprice")
+	ls_amzmaxprice = gdb_skumap.getitemstring(ll_count,"amzmaxprice")
+	ls_shopifymaxprice = gdb_skumap.getitemstring(ll_count,"shopifymaxprice")		
+	ls_shopifyminprice = gdb_skumap.getitemstring(ll_count,"shopifyminprice")		
+	ls_notes = gdb_skumap.getitemstring(ll_count,"notes")
+	ls_amzperformance = String(gdb_skumap.getitemnumber(ll_count,"amzperformance"))
+	ls_shopifyprice = gdb_skumap.getitemstring(ll_count,"shopifyprice")
+	ls_reportgroup_a = gdb_skumap.getitemstring(ll_count,"reportgroup_a")
+	ls_reportgroup_b = gdb_skumap.getitemstring(ll_count,"reportgroup_b")
+	ls_reportgroup_c = gdb_skumap.getitemstring(ll_count,"reportgroup_c")
+	ls_reportgroup_d = gdb_skumap.getitemstring(ll_count,"reportgroup_d")
+	ls_amzfeatureprice = gdb_skumap.getitemstring(ll_count,"amzfeatureprice")
+	li_localreserve = gdb_skumap.getitemnumber(ll_count,"localreserve")
+	ldt_amzorderdate = gdb_skumap.getitemdate(ll_count,"amzorderdate2")
+	ll_amzrank = gdb_skumap.getitemnumber(ll_count,"amzrank")
+	ls_amzstorage = String(gdb_skumap.getitemnumber(ll_count,"amzstorage"),"0.00")
+	IF isNull(ll_amzrank) THEN ll_amzrank = 900009
+
+	IF ls_code = "M404A-12" THEN
+		ls_code = ls_code
+	END IF
+
+	IF isNULL(li_localreserve) THEN li_localreserve = 0
+	IF isNULL(ls_status) THEN ls_status = "0"
+	IF isNULL(ls_notes) THEN ls_notes = ""
+	IF isNULL(ls_amzminprice) THEN ls_amzminprice = ""
+	IF isNULL(ls_shopifyminprice) THEN ls_shopifyminprice = ""		
+	IF isNULL(ls_shopifymaxprice) THEN ls_shopifymaxprice = ""		
+	IF isNULL(ls_amzmaxprice) THEN ls_amzmaxprice = ""		
+	IF isNULL(ls_amzperformance) THEN ls_amzperformance = "0"	
+	IF isNULL(ls_reportgroup_a) THEN ls_reportgroup_a = ""		
+	IF isNULL(ls_reportgroup_b) THEN ls_reportgroup_b = ""		
+	IF isNULL(ls_reportgroup_c) THEN ls_reportgroup_c = ""		
+	IF isNULL(ls_reportgroup_d) THEN ls_reportgroup_d = ""				
+	ls_barcode = Mid(ls_barcode,1,Len(ls_barcode) - 1)
+	IF isNULL(ldt_amzorderdate) THEN
+		ldt_amzorderdate = Date("1/1/2022")
+	END IF
+
+	// Check Days
+	li_dayssold = daysafter(ldt_amzorderdate,today())
+	IF li_dayssold > 365 THEN
+		li_dayssold = 365
+	END IF
+
+
+	IF ls_amzmaxprice = "" OR ls_amzmaxprice = "0.00" THEN
+		ls_amzmaxprice = ls_rrp
+	END IF
+	ls_amzmaxprice = String(Real(ls_amzmaxprice),"0.00")
+
+	// get SKU Summary Details
+	ls_rrp = "1000.00"
+	ls_find = "groupid = '"+ls_groupid+"'"
+	ll_found = gdb_skusummary.find(ls_find,1,gdb_skusummary.rowcount())
+	IF ll_found > 0 THEN
+		ls_rrp = String(Real(gdb_skusummary.getitemstring(ll_found,"rrp")),"0.00")
+		ls_supplier =  gdb_skusummary.getitemstring(ll_found,"supplier")
+		ls_season = Upper(gdb_skusummary.getitemstring(ll_found,"season")	)
+		li_shopify = gdb_skusummary.getitemnumber(ll_found,"shopify")
+		ls_created = gdb_skusummary.getitemstring(ll_found,"created")
+		ls_createddisplay = Mid(ls_created,1,4) + "-" + Mid(ls_created,5,2) + "-" + Mid(ls_created,7,2)
+	END IF
+
+
+
+	IF as_filtertype = "text" THEN
+		li_pos1 = Pos(Upper(ls_code),Upper(ls_search))
+		li_pos2 = Pos(Upper(ls_sku),Upper(ls_search))
+		li_pos3 = Pos(Upper(ls_supplier),Upper(ls_search))
+		li_pos4 = Pos(Upper(ls_season),Upper(ls_search))
+		
+		IF ls_statussearch <> "" THEN
+			li_pos4 = Pos(Upper(ls_status),Upper(ls_statussearch))
+		END IF
+		
+		IF li_pos1 > 0 OR li_pos2 > 0 OR li_pos3 > 0 OR li_pos4 > 0 THEN
+			// Keep
+			li_pos1 = li_pos1
+		ELSE
+			Continue
+		END IF
+	ELSE
+		// Status
+		IF is_filter_status = "ANY STATUS" THEN	
+			// OK
+		END IF
+		IF is_filter_status = "STATUS 0" THEN
+			IF ls_status = "0" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF		
+		IF is_filter_status = "STATUS 1" THEN
+			IF ls_status = "1" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_status = "STATUS 2" THEN
+			IF ls_status = "2" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_status = "STATUS 3" THEN
+			IF ls_status = "3" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_status = "STATUS 4" THEN
+			IF ls_status = "4" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_status = "STATUS 5" THEN
+			IF ls_status = "5" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+	END IF
+
+
+	// Report group Display
+	ls_reportgroupdisplay = ""
+	IF ls_reportgroup_a = "1" OR ls_reportgroup_b = "1" OR ls_reportgroup_c = "1" OR ls_reportgroup_d = "1" THEN
+		IF ls_reportgroup_a = "1" THEN ls_reportgroupdisplay = ls_reportgroupdisplay + "A"
+		IF ls_reportgroup_b = "1" THEN ls_reportgroupdisplay = ls_reportgroupdisplay + "B"
+		IF ls_reportgroup_c = "1" THEN ls_reportgroupdisplay = ls_reportgroupdisplay + "C"
+		IF ls_reportgroup_d = "1" THEN ls_reportgroupdisplay = ls_reportgroupdisplay + "D"
+	END IF
+
+
+	IF as_filtertype = "text" THEN
+		// Do Not Filter
+	ELSE
+		// Supplier
+		IF Upper(ls_supplier) = Upper(ls_filtersupplier) OR ls_filtersupplier = "" THEN	
+			// OK
+		ELSE		
+			Continue
+		END IF
+	
+		// Season
+		IF is_filter_season = "ANY SEASON" THEN
+			// Keep
+		END IF	
+		IF is_filter_season = "SUMMER" THEN
+			IF ls_season = "SUMMER" OR Upper(ls_season) = "ALL" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_season = "WINTER" THEN
+			IF ls_season = "WINTER" OR Upper(ls_season) = "ALL" THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		
+		IF is_filter_channel = "ANY CHANNEL" THEN	
+			// OK
+		END IF
+		IF is_filter_channel = "SHOPIFY CHANNEL" THEN
+			IF li_shopify = 1 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+	END IF
+
+	IF ls_code = "M404A-12" THEN
+		ls_code = ls_code
+	END IF
+	
+	// Get Stock
+	li_localstock = w_main.wf_localcountwithoutamz(ls_code)
+	IF Upper(ls_supplier) = "BIRKENSTOCK" THEN
+		li_birkstock = w_main.wf_getbirkstock(ls_code)
+	END IF
+	
+
+	
+	IF as_filtertype = "text" THEN
+		// Do Not Filter	
+	ELSE
+		IF is_filter_localstock = "ANY LOCAL STOCK" THEN
+			// Keep
+		END IF
+		IF is_filter_localstock = "0 LOCAL STOCK" THEN
+			IF li_localstock > 0 OR li_pfgstock > 0 THEN
+				Continue
+			END IF			
+		END IF
+		IF is_filter_localstock = "1 OR MORE LOCAL STOCK" THEN
+			IF li_localstock < 1 AND li_pfgstock < 1 THEN
+				Continue
+			END IF
+		END IF
+	END IF
+
+	
+	
+
+	
+	IF ls_code = "FLE030-IVES-BLACK-07" THEN
+		ls_code = ls_code
+	END IF
+
+	li_localamazon = w_main.of_localamazon(ls_code) 
+	li_fbatotal = w_main.wf_getamzstock(ls_code,0)
+	li_fbalive = w_main.wf_getamzstock(ls_code,1)	
+	li_amzorder = w_main.wf_getorderstatusstock(ls_code,"amzorder")	
+	li_amztotal = li_fbatotal + li_amzorder + li_localamazon
+	li_localorder = w_main.wf_getorderstatusstock(ls_code,"local")
+	li_totalstock = li_amztotal + li_localstock + li_birkstock + li_localorder
+	
+	
+	li_ukdstock = 0
+	IF ls_supplier = "UKD" THEN
+		li_ukdstock = w_main.wf_getukdstock(ls_code)
+	END IF
+	
+
+	// Check Amz filter after current stock
+	IF as_filtertype = "text" THEN
+		// Do Not Filter	
+	ELSE
+		IF is_filter_amztotal = "ANY AMZ TOTAL" THEN
+			// Keep
+		END IF
+		IF is_filter_amztotal = "1 OR MORE AMZ TOTAL" THEN
+			IF li_amztotal < 1 THEN
+				Continue
+			END IF			
+		END IF
+		IF is_filter_amztotal = "0 AMZ TOTAL" THEN
+			IF li_amztotal > 0 THEN
+				Continue
+			END IF			
+		END IF
+		IF is_filter_amztotal = "1 OR MORE AMZ LIVE" THEN
+			IF li_amzlive < 1 THEN
+				Continue
+			END IF			
+		END IF		
+	END IF
+
+
+	// Get Amz Report Data
+	ls_amzreportfind = "code = '"+ls_code+"'"
+	ll_amzreportfound = ids_amzstock.find(ls_amzreportfind,1,ids_amzstock.rowcount())
+	IF ll_amzreportfound > 0 THEN
+		ls_sku = ids_amzstock.getitemstring(ll_amzreportfound,"sku")
+		li_amzsold = ids_amzstock.getitemnumber(ll_amzreportfound,"sold")
+		li_amzsold7 = ids_amzstock.getitemnumber(ll_amzreportfound,"amzsold7")		
+		li_return = ids_amzstock.getitemnumber(ll_amzreportfound,"return")
+		ls_profit = ids_amzstock.getitemstring(ll_amzreportfound,"profit")
+		ls_floor = ids_amzstock.getitemstring(ll_amzreportfound,"floor")
+		ls_soldprice = ids_amzstock.getitemstring(ll_amzreportfound,"soldprice")		
+		ls_roi = ids_amzstock.getitemstring(ll_amzreportfound,"roi")
+		ls_fnsku = ids_amzstock.getitemstring(ll_amzreportfound,"fnsku")
+		ls_asin = ids_amzstock.getitemstring(ll_amzreportfound,"asin")
+		li_shopify = ids_amzstock.getitemnumber(ll_amzreportfound,"shopify")
+		li_ukd = ids_amzstock.getitemnumber(ll_amzreportfound,"ukd")
+		IF isNULL(ls_asin) THEN ls_asin = ""
+		IF isNULL(li_amzsold7) THEN li_amzsold7 = 0
+
+		li_netsold = li_amzsold - li_return
+		IF li_amzsold > 0 THEN
+			lr_amzreturnrate = (li_return / li_amzsold) * 100
+		ELSE
+			lr_amzreturnrate = 0
+		END IF
+		ls_amzreturnrate = String(lr_amzreturnrate,"0.00")+" %"
+	END IF
+
+	// get AMZ Feed Details
+	ls_find = "code = '"+ls_code+"'"
+	ll_found = gdb_amzfeed.find(ls_find,1,gdb_amzfeed.rowcount())
+	IF ll_found > 0 THEN
+		ls_buybox = gdb_amzfeed.getitemstring(ll_found,"buybox")
+		ls_amzprice = gdb_amzfeed.getitemstring(ll_found,"amzprice")
+		li_inamazon = 1
+	ELSE
+		li_inamazon = 0		
+	END IF	
+
+
+	IF as_filtertype = "text" THEN
+		// Do Not Filter	
+	ELSE
+
+		// In Amazon
+		IF is_filter_inamazon = "ANY AMAZON" THEN
+			// Keep All
+		END IF
+		IF is_filter_inamazon = "IN AMAZON" THEN
+			IF li_inamazon = 1 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_inamazon = "NOT IN AMAZON" THEN
+			IF li_inamazon = 0 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+	
+	
+		// Sold
+		IF is_filter_sold = "ANY SOLD" THEN
+			// Keep
+		END IF
+		IF is_filter_sold = "SOLD 1 OR MORE" THEN
+			IF li_netsold > 0 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_sold = "SOLD 2 OR MORE" THEN
+			IF li_netsold > 1 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_sold = "SOLD NONE" THEN
+			IF li_netsold = 0 THEN
+				// OK
+			ELSE
+				Continue
+			END IF
+		END IF
+	
+		// Profit
+		IF is_filter_profit = "ANY PROFIT" THEN
+			// Keep
+		END IF
+		IF is_filter_profit = "PROFIT 2+" THEN
+			IF Real(ls_profit) > 2 THEN
+				// Keep
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_profit = "PROFIT 1+" THEN
+			IF Real(ls_profit) > 1 THEN
+				// Keep
+			ELSE
+				Continue
+			END IF
+		END IF
+		IF is_filter_profit = "PROFIT LESS 1" THEN
+			IF Real(ls_profit) < 1 THEN
+				// Keep
+			ELSE
+				Continue
+			END IF
+		END IF
+	END IF
+
+
+	/*********************************************************************************************
+	* Calculations
+	*********************************************************************************************/	
+//	li_stockdays = 0
+//	li_calcdone = 0
+//	IF li_amzlive = 0 AND li_calcdone = 0 THEN
+//		li_stockdays = 0
+//		li_calcdone = 1
+//	END IF
+//	
+//	IF li_amzsold7 = 0 AND li_netsold < 1 AND li_amzlive > 0 AND li_shelf > 60 AND li_calcdone = 0 THEN
+//		li_stockdays = 180
+//		li_calcdone = 1
+//	END IF		
+//	
+//	IF li_amzsold7 = 0 AND li_netsold > 0 AND li_amzlive > 0 AND li_calcdone = 0 THEN
+//		li_stockdays = 90
+//		li_calcdone = 1
+//	END IF		
+//	
+//	IF li_amzsold7 = 0 AND li_netsold < 1 AND li_amzlive > 0 AND li_calcdone = 0 THEN
+//		li_stockdays = 90
+//		li_calcdone = 1
+//	END IF		
+//
+//	IF li_calcdone = 0 THEN
+//		lr_dailysales = li_amzsold7 / 7
+//		IF lr_dailysales > 0 THEN
+//			li_stockdays = li_amzlive / lr_dailysales
+//		END IF
+//	END IF
+//
+//	IF li_stockdays > 90 THEN li_stockdays = 90
+
+	IF ls_floor = "" THEN
+		ls_floor = String((Real(ls_rrp) * 0.75),"0.00")
+	END IF
+
+	// Discount
+	IF ls_amzprice <> "" THEN
+		ls_discount = String(Real(((Real(ls_rrp) - Real(ls_amzprice)) / Real(ls_rrp)) * 100),"0")
+	ELSE
+		ls_discount = "0"
+	END IF
+	IF ls_amzfeatureprice <> "" THEN
+		ls_amzdiscount = String(Real(((Real(ls_rrp) - Real(ls_amzfeatureprice)) / Real(ls_rrp)) * 100),"0")
+	ELSE
+		ls_amzdiscount = "0"
+	END IF
+
+//	ls_discountlimit = String(((Real(ls_rrp) - Real(ls_amzminprice)) / Real(ls_rrp)) * 100,"0")
+ls_discountlimit = "100"
+	
+	// FBA Returns
+	IF Real(ls_soldprice) > 0 THEN
+		lr_feereturns = (Real(ls_soldprice) * (15.3/100)) * .2
+	ELSE
+		lr_feereturns = (Real(ls_amzprice) * (15.3/100)) * .2		
+	END IF
+	//lr_fbareturnfee = lr_fbareturnfee + lr_feereturns
+
+	// Ready to Display
+	ll_row = dw_amzstockdisplay.insertrow(0)
+	dw_amzstockdisplay.setitem(ll_row,"supplier",ls_supplier)
+	dw_amzstockdisplay.setitem(ll_row,"code",ls_code)
+	dw_amzstockdisplay.setitem(ll_row,"sku",ls_sku)		
+	dw_amzstockdisplay.setitem(ll_row,"groupid",ls_groupid)
+	dw_amzstockdisplay.setitem(ll_row,"status",ls_status)
+	dw_amzstockdisplay.setitem(ll_row,"localstock",li_localstock)	
+	//dw_amzstockdisplay.setitem(ll_row,"pfgstock",li_pfgstock)
+	dw_amzstockdisplay.setitem(ll_row,"amztotal",li_amztotal)	
+	dw_amzstockdisplay.setitem(ll_row,"totalstock",li_totalstock)		
+	dw_amzstockdisplay.setitem(ll_row,"amzlive",li_fbalive)	
+	dw_amzstockdisplay.setitem(ll_row,"netsold",li_netsold)	
+	dw_amzstockdisplay.setitem(ll_row,"amzsold",li_amzsold)
+	dw_amzstockdisplay.setitem(ll_row,"amzsold7",li_amzsold7)			
+	dw_amzstockdisplay.setitem(ll_row,"return",li_return)	
+	dw_amzstockdisplay.setitem(ll_row,"amzreturnrate",ls_amzreturnrate)	
+	dw_amzstockdisplay.setitem(ll_row,"profit",ls_profit)	
+	dw_amzstockdisplay.setitem(ll_row,"rrp",ls_rrp)	
+	dw_amzstockdisplay.setitem(ll_row,"price",ls_amzprice)
+	dw_amzstockdisplay.setitem(ll_row,"originalprice",ls_amzprice)		
+	dw_amzstockdisplay.setitem(ll_row,"soldprice",ls_soldprice)	
+	dw_amzstockdisplay.setitem(ll_row,"floor",ls_floor)
+	dw_amzstockdisplay.setitem(ll_row,"roi",ls_roi)	
+	dw_amzstockdisplay.setitem(ll_row,"amzminprice",ls_amzminprice)		
+	dw_amzstockdisplay.setitem(ll_row,"amzmaxprice",ls_amzmaxprice)
+	dw_amzstockdisplay.setitem(ll_row,"shopifymaxprice",ls_shopifymaxprice)	
+	dw_amzstockdisplay.setitem(ll_row,"shopifyminprice",ls_shopifyminprice)			
+	dw_amzstockdisplay.setitem(ll_row,"season",ls_season)	
+	dw_amzstockdisplay.setitem(ll_row,"notes",ls_notes)	
+	dw_amzstockdisplay.setitem(ll_row,"fnsku",ls_fnsku)	
+	dw_amzstockdisplay.setitem(ll_row,"asin",ls_asin)		
+	dw_amzstockdisplay.setitem(ll_row,"soldprice",ls_soldprice)	
+	dw_amzstockdisplay.setitem(ll_row,"shopify",li_shopify)
+	dw_amzstockdisplay.setitem(ll_row,"shopifyprice",ls_shopifyprice)	
+	dw_amzstockdisplay.setitem(ll_row,"newshopify",ls_shopifyprice)	
+	dw_amzstockdisplay.setitem(ll_row,"inamazon",li_inamazon)		
+	dw_amzstockdisplay.setitem(ll_row,"ukdstock",li_ukd)	
+	dw_amzstockdisplay.setitem(ll_row,"created",ls_createddisplay)	
+	dw_amzstockdisplay.setitem(ll_row,"barcode",ls_barcode)	
+	dw_amzstockdisplay.setitem(ll_row,"amzperformance",ls_amzperformance)
+	dw_amzstockdisplay.setitem(ll_row,"asin",ls_asin)	
+	dw_amzstockdisplay.setitem(ll_row,"reportgroup",ls_reportgroupdisplay)	
+	dw_amzstockdisplay.setitem(ll_row,"buybox",ls_buybox)		
+	dw_amzstockdisplay.setitem(ll_row,"changed",0)
+	IF ls_supplier = "UKD" THEN
+		dw_amzstockdisplay.setitem(ll_row,"ukdstock",li_ukdstock)
+	END IF
+	dw_amzstockdisplay.setitem(ll_row,"amzfeature",ls_amzfeatureprice)	
+	dw_amzstockdisplay.setitem(ll_row,"discount",ls_discount)	
+	dw_amzstockdisplay.setitem(ll_row,"amzdiscount",ls_amzdiscount)	
+	dw_amzstockdisplay.setitem(ll_row,"discountlimit",ls_discountlimit)		
+	dw_amzstockdisplay.setitem(ll_row,"localreserve",String(li_localreserve))
+	dw_amzstockdisplay.setitem(ll_row,"localorder",li_localorder)	
+	dw_amzstockdisplay.setitem(ll_row,"lastsold",li_dayssold)	
+	//dw_amzstockdisplay.setitem(ll_row,"fbareturnfee",lr_fbareturnfee)	
+	dw_amzstockdisplay.setitem(ll_row,"amzrank",ll_amzrank)		
+	dw_amzstockdisplay.setitem(ll_row,"amzstorage",ls_amzstorage)	
+NEXT
+
+
+sle_input.text = ""
+dw_amzstockdisplay.setsort("Created D, Code A")
+dw_amzstockdisplay.sort()
+dw_amzstockdisplay.setredraw(True)
+
+
+of_calcstats()
+
+Return 0
+

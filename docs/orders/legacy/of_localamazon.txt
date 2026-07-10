@@ -1,0 +1,23 @@
+Long	ll_found, ll_findstart
+String	ls_find
+Integer	li_qty
+
+ll_findstart = 1
+li_qty = 0
+
+DO
+	ls_find = "Upper(code) = '"+Upper(as_code)+"' AND ordernum = '#FREE' AND allocated = 'amz' AND deleted = 0"
+	
+	ll_found = gdb_localstock.find(ls_find,ll_findstart,gdb_localstock.rowcount())		
+	
+	IF ll_found > 0 THEN
+		li_qty = li_qty + gdb_localstock.getitemnumber(ll_found,"qty")
+		
+		ll_findstart = ll_found + 1
+		IF ll_findstart > gdb_localstock.rowcount() THEN
+			Exit
+		END IF
+	END IF
+LOOP UNTIL ll_found = 0
+
+Return li_qty

@@ -1,0 +1,282 @@
+String		ls_line, ls_supplier, ls_chosensupplier, ls_status, ls_productname, ls_filename
+String		ls_style, ls_size, ls_sku, ls_code, ls_find, ls_barcode, ls_date, ls_expiry, ls_skufind
+String		ls_groupid, ls_return, ls_shopifysku, ls_orderdate
+String		ls_ordered, ls_order, ls_fnsku, ls_batch, ls_pickordercode, ls_location, ls_id
+String		ls_title, ls_brand, ls_titledetail, ls_reorderdate, ls_ordercode
+String		ls_ordernum, ls_allowdate, ls_statusordernum, ls_ponumber, ls_createddate
+Long		ll_row, ll_filereturn, ll_return, ll_count, ll_suppliercount, ll_orderpickrow, ll_sharedfound
+Long		ll_orderstatusrow, ll_skufound, ll_ordercode, ll_found, ll_pickordercode
+Long		ll_stockfindstart, ll_totallocalqty
+Integer	li_done, li_return, li_filenum, li_filenumincoming, li_amzlorder, li_localorder, li_localstockchanged, li_newqty
+Integer	li_pos, li_supplierfiledone, li_booked, li_incomingexpiry, li_currenttotal
+Integer	li_qty, li_ukd, li_orderqty, li_shopifyorderdone, li_localqty, li_orderedqty, li_localavailable, li_newbooked
+Integer	li_localbooked, li_available, li_required, li_book, li_currentqty, li_shopifyorder, li_mainorder, li_currentbooked
+Integer	li_newlocalstockbooked, li_ukdorder, li_currentamzstock, li_daysafter, li_orderpickchange, li_ordertype
+Integer	li_itemqty, li_pickedqty, li_orderlocalchanged, li_orderstatuschanged, li_selectedrow, li_current, li_localswitch
+Integer	li_orderswitchmessage, li_amzorder, li_amzpick, li_birkswitch, li_localstock, li_qtycount
+Integer	li_totallocalqty, li_currentstock, li_pickorder, li_null
+Real		lr_size
+Date		ldt_ordered
+
+ls_date = String(Today(),"YYYYMMDD HH:MM:SS")
+ls_createddate = String(Today(),"YYYY-MM-DD")
+dw_amzstockdisplay.accepttext()
+setnull(li_null)
+
+// Get Order Code
+ls_ordercode = ProfileString("C:\BrookfieldComfort\brookfield.ini", "general","ordercode","1")
+ll_ordercode = Long(ls_ordercode)
+
+
+/***********************************************************************************
+*  Request the Order
+***********************************************************************************/
+FOR ll_count = 1 TO dw_amzstockdisplay.Rowcount()
+	ls_supplier = dw_amzstockdisplay.getitemstring(ll_count,"supplier")
+	ls_code = dw_amzstockdisplay.getitemstring(ll_count,"code")
+	ls_fnsku = dw_amzstockdisplay.getitemstring(ll_count,"fnsku")
+	ls_barcode = dw_amzstockdisplay.getitemstring(ll_count,"barcode")
+	ls_status = dw_amzstockdisplay.getitemstring(ll_count,"status")
+	li_amzorder =  Integer(dw_amzstockdisplay.getitemstring(ll_count,"order"))
+	li_amzpick =  Integer(dw_amzstockdisplay.getitemstring(ll_count,"amzpick"))
+	li_localorder = dw_amzstockdisplay.getitemnumber(ll_count,"localorder")
+	li_localstock = dw_amzstockdisplay.getitemnumber(ll_count,"localstock")
+
+	IF isNULL(li_amzorder) THEN li_amzorder = 0
+	IF isNULL(li_amzpick) THEN li_amzpick = 0
+	IF isNULL(li_localorder) THEN li_localorder = 0
+
+	IF UPPER(ls_supplier) = "BIRKENSTOCK" THEN
+		// Birkenstock orders are placed on their own screen
+		li_amzorder = 0
+		li_localorder = 0
+	END IF
+
+
+	IF li_localstock < li_amzpick THEN
+		li_amzpick = li_localstock
+	END IF
+
+
+	// AMAZON ORDER
+	IF li_amzorder > 0 THEN
+		// Load into OrderStatus
+		FOR li_qtycount = 1 TO li_amzorder
+			ls_ordernum = ""	
+			// generate a new ordernumber
+			ll_ordercode = ll_ordercode + 1
+			ls_ordernum = "AMZ-O-" + gs_workstation + "-" + String(ll_ordercode)
+			li_ordertype = 3
+	
+			ll_orderstatusrow = gdb_orderstatus.insertrow(0)
+			w_main.wf_blankorderstatus(ll_orderstatusrow)
+		
+			gdb_orderstatus.setitem(ll_orderstatusrow,"ordernum",ls_ordernum)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"shopifysku",ls_code)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"qty",1)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"supplier",ls_supplier)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"batch","0")
+			gdb_orderstatus.setitem(ll_orderstatusrow,"fnsku",ls_fnsku)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"channel","MANUAL")
+			gdb_orderstatus.setitem(ll_orderstatusrow,"ordertype",li_ordertype)
+			gdb_orderstatus.setitem(ll_orderstatusrow,"createddate",today())
+			gdb_orderstatus.setitem(ll_orderstatusrow,"arrived",0)
+	
+			IF ls_supplier = "UKD" THEN
+				//gdb_orderstatus.setitem(ll_orderstatusrow,"ukd",li_amzorder)
+				gdb_orderstatus.setitem(ll_orderstatusrow,"ukd",1)
+				gdb_orderstatus.setitem(ll_orderstatusrow,"othersupplier",0)
+			ELSE
+				gdb_orderstatus.setitem(ll_orderstatusrow,"ukd",0)
+				//gdb_orderstatus.setitem(ll_orderstatusrow,"othersupplier",li_amzorder)
+				gdb_orderstatus.setitem(ll_orderstatusrow,"othersupplier",1)
+			END IF
+			li_orderstatuschanged = 1
+	
+			// Update Display
+			dw_amzstockdisplay.setitem(ll_count,"order","0")
+			li_current = dw_amzstockdisplay.getitemnumber(ll_count,"amztotal")
+			li_current = li_current + 1
+			dw_amzstockdisplay.setitem(ll_count,"amztotal",li_current)
+			li_current = dw_amzstockdisplay.getitemnumber(ll_count,"totalstock")
+			li_current = li_current + 1
+			dw_amzstockdisplay.setitem(ll_count,"totalstock",li_current)			
+		NEXT
+		
+		// Update skumap
+		ls_find = "code = '"+ls_code+"'"
+		ll_found = gdb_skumap.find(ls_find,1,gdb_skumap.rowcount())
+		IF ll_found > 0 THEN
+			gdb_skumap.setitem(ll_found,"amzrequest",li_null)			
+		END IF
+	END IF
+
+	// AMAZON PICK
+	IF li_amzpick > 0 THEN
+
+		li_required = li_amzpick
+		ls_statusordernum = ""	
+
+		/************************************************************************
+		* Find All Picks
+		************************************************************************/	
+		ll_stockfindstart = 1
+		li_totallocalqty = 0
+		
+		DO
+			ls_find = "Upper(code) = '" + Upper(ls_code) + "' AND ordernum = '#FREE' AND qty > 0 AND allocated = 'unallocated' AND deleted = 0"
+			
+			ll_found = gdb_localstock.find(ls_find,ll_stockfindstart,gdb_localstock.rowcount())
+			IF ll_found > 0 THEN
+				li_localqty = gdb_localstock.getitemnumber(ll_found,"qty")
+				ls_location = gdb_localstock.getitemstring(ll_found,"location")
+				ls_brand = gdb_localstock.getitemstring(ll_found,"brand")
+				ls_groupid = gdb_localstock.getitemstring(ll_found,"groupid")
+				li_pickorder = gdb_localstock.getitemnumber(ll_found,"pickorder")
+				IF IsNULL(li_localqty) THEN li_localqty = 0
+			ELSE
+				li_localqty = 0
+			END IF
+			
+			// Take what is available
+			IF li_required >= li_localqty AND (li_localqty > 0) THEN
+				// Take all of them
+				li_required = li_required - li_localqty
+	
+				// Split into individual lines
+				ls_ordernum = gdb_localstock.getitemstring(ll_found,"ordernum")
+				ls_code = gdb_localstock.getitemstring(ll_found,"code")
+				ls_location = gdb_localstock.getitemstring(ll_found,"location")
+				ls_id = gdb_localstock.getitemstring(ll_found,"id")
+	
+				//gdb_localstock.setitem(ll_found,"updated",ls_date)
+				//gdb_localstock.setitem(ll_found,"deleted",1)
+				gdb_localstock.setitem(ll_found,"qty",0)
+	
+				FOR li_qtycount = 1 TO li_localqty
+					li_totallocalqty = li_totallocalqty + 1
+					ll_row = gdb_localstock.insertrow(0)
+					gdb_localstock.setitem(ll_row,"updated",ls_date)
+					gdb_localstock.setitem(ll_row,"ordernum",ls_statusordernum)
+					gdb_localstock.setitem(ll_row,"groupid",ls_groupid)
+					gdb_localstock.setitem(ll_row,"code",ls_code)
+					gdb_localstock.setitem(ll_row,"ordernum","#FREE")
+					gdb_localstock.setitem(ll_row,"supplier",ls_supplier)
+					gdb_localstock.setitem(ll_row,"qty",1)
+					gdb_localstock.setitem(ll_row,"location",ls_location)
+					gdb_localstock.setitem(ll_row,"brand",ls_brand)
+					gdb_localstock.setitem(ll_row,"deleted",0)
+					gdb_localstock.setitem(ll_row,"pickorder",li_pickorder)
+					gdb_localstock.setitem(ll_row,"id",w_main.wf_nextlocalstockid())
+					gdb_localstock.setitem(ll_row,"allocated","amz")
+				NEXT
+				
+				li_localstockchanged = 1
+			ELSE
+				// Split the location
+				IF li_required < li_localqty AND (li_required > 0) THEN
+					// Take part of them
+					li_newqty = li_localqty - li_required
+					ls_ordernum = gdb_localstock.getitemstring(ll_found,"ordernum")
+					ls_code = gdb_localstock.getitemstring(ll_found,"code")
+					ls_location = gdb_localstock.getitemstring(ll_found,"location")
+					ls_id = gdb_localstock.getitemstring(ll_found,"id")
+					
+					// Split into multiple lines
+					//gdb_localstock.setitem(ll_found,"deleted",1)
+					//gdb_localstock.setitem(ll_found,"updated",ls_date)
+					gdb_localstock.setitem(ll_found,"qty",0)
+	
+					FOR li_qtycount = 1 TO li_required
+						li_totallocalqty = li_totallocalqty + 1
+						ll_row = gdb_localstock.insertrow(0)
+						gdb_localstock.setitem(ll_row,"updated",ls_date)
+						gdb_localstock.setitem(ll_row,"ordernum","#FREE")
+						gdb_localstock.setitem(ll_row,"groupid",ls_groupid)
+						gdb_localstock.setitem(ll_row,"code",ls_code)
+						gdb_localstock.setitem(ll_row,"supplier",ls_supplier)
+						gdb_localstock.setitem(ll_row,"qty",1)
+						gdb_localstock.setitem(ll_row,"location",ls_location)
+						gdb_localstock.setitem(ll_row,"brand",ls_brand)
+						gdb_localstock.setitem(ll_row,"deleted",0)
+						gdb_localstock.setitem(ll_row,"id",w_main.wf_nextlocalstockid())
+						gdb_localstock.setitem(ll_row,"pickorder",li_pickorder)
+						gdb_localstock.setitem(ll_row,"allocated","unallocated")						
+					NEXT
+					
+					ll_row = gdb_localstock.insertrow(0)
+					gdb_localstock.setitem(ll_row,"updated",ls_date)
+					gdb_localstock.setitem(ll_row,"ordernum","#FREE")
+					gdb_localstock.setitem(ll_row,"groupid",ls_groupid)
+					gdb_localstock.setitem(ll_row,"code",ls_code)
+					gdb_localstock.setitem(ll_row,"supplier",ls_supplier)
+					gdb_localstock.setitem(ll_row,"qty",li_newqty)
+					gdb_localstock.setitem(ll_row,"location",ls_location)
+					gdb_localstock.setitem(ll_row,"brand",ls_brand)
+					gdb_localstock.setitem(ll_row,"deleted",0)
+					gdb_localstock.setitem(ll_row,"id",w_main.wf_nextlocalstockid())
+					gdb_localstock.setitem(ll_row,"pickorder",li_pickorder)					
+					gdb_localstock.setitem(ll_row,"allocated","amz")
+					
+					li_localstockchanged = 1
+					li_required = 0
+				END IF
+			END IF
+		
+			ll_stockfindstart = ll_found + 1
+			IF ll_stockfindstart > gdb_localstock.rowcount() THEN
+				Exit
+			END IF
+			IF li_required = 0 THEN
+				Exit
+			END IF
+		LOOP UNTIL ll_found = 0
+				
+	
+		// Update skumap
+		ls_find = "code = '"+ls_code+"'"
+		ll_found = gdb_skumap.find(ls_find,1,gdb_skumap.rowcount())
+		IF ll_found > 0 THEN
+			gdb_skumap.setitem(ll_found,"amzallow",ls_allowdate)
+			gdb_skumap.setitem(ll_found,"amzpickrequest",li_null)
+		END IF
+	
+		// Update the display
+		li_currenttotal = dw_amzstockdisplay.getitemnumber(ll_count,"amztotal")
+		li_currenttotal = li_currenttotal + li_amzpick
+		li_currentstock = dw_amzstockdisplay.getitemnumber(ll_count,"localstock")
+		li_currentstock = li_currentstock - li_amzpick
+		dw_amzstockdisplay.setitem(ll_count,"amzpick","0")
+		dw_amzstockdisplay.setitem(ll_count,"localstock",li_currentstock)
+		dw_amzstockdisplay.setitem(ll_count,"amztotal",li_currenttotal)
+	END IF
+
+
+NEXT
+
+
+// Save
+CONNECT USING SQLCA;
+gdb_orderstatus.settransobject(SQLCA)
+gdb_localstock.settransobject(SQLCA)
+gdb_skumap.settransobject(SQLCA)
+gdb_orderstatus.update()
+gdb_localstock.update()
+gdb_skumap.update()
+
+DISCONNECT USING SQLCA;
+
+
+// Update order code
+IF ll_ordercode > 10000 THEN
+	ll_ordercode = 1
+END IF
+ls_ordercode = String(ll_ordercode)
+SetProfileString("C:\BrookfieldComfort\brookfield.ini", "General","ordercode",ls_ordercode)
+
+IF li_birkswitch = 1 THEN
+	Messagebox("Order Switch","There were some AMZ orders that were switched to LOCAL. Birkenstock is ordered as local and managed on arrival.")
+END IF
+
+//
+Return 0

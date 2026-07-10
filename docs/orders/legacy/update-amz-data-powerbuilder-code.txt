@@ -1,0 +1,630 @@
+Long			ll_ukdfound, ll_amzfound, ll_findstart, ll_row, ll_filereturn
+Long			ll_return, ll_count, ll_found, ll_incomingfound, ll_incomingstart, ll_sharedfound
+Long			ll_findpos, ll_sold, ll_salesrow, ll_max, ll_id
+Integer		li_stock, li_filenum, li_pos, li_totalstock, li_return, li_amztotal, li_incoming, li_quantity, li_readerror
+Integer		li_amzstock, li_ukdstock, li_amz, li_currentamz, li_ukd, li_currentukd, li_shopifystatus
+Integer		li_tax, li_skumapchanged, li_live, li_stockqty
+Integer		li_returnqty, li_currentqty, li_amzlive, li_dayssold, li_amzsold7, li_random
+String			ls_line, ls_code, ls_size, ls_stock, ls_code1, ls_code2, ls_sku, ls_find, ls_expiry, ls_groupid
+String			ls_orderdate, ls_currency, ls_afnlisting, ls_orderstatus, ls_soldprice
+String			ls_summarycost, ls_tax, ls_ukdcode, ls_ukdsize, ls_barcode, ls_nextdelivery, ls_vat, ls_supplier, ls_ukdcost, ls_date
+String			ls_currentcost, ls_workstation, ls_amazonorderid, ls_product
+String			ls_amzprice, ls_asin, ls_fnsku, ls_fbafee, ls_inputfile, ls_buybox, ls_saleschannel
+String			ls_quantity, ls_purchasedate, ls_purchaseyear, ls_purchasemonth, ls_purchaseday
+String			ls_now, ls_id, ls_solddate, ls_newpurchasedate, ls_purchasetime, ls_licenseplate, ls_shopifytitle
+String			ls_itemprice, ls_orderid, ls_returndate,ls_year,ls_month,ls_day,ls_newreturndate,ls_time
+String			ls_rrp, ls_cost, ls_lowbench
+Integer		li_found, li_prevshelf, li_shelf, li_roi, li_localstock, li_localsold
+Integer		li_minlocal, li_inamazon, li_amzsold, li_amzreturn
+Integer		li_qty, li_currentstock, li_status, li_shopify, li_pfgstock
+String			ls_ordernum, ls_amzminprice, ls_roi, ls_created
+String			ls_chosensupplier, ls_status
+String			ls_titledetail, ls_brand, ls_fulltitle, ls_notes, ls_season
+String			ls_floor, ls_msp, ls_amzsoldprice
+String			ls_profit, ls_value, ls_amzsolddate, ls_unitprocessing, ls_buyboxdate, ls_storedprofit, ls_inivalue
+Long			ll_suppliercount, ll_soldvalue, ll_startfind
+Real			lr_value, lr_soldvalue, lr_profit, lr_roi, lr_floor, lr_fbafee
+Real			lr_soldprice, lr_amzreferralfee, lr_dpdeach, lr_skumapfbafee, lr_itemprice
+Date			ldt_expiry, ldt_purchasedate, ldt_amzorderdate
+Datastore	lds_ukdfeed, lds_r001, lds_r002,lds_r004,lds_r006,lds_xstockfile1, lds_xstockfile5, lds_amzstockreport
+Datastore	lds_buybox
+
+
+/**************************************************
+* CONSTANT
+**************************************************/
+
+//lr_fbamonthstorage = 0.45
+
+
+lds_r001 = CREATE datastore
+lds_r001.dataobject = "d_r001"
+lds_r002 = CREATE datastore
+lds_r002.dataobject = "d_r002"
+lds_r004 = CREATE datastore
+lds_r004.dataobject = "d_r004"
+lds_r006  = CREATE datastore
+lds_r006.dataobject = "d_returns"
+lds_buybox  = CREATE datastore
+lds_buybox.dataobject = "d_buybox"
+
+ls_date = string(today(),"YYYYMMDD HH:MM:SS")
+
+
+// Sort out the files
+w_main.wf_amzfiles()
+FileDelete("c:\brookfieldcomfort\backdata\sales.csv")
+
+
+/***********************************************************************************
+* LOAD r002 (Orders)
+***********************************************************************************/
+ll_row = 0
+li_FileNum = FileOpen(gs_dropbox + "datafiles\order.txt" , LineMode!,Read!,Shared!)
+
+DO
+	ll_row = ll_row + 1
+	ll_filereturn = FileReadEx(li_FileNum, ls_line)
+
+	IF ll_filereturn < 0 AND ll_filereturn <> -100 THEN
+		li_readerror = 1
+	END IF
+	
+	IF ll_row < 2 THEN
+		Continue
+	END IF
+	
+	IF ll_filereturn > 0 THEN
+		ll_return = lds_r002.importstring(Text!,ls_line)		
+	END IF
+	
+LOOP UNTIL ll_filereturn < 0
+
+// Close File Read
+FileClose(li_FileNum)
+
+IF li_readerror = 1 THEN
+	Messagebox("Data","There is a data error in r002.txt. Carry on as normal but there will be some sales missing")
+	li_readerror = 0
+END IF
+
+//lds_r002.saveas(gs_downloadarea + "test1.csv",csv!,true)
+
+
+// Clear Unwanted r002 rows
+FOR ll_count = lds_r002.rowcount() TO 1 STEP -1
+	ls_orderstatus = lds_r002.getitemstring(ll_count,"orderstatus")
+	ls_soldprice =lds_r002.getitemstring(ll_count,"itemprice")
+	IF ls_orderstatus = "Cancelled" OR isNULL(ls_soldprice) THEN
+		lds_r002.deleterow(ll_count)
+	END IF
+NEXT
+
+// Sort Descending so to take latest sales
+lds_r002.setsort("purchasedate A")
+lds_r002.sort()
+
+
+
+/***********************************************************************************
+* LOAD Returns
+***********************************************************************************/
+ll_row = 0
+li_FileNum = FileOpen(gs_dropbox + "datafiles\returns.txt" , LineMode!,Read!,Shared!)
+
+DO
+	ll_row = ll_row + 1
+	ll_filereturn = FileReadEx(li_FileNum, ls_line)
+
+	IF ll_row < 2 THEN
+		Continue
+	END IF
+	
+	IF ll_filereturn > 0 THEN
+		ll_return = lds_r006.importstring(Text!,ls_line)
+	END IF
+	
+LOOP UNTIL ll_filereturn < 0
+
+// Close File Read
+FileClose(li_FileNum)
+
+
+/***********************************************************************************
+* LOAD BuyBox
+***********************************************************************************/
+ll_row = 0
+li_FileNum = FileOpen(gs_dropbox + "datafiles\buybox.csv" , LineMode!,Read!,Shared!)
+
+DO
+	ll_row = ll_row + 1
+	ll_filereturn = FileReadEx(li_FileNum, ls_line)
+
+	IF ll_row < 2 THEN
+		Continue
+	END IF
+	
+	IF ll_filereturn > 0 THEN
+		ll_return = lds_buybox.importstring(CSV!,ls_line)
+	END IF
+	
+LOOP UNTIL ll_filereturn < 0
+
+// Close File Read
+FileClose(li_FileNum)
+
+
+
+/***********************************************************************************
+* LOAD Fees
+***********************************************************************************/
+ll_row = 0
+li_FileNum = FileOpen(gs_dropbox + "datafiles\r004.txt", LineMode!,Read!,Shared!)
+
+DO
+	ll_row = ll_row + 1
+	ll_filereturn = FileReadEx(li_FileNum, ls_line)
+
+	IF ll_row < 2 THEN
+		Continue
+	END IF
+	
+	IF ll_filereturn > 0 THEN
+		ll_return = lds_r004.importstring(Text!,ls_line)
+
+		IF ll_return > 0 THEN
+			ls_currency = lds_r004.getitemstring(lds_r004.rowcount(),"currency")
+
+			IF ls_currency = "GBP" THEN
+				// Keep
+				Continue
+			END IF
+		
+			// Delete Row
+			lds_r004.deleterow(lds_r004.rowcount())
+		END IF
+	END IF
+	
+LOOP UNTIL ll_filereturn < 0
+
+// Close File Read
+FileClose(li_FileNum)
+
+
+/***********************************************************************************
+* LOAD Main Stock r001
+***********************************************************************************/
+ll_row = 0
+li_FileNum = FileOpen(gs_dropbox + "datafiles\stock.txt", LineMode!,Read!,Shared!)
+
+DO
+	ll_row = ll_row + 1
+	ll_filereturn = FileReadEx(li_FileNum, ls_line)
+
+	IF ll_filereturn < 0 AND ll_filereturn <> -100 THEN
+		li_readerror = 1
+	END IF
+	
+	IF ll_row < 2 THEN
+		Continue
+	END IF
+	
+	IF ll_filereturn > 0 THEN
+		ll_return = lds_r001.importstring(Text!,ls_line)
+		IF ll_return > 0 THEN
+			ls_afnlisting = lds_r001.getitemstring(lds_r001.rowcount(),"afnlisting")
+
+			IF Upper(ls_afnlisting) = "YES" THEN
+				// Keep
+				Continue
+			END IF
+		
+			// Delete Row
+			lds_r001.deleterow(lds_r001.rowcount())
+		END IF
+	END IF
+	
+LOOP UNTIL ll_filereturn < 0
+
+// Close File Read
+FileClose(li_FileNum)
+
+IF li_readerror = 1 THEN
+	Messagebox("Data","There is a data error in r001.txt. Carry on as normal but there will be some sales missing")
+	li_readerror = 0
+END IF
+
+
+
+
+
+/***********************************************************************************
+* AMAZON DATA
+***********************************************************************************/
+// Reset Data
+CONNECT USING SQLCA;
+DELETE FROM amzfeed USING SQLCA;
+gdb_amzfeed.settransobject(SQLCA)
+gdb_amzfeed.retrieve()
+DISCONNECT USING SQLCA;
+
+FOR ll_count = 1 TO gdb_skumap.rowcount()
+
+	lr_skumapfbafee = 0
+	ls_sku = gdb_skumap.getitemstring(ll_count,"sku")
+	
+	// Debug Spot
+	IF ls_sku = "IVES-WHITE-08" THEN
+		ls_sku = ls_sku
+	END IF
+	
+	ls_code = gdb_skumap.getitemstring(ll_count,"code")
+	ls_groupid = gdb_skumap.getitemstring(ll_count,"groupid")
+	lr_skumapfbafee = gdb_skumap.getitemnumber(ll_count,"fbafee")
+	IF isNULL(lr_skumapfbafee) THEN lr_skumapfbafee = 0
+	
+	//ls_cost = gdb_skumap.getitemstring(ll_count,"cost")
+
+
+
+	// Get BuyBox
+	ls_buybox = "0.00"
+	ls_find = "sku = '"+ls_sku+"'"
+	ll_found = lds_buybox.Find(ls_find,1, lds_buybox.rowcount())
+	IF ll_found > 0 THEN
+		ls_buybox = lds_buybox.getitemstring(ll_found,"buybox")
+		ls_buybox = Mid(ls_buybox,1,Len(ls_buybox) - 1)
+	END IF
+	
+	
+
+	// Reset to remove Nulls
+	li_amztotal = 0
+	li_amzlive = 0
+	
+
+	ls_find = "sku = '"+ls_sku+"'"
+	ll_found = lds_r001.Find(ls_find,1, lds_r001.rowcount())
+	IF ll_found > 0 THEN
+		ll_row = gdb_amzfeed.insertrow(0)
+		ls_amzprice = lds_r001.getitemstring(ll_found,"price")
+		ls_asin = lds_r001.getitemstring(ll_found,"asin")
+		ls_fnsku = lds_r001.getitemstring(ll_found,"fnsku")
+		li_amztotal = lds_r001.getitemnumber(ll_found,"afntotal")
+		li_amzlive = lds_r001.getitemnumber(ll_found,"afnfulfillable")
+
+		// Adjust for buffer
+		li_amztotal = li_amztotal - gi_amzstockbuffer
+		IF li_amztotal < 1 THEN li_amztotal = 0
+		li_amzlive = li_amzlive - gi_amzstockbuffer
+		IF li_amzlive < 1 THEN li_amzlive = 0
+		
+		gdb_amzfeed.setitem(ll_row,"sku",ls_sku)
+		gdb_amzfeed.setitem(ll_row,"asin",ls_asin)
+		gdb_amzfeed.setitem(ll_row,"fnsku",ls_fnsku)
+		gdb_amzfeed.setitem(ll_row,"code",ls_code)
+		gdb_amzfeed.setitem(ll_row,"groupid",ls_groupid)
+		gdb_amzfeed.setitem(ll_row,"amzprice",ls_amzprice)
+		gdb_amzfeed.setitem(ll_row,"amztotal",li_amztotal)
+		gdb_amzfeed.setitem(ll_row,"amzlive",li_amzlive)
+		gdb_amzfeed.setitem(ll_row,"buybox",ls_buybox)
+
+		ls_find = "sku = '"+ls_sku+"'"
+		ll_found = lds_r004.Find(ls_find,1, lds_r004.rowcount())
+		IF ll_found > 0 THEN
+			// Use latest fee
+			ls_fbafee = 	lds_r004.getitemstring(ll_found,"fbafee")
+			lr_skumapfbafee = Real(ls_fbafee)
+			gdb_skumap.setitem(ll_count,"fbafee",lr_skumapfbafee)
+		ELSE
+			// Check if there is one in SKUMAP
+			IF lr_skumapfbafee > 0 THEN
+				ls_fbafee = String(lr_skumapfbafee,"0.00")
+			ELSE
+				ls_fbafee = "3.39"
+			END IF
+		END IF
+		gdb_amzfeed.setitem(ll_row,"fbafee",ls_fbafee)	
+		
+		
+		// Get Sales Data
+		ll_findpos = 1
+		ll_sold = 0
+		li_amzsold7 = 0
+		ls_find = "sku = '" + ls_sku +"'"
+
+		DO
+			ll_found = lds_r002.find(ls_find,ll_findpos,lds_r002.rowcount())
+			IF ll_found > 0 THEN
+				ls_quantity = lds_r002.getitemstring(ll_found,"quantity")
+				li_quantity = Integer(ls_quantity)
+				IF Real(li_quantity) > 0 THEN
+					ls_purchasedate = Mid(lds_r002.getitemstring(ll_found,"purchasedate"),1,10)				
+					ll_sold = ll_sold + li_quantity
+					ls_soldprice = lds_r002.getitemstring(ll_found,"itemprice")
+					lr_soldprice = Real(ls_soldprice)
+					lr_soldprice = lr_soldprice / li_quantity
+					ls_soldprice = String(lr_soldprice,"0.00")
+					ldt_purchasedate = date(ls_purchasedate)
+					
+					ls_purchaseyear = Mid(ls_purchasedate,1,4)
+					ls_purchasemonth = Mid(ls_purchasedate,6,2) 
+					ls_purchaseday = Mid(ls_purchasedate,9,2)
+					ls_purchasedate = ls_purchaseyear + ls_purchasemonth + ls_purchaseday
+
+					// Check Sold 7
+					li_dayssold = daysafter(ldt_purchasedate,today())
+					IF li_dayssold < 8 THEN
+						li_amzsold7 = li_amzsold7 + li_quantity
+					END IF
+					
+					
+					gdb_amzfeed.setitem(ll_row,"amzsoldprice",ls_soldprice)
+					gdb_amzfeed.setitem(ll_row,"amzsold",ll_sold)
+					gdb_amzfeed.setitem(ll_row,"amzsolddate",ls_purchasedate)	
+					gdb_amzfeed.setitem(ll_row,"amzsold7",li_amzsold7)
+
+				END IF
+			END IF
+			
+			ll_findpos = ll_found + 1
+			IF ll_findpos > lds_r002.rowcount() THEN
+				ll_found = 0
+			END IF
+		LOOP UNTIL ll_found = 0
+	END IF
+NEXT
+
+
+
+/****************************************************************
+* Add Returns
+****************************************************************/
+FOR ll_count = 1 TO lds_r006.rowcount()
+	ls_sku = lds_r006.getitemstring(ll_count,"sku")
+	li_returnqty = Integer(lds_r006.getitemstring(ll_count,"quantity"))
+	IF isNULL(li_returnqty) THEN li_returnqty = 0
+
+	ls_find = "sku = '"+ls_sku+"'"
+	ll_found = gdb_amzfeed.Find(ls_find,1, gdb_amzfeed.rowcount())
+	IF (ll_found > 0) THEN
+		li_currentqty = gdb_amzfeed.getitemnumber(ll_found,"amzreturn")
+		IF isNULL(li_currentqty) THEN li_currentqty = 0
+		li_returnqty = li_returnqty + li_currentqty
+		gdb_amzfeed.setitem(ll_found,"amzreturn",li_returnqty)
+	END IF
+NEXT
+
+
+
+
+
+/**************************************************************************************************
+* GENERATE REPORT
+**************************************************************************************************/
+lds_amzstockreport = CREATE Datastore
+lds_amzstockreport.dataobject = "d_amzstockreport"
+
+
+ls_unitprocessing = profilestring("C:\BrookfieldComfort\brookfield.ini","General","unitprocessing","1")
+
+// Loop through SKUMAP
+FOR ll_count = 1 TO gdb_skumap.rowcount()
+	ls_status = gdb_skumap.getitemstring(ll_count,"status")
+	ls_groupid = Upper(gdb_skumap.getitemstring(ll_count,"groupid"))
+	ls_code = gdb_skumap.getitemstring(ll_count,"code")
+	ls_notes = gdb_skumap.getitemstring(ll_count,"notes")
+	li_minlocal = gdb_skumap.getitemnumber(ll_count,"minstock")
+	ls_barcode = gdb_skumap.getitemstring(ll_count,"ean")
+	//li_tax = gdb_skumap.getitemnumber(ll_count,"tax")
+	ls_amzminprice = String(Real(gdb_skumap.getitemstring(ll_count,"amzminprice")),"0.00")
+	li_shelf = gdb_skumap.getitemnumber(ll_count,"shelf")
+	ls_storedprofit = gdb_skumap.getitemstring(ll_count,"amzprofit")
+
+
+
+	IF isNull(li_minlocal) THEN li_minlocal = 0	
+	//IF isNull(ls_cost) THEN ls_cost = "0.00"	
+	IF isNull(li_shelf) THEN li_shelf = 0
+	IF isNULL(ls_storedprofit) THEN ls_storedprofit = "0.00"
+
+	IF ls_code = "G268A-04" THEN
+		ls_groupid = ls_groupid
+	END IF
+
+	// Get SKUSummary Details
+	ls_find = "Upper(groupid) = '"+ls_groupid+"'"
+	ll_found = gdb_skusummary.find(ls_find,1,gdb_skusummary.rowcount())
+	IF ll_found > 0 THEN
+		ls_brand = gdb_skusummary.getitemstring(ll_found,"brand")
+		ls_supplier = gdb_skusummary.getitemstring(ll_found,"supplier")
+		ls_season = gdb_skusummary.getitemstring(ll_found,"season")
+		li_shopify = gdb_skusummary.getitemnumber(ll_found,"shopify")
+		li_tax = gdb_skusummary.getitemnumber(ll_found,"tax")
+		ls_created = gdb_skusummary.getitemstring(ll_found,"created")
+		ls_summarycost = String(Real(gdb_skusummary.getitemstring(ll_found,"cost")),"0.00")
+
+		IF Upper(ls_season) = "SUMMER" THEN ls_season = "SS"
+		IF Upper(ls_season) = "WINTER" THEN ls_season = "AW"		
+		IF Upper(ls_season) = "ANY" THEN ls_season = "Any"		
+		IF Real(ls_summarycost) = 0 THEN ls_summarycost = "1000"
+	ELSE
+		Continue
+	END IF
+
+
+
+	ls_find = "Upper(code) = '"+Upper(ls_code)+"'"
+	ll_found = gdb_amzfeed.find(ls_find,1,gdb_amzfeed.rowcount())
+	ls_amzsolddate = ""
+	ls_amzsoldprice = ""
+	ls_amzprice = "0.00"
+	ls_sku = ""
+	ls_fnsku = ""
+	ls_asin = ""
+	li_amzsold = 0
+	li_amzsold7 = 0
+	li_amzreturn = 0
+	ls_fbafee = "3.39"
+	
+	IF ll_found > 0 THEN
+		ls_sku = gdb_amzfeed.getitemstring(ll_found,"sku")
+		ls_amzsolddate = gdb_amzfeed.getitemstring(ll_found,"amzsolddate")
+		li_amzsold = gdb_amzfeed.getitemnumber(ll_found,"amzsold")
+		li_amzsold7 = gdb_amzfeed.getitemnumber(ll_found,"amzsold7")
+		li_amzreturn = gdb_amzfeed.getitemnumber(ll_found,"amzreturn")
+		ls_amzsoldprice = String(Real(gdb_amzfeed.getitemstring(ll_found,"amzsoldprice")),"0.00")
+		ls_fbafee = String(Real(gdb_amzfeed.getitemstring(ll_found,"fbafee")),"0.00")
+		ls_fnsku = gdb_amzfeed.getitemstring(ll_found,"fnsku")
+		ls_asin = gdb_amzfeed.getitemstring(ll_found,"asin")
+		IF isNULL(li_amzreturn) THEN li_amzreturn = 0
+		IF isNULL(li_amzsold) THEN li_amzsold = 0		
+
+		IF isNULL(ls_amzsolddate) THEN
+			// Do Nothing
+		ELSE
+			// 20241012
+			// Update SKUMAP date with latest sold date
+			ls_amzsolddate = Mid(ls_amzsolddate,7,2) + "/" + Mid(ls_amzsolddate,5,2) + "/" + Mid(ls_amzsolddate,1,4)
+			ldt_amzorderdate = Date(ls_amzsolddate)
+			gdb_skumap.setitem(ll_count,"amzorderdate2",ldt_amzorderdate)
+		END IF
+		
+		li_inamazon = 1
+	ELSE
+		li_inamazon = 0
+	END IF
+
+	// Get Title Details
+	ls_fulltitle = ""
+	ls_find = "groupid = '"+ls_groupid+"'"
+	ll_found = gdb_title.find(ls_find,1,gdb_title.rowcount())
+	IF ll_found > 0 THEN
+		ls_fulltitle = gdb_title.getitemstring(ll_found,"shopifytitle")
+	END IF
+
+	// Get Stock
+	// Get local stock at filter stage in order to have latest
+	li_localstock = 0	
+	li_pfgstock = 0
+	li_amzlive = w_main.wf_getamzstock(ls_code,1)
+	li_amztotal = w_main.wf_getamzstock(ls_code,2)
+
+
+
+//	lr_profit = 0
+//	lr_roi = 0
+//	IF Real(ls_amzsoldprice) > 0 AND lr_floor > 0 THEN
+//		// Profit
+//		lr_profit = Real(ls_amzsoldprice) - lr_floor
+//		
+//		// ROI
+//		lr_roi = (lr_profit / Real(ls_summarycost)) * 100
+//	END IF
+
+	// Calculate PROFIT and Floor estimate
+	lr_amzreferralfee = 15.3
+	lr_dpdeach = .80
+	lr_profit = 0
+	lr_roi = 0
+	IF Real(ls_amzsoldprice) > 0 THEN
+		// Profit
+		IF li_tax = 1 THEN
+			lr_profit = Real(ls_amzsoldprice) - (Real(ls_amzsoldprice) * (lr_amzreferralfee / 100)) - Real(ls_fbafee) - (Real(ls_amzsoldprice) / 6) - Real(ls_summarycost) - lr_dpdeach
+		ELSE
+			lr_profit = Real(ls_amzsoldprice) - (Real(ls_amzsoldprice) * (lr_amzreferralfee / 100)) - Real(ls_fbafee) - Real(ls_summarycost) - lr_dpdeach
+		END IF
+			
+		// ROI
+		lr_roi = (lr_profit / Real(ls_summarycost)) * 100
+	END IF
+
+	// Determine Floor
+	IF li_tax = 1 THEN
+		lr_floor = ((Real(ls_fbafee) + Real(ls_summarycost) + Real(ls_unitprocessing)) / 0.683333333)
+	ELSE
+		lr_floor = ((Real(ls_fbafee) + Real(ls_summarycost) + Real(ls_unitprocessing)) / 0.85)
+	END IF
+	lr_floor = lr_floor + lr_dpdeach
+
+	IF lr_profit = 0 THEN
+		// Use stored profit
+		lr_profit = Real(ls_storedprofit)
+	ELSE
+		// Update stored profit
+		gdb_skumap.setitem(ll_count,"amzprofit",String(lr_profit,"0.00"))		
+	END IF
+
+	//IF ls_code = "G268A-04" THEN
+	//	ls_code = ls_code
+	//END IF
+
+	
+
+	ll_row = lds_amzstockreport.insertrow(0)
+	lds_amzstockreport.setitem(ll_row,"sku",ls_sku)
+	lds_amzstockreport.setitem(ll_row,"fnsku",ls_fnsku)
+	lds_amzstockreport.setitem(ll_row,"asin",ls_asin)	
+	lds_amzstockreport.setitem(ll_row,"supplier",ls_supplier)
+	lds_amzstockreport.setitem(ll_row,"code",ls_code)
+	lds_amzstockreport.setitem(ll_row,"title",ls_fulltitle)
+	lds_amzstockreport.setitem(ll_row,"minlocal",li_minlocal)	
+	lds_amzstockreport.setitem(ll_row,"floor",String(lr_floor,"0.00"))
+	lds_amzstockreport.setitem(ll_row,"soldprice",ls_amzsoldprice)
+	lds_amzstockreport.setitem(ll_row,"localstock",li_localstock)
+	lds_amzstockreport.setitem(ll_row,"amzlive",li_amzlive)
+	lds_amzstockreport.setitem(ll_row,"amztotal",li_amztotal)	
+	//lds_amzstockreport.setitem(ll_row,"pfgstock",li_pfgstock)	
+	lds_amzstockreport.setitem(ll_row,"groupid",ls_groupid)
+	lds_amzstockreport.setitem(ll_row,"ukd",li_ukd)
+	lds_amzstockreport.setitem(ll_row,"sold",li_amzsold)
+	lds_amzstockreport.setitem(ll_row,"amzsold7",li_amzsold7)
+	lds_amzstockreport.setitem(ll_row,"return",li_amzreturn)
+	//lds_amzstockreport.setitem(ll_row,"solddate",ls_amzsolddate)
+	lds_amzstockreport.setitem(ll_row,"barcode",ls_barcode)
+	lds_amzstockreport.setitem(ll_row,"season",ls_season)
+	lds_amzstockreport.setitem(ll_row,"cost",ls_summarycost)
+	lds_amzstockreport.setitem(ll_row,"profit",String(lr_profit,"0.00"))	
+	lds_amzstockreport.setitem(ll_row,"roi",String(lr_roi,"0"))	
+	lds_amzstockreport.setitem(ll_row,"shopify",li_shopify)	
+	lds_amzstockreport.setitem(ll_row,"created",ls_created)	
+	
+//	// Update Shelf
+//	IF li_inamazon = 1 THEN
+//		IF li_amzsold > 0 THEN
+//			li_shelf = li_shelf - 2
+//			IF li_shelf < 0 THEN li_shelf = 0
+//			gdb_skumap.setitem(ll_count,"shelf",li_shelf)	
+//		ELSE
+//			IF li_amzsold = 0 AND li_amzlive > 0 THEN
+//				li_shelf = li_shelf + 1
+//				gdb_skumap.setitem(ll_count,"shelf",li_shelf)
+//			END IF
+//		END IF
+//	END IF
+
+NEXT
+
+
+/********************************************
+* Save
+********************************************/
+lds_amzstockreport.saveas(gs_dropbox + "datafiles\amzstockreport.csv",csv!,True)
+
+w_main.wf_connectcheckdb(0)
+gdb_skumap.settransobject(SQLCA)
+gdb_skumap.update()
+gdb_amzfeed.settransobject(SQLCA)
+gdb_amzfeed.update()
+DISCONNECT USING SQLCA;		
+
+DESTROY	lds_r001
+DESTROY	lds_r002
+DESTROY	lds_r004
+DESTROY	lds_r006
+DESTROY	lds_amzstockreport
+DESTROY	lds_buybox
+
+Return 0
+
+
