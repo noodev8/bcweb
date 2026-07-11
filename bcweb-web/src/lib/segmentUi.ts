@@ -26,11 +26,17 @@ export const SEGMENT_REVIEW_CHIPS: { days: number; label: string }[] = [
 export function dueTone(state: DueState): string {
   switch (state) {
     case 'overdue': return 'bg-red-100 text-red-700 border-red-200';
+    case 'due': return 'bg-red-100 text-red-700 border-red-200';      // derived Shopify "work waiting" — same red, no new colour (§9.2)
     case 'due-soon': return 'bg-amber-100 text-amber-700 border-amber-200';
     case 'ok': return 'bg-green-100 text-green-700 border-green-200';
     case 'off': return 'bg-slate-200 text-slate-500 border-slate-300 border-dashed';
     default: return 'bg-red-100 text-red-700 border-red-200'; // defensive: unknown → treat as overdue
   }
+}
+
+// A derived (Shopify) cell carries live style counts (instock !== null); manual clocks (Housekeeping, Amazon-for-now) don't.
+function isDerived(cell: SegmentAreaCell): boolean {
+  return cell.instock !== null && cell.instock !== undefined;
 }
 
 // A never-worked area comes through as overdue with no baseline date (daysOverdue 0) — show a bare "overdue", not "0d late".
@@ -39,7 +45,14 @@ function isNeverWorked(cell: SegmentAreaCell): boolean {
 }
 
 // Compact label for a grid cell — colour carries most of the meaning; a tooltip (see cellTitle) gives the detail.
+// A derived Shopify cell shows its live style counts ("12 / 30") rather than a "Nd late" clock (spec §9.3).
 export function dueCellLabel(cell: SegmentAreaCell): string {
+  if (isDerived(cell)) {
+    if (cell.dueState === 'off') return 'off';
+    if (cell.instock === 0) return '—';                          // nothing in stock to price
+    // Show progress done/total (parked so far / candidates): 0/9 = nothing done yet, ticks up to 9/9 as styles are parked.
+    return cell.dueState === 'due' ? `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} / ${cell.instock}` : 'ok';
+  }
   switch (cell.dueState) {
     case 'overdue': return isNeverWorked(cell) ? 'overdue' : `${cell.daysOverdue}d late`;
     case 'due-soon': return 'soon';
@@ -51,6 +64,12 @@ export function dueCellLabel(cell: SegmentAreaCell): string {
 
 // Longer, human sentence for the detail page + cell tooltip.
 export function dueText(cell: SegmentAreaCell): string {
+  if (isDerived(cell)) {
+    if (cell.dueState === 'off') return 'not applicable';
+    if (cell.instock === 0) return 'no Shopify stock';
+    if (cell.dueState === 'due') return `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} of ${cell.instock} styles done · ${cell.outstanding} waiting`;
+    return cell.nextReview ? `all parked · back ${cell.nextReview}` : 'all styles parked';
+  }
   switch (cell.dueState) {
     case 'overdue': return isNeverWorked(cell) ? 'overdue' : `${cell.daysOverdue} day${cell.daysOverdue === 1 ? '' : 's'} overdue`;
     case 'due-soon': return cell.nextReview ? `due ${cell.nextReview}` : 'due soon';
@@ -76,9 +95,10 @@ export function worstDueScore(row: SegmentOverviewRow): number {
   let worst = -2;
   for (const a of row.areas) {
     const s = a.dueState === 'off' ? -2
-      : a.dueState === 'overdue' ? (a.daysOverdue > 0 ? a.daysOverdue : NEVER)
-        : a.dueState === 'due-soon' ? 0.5
-          : -1;
+      : a.dueState === 'due' ? Math.max(a.outstanding ?? 0, 1)      // derived Shopify: rank by how many styles are waiting (>=1)
+        : a.dueState === 'overdue' ? (a.daysOverdue > 0 ? a.daysOverdue : NEVER)
+          : a.dueState === 'due-soon' ? 0.5
+            : -1;
     if (s > worst) worst = s;
   }
   return worst;
