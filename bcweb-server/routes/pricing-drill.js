@@ -6,6 +6,8 @@ Method: GET
 Purpose: Stage 2 — drill-down for one style. Returns everything the decision screen needs (see CLAUDE.md, "drill-down"):
            - header  : current price (now), rrp, cost, min/max bounds, stock, GROSS margin, cooldown date, title, tags.
            - timeline: one row per distinct price the style has SOLD at, newest first (latest era on top), with units, PACE (/wk) and NET PROFIT/wk, all app-side.
+           - weeks   : 6-week zero-filled velocity (units, avg sold price, net profit per week), oldest→newest — the TREND ("is it slowing
+                       this week?"), ported from amz-drill so both drills share one Velocity view (drill-evidence-spec §4, block 2).
            - bands   : units sold at each distinct price over 60 days, ascending price, with NET profit-per-unit — the resistance / "how high
                        can I go" guardrail (drill-evidence-spec §3/§4, ported from amz-drill so both drills share one Units-by-price view).
            - sizes   : remaining stock by EU size (RIGHT(code,2)) — a collapsible guardrail before a CUT (CLAUDE.md).
@@ -39,6 +41,11 @@ Success Response:
       "span_days": 19, "weeks": 2.71, "per_wk": 6.3, "is_current": false },
     ... // newest first (by each price's first sale date); is_current=true when price == header.now. profit/profit_wk are NET (from
     ... // sales.profit, not price-cost); profit_wk = era £/wk = the "best price" ranking; null when the era has no profit data.
+  ],
+  "weeks": [
+    { "week_start": "2026-06-01", "units": 4, "avg_price": 57.87, "profit": 89.60 },
+    { "week_start": "2026-06-08", "units": 6, "avg_price": 65.00, "profit": 177.48 }
+    // oldest -> newest (a trend reads left-to-right; NOT the timeline's "latest on top" rule); zero-filled so a gap week reads 0
   ],
   "bands": [
     { "price": 57.87, "units": 12, "profit_per_unit": 22.40, "first": "2026-05-16", "last": "2026-05-29" },
@@ -197,6 +204,33 @@ router.get('/', async (req, res) => {
     `, [groupid]);
     const sizes = sizesResult.rows.map((r) => ({ size: r.size, qty: Number(r.qty) }));
 
+    // ---- Velocity trend (drill-evidence-spec §4, block 2) — 6 weeks of units/avg-price/net-profit, zero-filled so a gap week reads 0
+    // (not a hidden hole), oldest→newest (a trend is read left-to-right; this is NOT the timeline's "latest on top" rule). Mirror of
+    // amz-drill's weeks[] query but for channel='SHP' grouped by groupid. Answers "is it slowing THIS week?" — the cumulative bands can't.
+    const weeksResult = await query(`
+      WITH wk AS (
+        SELECT generate_series(date_trunc('week', CURRENT_DATE) - INTERVAL '5 weeks',
+                               date_trunc('week', CURRENT_DATE), INTERVAL '1 week')::date AS week_start
+      ),
+      s AS (
+        SELECT date_trunc('week', solddate)::date AS week_start,
+               SUM(CASE WHEN qty>0 THEN qty ELSE 0 END)::int AS units,
+               ROUND(AVG(CASE WHEN qty>0 THEN soldprice END)::numeric, 2) AS avg_price,
+               ROUND(SUM(profit)::numeric, 2) AS profit
+        FROM sales
+        WHERE channel='SHP' AND groupid=$1 AND solddate >= date_trunc('week', CURRENT_DATE) - INTERVAL '5 weeks'
+        GROUP BY 1
+      )
+      SELECT to_char(wk.week_start, 'YYYY-MM-DD') AS week_start,
+             COALESCE(s.units,0) AS units, s.avg_price, COALESCE(s.profit,0) AS profit
+      FROM wk LEFT JOIN s USING (week_start)
+      ORDER BY wk.week_start
+    `, [groupid]);
+    const weeks = weeksResult.rows.map((r) => ({
+      week_start: r.week_start, units: Number(r.units),
+      avg_price: num(r.avg_price), profit: Number(r.profit),
+    }));
+
     // ---- Units-by-price bands (drill-evidence-spec §4, block 3) — the resistance guardrail, mirror of amz-drill's bands but for
     // channel='SHP' grouped by groupid. Fixed 60-day window (independent of the timeline's `days`), ascending price so the ceiling
     // reads top-down. profit_per_unit = NET SUM(profit)/SUM(qty) at that price (from sales.profit, not price-cost) → the band shows
@@ -221,7 +255,7 @@ router.get('/', async (req, res) => {
       last: r.last,
     }));
 
-    return res.json({ return_code: 'SUCCESS', header, timeline, bands, sizes, days });
+    return res.json({ return_code: 'SUCCESS', header, timeline, weeks, bands, sizes, days });
   } catch (err) {
     logger.error('[pricing-drill] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load style detail' });

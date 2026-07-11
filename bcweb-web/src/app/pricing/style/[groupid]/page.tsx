@@ -22,6 +22,7 @@ import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import PriceBands from '@/components/PriceBands';
+import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { bumpActionedCount } from '@/lib/sessionCounter';
@@ -186,9 +187,9 @@ function DrillContent() {
             />
           </section>
 
-          {/* Units-by-price (resistance + profit/unit) — the "how high can I go" view, shared with the Amazon drill (drill-evidence-spec §3). */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Units by price</h2>
+          {/* Evidence — velocity trend + units-by-price resistance, shared with the Amazon drill (drill-evidence-spec §3, blocks 2-3). */}
+          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <VelocityBars weeks={data.weeks} />
             <PriceBands bands={data.bands} currentPrice={data.header.now} />
           </section>
 

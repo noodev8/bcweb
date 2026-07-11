@@ -125,7 +125,10 @@ export interface AmzDrillHeader {
   margin: number | null; margin_pct: number | null;
   fba_live: number; fba_inbound: number;
 }
-export interface AmzWeek { week_start: string; units: number; avg_price: number | null; profit: number; }
+// VelocityWeek is the shared weekly-pace shape both drills return (drill-evidence-spec §4). Zero-filled, oldest→newest. profit is NET
+// (from sales.profit). Rendered by the shared VelocityBars component.
+export interface VelocityWeek { week_start: string; units: number; avg_price: number | null; profit: number; }
+export type AmzWeek = VelocityWeek;
 // PriceBand is the shared units-by-price shape both drills return (drill-evidence-spec §3/§4). profit_per_unit is NET per unit at that
 // price (Amazon: price-cost-FBA; Shopify: from sales.profit). Rendered by the shared PriceBands component.
 export interface PriceBand { price: number | null; units: number; profit_per_unit: number | null; first: string; last: string; }
@@ -159,7 +162,7 @@ export interface TimelineRow {
   span_days: number; weeks: number; per_wk: number; is_current: boolean;
 }
 export interface SizeRow { size: string; qty: number; }
-export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; bands: PriceBand[]; sizes: SizeRow[]; days: number; }
+export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; weeks: VelocityWeek[]; bands: PriceBand[]; sizes: SizeRow[]; days: number; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
 export interface PriceHistoryRow { change_date: string | null; changed_time: string | null; old_price: number | null; new_price: number | null; note: string; changed_by: string | null; }
 export interface PriceHistoryData { rows: PriceHistoryRow[]; limit: number; truncated: boolean; }
@@ -296,7 +299,7 @@ export function applyAmzPrice(code: string, newPrice: number, note?: string) {
 export function getDrill(groupid: string, days?: number) {
   return request<DrillData>(
     { url: '/pricing-drill', method: 'GET', params: { groupid, days } },
-    (b) => ({ header: b.header, timeline: b.timeline || [], bands: b.bands || [], sizes: b.sizes || [], days: b.days })
+    (b) => ({ header: b.header, timeline: b.timeline || [], weeks: b.weeks || [], bands: b.bands || [], sizes: b.sizes || [], days: b.days })
   );
 }
 

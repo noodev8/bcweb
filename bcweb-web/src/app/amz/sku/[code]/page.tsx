@@ -22,6 +22,7 @@ import AmzPriceSetter from '@/components/AmzPriceSetter';
 import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
 import PriceBands from '@/components/PriceBands';
+import VelocityBars from '@/components/VelocityBars';
 import { getAmzDrill, applyAmzPrice, AmzDrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
@@ -34,11 +35,6 @@ export default function AmzDrillPage() {
   );
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function fmtShort(iso: string): string {
-  const [, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]}`;
-}
 function DrillContent() {
   const router = useRouter();
   const params = useParams<{ code: string }>();
@@ -159,7 +155,7 @@ function DrillContent() {
 
           {/* Evidence — the read-only case for a decision: velocity trend + price-band resistance. */}
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <Velocity weeks={data.weeks} />
+            <VelocityBars weeks={data.weeks} />
             <PriceBands bands={data.bands} currentPrice={data.header.price} />
           </section>
 
@@ -172,26 +168,4 @@ function DrillContent() {
   );
 }
 
-// 6-week velocity — the trend. A halving week over week is the act-now signal. (Returns are intentionally not shown — noise for pricing.)
-function Velocity({ weeks }: { weeks: AmzDrillData['weeks'] }) {
-  const maxWeek = Math.max(1, ...weeks.map((w) => w.units));
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Velocity — 6 weeks</h3>
-      <div className="flex items-end gap-1.5" style={{ height: 72 }}>
-        {weeks.map((w) => (
-          <div key={w.week_start} className="flex flex-1 flex-col items-center justify-end" title={`${w.units} sold · avg ${w.avg_price !== null ? '£' + w.avg_price.toFixed(2) : '—'}`}>
-            <span className="mb-0.5 text-[10px] font-medium text-slate-600">{w.units}</span>
-            <div className="w-full rounded-t bg-emerald-400" style={{ height: Math.round((w.units / maxWeek) * 48) }} />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 flex gap-1.5">
-        {weeks.map((w) => (
-          <span key={w.week_start} className="flex-1 text-center text-[10px] text-slate-400">{fmtShort(w.week_start)}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
 

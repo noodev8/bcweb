@@ -26,8 +26,11 @@ directly answers "what's the best price". Neither is a different *model* — see
 - **units-by-price (+profit) on Shopify + profit/unit on Amazon** (step 3) — see §4/§6. `pricing-drill` now returns
   `bands[]` (60d, ascending price, NET `profit_per_unit`); `amz-drill` bands gained `profit_per_unit` for parity. New
   shared `PriceBands` component renders the block identically on both drills (Amazon's local `Bands` deleted so they
-  can't drift); `AmzBand` is now `= PriceBand` (one shared shape). Rendered above the timeline on Shopify. NOT yet
-  click-tested against the two worked screens.
+  can't drift); `AmzBand` is now `= PriceBand` (one shared shape). NOT yet click-tested against the two worked screens.
+- **velocity trend on Shopify** (step 4) — see §4/§6. `pricing-drill` now returns `weeks[]` (6-week zero-filled,
+  oldest→newest, mirror of amz-drill's). New shared `VelocityBars` component renders it on both (Amazon's local
+  `Velocity` deleted); `AmzWeek` is now `= VelocityWeek`. Shopify drill shows Velocity + Units-by-price side-by-side
+  above the timeline — the aligned §3 block order. tsc clean; NOT yet click-tested.
 
 **DROPPED 2026-07-11 (owner decision) — stock cover on the pricing drill.** Cover (weeks-to-clear) was built into both
 headers (step 1) then removed: the operator already holds the season / stock / weather context a cover number would
@@ -191,7 +194,8 @@ components for the ported blocks (a `VelocityBars` and a `PriceBands` reused by 
 3. ✅ **Units-by-price (+profit) → Shopify** — BUILT 2026-07-11. `pricing-drill` returns `bands[]` (60d, NET
    `profit_per_unit`); `amz-drill` bands gained `profit_per_unit`; shared `PriceBands` component renders both. The
    ceiling / "how high can I go before demand resists" view. Not yet click-tested.
-4. **Velocity trend → Shopify** (NEXT — parity). Add `weeks[]` to `pricing-drill`; shared `VelocityBars`; render on both.
+4. ✅ **Velocity trend → Shopify** — BUILT 2026-07-11. `pricing-drill` returns `weeks[]` (6-week zero-filled); shared
+   `VelocityBars` renders on both; Amazon's local `Velocity` deleted. Shopify now shows the full aligned §3 evidence set.
 5. **(Optional / later)** profit/wk framing on the Amazon bands; decide the Amazon era-timeline question (§7).
 
 ## 7. Open decisions (resolve when building the relevant piece)
