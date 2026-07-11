@@ -29,8 +29,8 @@ Success Response:
   "active": true,
   "days": 30,
   "stats": { "revenue30": 9314.74, "gpPct": 44, "stock": 812, "styles": 37, "heat": null },
-  "areas": [ { "area": "Shopify", "cadenceDays": 30, "dueState": "overdue", "daysOverdue": 0,
-               "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null }, ... ],   // never worked → overdue; ordered by area.sort
+  "areas": [ { "area": "Shopify", "cadenceDays": 30, "dueState": "due", "daysOverdue": 0, "outstanding": 12, "instock": 30,
+               "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null }, ... ],   // Shopify DERIVED (§9); others manual, ordered by area.sort
   "worklog": [ { "area": "Shopify", "workedBy": "Andreas", "workedAt": "2026-07-09T10:11:12.000Z", "note": "harvest" }, ... ],
   "limit": 20,
   "truncated": false
@@ -50,6 +50,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { safeNumeric } = require('../utils/sql');
 const { classifyDue, isoDate } = require('../utils/segmentDue');
+const { deriveShopify } = require('../utils/segmentDerived');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -74,7 +75,7 @@ router.get('/', async (req, res) => {
     const segmentId = seg.rows[0].id;
 
     // Header stats — live revenue/COGS (all channels), current sellable stock, and style count. Run in parallel; independent reads.
-    const [rev, stockStyles, clocks, work] = await Promise.all([
+    const [rev, stockStyles, clocks, work, shp, amz] = await Promise.all([
       query(`
         SELECT SUM(s.qty * s.soldprice)               AS revenue,
                SUM(s.qty * ${safeNumeric('ss.cost')}) AS cogs
@@ -118,7 +119,48 @@ router.get('/', async (req, res) => {
         ORDER BY w.worked_at DESC, w.id DESC
         LIMIT $2::int
       `, [segmentId, limit + 1]),
+
+      // Derived Shopify clock (spec §9.3) — in-stock live styles in this segment, and how many are still un-parked. Same pool as
+      // triage/losers; merged onto the Shopify area cell below (replacing its manual next_review_date read).
+      query(`
+        WITH stk AS (
+          SELECT groupid, SUM(qty) AS stock FROM localstock
+          WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+          GROUP BY groupid
+        )
+        SELECT COUNT(*)::int AS instock,
+               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
+                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS outstanding,
+               MIN(ss.next_shopify_price_review)
+                 FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE) AS next_wake
+        FROM skusummary ss
+        JOIN stk ON stk.groupid = ss.groupid
+        WHERE ss.segment = $1 AND ss.shopify = 1
+      `, [name]),
+
+      // Derived Amazon clock (spec §10.3) — SKU-grain twin of the Shopify block: FBA-in-stock SKUs in this segment (amzfeed.amzlive>0)
+      // and how many are still un-parked (per-SKU review date on skumap). 1:1 join (code unique in skumap).
+      query(`
+        SELECT COUNT(*)::int AS instock,
+               COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
+                                   OR m.next_amz_price_review <= CURRENT_DATE)::int AS outstanding,
+               MIN(m.next_amz_price_review)
+                 FILTER (WHERE m.next_amz_price_review > CURRENT_DATE) AS next_wake
+        FROM amzfeed a
+        JOIN skusummary sk ON sk.groupid = a.groupid
+        JOIN skumap m ON m.code = a.code
+        WHERE sk.segment = $1 AND COALESCE(a.amzlive, 0) > 0
+      `, [name]),
     ]);
+
+    // The derived Shopify counts (single grouped row; all-zero when the segment has no in-stock live styles).
+    const shopifyCounts = shp.rows[0]
+      ? { instock: shp.rows[0].instock, outstanding: shp.rows[0].outstanding, nextWake: shp.rows[0].next_wake }
+      : { instock: 0, outstanding: 0, nextWake: null };
+    // The derived Amazon counts (same shape; all-zero when the segment has no in-stock FBA SKUs).
+    const amazonCounts = amz.rows[0]
+      ? { instock: amz.rows[0].instock, outstanding: amz.rows[0].outstanding, nextWake: amz.rows[0].next_wake }
+      : { instock: 0, outstanding: 0, nextWake: null };
 
     const revenue = rev.rows[0].revenue === null ? 0 : Number(rev.rows[0].revenue);
     const cogs = rev.rows[0].cogs === null ? null : Number(rev.rows[0].cogs);
@@ -126,12 +168,20 @@ router.get('/', async (req, res) => {
 
     const areas = clocks.rows.map((c) => {
       const daysOver = c.days_over === null ? null : Number(c.days_over);
+      // Shopify AND Amazon = derived clocks (§9/§10); Housekeeping (and any future manual area) keeps the manual classification.
+      const areaName = c.area.toLowerCase();
+      const derived =
+        areaName === 'shopify' ? deriveShopify(shopifyCounts, c.off) :
+        areaName === 'amazon' ? deriveShopify(amazonCounts, c.off) :
+        null;
       return {
         area: c.area,
         cadenceDays: c.cadence_days,
-        dueState: classifyDue(daysOver, c.off),
-        daysOverdue: daysOver !== null && daysOver > 0 ? daysOver : 0,
-        nextReview: isoDate(c.next_review_date),
+        dueState: derived ? derived.dueState : classifyDue(daysOver, c.off),
+        daysOverdue: derived ? 0 : (daysOver !== null && daysOver > 0 ? daysOver : 0),
+        nextReview: derived ? derived.nextReview : isoDate(c.next_review_date),
+        outstanding: derived ? derived.outstanding : null,   // derived (Shopify) only; null for manual clocks
+        instock: derived ? derived.instock : null,
         lastWorkedBy: c.last_worked_by || null,
         lastWorkedAt: c.last_worked_at ? c.last_worked_at.toISOString() : null,
       };

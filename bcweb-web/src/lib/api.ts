@@ -288,11 +288,21 @@ export function findAmzSkus(term: string) {
 }
 
 // Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; the price reaches Amazon via the client upload file, not
-// this call. Returns amz_sku + rrp so the session basket can build that file straight from the response.
-export function applyAmzPrice(code: string, newPrice: number, note?: string) {
+// this call. Also auto-parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays optional
+// (omitted → server default 14d). Returns amz_sku + rrp so the session basket can build the upload file straight from the response.
+export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number) {
   return request<AmzApplyResult>(
-    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note } },
+    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, reviewDays } },
     (b) => ({ code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, warnings: b.warnings || [] })
+  );
+}
+
+// Amazon Pricing — batch "mark reviewed" (W-A2). Parks a selection of SKUs left UNCHANGED (no price applied) so they drop off the
+// winners/losers queue and the derived Amazon segment clock advances. Returns how many rows were parked + the review date set.
+export function markAmzReviewed(codes: string[], reviewDays: number) {
+  return request<{ updated: number; nextReview: string | null }>(
+    { url: '/amz-review', method: 'POST', data: { codes, reviewDays } },
+    (b) => ({ updated: b.updated, nextReview: b.nextReview ?? null })
   );
 }
 
@@ -551,6 +561,94 @@ export function renameSegment(oldName: string, newName: string) {
   return request<{ oldName: string; newName: string; productsMoved: number }>(
     { url: '/segment-rename', method: 'POST', data: { oldName, newName } },
     (b) => ({ oldName: b.oldName, newName: b.newName, productsMoved: b.productsMoved })
+  );
+}
+
+// =============================================================================================================================
+// Analytics module — Birk Tracker (daily snapshot of Birkenstock core-size availability; the Google-Ads push/scale-back gauge).
+// =============================================================================================================================
+// One daily snapshot row. full = Birk styles with all 3 core sizes (38/39/40) in FREE stock (the decision number);
+// styles = all in-range Birk styles (grid offers 38/39/40, the ceiling); full_pct = full/styles (trend gauge).
+// units7 = trailing 7-day all-channel Birk units sold ending on that date, computed live from `sales` (not stored).
+// total_free = ALL Birk FREE units on hand that day (the whole tank); core_free = FREE units at core sizes 38/39/40. Both STORED,
+// nullable (pre-totals rows are null). cover_weeks = total_free / units7 (whole tank / weekly burn) — the push/scale-back gauge; null
+// when stock level or recent sales are unknown.
+export interface BirkSnapshot {
+  date: string; full: number; styles: number; full_pct: number; units7: number;
+  total_free: number | null; core_free: number | null; cover_weeks: number | null;
+}
+
+// Read the stored history (default last 90 days) + the latest row for the headline. Oldest -> newest.
+export function getBirkTracker(days?: number) {
+  return request<{ days: number; latest: BirkSnapshot | null; rows: BirkSnapshot[] }>(
+    { url: '/birk-tracker', method: 'GET', params: { days } },
+    (b) => ({ days: b.days, latest: b.latest ?? null, rows: b.rows || [] })
+  );
+}
+
+// "Update" button — recompute the current snapshot, upsert today's row (latest run of the day wins), prune rows older than 2 years.
+export function updateBirkTracker() {
+  return request<{ latest: BirkSnapshot; pruned: number }>(
+    { url: '/birk-tracker-update', method: 'POST' },
+    // The POST recomputes stock (full/styles/total_free/core_free) only; units7 & cover (live sales reads) aren't returned here —
+    // default them. The page reloads via GET /birk-tracker straight after, which carries the real units7 + cover.
+    (b) => ({
+      latest: {
+        ...b.latest,
+        units7: b.latest?.units7 ?? 0,
+        total_free: b.latest?.total_free ?? null,
+        core_free: b.latest?.core_free ?? null,
+        cover_weeks: b.latest?.cover_weeks ?? null,
+      },
+      pruned: b.pruned ?? 0,
+    })
+  );
+}
+
+// =============================================================================================================================
+// Analytics module — Stock Position (living-catalogue gauge per channel; the inventory-growth trend).
+// =============================================================================================================================
+// One snapshot row per channel. Four buckets that sum to `total` (the channel's universe); ALIVE = total - dormant:
+//   in_stock_selling  — in stock now AND sold in last 6 months
+//   in_stock_no_sale  — in stock now, no sale in 6 months
+//   oos_sold_recently — out of stock but sold in last 6 months
+//   dormant           — no stock AND no sale in 6 months (the "gone quiet" pile — NOT alive)
+// Shopify counts STYLES (groupid, shopify=1); Amazon counts SKUs (amzfeed.code). `date` is the snapshot day (YYYY-MM-DD).
+export interface StockPositionRow {
+  date: string;
+  in_stock_selling: number;
+  in_stock_no_sale: number;
+  oos_sold_recently: number;
+  dormant: number;
+  alive: number;
+  total: number;
+}
+
+export interface StockPositionData {
+  days: number;
+  today: { shp: StockPositionRow; amz: StockPositionRow };
+  history: { shp: StockPositionRow[]; amz: StockPositionRow[] };  // each oldest -> newest
+}
+
+// Load the Stock Position gauge. GET is read-only: it computes today's LIVE figures (the panels stay fresh) and returns the stored
+// trend (default last 90 days). Recording a trend point is the separate "Update now" call below.
+export function getStockPosition(days?: number) {
+  return request<StockPositionData>(
+    { url: '/analytics-stock-position', method: 'GET', params: { days } },
+    (b) => ({
+      days: b.days,
+      today: b.today,
+      history: { shp: b.history?.shp || [], amz: b.history?.amz || [] },
+    })
+  );
+}
+
+// "Update now" button — recompute both channels and upsert today's two rows (latest run of the day wins), prune rows older than 2
+// years. Returns the freshly-computed `today`; the page reloads via GET afterwards to pick up the new history point.
+export function updateStockPosition() {
+  return request<{ today: { shp: StockPositionRow; amz: StockPositionRow }; pruned: number }>(
+    { url: '/analytics-stock-position-update', method: 'POST' },
+    (b) => ({ today: b.today, pruned: b.pruned ?? 0 })
   );
 }
 

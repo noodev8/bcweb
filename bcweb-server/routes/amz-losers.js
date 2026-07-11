@@ -110,6 +110,7 @@ router.get('/', async (req, res) => {
              (CURRENT_DATE - ls.last_sold)::int AS days_since_sale
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
+      JOIN skumap m      ON m.code   = a.code                                            -- per-SKU review date (next_amz_price_review); 1:1
       LEFT JOIN cover c  ON c.code   = a.code
       LEFT JOIN s30      ON s30.code = a.code
       LEFT JOIN s14      ON s14.code = a.code
@@ -117,6 +118,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t  ON t.groupid = a.groupid
       WHERE sk.segment = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
+        AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only (drops reviewed SKUs; §10.4)
         AND (
               COALESCE(s14.u14,0) = 0                                                     -- DEAD (no sale in 14d)
               OR COALESCE(a.amzlive,0) * ($2::numeric/7.0) / NULLIF(c.u_win,0) >= $4::numeric  -- SLOW (cover >= coverWeeks)

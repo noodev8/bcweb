@@ -28,7 +28,7 @@ Success Response:
   "return_code": "SUCCESS",
   "groupid": "ABC123",
   "rows": [
-    { "solddate": "2026-07-08", "ordertime": "14:32", "size": "38", "qty": 1, "soldprice": 36.95 },
+    { "solddate": "2026-07-08", "ordertime": "14:32", "size": "38", "qty": 1, "soldprice": 36.95, "profit": 2.38 },  // profit read straight from sales.profit (computed downstream); null if not set
     ... // newest first
   ],
   "limit": 50,
@@ -71,14 +71,17 @@ router.get('/', async (req, res) => {
     if (!(limit > 0)) limit = 50;
     if (limit > 200) limit = 200;
 
-    const exists = await query(`SELECT 1 FROM skusummary WHERE groupid = $1`, [groupid]);
+    // Confirm the style exists so we can return a clean NOT_FOUND rather than an empty sales list for a bogus groupid.
+    const exists = await query('SELECT 1 FROM skusummary WHERE groupid = $1', [groupid]);
     if (exists.rows.length === 0) {
       return res.json({ return_code: 'NOT_FOUND', message: 'Style not found' });
     }
 
     // Fetch limit+1 to detect truncation without a separate COUNT. Newest first (solddate, then time, then surrogate id).
+    // `profit` is read straight from the sales table: it's now computed downstream (by the owner's own P&L pipeline) and
+    // populated per sale line, so we no longer re-derive it app-side — this row just surfaces what the table already holds.
     const result = await query(`
-      SELECT solddate, ordertime, RIGHT(code, 2) AS size, qty, soldprice
+      SELECT solddate, ordertime, RIGHT(code, 2) AS size, qty, soldprice, profit
       FROM sales
       WHERE groupid = $1 AND channel = 'SHP' AND qty > 0 AND soldprice > 0
       ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
@@ -86,13 +89,17 @@ router.get('/', async (req, res) => {
     `, [groupid, limit + 1]);
 
     const truncated = result.rows.length > limit;
-    const rows = result.rows.slice(0, limit).map((r) => ({
-      solddate: toIsoDate(r.solddate),
-      ordertime: r.ordertime || null,
-      size: r.size || null,
-      qty: Number(r.qty),
-      soldprice: num(r.soldprice)
-    }));
+    const rows = result.rows.slice(0, limit).map((r) => {
+      return {
+        solddate: toIsoDate(r.solddate),
+        ordertime: r.ordertime || null,
+        size: r.size || null,
+        qty: Number(r.qty),
+        soldprice: num(r.soldprice),
+        // Net profit for this sale line, straight from sales.profit (downstream-calculated). null -> UI shows "—".
+        profit: num(r.profit)
+      };
+    });
 
     return res.json({ return_code: 'SUCCESS', groupid, rows, limit, truncated });
   } catch (err) {

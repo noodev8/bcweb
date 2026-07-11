@@ -91,11 +91,13 @@ router.get('/', async (req, res) => {
              to_char(w.last_sold,'YYYY-MM-DD') AS last_sold
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
+      JOIN skumap m ON m.code = a.code                    -- for the per-SKU review date (next_amz_price_review); 1:1 (code unique)
       JOIN win w ON w.code = a.code                       -- INNER JOIN: must have sold in the window
       LEFT JOIN s7 ON s7.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
       WHERE sk.segment = $1
         AND COALESCE(a.amzlive,0) > 0                     -- in FBA stock now
+        AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only (drops reviewed SKUs; §10.4)
       ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
     `, [segment, days, limit]);

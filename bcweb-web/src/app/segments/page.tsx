@@ -53,9 +53,12 @@ export default function SegmentsHeatmap() {
     return onlyDue ? arr.filter((r) => r.areas.some((a) => a.dueState !== 'ok' && a.dueState !== 'off')) : arr;
   }, [rows, sortMode, onlyDue]);
 
-  // A Shopify cell drops into the existing triage; any other area opens the segment detail (where it can be marked worked).
+  // A pricing cell drops into its work screen (Shopify triage / Amazon SKU lists); Housekeeping (and any manual area) opens the
+  // segment detail, where it can be marked worked.
   function openCell(name: string, cell: SegmentAreaCell) {
-    if (cell.area.toLowerCase() === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}`);
+    const a = cell.area.toLowerCase();
+    if (a === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}`);
+    else if (a === 'amazon') router.push(`/amz/${encodeURIComponent(name)}`);
     else router.push(`/segments/${encodeURIComponent(name)}`);
   }
 

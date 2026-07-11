@@ -62,9 +62,17 @@ export default function DashboardPage() {
         />
 
         {/* Placeholders — modular growth path, not built in v1. */}
+        {/* Analytics — v1 ships the Birk Tracker view (Birkenstock core-size availability gauge). */}
+        <ModuleTile
+          title="Analytics"
+          description="Stock and sales reporting — starting with the Birk Tracker availability gauge."
+          href="/analytics"
+          icon={ChartBarIcon}
+          live
+        />
+
         <ModuleTile title="Inventory" description="Stock levels, allocation and incoming." icon={ArchiveBoxIcon} />
         <ModuleTile title="Orders" description="Order search and fulfilment status." icon={ShoppingCartIcon} />
-        <ModuleTile title="Analytics" description="Sales and margin reporting." icon={ChartBarIcon} />
       </div>
     </AppShell>
   );

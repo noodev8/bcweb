@@ -24,6 +24,15 @@ Due state per area (spec §4): from segment_area_state.next_review_date vs CURRE
   ok     (green) = further out
 Last-worked (who/when) is the most recent segment_worklog row for that (segment, area).
 
+DERIVED Shopify clock (spec §9 — CHANGE 2026-07-11): the SHOPIFY area no longer reads its manual next_review_date. Instead its due
+state is COMPUTED from the products' own review dates — the same in-stock / un-parked pool triage & losers draw from — so the segment
+can't disagree with its styles (§9.2). One extra set-based query (grouped by ss.segment) counts, per segment: `instock` (live +
+in-stock styles) and `outstanding` (of those, un-parked → still need pricing). utils/segmentDerived.js maps those to dueState
+'due' (outstanding>0, RED, cell shows "12 / 30 waiting") / 'ok' (all parked, GREEN, cell shows when the soonest parked style returns),
+with the operator's `off` flag still short-circuiting. The AMAZON area derives the same way at SKU grain (§10 — FBA-in-stock SKUs from
+amzfeed, per-SKU review date on skumap.next_amz_price_review). Both pricing cells carry the extra `outstanding`/`instock` counts; only
+the manual clock (Housekeeping) leaves them null and keeps the classifyDue path above.
+
 Heat (🔥) is a deferred fast-follow (spec §3/§7) — returned as null for now.
 =======================================================================================================================================
 Request Query Params:
@@ -40,8 +49,10 @@ Success Response:
       "gpPct": 44,
       "heat": null,
       "areas": [
-        { "area": "Shopify", "cadenceDays": 30, "dueState": "overdue", "daysOverdue": 0,
-          "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },   // never worked → overdue, daysOverdue 0
+        { "area": "Shopify", "cadenceDays": 30, "dueState": "due", "daysOverdue": 0, "outstanding": 12, "instock": 30,
+          "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },   // DERIVED (§9): 12 of 30 in-stock styles un-parked
+        { "area": "Housekeeping", "cadenceDays": 91, "dueState": "overdue", "daysOverdue": 0, "outstanding": null, "instock": null,
+          "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },   // manual clock: never worked → overdue, daysOverdue 0
         ...  // ordered by area.sort
       ]
     },
@@ -63,6 +74,7 @@ const { withTransaction } = require('../utils/transaction');
 const { reconcileSegments } = require('../utils/segmentReconcile');
 const { safeNumeric } = require('../utils/sql');
 const { classifyDue, isoDate } = require('../utils/segmentDue');
+const { deriveShopify } = require('../utils/segmentDerived');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -99,6 +111,53 @@ router.get('/', async (req, res) => {
       revByName.set(r.name, { revenue30: Math.round(revenue * 100) / 100, gpPct });
     }
 
+    // 2b) Derived SHOPIFY clock (spec §9.3) — per segment, how many in-stock live styles still need pricing (un-parked) vs are
+    //     parked into the future. Same candidate pool as triage/losers (live on Shopify + sellable stock via localstock #FREE).
+    //     Keyed by segment name; merged onto the Shopify area cell below, replacing its manual next_review_date read.
+    const shp = await query(`
+      WITH stk AS (
+        SELECT groupid, SUM(qty) AS stock FROM localstock
+        WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+        GROUP BY groupid
+      )
+      SELECT ss.segment AS name,
+             COUNT(*)::int AS instock,
+             COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
+                                 OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS outstanding,
+             MIN(ss.next_shopify_price_review)
+               FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE) AS next_wake
+      FROM skusummary ss
+      JOIN stk ON stk.groupid = ss.groupid          -- INNER JOIN drops 0-stock styles (nothing to price)
+      WHERE ss.shopify = 1                           -- live on Shopify only
+      GROUP BY ss.segment
+    `);
+    const shopifyByName = new Map();
+    for (const r of shp.rows) {
+      shopifyByName.set(r.name, { instock: r.instock, outstanding: r.outstanding, nextWake: r.next_wake });
+    }
+
+    // 2c) Derived AMAZON clock (spec §10.3) — the SKU-grain twin of the Shopify block. Candidate pool = FBA-in-stock SKUs
+    //     (amzfeed.amzlive>0, the same pool amz-winners/amz-losers draw from); the per-SKU review date lives on skumap
+    //     (next_amz_price_review). code is unique in skumap and every in-stock amzfeed SKU has a skumap row, so the join is 1:1
+    //     and can't double-count. Keyed by segment name; merged onto the Amazon area cell below via the same deriveShopify helper.
+    const amz = await query(`
+      SELECT sk.segment AS name,
+             COUNT(*)::int AS instock,
+             COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
+                                 OR m.next_amz_price_review <= CURRENT_DATE)::int AS outstanding,
+             MIN(m.next_amz_price_review)
+               FILTER (WHERE m.next_amz_price_review > CURRENT_DATE) AS next_wake
+      FROM amzfeed a
+      JOIN skusummary sk ON sk.groupid = a.groupid
+      JOIN skumap m ON m.code = a.code               -- 1:1 (code unique in skumap; every in-stock amzfeed SKU has a skumap row)
+      WHERE COALESCE(a.amzlive, 0) > 0               -- in FBA stock now (nothing to price on an out-of-stock SKU)
+      GROUP BY sk.segment
+    `);
+    const amazonByName = new Map();
+    for (const r of amz.rows) {
+      amazonByName.set(r.name, { instock: r.instock, outstanding: r.outstanding, nextWake: r.next_wake });
+    }
+
     // 3) Clocks + last-worked for every ACTIVE segment × ACTIVE area. One set-based query (no N+1), ordered for assembly.
     const clocks = await query(`
       SELECT s.name AS segment, a.name AS area, a.sort,
@@ -130,12 +189,21 @@ router.get('/', async (req, res) => {
         bySegment.set(c.segment, { name: c.segment, revenue30: gutter.revenue30, gpPct: gutter.gpPct, heat: null, areas: [] });
       }
       const daysOver = c.days_over === null ? null : Number(c.days_over);
+      // Shopify AND Amazon are DERIVED clocks (§9/§10 — computed from the products' own review dates); Housekeeping (and any future
+      // manual area) keeps the manual next_review_date classification. Both pricing areas use the same grain-agnostic deriveShopify.
+      const areaName = c.area.toLowerCase();
+      const derived =
+        areaName === 'shopify' ? deriveShopify(shopifyByName.get(c.segment), c.off) :
+        areaName === 'amazon' ? deriveShopify(amazonByName.get(c.segment), c.off) :
+        null;
       bySegment.get(c.segment).areas.push({
         area: c.area,
         cadenceDays: c.cadence_days,
-        dueState: classifyDue(daysOver, c.off),
-        daysOverdue: daysOver !== null && daysOver > 0 ? daysOver : 0,
-        nextReview: isoDate(c.next_review_date),
+        dueState: derived ? derived.dueState : classifyDue(daysOver, c.off),
+        daysOverdue: derived ? 0 : (daysOver !== null && daysOver > 0 ? daysOver : 0),
+        nextReview: derived ? derived.nextReview : isoDate(c.next_review_date),
+        outstanding: derived ? derived.outstanding : null,   // derived (Shopify) only; null for manual clocks
+        instock: derived ? derived.instock : null,
         lastWorkedBy: c.last_worked_by || null,
         lastWorkedAt: c.last_worked_at ? c.last_worked_at.toISOString() : null,
       });

@@ -65,10 +65,13 @@ export function dueCellLabel(cell: SegmentAreaCell): string {
 // Longer, human sentence for the detail page + cell tooltip.
 export function dueText(cell: SegmentAreaCell): string {
   if (isDerived(cell)) {
+    // Both pricing areas derive the same way; only the channel nouns differ (Amazon counts SKUs/sizes, Shopify counts styles).
+    const isAmazon = cell.area.toLowerCase() === 'amazon';
+    const noun = isAmazon ? 'SKUs' : 'styles';
     if (cell.dueState === 'off') return 'not applicable';
-    if (cell.instock === 0) return 'no Shopify stock';
-    if (cell.dueState === 'due') return `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} of ${cell.instock} styles done · ${cell.outstanding} waiting`;
-    return cell.nextReview ? `all parked · back ${cell.nextReview}` : 'all styles parked';
+    if (cell.instock === 0) return isAmazon ? 'no Amazon stock' : 'no Shopify stock';
+    if (cell.dueState === 'due') return `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} of ${cell.instock} ${noun} done · ${cell.outstanding} waiting`;
+    return cell.nextReview ? `all parked · back ${cell.nextReview}` : `all ${noun} parked`;
   }
   switch (cell.dueState) {
     case 'overdue': return isNeverWorked(cell) ? 'overdue' : `${cell.daysOverdue} day${cell.daysOverdue === 1 ? '' : 's'} overdue`;
@@ -81,9 +84,12 @@ export function dueText(cell: SegmentAreaCell): string {
 
 // Tooltip text for a grid cell — due state + who/when last worked.
 export function cellTitle(cell: SegmentAreaCell): string {
-  const worked = cell.lastWorkedAt
-    ? `\nLast worked by ${cell.lastWorkedBy || '—'} on ${fmtDate(cell.lastWorkedAt)}`
-    : '\nNever worked';
+  // Derived cells (Shopify) have no worklog clock — their status is fully in dueText; skip the worked line.
+  const worked = isDerived(cell)
+    ? ''
+    : cell.lastWorkedAt
+      ? `\nLast worked by ${cell.lastWorkedBy || '—'} on ${fmtDate(cell.lastWorkedAt)}`
+      : '\nNever worked';
   return `${cell.area}: ${dueText(cell)}${worked}`;
 }
 

@@ -15,8 +15,9 @@ Purpose: A reference report for the drill-down decision screen — the Shopify P
          "showing last N". Newest first (most recent decision at the top). Shopify channel only ('SHP'), matching the rest of the module.
 
          Schema note: `change_date` is a DATE (no time), so same-day changes are tie-broken by `id` (an ascending surrogate key) to keep a
-         stable, real chronological order. old_price/new_price are NUMERIC here (unlike the VARCHAR price columns on skusummary), so no
-         safeNumeric needed. Requires auth.
+         stable, real chronological order. `changed_at` (added 2026-07-10) is a timestamptz carrying the exact instant — surfaced as
+         `changed_time` (Europe/London HH:MM); it's null for pre-migration rows that only have a date. old_price/new_price are NUMERIC here
+         (unlike the VARCHAR price columns on skusummary), so no safeNumeric needed. Requires auth.
 =======================================================================================================================================
 Request Query Params:
   groupid (string, required)
@@ -27,7 +28,7 @@ Success Response:
   "return_code": "SUCCESS",
   "groupid": "ABC123",
   "rows": [
-    { "change_date": "2026-07-01", "old_price": 34.95, "new_price": 36.95, "note": "harvest — pace held", "changed_by": "Andreas" },
+    { "change_date": "2026-07-01", "changed_time": "14:32", "old_price": 34.95, "new_price": 36.95, "note": "harvest — pace held", "changed_by": "Andreas" },
     ... // newest first
   ],
   "limit": 20,
@@ -79,7 +80,9 @@ router.get('/', async (req, res) => {
 
     // Fetch limit+1 so we can tell whether more rows exist (truncation) without a second COUNT query.
     const result = await query(`
-      SELECT change_date, old_price, new_price, reason_notes, changed_by
+      SELECT change_date,
+             to_char(changed_at AT TIME ZONE 'Europe/London', 'HH24:MI') AS changed_time,
+             old_price, new_price, reason_notes, changed_by
       FROM price_change_log
       WHERE groupid = $1 AND channel = 'SHP'
       ORDER BY change_date DESC, id DESC
@@ -89,6 +92,8 @@ router.get('/', async (req, res) => {
     const truncated = result.rows.length > limit;
     const rows = result.rows.slice(0, limit).map((r) => ({
       change_date: toIsoDate(r.change_date),
+      // Time-of-day (Europe/London wall clock) from the newer changed_at timestamptz; null for pre-migration rows that only have a date.
+      changed_time: r.changed_time || null,
       old_price: num(r.old_price),
       new_price: num(r.new_price),
       note: r.reason_notes || '',

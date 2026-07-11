@@ -109,7 +109,17 @@ app.use('/amz-drill', require('./routes/amz-drill'));        // Stage 2: one SKU
 app.use('/amz-history', require('./routes/amz-history'));    // drill report (lazy): recent amz_price_log changes for the SKU
 app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (lazy): recent raw Amazon sales (incl. returns) for the SKU
 app.use('/amz-find', require('./routes/amz-find'));          // direct SKU search across all managed segments
-app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price (amz_price_log only; never writes amzfeed)
+app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price + auto-park the SKU (skumap.next_amz_price_review)
+app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark-reviewed — park a selection of un-changed SKUs at once
+
+// Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
+// stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
+app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)
+app.use('/birk-tracker-update', require('./routes/birk-tracker-update')); // POST: recompute + upsert today's snapshot, prune >2yr
+// Stock Position: living-catalogue gauge per channel (Shopify styles / Amazon SKUs). GET is read-only (today's live figures + stored
+// history); POST "Update now" upserts today's two rows + prunes >2yr (mirrors the Birk Tracker read/update split).
+app.use('/analytics-stock-position', require('./routes/analytics-stock-position'));
+app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

@@ -25,7 +25,7 @@ Success Response:
   "return_code": "SUCCESS",
   "code": "FLE030-IVES-WHITE-38",
   "rows": [
-    { "solddate": "2026-07-08", "size": "38", "qty": 1, "soldprice": 37.99 },
+    { "solddate": "2026-07-08", "size": "38", "qty": 1, "soldprice": 37.99, "profit": 4.12 },  // profit read straight from sales.profit (computed downstream); null if not set
     ... // newest first
   ],
   "limit": 50,
@@ -62,15 +62,18 @@ router.get('/', async (req, res) => {
     if (!(limit > 0)) limit = 50;
     if (limit > 200) limit = 200;
 
-    const exists = await query(`SELECT 1 FROM amzfeed WHERE code = $1`, [code]);
+    // Confirm the SKU exists in amzfeed so we can return a clean NOT_FOUND rather than an empty sales list for a bogus code.
+    const exists = await query('SELECT 1 FROM amzfeed WHERE code = $1', [code]);
     if (exists.rows.length === 0) {
       return res.json({ return_code: 'NOT_FOUND', message: 'SKU not found in amzfeed' });
     }
 
     // Fetch limit+1 to detect truncation without a separate COUNT. Newest first (solddate, then surrogate id). Positive sold lines only
     // (qty>0, soldprice>0) — returns are excluded here (noise for pricing intent, owner decision), matching the Shopify sales report.
+    // `profit` is read straight from the sales table: it's now computed downstream (the owner's own P&L pipeline) and populated per
+    // sale line, so we no longer re-derive it app-side (no need for cost/fbafee here) — this just surfaces what the table already holds.
     const result = await query(`
-      SELECT to_char(solddate, 'YYYY-MM-DD') AS solddate, RIGHT(code, 2) AS size, qty, soldprice
+      SELECT to_char(solddate, 'YYYY-MM-DD') AS solddate, RIGHT(code, 2) AS size, qty, soldprice, profit
       FROM sales
       WHERE channel='AMZ' AND code = $1 AND qty > 0 AND soldprice > 0
       ORDER BY solddate DESC, id DESC
@@ -78,12 +81,16 @@ router.get('/', async (req, res) => {
     `, [code, limit + 1]);
 
     const truncated = result.rows.length > limit;
-    const rows = result.rows.slice(0, limit).map((r) => ({
-      solddate: r.solddate,
-      size: r.size || null,
-      qty: Number(r.qty),
-      soldprice: num(r.soldprice),
-    }));
+    const rows = result.rows.slice(0, limit).map((r) => {
+      return {
+        solddate: r.solddate,
+        size: r.size || null,
+        qty: Number(r.qty),
+        soldprice: num(r.soldprice),
+        // Net profit for this sale line, straight from sales.profit (downstream-calculated). null -> UI shows "—".
+        profit: num(r.profit),
+      };
+    });
 
     return res.json({ return_code: 'SUCCESS', code, rows, limit, truncated });
   } catch (err) {

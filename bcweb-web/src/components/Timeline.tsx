@@ -3,8 +3,8 @@
 =======================================================================================================================================
 Component: Timeline
 =======================================================================================================================================
-Purpose: The pricing timeline (CLAUDE.md Stage 2) — one row per distinct price the style has sold at, OLDEST FIRST, showing the
-         selling period, units sold at that price, and the PACE (/wk). The whole pricing decision is one relationship: the price we
+Purpose: The pricing timeline (CLAUDE.md Stage 2) — one row per distinct price the style has sold at, NEWEST FIRST (latest era on top), showing the
+         selling period, units sold at that price, the PACE (/wk) and the NET PROFIT/wk (margin × pace — the "best price" ranking). The whole pricing decision is one relationship: the price we
          charged vs how fast it sold, over time. We show BOTH units and pace because total units mislead across periods of different
          length. The current price's row is marked. We include the honest caveat from the domain notes (CLAUDE.md) so the reader interprets a rise
          correctly (units rising as price rose can be the season arriving, not the price working; the clean signal is a rise where
@@ -41,6 +41,7 @@ export default function Timeline({ rows }: { rows: TimelineRow[] }) {
               <th className="px-4 py-2 font-medium">Period</th>
               <th className="px-4 py-2 text-right font-medium">Units</th>
               <th className="px-4 py-2 text-right font-medium">Pace</th>
+              <th className="px-4 py-2 text-right font-medium" title="Net profit per week at this price — margin × pace in one number. The best price is the one that maximises this, not units or pace alone.">Profit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -54,15 +55,20 @@ export default function Timeline({ rows }: { rows: TimelineRow[] }) {
                   {fmtDate(r.first_at)} – {r.is_current ? 'now' : fmtDate(r.last_at)}
                 </td>
                 <td className="px-4 py-2 text-right text-slate-800">{r.units}</td>
-                <td className="px-4 py-2 text-right font-medium text-slate-800">{r.per_wk}/wk</td>
+                <td className="px-4 py-2 text-right text-slate-800">{r.per_wk}/wk</td>
+                {/* Profit velocity — the row that actually ranks prices. NET (fees/shipping already out), so it can look far below the
+                    header's gross margin; that's expected. null = no profit data for this era. */}
+                <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.profit_wk !== null ? `£${r.profit_wk}/wk` : '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-slate-400">
-        Pace makes eras of different length comparable. Careful: for seasonal styles, units rising as price rose can be the season
-        arriving, not the price working — the cleaner signal for going higher is a price step where the pace <em>held</em>.
+        Pace makes eras of different length comparable, and <strong>Profit (£/wk)</strong> — net of fees/shipping, so below the headline
+        margin — folds price and pace into one number: the era earning the most per week is usually the price to hold. Careful: for
+        seasonal styles, units rising as price rose can be the season arriving, not the price working — the cleaner signal for going
+        higher is a price step where the pace <em>held</em>.
       </p>
     </div>
   );

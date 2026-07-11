@@ -5,7 +5,7 @@ Script: scripts/setup-segments.js
 Purpose: One-off / re-runnable setup for the Segments module — steps 1 & 2 of docs/segments-spec.md. It:
   1. Ensures the three registry tables exist (CREATE TABLE IF NOT EXISTS — safe to re-run):
        - `segment`             — stable id per segment (name = skusummary.segment join key).           [step 1]
-       - `area`                — the work areas (Shopify / Amazon / Remove …); grows over time.         [step 2]
+       - `area`                — the work areas (Shopify / Amazon / Housekeeping …); grows over time.    [step 2]
        - `segment_area_state`  — one review clock per (segment, area): cadence_days + next_review_date + off. [step 2]
        - `segment_worklog`     — one row per work event (who/when/note); source of "last worked".       [step 3 read / step 5 writes]
   2. Seeds the three starting areas (ON CONFLICT DO NOTHING — never clobbers later cadence/sort edits).
@@ -14,8 +14,9 @@ Purpose: One-off / re-runnable setup for the Segments module — steps 1 & 2 of 
 
 It only ever writes to these NEW tables (and reads skusummary). It does NOT touch product rows. Additive and reversible.
 
-Cadence defaults (days) are seeds, overridable per (segment, area) later: Shopify 30, Amazon 30, Remove 91. The exact set of
-cadence "pills" the UI offers is still open (spec §7) — these are just the fallbacks a freshly-seen segment starts on.
+Cadence defaults (days) are seeds, overridable per (segment, area) later: Shopify 30, Amazon 30, Housekeeping 91. The exact set of
+cadence "pills" the UI offers is still open (spec §7) — these are just the fallbacks a freshly-seen segment starts on. (Shopify's
+cadence is now vestigial — its clock is DERIVED from product review dates, spec §9 — but kept for schema uniformity.)
 
 Usage (from bcweb-server/):
   node scripts/setup-segments.js            # create tables + seed areas + reconcile (commits)
@@ -66,11 +67,13 @@ const WORKLOG_BODY = `
   note        TEXT`;
 
 // Seed the starting areas. DO NOTHING so a re-run never overwrites cadence/sort the owner has since tuned.
+// NOTE: the third area was originally 'Remove'; renamed to 'Housekeeping' (spec §9.4). Fresh builds seed the new name directly; an
+// existing prod DB is migrated by migrations/2026-07-11-rename-remove-to-housekeeping.sql (id stable, so clocks/worklog carry across).
 const SEED_AREAS = `
   INSERT INTO area (name, default_cadence_days, sort, active) VALUES
-    ('Shopify', 30, 1, true),
-    ('Amazon',  30, 2, true),
-    ('Remove',  91, 3, true)
+    ('Shopify',      30, 1, true),
+    ('Amazon',       30, 2, true),
+    ('Housekeeping', 91, 3, true)
   ON CONFLICT (name) DO NOTHING`;
 
 async function createSchema(run, temp) {

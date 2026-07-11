@@ -92,7 +92,9 @@ export default function PriceHistory({ groupid }: { groupid: string }) {
                       const tone = up ? 'text-green-700' : down ? 'text-amber-700' : 'text-slate-600';
                       return (
                         <tr key={i}>
-                          <td className="whitespace-nowrap py-1.5 pr-4 text-slate-600">{fmtDate(r.change_date)}</td>
+                          <td className="whitespace-nowrap py-1.5 pr-4 text-slate-600">
+                            {fmtDate(r.change_date)}{r.changed_time ? <span className="text-slate-400"> {r.changed_time}</span> : null}
+                          </td>
                           <td className={'whitespace-nowrap py-1.5 pr-4 tabular-nums ' + tone}>
                             {money(r.old_price)} <span className="px-0.5">{arrow}</span> <span className="font-semibold">{money(r.new_price)}</span>
                           </td>

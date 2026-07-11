@@ -80,7 +80,8 @@ export default function SalesList({ groupid }: { groupid: string }) {
                     <tr>
                       <th className="py-1.5 pr-4 font-medium">Date</th>
                       <th className="py-1.5 pr-4 font-medium">Size</th>
-                      <th className="py-1.5 text-right font-medium">Sold at</th>
+                      <th className="py-1.5 pr-4 text-right font-medium">Sold at</th>
+                      <th className="py-1.5 text-right font-medium">Profit</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -90,7 +91,8 @@ export default function SalesList({ groupid }: { groupid: string }) {
                           {fmtDate(r.solddate)}{r.ordertime ? <span className="text-slate-400"> {r.ordertime}</span> : null}
                         </td>
                         <td className="py-1.5 pr-4 font-mono text-slate-600">{r.size || '—'}</td>
-                        <td className="py-1.5 text-right font-semibold tabular-nums text-slate-800">{money(r.soldprice)}</td>
+                        <td className="py-1.5 pr-4 text-right font-semibold tabular-nums text-slate-800">{money(r.soldprice)}</td>
+                        <td className={`py-1.5 text-right font-semibold tabular-nums ${r.profit === null ? 'text-slate-400' : r.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(r.profit)}</td>
                       </tr>
                     ))}
                   </tbody>

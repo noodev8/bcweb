@@ -165,7 +165,8 @@ router.post('/', async (req, res) => {
       `, params);
 
       // Audit: log every actual Shopify-price change ('SHP'). reason_code is intentionally omitted from the column list (owner plans to
-      // drop it) so this INSERT survives its removal; change_date defaults to CURRENT_DATE. The optional note rides here in reason_notes.
+      // drop it) so this INSERT survives its removal; change_date defaults to CURRENT_DATE and changed_at to now() (the full
+      // timestamptz, set automatically). The optional note rides here in reason_notes.
       if (priceChanged) {
         await client.query(`
           INSERT INTO price_change_log

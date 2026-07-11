@@ -3,10 +3,16 @@
 API Route: amz_apply
 =======================================================================================================================================
 Method: POST
-Purpose: The Amazon Pricing write (W-A1, docs/amz-pricing-spec.md §4) — record a new Amazon price for ONE SKU. Deliberately smaller
-         than the Shopify apply: it does NOT change any live price by itself. It writes a single amz_price_log row (the audit trail) and
-         returns the SKU + new price + RRP; the price only actually reaches Amazon when the operator downloads the one-file Seller Central
-         upload (built client-side in the module's session basket from these apply responses) and uploads it. No live push, ever.
+Purpose: The Amazon Pricing write (W-A1, docs/amz-pricing-spec.md §4; auto-park added per segments-spec.md §10.5A) — record a new Amazon
+         price for ONE SKU. Deliberately smaller than the Shopify apply: it does NOT change any live price by itself. It writes a single
+         amz_price_log row (the audit trail) and returns the SKU + new price + RRP; the price only actually reaches Amazon when the operator
+         downloads the one-file Seller Central upload (built client-side in the module's session basket from these apply responses) and
+         uploads it. No live push, ever.
+
+         Auto-park (§10.5A): applying a price IS reviewing the SKU, so in the SAME transaction it stamps skumap.next_amz_price_review =
+         CURRENT_DATE + reviewDays (optional payload field, default AMZ_DEFAULT_REVIEW_DAYS = 14). This drops the SKU off the derived
+         segment clock + the winners/losers queues immediately (they filter un-parked only) — the Amazon analogue of Shopify's W1 review.
+         Apply ALWAYS parks (no "None"); to review-without-pricing the operator uses the batch POST /amz-review instead.
 
 Rules enforced here (never trust the client):
   - BLOCK  newPrice < hard-floor (cost + FBA fee)      -> PRICE_BELOW_FLOOR   (breakeven; can't knowingly sell at a loss)
@@ -23,14 +29,14 @@ convention. `old_price` is NOT NULL, so when the live amzprice reads back NULL (
 (a zero-delta 'flat' row) rather than violate the constraint; the response still returns the true old_price (null when unknown).
 =======================================================================================================================================
 Request Payload:
-{ "code": "FLE030-IVES-WHITE-05", "newPrice": 39.79, "note": "creep 0.50 — 14u/7d" }   // note optional
+{ "code": "FLE030-IVES-WHITE-05", "newPrice": 39.79, "note": "creep 0.50 — 14u/7d", "reviewDays": 14 }   // note + reviewDays optional
 
 Success Response:
 { "return_code": "SUCCESS", "code": "...", "amz_sku": "AD-0XF8D-48L", "new_price": 39.79, "old_price": 39.29, "rrp": 45.00,
   "warnings": ["ABOVE_RRP"] }  // warnings [] if none. amz_sku + rrp let the client basket build the upload file from this response.
 =======================================================================================================================================
 Return Codes:
-"SUCCESS" · "MISSING_FIELDS" · "INVALID_PRICE" · "PRICE_BELOW_FLOOR" · "NOT_FOUND" · "UNAUTHORIZED" · "SERVER_ERROR"
+"SUCCESS" · "MISSING_FIELDS" · "INVALID_PRICE" · "INVALID_REVIEW_DAYS" · "PRICE_BELOW_FLOOR" · "NOT_FOUND" · "UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -45,6 +51,11 @@ const logger = require('../utils/logger');
 router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+// Applying a price IS reviewing the SKU (spec §10.5A): the same write parks it so it drops off the winners/losers queue immediately.
+// When the client sends no explicit reviewDays we park with this middle-of-the-road cadence (owner: "if the human misses it, it'll come
+// round again anyway"). Apply always parks — there is no "None" for apply (unlike the batch mark-reviewed / Shopify's optional review).
+const AMZ_DEFAULT_REVIEW_DAYS = 14;
 
 router.post('/', async (req, res) => {
   try {
@@ -61,6 +72,16 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'INVALID_PRICE', message: 'newPrice must be a positive number' });
     }
     const rounded = Math.round(newPriceNum * 100) / 100;
+
+    // Optional reviewDays for the auto-park (§10.5A). Omitted → AMZ_DEFAULT_REVIEW_DAYS; supplied must be an integer >= 1 (same rule as
+    // W-seg-1 / the batch mark-reviewed). Apply always parks, so there is no "None"/0 option here.
+    let reviewDays = AMZ_DEFAULT_REVIEW_DAYS;
+    if (body.reviewDays !== undefined && body.reviewDays !== null) {
+      reviewDays = Number(body.reviewDays);
+      if (!Number.isInteger(reviewDays) || reviewDays < 1) {
+        return res.json({ return_code: 'INVALID_REVIEW_DAYS', message: 'reviewDays must be an integer >= 1' });
+      }
+    }
 
     const note = (body.note === undefined || body.note === null ? '' : String(body.note)).trim().slice(0, 500);
 
@@ -106,11 +127,17 @@ router.post('/', async (req, res) => {
     // changed_by = the logged-in operator, resolved server-side by verifyToken from the token's id — never sent by the client (CLAUDE.md).
     const changedBy = req.user.display_name;
 
-    // Single INSERT, wrapped for consistency with the platform's write convention (utils/transaction.js).
+    // INSERT the audit row AND auto-park the SKU in one transaction (spec §10.5A) — so a park can never land without its log row, nor
+    // vice-versa. This is the first time W-A1 writes a product row (skumap); still never amzfeed (READ ONLY). The skumap row always
+    // exists for a real SKU (§10.2), so a plain UPDATE is enough (rowCount 0 = no matching skumap row → harmless, the log still stands).
     await withTransaction(async (client) => {
       await client.query(
         `INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by) VALUES ($1, $2, $3, $4, $5)`,
         [code, oldForLog, rounded, note, changedBy]
+      );
+      await client.query(
+        `UPDATE skumap SET next_amz_price_review = CURRENT_DATE + $2::int WHERE code = $1`,
+        [code, reviewDays]
       );
     });
 

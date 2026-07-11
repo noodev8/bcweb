@@ -11,6 +11,8 @@ Purpose: Step 5 write W-seg-1 (docs/segments-spec.md §5, §6-B) — record a WO
 Rules:
   - `reviewDays` is OPTIONAL (mirrors pricing-apply / the Add-Modify "None" chip). If supplied it must be an integer >= 1 and sets
     next_review_date = CURRENT_DATE + reviewDays; if omitted/blank/null we leave the clock UNTOUCHED and only log the event.
+    EXCEPTION — the SHOPIFY area is now a DERIVED clock (spec §9): it has no segment-level date, so reviewDays is ignored for it
+    (the UI hides the pills; this is a defensive server-side guard). A note and the `off` flag still apply to Shopify.
   - `off` is OPTIONAL (true/false). Flags this area as not applicable to this segment (e.g. EVA-SEG isn't sold on Amazon) — an
     operator decision, not derived from the date, so it lives as its own column and short-circuits due-state classification
     (utils/segmentDue.js) regardless of next_review_date. Omitted = leave the flag UNTOUCHED. Turning off does NOT touch
@@ -26,7 +28,7 @@ Only writes the module's own tables (segment_worklog, segment_area_state) — ne
 Request Payload:
 {
   "name":       "IVES-WHITE",  // string, required — the segment name
-  "area":       "Shopify",     // string, required — the area name (Shopify / Amazon / Remove …)
+  "area":       "Shopify",     // string, required — the area name (Shopify / Amazon / Housekeeping …)
   "reviewDays": 7,             // integer >= 1, OPTIONAL; omit/blank/null = "None" (leave the clock untouched)
   "off":        false,         // boolean, OPTIONAL; omit/null = leave the flag untouched
   "note":       "harvested — pace held"  // string, OPTIONAL
@@ -108,6 +110,11 @@ router.post('/', async (req, res) => {
     const segmentId = seg.rows[0].id;
     const areaId = ar.rows[0].id;
     const areaCadence = ar.rows[0].default_cadence_days;
+
+    // Shopify is now a DERIVED clock (spec §9): its due state comes from the products' own review dates, so there is no segment-level
+    // date to set. Defensively ignore any reviewDays a stale client still sends for Shopify (the UI already hides the pills); a note
+    // and the `off` flag remain meaningful and are left untouched.
+    if (area.toLowerCase() === 'shopify') reviewDays = null;
 
     const workedBy = req.user.display_name; // server-resolved from the token — never from the client body
 

@@ -80,7 +80,8 @@ export default function AmzSales({ code }: { code: string }) {
                       <th className="py-1.5 pr-4 font-medium">Date</th>
                       <th className="py-1.5 pr-4 font-medium">Size</th>
                       <th className="py-1.5 pr-4 text-right font-medium">Qty</th>
-                      <th className="py-1.5 text-right font-medium">Sold at</th>
+                      <th className="py-1.5 pr-4 text-right font-medium">Sold at</th>
+                      <th className="py-1.5 text-right font-medium">Profit</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -89,7 +90,8 @@ export default function AmzSales({ code }: { code: string }) {
                         <td className="whitespace-nowrap py-1.5 pr-4 text-slate-600">{fmtDate(r.solddate)}</td>
                         <td className="py-1.5 pr-4 font-mono text-xs text-slate-500">{r.size || '—'}</td>
                         <td className="py-1.5 pr-4 text-right tabular-nums text-slate-700">{r.qty}</td>
-                        <td className="py-1.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
+                        <td className="py-1.5 pr-4 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
+                        <td className={`py-1.5 text-right font-semibold tabular-nums ${r.profit === null ? 'text-slate-400' : r.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(r.profit)}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -14,14 +14,23 @@ in the URL (?mode=) so returning after an apply restores the same tab. A queued 
 =======================================================================================================================================
 */
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
-import { getAmzWinners, getAmzLosers, getAmzAll, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
+import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
+
+// Park-period pills for the batch "mark reviewed" action. Amazon-native cadence (faster than the segment 1w–6m set): a reviewed-but-
+// unchanged SKU comes back round within a couple of months. Value = days; matches the amz-apply default of 14 (2w).
+const AMZ_REVIEW_CHIPS: { days: number; label: string }[] = [
+  { days: 7, label: '1w' },
+  { days: 14, label: '2w' },
+  { days: 30, label: '1m' },
+  { days: 60, label: '2m' },
+];
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function AmzSegmentPage() {
@@ -67,28 +76,63 @@ function SegmentContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all three lists up front so each tab can show a count. Cached for the life of the page.
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
-      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
-      if (w.success && w.data) setWinners(w.data.rows); else setError(w.error || 'Failed to load winners');
-      if (l.success && l.data) setLosers(l.data.rows); else if (!error) setError(l.error || 'Failed to load losers');
-      if (a.success && a.data) setAll(a.data.rows); else if (!error) setError(a.error || 'Failed to load all SKUs');
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segment]);
+  // Batch "mark reviewed" selection (WINNERS/LOSERS only) — the codes ticked for parking-without-pricing. Cleared on mode/segment change.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marking, setMarking] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+
+  // Fetch all three lists so each tab can show a count. Re-callable so a mark-reviewed can refetch (parked SKUs drop out, queue refills).
+  const loadLists = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
+    if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
+    let err: string | null = null;
+    if (w.success && w.data) setWinners(w.data.rows); else err = err || w.error || 'Failed to load winners';
+    if (l.success && l.data) setLosers(l.data.rows); else err = err || l.error || 'Failed to load losers';
+    if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all SKUs';
+    if (err) setError(err);
+    setLoading(false);
+  }, [segment, logout]);
+
+  useEffect(() => { loadLists(); }, [loadLists]);
+  // A different tab / segment is a different selection — never carry ticks across.
+  useEffect(() => { setSelected(new Set()); setMarkError(null); }, [mode, segment]);
 
   function openSku(code: string) {
     const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
+  function toggle(code: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  }
+  function toggleAll(codes: string[], checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) codes.forEach((c) => next.add(c)); else codes.forEach((c) => next.delete(c));
+      return next;
+    });
+  }
+
+  // Park the ticked SKUs (spec §10.5B). On success clear the selection and refetch so parked SKUs drop off and the queue refills.
+  async function markReviewed(days: number) {
+    if (selected.size === 0) return;
+    setMarking(true); setMarkError(null);
+    const res = await markAmzReviewed(Array.from(selected), days);
+    setMarking(false);
+    if (res.success) { setSelected(new Set()); await loadLists(); }
+    else if (res.return_code === 'UNAUTHORIZED') { logout(); }
+    else setMarkError(res.error || 'Failed to mark reviewed');
+  }
+
   const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
   const isEmpty = !loading && !error && rows !== null && rows.length === 0;
+  const selectable = mode === 'winners' || mode === 'losers';
 
   return (
     <AppShell title={segment} backHref="/amz" backLabel="Segments">
@@ -116,16 +160,59 @@ function SegmentContent() {
         </div>
       )}
 
+      {/* Batch mark-reviewed control (WINNERS/LOSERS): park the SKUs you looked at but left unchanged, so they leave the queue. */}
+      {!loading && !error && selectable && rows && rows.length > 0 && (
+        <MarkReviewedBar count={selected.size} busy={marking} error={markError} onMark={markReviewed} />
+      )}
+
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
-        <WinnersTable rows={winners} queued={items} onOpen={openSku} />
+        <WinnersTable rows={winners} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
-        <LosersTable rows={losers} queued={items} onOpen={openSku} />
+        <LosersTable rows={losers} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
       )}
       {!loading && !error && mode === 'all' && all && all.length > 0 && (
         <AllTable rows={all} queued={items} onOpen={openSku} />
       )}
     </AppShell>
+  );
+}
+
+// The batch mark-reviewed action bar: pick a park period, then park the currently-ticked SKUs. Disabled until at least one is ticked.
+function MarkReviewedBar({ count, busy, error, onMark }: { count: number; busy: boolean; error: string | null; onMark: (days: number) => void }) {
+  const [days, setDays] = useState(14);   // default 2w, matching amz-apply's AMZ_DEFAULT_REVIEW_DAYS
+  return (
+    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="text-sm font-medium text-slate-700">
+          {count > 0 ? `${count} selected` : 'Select SKUs to mark reviewed'}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400">park for</span>
+          {AMZ_REVIEW_CHIPS.map((c) => (
+            <button
+              key={c.days}
+              onClick={() => setDays(c.days)}
+              className={'rounded-full border px-2.5 py-1 text-xs ' + (days === c.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-white')}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => onMark(days)}
+          disabled={busy || count === 0}
+          className="ml-auto rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+        >
+          {busy ? 'Marking…' : `Mark ${count > 0 ? count + ' ' : ''}reviewed`}
+        </button>
+      </div>
+      <p className="mt-1.5 text-xs text-slate-400">
+        For SKUs you reviewed but are leaving unchanged — they drop off this list and come back round after the park period. Applying a
+        price already parks a SKU on its own.
+      </p>
+      {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+    </div>
   );
 }
 
@@ -136,12 +223,17 @@ function QueuedPill() {
 
 type Queued = Record<string, unknown>;
 
-function WinnersTable({ rows, queued, onOpen }: { rows: AmzWinnerRow[]; queued: Queued; onOpen: (c: string) => void }) {
+function WinnersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
+  rows: AmzWinnerRow[]; queued: Queued; onOpen: (c: string) => void;
+  selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
+}) {
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
             <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>
             <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
@@ -153,7 +245,8 @@ function WinnersTable({ rows, queued, onOpen }: { rows: AmzWinnerRow[]; queued: 
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={r.code} onClick={() => onOpen(r.code)} className="cursor-pointer hover:bg-slate-50">
+            <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
+              <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.units}</td>
               <td className="px-4 py-2 text-right text-slate-600">{r.u7 || <span className="text-slate-300">0</span>}</td>
@@ -171,12 +264,43 @@ function WinnersTable({ rows, queued, onOpen }: { rows: AmzWinnerRow[]; queued: 
   );
 }
 
-function LosersTable({ rows, queued, onOpen }: { rows: AmzLoserRow[]; queued: Queued; onOpen: (c: string) => void }) {
+// Row checkbox — stops the click bubbling to the row (which would open the drill instead of toggling selection).
+function RowBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onClick={(e) => e.stopPropagation()}
+      onChange={onToggle}
+      className="h-4 w-4 rounded border-slate-300"
+      aria-label="Select SKU for mark-reviewed"
+    />
+  );
+}
+function SelectAllBox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.checked)}
+      className="h-4 w-4 rounded border-slate-300"
+      aria-label="Select all SKUs"
+    />
+  );
+}
+
+function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
+  rows: AmzLoserRow[]; queued: Queued; onOpen: (c: string) => void;
+  selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
+}) {
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
             <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
             <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">30d</th>
@@ -188,7 +312,8 @@ function LosersTable({ rows, queued, onOpen }: { rows: AmzLoserRow[]; queued: Qu
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={r.code} onClick={() => onOpen(r.code)} className="cursor-pointer hover:bg-slate-50">
+            <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
+              <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               {/* FBA stock is the ranking metric within each cluster — emphasised. */}
               <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.fba}</td>

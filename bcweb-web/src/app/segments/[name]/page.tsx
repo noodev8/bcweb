@@ -123,10 +123,17 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const isShopify = cell.area.toLowerCase() === 'shopify';
+  const isAmazon = cell.area.toLowerCase() === 'amazon';
+  // Shopify AND Amazon are DERIVED clocks (spec §9/§10): no segment-level review date to set, so their "Mark worked" hides the review
+  // pills and cadence — the operator parks styles/SKUs in the work screen instead. A note + the "off" (N/A) flag still apply.
+  // Detected via the live counts (instock is non-null only for a derived cell).
+  const derived = cell.instock !== null;
 
   async function save() {
     setSaving(true); setErr(null);
-    const res = await logSegmentWork(segment, cell.area, off ? null : reviewDays, note.trim() || undefined, off);
+    // Never send a review date for a derived clock (there's nothing to set) or when marking the area off.
+    const rd = derived || off ? null : reviewDays;
+    const res = await logSegmentWork(segment, cell.area, rd, note.trim() || undefined, off);
     setSaving(false);
     if (res.success) { setOpen(false); setReviewDays(null); setNote(''); onWorked(); }
     else setErr(res.error || 'Failed to save');
@@ -137,16 +144,25 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="text-base font-semibold text-slate-800">{cell.area}</span>
         <span className={'rounded-full border px-2.5 py-0.5 text-xs font-medium ' + dueTone(cell.dueState)}>{dueText(cell)}</span>
-        <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-          <ClockIcon className="h-3.5 w-3.5" /> every {cell.cadenceDays}d
-        </span>
-        <span className="text-xs text-slate-400">
-          {cell.lastWorkedAt ? <>Last: {cell.lastWorkedBy || '—'} · {fmtDate(cell.lastWorkedAt)}</> : 'Never worked'}
-        </span>
+        {!derived && (
+          <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+            <ClockIcon className="h-3.5 w-3.5" /> every {cell.cadenceDays}d
+          </span>
+        )}
+        {!derived && (
+          <span className="text-xs text-slate-400">
+            {cell.lastWorkedAt ? <>Last: {cell.lastWorkedBy || '—'} · {fmtDate(cell.lastWorkedAt)}</> : 'Never worked'}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-3">
           {isShopify && (
             <Link href={`/pricing/${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
               Open pricing →
+            </Link>
+          )}
+          {isAmazon && (
+            <Link href={`/amz/${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
+              Open Amazon →
             </Link>
           )}
           <button
@@ -160,6 +176,12 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
 
       {open && (
         <div className="mt-4 border-t border-slate-100 pt-4">
+          {derived && !off && (
+            <p className="mb-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              This area tracks itself from your pricing work — a style drops off once you set its review in triage. No segment date to
+              set here; just log a note if useful.
+            </p>
+          )}
           <div className="mb-1 text-sm font-medium text-slate-700">
             Note <span className="font-normal text-slate-400">(optional)</span>
           </div>
@@ -183,7 +205,7 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
             </span>
           </label>
 
-          {!off && (
+          {!off && !derived && (
             <>
               <div className="mb-1 text-sm font-medium text-slate-700">
                 Next review <span className="font-normal text-slate-400">(optional — when this area is due again)</span>
