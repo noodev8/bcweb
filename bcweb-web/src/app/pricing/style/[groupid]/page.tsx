@@ -110,17 +110,16 @@ function DrillContent() {
         setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Shopify${push.message ? `: ${push.message}` : ''}. Press Apply again to retry.` });
         return;
       }
-      // Google Merchant push, unlike Shopify, is non-urgent to retry — the nightly merchant_feed.py --upload cron is still an eventual
-      // fallback — so a failure here is just folded into the success notice rather than blocking the flow.
+      // Google Merchant push, unlike Shopify, has a nightly fallback (merchant_feed.py --upload), so a failure here doesn't block the
+      // flow — but the owner still wants it flagged if it happens (null = not live on Google, nothing to push — no note).
       const googlePush = res.data.google;
-      const googleNote = googlePush
-        ? (googlePush.pushed ? ' Sent to Google.' : ` But it did NOT reach Google Merchant${googlePush.message ? `: ${googlePush.message}` : ''} (tonight's feed run will still catch it).`)
-        : '';
-      // Success. Stay on the page (no auto-return): show a persistent confirmation, then refresh the drill in place and remount the
-      // setter + reports (reloadKey) so the new price, timeline and price-history reflect the change. The user returns via the button.
-      // push.pushed === true -> sent to the store; push == null -> style not live on Shopify (nothing to push).
-      const pushedNote = push && push.pushed ? ' Sent to Shopify.' : '';
-      setNotice({ kind: 'ok', text: `Applied £${res.data.new_price}.${pushedNote}${googleNote}${reviewMsg}${warn}` });
+      if (googlePush && googlePush.pushed === false) {
+        setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Google Merchant${googlePush.message ? `: ${googlePush.message}` : ''} (tonight's feed run will still catch it).` });
+        return;
+      }
+      // Success on every channel that applied. Deliberately a single plain "Saved" — we don't spell out Shopify vs Google (both pushed
+      // silently) so the operator isn't left wondering why only one channel is named. Errors above are the only per-channel callouts.
+      setNotice({ kind: 'ok', text: `Saved £${res.data.new_price}.${reviewMsg}${warn}` });
       if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);

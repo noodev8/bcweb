@@ -60,15 +60,26 @@ function runHelper(groupid) {
  * pushIfLive(groupid)
  * If the product is live on Google (skusummary.googlestatus=1 AND shopify=1) and Content API creds are configured, push the current
  * shopifyprice to every size's googleid. Returns:
- *    null                                     -> not live on Google, Google not configured, or nothing eligible to push
- *    { pushed: true, updated, failed, total }  -> ran (failed/total may be > 0 if some sizes' individual pushes errored)
- *    { pushed: false, error, message }         -> the whole run failed before/during the API calls (DB write still stands)
+ *    null                                       -> legitimately nothing to push: the style is NOT live on Google (googlestatus/shopify
+ *                                                  != 1) or has no googleid mapped yet. A genuine no-op — stays silent in the UI.
+ *    { pushed: false, error: 'GOOGLE_NOT_CONFIGURED', ... } -> the style IS live on Google but the server has no Content API creds, so
+ *                                                  the push was SKIPPED. This is a misconfiguration, deliberately NOT folded into null
+ *                                                  (which would hide it as a success) — the UI surfaces it so it isn't silently dropped.
+ *    { pushed: true, updated, failed, total }   -> ran (failed/total may be > 0 if some sizes' individual pushes errored)
+ *    { pushed: false, error: 'GOOGLE_PUSH_FAILED', ... }    -> the whole run failed before/during the API calls (DB write still stands)
  * Call it AFTER the DB write has committed (same timing as shopify.pushIfLive) — best-effort, never throws.
  */
 async function pushIfLive(groupid) {
-  if (!isConfigured()) return null;
+  // Is the style even live on Google? Check this FIRST so a style that isn't on Google stays a silent null regardless of creds — we
+  // only want the "not configured" warning to fire for styles that genuinely SHOULD have pushed.
   const r = await query(`SELECT googlestatus, shopify FROM skusummary WHERE groupid = $1`, [groupid]);
   if (!r.rows.length || r.rows[0].googlestatus !== 1 || r.rows[0].shopify !== 1) return null;
+  // The style is live on Google but the server has no Content API creds -> surface it instead of silently skipping (was a null before,
+  // indistinguishable from "not on Google"). Owner needs to know the instant push was a no-op so they can add the env vars.
+  if (!isConfigured()) {
+    logger.error(`[googleMerchant] pushIfLive skipped for ${groupid}: GOOGLE_MERCHANT_ID / GOOGLE_MERCHANT_CREDENTIALS_JSON not configured`);
+    return { pushed: false, error: 'GOOGLE_NOT_CONFIGURED', message: 'Google Merchant credentials are not configured on the server' };
+  }
   try {
     const summary = await runHelper(groupid);
     if (summary.total === 0) return null; // nothing eligible (e.g. no googleid assigned yet) — nothing to report

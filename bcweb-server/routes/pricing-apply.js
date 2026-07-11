@@ -48,10 +48,11 @@ Success Response:
 }
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
 { pushed:true, ... } = the new price reached Shopify; { pushed:false, error, message } = DB save stands but the push failed (retry Apply).
-Google push outcome (`google` field): null = not live on Google (skusummary.googlestatus != 1), Google not configured, or no googleid
-assigned to any size yet — nothing pushed; { pushed:true, updated, failed, total } = ran (a groupid can have multiple googleids, one per
-size — failed/total > 0 means some sizes' pushes errored, but the DB price stands either way); { pushed:false, error, message } = the whole
-run failed (retry Apply — no automatic fallback; the nightly feed will still pick it up eventually).
+Google push outcome (`google` field): null = legitimately nothing to push — the style is NOT live on Google (skusummary.googlestatus != 1
+/ shopify != 1) or has no googleid mapped yet; { pushed:true, updated, failed, total } = ran (a groupid can have multiple googleids, one per
+size — failed/total > 0 means some sizes' pushes errored, but the DB price stands either way); { pushed:false, error:'GOOGLE_NOT_CONFIGURED' }
+= the style IS live on Google but the server lacks Content API creds so the push was SKIPPED (surfaced, not hidden as a null); { pushed:false,
+error:'GOOGLE_PUSH_FAILED' } = the run failed. In every failure case the DB price stands and the nightly merchant_feed.py --upload catches it.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -156,7 +157,8 @@ router.post('/', async (req, res) => {
       `, updParams);
 
       // W1 INSERT — audit row: (groupid, 'SHP', old_price, new_price, reason_code NULL, reason_notes, changed_by). reason_notes now
-      // carries the optional user note (was hardcoded ''); reason_code stays NULL by design (CLAUDE.md). change_date defaults to today.
+      // carries the optional user note (was hardcoded ''); reason_code stays NULL by design (CLAUDE.md). change_date defaults to today
+      // and changed_at defaults to now() (the full timestamptz — set automatically, not listed here).
       await client.query(`
         INSERT INTO price_change_log
            (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by)
