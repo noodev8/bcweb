@@ -4,8 +4,10 @@ API Route: pricing_drill
 =======================================================================================================================================
 Method: GET
 Purpose: Stage 2 — drill-down for one style. Returns everything the decision screen needs (see CLAUDE.md, "drill-down"):
-           - header  : current price (now), rrp, cost, min/max bounds, stock, margin, cooldown date, title, tags.
-           - timeline: one row per distinct price the style has SOLD at, oldest first, with units and PACE (/wk) computed app-side.
+           - header  : current price (now), rrp, cost, min/max bounds, stock, GROSS margin, cooldown date, title, tags.
+           - timeline: one row per distinct price the style has SOLD at, newest first (latest era on top), with units, PACE (/wk) and NET PROFIT/wk, all app-side.
+           - bands   : units sold at each distinct price over 60 days, ascending price, with NET profit-per-unit — the resistance / "how high
+                       can I go" guardrail (drill-evidence-spec §3/§4, ported from amz-drill so both drills share one Units-by-price view).
            - sizes   : remaining stock by EU size (RIGHT(code,2)) — a collapsible guardrail before a CUT (CLAUDE.md).
 
 Why pace is computed here (not in SQL): total units mislead across periods of different length. Pace makes eras comparable.
@@ -28,14 +30,20 @@ Success Response:
   "header": {
     "groupid": "ABC123", "title": "Arizona Birko-Flor",
     "now": 36.95, "cost": 20.83, "rrp": 50.00, "minp": 35.99, "maxp": 45.00,
-    "margin": 16.12, "margin_pct": 44,        // now - cost, and as % of price (null if now/cost unknown)
+    "margin": 16.12, "margin_pct": 44,        // GROSS: now - cost, and as % of price (null if now/cost unknown)
     "stock": 8, "colour": "Brown", "width": "Narrow", "season": "SS25",
     "next_review": "2026-07-10"               // cooldown date (or null)
   },
   "timeline": [
-    { "price": 32.95, "units": 17, "first_at": "2026-04-01", "last_at": "2026-04-20",
+    { "price": 32.95, "units": 17, "profit": 90.44, "profit_wk": 33, "first_at": "2026-04-01", "last_at": "2026-04-20",
       "span_days": 19, "weeks": 2.71, "per_wk": 6.3, "is_current": false },
-    ... // oldest first; is_current=true when price == header.now
+    ... // newest first (by each price's first sale date); is_current=true when price == header.now. profit/profit_wk are NET (from
+    ... // sales.profit, not price-cost); profit_wk = era £/wk = the "best price" ranking; null when the era has no profit data.
+  ],
+  "bands": [
+    { "price": 57.87, "units": 12, "profit_per_unit": 22.40, "first": "2026-05-16", "last": "2026-05-29" },
+    { "price": 65.00, "units": 18, "profit_per_unit": 29.58, "first": "2026-06-01", "last": "2026-06-30" }
+    // ascending price (ceiling reads top-down); profit_per_unit is NET (sales.profit / units), null when no profit data
   ],
   "sizes": [ { "size": "38", "qty": 3 }, { "size": "39", "qty": 5 } ],  // oldest-first by size
   "days": 90
@@ -130,12 +138,12 @@ router.get('/', async (req, res) => {
 
     // ---- S4: pricing timeline (CLAUDE.md) — verbatim. Pace computed app-side below. ----
     const timelineResult = await query(`
-      SELECT soldprice, SUM(qty) AS units, MIN(solddate) AS first_at, MAX(solddate) AS last_at
+      SELECT soldprice, SUM(qty) AS units, SUM(profit) AS profit, MIN(solddate) AS first_at, MAX(solddate) AS last_at
       FROM sales
       WHERE groupid=$1 AND channel='SHP' AND qty>0 AND soldprice>0
         AND solddate >= CURRENT_DATE - $2::int
       GROUP BY soldprice
-      ORDER BY MIN(solddate)
+      ORDER BY MIN(solddate) DESC
     `, [groupid, days]);
 
     const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -148,9 +156,16 @@ router.get('/', async (req, res) => {
       const spanDays = Math.round((last - first) / MS_PER_DAY);
       const weeks = Math.max(spanDays, 7) / 7;
       const perWk = Math.round((units / weeks) * 10) / 10; // 1 dp is enough for a pace figure
+      // Profit velocity (spec §2.4/§4, step 2): NET £/wk at this price, from the sales.profit column (already net of fees/shipping —
+      // NOT price-cost, which is the gross margin the header shows). This is what actually ranks prices: margin × pace in one number.
+      // SUM(profit) is null only if every row's profit is null (no profit data for this era) → profit_wk null, don't fabricate a 0.
+      const profit = num(r.profit);
+      const profitWk = profit !== null ? Math.round(profit / weeks) : null; // whole £/wk — a rate needs no pence
       return {
         price,
         units,
+        profit: profit !== null ? Math.round(profit * 100) / 100 : null, // era total, 2dp
+        profit_wk: profitWk,
         first_at: toIsoDate(r.first_at),
         last_at: toIsoDate(r.last_at),
         span_days: spanDays,
@@ -182,7 +197,31 @@ router.get('/', async (req, res) => {
     `, [groupid]);
     const sizes = sizesResult.rows.map((r) => ({ size: r.size, qty: Number(r.qty) }));
 
-    return res.json({ return_code: 'SUCCESS', header, timeline, sizes, days });
+    // ---- Units-by-price bands (drill-evidence-spec §4, block 3) — the resistance guardrail, mirror of amz-drill's bands but for
+    // channel='SHP' grouped by groupid. Fixed 60-day window (independent of the timeline's `days`), ascending price so the ceiling
+    // reads top-down. profit_per_unit = NET SUM(profit)/SUM(qty) at that price (from sales.profit, not price-cost) → the band shows
+    // reward as well as volume; NULLIF guards the divide, and it's null when the era carries no profit data.
+    const bandsResult = await query(`
+      SELECT soldprice AS price,
+             SUM(qty)::int AS units,
+             ROUND(SUM(profit)::numeric / NULLIF(SUM(qty), 0), 2) AS profit_per_unit,
+             to_char(MIN(solddate), 'YYYY-MM-DD') AS first,
+             to_char(MAX(solddate), 'YYYY-MM-DD') AS last
+      FROM sales
+      WHERE groupid=$1 AND channel='SHP' AND qty>0 AND soldprice>0
+        AND solddate >= CURRENT_DATE - 60
+      GROUP BY soldprice
+      ORDER BY soldprice
+    `, [groupid]);
+    const bands = bandsResult.rows.map((r) => ({
+      price: num(r.price),
+      units: Number(r.units),
+      profit_per_unit: num(r.profit_per_unit),
+      first: r.first,
+      last: r.last,
+    }));
+
+    return res.json({ return_code: 'SUCCESS', header, timeline, bands, sizes, days });
   } catch (err) {
     logger.error('[pricing-drill] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load style detail' });

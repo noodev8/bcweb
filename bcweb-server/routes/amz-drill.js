@@ -37,7 +37,7 @@ Success Response:
     "fba_live": 96, "fba_inbound": 0
   },
   "weeks":   [ { "week_start": "2026-06-01", "units": 9, "avg_price": 39.82, "profit": 154.74 }, ... ],  // oldest -> newest
-  "bands":   [ { "price": 38.99, "units": 49, "first": "2026-05-16", "last": "2026-05-29" }, ... ]                     // ascending price
+  "bands":   [ { "price": 38.99, "units": 49, "profit_per_unit": 18.94, "first": "2026-05-16", "last": "2026-05-29" }, ... ]  // ascending price; profit_per_unit = NET/unit
 }
 =======================================================================================================================================
 Return Codes:
@@ -139,6 +139,7 @@ router.get('/', async (req, res) => {
 
       query(`
         SELECT ${safeNumeric('soldprice')} AS price, SUM(qty)::int AS units,
+               ROUND(SUM(profit)::numeric / NULLIF(SUM(qty), 0), 2) AS profit_per_unit,
                to_char(MIN(solddate), 'YYYY-MM-DD') AS first, to_char(MAX(solddate), 'YYYY-MM-DD') AS last
         FROM sales
         WHERE channel='AMZ' AND code=$1 AND qty>0 AND solddate >= CURRENT_DATE - 60
@@ -150,8 +151,10 @@ router.get('/', async (req, res) => {
       week_start: r.week_start, units: Number(r.units),
       avg_price: num(r.avg_price), profit: Number(r.profit),
     }));
+    // profit_per_unit added for drill-evidence parity (§4, block 3): NET (price - cost - FBA fee) per unit at that band, so the band
+    // reads as reward-vs-resistance, not raw units. Same shared PriceBands component renders it on both drills.
     const bands = bandsR.rows.map((r) => ({
-      price: num(r.price), units: Number(r.units), first: r.first, last: r.last,
+      price: num(r.price), units: Number(r.units), profit_per_unit: num(r.profit_per_unit), first: r.first, last: r.last,
     }));
 
     return res.json({ return_code: 'SUCCESS', header, weeks, bands });

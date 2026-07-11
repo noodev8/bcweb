@@ -126,12 +126,15 @@ export interface AmzDrillHeader {
   fba_live: number; fba_inbound: number;
 }
 export interface AmzWeek { week_start: string; units: number; avg_price: number | null; profit: number; }
-export interface AmzBand { price: number | null; units: number; first: string; last: string; }
+// PriceBand is the shared units-by-price shape both drills return (drill-evidence-spec §3/§4). profit_per_unit is NET per unit at that
+// price (Amazon: price-cost-FBA; Shopify: from sales.profit). Rendered by the shared PriceBands component.
+export interface PriceBand { price: number | null; units: number; profit_per_unit: number | null; first: string; last: string; }
+export type AmzBand = PriceBand;
 export interface AmzDrillData { header: AmzDrillHeader; weeks: AmzWeek[]; bands: AmzBand[]; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
 export interface AmzHistoryRow { log_date: string; old_price: number | null; new_price: number | null; direction: string; notes: string; changed_by: string | null; }
 export interface AmzHistoryData { rows: AmzHistoryRow[]; limit: number; truncated: boolean; }
-export interface AmzSaleRow { solddate: string | null; size: string | null; qty: number; soldprice: number | null; }
+export interface AmzSaleRow { solddate: string | null; size: string | null; qty: number; soldprice: number | null; profit: number | null; }
 export interface AmzSalesData { rows: AmzSaleRow[]; limit: number; truncated: boolean; }
 export interface AmzFindRow {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
@@ -144,20 +147,23 @@ export interface AmzApplyResult { code: string; amz_sku: string; new_price: numb
 export interface DrillHeader {
   groupid: string; title: string | null;
   now: number | null; cost: number | null; rrp: number | null; minp: number | null; maxp: number | null;
-  margin: number | null; margin_pct: number | null;
+  margin: number | null; margin_pct: number | null;   // GROSS (now - cost); net reasoning lives in the timeline profit/wk
   stock: number; colour: string | null; width: string | null; season: string | null;
   next_review: string | null;
 }
 export interface TimelineRow {
-  price: number; units: number; first_at: string | null; last_at: string | null;
+  price: number; units: number;
+  profit: number | null;                // NET era total (from sales.profit), null if the era has no profit data
+  profit_wk: number | null;             // NET £/wk = margin × pace in one number — the "best price" ranking
+  first_at: string | null; last_at: string | null;
   span_days: number; weeks: number; per_wk: number; is_current: boolean;
 }
 export interface SizeRow { size: string; qty: number; }
-export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; sizes: SizeRow[]; days: number; }
+export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; bands: PriceBand[]; sizes: SizeRow[]; days: number; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
-export interface PriceHistoryRow { change_date: string | null; old_price: number | null; new_price: number | null; note: string; changed_by: string | null; }
+export interface PriceHistoryRow { change_date: string | null; changed_time: string | null; old_price: number | null; new_price: number | null; note: string; changed_by: string | null; }
 export interface PriceHistoryData { rows: PriceHistoryRow[]; limit: number; truncated: boolean; }
-export interface SaleRow { solddate: string | null; ordertime: string | null; size: string | null; qty: number; soldprice: number | null; }
+export interface SaleRow { solddate: string | null; ordertime: string | null; size: string | null; qty: number; soldprice: number | null; profit: number | null; }
 export interface SalesData { rows: SaleRow[]; limit: number; truncated: boolean; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
@@ -290,7 +296,7 @@ export function applyAmzPrice(code: string, newPrice: number, note?: string) {
 export function getDrill(groupid: string, days?: number) {
   return request<DrillData>(
     { url: '/pricing-drill', method: 'GET', params: { groupid, days } },
-    (b) => ({ header: b.header, timeline: b.timeline || [], sizes: b.sizes || [], days: b.days })
+    (b) => ({ header: b.header, timeline: b.timeline || [], bands: b.bands || [], sizes: b.sizes || [], days: b.days })
   );
 }
 
@@ -469,16 +475,20 @@ export function parkStyle(groupid: string, reviewDays: number) {
 // =============================================================================================================================
 // Segments module — the review/attention layer over the pricing tools (docs/segments-spec.md).
 // =============================================================================================================================
-// No 'never' state — a never-worked area is reported as 'overdue' (with daysOverdue 0), so it reads as "needs attention now".
-export type DueState = 'overdue' | 'due-soon' | 'ok' | 'off';
+// No 'never' state — a never-worked MANUAL area is reported as 'overdue' (daysOverdue 0), so it reads as "needs attention now".
+// 'due' is the DERIVED Shopify state (spec §9): styles still need pricing. Reuses the overdue RED, but its own state so the cell
+// can render "X / Y waiting" instead of "Nd late". Manual clocks (Housekeeping, Amazon-for-now) never emit 'due'.
+export type DueState = 'overdue' | 'due-soon' | 'ok' | 'off' | 'due';
 
-// One clock cell = one work area (Shopify / Amazon / Remove …) of one segment. Shared by the overview grid and the detail page.
+// One clock cell = one work area (Shopify / Amazon / Housekeeping …) of one segment. Shared by the overview grid and the detail page.
 export interface SegmentAreaCell {
   area: string;
   cadenceDays: number;
   dueState: DueState;
-  daysOverdue: number;            // >0 only when overdue; 0 otherwise
-  nextReview: string | null;      // YYYY-MM-DD, or null when never worked / no review set
+  daysOverdue: number;            // >0 only when overdue; 0 otherwise (and always 0 for derived Shopify)
+  nextReview: string | null;      // YYYY-MM-DD; for derived Shopify 'ok' = when the soonest parked style returns
+  outstanding: number | null;     // DERIVED (Shopify) only: in-stock styles still un-parked; null for manual clocks
+  instock: number | null;         // DERIVED (Shopify) only: in-stock live styles (the candidate pool); null for manual clocks
   lastWorkedBy: string | null;
   lastWorkedAt: string | null;    // ISO timestamp
 }

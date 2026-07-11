@@ -21,6 +21,7 @@ import AmzBasketBar from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
 import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
+import PriceBands from '@/components/PriceBands';
 import { getAmzDrill, applyAmzPrice, AmzDrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
@@ -38,10 +39,6 @@ function fmtShort(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
   return `${d} ${MONTHS[m - 1]}`;
 }
-function money(v: number | null): string {
-  return v !== null && v !== undefined ? `£${v.toFixed(2)}` : '—';
-}
-
 function DrillContent() {
   const router = useRouter();
   const params = useParams<{ code: string }>();
@@ -163,7 +160,7 @@ function DrillContent() {
           {/* Evidence — the read-only case for a decision: velocity trend + price-band resistance. */}
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Velocity weeks={data.weeks} />
-            <Bands bands={data.bands} currentPrice={data.header.price} />
+            <PriceBands bands={data.bands} currentPrice={data.header.price} />
           </section>
 
           {/* Reference reports (collapsible, lazy). Keyed on reloadKey so an apply remounts them (collapsed) to re-fetch with the change. */}
@@ -198,33 +195,3 @@ function Velocity({ weeks }: { weeks: AmzDrillData['weeks'] }) {
   );
 }
 
-// Units at each price over 60 days. Where units thin out above a price is the discovered ceiling.
-function Bands({ bands, currentPrice }: { bands: AmzDrillData['bands']; currentPrice: number | null }) {
-  const maxBand = Math.max(1, ...bands.map((b) => b.units));
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Units by price — 60 days</h3>
-      {bands.length === 0 ? (
-        <p className="text-xs text-slate-400">No sales in the last 60 days.</p>
-      ) : (
-        <div className="space-y-1">
-          {bands.map((b, i) => {
-            const isCurrent = currentPrice !== null && b.price === currentPrice;
-            return (
-              <div key={i} className="flex items-center gap-2">
-                <span className={'w-14 shrink-0 text-right text-xs tabular-nums ' + (isCurrent ? 'font-semibold text-slate-800' : 'text-slate-500')}>
-                  {money(b.price)}
-                </span>
-                <div className="h-3.5 flex-1 rounded bg-slate-100">
-                  <div className={'h-3.5 rounded ' + (isCurrent ? 'bg-brand-500' : 'bg-slate-300')} style={{ width: `${Math.round((b.units / maxBand) * 100)}%` }} />
-                </div>
-                <span className="w-8 shrink-0 text-xs tabular-nums text-slate-600">{b.units}</span>
-              </div>
-            );
-          })}
-          <p className="pt-1 text-[10px] text-slate-400">blue = current price. Units drying up above a price = resistance.</p>
-        </div>
-      )}
-    </div>
-  );
-}

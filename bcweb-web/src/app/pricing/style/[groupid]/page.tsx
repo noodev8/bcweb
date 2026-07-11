@@ -21,6 +21,7 @@ import SizeCurve from '@/components/SizeCurve';
 import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
+import PriceBands from '@/components/PriceBands';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { bumpActionedCount } from '@/lib/sessionCounter';
@@ -183,6 +184,12 @@ function DrillContent() {
               onPark={handlePark}
               onCancel={() => router.push(backTo)}
             />
+          </section>
+
+          {/* Units-by-price (resistance + profit/unit) — the "how high can I go" view, shared with the Amazon drill (drill-evidence-spec §3). */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Units by price</h2>
+            <PriceBands bands={data.bands} currentPrice={data.header.now} />
           </section>
 
           {/* Timeline */}
