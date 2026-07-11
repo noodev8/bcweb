@@ -165,46 +165,69 @@ function Stat({ label, value, accent, tone }: { label: string; value: string; ac
   );
 }
 
-// A lightweight inline SVG chart. No chart lib. Two axes:
-//   LEFT  (styles scale) — Full (brand line) below its Styles ceiling (dashed grey).
-//   RIGHT (units scale)  — Sales 7d (amber line), a live trailing-7-day Birk units read, so you can eyeball whether availability
-//                          and demand move together. Separate axis because units (100s) and style counts (10s) don't share a scale.
+// A lightweight inline SVG chart. No chart lib. Three scales:
+//   LEFT   (counts)  — Full (brand line) below its Styles ceiling (dashed grey).
+//   RIGHT-1 (units)  — Sales 7d (amber), a live trailing-7-day Birk units read — availability vs demand.
+//   RIGHT-2 (stock)  — total FREE Birk units on hand (emerald), the tank level. Its own axis because stock (1000s) dwarfs the
+//                      counts (10s) and weekly sales (100s). Only points with a stored stock level plot (older rows are null).
 function FullChart({ rows }: { rows: BirkSnapshot[] }) {
-  const W = 720, H = 210, padL = 34, padR = 40, padT = 12, padB = 24;
+  const W = 720, H = 210, padL = 34, padR = 66, padT = 12, padB = 24;
   const maxL = Math.max(1, ...rows.map((r) => r.styles));  // left axis: the styles ceiling
-  const maxR = Math.max(1, ...rows.map((r) => r.units7));  // right axis: peak trailing-7d units
+  const maxR = Math.max(1, ...rows.map((r) => r.units7));  // inner-right axis: peak trailing-7d units
   const n = rows.length;
+
+  // Stock series — nullable (pre-totals rows have no level), so plot only the points we actually have.
+  const stockPts = rows
+    .map((r, i) => ({ i, v: r.total_free }))
+    .filter((p): p is { i: number; v: number } => p.v != null);
+  const hasStock = stockPts.length > 0;
+  const maxS = hasStock ? Math.max(1, ...stockPts.map((p) => p.v)) : 1;  // far-right axis: peak stock
+
   const x = (i: number) => padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
   const yL = (v: number) => padT + (1 - v / maxL) * (H - padT - padB);
   const yR = (v: number) => padT + (1 - v / maxR) * (H - padT - padB);
+  const yS = (v: number) => padT + (1 - v / maxS) * (H - padT - padB);
 
   const lineL = (key: 'full' | 'styles') => rows.map((r, i) => `${x(i)},${yL(r[key])}`).join(' ');
   const lineUnits = rows.map((r, i) => `${x(i)},${yR(r.units7)}`).join(' ');
+  const lineStock = stockPts.map((p) => `${x(p.i)},${yS(p.v)}`).join(' ');
 
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-brand-600" /> Full</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-slate-300" /> Styles (ceiling)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-amber-500" /> Sales 7d (units, right axis)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-amber-500" /> Sales 7d (units, right)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-600" /> Stock (units, far right)</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 460 }} role="img" aria-label="Full styles vs trailing 7-day Birk sales">
-        {/* left-axis gridlines + labels (styles scale) at 0, mid, max */}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 520 }} role="img" aria-label="Full styles vs trailing 7-day Birk sales and stock on hand">
+        {/* left-axis gridlines + labels (counts) at 0, mid, max */}
         {[0, Math.round(maxL / 2), maxL].map((v) => (
           <g key={`l${v}`}>
             <line x1={padL} y1={yL(v)} x2={W - padR} y2={yL(v)} stroke="#f1f5f9" />
             <text x={padL - 6} y={yL(v) + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{v}</text>
           </g>
         ))}
-        {/* right-axis labels (units scale) at 0, mid, max, in amber */}
+        {/* inner-right labels (units scale) at 0, mid, max, in amber */}
         {[0, Math.round(maxR / 2), maxR].map((v) => (
           <text key={`r${v}`} x={W - padR + 6} y={yR(v) + 3} textAnchor="start" fontSize="10" fill="#d97706">{v}</text>
         ))}
-        {/* Sales (right axis) drawn first so the Full line sits on top */}
+        {/* far-right labels (stock scale) at 0, mid, max, in emerald — only when we have stock data */}
+        {hasStock && [0, Math.round(maxS / 2), maxS].map((v) => (
+          <text key={`s${v}`} x={W - 4} y={yS(v) + 3} textAnchor="end" fontSize="10" fill="#059669">{v}</text>
+        ))}
+        {/* Sales (inner-right axis) drawn first so the Full line sits on top */}
         <polyline points={lineUnits} fill="none" stroke="#f59e0b" strokeWidth={2} />
         {rows.map((r, i) => (
           <circle key={`u${r.date}`} cx={x(i)} cy={yR(r.units7)} r={2} fill="#f59e0b">
             <title>{`${r.date}: ${r.units7} units (7d)`}</title>
+          </circle>
+        ))}
+        {/* Stock (far-right axis) — line across the points we have, plus dots (a single reading shows as one dot) */}
+        {hasStock && <polyline points={lineStock} fill="none" stroke="#059669" strokeWidth={2} />}
+        {hasStock && stockPts.map((p) => (
+          <circle key={`s${rows[p.i].date}`} cx={x(p.i)} cy={yS(p.v)} r={2.5} fill="#059669">
+            <title>{`${rows[p.i].date}: ${p.v} units in stock${rows[p.i].cover_weeks != null ? ` · ${rows[p.i].cover_weeks}w cover` : ''}`}</title>
           </circle>
         ))}
         {/* x-axis date labels — show ~6 evenly spaced so they don't crowd (e.g. "2 Jun") */}
