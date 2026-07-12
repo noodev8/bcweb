@@ -12,11 +12,21 @@ Guard: if auth has hydrated (ready) and the user is NOT authenticated, redirect 
 */
 
 import { ReactNode, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
+
+// The persistent module switcher — one row of links in the header on every screen, so the operator can hop straight between the
+// "doing" modules without going back to the dashboard first. Kept to the three action modules only: Segments and Analytics are
+// "starting thought" screens reached from the dashboard, not places you hop between mid-task. Active state is by path-prefix, so a
+// drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
+const MODULES: { label: string; href: string }[] = [
+  { label: 'Shopify Pricing', href: '/pricing' },
+  { label: 'Amazon Pricing', href: '/amz' },
+  { label: 'Add / Modify', href: '/products' },
+];
 
 interface AppShellProps {
   children: ReactNode;
@@ -29,6 +39,7 @@ interface AppShellProps {
 
 export default function AppShell({ children, title, subtitle, subtitleCopy, backHref, backLabel }: AppShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
 
   // Route guard — bounce unauthenticated users to /login once hydration is done.
@@ -64,6 +75,27 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, back
           </div>
         </div>
       </header>
+
+      {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour). */}
+      <nav className="border-b border-slate-200 bg-white">
+        <div className={container + ' flex gap-1 overflow-x-auto py-1.5 text-sm'}>
+          {MODULES.map((m) => {
+            const active = pathname === m.href || pathname.startsWith(m.href + '/');
+            return (
+              <Link
+                key={m.href}
+                href={m.href}
+                className={
+                  'whitespace-nowrap rounded-md px-3 py-1.5 font-medium transition ' +
+                  (active ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')
+                }
+              >
+                {m.label}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* Optional page sub-header (back link + title). */}
       {(title || backHref) && (

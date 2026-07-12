@@ -17,6 +17,7 @@ Guarded by AppShell. Consumes GET /analytics-new-additions.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getNewAdditions,
@@ -31,7 +32,7 @@ const DAYS = 30; // fixed window (owner decision — no lens toggle)
 
 export default function NewAdditionsPage() {
   const { logout } = useAuth();
-  const [copied, setCopied] = useState<string | null>(null); // groupid just copied (brief flash)
+  const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
   const [rows, setRows] = useState<NewAdditionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,16 +88,6 @@ export default function NewAdditionsPage() {
     if (!d) return '—';
     const dt = new Date(d);
     return `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}`;
-  };
-  // Click a row to copy its groupid to the clipboard (paste into Add / Modify search). Brief "Copied" flash on the row.
-  const copyGroupid = async (groupid: string) => {
-    try {
-      await navigator.clipboard.writeText(groupid);
-      setCopied(groupid);
-      setTimeout(() => setCopied((c) => (c === groupid ? null : c)), 1200);
-    } catch {
-      /* clipboard unavailable — no-op */
-    }
   };
   // Whole days between the creation date and today — how long the line has been live.
   const daysLive = (d: string | null) => {
@@ -174,9 +165,9 @@ export default function NewAdditionsPage() {
                   {sortedRows.map((r) => (
                     <tr
                       key={r.groupid}
-                      onClick={() => copyGroupid(r.groupid)}
+                      onClick={(e) => actions.open(e, r.groupid, { title: r.title })}
                       className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
-                      title="Click to copy groupid"
+                      title="Click to reprice or copy"
                     >
                       <td className="px-4 py-2 whitespace-nowrap text-slate-500">
                         {fmtDate(r.created)}
@@ -185,10 +176,7 @@ export default function NewAdditionsPage() {
                         )}
                       </td>
                       <td className="px-4 py-2">
-                        <div className="font-mono text-sm tracking-tight text-slate-900">
-                          {r.groupid}
-                          {copied === r.groupid && <span className="ml-2 font-sans text-xs font-medium text-brand-600">Copied</span>}
-                        </div>
+                        <div className="font-mono text-sm tracking-tight text-slate-900">{r.groupid}</div>
                         <div className="text-xs text-slate-400">{r.title || 'Untitled'}</div>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
@@ -212,6 +200,7 @@ export default function NewAdditionsPage() {
       )}
 
       <Scratchpad onUnauthorized={logout} />
+      {actions.node}
     </AppShell>
   );
 }

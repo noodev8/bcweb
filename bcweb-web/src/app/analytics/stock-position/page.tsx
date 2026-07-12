@@ -24,6 +24,7 @@ Guarded by AppShell. Consumes GET /analytics-stock-position.
 
 import { useCallback, useEffect, useState } from 'react';
 import AppShell from '@/components/AppShell';
+import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getStockPosition, updateStockPosition, getStockPositionList,
@@ -261,8 +262,9 @@ function ChannelPanel({
   );
 }
 
-// The drill table: the products behind the selected bucket. Columns differ by channel (Amazon adds the SKU code). Read-only for now —
-// the next step is linking each row into the Pricing / Amazon module to price / restock / remove / park.
+// The drill table: the products behind the selected bucket. Columns differ by channel (Amazon adds the SKU code). Click a row to jump
+// straight into the Pricing / Amazon module to reprice it (Amazon rows carry the exact SKU code, so they deep-link to that SKU's drill;
+// Shopify rows open the style's price screen).
 function BucketList({
   channel, bucket, rows, loading, onClose,
 }: {
@@ -270,6 +272,7 @@ function BucketList({
 }) {
   const meta = BUCKETS.find((b) => b.key === bucket);
   const channelName = channel === 'SHP' ? 'Shopify' : 'Amazon';
+  const actions = useProductActions();
   const money = (v: number | null) => (v === null ? '—' : `£${v.toFixed(2)}`);
 
   return (
@@ -304,7 +307,12 @@ function BucketList({
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.code || r.groupid} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                <tr
+                  key={r.code || r.groupid}
+                  onClick={(e) => actions.open(e, r.groupid, { title: r.title, amzCode: channel === 'AMZ' ? r.code : null })}
+                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
+                  title="Click to reprice or copy"
+                >
                   <td className="px-4 py-2 text-slate-700">
                     {r.title || <span className="text-slate-400">Untitled</span>}
                     <span className="ml-2 text-xs text-slate-400">{r.groupid}</span>
@@ -319,6 +327,7 @@ function BucketList({
           </table>
         </div>
       )}
+      {actions.node}
     </div>
   );
 }

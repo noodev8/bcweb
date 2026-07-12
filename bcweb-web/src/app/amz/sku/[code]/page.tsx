@@ -16,6 +16,8 @@ Purpose: The decision screen for one Amazon SKU (one size), mirroring the Shopif
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { CurrencyPoundIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
@@ -24,6 +26,7 @@ import AmzSales from '@/components/AmzSales';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
 import { getAmzDrill, applyAmzPrice, AmzDrillData } from '@/lib/api';
+import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
@@ -49,6 +52,8 @@ function DrillContent() {
   const backLabel = (() => {
     if (!backTo || backTo === '/amz') return 'Segments';
     if (backTo.startsWith('/amz/find')) return 'Search';
+    // Reached from outside the Amazon segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
+    if (!backTo.startsWith('/amz/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/amz/', ''));
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
@@ -137,6 +142,18 @@ function DrillContent() {
                   ← Back to {backLabel}
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Cross-module hop — this style's Shopify price screen (style-grain), backing here when done. */}
+          {data.header.groupid && (
+            <div className="flex justify-end">
+              <Link
+                href={`/pricing/style/${encodeURIComponent(data.header.groupid)}?from=${encodeURIComponent(`/amz/sku/${code}`)}`}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-slate-800"
+              >
+                <CurrencyPoundIcon className="h-4 w-4" /> Change this on Shopify →
+              </Link>
             </div>
           )}
 

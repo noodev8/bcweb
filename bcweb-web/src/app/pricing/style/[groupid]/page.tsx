@@ -15,6 +15,8 @@ Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set pric
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import Timeline from '@/components/Timeline';
 import SizeCurve from '@/components/SizeCurve';
@@ -24,6 +26,7 @@ import PriceSetter from '@/components/PriceSetter';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
+import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { bumpActionedCount } from '@/lib/sessionCounter';
 
@@ -51,6 +54,8 @@ function DrillContent() {
   const backLabel = (() => {
     if (!backTo || backTo === '/pricing') return 'Segments';
     if (backTo.startsWith('/pricing/find')) return 'Search';
+    // Reached from outside the pricing segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
+    if (!backTo.startsWith('/pricing/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/pricing/', ''));
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
@@ -58,9 +63,10 @@ function DrillContent() {
     return `${seg} · ${modeLabel}`;
   })();
 
-  // Segment name (if we came from a segment list), used to key the session "actioned" counter — null for a deep-link/search origin.
+  // Segment name (if we came from a segment list), used to key the session "actioned" counter — null for a deep-link/search/cross-
+  // module origin (only a real /pricing/<segment> list carries a segment).
   const backSegment = (() => {
-    if (!backTo || backTo === '/pricing' || backTo.startsWith('/pricing/find')) return null;
+    if (!backTo.startsWith('/pricing/') || backTo.startsWith('/pricing/find')) return null;
     const [path] = backTo.split('?');
     return decodeURIComponent(path.replace('/pricing/', ''));
   })();
@@ -172,6 +178,16 @@ function DrillContent() {
               )}
             </div>
           )}
+
+          {/* Cross-module hop — this same style on the Amazon side (SKU-grain, so it lands on a pre-searched list to pick the size). */}
+          <div className="flex justify-end">
+            <Link
+              href={`/amz/find?q=${encodeURIComponent(groupid)}`}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-slate-800"
+            >
+              <BuildingStorefrontIcon className="h-4 w-4" /> Change this on Amazon →
+            </Link>
+          </div>
 
           {/* Set-price control — kept high so the action is reachable without scrolling past the supporting reports below. */}
           <section>
