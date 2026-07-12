@@ -122,6 +122,11 @@ app.use('/analytics-stock-position', require('./routes/analytics-stock-position'
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
+// Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
+// are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
+app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first
+app.use('/analytics-scratchpad-add', require('./routes/analytics-scratchpad-add'));       // POST {body}: insert a note
+app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-delete')); // POST {id}: remove a note
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

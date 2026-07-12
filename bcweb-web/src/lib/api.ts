@@ -697,4 +697,37 @@ export function getNewAdditions(days?: number) {
   );
 }
 
+// One scratchpad note — a free-form product jotting on the New Additions screen. `body` is the loose note text; `created_by` is who
+// wrote it (server-resolved); `created_at` is an ISO timestamp.
+export interface ScratchpadNote {
+  id: number;
+  body: string;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+// Load all scratchpad notes, newest first.
+export function getScratchpad() {
+  return request<ScratchpadNote[]>(
+    { url: '/analytics-scratchpad', method: 'GET' },
+    (b) => (b.rows || []) as ScratchpadNote[]
+  );
+}
+
+// Add a scratchpad note. Returns the newly-created note so the caller can prepend it without a re-fetch.
+export function addScratchpadNote(body: string) {
+  return request<ScratchpadNote>(
+    { url: '/analytics-scratchpad-add', method: 'POST', data: { body } },
+    (b) => b.note as ScratchpadNote
+  );
+}
+
+// Delete a scratchpad note by id. `deleted` is false if it was already gone (idempotent).
+export function deleteScratchpadNote(id: number) {
+  return request<{ deleted: boolean }>(
+    { url: '/analytics-scratchpad-delete', method: 'POST', data: { id } },
+    (b) => ({ deleted: !!b.deleted })
+  );
+}
+
 export default api;
