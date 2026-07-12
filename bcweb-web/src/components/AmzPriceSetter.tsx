@@ -20,6 +20,7 @@ Rules, enforced here for UX and AGAIN on the server (never trust the client):
 */
 
 import { useMemo, useState } from 'react';
+import ChannelBadge from '@/components/ChannelBadge';
 import { AmzDrillHeader } from '@/lib/api';
 
 interface AmzPriceSetterProps {
@@ -63,6 +64,13 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {/* Platform banner — the Amazon and Shopify drills look near-identical, so name the channel RIGHT ON the control (not just in the
+          top nav) to kill the "I thought I was changing the other platform" mix-up. Amber = Amazon throughout; Apply here only QUEUES. */}
+      <div className="-mx-5 -mt-5 mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-amber-200 bg-amber-50 px-5 py-2.5">
+        <ChannelBadge channel="amazon" label="Amazon price" />
+        <span className="text-xs text-amber-700/90">Apply queues a Seller Central upload — no live change</span>
+      </div>
+
       {/* Reference line: current / FBA / net margin / floor / RRP */}
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
         <span className="text-slate-500">Current: <span className="font-semibold text-slate-800">{now !== null ? `£${now.toFixed(2)}` : '—'}</span></span>
@@ -124,9 +132,9 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
         <button
           onClick={() => onApply(Math.round(price * 100) / 100, note.trim())}
           disabled={applyDisabled}
-          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
-          {applying ? 'Applying…' : queuedPrice != null ? 'Update queued price → basket' : 'Apply price → basket'}
+          {applying ? 'Applying…' : queuedPrice != null ? 'Update Amazon price → basket' : 'Apply to Amazon → basket'}
         </button>
         <button
           onClick={onCancel}

@@ -18,6 +18,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
+import ChannelBadge from '@/components/ChannelBadge';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
 import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -145,6 +146,10 @@ function SegmentContent() {
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
+
+      {/* Channel header — names the sales channel these Winners/Losers belong to (logo = the unambiguous cue), matching the Shopify
+          segment lists and the per-SKU drill/price-setter you'll land on. */}
+      <div className="mb-4"><ChannelBadge channel="amazon" label="Amazon pricing" /></div>
 
       <ListModeSwitcher
         mode={mode}

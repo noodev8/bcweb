@@ -23,6 +23,7 @@ Rules, enforced here for UX and AGAIN on the server (never trust the client):
 */
 
 import { useMemo, useState } from 'react';
+import ChannelBadge from '@/components/ChannelBadge';
 import { DrillHeader, SizeRow } from '@/lib/api';
 
 const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
@@ -94,6 +95,13 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {/* Platform banner — the Shopify and Amazon drills look near-identical, so name the channel RIGHT ON the control (not just in the
+          top nav) to kill the "I thought I was changing the other platform" mix-up. Green = Shopify throughout; Apply here is LIVE. */}
+      <div className="-mx-5 -mt-5 mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-emerald-200 bg-emerald-50 px-5 py-2.5">
+        <ChannelBadge channel="shopify" label="Shopify price" />
+        <span className="text-xs text-emerald-700/80">Apply updates the live store immediately</span>
+      </div>
+
       {/* Reference line: current / margin / bounds */}
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
         <span className="text-slate-500">Current: <span className="font-semibold text-slate-800">{now !== null ? `£${now.toFixed(2)}` : '—'}</span></span>
@@ -202,9 +210,9 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         <button
           onClick={() => onApply(Math.round(price * 100) / 100, reviewDays, note.trim())}
           disabled={applyDisabled}
-          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          {applying ? 'Applying…' : 'Apply price'}
+          {applying ? 'Applying…' : 'Apply to Shopify'}
         </button>
         <button
           onClick={() => reviewDays !== null && onPark(reviewDays)}
