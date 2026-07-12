@@ -8,23 +8,28 @@ Purpose: Compute the CURRENT stock-position snapshot for both sales channels, se
 
          Grain differs by channel, on purpose (a Shopify product and an Amazon product are different things):
            - Shopify: STYLE grain. Universe = skusummary WHERE shopify=1. In stock now = localstock #FREE qty>0 (schema landmine:
-                      NEVER skusummary.stockvariants/variants — stale). 6-month sale = sales channel='SHP', matched by groupid.
+                      NEVER skusummary.stockvariants/variants — stale). recent sale = sales channel='SHP', matched by groupid.
            - Amazon:  SKU grain. Universe = every row in amzfeed (FBA-only, rebuilt nightly from Amazon — so membership already means
                       "still a live listing"). In stock now = amzfeed.amzlive > 0 (amzlive is a live FBA stock QTY, not a flag).
-                      6-month sale = sales channel='AMZ', matched by code.
+                      recent sale = sales channel='AMZ', matched by code.
 
-         Each product lands in exactly ONE of four buckets (they sum to the channel's universe):
-           in_stock_selling  — in stock now AND sold in last 6 months
-           in_stock_no_sale  — in stock now, no sale in 6 months
-           oos_sold_recently — out of stock but sold in last 6 months
-           dormant           — no stock AND no sale in 6 months  (NOT alive; the "gone quiet" pile to triage later)
+         Each product lands in exactly ONE of four buckets (they sum to the channel's universe); "recently" = the SALES_WINDOW below:
+           in_stock_selling  — in stock now AND sold recently
+           in_stock_no_sale  — in stock now, no recent sale
+           oos_sold_recently — out of stock but sold recently
+           dormant           — no stock AND no recent sale  (NOT alive; the "gone quiet" pile to triage later)
          ALIVE = in_stock_selling + in_stock_no_sale + oos_sold_recently = total - dormant.
 
-         The 6-month window is fixed (owner decision — keep it simple). Two DB round-trips (one per channel), no N+1.
+         The recency window is the shared SALES_WINDOW constant (currently 12 months). Two DB round-trips (one per channel), no N+1.
 =======================================================================================================================================
 */
 
 const { query } = require('../database');
+
+// How far back a sale still counts a product as "selling / active" (and, inverted, the dormancy gate). Owner chose 12 months
+// (≈ a full seasonal cycle for Birkenstock) over the original 6. Single source of truth — the drill route imports this too, so the
+// counts and the drilled lists always agree. Internal constant, never user input, so it's safe to interpolate into the SQL.
+const SALES_WINDOW = '12 months';
 
 // Shopify (style grain). One row of counts.
 async function computeShopify() {
@@ -38,10 +43,10 @@ async function computeShopify() {
       GROUP BY groupid
     ),
     sold AS (
-      -- styles with at least one Shopify sale in the last 6 months
+      -- styles with at least one Shopify sale within the SALES_WINDOW
       SELECT DISTINCT groupid
       FROM sales
-      WHERE channel = 'SHP' AND solddate >= CURRENT_DATE - INTERVAL '6 months'
+      WHERE channel = 'SHP' AND solddate >= CURRENT_DATE - INTERVAL '${SALES_WINDOW}'
     )
     SELECT
       COUNT(*) FILTER (WHERE COALESCE(stk.q,0) > 0 AND sold.groupid IS NOT NULL)::int AS in_stock_selling,
@@ -63,10 +68,10 @@ async function computeAmazon() {
   const result = await query(
     `
     WITH sold AS (
-      -- SKUs with at least one Amazon sale in the last 6 months
+      -- SKUs with at least one Amazon sale within the SALES_WINDOW
       SELECT DISTINCT code
       FROM sales
-      WHERE channel = 'AMZ' AND solddate >= CURRENT_DATE - INTERVAL '6 months'
+      WHERE channel = 'AMZ' AND solddate >= CURRENT_DATE - INTERVAL '${SALES_WINDOW}'
     )
     SELECT
       COUNT(*) FILTER (WHERE COALESCE(f.amzlive,0) > 0 AND sold.code IS NOT NULL)::int AS in_stock_selling,
@@ -87,4 +92,4 @@ async function computeStockPosition() {
   return { shp, amz };
 }
 
-module.exports = { computeStockPosition, computeShopify, computeAmazon };
+module.exports = { computeStockPosition, computeShopify, computeAmazon, SALES_WINDOW };

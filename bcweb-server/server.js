@@ -120,6 +120,8 @@ app.use('/birk-tracker-update', require('./routes/birk-tracker-update')); // POS
 // history); POST "Update now" upserts today's two rows + prunes >2yr (mirrors the Birk Tracker read/update split).
 app.use('/analytics-stock-position', require('./routes/analytics-stock-position'));
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
+app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
+app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

@@ -10,7 +10,7 @@ Purpose: The Analytics module front door — a tile grid, matching the dashboard
 
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
-import { ChartBarIcon, PresentationChartLineIcon, CubeIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
   return (
@@ -35,6 +35,15 @@ export default function AnalyticsPage() {
           description="How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time."
           href="/analytics/stock-position"
           icon={CubeIcon}
+          live
+        />
+
+        {/* Catalogue-growth pulse — what's been added lately and how the new lines are selling. */}
+        <ModuleTile
+          title="New Additions"
+          description="Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit)."
+          href="/analytics/new-additions"
+          icon={SparklesIcon}
           live
         />
 

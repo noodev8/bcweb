@@ -652,4 +652,49 @@ export function updateStockPosition() {
   );
 }
 
+// One product row behind a bucket. `code`/`size` are Amazon-only (SKU grain); Shopify rows carry just groupid. stock = current units
+// (Shopify FREE stock / Amazon FBA); last_sold = most recent sale date on that channel (null = never) — how long it's been quiet.
+export interface StockListItem {
+  code?: string;
+  groupid: string;
+  size?: string;
+  title: string | null;
+  price: number | null;
+  stock: number;
+  last_sold: string | null;
+}
+export type StockBucket = 'in_stock_selling' | 'in_stock_no_sale' | 'oos_sold_recently' | 'dormant';
+
+// Drill: the actual products behind one bucket of one channel (e.g. everything Dormant on Amazon).
+export function getStockPositionList(channel: 'SHP' | 'AMZ', bucket: StockBucket) {
+  return request<{ channel: string; bucket: string; count: number; rows: StockListItem[] }>(
+    { url: '/analytics-stock-position-list', method: 'GET', params: { channel, bucket } },
+    (b) => ({ channel: b.channel, bucket: b.bucket, count: b.count ?? 0, rows: b.rows || [] })
+  );
+}
+
+// One newly-added Shopify style with its lifetime sales performance. `created` = effective creation date; sales figures are lifetime
+// (≈ since-add, as these are new products): units sold, revenue (qty×soldprice) and net profit. stock = current FREE stock.
+export interface NewAdditionRow {
+  groupid: string;
+  title: string | null;
+  created: string | null;
+  price: number | null;
+  rrp: number | null;
+  stock: number;
+  units: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface NewAdditionsData { days: number; count: number; rows: NewAdditionRow[]; }
+
+// Load the New Additions report — Shopify styles created in the last `days` (default 30), newest first, each with lifetime sales.
+export function getNewAdditions(days?: number) {
+  return request<NewAdditionsData>(
+    { url: '/analytics-new-additions', method: 'GET', params: { days } },
+    (b) => ({ days: b.days, count: b.count ?? 0, rows: b.rows || [] })
+  );
+}
+
 export default api;
