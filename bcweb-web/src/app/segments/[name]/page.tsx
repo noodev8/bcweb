@@ -155,13 +155,14 @@ function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentA
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">
+          {/* Deep-links carry from=/&back= so the pricing screen's "← <segment>" returns here, not to the pricing home. */}
           {isShopify && (
-            <Link href={`/pricing/${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
+            <Link href={`/pricing/${encodeURIComponent(segment)}?from=${encodeURIComponent(`/segments/${encodeURIComponent(segment)}`)}&back=${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
               Open pricing →
             </Link>
           )}
           {isAmazon && (
-            <Link href={`/amz/${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
+            <Link href={`/amz/${encodeURIComponent(segment)}?from=${encodeURIComponent(`/segments/${encodeURIComponent(segment)}`)}&back=${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
               Open Amazon →
             </Link>
           )}

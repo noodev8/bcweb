@@ -66,6 +66,12 @@ function SegmentContent() {
   const initialMode: ListMode = modeParam === 'losers' ? 'losers' : modeParam === 'all' ? 'all' : 'winners';
   const [mode, setMode] = useState<ListMode>(initialMode);
 
+  // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments module returns you to that segment's detail —
+  // not to /pricing (the Shopify Pricing home), which is a *different* list of segments and was the source of the "it took me to
+  // Shopify Pricing" confusion. Absent params (i.e. you came from /pricing itself) fall back to that home, labelled "Segments".
+  const backHref = searchParams.get('from') || '/pricing';
+  const backLabel = searchParams.get('back') || 'Segments';
+
   const [winners, setWinners] = useState<TriageRow[] | null>(null);
   const [losers, setLosers] = useState<LoserRow[] | null>(null);
   const [all, setAll] = useState<AllRow[] | null>(null);
@@ -94,7 +100,11 @@ function SegmentContent() {
   useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openStyle(groupid: string) {
-    const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}`;
+    // Carry the back-context (from/back) into the return URL so it survives the drill round-trip (returning from a price apply keeps
+    // pointing at the right "back" target rather than reverting to /pricing).
+    const rawFrom = searchParams.get('from');
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
+    const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}${ctx}`;
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -102,7 +112,7 @@ function SegmentContent() {
   const isEmpty = !loading && !error && rows !== null && rows.length === 0;
 
   return (
-    <AppShell title={segment} backHref="/pricing" backLabel="Segments">
+    <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
       <ListModeSwitcher
         mode={mode}
         onChange={setMode}

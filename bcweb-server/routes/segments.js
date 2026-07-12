@@ -111,25 +111,55 @@ router.get('/', async (req, res) => {
       revByName.set(r.name, { revenue30: Math.round(revenue * 100) / 100, gpPct });
     }
 
-    // 2b) Derived SHOPIFY clock (spec §9.3) — per segment, how many in-stock live styles still need pricing (un-parked) vs are
-    //     parked into the future. Same candidate pool as triage/losers (live on Shopify + sellable stock via localstock #FREE).
-    //     Keyed by segment name; merged onto the Shopify area cell below, replacing its manual next_review_date read.
+    // 2b) Derived SHOPIFY clock (spec §9.3) — per segment, how many pricing-ACTIONABLE styles still need pricing (un-parked) vs are
+    //     parked into the future. The candidate pool is deliberately NOT "every in-stock style": it is exactly the union of what the
+    //     WINNERS and LOSERS job-lists surface, so the heatmap count can always be driven to zero by working those two lists. Without
+    //     this, "healthy-middle" styles (in stock, un-parked, but neither a fast recent seller nor dead/slow) counted as outstanding
+    //     yet appeared in no job-list — the segment could never go green and "0/9" looked like unclearable work (owner-reported).
+    //
+    //     A style is ACTIONABLE when it is one of (mirrors pricing-triage / pricing-losers membership, same default windows):
+    //       - WINNER: sold > 0 units on Shopify in the last 30 days, OR
+    //       - DEAD:   no Shopify sales in the last 90 days (u90 = 0), OR
+    //       - SLOW:   cover = stock × (90/7) / u90 ≥ 26 weeks (~6 months).
+    //     The healthy middle (some 90d sales, nothing in 30d, cover < 26wk) is excluded — genuinely nothing to do. `instock` here is
+    //     therefore the ACTIONABLE count (the denominator the cell shows), not the raw in-stock count. Parking is unaffected by sales,
+    //     so a parked-but-actionable style is "done" (drops out of outstanding) until its review lapses. COUNT..FILTER counts a
+    //     winner-and-slow style once (no double-count). Same candidate stock pool as triage/losers (localstock #FREE).
     const shp = await query(`
       WITH stk AS (
         SELECT groupid, SUM(qty) AS stock FROM localstock
         WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
         GROUP BY groupid
+      ),
+      s30 AS (   -- 30d Shopify units (winner test)
+        SELECT groupid, SUM(qty) AS u30 FROM sales
+        WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 30
+        GROUP BY groupid
+      ),
+      s90 AS (   -- 90d Shopify units (dead / slow test)
+        SELECT groupid, SUM(qty) AS u90 FROM sales
+        WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 90
+        GROUP BY groupid
+      ),
+      cand AS (
+        SELECT ss.segment AS name,
+               ss.next_shopify_price_review AS review,
+               ( COALESCE(s30.u30, 0) > 0                                              -- WINNER
+                 OR COALESCE(s90.u90, 0) = 0                                           -- DEAD
+                 OR stk.stock * (90 / 7.0) / NULLIF(s90.u90, 0) >= 26 ) AS actionable  -- SLOW (cover >= 26wk)
+        FROM skusummary ss
+        JOIN stk ON stk.groupid = ss.groupid          -- INNER JOIN drops 0-stock styles (nothing to price)
+        LEFT JOIN s30 ON s30.groupid = ss.groupid
+        LEFT JOIN s90 ON s90.groupid = ss.groupid
+        WHERE ss.shopify = 1                           -- live on Shopify only
       )
-      SELECT ss.segment AS name,
-             COUNT(*)::int AS instock,
-             COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                 OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS outstanding,
-             MIN(ss.next_shopify_price_review)
-               FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE) AS next_wake
-      FROM skusummary ss
-      JOIN stk ON stk.groupid = ss.groupid          -- INNER JOIN drops 0-stock styles (nothing to price)
-      WHERE ss.shopify = 1                           -- live on Shopify only
-      GROUP BY ss.segment
+      SELECT name,
+             COUNT(*) FILTER (WHERE actionable)::int AS instock,
+             COUNT(*) FILTER (WHERE actionable
+                                AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
+             MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
+      FROM cand
+      GROUP BY name
     `);
     const shopifyByName = new Map();
     for (const r of shp.rows) {
@@ -140,6 +170,15 @@ router.get('/', async (req, res) => {
     //     (amzfeed.amzlive>0, the same pool amz-winners/amz-losers draw from); the per-SKU review date lives on skumap
     //     (next_amz_price_review). code is unique in skumap and every in-stock amzfeed SKU has a skumap row, so the join is 1:1
     //     and can't double-count. Keyed by segment name; merged onto the Amazon area cell below via the same deriveShopify helper.
+    //
+    //     NOTE — unlike Shopify (block 2b), this deliberately counts EVERY un-parked in-stock SKU, with NO "actionable" sales filter,
+    //     because on Amazon that filter would be a no-op: every in-stock un-parked SKU is already a WINNER or a LOSER, so
+    //     un-parked-in-stock == WINNERS ∪ LOSERS and there is no "healthy middle" to exclude. Why it holds: WINNER = sold in 30d
+    //     (amz-winners), DEAD = NO sale in 14d (amz-losers). The 14d dead window is NESTED inside the 30d winner window, so a SKU with
+    //     no 30d sale necessarily has no 14d sale → it's DEAD (a loser). No gap. (Shopify's gap existed only because its DEAD window,
+    //     90d, is LONGER than its 30d winner window.) VERIFIED on prod 2026-07-12: IVES-COLOUR 51 in-stock, healthy-middle gap = 0.
+    //     LANDMINE: if the Amazon DEAD window in amz-losers.js is ever lengthened past 30d, this nesting breaks and a gap reappears —
+    //     at that point mirror block 2b's actionable-count CTEs here.
     const amz = await query(`
       SELECT sk.segment AS name,
              COUNT(*)::int AS instock,

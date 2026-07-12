@@ -70,6 +70,11 @@ function SegmentContent() {
   const initialMode: ListMode = modeParam === 'losers' ? 'losers' : modeParam === 'all' ? 'all' : 'winners';
   const [mode, setMode] = useState<ListMode>(initialMode);
 
+  // Back target — threaded via ?from=/&back= so arriving from the Segments module returns you to that segment's detail rather than to
+  // /amz (the Amazon Pricing home). Absent params fall back to that home, labelled "Segments". Mirrors the Shopify segment page.
+  const backHref = searchParams.get('from') || '/amz';
+  const backLabel = searchParams.get('back') || 'Segments';
+
   const [winners, setWinners] = useState<AmzWinnerRow[] | null>(null);
   const [losers, setLosers] = useState<AmzLoserRow[] | null>(null);
   const [all, setAll] = useState<AmzAllRow[] | null>(null);
@@ -100,7 +105,10 @@ function SegmentContent() {
   useEffect(() => { setSelected(new Set()); setMarkError(null); }, [mode, segment]);
 
   function openSku(code: string) {
-    const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}`;
+    // Carry the back-context (from/back) through the drill round-trip so returning keeps the right "back" target.
+    const rawFrom = searchParams.get('from');
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
+    const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -135,7 +143,7 @@ function SegmentContent() {
   const selectable = mode === 'winners' || mode === 'losers';
 
   return (
-    <AppShell title={segment} backHref="/amz" backLabel="Segments">
+    <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
 
       <ListModeSwitcher

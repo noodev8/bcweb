@@ -49,8 +49,9 @@ function isNeverWorked(cell: SegmentAreaCell): boolean {
 export function dueCellLabel(cell: SegmentAreaCell): string {
   if (isDerived(cell)) {
     if (cell.dueState === 'off') return 'off';
-    if (cell.instock === 0) return '—';                          // nothing in stock to price
-    // Show progress done/total (parked so far / candidates): 0/9 = nothing done yet, ticks up to 9/9 as styles are parked.
+    // Resting cells all read "ok" (green) — nothing to do now. That covers both "nothing actionable" (instock 0) and "all parked"
+    // (dueState 'ok'); the tooltip (cellTitle/dueText) carries which it is. Only a 'due' cell shows the done/total progress fraction
+    // (parked so far / actionable candidates): 0/6 = nothing done yet, ticks up as flagged styles are parked.
     return cell.dueState === 'due' ? `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} / ${cell.instock}` : 'ok';
   }
   switch (cell.dueState) {
@@ -69,9 +70,10 @@ export function dueText(cell: SegmentAreaCell): string {
     const isAmazon = cell.area.toLowerCase() === 'amazon';
     const noun = isAmazon ? 'SKUs' : 'styles';
     if (cell.dueState === 'off') return 'not applicable';
-    if (cell.instock === 0) return isAmazon ? 'no Amazon stock' : 'no Shopify stock';
     if (cell.dueState === 'due') return `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} of ${cell.instock} ${noun} done · ${cell.outstanding} waiting`;
-    return cell.nextReview ? `all parked · back ${cell.nextReview}` : `all ${noun} parked`;
+    // Resting — there is no work here. Both "nothing actionable" (instock 0) and "all parked" collapse to the same message; a wake
+    // date is appended only when one exists (all-parked case), otherwise it's a plain "nothing to review".
+    return cell.nextReview ? `nothing to review · back ${cell.nextReview}` : 'nothing to review';
   }
   switch (cell.dueState) {
     case 'overdue': return isNeverWorked(cell) ? 'overdue' : `${cell.daysOverdue} day${cell.daysOverdue === 1 ? '' : 's'} overdue`;

@@ -120,26 +120,48 @@ router.get('/', async (req, res) => {
         LIMIT $2::int
       `, [segmentId, limit + 1]),
 
-      // Derived Shopify clock (spec §9.3) — in-stock live styles in this segment, and how many are still un-parked. Same pool as
-      // triage/losers; merged onto the Shopify area cell below (replacing its manual next_review_date read).
+      // Derived Shopify clock (spec §9.3) — the pricing-ACTIONABLE styles in this segment, and how many are still un-parked. MUST match
+      // the overview's block 2b in routes/segments.js exactly (else the heatmap cell and this detail card disagree): the candidate pool
+      // is the union of what WINNERS and LOSERS surface — WINNER (u30>0) OR DEAD (u90=0) OR SLOW (cover >= 26wk) — NOT every in-stock
+      // style, so the healthy middle doesn't count and the clock can be driven to zero via the two job-lists. `instock` = actionable count.
       query(`
         WITH stk AS (
           SELECT groupid, SUM(qty) AS stock FROM localstock
           WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
           GROUP BY groupid
+        ),
+        s30 AS (
+          SELECT groupid, SUM(qty) AS u30 FROM sales
+          WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 30
+          GROUP BY groupid
+        ),
+        s90 AS (
+          SELECT groupid, SUM(qty) AS u90 FROM sales
+          WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 90
+          GROUP BY groupid
+        ),
+        cand AS (
+          SELECT ss.next_shopify_price_review AS review,
+                 ( COALESCE(s30.u30, 0) > 0
+                   OR COALESCE(s90.u90, 0) = 0
+                   OR stk.stock * (90 / 7.0) / NULLIF(s90.u90, 0) >= 26 ) AS actionable
+          FROM skusummary ss
+          JOIN stk ON stk.groupid = ss.groupid
+          LEFT JOIN s30 ON s30.groupid = ss.groupid
+          LEFT JOIN s90 ON s90.groupid = ss.groupid
+          WHERE ss.segment = $1 AND ss.shopify = 1
         )
-        SELECT COUNT(*)::int AS instock,
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS outstanding,
-               MIN(ss.next_shopify_price_review)
-                 FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE) AS next_wake
-        FROM skusummary ss
-        JOIN stk ON stk.groupid = ss.groupid
-        WHERE ss.segment = $1 AND ss.shopify = 1
+        SELECT COUNT(*) FILTER (WHERE actionable)::int AS instock,
+               COUNT(*) FILTER (WHERE actionable
+                                  AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
+               MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
+        FROM cand
       `, [name]),
 
       // Derived Amazon clock (spec §10.3) — SKU-grain twin of the Shopify block: FBA-in-stock SKUs in this segment (amzfeed.amzlive>0)
-      // and how many are still un-parked (per-SKU review date on skumap). 1:1 join (code unique in skumap).
+      // and how many are still un-parked (per-SKU review date on skumap). 1:1 join (code unique in skumap). Counts EVERY un-parked
+      // in-stock SKU with no "actionable" filter — on Amazon that's already == WINNERS ∪ LOSERS (14d dead window nests inside the 30d
+      // winner window → no healthy-middle gap). See the fuller note on block 2c in routes/segments.js. Keep in lockstep with it.
       query(`
         SELECT COUNT(*)::int AS instock,
                COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
