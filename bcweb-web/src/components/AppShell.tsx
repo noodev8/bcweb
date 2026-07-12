@@ -14,18 +14,20 @@ Guard: if auth has hydrated (ready) and the user is NOT authenticated, redirect 
 import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon,
+} from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 
-// The persistent module switcher — one row of links in the header on every screen, so the operator can hop straight between the
-// "doing" modules without going back to the dashboard first. Kept to the three action modules only: Segments and Analytics are
-// "starting thought" screens reached from the dashboard, not places you hop between mid-task. Active state is by path-prefix, so a
-// drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
-const MODULES: { label: string; href: string }[] = [
-  { label: 'Shopify Pricing', href: '/pricing' },
-  { label: 'Amazon Pricing', href: '/amz' },
-  { label: 'Add / Modify', href: '/products' },
+// The persistent module switcher — a compact segmented control in the header on every screen, so the operator can hop straight between
+// the "doing" modules without going back to the dashboard first. Kept to the three action modules only: Segments and Analytics are
+// "starting thought" screens reached from the dashboard, not places you hop between mid-task. Icons match the dashboard tiles. Active
+// state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
+const MODULES: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { label: 'Shopify Pricing', href: '/pricing', icon: CurrencyPoundIcon },
+  { label: 'Amazon Pricing', href: '/amz', icon: BuildingStorefrontIcon },
+  { label: 'Add / Modify', href: '/products', icon: TagIcon },
 ];
 
 interface AppShellProps {
@@ -76,24 +78,32 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, back
         </div>
       </header>
 
-      {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour). */}
+      {/* Module switcher — a segmented control to hop between modules from anywhere (kills the "back to the front page, then in again"
+          detour). The active tab lifts to a white "raised" pill inside the recessed track. */}
       <nav className="border-b border-slate-200 bg-white">
-        <div className={container + ' flex gap-1 overflow-x-auto py-1.5 text-sm'}>
-          {MODULES.map((m) => {
-            const active = pathname === m.href || pathname.startsWith(m.href + '/');
-            return (
-              <Link
-                key={m.href}
-                href={m.href}
-                className={
-                  'whitespace-nowrap rounded-md px-3 py-1.5 font-medium transition ' +
-                  (active ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')
-                }
-              >
-                {m.label}
-              </Link>
-            );
-          })}
+        <div className={container + ' overflow-x-auto py-2.5'}>
+          <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+            {MODULES.map((m) => {
+              const active = pathname === m.href || pathname.startsWith(m.href + '/');
+              const Icon = m.icon;
+              return (
+                <Link
+                  key={m.href}
+                  href={m.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={
+                    'inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition ' +
+                    (active
+                      ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                      : 'text-slate-500 hover:text-slate-800')
+                  }
+                >
+                  <Icon className={'h-4 w-4 ' + (active ? 'text-brand-600' : 'text-slate-400')} />
+                  {m.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </nav>
 
