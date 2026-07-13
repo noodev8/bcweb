@@ -797,6 +797,85 @@ export function getPriceChanges(
   );
 }
 
+// --- Analytics -> Sales (windowed sales ledger + net-profit summary) -----------------------------------------------------------
+// (Named SalesReport* to avoid colliding with the drill's own SaleRow/SalesData/getSales for pricing-sales.)
+// One sale line. `channel` includes the minor 'CM3' alongside 'SHP'/'AMZ'. Returns are negative-`qty` (and negative-`profit`) lines.
+// `marginPct` is that line's profit over its revenue (soldprice*qty); null when revenue is 0.
+export interface SalesReportRow {
+  solddate: string | null;   // 'YYYY-MM-DD'
+  ordertime: string | null;  // 'HH:MM' (may be null on legacy rows)
+  channel: 'SHP' | 'AMZ' | 'CM3';
+  code: string | null;       // full SKU code
+  size: string | null;       // EU size (RIGHT(code,2))
+  groupid: string | null;    // style key
+  productname: string | null;
+  ordernum: string | null;
+  qty: number;               // negative on a return
+  soldprice: number | null;  // per unit
+  profit: number | null;     // net, downstream-computed; negative on a return
+  marginPct: number | null;
+}
+// Headline totals over the WHOLE window (never bounded by the row cap). Units split sold / returned / net (mirrors the legacy footer).
+export interface SalesReportSummary {
+  unitsSold: number;
+  unitsReturned: number;
+  unitsNet: number;
+  orders: number;
+  revenue: number;
+  profit: number;            // the hero number
+  marginPct: number | null;
+  products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
+}
+export type SalesWindow = 'today' | 'yesterday' | '3d';
+export interface SalesReportData {
+  channel: 'all' | 'shp' | 'amz';
+  window: SalesWindow;
+  searchActive: boolean;     // true = product mode (window ignored, all-time match capped at 50); false = window pulse mode
+  from: string | null;       // resolved bounds (echoed for display) — window bounds in pulse mode, item's first→last sale in product mode
+  to: string | null;
+  search: string | null;
+  summary: SalesReportSummary;
+  rows: SalesReportRow[];
+  limit: number;
+  count: number;
+  truncated: boolean;        // true when more rows exist than the cap (UI notes it; export still covers the loaded rows)
+}
+
+// Load the Sales report — sale lines for the selected channel + short window (today/yesterday/3d) plus a product search, with the
+// net-profit summary. Returns included. Short-window only by design (no custom range).
+export function getSalesReport(params: {
+  channel?: 'all' | 'shp' | 'amz';
+  window?: SalesWindow;
+  search?: string | null;
+  limit?: number;
+}) {
+  return request<SalesReportData>(
+    {
+      url: '/analytics-sales',
+      method: 'GET',
+      params: {
+        channel: params.channel || 'all',
+        window: params.window || 'today',
+        search: params.search || undefined,
+        limit: params.limit,
+      },
+    },
+    (b) => ({
+      channel: (b.channel as 'all' | 'shp' | 'amz') || 'all',
+      window: (b.window as SalesWindow) || 'today',
+      searchActive: !!b.searchActive,
+      from: b.from ?? null,
+      to: b.to ?? null,
+      search: b.search ?? null,
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, revenue: 0, profit: 0, marginPct: null, products: 0 },
+      rows: (b.rows as SalesReportRow[]) || [],
+      limit: b.limit ?? 500,
+      count: b.count ?? 0,
+      truncated: !!b.truncated,
+    })
+  );
+}
+
 // Add a scratchpad note. Returns the newly-created note so the caller can prepend it without a re-fetch.
 export function addScratchpadNote(body: string) {
   return request<ScratchpadNote>(

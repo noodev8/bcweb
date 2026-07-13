@@ -128,6 +128,9 @@ app.use('/analytics-new-additions', require('./routes/analytics-new-additions'))
 // Price Changes: recent price moves across BOTH channels (before->after, who/when) + units sold since each change. Filterable by
 // channel (all/shp/amz) and user; per-channel limit. Read-only.
 app.use('/analytics-change-impact', require('./routes/analytics-change-impact'));
+// Sales: the windowed sales ledger (raw lines + a net-profit summary). Filter by channel (all/shp/amz) and window (today/…/90d/custom),
+// search to one product, returns included & netted. Read-only; the front end builds the CSV export from these rows.
+app.use('/analytics-sales', require('./routes/analytics-sales'));
 // Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
 // are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
 app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first

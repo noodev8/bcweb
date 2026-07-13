@@ -10,7 +10,7 @@ Purpose: The Analytics module front door — a tile grid, matching the dashboard
 
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
-import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
   return (
@@ -20,6 +20,15 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Sales ledger — the first thing to check: recent sales + net profit, windowed & searchable, CSV export. */}
+        <ModuleTile
+          title="Sales"
+          description="Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel."
+          href="/analytics/sales"
+          icon={BanknotesIcon}
+          live
+        />
+
         {/* The one live analytics view in v1. */}
         <ModuleTile
           title="Birk Tracker"
