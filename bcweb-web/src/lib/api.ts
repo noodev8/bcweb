@@ -145,7 +145,7 @@ export interface AmzFindRow {
 }
 // Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the client-built upload file, not this call.
 // amz_sku + rrp let the session basket build that file straight from this response.
-export interface AmzApplyResult { code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; warnings: string[]; }
+export interface AmzApplyResult { code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; }
 
 export interface DrillHeader {
   groupid: string; title: string | null;
@@ -288,12 +288,25 @@ export function findAmzSkus(term: string) {
 }
 
 // Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; the price reaches Amazon via the client upload file, not
-// this call. Also auto-parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays optional
-// (omitted → server default 14d). Returns amz_sku + rrp so the session basket can build the upload file straight from the response.
-export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number) {
+// this call. Optionally parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays mirrors
+// Shopify W1: null/omitted = "None" (leave the review date untouched, SKU stays in the list); an integer >= 1 parks until today+N.
+// Returns amz_sku + rrp (so the session basket can build the upload file straight from the response) + next_review (null when None).
+export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number | null) {
   return request<AmzApplyResult>(
-    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, reviewDays } },
-    (b) => ({ code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, warnings: b.warnings || [] })
+    // Only send reviewDays when it's a real period, so a "None" never reaches the server as a stray value (matches updateProductPrice).
+    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, ...(reviewDays != null ? { reviewDays } : {}) } },
+    (b) => ({ code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [] })
+  );
+}
+
+// Amazon Pricing — rebuild the upload basket from the audit log (amz_price_log), so it survives a browser close / machine restart. Returns
+// the whole team's price changes in the last 12h (latest price per SKU, any operator), each carrying the fields the upload file needs — so
+// whoever is at the desk can upload a colleague's pending change. The item shape matches AmzBasketItem so the context can hydrate from it.
+export interface AmzBasketFetchItem { code: string; amz_sku: string | null; size: string; title: string | null; segment: string | null; old_price: number | null; new_price: number; rrp: number | null; }
+export function getAmzBasket() {
+  return request<{ items: AmzBasketFetchItem[] }>(
+    { url: '/amz-basket', method: 'GET' },
+    (b) => ({ items: (b.items || []) as AmzBasketFetchItem[] })
   );
 }
 

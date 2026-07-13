@@ -15,7 +15,6 @@ in the URL (?mode=) so returning after a write restores the same tab.
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
-import ChannelBadge from '@/components/ChannelBadge';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
 import { getTriage, getLosers, getAll, TriageRow, LoserRow, AllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -114,10 +113,6 @@ function SegmentContent() {
 
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
-      {/* Channel header — names the sales channel these Winners/Losers belong to (logo = the unambiguous cue), so the segment lists
-          carry the same channel identity as the drill/price-setter you'll land on. */}
-      <div className="mb-4"><ChannelBadge channel="shopify" label="Shopify pricing" /></div>
-
       <ListModeSwitcher
         mode={mode}
         onChange={setMode}
@@ -150,7 +145,14 @@ function SegmentContent() {
         </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
-        <LosersTable rows={losers} onOpen={openStyle} />
+        <>
+          {actioned > 0 && (
+            <p className="mb-2 text-xs text-slate-400">
+              {actioned} actioned this session — parked styles drop off as you work, so the list refills from the segment.
+            </p>
+          )}
+          <LosersTable rows={losers} onOpen={openStyle} />
+        </>
       )}
       {!loading && !error && mode === 'all' && all && all.length > 0 && (
         <AllTable rows={all} onOpen={openStyle} />

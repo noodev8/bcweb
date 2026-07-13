@@ -18,9 +18,11 @@ export function getActionedCount(segment: string): number {
   return raw ? Number(raw) || 0 : 0;
 }
 
-export function bumpActionedCount(segment: string): number {
+// Bump by `by` (default 1) — the batch "mark reviewed" action parks several SKUs at once, so it adds its whole count in one go. Returns
+// the new total so the caller can reflect it immediately (e.g. the list page, which doesn't remount after an in-place batch action).
+export function bumpActionedCount(segment: string, by = 1): number {
   if (typeof window === 'undefined') return 0;
-  const next = getActionedCount(segment) + 1;
+  const next = getActionedCount(segment) + Math.max(0, by);
   window.sessionStorage.setItem(PREFIX + segment, String(next));
   return next;
 }

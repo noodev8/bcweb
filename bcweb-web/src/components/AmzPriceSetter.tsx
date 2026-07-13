@@ -3,19 +3,23 @@
 =======================================================================================================================================
 Component: AmzPriceSetter  (the Amazon set-price control)
 =======================================================================================================================================
-Purpose: The SKU-grain price control on the Amazon drill. Leaner than the Shopify PriceSetter — Amazon has NO review/park concept and NO
-         live push, so there are no review chips and no "just set review" action. Applying queues the change into the session upload
-         basket (and writes the amz_price_log audit row); the price reaches Amazon only when the operator downloads + uploads the file.
+Purpose: The SKU-grain price control on the Amazon drill. Leaner than the Shopify PriceSetter — Amazon has NO live push, so applying only
+         queues the change into the session upload basket (and writes the amz_price_log audit row); the price reaches Amazon only when the
+         operator downloads + uploads the file. It DOES have a review/park: applying parks the SKU (skumap.next_amz_price_review) so it
+         drops off the winners/losers queue, exactly like Shopify's W1 — so the operator picks the review period right here (like Shopify).
 
    Current: 37.99   FBA: 96 (+0)   Net margin: 18.94 (50%)   floor 19.07   RRP 45.00
    New price:  [−£1][−50p][−30p]  [ 38.29 ]  [+30p][+50p][+£1]      <- big editable field; margin recalculates live
    Note:       [ optional — why the price is changing (saved to the price log) ]
-   [ Apply price → basket ]   [ Cancel ]
+   Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days                <- single-select; None (default) = don't park (mirrors Shopify).
+   [ Apply price → basket ]   [ No change — just set review ]   [ Cancel ]
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
   - Nudge buttons step the editable price (the engine's typical £0.30 / £0.50 / £1.00 moves); net margin updates live.
   - Disable Apply if price < floor (cost + FBA fee — breakeven). Warn (but allow) if price > RRP.
   - Note is optional; it's saved to the amz_price_log row as the rationale.
+  - Review period is OPTIONAL (None by default), mirroring the Shopify setter: None leaves the review date untouched and the SKU stays in
+    the list; a period parks it out of the winners/losers queue until today+N. To review WITHOUT pricing, use the list's batch "mark reviewed".
 =======================================================================================================================================
 */
 
@@ -23,20 +27,26 @@ import { useMemo, useState } from 'react';
 import ChannelBadge from '@/components/ChannelBadge';
 import { AmzDrillHeader } from '@/lib/api';
 
+// Park-period pills after an apply — the SAME day set as the Shopify setter (owner: keep the two drills identical). Raw days, None default.
+const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+
 interface AmzPriceSetterProps {
   header: AmzDrillHeader;
   applying: boolean;                                  // disables buttons while a write is in flight
   queuedPrice?: number | null;                        // if this SKU is already in the basket, its queued price (for the button label)
-  onApply: (newPrice: number, note: string) => void;
+  onApply: (newPrice: number, note: string, reviewDays: number | null) => void;
+  onPark: (reviewDays: number) => void;               // set a review date only, price unchanged (needs a real period, not None)
   onCancel: () => void;
 }
 
-export default function AmzPriceSetter({ header, applying, queuedPrice, onApply, onCancel }: AmzPriceSetterProps) {
+export default function AmzPriceSetter({ header, applying, queuedPrice, onApply, onPark, onCancel }: AmzPriceSetterProps) {
   const now = header.price;
 
   // Editable price starts at the current price (or blank if unknown). Kept as a string so the user can type freely.
   const [priceStr, setPriceStr] = useState<string>(now !== null ? now.toFixed(2) : '');
   const [note, setNote] = useState('');
+  // Review period the apply will park for. null = None (the default, mirroring Shopify) — don't park, leave the SKU in the list.
+  const [reviewDays, setReviewDays] = useState<number | null>(null);
 
   const price = useMemo(() => {
     const p = parseFloat(priceStr);
@@ -127,14 +137,58 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
         className="mb-5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       />
 
+      {/* Review chips — optional single-select, mirroring the Shopify setter exactly (same day set + copy). None (default) leaves the
+          review date untouched and the SKU stays in the winners/losers list; a day parks it out of the queue until today+N. */}
+      <div className="mb-1 text-sm font-medium text-slate-700">
+        Review in <span className="font-normal text-slate-400">(optional — hides from pricing triage until then)</span>
+      </div>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        {/* Explicit None (no park) — selected by default. */}
+        <button
+          onClick={() => setReviewDays(null)}
+          className={
+            'rounded-full border px-3.5 py-1.5 text-sm ' +
+            (reviewDays === null ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+          }
+        >
+          None
+        </button>
+        {REVIEW_CHIPS.map((d) => {
+          const isSel = reviewDays === d;
+          return (
+            <button
+              key={d}
+              onClick={() => setReviewDays(d)}
+              className={
+                'rounded-full border px-3.5 py-1.5 text-sm ' +
+                (isSel ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+              }
+            >
+              {d}
+            </button>
+          );
+        })}
+        <span className="text-sm text-slate-400">days</span>
+      </div>
+
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-3">
         <button
-          onClick={() => onApply(Math.round(price * 100) / 100, note.trim())}
+          onClick={() => onApply(Math.round(price * 100) / 100, note.trim(), reviewDays)}
           disabled={applyDisabled}
           className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
           {applying ? 'Applying…' : queuedPrice != null ? 'Update Amazon price → basket' : 'Apply to Amazon → basket'}
+        </button>
+        {/* Set a review date WITHOUT changing the price (mirrors Shopify's "just set review"). Needs a real period, so it's disabled while
+            None is selected. No price change = nothing queued to the basket. */}
+        <button
+          onClick={() => reviewDays !== null && onPark(reviewDays)}
+          disabled={applying || reviewDays === null}
+          title={reviewDays === null ? 'Pick a review period (not None) to set a review without changing the price' : undefined}
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          No change — just set review
         </button>
         <button
           onClick={onCancel}

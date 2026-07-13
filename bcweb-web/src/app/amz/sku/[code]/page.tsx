@@ -23,10 +23,11 @@ import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
-import { getAmzDrill, applyAmzPrice, AmzDrillData } from '@/lib/api';
+import { getAmzDrill, applyAmzPrice, markAmzReviewed, AmzDrillData } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
+import { bumpActionedCount } from '@/lib/sessionCounter';
 
 export default function AmzDrillPage() {
   return (
@@ -59,6 +60,14 @@ function DrillContent() {
     return `${seg} · ${modeLabel}`;
   })();
 
+  // The segment list we'll return to — used to key the session "actioned" counter so the bump lands on the right list (mirrors Shopify).
+  // Null when we didn't come from a segment list (search / deep link), in which case there's no list to count against.
+  const backSegment = (() => {
+    if (!backTo.startsWith('/amz/') || backTo.startsWith('/amz/find')) return null;
+    const [path] = backTo.split('?');
+    return decodeURIComponent(path.replace('/amz/', ''));
+  })();
+
   const [data, setData] = useState<AmzDrillData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,11 +95,11 @@ function DrillContent() {
     router.push(backTo);
   }
 
-  async function handleApply(newPrice: number, note: string) {
+  async function handleApply(newPrice: number, note: string, reviewDays: number | null) {
     if (!data) return;
     setApplying(true);
     setNotice(null);
-    const res = await applyAmzPrice(code, newPrice, note);
+    const res = await applyAmzPrice(code, newPrice, note, reviewDays);
     setApplying(false);
     if (res.success && res.data) {
       const d = res.data;
@@ -107,12 +116,34 @@ function DrillContent() {
         rrp: d.rrp,
       });
       const warn = d.warnings.includes('ABOVE_RRP') ? ' (above RRP — check)' : '';
-      setNotice({ kind: 'ok', text: `Queued £${d.new_price.toFixed(2)} for upload.${warn} Download the file from the basket when you're done.` });
+      // Plain "Saved", mirroring the Shopify drill — plus the next review date (or "No review set"). The basket bar above owns the
+      // "download the file" affordance, so we don't restate it on every apply.
+      const reviewMsg = d.next_review ? ` Next review ${d.next_review}.` : ' No review set.';
+      setNotice({ kind: 'ok', text: `Saved £${d.new_price.toFixed(2)}.${reviewMsg}${warn}` });
+      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setNotice({ kind: 'err', text: res.error || 'Failed to apply price' });
+    }
+  }
+
+  // Set a review date only, price unchanged (mirrors Shopify's W2 park). Parks this one SKU via the batch endpoint (codes:[code]); no
+  // price change means nothing is queued to the upload basket. Reloads so the header reflects the new review date.
+  async function handlePark(reviewDays: number) {
+    setApplying(true);
+    setNotice(null);
+    const res = await markAmzReviewed([code], reviewDays);
+    setApplying(false);
+    if (res.success && res.data) {
+      setNotice({ kind: 'ok', text: `Review set for ${res.data.nextReview} (price unchanged).` });
+      if (backSegment) bumpActionedCount(backSegment);
+      await load(true);
+      setReloadKey((k) => k + 1);
+    } else {
+      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+      setNotice({ kind: 'err', text: res.error || 'Failed to set review' });
     }
   }
 
@@ -152,6 +183,7 @@ function DrillContent() {
               applying={applying}
               queuedPrice={queuedPrice}
               onApply={handleApply}
+              onPark={handlePark}
               onCancel={() => router.push(backTo)}
             />
           </section>

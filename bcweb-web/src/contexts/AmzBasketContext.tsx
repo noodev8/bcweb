@@ -8,17 +8,25 @@ Purpose: Amazon has no live price push — a price change is logged (POST /amz-a
 
 Why a context (not per-page state): the flow is multi-page (apply on a SKU's detail page, navigate back to the list, apply another). The
 provider lives in the module layout (src/app/amz/layout.tsx), above every /amz page, so the basket survives client-side navigation between
-them. It is deliberately SESSION-SCOPED and in-memory (owner's choice): a hard refresh / re-login empties it, matching today's ephemeral
-"build a file, upload it, done" workflow. No server-side pending set, no schema change.
+them.
 
-The file is built here, client-side, from the queued rows (each carries its Amazon SKU + RRP), so no extra round-trip is needed — the
-POST /amz-apply response already returns amz_sku + rrp. Format (from AMZ_PRICING.md):
+DURABLE + TEAM-WIDE, regenerate-anytime (2026-07-12): the basket is no longer only in browser memory — it is a VIEW of "the team's Amazon
+price changes in the last 12 hours" (any operator, so whoever is at the desk can upload a colleague's pending change), rebuilt from the
+audit log (GET /amz-basket) on mount. So switching the machine off before downloading no longer loses the file: reopen and recent changes
+are still there (they were persisted to amz_price_log by every Apply). add() still updates it optimistically on Apply for instant feedback;
+a hard refresh re-hydrates from the DB. Because the Seller Central upload is idempotent (the file just SETS prices), the basket is a view
+you can download any number of times — there is no "clear once uploaded" step, and no delete (that would be tampering with the audit log).
+A rolling 12h window carries a session across midnight and then self-clears.
+
+The file is built here, client-side, from the queued rows (each carries its Amazon SKU + RRP), so no extra round-trip is needed — both the
+POST /amz-apply response and GET /amz-basket return amz_sku + rrp. Format (from AMZ_PRICING.md):
    sku <TAB> price <TAB> minimum-seller-allowed-price <TAB> maximum-seller-allowed-price
    - sku = the Amazon SKU (amzfeed.sku), NOT our code.  - min = blank.  - max = the style's RRP (blank if unknown).
 =======================================================================================================================================
 */
 
-import { createContext, useContext, useCallback, useMemo, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useEffect, useMemo, useState, ReactNode } from 'react';
+import { getAmzBasket } from '@/lib/api';
 
 // One queued change. Everything the Seller Central file needs lives on the item (amz_sku, new_price, rrp) so it's built without a fetch.
 export interface AmzBasketItem {
@@ -36,9 +44,8 @@ interface AmzBasketValue {
   items: Record<string, AmzBasketItem>;   // keyed by code; re-applying a code overwrites (latest price wins)
   count: number;
   add: (item: AmzBasketItem) => void;
-  remove: (code: string) => void;
-  clear: () => void;
-  download: () => void;                    // build + download the one upload file
+  refresh: () => void;                      // re-pull recent changes from the audit log (GET /amz-basket)
+  download: () => void;                     // build + download the one upload file
 }
 
 const AmzBasketContext = createContext<AmzBasketValue | null>(null);
@@ -65,22 +72,33 @@ export function AmzBasketProvider({ children }: { children: ReactNode }) {
   const add = useCallback((item: AmzBasketItem) => {
     setItems((prev) => ({ ...prev, [item.code]: item }));
   }, []);
-  const remove = useCallback((code: string) => {
-    setItems((prev) => {
-      const next = { ...prev };
-      delete next[code];
-      return next;
-    });
+
+  // Rebuild the basket from the audit log (this operator's recent changes). Runs on mount so a hard refresh / reopen restores the file;
+  // drops any row without an Amazon SKU (can't build a file line for it). Silent on failure/UNAUTHORIZED — the page chrome handles auth.
+  const refresh = useCallback(async () => {
+    const res = await getAmzBasket();
+    if (!res.success || !res.data) return;
+    const next: Record<string, AmzBasketItem> = {};
+    for (const r of res.data.items) {
+      if (!r.amz_sku) continue;
+      next[r.code] = {
+        code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title,
+        segment: r.segment, old_price: r.old_price, new_price: r.new_price, rrp: r.rrp,
+      };
+    }
+    setItems(next);
   }, []);
-  const clear = useCallback(() => setItems({}), []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
   const download = useCallback(() => {
     const list = Object.values(items);
     if (list.length) buildAndDownload(list);
   }, [items]);
 
   const value = useMemo<AmzBasketValue>(
-    () => ({ items, count: Object.keys(items).length, add, remove, clear, download }),
-    [items, add, remove, clear, download]
+    () => ({ items, count: Object.keys(items).length, add, refresh, download }),
+    [items, add, refresh, download]
   );
 
   return <AmzBasketContext.Provider value={value}>{children}</AmzBasketContext.Provider>;

@@ -111,6 +111,7 @@ app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (la
 app.use('/amz-find', require('./routes/amz-find'));          // direct SKU search across all managed segments
 app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price + auto-park the SKU (skumap.next_amz_price_review)
 app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark-reviewed — park a selection of un-changed SKUs at once
+app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
 
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).

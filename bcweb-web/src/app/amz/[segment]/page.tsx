@@ -18,11 +18,11 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
-import ChannelBadge from '@/components/ChannelBadge';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
 import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
+import { getActionedCount, bumpActionedCount } from '@/lib/sessionCounter';
 
 // Park-period pills for the batch "mark reviewed" action. Amazon-native cadence (faster than the segment 1w–6m set): a reviewed-but-
 // unchanged SKU comes back round within a couple of months. Value = days; matches the amz-apply default of 14 (2w).
@@ -87,6 +87,10 @@ function SegmentContent() {
   const [marking, setMarking] = useState(false);
   const [markError, setMarkError] = useState<string | null>(null);
 
+  // Session-only "actioned" count for this segment (bumped by the drill on a successful apply/park). Winners/Losers are live shortlists
+  // that refill as you work, so this answers "am I getting anywhere". Re-read on segment change and after returning from the drill.
+  const [actioned, setActioned] = useState(0);
+
   // Fetch all three lists so each tab can show a count. Re-callable so a mark-reviewed can refetch (parked SKUs drop out, queue refills).
   const loadLists = useCallback(async () => {
     setLoading(true);
@@ -104,6 +108,8 @@ function SegmentContent() {
   useEffect(() => { loadLists(); }, [loadLists]);
   // A different tab / segment is a different selection — never carry ticks across.
   useEffect(() => { setSelected(new Set()); setMarkError(null); }, [mode, segment]);
+  // Read the session "actioned" count on mount / segment change — the drill bumps it, and returning here remounts this page so it refreshes.
+  useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openSku(code: string) {
     // Carry the back-context (from/back) through the drill round-trip so returning keeps the right "back" target.
@@ -134,7 +140,14 @@ function SegmentContent() {
     setMarking(true); setMarkError(null);
     const res = await markAmzReviewed(Array.from(selected), days);
     setMarking(false);
-    if (res.success) { setSelected(new Set()); await loadLists(); }
+    if (res.success) {
+      // Count the parked SKUs toward the session tally (soft "how many have I actioned"). Use the server's updated count, falling back to
+      // the selection size. Update the displayed count in place — we stay on the list here, so there's no remount to re-read it.
+      const n = res.data ? res.data.updated : selected.size;
+      setActioned(bumpActionedCount(segment, n));
+      setSelected(new Set());
+      await loadLists();
+    }
     else if (res.return_code === 'UNAUTHORIZED') { logout(); }
     else setMarkError(res.error || 'Failed to mark reviewed');
   }
@@ -146,10 +159,6 @@ function SegmentContent() {
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
-
-      {/* Channel header — names the sales channel these Winners/Losers belong to (logo = the unambiguous cue), matching the Shopify
-          segment lists and the per-SKU drill/price-setter you'll land on. */}
-      <div className="mb-4"><ChannelBadge channel="amazon" label="Amazon pricing" /></div>
 
       <ListModeSwitcher
         mode={mode}
@@ -179,10 +188,24 @@ function SegmentContent() {
       )}
 
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
-        <WinnersTable rows={winners} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+        <>
+          {actioned > 0 && (
+            <p className="mb-2 text-xs text-slate-400">
+              {actioned} actioned this session — the list refills from the segment as you go, so it always shows the current top {winners.length}.
+            </p>
+          )}
+          <WinnersTable rows={winners} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+        </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
-        <LosersTable rows={losers} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+        <>
+          {actioned > 0 && (
+            <p className="mb-2 text-xs text-slate-400">
+              {actioned} actioned this session — parked SKUs drop off as you work, so the list refills from the segment.
+            </p>
+          )}
+          <LosersTable rows={losers} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+        </>
       )}
       {!loading && !error && mode === 'all' && all && all.length > 0 && (
         <AllTable rows={all} queued={items} onOpen={openSku} />
@@ -193,7 +216,7 @@ function SegmentContent() {
 
 // The batch mark-reviewed action bar: pick a park period, then park the currently-ticked SKUs. Disabled until at least one is ticked.
 function MarkReviewedBar({ count, busy, error, onMark }: { count: number; busy: boolean; error: string | null; onMark: (days: number) => void }) {
-  const [days, setDays] = useState(14);   // default 2w, matching amz-apply's AMZ_DEFAULT_REVIEW_DAYS
+  const [days, setDays] = useState(14);   // default 2w for the batch review-without-pricing (independent of the drill's per-apply review)
   return (
     <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
