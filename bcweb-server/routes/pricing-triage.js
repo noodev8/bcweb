@@ -24,7 +24,7 @@ Success Response:
   "segment": "EVA-SEG",
   "days": 30,
   "rows": [
-    { "rank": 1, "groupid": "ABC123", "title": "Arizona Birko-Flor", "units": 25, "stock": 8 },
+    { "rank": 1, "groupid": "ABC123", "title": "Arizona Birko-Flor", "units": 25, "stock": 8, "price": 36.95 },
     ...   // ordered by units desc; rank is 1-based row number for the numbered list (CLAUDE.md)
   ]
 }
@@ -41,6 +41,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -75,21 +76,25 @@ router.get('/', async (req, res) => {
         WHERE ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0
         GROUP BY groupid
       )
-      SELECT w.groupid, w.units, st.stock, t.shopifytitle
+      SELECT w.groupid, w.units, st.stock, t.shopifytitle,
+             ${safeNumeric('sp.shopifyprice')} AS price   -- current live price, so the bulk price-editor can compute per-row deltas
       FROM win w
       JOIN stk st ON st.groupid = w.groupid            -- INNER JOIN drops 0-stock styles
+      LEFT JOIN skusummary sp ON sp.groupid = w.groupid -- for the current price (legacy VARCHAR -> safeNumeric)
       LEFT JOIN title t ON t.groupid = w.groupid
       ORDER BY w.units DESC, w.last_ts DESC
       LIMIT $3::int
     `, [segment, days, limit]);
 
-    // Shape for the numbered list (CLAUDE.md): row number + units + groupid + title + stock. Coerce pg bigints to numbers.
+    // Shape for the numbered list (CLAUDE.md): row number + units + groupid + title + stock + current price (for the bulk editor).
+    // price is NULL when the legacy VARCHAR held junk/blank (safeNumeric) — the client shows "—" and skips that row's delta preview.
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
       groupid: r.groupid,
       title: r.shopifytitle || null,
       units: Number(r.units),
-      stock: Number(r.stock)
+      stock: Number(r.stock),
+      price: r.price === null || r.price === undefined ? null : Number(r.price)
     }));
 
     return res.json({ return_code: 'SUCCESS', segment, days, rows });

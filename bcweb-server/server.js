@@ -83,6 +83,7 @@ app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-park', require('./routes/pricing-park'));
+app.use('/pricing-park-bulk', require('./routes/pricing-park-bulk')); // bulk W2: batch "just set review" — park a selection of un-changed styles
 app.use('/pricing-history', require('./routes/pricing-history')); // drill report: recent Shopify price changes (audit log, lazy)
 app.use('/pricing-sales', require('./routes/pricing-sales'));     // drill report: recent raw Shopify sales w/ sold price (lazy)
 
@@ -112,6 +113,7 @@ app.use('/amz-find', require('./routes/amz-find'));          // direct SKU searc
 app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price + auto-park the SKU (skumap.next_amz_price_review)
 app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark-reviewed — park a selection of un-changed SKUs at once
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
+app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm a Seller Central upload -> stamp those rows uploaded_at (clears them from the basket, team-wide)
 
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
@@ -123,6 +125,9 @@ app.use('/analytics-stock-position', require('./routes/analytics-stock-position'
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
+// Price Changes: recent price moves across BOTH channels (before->after, who/when) + units sold since each change. Filterable by
+// channel (all/shp/amz) and user; per-channel limit. Read-only.
+app.use('/analytics-change-impact', require('./routes/analytics-change-impact'));
 // Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
 // are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
 app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first

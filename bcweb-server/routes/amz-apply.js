@@ -130,17 +130,20 @@ router.post('/', async (req, res) => {
     // its log row, nor vice-versa. This is the only time W-A1 writes a product row (skumap); still never amzfeed (READ ONLY). The skumap
     // row always exists for a real SKU (§10.2), so a plain UPDATE is enough. When reviewDays is null ("None", mirroring Shopify W1) we skip
     // the park entirely — the review date is left untouched and the SKU stays in the winners/losers list.
-    const nextReview = await withTransaction(async (client) => {
-      await client.query(
-        `INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by) VALUES ($1, $2, $3, $4, $5)`,
+    const { logId, nextReview } = await withTransaction(async (client) => {
+      // RETURNING id — the client puts this log-row id on the queued basket item so a later "I've uploaded" (POST /amz-mark-uploaded) can
+      // name exactly which rows the downloaded file covered (without waiting for a basket refresh to learn the id).
+      const ins = await client.query(
+        `INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
         [code, oldForLog, rounded, note, changedBy]
       );
-      if (reviewDays === null) return null;
+      const insertedId = ins.rows[0].id;
+      if (reviewDays === null) return { logId: insertedId, nextReview: null };
       const upd = await client.query(
         `UPDATE skumap SET next_amz_price_review = CURRENT_DATE + $2::int WHERE code = $1 RETURNING next_amz_price_review`,
         [code, reviewDays]
       );
-      return upd.rows[0] ? upd.rows[0].next_amz_price_review : null;
+      return { logId: insertedId, nextReview: upd.rows[0] ? upd.rows[0].next_amz_price_review : null };
     });
 
     // Format the park date as YYYY-MM-DD (local components, no UTC day-shift). Null when review was None. Mirrors pricing-apply.
@@ -150,7 +153,7 @@ router.post('/', async (req, res) => {
       nextReviewIso = `${nr.getFullYear()}-${String(nr.getMonth() + 1).padStart(2, '0')}-${String(nr.getDate()).padStart(2, '0')}`;
     }
 
-    return res.json({ return_code: 'SUCCESS', code, amz_sku: row.amz_sku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings });
+    return res.json({ return_code: 'SUCCESS', log_id: logId, code, amz_sku: row.amz_sku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings });
   } catch (err) {
     logger.error('[amz-apply] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to apply Amazon price' });

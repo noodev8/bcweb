@@ -33,8 +33,8 @@ Success Response:
   "days": 90,
   "coverWeeks": 26,
   "rows": [
-    { "rank": 1, "groupid": "...", "title": "...", "stock": 48, "u30": 1, "u90": 2, "cover_weeks": 308.6, "is_dead": false },
-    { "rank": 2, "groupid": "...", "title": "...", "stock": 14, "u30": 0, "u90": 0, "cover_weeks": null, "is_dead": true },
+    { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 1, "u90": 2, "cover_weeks": 308.6, "is_dead": false },
+    { "rank": 2, "groupid": "...", "title": "...", "price": 29.95, "stock": 14, "u30": 0, "u90": 0, "cover_weeks": null, "is_dead": true },
     ...  // dead cluster first (cover_weeks null / is_dead true), then slow; most stock first within each
   ]
 }
@@ -51,6 +51,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -87,6 +88,7 @@ router.get('/', async (req, res) => {
         GROUP BY groupid
       )
       SELECT ss.groupid,
+             ${safeNumeric('ss.shopifyprice')} AS price,   -- current live price, so the bulk price-editor can compute per-row deltas
              st.stock,
              COALESCE(r.u30,0)   AS u30,
              COALESCE(w.u_win,0) AS u_win,
@@ -115,6 +117,7 @@ router.get('/', async (req, res) => {
       rank: i + 1,
       groupid: r.groupid,
       title: r.shopifytitle || null,
+      price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
       stock: Number(r.stock),
       u30: Number(r.u30),
       u90: Number(r.u_win),                                     // labelled u90 in the payload (default window is 90d)

@@ -10,7 +10,7 @@ Purpose: The Analytics module front door — a tile grid, matching the dashboard
 
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
-import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
   return (
@@ -44,6 +44,15 @@ export default function AnalyticsPage() {
           description="Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit)."
           href="/analytics/new-additions"
           icon={SparklesIcon}
+          live
+        />
+
+        {/* Repricing-impact ledger — recent price moves (both channels) and whether they're shifting stock. */}
+        <ModuleTile
+          title="Price Changes"
+          description="The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user."
+          href="/analytics/price-changes"
+          icon={ArrowsRightLeftIcon}
           live
         />
 

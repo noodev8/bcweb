@@ -30,6 +30,10 @@ import { AmzDrillHeader } from '@/lib/api';
 // Park-period pills after an apply — the SAME day set as the Shopify setter (owner: keep the two drills identical). Raw days, None default.
 const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
 
+// Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
+// history reports (matches the Shopify setter and the bulk bar). The amz_price_log column is untouched.
+const NOTE_MAX = 80;
+
 interface AmzPriceSetterProps {
   header: AmzDrillHeader;
   applying: boolean;                                  // disables buttons while a write is in flight
@@ -132,10 +136,14 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
         value={note}
         onChange={(e) => setNote(e.target.value)}
         disabled={!changed}
-        maxLength={500}
+        maxLength={NOTE_MAX}
         placeholder={changed ? 'Why the price is changing' : 'Change the price to add a note'}
-        className="mb-5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        className="mb-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       />
+      {/* Live length counter — keeps notes tidy on the reports (they render on one line). Amber once the cap is reached. */}
+      <div className={'mb-5 text-right text-xs ' + (note.length >= NOTE_MAX ? 'text-amber-600' : 'text-slate-400')}>
+        {note.length}/{NOTE_MAX}
+      </div>
 
       {/* Review chips — optional single-select, mirroring the Shopify setter exactly (same day set + copy). None (default) leaves the
           review date untouched and the SKU stays in the winners/losers list; a day parks it out of the queue until today+N. */}

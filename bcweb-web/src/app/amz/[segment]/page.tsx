@@ -19,19 +19,24 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
-import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
+import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
+import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, applyAmzPrice, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 import { getActionedCount, bumpActionedCount } from '@/lib/sessionCounter';
 
-// Park-period pills for the batch "mark reviewed" action. Amazon-native cadence (faster than the segment 1w–6m set): a reviewed-but-
-// unchanged SKU comes back round within a couple of months. Value = days; matches the amz-apply default of 14 (2w).
-const AMZ_REVIEW_CHIPS: { days: number; label: string }[] = [
-  { days: 7, label: '1w' },
-  { days: 14, label: '2w' },
-  { days: 30, label: '1m' },
-  { days: 60, label: '2m' },
+// Bulk price + review controls — kept identical to the Amazon drill's price-setter (owner: "exactly the same as the individual item").
+// Nudge denominations = the engine's typical £0.30 / £0.50 / £1.00 steps; review chips = the drill's day set. Amber tone throughout.
+const AMZ_NUDGES: Nudge[] = [
+  { label: '−£1', delta: -1 }, { label: '−50p', delta: -0.5 }, { label: '−30p', delta: -0.3 },
+  { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
+const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+const AMZ_TONE: BulkTone = {
+  chipOn: 'border-amber-600 bg-amber-600 text-white',
+  applyBtn: 'bg-amber-600 hover:bg-amber-700',
+  panel: 'border-amber-200',
+};
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function AmzSegmentPage() {
@@ -65,7 +70,7 @@ function SegmentContent() {
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
   const { logout } = useAuth();
-  const { items } = useAmzBasket();
+  const { items, add } = useAmzBasket();
 
   const modeParam = searchParams.get('mode');
   const initialMode: ListMode = modeParam === 'losers' ? 'losers' : modeParam === 'all' ? 'all' : 'winners';
@@ -82,10 +87,12 @@ function SegmentContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Batch "mark reviewed" selection (WINNERS/LOSERS only) — the codes ticked for parking-without-pricing. Cleared on mode/segment change.
+  // Bulk selection (WINNERS/LOSERS only) — the codes ticked for a bulk price move and/or review. Cleared on mode/segment change.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [marking, setMarking] = useState(false);
+  const [marking, setMarking] = useState(false);                         // a bulk write is in flight (disables the bar)
   const [markError, setMarkError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
+  const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
   // Session-only "actioned" count for this segment (bumped by the drill on a successful apply/park). Winners/Losers are live shortlists
   // that refill as you work, so this answers "am I getting anywhere". Re-read on segment change and after returning from the drill.
@@ -106,8 +113,8 @@ function SegmentContent() {
   }, [segment, logout]);
 
   useEffect(() => { loadLists(); }, [loadLists]);
-  // A different tab / segment is a different selection — never carry ticks across.
-  useEffect(() => { setSelected(new Set()); setMarkError(null); }, [mode, segment]);
+  // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
+  useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
   // Read the session "actioned" count on mount / segment change — the drill bumps it, and returning here remounts this page so it refreshes.
   useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
@@ -134,25 +141,64 @@ function SegmentContent() {
     });
   }
 
-  // Park the ticked SKUs (spec §10.5B). On success clear the selection and refetch so parked SKUs drop off and the queue refills.
-  async function markReviewed(days: number) {
+  const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
+
+  // Lookup of the ticked rows (from the active list) — the bulk price loop needs each SKU's current price + the basket fields (amz_sku,
+  // size, title) that the upload file is built from. Winners and Losers rows both carry these (amz-winners/amz-losers).
+  const selectedRows = (): (AmzWinnerRow | AmzLoserRow)[] => {
+    const list = (mode === 'winners' ? winners : mode === 'losers' ? losers : null) || [];
+    return list.filter((r) => selected.has(r.code));
+  };
+
+  // BULK PRICE MOVE — loop POST /amz-apply per ticked SKU (newPrice = its current price + delta), exactly like applying one at a time,
+  // so each write hits the same server bounds and queues the upload basket. reviewDays rides along as an optional park (mirrors the drill).
+  // Rows whose current price is unknown (junk VARCHAR -> null) are skipped; the server may also block a SKU below its floor — both are
+  // reported in the summary, not surfaced as hard errors (owner: "ignore blocked/below-min for now").
+  async function bulkApplyPrice(delta: number, reviewDays: number | null, note: string) {
+    const targets = selectedRows();
+    if (targets.length === 0 || Math.abs(delta) < 0.005) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, skipped = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.price === null) { skipped++; setProgress({ done: i + 1, total: targets.length }); continue; }
+      const newPrice = Math.round((row.price + delta) * 100) / 100;
+      const res = await applyAmzPrice(row.code, newPrice, note, reviewDays);
+      if (res.success && res.data) {
+        const d = res.data;
+        // Queue into the upload basket for instant feedback (same shape the drill's apply uses; segment from the page).
+        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        applied++;
+      } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+      else { skipped++; }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setActioned(bumpActionedCount(segment, applied));
+    setResultSummary(`Applied ${applied}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
+  // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). On success clear the selection and refetch so
+  // parked SKUs drop off and the queue refills.
+  async function bulkSetReview(days: number) {
     if (selected.size === 0) return;
-    setMarking(true); setMarkError(null);
+    setMarking(true); setMarkError(null); setResultSummary(null);
     const res = await markAmzReviewed(Array.from(selected), days);
     setMarking(false);
     if (res.success) {
-      // Count the parked SKUs toward the session tally (soft "how many have I actioned"). Use the server's updated count, falling back to
-      // the selection size. Update the displayed count in place — we stay on the list here, so there's no remount to re-read it.
       const n = res.data ? res.data.updated : selected.size;
       setActioned(bumpActionedCount(segment, n));
+      setResultSummary(`Review set on ${n}`);
       setSelected(new Set());
       await loadLists();
     }
     else if (res.return_code === 'UNAUTHORIZED') { logout(); }
-    else setMarkError(res.error || 'Failed to mark reviewed');
+    else setMarkError(res.error || 'Failed to set review');
   }
 
-  const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
   const isEmpty = !loading && !error && rows !== null && rows.length === 0;
   const selectable = mode === 'winners' || mode === 'losers';
 
@@ -182,9 +228,22 @@ function SegmentContent() {
         </div>
       )}
 
-      {/* Batch mark-reviewed control (WINNERS/LOSERS): park the SKUs you looked at but left unchanged, so they leave the queue. */}
+      {/* Bulk edit control (WINNERS/LOSERS): apply a relative price move and/or set a review across the ticked SKUs. Same denominations
+          and review chips as the drill; a price move loops POST /amz-apply per SKU (queuing the basket), review-only uses POST /amz-review. */}
       {!loading && !error && selectable && rows && rows.length > 0 && (
-        <MarkReviewedBar count={selected.size} busy={marking} error={markError} onMark={markReviewed} />
+        <BulkActionBar
+          channel="amazon"
+          count={selected.size}
+          nudges={AMZ_NUDGES}
+          reviewChips={AMZ_REVIEW_CHIPS}
+          tone={AMZ_TONE}
+          busy={marking}
+          progress={progress}
+          resultSummary={resultSummary}
+          error={markError}
+          onApplyPrice={bulkApplyPrice}
+          onSetReview={bulkSetReview}
+        />
       )}
 
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
@@ -211,44 +270,6 @@ function SegmentContent() {
         <AllTable rows={all} queued={items} onOpen={openSku} />
       )}
     </AppShell>
-  );
-}
-
-// The batch mark-reviewed action bar: pick a park period, then park the currently-ticked SKUs. Disabled until at least one is ticked.
-function MarkReviewedBar({ count, busy, error, onMark }: { count: number; busy: boolean; error: string | null; onMark: (days: number) => void }) {
-  const [days, setDays] = useState(14);   // default 2w for the batch review-without-pricing (independent of the drill's per-apply review)
-  return (
-    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="text-sm font-medium text-slate-700">
-          {count > 0 ? `${count} selected` : 'Select SKUs to mark reviewed'}
-        </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400">park for</span>
-          {AMZ_REVIEW_CHIPS.map((c) => (
-            <button
-              key={c.days}
-              onClick={() => setDays(c.days)}
-              className={'rounded-full border px-2.5 py-1 text-xs ' + (days === c.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-white')}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => onMark(days)}
-          disabled={busy || count === 0}
-          className="ml-auto rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
-        >
-          {busy ? 'Marking…' : `Mark ${count > 0 ? count + ' ' : ''}reviewed`}
-        </button>
-      </div>
-      <p className="mt-1.5 text-xs text-slate-400">
-        For SKUs you reviewed but are leaving unchanged — they drop off this list and come back round after the park period. Applying a
-        price already parks a SKU on its own.
-      </p>
-      {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
-    </div>
   );
 }
 

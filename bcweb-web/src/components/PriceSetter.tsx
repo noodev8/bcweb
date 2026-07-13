@@ -32,6 +32,10 @@ const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
 // gappy core is the classic "looks dead but it's just sold-out cores" trap before a cut (CLAUDE.md size-curve principle).
 const CORE_SIZES = ['38', '39', '40'];
 
+// Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
+// history reports (the same cap is used on the Amazon setter and the bulk bar). The DB column is untouched.
+const NOTE_MAX = 80;
+
 interface PriceSetterProps {
   header: DrillHeader;
   sizes: SizeRow[];                                             // remaining stock by size (from the drill) — feeds the core-size gauge
@@ -167,10 +171,14 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         value={note}
         onChange={(e) => setNote(e.target.value)}
         disabled={!changed}
-        maxLength={500}
+        maxLength={NOTE_MAX}
         placeholder={changed ? 'Why the price is changing' : 'Change the price to add a note'}
-        className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        className="mb-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       />
+      {/* Live length counter — keeps notes tidy on the reports (they render on one line). Amber once the cap is reached. */}
+      <div className={'mb-4 text-right text-xs ' + (note.length >= NOTE_MAX ? 'text-amber-600' : 'text-slate-400')}>
+        {note.length}/{NOTE_MAX}
+      </div>
 
       {/* Review chips — optional single-select. None (default) leaves the review date untouched; a day parks the style out of triage. */}
       <div className="mb-1 text-sm font-medium text-slate-700">

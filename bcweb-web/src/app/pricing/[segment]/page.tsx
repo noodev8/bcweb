@@ -12,13 +12,27 @@ in the URL (?mode=) so returning after a write restores the same tab.
 =======================================================================================================================================
 */
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
-import { getTriage, getLosers, getAll, TriageRow, LoserRow, AllRow } from '@/lib/api';
+import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
+import { getTriage, getLosers, getAll, applyPrice, parkStyleBulk, TriageRow, LoserRow, AllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { getActionedCount } from '@/lib/sessionCounter';
+import { getActionedCount, bumpActionedCount } from '@/lib/sessionCounter';
+
+// Bulk price + review controls — kept identical to the Shopify drill's price-setter (owner: "exactly the same as the individual item").
+// Nudge denominations = the drill's −£1/−50p/+50p/+£1/+£2 steps; review chips = the drill's day set. Shopify green tone throughout.
+const SHP_NUDGES: Nudge[] = [
+  { label: '−£1', delta: -1 }, { label: '−50p', delta: -0.5 },
+  { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 }, { label: '+£2', delta: 2 },
+];
+const SHP_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+const SHP_TONE: BulkTone = {
+  chipOn: 'border-brand-600 bg-brand-600 text-white',
+  applyBtn: 'bg-emerald-600 hover:bg-emerald-700',
+  panel: 'border-slate-200',
+};
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function SegmentPage() {
@@ -82,21 +96,30 @@ function SegmentContent() {
   // you return here from the drill page.
   const [actioned, setActioned] = useState(0);
 
-  // Fetch all three lists up front so each tab can show a count. Cached for the life of the page.
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
-      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
-      if (w.success && w.data) setWinners(w.data.rows); else setError(w.error || 'Failed to load winners');
-      if (l.success && l.data) setLosers(l.data.rows); else if (!error) setError(l.error || 'Failed to load losers');
-      if (a.success && a.data) setAll(a.data.rows); else if (!error) setError(a.error || 'Failed to load all styles');
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segment]);
+  // Bulk selection (WINNERS/LOSERS only) — the groupids ticked for a bulk price move and/or review. Cleared on mode/segment change.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marking, setMarking] = useState(false);                        // a bulk write is in flight (disables the bar)
+  const [markError, setMarkError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-style apply progress
+  const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
+  // Fetch all three lists so each tab can show a count. Re-callable so a bulk write can refetch (parked/changed styles drop out, list refills).
+  const loadLists = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
+    if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
+    let err: string | null = null;
+    if (w.success && w.data) setWinners(w.data.rows); else err = err || w.error || 'Failed to load winners';
+    if (l.success && l.data) setLosers(l.data.rows); else err = err || l.error || 'Failed to load losers';
+    if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all styles';
+    if (err) setError(err);
+    setLoading(false);
+  }, [segment, logout]);
+
+  useEffect(() => { loadLists(); }, [loadLists]);
+  // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
+  useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
   useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openStyle(groupid: string) {
@@ -108,8 +131,78 @@ function SegmentContent() {
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
 
+  function toggle(groupid: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupid)) next.delete(groupid); else next.add(groupid);
+      return next;
+    });
+  }
+  function toggleAll(ids: string[], checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) ids.forEach((g) => next.add(g)); else ids.forEach((g) => next.delete(g));
+      return next;
+    });
+  }
+
+  // The ticked rows from the active list — the bulk price loop needs each style's current price to compute its per-row delta.
+  const selectedRows = (): (TriageRow | LoserRow)[] => {
+    const list = (mode === 'winners' ? winners : mode === 'losers' ? losers : null) || [];
+    return list.filter((r) => selected.has(r.groupid));
+  };
+
+  // BULK PRICE MOVE — loop POST /pricing-apply (W1) per ticked style (newPrice = its current price + delta), exactly like applying one at
+  // a time, so each write runs the same server bounds AND the live Shopify + Google pushes. reviewDays rides along as an optional park
+  // (mirrors the drill). Styles with an unknown current price (junk VARCHAR -> null) are skipped; the server may also block one below cost
+  // — both are reported in the summary, not surfaced as hard errors (owner: "ignore blocked/below-min for now").
+  async function bulkApplyPrice(delta: number, reviewDays: number | null, note: string) {
+    const targets = selectedRows();
+    if (targets.length === 0 || Math.abs(delta) < 0.005) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, skipped = 0, pushIssues = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.price === null) { skipped++; setProgress({ done: i + 1, total: targets.length }); continue; }
+      const newPrice = Math.round((row.price + delta) * 100) / 100;
+      const res = await applyPrice(row.groupid, newPrice, reviewDays, note);
+      if (res.success && res.data) {
+        applied++;
+        // The DB price is saved either way; a failed live push (Shopify hard, Google soft) is noted so the operator can re-check those.
+        if ((res.data.shopify && res.data.shopify.pushed === false) || (res.data.google && res.data.google.pushed === false)) pushIssues++;
+      } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+      else { skipped++; }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    if (applied > 0) setActioned(bumpActionedCount(segment, applied));
+    setResultSummary(`Applied ${applied}${skipped ? ` · ${skipped} skipped` : ''}${pushIssues ? ` · ${pushIssues} push issue${pushIssues > 1 ? 's' : ''}` : ''}`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
+  // BULK REVIEW ONLY — park the ticked styles with no price change (batch POST /pricing-park-bulk, W2). On success clear + refetch so the
+  // parked styles drop off the triage and it refills.
+  async function bulkSetReview(days: number) {
+    if (selected.size === 0) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    const res = await parkStyleBulk(Array.from(selected), days);
+    setMarking(false);
+    if (res.success) {
+      const n = res.data ? res.data.updated : selected.size;
+      setActioned(bumpActionedCount(segment, n));
+      setResultSummary(`Review set on ${n}`);
+      setSelected(new Set());
+      await loadLists();
+    }
+    else if (res.return_code === 'UNAUTHORIZED') { logout(); }
+    else setMarkError(res.error || 'Failed to set review');
+  }
+
   const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
   const isEmpty = !loading && !error && rows !== null && rows.length === 0;
+  const selectable = mode === 'winners' || mode === 'losers';
 
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
@@ -134,6 +227,24 @@ function SegmentContent() {
         </div>
       )}
 
+      {/* Bulk edit control (WINNERS/LOSERS): apply a relative price move and/or set a review across the ticked styles. Same denominations
+          and review chips as the drill; a price move loops POST /pricing-apply (W1, live push per style), review-only uses /pricing-park-bulk. */}
+      {!loading && !error && selectable && rows && rows.length > 0 && (
+        <BulkActionBar
+          channel="shopify"
+          count={selected.size}
+          nudges={SHP_NUDGES}
+          reviewChips={SHP_REVIEW_CHIPS}
+          tone={SHP_TONE}
+          busy={marking}
+          progress={progress}
+          resultSummary={resultSummary}
+          error={markError}
+          onApplyPrice={bulkApplyPrice}
+          onSetReview={bulkSetReview}
+        />
+      )}
+
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
         <>
           {actioned > 0 && (
@@ -141,7 +252,7 @@ function SegmentContent() {
               {actioned} actioned this session — the list refills from the segment as you go, so it always shows the current top {winners.length}.
             </p>
           )}
-          <WinnersTable rows={winners} onOpen={openStyle} />
+          <WinnersTable rows={winners} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
@@ -151,7 +262,7 @@ function SegmentContent() {
               {actioned} actioned this session — parked styles drop off as you work, so the list refills from the segment.
             </p>
           )}
-          <LosersTable rows={losers} onOpen={openStyle} />
+          <LosersTable rows={losers} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}
       {!loading && !error && mode === 'all' && all && all.length > 0 && (
@@ -161,32 +272,66 @@ function SegmentContent() {
   );
 }
 
-function WinnersTable({ rows, onOpen }: { rows: TriageRow[]; onOpen: (g: string) => void }) {
+function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
+  rows: TriageRow[]; onOpen: (g: string) => void;
+  selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
+}) {
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
             <th className="px-4 py-2 font-medium">Units (30d)</th>
             <th className="px-4 py-2 font-medium">Code</th>
             <th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium">Stock</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className="cursor-pointer hover:bg-slate-50">
+            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
+              <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               <td className="px-4 py-2 font-semibold text-slate-800">{r.units}</td>
               <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
               <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
               <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+// Row checkbox — stops the click bubbling to the row (which would open the drill instead of toggling selection).
+function RowBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onClick={(e) => e.stopPropagation()}
+      onChange={onToggle}
+      className="h-4 w-4 rounded border-slate-300"
+      aria-label="Select style for bulk edit"
+    />
+  );
+}
+function SelectAllBox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.checked)}
+      className="h-4 w-4 rounded border-slate-300"
+      aria-label="Select all styles"
+    />
   );
 }
 
@@ -227,23 +372,30 @@ function AllTable({ rows, onOpen }: { rows: AllRow[]; onOpen: (g: string) => voi
   );
 }
 
-function LosersTable({ rows, onOpen }: { rows: LoserRow[]; onOpen: (g: string) => void }) {
+function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
+  rows: LoserRow[]; onOpen: (g: string) => void;
+  selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
+}) {
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
             <th className="px-4 py-2 text-right font-medium">Stock</th>
             <th className="px-4 py-2 text-right font-medium">Sold 30d</th>
             <th className="px-4 py-2 text-right font-medium">Sold 90d</th>
             <th className="px-4 py-2 text-right font-medium">Cover</th>
+            <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 font-medium">Product</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className="cursor-pointer hover:bg-slate-50">
+            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
+              <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               {/* Stock is the ranking metric — emphasised. */}
               <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.stock}</td>
@@ -254,6 +406,7 @@ function LosersTable({ rows, onOpen }: { rows: LoserRow[]; onOpen: (g: string) =
                   ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">no sales</span>
                   : <span className="tabular-nums text-slate-700">{coverLabel(r.cover_weeks)}</span>}
               </td>
+              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
               <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
             </tr>
           ))}

@@ -84,9 +84,9 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 // Domain types (mirror the server response shapes in routes/*)
 // =============================================================================================================================
 export interface Segment { segment: string; styles: number; }
-export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; }
+export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; }
 export interface LoserRow {
-  rank: number; groupid: string; title: string | null;
+  rank: number; groupid: string; title: string | null; price: number | null;
   stock: number; u30: number; u90: number;
   cover_weeks: number | null;   // weeks-to-clear at 90d pace; null when dead (no sales in window)
   is_dead: boolean;             // true = 0 sales in the window
@@ -145,7 +145,7 @@ export interface AmzFindRow {
 }
 // Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the client-built upload file, not this call.
 // amz_sku + rrp let the session basket build that file straight from this response.
-export interface AmzApplyResult { code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; }
+export interface AmzApplyResult { log_id: number; code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; }
 
 export interface DrillHeader {
   groupid: string; title: string | null;
@@ -295,18 +295,30 @@ export function applyAmzPrice(code: string, newPrice: number, note?: string, rev
   return request<AmzApplyResult>(
     // Only send reviewDays when it's a real period, so a "None" never reaches the server as a stray value (matches updateProductPrice).
     { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, ...(reviewDays != null ? { reviewDays } : {}) } },
-    (b) => ({ code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [] })
+    (b) => ({ log_id: b.log_id, code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [] })
   );
 }
 
 // Amazon Pricing — rebuild the upload basket from the audit log (amz_price_log), so it survives a browser close / machine restart. Returns
 // the whole team's price changes in the last 12h (latest price per SKU, any operator), each carrying the fields the upload file needs — so
 // whoever is at the desk can upload a colleague's pending change. The item shape matches AmzBasketItem so the context can hydrate from it.
-export interface AmzBasketFetchItem { code: string; amz_sku: string | null; size: string; title: string | null; segment: string | null; old_price: number | null; new_price: number; rrp: number | null; }
+export interface AmzBasketFetchItem { id: number; code: string; amz_sku: string | null; size: string; title: string | null; segment: string | null; old_price: number | null; new_price: number; rrp: number | null; }
+// The last confirmed Seller Central upload (any operator): when, who, how many SKUs — so the UI can reassure "already uploaded" even when
+// the basket is empty. null if nothing has ever been marked uploaded.
+export interface AmzLastUpload { at: string; by: string | null; count: number; }
 export function getAmzBasket() {
-  return request<{ items: AmzBasketFetchItem[] }>(
+  return request<{ items: AmzBasketFetchItem[]; lastUpload: AmzLastUpload | null }>(
     { url: '/amz-basket', method: 'GET' },
-    (b) => ({ items: (b.items || []) as AmzBasketFetchItem[] })
+    (b) => ({ items: (b.items || []) as AmzBasketFetchItem[], lastUpload: (b.lastUpload ?? null) as AmzLastUpload | null })
+  );
+}
+
+// Amazon Pricing — confirm a downloaded file has been uploaded to Seller Central. `ids` are the amz_price_log row ids the file covered
+// (latest pending row per SKU); the server stamps those + older same-code pending rows as uploaded, clearing them from the basket team-wide.
+export function markAmzUploaded(ids: number[]) {
+  return request<{ updated: number }>(
+    { url: '/amz-mark-uploaded', method: 'POST', data: { ids } },
+    (b) => ({ updated: b.updated })
   );
 }
 
@@ -495,6 +507,16 @@ export function parkStyle(groupid: string, reviewDays: number) {
   return request<ParkData>(
     { url: '/pricing-park', method: 'POST', data: { groupid, reviewDays } },
     (b) => ({ groupid: b.groupid, next_review: b.next_review })
+  );
+}
+
+// Bulk W2 — park a whole SELECTION of styles at once (batch "just set review", no price change). The Shopify mirror of markAmzReviewed.
+// Returns how many rows were parked + the review date set. A bulk PRICE change instead loops applyPrice() per style (so each style's
+// live Shopify + Google push still runs), which is why there's no bulk-apply endpoint here.
+export function parkStyleBulk(groupids: string[], reviewDays: number) {
+  return request<{ updated: number; next_review: string | null }>(
+    { url: '/pricing-park-bulk', method: 'POST', data: { groupids, reviewDays } },
+    (b) => ({ updated: b.updated, next_review: b.next_review ?? null })
   );
 }
 
@@ -724,6 +746,54 @@ export function getScratchpad() {
   return request<ScratchpadNote[]>(
     { url: '/analytics-scratchpad', method: 'GET' },
     (b) => (b.rows || []) as ScratchpadNote[]
+  );
+}
+
+// One recent price change (Analytics -> Price Changes). Unified across channels: `channel` is 'SHP' | 'AMZ'. Shopify rows are style-grain
+// (groupid, no amzCode/size); Amazon rows are SKU-grain (amzCode + size, groupid resolved via amzfeed). `oldPrice`/`newPrice` are the
+// before/after. `unitsSince` = units sold from the change date to today (same channel + key); `daysSince` = whole days since the change
+// (0 = same-day, treat unitsSince as indicative). `changedAt` is an ISO instant; `note` is the operator's free-text reason (may be '').
+export interface PriceChangeRow {
+  channel: 'SHP' | 'AMZ';
+  groupid: string | null;
+  amzCode: string | null;
+  size: string | null;
+  title: string | null;
+  oldPrice: number | null;
+  newPrice: number | null;
+  note: string;
+  changedBy: string | null;
+  changedAt: string | null;
+  daysSince: number | null;
+  unitsSince: number;
+}
+
+export interface PriceChangesData {
+  channel: 'all' | 'shp' | 'amz';
+  user: string | null;
+  limit: number;
+  count: number;
+  users: string[];          // distinct operators across both logs, for the "filter by user" dropdown
+  rows: PriceChangeRow[];
+}
+
+// Load the Price Changes report — the latest `limit` price moves for the selected `channel` (default all), optionally filtered to one
+// `user`, newest first, each with units sold since the change. `channel`: 'all' | 'shp' | 'amz'.
+export function getPriceChanges(
+  channel: 'all' | 'shp' | 'amz' = 'all',
+  user?: string | null,
+  limit?: number,
+) {
+  return request<PriceChangesData>(
+    { url: '/analytics-change-impact', method: 'GET', params: { channel, user: user || undefined, limit } },
+    (b) => ({
+      channel: (b.channel as 'all' | 'shp' | 'amz') || 'all',
+      user: b.user ?? null,
+      limit: b.limit ?? 50,
+      count: b.count ?? 0,
+      users: b.users || [],
+      rows: b.rows || [],
+    })
   );
 }
 

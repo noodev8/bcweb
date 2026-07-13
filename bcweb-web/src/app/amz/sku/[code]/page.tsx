@@ -106,6 +106,7 @@ function DrillContent() {
       // Queue the change into the session upload basket (built into the one Seller Central file on download). The apply response carries
       // amz_sku + rrp; size/title/segment come from the loaded header.
       add({
+        id: d.log_id,
         code: d.code,
         amz_sku: d.amz_sku,
         size: data.header.size,

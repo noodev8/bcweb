@@ -28,6 +28,10 @@ import GooglePushNote from '@/components/GooglePushNote';
 // Same review options as the pricing screen's PriceSetter (kept in sync deliberately).
 const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
 
+// Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
+// history reports (matches the pricing setters + bulk bar, which write to the same price_change_log). The DB column is untouched.
+const NOTE_MAX = 80;
+
 interface Props {
   groupid: string;
   cost: number | null;
@@ -199,10 +203,14 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }:
             value={note}
             onChange={(e) => { setNote(e.target.value); setOk(false); setSavedInfo(null); }}
             disabled={!priceChanged}
-            maxLength={500}
+            maxLength={NOTE_MAX}
             placeholder={priceChanged ? 'Why the price changed (saved to the price log)' : 'Change the Shopify price to add a note'}
             className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           />
+          {/* Live length counter — same cap as the pricing setters so notes stay to one tidy line on the Price Changes / history reports. */}
+          <div className={'mt-1 text-right text-xs ' + (note.length >= NOTE_MAX ? 'text-amber-600' : 'text-slate-400')}>
+            {note.length}/{NOTE_MAX}
+          </div>
         </div>
 
         {/* Review chips — optional single-select; parks the style out of the pricing triage until then. */}
