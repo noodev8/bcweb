@@ -152,7 +152,7 @@ function SegmentContent() {
     if (targets.length === 0 || Math.abs(delta) < 0.005) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, skipped = 0;
+    let applied = 0, skipped = 0, aboveRrp = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       if (row.price === null) { skipped++; setProgress({ done: i + 1, total: targets.length }); continue; }
@@ -162,6 +162,9 @@ function SegmentContent() {
         const d = res.data;
         // Queue into the upload basket for instant feedback (same shape the drill's apply uses; segment from the page).
         add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        // Over-RRP is allowed (a deliberate harvest move, not an error) but worth counting — a blanket bump can tip a size past RRP without
+        // the operator noticing. Surface it in the summary; the write itself is unaffected. Mirrors the drill's "Above RRP — allowed" flag.
+        if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
         applied++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
@@ -169,7 +172,7 @@ function SegmentContent() {
     }
     setProgress(null); setMarking(false);
     setActioned(bumpActionedCount(segment, applied));
-    setResultSummary(`Applied ${applied}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
     setSelected(new Set());
     await loadLists();
   }
