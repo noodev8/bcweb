@@ -6,12 +6,18 @@ Method: GET
 Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the raw sale lines for a chosen window and channel, each with
          the PROFIT the owner's downstream P&L already computed, plus a summary strip (net profit is the headline, with revenue, units and
          margin supporting). Replaces the legacy PowerBuilder "Sales" screen, but reframed for analysis rather than data entry:
-           - windowed (Today / Yesterday / last 7·30·90 days / custom range) instead of only "24 hrs" / "30 Day",
+           - windowed. TWO tiers by design:
+               * SHORT windows (Today / Yesterday / 3 days) return the summary AND the line list — the "is today's trade healthy?" pulse.
+               * LONG windows (7 / 30 / 90 days) are SUMMARY-ONLY — the honest net-profit / revenue / units totals over the horizon, with
+                 NO line list (the point is the headline; a 30-90d list would be thousands of rows). The rows query is skipped entirely in
+                 this mode (nothing fetched), and the response carries `summaryOnly:true` so the UI hides the table and explains why.
+             (A product SEARCH overrides the window either way — see below.)
            - channel-filtered (All / Shopify / Amazon — "All" also folds in the minor CM3 channel so the totals reconcile),
            - searchable to one product (matches product name, style groupid or SKU code). A search (>= 3 chars) flips the screen into
-             PRODUCT MODE: the window is IGNORED and the match is pulled across ALL TIME, newest-first, hard-capped at 50 lines — because
-             a search means "show me this product's whole story", not "within 3 days". The summary still covers the whole matched set
-             (lifetime verdict), and `products` (distinct styles matched) warns when a loose term spans more than one product,
+             PRODUCT MODE: the preset window is replaced by a rolling LAST 12 MONTHS, newest-first, hard-capped at 50 lines — because a
+             search means "how is this product doing lately?", and a recent-year lens gauges current performance without dragging in dead
+             seasons (or scanning the whole table). The summary covers that 12-month matched set, and `products` (distinct styles matched)
+             warns when a loose term spans more than one product,
            - RETURNS INCLUDED. Unlike the pricing module (which is positive-lines-only, because it's about velocity), a sales/profit
              report must show refunds — a return is a real negative-profit line — and NET them into the totals. The summary therefore
              breaks units into sold / returned / net, mirroring the legacy footer (Sold / Returned / Net).
@@ -30,16 +36,16 @@ Requires auth.
 =======================================================================================================================================
 Request Query Params:
   channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz'. Case-insensitive.
-  window  (string, optional)  - 'today' (default) | 'yesterday' | '3d'. Short-window only by design (no custom range). IGNORED when a
-                                search is active (product mode spans all time).
-  search  (string, optional)  - >= 3 chars flips to product mode: matches product name / groupid / SKU code (case-insensitive), all time,
-                                capped at 50 latest lines. 0-2 chars = no search (pulse mode).
+  window  (string, optional)  - 'today' (default) | 'yesterday' | '3d' (these carry the line list) | '7d' | '30d' | '90d' (SUMMARY-ONLY —
+                                totals with no rows). No custom range by design. IGNORED when a search is active (product mode = last 12 months).
+  search  (string, optional)  - >= 3 chars flips to product mode: matches product name / groupid / SKU code (case-insensitive), last 12
+                                months, capped at 50 latest lines. 0-2 chars = no search (pulse mode).
   limit   (int, optional)     - pulse-mode row cap; default 500, clamped to [1, 5000]. Product mode is fixed at 50.
 
 Success Response:
 {
   "return_code": "SUCCESS",
-  "channel": "all", "window": "3d", "searchActive": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
+  "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
   "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640,
                "revenue": 41234.55, "profit": 6120.11, "marginPct": 14.8, "products": 137 },
   "rows": [
@@ -75,10 +81,14 @@ function toIsoDate(d) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-// This screen is deliberately SHORT-WINDOW only (today / yesterday / last 3 days) — it's the "is today's trade healthy?" pulse, and
-// keeping the range tiny keeps the row list practical and the scan cheap. There is NO custom range on purpose (an open-ended range
-// invites full-table scans). Longer-horizon analysis lives on the other analytics screens.
-const WINDOWS = new Set(['today', 'yesterday', '3d']);
+// The window presets, in two tiers:
+//   SHORT — today / yesterday / 3 days — carry the line list (the range is tiny, so the row list stays practical and the scan cheap).
+//   LONG  — 7 / 30 / 90 days — SUMMARY-ONLY: we want the net-profit / revenue totals over a longer horizon WITHOUT listing thousands of
+//           rows, so in these windows the rows query is skipped and the UI shows totals only. Still no custom range on purpose (an
+//           open-ended range invites full-table scans).
+const SHORT_WINDOWS = new Set(['today', 'yesterday', '3d']);
+const LONG_WINDOWS = new Set(['7d', '30d', '90d']);
+const WINDOWS = new Set([...SHORT_WINDOWS, ...LONG_WINDOWS]);
 
 router.get('/', async (req, res) => {
   try {
@@ -88,7 +98,7 @@ router.get('/', async (req, res) => {
     const channelAll = channel === 'all';
     const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : null;
 
-    // Window: one of the three short presets. Default 'today' (the freshest pulse; one click to yesterday / 3 days).
+    // Window: one of the presets. Default 'today' (the freshest pulse; one click to yesterday / 3 days / the longer totals).
     let window = String(req.query.window || 'today').toLowerCase();
     if (!WINDOWS.has(window)) window = 'today';
 
@@ -112,8 +122,10 @@ router.get('/', async (req, res) => {
     }
 
     // Shared filter CTE, reused by both the summary and the rows query. Window bounds are resolved off CURRENT_DATE in SQL (the anchor
-    // the rest of the app trusts) so "today" means the DB's today. In product mode ($2=searchActive) the window bound is SKIPPED so the
-    // match spans all time. All three windows end at CURRENT_DATE except 'yesterday', which is that single prior day.
+    // the rest of the app trusts) so "today" means the DB's today. In product mode ($2=searchActive) the preset window is replaced by a
+    // rolling LAST 12 MONTHS bound — recent enough to gauge how a style is performing NOW (a lifetime total drags in dead seasons and
+    // scans far more rows), while still deep enough to see a full year's shape. The short windows end at CURRENT_DATE except 'yesterday',
+    // which is that single prior day.
     const filterCte = `
       WITH b AS (
         SELECT
@@ -121,6 +133,9 @@ router.get('/', async (req, res) => {
             WHEN 'today'     THEN CURRENT_DATE
             WHEN 'yesterday' THEN CURRENT_DATE - 1
             WHEN '3d'        THEN CURRENT_DATE - 2
+            WHEN '7d'        THEN CURRENT_DATE - 6
+            WHEN '30d'       THEN CURRENT_DATE - 29
+            WHEN '90d'       THEN CURRENT_DATE - 89
           END AS from_date,
           CASE $1
             WHEN 'yesterday' THEN CURRENT_DATE - 1
@@ -130,17 +145,27 @@ router.get('/', async (req, res) => {
       f AS (
         SELECT s.*
         FROM sales s, b
-        WHERE ($2::bool OR (s.solddate >= b.from_date AND s.solddate <= b.to_date))
+        WHERE (
+              ($2::bool AND s.solddate >= (CURRENT_DATE - INTERVAL '12 months'))   -- product mode: rolling last 12 months
+              OR (NOT $2::bool AND s.solddate >= b.from_date AND s.solddate <= b.to_date)  -- pulse mode: the chosen preset window
+            )
           AND ($3::bool OR s.channel = $4)
           AND ($5::text IS NULL OR s.productname ILIKE $5 OR s.groupid ILIKE $5 OR s.code ILIKE $5)
       )`;
 
     const filterParams = [window, searchActive, channelAll, channelCode, searchLike];
 
+    // Summary-only when a LONG window is chosen in pulse mode — totals with no line list. A search always shows its (capped) lines, so it
+    // is never summary-only even on a long-labelled window (the window is ignored in product mode anyway).
+    const summaryOnly = !searchActive && LONG_WINDOWS.has(window);
+
     // SUMMARY — the honest headline over the whole matched set (returns netted in). Units split sold / returned / net; revenue and profit
-    // net returns; margin = profit / revenue (NULL when revenue is 0). We return BOTH the window bounds and the actual data span (min/max
-    // solddate) so the UI can label pulse mode with the window and product mode with the item's first->last sale. `products` = distinct
-    // styles matched: in product mode, > 1 warns the operator the total spans multiple products (refine to isolate one).
+    // net returns; margin = profit / revenue (NULL when revenue is 0). `orders` counts distinct order numbers that contain a SALE (qty>0)
+    // only — a refund whose original sale sat outside the window would otherwise land here as a return-only "order" and push Orders ABOVE
+    // units sold, which reads as an error (owner confusion, 2026-07-13). Returns are already surfaced in the units sold/returned split, so
+    // they don't also need to inflate the order count. We return BOTH the window bounds and the actual data span (min/max solddate) so the
+    // UI can label pulse mode with the window and product mode with the item's first->last sale. `products` = distinct styles matched:
+    // in product mode, > 1 warns the operator the total spans multiple products (refine to isolate one).
     const summaryResult = await query(
       `${filterCte}
        SELECT
@@ -152,25 +177,28 @@ router.get('/', async (req, res) => {
          COALESCE(SUM(qty) FILTER (WHERE qty > 0), 0)::int              AS units_sold,
          COALESCE(-SUM(qty) FILTER (WHERE qty < 0), 0)::int             AS units_returned,
          COALESCE(SUM(qty), 0)::int                                     AS units_net,
-         COUNT(DISTINCT ordernum) FILTER (WHERE ordernum IS NOT NULL AND ordernum <> '') AS orders,
+         COUNT(DISTINCT ordernum) FILTER (WHERE qty > 0 AND ordernum IS NOT NULL AND ordernum <> '') AS orders,
          COALESCE(SUM(soldprice * qty), 0)::numeric                     AS revenue,
          COALESCE(SUM(profit), 0)::numeric                             AS profit
        FROM f`,
       filterParams
     );
 
-    // ROWS — newest first, capped. Fetch limit+1 to detect truncation without a COUNT.
-    const rowsResult = await query(
-      `${filterCte}
-       SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, ordernum,
-              qty, soldprice, profit
-       FROM f
-       ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
-       LIMIT $6::int`,
-      [...filterParams, limit + 1]
-    );
+    // ROWS — newest first, capped. Fetch limit+1 to detect truncation without a COUNT. SKIPPED entirely in summary-only mode (a long
+    // window wants totals, not thousands of lines) — we return an empty list and let the UI explain why.
+    const rowsResult = summaryOnly
+      ? { rows: [] }
+      : await query(
+          `${filterCte}
+           SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, ordernum,
+                  qty, soldprice, profit
+           FROM f
+           ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
+           LIMIT $6::int`,
+          [...filterParams, limit + 1]
+        );
 
-    const truncated = rowsResult.rows.length > limit;
+    const truncated = !summaryOnly && rowsResult.rows.length > limit;
     const rows = rowsResult.rows.slice(0, limit).map((r) => {
       const qty = Number(r.qty);
       const soldprice = num(r.soldprice);
@@ -218,6 +246,7 @@ router.get('/', async (req, res) => {
       channel,
       window,
       searchActive,
+      summaryOnly,      // true = long window, totals only (no rows); UI hides the table and explains
       from,
       to,
       search: searchRaw || null,

@@ -826,11 +826,13 @@ export interface SalesReportSummary {
   marginPct: number | null;
   products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
 }
-export type SalesWindow = 'today' | 'yesterday' | '3d';
+// Short windows carry the line list; long windows (7/30/90d) are summary-only (totals, no rows).
+export type SalesWindow = 'today' | 'yesterday' | '3d' | '7d' | '30d' | '90d';
 export interface SalesReportData {
   channel: 'all' | 'shp' | 'amz';
   window: SalesWindow;
   searchActive: boolean;     // true = product mode (window ignored, all-time match capped at 50); false = window pulse mode
+  summaryOnly: boolean;      // true = long window: totals only, no rows fetched (UI hides the table and explains)
   from: string | null;       // resolved bounds (echoed for display) — window bounds in pulse mode, item's first→last sale in product mode
   to: string | null;
   search: string | null;
@@ -841,8 +843,8 @@ export interface SalesReportData {
   truncated: boolean;        // true when more rows exist than the cap (UI notes it; export still covers the loaded rows)
 }
 
-// Load the Sales report — sale lines for the selected channel + short window (today/yesterday/3d) plus a product search, with the
-// net-profit summary. Returns included. Short-window only by design (no custom range).
+// Load the Sales report — sale lines for the selected channel + window plus a product search, with the net-profit summary. Returns
+// included. Short windows (today/yesterday/3d) carry the lines; long windows (7/30/90d) come back summary-only (totals, no rows).
 export function getSalesReport(params: {
   channel?: 'all' | 'shp' | 'amz';
   window?: SalesWindow;
@@ -864,6 +866,7 @@ export function getSalesReport(params: {
       channel: (b.channel as 'all' | 'shp' | 'amz') || 'all',
       window: (b.window as SalesWindow) || 'today',
       searchActive: !!b.searchActive,
+      summaryOnly: !!b.summaryOnly,
       from: b.from ?? null,
       to: b.to ?? null,
       search: b.search ?? null,

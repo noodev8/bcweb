@@ -17,7 +17,7 @@ Guarded by AppShell. Consumes GET /analytics-sales.
 */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckBadgeIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,10 +31,18 @@ const CHANNEL_TABS: { key: ChannelFilter; label: string }[] = [
   { key: 'amz', label: 'Amazon' },
 ];
 
-const WINDOW_TABS: { key: SalesWindow; label: string }[] = [
+// Two tiers of window. SHORT windows carry the line list (the daily-trade pulse). LONG windows are summary-only — totals over a longer
+// horizon with no list (a 30-90d list would be thousands of rows). They're shown as a separate group, labelled "totals", so the different
+// behaviour is signalled before you click.
+const SHORT_WINDOW_TABS: { key: SalesWindow; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: '3d', label: '3 days' },
+];
+const LONG_WINDOW_TABS: { key: SalesWindow; label: string }[] = [
+  { key: '7d', label: '7d' },
+  { key: '30d', label: '30d' },
+  { key: '90d', label: '90d' },
 ];
 
 // Per-channel chip identity (compact — this is a dense table). Tints match the rest of the module (Shopify=emerald, Amazon=amber).
@@ -57,6 +65,7 @@ export default function SalesPage() {
   const [summary, setSummary] = useState<SalesReportSummary | null>(null);
   const [range, setRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
   const [searchActive, setSearchActive] = useState(false); // reflects the loaded result (product mode vs window pulse)
+  const [summaryOnly, setSummaryOnly] = useState(false);   // long window: totals only, no line list
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +88,7 @@ export default function SalesPage() {
       setSummary(res.data.summary);
       setRange({ from: res.data.from, to: res.data.to });
       setSearchActive(res.data.searchActive);
+      setSummaryOnly(res.data.summaryOnly);
       setTruncated(res.data.truncated);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -90,7 +100,8 @@ export default function SalesPage() {
   useEffect(() => { load(); }, [load]);
 
   // --- formatters --------------------------------------------------------------------------------------------------------------
-  const money = (v: number | null) => (v === null ? '—' : `${v < 0 ? '-£' : '£'}${Math.abs(v).toFixed(2)}`);
+  const money = (v: number | null) =>
+    v === null ? '—' : `${v < 0 ? '-£' : '£'}${Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const pct = (v: number | null) => (v === null ? '—' : `${v.toFixed(1)}%`);
   const int = (v: number) => v.toLocaleString('en-GB');
   const CUR_YEAR = new Date().getFullYear();
@@ -144,8 +155,8 @@ export default function SalesPage() {
 
   const rangeLabel = useMemo(() => {
     if (!range.from || !range.to) return '';
-    // Pulse mode: short, same-year day-month (the window is always current). Product mode: all-time, so make the years explicit and add
-    // the sold DURATION — the profit total is spread over that span (could be several seasons), which the day-month alone would hide.
+    // Pulse mode: short, same-year day-month (the window is always current). Product mode: the item's first→last sale within the last 12
+    // months — make the years explicit and add the sold DURATION, since the profit total is spread over that span (day-month alone hides it).
     if (!searchActive) {
       return range.from === range.to ? fmtDate(range.from) : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
     }
@@ -158,38 +169,25 @@ export default function SalesPage() {
   return (
     <AppShell title="Sales" backHref="/analytics" backLabel="Analytics">
       <p className="mb-5 max-w-3xl text-sm text-slate-500">
-        Recent sales with the profit on each line, netted for returns. Watch <strong>net profit</strong> for the window — or
-        <strong> search a product</strong> to pull its <strong>whole sales history</strong> (latest 50), with lifetime totals to judge how
-        it&apos;s doing. Export the current view to Excel any time.
+        Recent sales with the profit on each line, netted for returns. Watch <strong>net profit</strong> for the window — the short
+        windows list every line; the <strong>7 / 30 / 90-day</strong> windows show the totals only. Or <strong>search a product</strong> to
+        pull its <strong>last 12 months</strong> (latest 50 lines), with the 12-month totals to judge how it&apos;s doing lately. Export
+        the current view to Excel any time.
       </p>
 
-      {/* Filters: channel · window · search · export. Searching flips to product mode, so the window control dims (it doesn't apply). */}
+      {/* Filters: channel · window. Searching (its own bar, just above the results) flips to product mode, so the window control dims. */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Segmented options={CHANNEL_TABS} value={channel} onChange={setChannel} />
-        <Segmented options={WINDOW_TABS} value={win} onChange={setWin} disabled={willSearch}
-          title={willSearch ? 'Windows don’t apply while searching a product (showing all time)' : undefined} />
 
-        <div className="relative min-w-[16rem] flex-1">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
-            placeholder="Search product, style or SKU…"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 pr-16 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-          />
-          {typedTerm.length > 0 && typedTerm.length < 3 && (
-            <span className="pointer-events-none absolute right-9 top-1/2 -translate-y-1/2 text-xs text-slate-400">type 3+ chars</span>
-          )}
-          {searchInput.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSearchInput('')}
-              title="Clear search — back to the date windows"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-            >
-              <XMarkIcon className="h-4 w-4" />
-            </button>
-          )}
+        {/* Window: short group (with lines) · long group (totals only). Split so the different behaviour is visible before clicking. */}
+        <div className="inline-flex items-center gap-2"
+          title={willSearch ? 'Windows don’t apply while searching a product (showing all time)' : undefined}>
+          <Segmented options={SHORT_WINDOW_TABS} value={win} onChange={setWin} disabled={willSearch} />
+          <span className="text-slate-300" aria-hidden>·</span>
+          <div className="inline-flex items-center gap-1.5">
+            <Segmented options={LONG_WINDOW_TABS} value={win} onChange={setWin} disabled={willSearch} />
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">totals</span>
+          </div>
         </div>
       </div>
 
@@ -204,16 +202,60 @@ export default function SalesPage() {
             <div className="mt-1 text-xs text-slate-400">{pct(summary.marginPct)} margin</div>
           </div>
           <Stat label="Revenue" value={money(summary.revenue)} />
-          <Stat label="Units (net)" value={int(summary.unitsNet)}
-            sub={`${int(summary.unitsSold)} sold${summary.unitsReturned ? ` · ${int(summary.unitsReturned)} returned` : ''}`} />
+          {/* Units lead with SOLD (gross) — the same basis as Orders — so the pair reads naturally (units >= orders). Returns are netted
+              into the money tiles above and shown here as a sub-line (with the return rate = returned / sold), so they stay visible
+              without dragging the headline below Orders. */}
+          <Stat label="Units" value={int(summary.unitsSold)}
+            sub={summary.unitsReturned
+              ? `${int(summary.unitsNet)} net · ${int(summary.unitsReturned)} returned${summary.unitsSold > 0 ? ` (${pct((summary.unitsReturned / summary.unitsSold) * 100)})` : ''}`
+              : undefined} />
           <Stat label="Orders" value={int(summary.orders)} />
         </div>
       )}
 
+      {/* Search — its own full-width bar, sitting right on top of the result box (it's the primary way in: a product's whole story).
+          Flips the screen to product mode, so the window control above dims. */}
+      <div className="relative mb-3">
+        <MagnifyingGlassIcon className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
+          placeholder="Search a product, style or SKU to see its last 12 months…"
+          className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-24 text-base text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30"
+        />
+        {typedTerm.length > 0 && typedTerm.length < 3 && (
+          <span className="pointer-events-none absolute right-12 top-1/2 -translate-y-1/2 text-xs text-slate-400">type 3+ chars</span>
+        )}
+        {searchInput.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSearchInput('')}
+            title="Clear search — back to the date windows"
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        )}
+      </div>
+
       {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
 
-      {!loading && !error && (
+      {/* Long window: the totals above ARE the view — the line list is intentionally omitted (a 30-90d list would be thousands of rows).
+          Explain the absence so it reads as deliberate, and point to the two ways to get lines back. */}
+      {!loading && !error && summaryOnly && (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center">
+          <p className="text-sm font-medium text-slate-600">Totals only for this window</p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-slate-400">
+            The headline above covers all sales in the last {win === '7d' ? '7' : win === '30d' ? '30' : '90'} days. Individual lines
+            aren’t listed over a longer window — pick <strong>Today / Yesterday / 3 days</strong> for the line list, or
+            <strong> search a product</strong> to see its full history.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && !summaryOnly && (
         rows.length === 0 ? (
           <p className="text-sm text-slate-400">No sales match this filter.</p>
         ) : (
@@ -221,7 +263,7 @@ export default function SalesPage() {
             <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
               <span>
                 {searchActive
-                  ? `Latest ${int(rows.length)} sales for “${search}”, all time${truncated ? ' (this style has more)' : ''}`
+                  ? `Latest ${int(rows.length)} sales for “${search}”, last 12 months${truncated ? ' (more in this window)' : ''}`
                   : truncated
                     ? `Showing the latest ${int(rows.length)} lines (more exist — narrow the window or search)`
                     : `${int(rows.length)} lines`}
@@ -336,7 +378,7 @@ function SaleRow({ r, actions, money, pct, fmtDate }: {
 
   return (
     <tr
-      onClick={(e) => actionKey && actions.open(e, actionKey, { title: r.productname, amzCode: r.channel === 'AMZ' ? r.code : null })}
+      onClick={(e) => actionKey && actions.open(e, actionKey, { title: r.productname, amzCode: r.channel === 'AMZ' ? r.code : null, ordernum: r.ordernum })}
       className={'cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ' + (isReturn ? 'bg-rose-50/40' : '')}
       title="Click to reprice or copy"
     >

@@ -12,6 +12,7 @@ Purpose: A single, reusable pop-over that lets the operator jump STRAIGHT from a
            - Change Amazon price  -> /amz/sku/<code> when the exact SKU code is known (e.g. an Amazon-channel row), else /amz/find?q=
              <groupid> which pre-searches so the operator picks which size to reprice (Amazon is SKU-grain — one price per size).
            - Copy groupid         -> clipboard, for pasting into any other tool.
+           - Copy order <num>     -> clipboard, ONLY when the caller supplies `ordernum` (e.g. a Sales row) — absent everywhere else.
 
          The target carries `?from=<current path>` so its back link returns the operator to exactly where they were (the drill pages
          already read `from`). Wherever this menu is used, back navigation "just works".
@@ -29,13 +30,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, usePathname } from 'next/navigation';
 import {
-  CurrencyPoundIcon, BuildingStorefrontIcon, ClipboardDocumentIcon, CheckIcon,
+  CurrencyPoundIcon, BuildingStorefrontIcon, ClipboardDocumentIcon, HashtagIcon, CheckIcon,
 } from '@heroicons/react/24/outline';
 
 interface MenuState {
   groupid: string;
   title?: string | null;
   amzCode?: string | null;   // when known, the Amazon action deep-links straight to this SKU's drill instead of pre-searching
+  ordernum?: string | null;  // when supplied (e.g. a Sales row), adds a "Copy order" action; absent elsewhere so nothing changes there
   x: number;
   y: number;
 }
@@ -45,10 +47,10 @@ export function useProductActions() {
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const open = useCallback(
-    (e: React.MouseEvent, groupid: string, opts?: { title?: string | null; amzCode?: string | null }) => {
+    (e: React.MouseEvent, groupid: string, opts?: { title?: string | null; amzCode?: string | null; ordernum?: string | null }) => {
       // Stop the click bubbling to any row-level handler and anchor the pop-over at the pointer.
       e.stopPropagation();
-      setMenu({ groupid, title: opts?.title ?? null, amzCode: opts?.amzCode ?? null, x: e.clientX, y: e.clientY });
+      setMenu({ groupid, title: opts?.title ?? null, amzCode: opts?.amzCode ?? null, ordernum: opts?.ordernum ?? null, x: e.clientX, y: e.clientY });
     },
     [],
   );
@@ -63,10 +65,10 @@ const MENU_W = 236; // px — used to clamp the pop-over inside the viewport
 function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);  // which value was just copied ('groupid' | 'ordernum'), for the tick
 
   // Fresh copy state each time the menu (re)opens for a different row.
-  useEffect(() => { setCopied(false); }, [menu?.groupid, menu?.x, menu?.y]);
+  useEffect(() => { setCopiedKey(null); }, [menu?.groupid, menu?.x, menu?.y]);
 
   // Escape closes.
   useEffect(() => {
@@ -94,21 +96,24 @@ function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose:
     router.push(url);
     onClose();
   };
-  const copy = async () => {
+  // Copy any value to the clipboard; `key` drives which row shows the "Copied" tick. Closes shortly after so the tick is seen.
+  const copyVal = async (key: string, value: string) => {
     try {
-      await navigator.clipboard.writeText(menu.groupid);
-      setCopied(true);
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
       setTimeout(onClose, 650);
     } catch {
       onClose();
     }
   };
 
-  // Clamp inside the viewport so a click near the right/bottom edge doesn't push the menu off-screen.
+  // Clamp inside the viewport so a click near the right/bottom edge doesn't push the menu off-screen. The menu is one row taller when a
+  // "Copy order" action is present.
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const menuH = menu.ordernum ? 232 : 190;
   const left = Math.max(8, Math.min(menu.x, vw - MENU_W - 8));
-  const top = Math.max(8, Math.min(menu.y, vh - 190));
+  const top = Math.max(8, Math.min(menu.y, vh - menuH));
 
   const item = 'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50';
 
@@ -133,10 +138,16 @@ function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose:
           <BuildingStorefrontIcon className="h-4 w-4 text-slate-400" />
           Change Amazon price
         </button>
-        <button type="button" role="menuitem" onClick={copy} className={item + ' border-t border-slate-100'}>
-          {copied ? <CheckIcon className="h-4 w-4 text-green-600" /> : <ClipboardDocumentIcon className="h-4 w-4 text-slate-400" />}
-          {copied ? 'Copied' : 'Copy groupid'}
+        <button type="button" role="menuitem" onClick={() => copyVal('groupid', menu.groupid)} className={item + ' border-t border-slate-100'}>
+          {copiedKey === 'groupid' ? <CheckIcon className="h-4 w-4 text-green-600" /> : <ClipboardDocumentIcon className="h-4 w-4 text-slate-400" />}
+          {copiedKey === 'groupid' ? 'Copied' : 'Copy groupid'}
         </button>
+        {menu.ordernum && (
+          <button type="button" role="menuitem" onClick={() => copyVal('ordernum', menu.ordernum!)} className={item}>
+            {copiedKey === 'ordernum' ? <CheckIcon className="h-4 w-4 text-green-600" /> : <HashtagIcon className="h-4 w-4 text-slate-400" />}
+            {copiedKey === 'ordernum' ? 'Copied' : 'Copy order number'}
+          </button>
+        )}
       </div>
     </>,
     document.body,
