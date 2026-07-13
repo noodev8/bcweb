@@ -10,7 +10,7 @@ Purpose: The Analytics module front door — a tile grid, matching the dashboard
 
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
-import { ChartBarIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon } from '@heroicons/react/24/outline';
+import { PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
   return (
@@ -64,9 +64,6 @@ export default function AnalyticsPage() {
           icon={ArrowsRightLeftIcon}
           live
         />
-
-        {/* Placeholder — growth path. */}
-        <ModuleTile title="Sales & margin" description="Revenue and gross profit reporting." icon={ChartBarIcon} />
       </div>
     </AppShell>
   );

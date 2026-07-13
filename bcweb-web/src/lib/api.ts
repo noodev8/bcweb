@@ -107,7 +107,7 @@ export interface AmzWinnerRow {
 // Stage 1 LOSERS: dead (no sale in 14d) / slow (cover >= coverWeeks) FBA stock at risk (candidates to price DOWN / cut).
 export interface AmzLoserRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
-  price: number | null; fba: number; u30: number; u90: number; u14: number;
+  price: number | null; fba: number; u7: number; u30: number; u90: number; u14: number;
   cover_weeks: number | null;   // weeks-to-clear at the cover-window pace; null when no sales in the window
   is_dead: boolean;             // true = no Amazon sale in the last 14 days
   last_sold: string | null; days_since_sale: number | null;

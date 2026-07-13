@@ -47,13 +47,6 @@ export default function AmzSegmentPage() {
   );
 }
 
-// Present a big cover figure gently — exact weeks are directional only below a few sales.
-function coverLabel(weeks: number | null): string {
-  if (weeks === null) return '—';
-  if (weeks >= 104) return '2+ yrs';
-  if (weeks >= 52) return '1+ yr';
-  return `${Math.round(weeks)} wk`;
-}
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -359,12 +352,12 @@ function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: 
           <tr>
             <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">30d</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 90 days">90d</th>
-            <th className="px-4 py-2 text-right font-medium" title="Weeks of cover at the 90-day pace">Cover</th>
+            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>
+            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
             <th className="px-4 py-2 font-medium">SKU (size)</th>
             <th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 text-right font-medium">Price</th>
+            <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -372,19 +365,14 @@ function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: 
             <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
               <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              {/* FBA stock is the ranking metric within each cluster — emphasised. */}
-              <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.fba}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u30}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u90}</td>
-              <td className="px-4 py-2 text-right">
-                {r.is_dead
-                  ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">no recent sales</span>
-                  : <span className="tabular-nums text-slate-700">{coverLabel(r.cover_weeks)}</span>}
-              </td>
+              <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.u30}</td>
+              <td className="px-4 py-2 text-right text-slate-600">{r.u7 || <span className="text-slate-300">0</span>}</td>
               <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
                 {r.code}{!!queued[r.code] && <QueuedPill />}
               </td>
               <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
+              <td className="px-4 py-2 text-right text-slate-700">{r.fba}</td>
             </tr>
           ))}
         </tbody>

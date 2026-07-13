@@ -86,6 +86,11 @@ router.get('/', async (req, res) => {
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 30
         GROUP BY code
       ),
+      s7 AS (           -- 7d units — same short-window column the WINNERS list shows (matched headers)
+        SELECT code, SUM(qty) AS u7 FROM sales
+        WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 7
+        GROUP BY code
+      ),
       s14 AS (          -- 14d units — the DEAD test (no recent sale)
         SELECT code, SUM(qty) AS u14 FROM sales
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 14
@@ -101,6 +106,7 @@ router.get('/', async (req, res) => {
              ${safeNumeric('a.amzprice')} AS price,
              COALESCE(a.amzlive,0) AS fba,
              COALESCE(s30.u30,0)   AS u30,
+             COALESCE(s7.u7,0)     AS u7,
              COALESCE(c.u_win,0)   AS u_win,
              COALESCE(s14.u14,0)   AS u14,
              CASE WHEN COALESCE(c.u_win,0)=0 THEN NULL
@@ -113,6 +119,7 @@ router.get('/', async (req, res) => {
       JOIN skumap m      ON m.code   = a.code                                            -- per-SKU review date (next_amz_price_review); 1:1
       LEFT JOIN cover c  ON c.code   = a.code
       LEFT JOIN s30      ON s30.code = a.code
+      LEFT JOIN s7       ON s7.code  = a.code
       LEFT JOIN s14      ON s14.code = a.code
       LEFT JOIN ls       ON ls.code  = a.code
       LEFT JOIN title t  ON t.groupid = a.groupid
@@ -139,6 +146,7 @@ router.get('/', async (req, res) => {
       price: num(r.price),
       fba: Number(r.fba),
       u30: Number(r.u30),
+      u7: Number(r.u7),
       u90: Number(r.u_win),                                    // labelled u90 in the payload (default window is 90d)
       u14: Number(r.u14),
       cover_weeks: r.cover_weeks === null ? null : Number(r.cover_weeks),
