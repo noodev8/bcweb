@@ -24,16 +24,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* The one live module in v1. */}
-        <ModuleTile
-          title="Shopify Pricing"
-          description="Review demand and set Shopify prices, segment by segment."
-          href="/pricing"
-          icon={CurrencyPoundIcon}
-          live
-        />
-
-        {/* Segments — the review/attention heatmap over the pricing tools. */}
+        {/* Segments leads — the review/attention heatmap is the "where do I start?" screen over the pricing tools. The tiles that
+            follow mirror the header module bar's order (Shopify Pricing -> Amazon Pricing -> Add / Modify) so the two menus agree. */}
         <ModuleTile
           title="Segments"
           description="See which segment needs attention next, and track who worked what."
@@ -42,12 +34,12 @@ export default function DashboardPage() {
           live
         />
 
-        {/* Add / Modify Product — Stage 1 (search). */}
+        {/* The one live module in v1. */}
         <ModuleTile
-          title="Add / Modify Product"
-          description="Find an existing product to edit, or create a new one."
-          href="/products"
-          icon={TagIcon}
+          title="Shopify Pricing"
+          description="Review demand and set Shopify prices, segment by segment."
+          href="/pricing"
+          icon={CurrencyPoundIcon}
           live
         />
 
@@ -58,6 +50,15 @@ export default function DashboardPage() {
           description="Review demand and set Amazon/FBA prices, segment by segment."
           href="/amz"
           icon={BuildingStorefrontIcon}
+          live
+        />
+
+        {/* Add / Modify Product — Stage 1 (search). */}
+        <ModuleTile
+          title="Add / Modify Product"
+          description="Find an existing product to edit, or create a new one."
+          href="/products"
+          icon={TagIcon}
           live
         />
 
