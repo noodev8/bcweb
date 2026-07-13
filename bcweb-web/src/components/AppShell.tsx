@@ -15,7 +15,7 @@ import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
+  ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
@@ -23,13 +23,14 @@ import CopyButton from '@/components/CopyButton';
 // The persistent module switcher — a compact segmented control in the header on every screen, so the operator can hop straight between
 // the modules without going back to the dashboard first. Segments leads: it's the "where do I start / what needs attention next"
 // screen the operator constantly returns to mid-task (owner feedback), so it belongs in the header, not just as a dashboard tile —
-// followed by the three action modules. Analytics stays a dashboard-only "starting thought" screen. Icons match the dashboard tiles.
-// Active state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
+// followed by the three action modules, then Analytics (promoted into the header too, so its reporting is reachable from anywhere).
+// Icons match the dashboard tiles. Active state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
 const MODULES: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { label: 'Segments', href: '/segments', icon: Squares2X2Icon },
   { label: 'Shopify Pricing', href: '/pricing', icon: CurrencyPoundIcon },
   { label: 'Amazon Pricing', href: '/amz', icon: BuildingStorefrontIcon },
   { label: 'Add / Modify', href: '/products', icon: TagIcon },
+  { label: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 
 interface AppShellProps {
