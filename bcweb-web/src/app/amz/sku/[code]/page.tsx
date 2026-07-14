@@ -17,6 +17,7 @@ Purpose: The decision screen for one Amazon SKU (one size), mirroring the Shopif
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import CopyButton from '@/components/CopyButton';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
 import AmzHistory from '@/components/AmzHistory';
@@ -152,7 +153,26 @@ function DrillContent() {
   const title = data?.header.title || code;
 
   return (
-    <AppShell title={title} subtitle={code} subtitleCopy backHref={backTo} backLabel={backLabel}>
+    <AppShell title={title} backHref={backTo} backLabel={backLabel}>
+      {/* Identity row — Group ID (the style) and Amazon SKU (the Seller Central listing id), each LABELLED (so it's obvious which is
+          which) and one-click copyable. Both come from the loaded header. */}
+      {data && (
+        <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-sm">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-slate-500">Group ID</span>
+            <span className="font-mono font-semibold text-slate-800">{data.header.groupid}</span>
+            <CopyButton value={data.header.groupid} label="Group ID" />
+          </span>
+          {data.header.amz_sku && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-slate-500">Amazon SKU</span>
+              <span className="font-mono font-semibold text-slate-800">{data.header.amz_sku}</span>
+              <CopyButton value={data.header.amz_sku} label="Amazon SKU" />
+            </span>
+          )}
+        </div>
+      )}
+
       <AmzBasketBar />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}

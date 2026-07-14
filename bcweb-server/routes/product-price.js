@@ -21,7 +21,9 @@ Purpose: Save the price fields on skusummary for the Add / Modify Product module
            - GOOGLE: right after the Shopify push, also re-pushes the price to Google Merchant Center's Content API if the product is
              live there (`utils/googleMerchant.js → pushIfLive`), same as `pricing-apply.js` (W1) — otherwise Google Shopping/ads would
              show the old price until the next nightly `C:\scripts\merchant-feed\merchant_feed.py --upload` cron run. Best-effort, never
-             fails the save.
+             fails the save. Unlike the Shopify push (which may still be reconciling other listing fields), this fires ONLY when the
+             Shopify price actually changed (old != new — the same `logged` condition as the audit row): Google Merchant carries price
+             only, so a no-op save has nothing to send there and we skip the round-trip. `google` is null when the price was unchanged.
 
          Money columns on skusummary are legacy VARCHAR, so we WRITE 2dp strings (e.g. '39.95'), never numbers (CLAUDE.md). Tax is the
          legacy 0/1 integer flag. `updated` uses the legacy 'YYYYMMDD HH24:MI:SS' Europe/London format. Single-row write, still wrapped
@@ -188,9 +190,11 @@ router.post('/', async (req, res) => {
     // If the product is live on Shopify, re-push so the new price/compareAtPrice reaches the store (best-effort — never fails the save).
     const shopifyResult = await shopify.pushIfLive(groupid);
 
-    // Same for Google: if the product is live there too, push the new price to Merchant Center's Content API right now (best-effort —
-    // never fails the save), so it doesn't wait on the nightly merchant_feed.py --upload cron (mirrors pricing-apply.js, W1).
-    const googleResult = await googleMerchant.pushIfLive(groupid);
+    // Same for Google, but ONLY when the price actually changed: Google Merchant carries price only, so a no-op save (old == new) has
+    // nothing to send there — skip the Content API round-trip entirely (unlike Shopify above, which may still be reconciling other
+    // listing fields). When the price did change, push the new price to Merchant Center's Content API right now (best-effort — never
+    // fails the save), so it doesn't wait on the nightly merchant_feed.py --upload cron (mirrors pricing-apply.js, W1).
+    const googleResult = logged ? await googleMerchant.pushIfLive(groupid) : null;
 
     return res.json({
       return_code: 'SUCCESS',
