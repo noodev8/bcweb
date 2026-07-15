@@ -20,7 +20,7 @@ Purpose: Editable price block for a product (skusummary): Cost, RRP, Tax, and th
 */
 
 import { useState } from 'react';
-import { updateProductPrice, ProductPriceSaved, ShopifyPushResult, GooglePushResult } from '@/lib/api';
+import { updateProductPrice, ProductPriceSaved, ShopifyPushResult, GooglePushResult, BirkPriceHint } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 import GooglePushNote from '@/components/GooglePushNote';
@@ -38,6 +38,8 @@ interface Props {
   rrp: number | null;
   price: number | null;
   tax: boolean;
+  // Suggested RRP/cost from the birktracker order book — set only for an unpriced Birkenstock style; drives the optional prefill.
+  birkPrice?: BirkPriceHint | null;
   onSaved?: (saved: ProductPriceSaved) => void;
 }
 
@@ -67,10 +69,28 @@ function Money({ label, value, onChange, onBlur }: { label: string; value: strin
   );
 }
 
-export default function PriceEditor({ groupid, cost, rrp, price, tax, onSaved }: Props) {
+export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice, onSaved }: Props) {
   const { logout } = useAuth();
-  const [form, setForm] = useState({ cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax });
-  const [baseline, setBaseline] = useState(() => JSON.stringify({ cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax }));
+
+  // Birk order-book prefill: when this Birkenstock style is still unpriced (Cost or RRP blank/≤0) and the order book gave us a
+  // suggestion, drop those numbers straight into the fields — Cost, RRP, and the Shopify Price (= RRP for a fresh product). They land
+  // as UNSAVED edits (baseline stays the loaded values), so the form is pre-dirty: the operator can tweak anything, then just Save.
+  const unpriced = !(Number(cost) > 0) || !(Number(rrp) > 0);
+  const prefillFromBirk = !!birkPrice && unpriced && (birkPrice.rrp != null || birkPrice.cost != null);
+  const loadedForm = { cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax };
+  const initialForm = prefillFromBirk
+    ? {
+        cost: birkPrice!.cost != null ? birkPrice!.cost.toFixed(2) : loadedForm.cost,
+        rrp: birkPrice!.rrp != null ? birkPrice!.rrp.toFixed(2) : loadedForm.rrp,
+        // Price field mirrors RRP for a new product (owner's rule); fall back to the loaded price when there's no RRP hint.
+        shopifyPrice: birkPrice!.rrp != null ? birkPrice!.rrp.toFixed(2) : loadedForm.shopifyPrice,
+        tax,
+      }
+    : loadedForm;
+
+  const [form, setForm] = useState(initialForm);
+  // Baseline is the LOADED (saved) values, not the prefill — so a prefilled form reads as dirty and Save is enabled straight away.
+  const [baseline, setBaseline] = useState(() => JSON.stringify(loadedForm));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);

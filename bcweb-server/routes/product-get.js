@@ -33,7 +33,9 @@ Success Response:
     "rrp": 45.00,                       // numeric or null
     "price": 35.0,                      // shopifyprice, numeric or null
     "tax": true,                        // skusummary.tax 1/0 -> bool
-    "shopify": true                     // skusummary.shopify 1/0 -> bool
+    "shopify": true,                    // skusummary.shopify 1/0 -> bool
+    "birkPrice": { "rrp": 90.0, "cost": 37.5 }  // suggested prefill from the birktracker order book; null unless this is an
+                                                //   UNPRICED Birkenstock style with a match (rrp/cost each null if not found)
   },
   "sizes": [                            // from skumap, one per variant, in legacy size order
     { "code": "0128221-GIZEH-35", "barcode": null, "sizeDisplay": "35 EU / 2.5 UK", "uksize": "2.5 UK" },
@@ -143,8 +145,56 @@ router.get('/', async (req, res) => {
       price: r.price === null ? null : Number(r.price),
       // Legacy 0/1 integer flags -> booleans for a clean client contract.
       tax: r.tax === 1,
-      shopify: r.shopify === 1
+      shopify: r.shopify === 1,
+      // Birk order-book price hint (see below) — null unless this is an unpriced Birkenstock style with a match.
+      birkPrice: null
     };
+
+    // Birk order-book price hint: a brand-new Birkenstock style is seeded unpriced ('0.00'), but its RRP + cost were usually already
+    // recorded on the purchase order — `birktracker` (the order book) often holds them. When the product is still unpriced we surface
+    // those as a suggested prefill so the operator doesn't retype known numbers. Gated to Birkenstock + unpriced only, so a fully
+    // priced existing style keeps its own values and non-Birk products skip the lookup entirely.
+    //
+    // MATCH KEY = the leading 7-digit Birkenstock ARTICLE NUMBER (e.g. 1030054), not the full groupid: the article is the stable style
+    // key the operator knows at order time, whereas the descriptive token drifts (birktracker codes are sometimes 'ARTICLE-ARIZONA-40',
+    // sometimes 'ARTICLE-Uppsala Zip …-40'), and it's unique per Birkenstock groupid (verified — no article maps to two groupids).
+    const article = (groupid.match(/^[0-9]+/) || [])[0] || null;
+    const unpriced = product.cost === null || product.cost <= 0 || product.rrp === null || product.rrp <= 0;
+    if (product.brand === 'Birkenstock' && unpriced && article) {
+      // Values are legacy varchar ('90' / '90.00' / '' / null) — strip to digits+dot, drop blanks. placedate has two legacy formats
+      // (ISO 'YYYY-MM-DD…' and UK 'DD/MM/YYYY'); normalise both so we can take the MOST RECENT order's price (they occasionally
+      // change over time). RRP and cost are picked independently (usually the same row, but not guaranteed). Match on the leading run
+      // of digits in the code = the article number.
+      const bt = await query(`
+        WITH bt AS (
+          SELECT
+            NULLIF(regexp_replace(rrp,  '[^0-9.]', '', 'g'), '') AS rrp_num,
+            NULLIF(regexp_replace(cost, '[^0-9.]', '', 'g'), '') AS cost_num,
+            CASE
+              WHEN placedate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN to_date(substring(placedate from 1 for 10), 'YYYY-MM-DD')
+              WHEN placedate ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'  THEN to_date(placedate, 'DD/MM/YYYY')
+              ELSE NULL
+            END AS placed
+          FROM birktracker
+          WHERE substring(code from '^[0-9]+') = $1
+        )
+        SELECT
+          (SELECT rrp_num  FROM bt WHERE rrp_num  IS NOT NULL ORDER BY placed DESC NULLS LAST LIMIT 1) AS rrp,
+          (SELECT cost_num FROM bt WHERE cost_num IS NOT NULL ORDER BY placed DESC NULLS LAST LIMIT 1) AS cost
+      `, [article]);
+
+      const row = bt.rows[0] || {};
+      const toMoney = (v) => {
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+      };
+      const hintRrp = toMoney(row.rrp);
+      const hintCost = toMoney(row.cost);
+      if (hintRrp !== null || hintCost !== null) {
+        product.birkPrice = { rrp: hintRrp, cost: hintCost };
+      }
+    }
 
     return res.json({ return_code: 'SUCCESS', product, sizes });
   } catch (err) {

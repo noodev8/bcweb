@@ -178,6 +178,8 @@ export interface ProductLookups {
 export interface ProductEditFields {
   brand: string; colour: string; segment: string; season: string; gender: string; producttype: string; title: string;
 }
+// Suggested price prefill from the birktracker order book — present only for an UNPRICED Birkenstock style with a match.
+export interface BirkPriceHint { rrp: number | null; cost: number | null; }
 export interface ProductDetail {
   groupid: string;
   brand: string | null; colour: string | null; segment: string | null; season: string | null;
@@ -186,6 +188,7 @@ export interface ProductDetail {
   title: string | null;
   cost: number | null; rrp: number | null; price: number | null;
   tax: boolean; shopify: boolean;
+  birkPrice?: BirkPriceHint | null;   // order-book RRP/cost suggestion (see BirkPriceHint); absent/null when not applicable
   sizes: ProductSize[];   // one row per variant (skumap)
 }
 export interface LoginData { token: string; display_name: string; }
