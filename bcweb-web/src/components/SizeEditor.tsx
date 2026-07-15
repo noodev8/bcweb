@@ -11,7 +11,7 @@ Purpose: Editable size list for a product (skumap). Barcode and Size Display are
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ChevronUpIcon, ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { updateProductSizes, ProductSize, ShopifyPushResult } from '@/lib/api';
 import { sizeTemplate, lookupTemplateSize } from '@/lib/sizeTemplates';
@@ -47,6 +47,13 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   const [saveOk, setSaveOk] = useState(false);
   const [push, setPush] = useState<ShopifyPushResult | null>(null);   // Shopify re-push outcome, when the product is live
 
+  // Barcode auto-advance: refs to each barcode <input> (by row index) so a completed scan/type can jump focus to the next row.
+  // `advanced` remembers rows we've already jumped from so going BACK to fix a barcode doesn't yank focus away on every keystroke;
+  // a row only re-arms once its barcode is fully CLEARED (owner's rule — not merely dropped below 13). We do NOT select the next
+  // field's contents on focus, so an accidental double-scan won't silently overwrite an existing barcode.
+  const barcodeRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const advanced = useRef<Record<number, boolean>>({});
+
   const dirty = rowsKey(rows) !== baseline;
 
   function touch() { setSaveOk(false); setPush(null); }
@@ -54,6 +61,25 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   function setCell(i: number, key: 'sizeDisplay' | 'barcode' | 'uksize', v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: v } : r)));
     touch();
+  }
+  // Barcode field: store the digits (parent input already strips non-digits) and, once a full 13-digit barcode is present, jump
+  // focus down to the next barcode field ONCE. Longer/shorter barcodes are never blocked — 13 just triggers the convenience jump
+  // (a future non-Birkenstock brand with a different length still types freely). The last row keeps focus (nothing below to jump to).
+  function onBarcodeChange(i: number, raw: string) {
+    const digits = raw.replace(/\D/g, '');
+    setCell(i, 'barcode', digits);
+    if (digits.length >= 13 && !advanced.current[i] && i < rows.length - 1) {
+      advanced.current[i] = true;
+      barcodeRefs.current[i + 1]?.focus();
+    }
+    if (digits.length === 0) advanced.current[i] = false;   // re-arm only when the field is fully cleared
+  }
+  // Manual/scanner escape hatch: Enter (or a scanner's carriage return, if it sends one) advances too. Harmless if it doesn't.
+  function onBarcodeKeyDown(i: number, e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && i < rows.length - 1) {
+      e.preventDefault();
+      barcodeRefs.current[i + 1]?.focus();
+    }
   }
   function move(i: number, dir: -1 | 1) {
     const j = i + dir;
@@ -135,8 +161,9 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
               <tr key={r.code} className="align-middle">
                 <td className="px-3 py-1.5 font-mono text-xs text-slate-500">{r.code}</td>
                 <td className="px-3 py-1.5">
-                  {/* Barcode is a numeric EAN — strip any non-digit as the user types. */}
-                  <input value={r.barcode} onChange={(e) => setCell(i, 'barcode', e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="—" className={inputCls} />
+                  {/* Barcode is a numeric EAN — strip any non-digit as the user types. A full 13-digit entry auto-advances to the
+                      next barcode field (see onBarcodeChange); Enter does the same. */}
+                  <input ref={(el) => { barcodeRefs.current[i] = el; }} value={r.barcode} onChange={(e) => onBarcodeChange(i, e.target.value)} onKeyDown={(e) => onBarcodeKeyDown(i, e)} inputMode="numeric" placeholder="—" className={inputCls} />
                 </td>
                 <td className="px-3 py-1.5">
                   <input value={r.sizeDisplay} onChange={(e) => setCell(i, 'sizeDisplay', e.target.value)} placeholder="e.g. 42 EU / 8 UK" className={inputCls} />
