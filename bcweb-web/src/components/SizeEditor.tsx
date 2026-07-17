@@ -53,6 +53,10 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   // field's contents on focus, so an accidental double-scan won't silently overwrite an existing barcode.
   const barcodeRefs = useRef<(HTMLInputElement | null)[]>([]);
   const advanced = useRef<Record<number, boolean>>({});
+  // Index of the row we just auto-jumped focus INTO (from a 13-digit onChange advance), so we can swallow the scanner's
+  // trailing Enter/CR keystroke — it lands on the newly-focused field (not the one just completed) and would otherwise
+  // cause a second advance, skipping a row. Cleared as soon as that row sees real input.
+  const justAdvancedTo = useRef<number | null>(null);
 
   const dirty = rowsKey(rows) !== baseline;
 
@@ -66,19 +70,24 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   // focus down to the next barcode field ONCE. Longer/shorter barcodes are never blocked — 13 just triggers the convenience jump
   // (a future non-Birkenstock brand with a different length still types freely). The last row keeps focus (nothing below to jump to).
   function onBarcodeChange(i: number, raw: string) {
+    if (justAdvancedTo.current === i) justAdvancedTo.current = null;   // real input into the jumped-to row — no longer expecting its stray Enter
     const digits = raw.replace(/\D/g, '');
     setCell(i, 'barcode', digits);
     if (digits.length >= 13 && !advanced.current[i] && i < rows.length - 1) {
       advanced.current[i] = true;
+      justAdvancedTo.current = i + 1;
       barcodeRefs.current[i + 1]?.focus();
     }
     if (digits.length === 0) advanced.current[i] = false;   // re-arm only when the field is fully cleared
   }
   // Manual/scanner escape hatch: Enter (or a scanner's carriage return, if it sends one) advances too. Harmless if it doesn't.
+  // But a scanner that sends digits-then-Enter fires that Enter AFTER the 13-digit onChange has already jumped focus to the
+  // next row, so the keydown lands there, not on the row that just completed — swallow it once rather than double-advancing.
   function onBarcodeKeyDown(i: number, e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && i < rows.length - 1) {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      barcodeRefs.current[i + 1]?.focus();
+      if (justAdvancedTo.current === i) { justAdvancedTo.current = null; return; }
+      if (i < rows.length - 1) barcodeRefs.current[i + 1]?.focus();
     }
   }
   function move(i: number, dir: -1 | 1) {
