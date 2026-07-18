@@ -43,14 +43,6 @@ export default function SegmentPage() {
   );
 }
 
-// Present a big cover figure gently — exact weeks are directional only below a few sales.
-function coverLabel(weeks: number | null): string {
-  if (weeks === null) return '—';
-  if (weeks >= 104) return '2+ yrs';
-  if (weeks >= 52) return '1+ yr';
-  return `${Math.round(weeks)} wk`;
-}
-
 // Compact date for the ALL table (YYYY-MM-DD -> "8 Jul 2026"). null-safe.
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -272,6 +264,21 @@ function SegmentContent() {
   );
 }
 
+// Shared, FIXED column geometry for the WINNERS and LOSERS tables (owner: they must line up when you switch tabs). Without table-fixed
+// each table auto-sizes its columns to its own content — two-digit unit counts vs one-digit made the headers/Code wrap differently and
+// the columns drift between tabs. A fixed colgroup + matching widths pins both tables to the same layout regardless of the data.
+const ListCols = () => (
+  <colgroup>
+    <col className="w-12" />{/* checkbox */}
+    <col className="w-12" />{/* # */}
+    <col className="w-24" />{/* Units (30d) */}
+    <col className="w-40" />{/* Code */}
+    <col />{/* Product — takes the remaining width */}
+    <col className="w-28" />{/* Price */}
+    <col className="w-20" />{/* Stock */}
+  </colgroup>
+);
+
 function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
   rows: TriageRow[]; onOpen: (g: string) => void;
   selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
@@ -279,7 +286,8 @@ function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <ListCols />
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
@@ -297,8 +305,8 @@ function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
               <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               <td className="px-4 py-2 font-semibold text-slate-800">{r.units}</td>
-              <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
+              <td className="truncate px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
               <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
               <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
             </tr>
@@ -379,17 +387,19 @@ function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
+      {/* Columns AND their fixed widths are kept identical to WinnersTable (owner: "use the Winners columns for LOSERS" + they must
+          line up when switching tabs). LoserRow.u30 is the 30-day units figure that maps onto the shared "Units (30d)" column. */}
+      <table className="w-full table-fixed text-sm">
+        <ListCols />
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium">Stock</th>
-            <th className="px-4 py-2 text-right font-medium">Sold 30d</th>
-            <th className="px-4 py-2 text-right font-medium">Sold 90d</th>
-            <th className="px-4 py-2 text-right font-medium">Cover</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
+            <th className="px-4 py-2 font-medium">Units (30d)</th>
+            <th className="px-4 py-2 font-medium">Code</th>
             <th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 text-right font-medium">Price</th>
+            <th className="px-4 py-2 text-right font-medium">Stock</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -397,17 +407,11 @@ function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
             <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
               <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              {/* Stock is the ranking metric — emphasised. */}
-              <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.stock}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u30}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u90}</td>
-              <td className="px-4 py-2 text-right">
-                {r.is_dead
-                  ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">no sales</span>
-                  : <span className="tabular-nums text-slate-700">{coverLabel(r.cover_weeks)}</span>}
-              </td>
+              <td className="px-4 py-2 font-semibold text-slate-800">{r.u30}</td>
+              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
+              <td className="truncate px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
               <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
             </tr>
           ))}
         </tbody>
