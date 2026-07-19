@@ -967,6 +967,10 @@ export interface InvSizeRow {
   buckets: InvBuckets;
   amazonTotal: number;   // PDF p7 re-order figure — everything at OR heading to Amazon, incl. earmarked stock still in our building
   demand: number;        // ordertype 1: a CLAIM on stock, not stock. Never add this into a stock figure.
+  // Birkenstock pre-order book (birktracker): requested MINUS arrived, since an arrived unit is already counted in Local.
+  // A separate notion of incoming from orderstatus, which knows nothing about these seasonal POs. NOT part of Total — we do not
+  // have these units yet.
+  birkOnOrder: number;
 }
 
 // One physical localstock row — which rack a unit is on, and what state it is in.
@@ -994,7 +998,7 @@ export interface InvStockData {
   imagename: string | null;
   totals: {
     local: number; onOrder: number; total: number;
-    amazonTotal: number; demand: number; buckets: InvBuckets;
+    amazonTotal: number; demand: number; birkOnOrder: number; buckets: InvBuckets;
   };
   sizes: InvSizeRow[];
   locations: InvLocationRow[];
@@ -1009,7 +1013,7 @@ export function getInvStock(groupid: string) {
       title: b.title ?? null,
       imagename: b.imagename ?? null,
       totals: b.totals || {
-        local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0,
+        local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0, birkOnOrder: 0,
         buckets: {
           free: 0, picked: 0, amzReserved: 0, amzBay: 0,
           onOrderLocal: 0, onOrderAmz: 0, arrivedLocal: 0, arrivedAmz: 0,

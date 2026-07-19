@@ -23,44 +23,96 @@ row would read as "we don't stock a 39", which is a different and wrong answer.
 
 import Image from 'next/image';
 import { useState } from 'react';
-import { InvStockData, InvBuckets } from '@/lib/api';
+import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
 import InvLocations from '@/components/InvLocations';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 
-// The Show Detail columns: the twelve buckets in three walking groups, appended to the RIGHT of Total/Local so the two columns the
-// operator already reads never move when the toggle flips. Labels are short because twelve columns is already a lot of width.
-const BUCKET_GROUPS: { group: string; cols: { key: keyof InvBuckets; label: string; title: string }[] }[] = [
+// The Show Detail columns, appended to the RIGHT of Total/Local so the two columns the operator already reads never move when the
+// toggle flips. Labels are short because fourteen columns is already a lot of width.
+//
+// GROUP ORDER IS BY HOW OFTEN THE NUMBERS ARE NON-ZERO (owner): Here, At Amazon, Derived, then Incoming last. Incoming is empty for
+// most styles most of the time — parking it on the far right means the columns that usually carry a value are the ones you see
+// without scrolling. Reorder this array to change the layout; nothing else needs touching.
+//
+// Each column carries its own accessors, so a group is just data. The derived columns (Amazon total, Demand) read off the row rather
+// than out of `buckets`, which is why `get`/`getTotal` exist instead of a bare bucket key.
+type DetailCol = {
+  key: string;
+  label: string;
+  title: string;
+  get: (s: InvSizeRow) => number;
+  getTotal: (t: InvStockData['totals']) => number;
+};
+
+// Helper for the twelve plain bucket columns.
+const bucket = (key: keyof InvBuckets, label: string, title: string): DetailCol => ({
+  key, label, title,
+  get: (s) => s.buckets[key],
+  getTotal: (t) => t.buckets[key],
+});
+
+const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
   {
     group: 'Here',
     cols: [
-      { key: 'free', label: 'Free', title: 'Unallocated and unpicked' },
-      { key: 'picked', label: 'Picked', title: 'Committed to an order, still on the shelf until packed' },
-      { key: 'amzReserved', label: 'Amz res', title: 'Earmarked for Amazon, still in its normal rack' },
-      { key: 'amzBay', label: 'Amz bay', title: 'In the C3-Amazon staging bay — still pickable for a Shopify customer' },
-    ],
-  },
-  {
-    group: 'Incoming',
-    cols: [
-      { key: 'onOrderLocal', label: 'Ord loc', title: 'Local order (type 2), not yet arrived' },
-      { key: 'onOrderAmz', label: 'Ord amz', title: 'Amazon order (type 3), not yet arrived' },
-      { key: 'arrivedLocal', label: 'Arr loc', title: 'Local order arrived, not yet shelved' },
-      { key: 'arrivedAmz', label: 'Arr amz', title: 'Amazon order arrived (held 7 days)' },
+      bucket('free', 'Free', 'Unallocated and unpicked'),
+      bucket('picked', 'Picked', 'Committed to an order, still on the shelf until packed'),
+      bucket('amzReserved', 'Amz res', 'Earmarked for Amazon, still in its normal rack'),
+      bucket('amzBay', 'Amz bay', 'In the C3-Amazon staging bay — still pickable for a Shopify customer'),
     ],
   },
   {
     group: 'At Amazon',
     cols: [
-      { key: 'amzLive', label: 'Live', title: 'Sellable FBA stock at Amazon' },
-      { key: 'amzInbound', label: 'Inbound', title: 'Booked in at Amazon, not yet live' },
-      { key: 'boxed', label: 'Boxed', title: 'In an Amazon box awaiting DPD' },
-      { key: 'transit', label: 'Transit', title: 'Collected by DPD within the last 2 days' },
+      bucket('amzLive', 'Live', 'Sellable FBA stock at Amazon'),
+      bucket('amzInbound', 'Inbound', 'Booked in at Amazon, not yet live'),
+      bucket('boxed', 'Boxed', 'In an Amazon box awaiting DPD'),
+      bucket('transit', 'Transit', 'Collected by DPD within the last 2 days'),
+    ],
+  },
+  {
+    // The Birkenstock pre-order book. Its own group, never folded into Incoming: an orderstatus line is a warehouse order landing
+    // shortly, a Birk PO is a seasonal commitment that may be months away. Mixing them would read as "more is coming than really is".
+    group: 'Birk PO',
+    cols: [
+      {
+        key: 'birkOnOrder', label: 'On order',
+        title: 'Birkenstock pre-order book: units requested minus those already arrived (arrived stock is counted in Local)',
+        get: (s) => s.birkOnOrder,
+        getTotal: (t) => t.birkOnOrder,
+      },
+    ],
+  },
+  {
+    group: 'Derived',
+    cols: [
+      {
+        key: 'amazonTotal', label: 'Amz tot',
+        title: 'PDF p7 re-order figure: everything at or heading to Amazon, including stock still here earmarked for it',
+        get: (s) => s.amazonTotal,
+        getTotal: (t) => t.amazonTotal,
+      },
+      {
+        key: 'demand', label: 'Demand',
+        title: 'Paid, unfulfilled customer orders — a claim on stock, not stock',
+        get: (s) => s.demand,
+        getTotal: (t) => t.demand,
+      },
+    ],
+  },
+  {
+    group: 'Incoming',
+    cols: [
+      bucket('onOrderLocal', 'Ord loc', 'Local order (type 2), not yet arrived'),
+      bucket('onOrderAmz', 'Ord amz', 'Amazon order (type 3), not yet arrived'),
+      bucket('arrivedLocal', 'Arr loc', 'Local order arrived, not yet shelved'),
+      bucket('arrivedAmz', 'Arr amz', 'Amazon order arrived (held 7 days)'),
     ],
   },
 ];
 
-const DETAIL_COL_COUNT = BUCKET_GROUPS.reduce((n, g) => n + g.cols.length, 0) + 2; // + Amazon total + Demand
+const DETAIL_COL_COUNT = DETAIL_GROUPS.reduce((n, g) => n + g.cols.length, 0);
 
 export default function InvStockPanel({ data }: { data: InvStockData }) {
   const [imgFailed, setImgFailed] = useState(false);
@@ -77,8 +129,9 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
   // default because that is what you read with a customer waiting; the breakdown answers the rarer "why is that number what it is".
   const [detail, setDetail] = useState(false);
 
+  // Spacing is owned by the parent (the panel renders below the list), so no margin on the root here.
   return (
-    <div className="mb-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       {/* Header — title and groupid, so the panel is self-identifying once the list is scrolled away below it. */}
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5">
         <div className="text-sm font-medium text-slate-800">{data.title || 'Untitled product'}</div>
@@ -96,19 +149,18 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
                 <tr className="text-[10px] text-slate-400">
                   <th className="py-1 pr-3" />
                   <th className="py-1 px-3" colSpan={2} />
-                  {BUCKET_GROUPS.map((g) => (
+                  {DETAIL_GROUPS.map((g) => (
                     <th key={g.group} colSpan={g.cols.length} className="border-l border-slate-200 py-1 px-2 text-center font-medium">
                       {g.group}
                     </th>
                   ))}
-                  <th colSpan={2} className="border-l border-slate-200 py-1 px-2 text-center font-medium">Derived</th>
                 </tr>
               )}
               <tr className="border-b border-slate-200">
                 <th className="py-1.5 pr-3 font-medium">Size</th>
                 <th className="py-1.5 px-3 text-right font-medium">Total</th>
                 <th className="py-1.5 pl-3 text-right font-medium">Local</th>
-                {detail && BUCKET_GROUPS.map((g) =>
+                {detail && DETAIL_GROUPS.map((g) =>
                   g.cols.map((c, i) => (
                     <th
                       key={c.key}
@@ -118,14 +170,6 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
                       {c.label}
                     </th>
                   ))
-                )}
-                {detail && (
-                  <>
-                    <th title="PDF p7 re-order figure: everything at or heading to Amazon, including stock still here earmarked for it"
-                        className="whitespace-nowrap border-l border-slate-200 py-1.5 px-2 text-right font-medium">Amz tot</th>
-                    <th title="Paid, unfulfilled customer orders — a claim on stock, not stock"
-                        className="whitespace-nowrap py-1.5 px-2 text-right font-medium">Demand</th>
-                  </>
                 )}
               </tr>
             </thead>
@@ -143,21 +187,18 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
                       could read as "not loaded". */}
                   <td className={`py-1.5 px-3 text-right tabular-nums ${s.total ? 'text-slate-700' : 'text-slate-300'}`}>{s.total}</td>
                   <td className={`py-1.5 pl-3 text-right font-semibold tabular-nums ${s.local ? 'text-slate-900' : 'text-slate-300'}`}>{s.local}</td>
-                  {detail && BUCKET_GROUPS.map((g) =>
-                    g.cols.map((c, i) => (
-                      <td
-                        key={c.key}
-                        className={`py-1.5 px-2 text-right tabular-nums ${s.buckets[c.key] ? 'text-slate-700' : 'text-slate-300'} ${i === 0 ? 'border-l border-slate-100' : ''}`}
-                      >
-                        {s.buckets[c.key]}
-                      </td>
-                    ))
-                  )}
-                  {detail && (
-                    <>
-                      <td className={`border-l border-slate-100 py-1.5 px-2 text-right tabular-nums ${s.amazonTotal ? 'text-slate-700' : 'text-slate-300'}`}>{s.amazonTotal}</td>
-                      <td className={`py-1.5 px-2 text-right tabular-nums ${s.demand ? 'text-slate-700' : 'text-slate-300'}`}>{s.demand}</td>
-                    </>
+                  {detail && DETAIL_GROUPS.map((g) =>
+                    g.cols.map((c, i) => {
+                      const v = c.get(s);
+                      return (
+                        <td
+                          key={c.key}
+                          className={`py-1.5 px-2 text-right tabular-nums ${v ? 'text-slate-700' : 'text-slate-300'} ${i === 0 ? 'border-l border-slate-100' : ''}`}
+                        >
+                          {v}
+                        </td>
+                      );
+                    })
                   )}
                 </tr>
               ))}
@@ -173,18 +214,12 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
                   <td className="py-1.5 pr-3 text-xs uppercase tracking-wide text-slate-500">All sizes</td>
                   <td className="py-1.5 px-3 text-right tabular-nums text-slate-600">{data.totals.total}</td>
                   <td className="py-1.5 pl-3 text-right font-bold tabular-nums text-slate-900">{data.totals.local}</td>
-                  {detail && BUCKET_GROUPS.map((g) =>
+                  {detail && DETAIL_GROUPS.map((g) =>
                     g.cols.map((c, i) => (
                       <td key={c.key} className={`py-1.5 px-2 text-right tabular-nums text-slate-600 ${i === 0 ? 'border-l border-slate-200' : ''}`}>
-                        {data.totals.buckets[c.key]}
+                        {c.getTotal(data.totals)}
                       </td>
                     ))
-                  )}
-                  {detail && (
-                    <>
-                      <td className="border-l border-slate-200 py-1.5 px-2 text-right tabular-nums text-slate-600">{data.totals.amazonTotal}</td>
-                      <td className="py-1.5 px-2 text-right tabular-nums text-slate-600">{data.totals.demand}</td>
-                    </>
                   )}
                 </tr>
               </tfoot>

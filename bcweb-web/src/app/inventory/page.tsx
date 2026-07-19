@@ -30,7 +30,7 @@ is in the haystack. skusummary.colour is deliberately NOT in it — it is an ove
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getInvStyles, getInvStock, InvStyleRow, InvStockData } from '@/lib/api';
@@ -69,23 +69,34 @@ export default function InventoryPage() {
   const [stockError, setStockError] = useState<string | null>(null);
   // The groupid of the most recent stock request — used to discard out-of-order responses (see onSelect).
   const reqRef = useRef<string | null>(null);
+  // Reset hands focus straight back to Contains so the next hunt starts by typing, with no reach for the mouse.
+  const containsRef = useRef<HTMLInputElement>(null);
 
-  // Fetch the whole list once. Everything after this is local.
-  useEffect(() => {
-    (async () => {
-      const res = await getInvStyles();
-      if (res.success && res.data) {
-        setRows(res.data.rows);
-      } else {
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load inventory');
-      }
-      setLoading(false);
-    })();
+  // Fetch the whole list. Called on mount and again on Reset — Reset is the natural "start a fresh hunt" moment, so it doubles as the
+  // refresh-from-DB button (mirrors what the operator does in PowerBuilder). Between refreshes the list is a snapshot: every FIND
+  // filters that array in the browser with no round-trip, which is what keeps the drill-down instant.
+  const loadStyles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const res = await getInvStyles();
+    if (res.success && res.data) {
+      setRows(res.data.rows);
+    } else {
+      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+      setError(res.error || 'Failed to load inventory');
+    }
+    setLoading(false);
   }, [logout]);
+
+  useEffect(() => { loadStyles(); }, [loadStyles]);
 
   // Pre-compute each row's haystack once per fetch, not once per filter pass.
   const indexed = useMemo(() => rows.map((r) => ({ row: r, hay: haystack(r) })), [rows]);
+
+  // Nothing is listed until the operator has searched at least once. The full set is already in memory and IS what gets filtered —
+  // we simply do not render 280 rows nobody asked for (owner). An empty screen is also a clearer invitation to type than a wall of
+  // every product we sell. Reset returns to this blank state.
+  const searched = steps.length > 0;
 
   // Apply every step in order. Steps are ANDed, which is what successive narrowing means.
   const filtered = useMemo(() => {
@@ -99,6 +110,22 @@ export default function InventoryPage() {
     return out.map((x) => x.row);
   }, [indexed, steps]);
 
+  // Drop the open stock panel as soon as its style is no longer in the filtered list. Without this, searching ARIZONA, opening a
+  // style, then searching IVES leaves the Arizona grid sitting above a list of Ives — the panel silently describes a product that is
+  // no longer on screen, which is worse than showing nothing.
+  //
+  // Done as an effect on `filtered` rather than inside onFind, so every path that can narrow the list is covered by one rule.
+  // A style that SURVIVES the new filter keeps its panel open, which is what you want when narrowing towards it.
+  useEffect(() => {
+    if (selected && !filtered.some((r) => r.groupid === selected)) {
+      setSelected(null);
+      setStock(null);
+      setStockError(null);
+      setStockLoading(false);
+      reqRef.current = null;
+    }
+  }, [filtered, selected]);
+
   // FIND: turn whatever is in the boxes into steps, then clear the boxes. Blank boxes are ignored, so pressing Enter in an empty
   // form is a no-op rather than an error.
   function onFind(e: React.FormEvent) {
@@ -110,6 +137,9 @@ export default function InventoryPage() {
     setSteps((prev) => [...prev, ...next]);
     setContains('');
     setNotContains('');
+    // Contains is home. After every Find — including one driven only from the "does not contain" box — focus returns here, so the
+    // next term is always typed from the same place and the operator never hunts for the cursor (owner).
+    containsRef.current?.focus();
   }
 
   // Reset clears the whole screen back to its opening state — filter steps, boxes AND the selected style's grid. Leaving a stock
@@ -124,6 +154,11 @@ export default function InventoryPage() {
     setStockError(null);
     setStockLoading(false);
     reqRef.current = null;
+    // Reset also RE-READS the list from the DB. The in-browser list is a snapshot taken at load, so stock figures drift as the day
+    // goes on; refreshing at the moment the operator starts a fresh hunt is exactly when a stale number would bite (owner — it is
+    // what they do in PowerBuilder). No separate Refresh button to remember.
+    loadStyles();
+    containsRef.current?.focus();
   }
 
   // Load one style's stock position. Clicking the already-selected row collapses the panel, so the operator can get the full list
@@ -168,6 +203,7 @@ export default function InventoryPage() {
             <div className="relative">
               <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
               <input
+                ref={containsRef}
                 value={contains}
                 onChange={(e) => setContains(e.target.value.toUpperCase())}
                 autoFocus
@@ -188,13 +224,14 @@ export default function InventoryPage() {
           <button type="submit" className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700">
             Find
           </button>
+          {/* Reset is also the refresh: it clears the hunt AND re-reads from the DB, so it stays enabled even with no filter applied. */}
           <button
             type="button"
             onClick={onReset}
-            disabled={steps.length === 0}
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white"
+            title="Clear the search and re-read stock from the database"
+            className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
-            <ArrowPathIcon className="h-4 w-4" />
+            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Reset
           </button>
         </div>
@@ -204,8 +241,11 @@ export default function InventoryPage() {
             friction we are removing (owner). */}
         <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
           <span className="mr-1 whitespace-nowrap text-slate-500">
-            Rows: <span className="font-semibold text-slate-800">{filtered.length}</span>
-            {steps.length > 0 && <span className="text-slate-400"> of {rows.length}</span>}
+            {searched ? (
+              <>Rows: <span className="font-semibold text-slate-800">{filtered.length}</span><span className="text-slate-400"> of {rows.length}</span></>
+            ) : (
+              <span className="text-slate-400">{rows.length} styles ready to search</span>
+            )}
           </span>
           {steps.length > 0 && (
             <>
@@ -230,25 +270,17 @@ export default function InventoryPage() {
         </div>
       </form>
 
-      {/* ---- Stock position (selected style) ------------------------------------------------------------------------------
-          Sits ABOVE the list, following the legacy PowerBuilder layout. That is inverted versus our other modules (list-then-drill)
-          but it is right here: the operator picks a style once and then studies the grid, so the grid must not slide down the page
-          as the result list grows. */}
-      {stockLoading && (
-        <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">
-          Loading stock position…
-        </div>
-      )}
-      {stockError && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{stockError}</div>}
-      {/* key={groupid} so picking a different style remounts the panel and clears its chosen size — otherwise the previous style's
-          size selection would carry over and point at a size the new style may not even have. */}
-      {stock && !stockLoading && <InvStockPanel key={stock.groupid} data={stock} />}
-
       {/* ---- List -------------------------------------------------------------------------------------------------------- */}
       {loading && <p className="text-sm text-slate-400">Loading stock…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {!loading && !error && (
+      {!loading && !error && !searched && (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
+          Type what you are looking for and press Find.
+        </div>
+      )}
+
+      {!loading && !error && searched && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -284,6 +316,25 @@ export default function InventoryPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ---- Stock position (selected style) ------------------------------------------------------------------------------
+          Sits BELOW the list, directly under the row that was clicked. It used to sit above (copying the PowerBuilder layout, on the
+          reasoning that the grid should not slide down the page as the list grows) but that reasoning died once the list started
+          blank and typically shows a handful of filtered rows. Clicking a row and having its detail appear ABOVE, out of view, read
+          as backwards — owner hit exactly that confusion. Detail belongs next to the thing you clicked. */}
+      {stockLoading && (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">
+          Loading stock position…
+        </div>
+      )}
+      {stockError && <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{stockError}</div>}
+      {/* key={groupid} so picking a different style remounts the panel and clears its chosen size — otherwise the previous style's
+          size selection would carry over and point at a size the new style may not even have. */}
+      {stock && !stockLoading && (
+        <div className="mt-4">
+          <InvStockPanel key={stock.groupid} data={stock} />
         </div>
       )}
     </AppShell>

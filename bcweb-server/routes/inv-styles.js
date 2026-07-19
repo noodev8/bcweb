@@ -23,7 +23,9 @@ DEFINITIONS (owner, 2026-07-19 — reconciled against the legacy PowerBuilder sc
             PowerBuilder for 1005292-ARIZONA (size 37 = 4 free + 1 picked = 5; size 38 = 3 free + 2 picked = 5).
   - Order = units on the way to us: orderstatus rows not yet arrived, local (type 2) or Amazon (type 3). Taken at face value — no
             staleness logic here. clean_sales.sql prunes stale rows weekly; cleanup is a human job on another screen (owner).
-  - Total = everything we have of that style wherever it sits = Local + Amazon-held (live at Amazon + inbound + boxed + in transit).
+  - Total = everything we have or have coming = Local + Amazon-held (live + inbound + boxed + in transit) + the Birkenstock pre-order
+            book (birktracker: requested - arrived). Birk POs are INCLUDED because the operator already counts a placed Birk order as
+            stock they have ("I know it's coming") — it is ordered ~6 months ahead and is the brand's only replenishment.
 =======================================================================================================================================
 Request Payload: none (GET)
 
@@ -105,6 +107,17 @@ router.get('/', async (req, res) => {
         JOIN skumap m ON m.code = a.code
         WHERE a.created_at >= now() - interval '2 days'
         GROUP BY m.groupid
+      ),
+      birk AS (
+        -- Birkenstock pre-order book (birktracker): the ~6-months-ahead seasonal POs, which orderstatus knows nothing about.
+        -- requested MINUS arrived — an arrived unit is already in localstock, so the raw requested would double-count it.
+        -- INNER JOIN on skumap: birktracker.code is Birkenstock's own naming and ~23% of lines are new-season styles we have not set
+        -- up yet; those have no Inventory presence to show against. Must stay in step with routes/inv-stock.js — the list Total and
+        -- the drill Total have to agree.
+        SELECT m.groupid, SUM(GREATEST(COALESCE(b.requested, 0) - COALESCE(b.arrived, 0), 0)) AS units
+        FROM birktracker b
+        JOIN skumap m ON m.code = b.code
+        GROUP BY m.groupid
       )
       SELECT
         s.groupid,
@@ -115,7 +128,8 @@ router.get('/', async (req, res) => {
         COALESCE(ord.units, 0)                                AS order_units,
         COALESCE(feed.units, 0)
           + COALESCE(boxed.units, 0)
-          + COALESCE(transit.units, 0)                        AS amazon_units
+          + COALESCE(transit.units, 0)                        AS amazon_units,
+        COALESCE(birk.units, 0)                               AS birk_units
       FROM skusummary s
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
@@ -123,6 +137,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN feed            ON feed.groupid    = s.groupid
       LEFT JOIN boxed           ON boxed.groupid   = s.groupid
       LEFT JOIN transit         ON transit.groupid = s.groupid
+      LEFT JOIN birk            ON birk.groupid    = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
     `);
 
@@ -131,6 +146,7 @@ router.get('/', async (req, res) => {
     const rows = result.rows.map((r) => {
       const local = Number(r.local_units) || 0;
       const amazon = Number(r.amazon_units) || 0;
+      const birk = Number(r.birk_units) || 0;
       return {
         groupid: r.groupid,
         title: r.title || null,
@@ -138,7 +154,9 @@ router.get('/', async (req, res) => {
         imagename: r.imagename || null,
         local,
         onOrder: Number(r.order_units) || 0,
-        total: local + amazon,
+        // Total INCLUDES the Birkenstock pre-order book (owner) — a placed Birk order is stock they count on having, since it is the
+        // only replenishment that exists for the brand. Local stays strictly "in the building".
+        total: local + amazon + birk,
       };
     });
 

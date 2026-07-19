@@ -167,6 +167,22 @@ router.get('/', async (req, res) => {
          JOIN sz ON sz.code = a.code
          WHERE a.created_at >= now() - interval '2 days'
          GROUP BY a.code
+       ),
+       birk AS (
+         -- Birkenstock pre-order book: the ~6-months-ahead seasonal POs. This is a SEPARATE notion of "incoming" from orderstatus —
+         -- orderstatus holds warehouse order lines and knows nothing about these, so without this the screen cannot see what is
+         -- coming from Birkenstock at all.
+         --
+         -- requested MINUS arrived (owner): an arrived unit has already been booked into localstock, so counting the full requested
+         -- figure would double-count it against Local. GREATEST(...,0) guards the case where more arrived than was requested.
+         --
+         -- INNER JOIN on skumap is deliberate: birktracker.code is BIRKENSTOCK's naming (e.g. '0044701-Ramses Birko-Flor Unisex-35'),
+         -- and only ~77% of lines match a code we carry. The rest are new-season styles not set up in skumap yet — they have no
+         -- Inventory presence to show this against, so dropping them is correct, not a gap (owner).
+         SELECT b.code, SUM(GREATEST(COALESCE(b.requested, 0) - COALESCE(b.arrived, 0), 0)) AS units
+         FROM birktracker b
+         JOIN sz ON sz.code = b.code
+         GROUP BY b.code
        )
        SELECT
          sz.code,
@@ -184,13 +200,15 @@ router.get('/', async (req, res) => {
          COALESCE(feed.amz_live_u, 0)      AS amz_live_u,
          COALESCE(feed.amz_inbound_u, 0)   AS amz_inbound_u,
          COALESCE(boxed.units, 0)          AS boxed_u,
-         COALESCE(transit.units, 0)        AS transit_u
+         COALESCE(transit.units, 0)        AS transit_u,
+         COALESCE(birk.units, 0)           AS birk_u
        FROM sz
        LEFT JOIN loc     ON loc.code     = sz.code
        LEFT JOIN ord     ON ord.code     = sz.code
        LEFT JOIN feed    ON feed.code    = sz.code
        LEFT JOIN boxed   ON boxed.code   = sz.code
        LEFT JOIN transit ON transit.code = sz.code
+       LEFT JOIN birk    ON birk.code    = sz.code
        -- Numeric size order (35, 36, ... 42), not text order. Sizes are EU by design and normally 2 digits, but the regex guard keeps
        -- a non-numeric code (accessories, one-size items) from throwing on the ::int cast — those sort last.
        ORDER BY (CASE WHEN sz.eu ~ '^[0-9]+$' THEN sz.eu::int ELSE 999 END), sz.code`,
@@ -220,6 +238,10 @@ router.get('/', async (req, res) => {
       // Compact figures DERIVED from the buckets, never computed independently — so Show Detail always reconciles.
       const local = b.free + b.picked + b.amzReserved + b.amzBay;
       const atAmazon = b.amzLive + b.amzInbound + b.boxed + b.transit;
+      // Birkenstock pre-order book, INCLUDED IN TOTAL (owner): the operator already counts a placed Birk order as stock they have —
+      // "I know it's coming" — because these are ordered ~6 months ahead and are the only replenishment that exists for Birkenstock.
+      // requested MINUS arrived, so units already booked into localstock are not counted twice against Local.
+      const birkOnOrder = n(r.birk_u);
 
       return {
         code: r.code,
@@ -227,13 +249,16 @@ router.get('/', async (req, res) => {
         uksize: r.uksize || null,
         local,
         onOrder: b.onOrderLocal + b.onOrderAmz,
-        total: local + atAmazon,
+        total: local + atAmazon + birkOnOrder,
         buckets: b,
         // Derived rows from PDF p7 / spec §3. amazonTotal is the figure that drives Amazon re-ordering: everything at or heading to
         // Amazon, INCLUDING the units still sitting in our building earmarked for it (amzReserved + amzBay + onOrderAmz).
         amazonTotal: b.amzLive + b.amzInbound + b.boxed + b.transit + b.onOrderAmz + b.amzReserved + b.amzBay,
         // Customer demand is a CLAIM on stock, not stock. Kept separate so it is never added into a stock figure.
         demand: n(r.demand_u),
+        // Also surfaced as its own Show Detail column, so the operator can see how much of Total is a pre-order rather than stock
+        // on a shelf. It is NOT part of Local — Local stays strictly "what is in the building".
+        birkOnOrder,
       };
     });
 
@@ -299,11 +324,12 @@ router.get('/', async (req, res) => {
         acc.total += s.total;
         acc.amazonTotal += s.amazonTotal;
         acc.demand += s.demand;
+        acc.birkOnOrder += s.birkOnOrder;
         for (const k of BUCKET_KEYS) acc.buckets[k] += s.buckets[k];
         return acc;
       },
       {
-        local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0,
+        local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0, birkOnOrder: 0,
         buckets: Object.fromEntries(BUCKET_KEYS.map((k) => [k, 0])),
       }
     );

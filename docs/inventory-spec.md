@@ -53,12 +53,36 @@ style total of **42**, matching `docs/inventory-powerbuilder.png` exactly. Size 
   **The compact Local / Order / Total figures are DERIVED from the buckets server-side**, never computed
   independently — so the collapsed and expanded views are arithmetically incapable of disagreeing.
 
+- **Birkenstock pre-order book (added 2026-07-19).** `GET /inv-stock` also reads **`birktracker`** — the
+  ~6-months-ahead seasonal POs. This is a **separate notion of incoming from `orderstatus`**, which holds
+  warehouse order lines and knows nothing about these; without it the screen cannot see what is coming from
+  Birkenstock at all. Shown as its own **Birk PO → On order** column under Show Detail **and INCLUDED IN
+  `Total`** (owner: "I know it's coming" — Birk is ordered ~6 months ahead and a placed PO is the brand's
+  only replenishment, so the operator already counts it as stock they have). Never folded into **Incoming**
+  (an `orderstatus` line lands shortly; a Birk PO may be months away), and never into **`Local`**, which
+  stays strictly "what is in the building". **`/inv-styles` and `/inv-stock` must apply this identically** —
+  the list Total and the drill Total have to agree.
+  - Figure is **`requested − arrived`** (owner): an arrived unit is already booked into `localstock`, so the
+    raw `requested` would double-count it against Local. `GREATEST(…, 0)` guards over-delivery.
+  - **INNER JOIN** to `skumap`. `birktracker.code` is *Birkenstock's* naming
+    (`0044701-Ramses Birko-Flor Unisex-35`), and only ~77% of the 382 lines match a code we carry; the rest
+    are new-season styles not set up in `skumap` yet, which have no Inventory presence anyway (owner: "we
+    don't care about items that are new").
+  - **Do not use `invoiced`, and do not use the dates.** `due` is a bare month name with no year, and
+    `placedate` is TEXT in *mixed* formats (`03/02/2026` alongside `2025-09-15`) — unusable without cleaning.
+
 **Owner trims during build (already applied — don't reinstate):**
 - The style list shows only `# / Groupid / Title / Total / Local`. **Segment and Order are "hidden truths"**:
   fetched, segment still searchable, but no column.
 - The size grid shows only `Size / Total / Local` — no Order column. "Will see the rest at the next drill
   down." `onOrder` still ships on the API for later slices.
-- **Reset clears the size grid too**, not just the filter.
+- **Reset clears the size grid too**, not just the filter, **and re-reads the list from the DB** — it is the
+  refresh, mirroring what the owner does in PowerBuilder. No separate Refresh button. (The in-browser list
+  is a snapshot taken at load; the size grid and locations are always fetched live per style click.)
+- **The list starts blank.** All ~280 styles are fetched and held in memory — that is still what gets
+  filtered — but nothing is rendered until the first FIND. Reset returns to blank.
+- **The open stock panel closes when its style drops out of the filtered list** (search ARIZONA, open a
+  style, search IVES → panel goes). A style that survives the new filter keeps its panel open.
 - Search boxes force UPPERCASE; row count sits at the **top**, not under the table.
 
 **Next:** slice 4 = Show Detail → the 12 buckets. Then phase 2 (localstock adjustments) on top of slice 3's
@@ -110,9 +134,12 @@ by side and lets the human read them.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Layout follows PowerBuilder: **stock position above, style list below**. That is inverted versus our other
-modules (list-then-drill), but it is right here — the operator picks a style once and then studies the size
-grid, so the grid should not slide down the page as the result list grows.
+Layout is **list first, stock position below it** — the detail appears directly under the row you clicked.
+
+*(This was originally the other way up, copying PowerBuilder, on the reasoning that the grid should not
+slide down the page as the list grows. That reasoning died once the list started blank and typically shows
+a handful of filtered rows; clicking a row and having its detail appear above, out of view, read as
+backwards and confused the owner in testing. Don't flip it back without a better reason than PB parity.)*
 
 ### 2a. The filter (deliberately dumb)
 
@@ -195,7 +222,7 @@ Three numbers per size, and these are the **primary** view:
 |---|---|---|
 | **Local** | Physically in the building | `SUM(qty)` over **all** `localstock` rows for the code, `COALESCE(deleted,0)=0` — **regardless of `ordernum`** |
 | **Order** | On the way | `COUNT(*)` of `orderstatus` rows, `arrived=0`, `ordertype IN (2,3)` |
-| **Total** | Everything we have of that SKU, wherever it is | `Local` + buckets 9–12 (`amzlive` + inbound + boxed + in transit) |
+| **Total** | Everything we have **or have coming** | `Local` + buckets 9–12 + **Birk pre-order book** (`requested − arrived`) |
 
 **`Local` deliberately includes stock already picked for an order.** Verified against the PowerBuilder
 screen for `1005292-ARIZONA`: size 37 = 4 `#FREE` + 1 picked (`BC18410`) = **5**, size 38 = 3 `#FREE` + 2
