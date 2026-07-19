@@ -69,11 +69,13 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   // Barcode field: store the digits (parent input already strips non-digits) and, once a full 13-digit barcode is present, jump
   // focus down to the next barcode field ONCE. Longer/shorter barcodes are never blocked — 13 just triggers the convenience jump
   // (a future non-Birkenstock brand with a different length still types freely). The last row keeps focus (nothing below to jump to).
+  // Owner's rule: only advance into a BLANK next field — if the next row already carries a barcode, hold focus so a scan can't
+  // overwrite or skip past an already-populated size (re-scanning a partly-filled run stays put on each completed cell).
   function onBarcodeChange(i: number, raw: string) {
     if (justAdvancedTo.current === i) justAdvancedTo.current = null;   // real input into the jumped-to row — no longer expecting its stray Enter
     const digits = raw.replace(/\D/g, '');
     setCell(i, 'barcode', digits);
-    if (digits.length >= 13 && !advanced.current[i] && i < rows.length - 1) {
+    if (digits.length >= 13 && !advanced.current[i] && i < rows.length - 1 && !rows[i + 1].barcode) {
       advanced.current[i] = true;
       justAdvancedTo.current = i + 1;
       barcodeRefs.current[i + 1]?.focus();
@@ -87,7 +89,7 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (justAdvancedTo.current === i) { justAdvancedTo.current = null; return; }
-      if (i < rows.length - 1) barcodeRefs.current[i + 1]?.focus();
+      if (i < rows.length - 1 && !rows[i + 1].barcode) barcodeRefs.current[i + 1]?.focus();
     }
   }
   function move(i: number, dir: -1 | 1) {
