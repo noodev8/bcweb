@@ -71,6 +71,7 @@ router.get('/', async (req, res) => {
     const headerResult = await query(`
       SELECT a.code, a.groupid, sk.segment, RIGHT(a.code,2) AS size, a.sku AS amz_sku,
              t.shopifytitle AS title,
+             sk.match_amazon_price AS match_amazon,
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.cost')}    AS cost,
              ${safeNumeric('sk.rrp')}     AS rrp,
@@ -104,6 +105,9 @@ router.get('/', async (req, res) => {
       segment: h.segment || null,
       size: h.size,
       title: h.title || null,
+      // Read-only flag for the drill badge: the parent STYLE auto-matches its Shopify price to Amazon's lowest in-stock size. Purely
+      // informational on the Amazon side (this SKU's Amazon price is set here as usual); it tells the operator Shopify follows Amazon.
+      match_amazon: h.match_amazon === true,
       price,
       cost,
       fbafee,

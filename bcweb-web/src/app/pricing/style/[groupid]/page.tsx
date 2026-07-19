@@ -21,6 +21,7 @@ import SizeCurve from '@/components/SizeCurve';
 import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
+import MatchAmazonPanel from '@/components/MatchAmazonPanel';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
@@ -178,16 +179,28 @@ function DrillContent() {
           )}
 
           {/* Set-price control — kept high so the action is reachable without scrolling past the supporting reports below. The card's
-              own channel banner labels it, so no separate heading. */}
-          <section>
-            <PriceSetter
-              key={reloadKey}
-              header={data.header}
-              sizes={data.sizes}
+              own channel banner labels it, so no separate heading. When the style auto-matches Amazon the manual setter is hidden (the
+              price is on autopilot) and the MatchAmazonPanel takes its place; otherwise the panel sits below as a compact enable card. */}
+          <section className="space-y-3">
+            {!data.header.match_amazon && (
+              <PriceSetter
+                key={reloadKey}
+                header={data.header}
+                sizes={data.sizes}
+                applying={applying}
+                onApply={handleApply}
+                onPark={handlePark}
+                onCancel={() => router.push(backTo)}
+              />
+            )}
+            <MatchAmazonPanel
+              groupid={groupid}
+              matchAmazon={data.header.match_amazon}
+              amazonLowest={data.header.amazon_lowest}
+              currentPrice={data.header.now}
               applying={applying}
-              onApply={handleApply}
               onPark={handlePark}
-              onCancel={() => router.push(backTo)}
+              onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
             />
           </section>
 

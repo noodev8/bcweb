@@ -170,6 +170,16 @@ function DrillContent() {
               <CopyButton value={data.header.amz_sku} label="Amazon SKU" />
             </span>
           )}
+          {/* Read-only heads-up: this style's Shopify price auto-follows Amazon's lowest in-stock size. Reminds the operator that an
+              Amazon price change here will pull Shopify down at the next amz-match sync (Amazon itself is priced normally below). */}
+          {data.header.match_amazon && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+              title="This style's Shopify price is auto-matched to Amazon's cheapest in-stock size (synced twice daily)."
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" /> Shopify auto-matches Amazon
+            </span>
+          )}
         </div>
       )}
 

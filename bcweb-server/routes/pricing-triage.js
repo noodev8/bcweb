@@ -12,6 +12,9 @@ Key domain rules baked into the SQL (S2, CLAUDE.md) — do not change without re
     back up to N. Rationale: Birkenstock can't be restocked, so a 0-stock style has nothing to price (CLAUDE.md).
   - Drop "parked" styles: a future next_shopify_price_review hides a style until the cooldown passes.
   - Stock is derived from localstock (#FREE, not deleted, qty>0) — NEVER skusummary.stockvariants (stale) (CLAUDE.md).
+  - Auto-matched styles (match_amazon_price) are deliberately KEPT in the list (owner): triage is where the operator re-decides whether a
+    style should stay in the Amazon-match bracket. Their price is on autopilot (pricing-apply refuses a manual change), so the action for
+    them is "keep matching → set a review to snooze" or "turn matching off". Each row carries match_amazon so the UI can badge it.
 =======================================================================================================================================
 Request Query Params:
   segment  (string, required)  - the segment to shortlist within
@@ -24,8 +27,8 @@ Success Response:
   "segment": "EVA-SEG",
   "days": 30,
   "rows": [
-    { "rank": 1, "groupid": "ABC123", "title": "Arizona Birko-Flor", "units": 25, "stock": 8, "price": 36.95 },
-    ...   // ordered by units desc; rank is 1-based row number for the numbered list (CLAUDE.md)
+    { "rank": 1, "groupid": "ABC123", "title": "Arizona Birko-Flor", "units": 25, "stock": 8, "price": 36.95, "match_amazon": false },
+    ...   // ordered by units desc; rank is 1-based row number for the numbered list (CLAUDE.md). match_amazon=true => auto-matched (badge + review-only).
   ]
 }
 =======================================================================================================================================
@@ -77,7 +80,8 @@ router.get('/', async (req, res) => {
         GROUP BY groupid
       )
       SELECT w.groupid, w.units, st.stock, t.shopifytitle,
-             ${safeNumeric('sp.shopifyprice')} AS price   -- current live price, so the bulk price-editor can compute per-row deltas
+             ${safeNumeric('sp.shopifyprice')} AS price,  -- current live price, so the bulk price-editor can compute per-row deltas
+             sp.match_amazon_price AS match_amazon        -- so the list can badge auto-matched styles (kept IN the list for review)
       FROM win w
       JOIN stk st ON st.groupid = w.groupid            -- INNER JOIN drops 0-stock styles
       LEFT JOIN skusummary sp ON sp.groupid = w.groupid -- for the current price (legacy VARCHAR -> safeNumeric)
@@ -94,7 +98,8 @@ router.get('/', async (req, res) => {
       title: r.shopifytitle || null,
       units: Number(r.units),
       stock: Number(r.stock),
-      price: r.price === null || r.price === undefined ? null : Number(r.price)
+      price: r.price === null || r.price === undefined ? null : Number(r.price),
+      match_amazon: r.match_amazon === true   // auto-matched styles stay in the list for a "keep matching?" review; badged in the UI
     }));
 
     return res.json({ return_code: 'SUCCESS', segment, days, rows });

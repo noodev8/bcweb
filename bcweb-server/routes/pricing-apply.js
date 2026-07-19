@@ -60,6 +60,7 @@ Return Codes:
 "INVALID_PRICE"
 "INVALID_REVIEW_DAYS"
 "PRICE_BELOW_COST"
+"MATCH_LOCKED"        // style is auto-matched to Amazon — turn matching off to price manually
 "NOT_FOUND"
 "UNAUTHORIZED"
 "SERVER_ERROR"
@@ -118,7 +119,8 @@ router.post('/', async (req, res) => {
     const cur = await query(`
       SELECT ${safeNumeric('shopifyprice')}    AS now,
              ${safeNumeric('cost')}            AS cost,
-             ${safeNumeric('rrp')}             AS rrp
+             ${safeNumeric('rrp')}             AS rrp,
+             match_amazon_price                AS match_amazon
       FROM skusummary WHERE groupid = $1
     `, [groupid]);
 
@@ -127,6 +129,13 @@ router.post('/', async (req, res) => {
     }
 
     const row = cur.rows[0];
+
+    // Auto-matched styles are on price autopilot (the amz-match cron pins the price to Amazon's lowest in-stock size). A manual price
+    // here would just be overwritten at the next sync, so refuse it — the operator must turn matching OFF (POST /pricing-match-toggle)
+    // to price by hand. Park/review (W2) is unaffected. This also guards the bulk loop, though matched styles are hidden from the lists.
+    if (row.match_amazon === true) {
+      return res.json({ return_code: 'MATCH_LOCKED', message: 'This style auto-matches its Amazon price. Turn off Amazon matching to set the price manually.' });
+    }
     const oldPrice = num(row.now);
     const cost = num(row.cost);
     const rrp = num(row.rrp);

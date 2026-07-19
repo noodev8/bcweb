@@ -306,7 +306,16 @@ function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               <td className="px-4 py-2 font-semibold text-slate-800">{r.units}</td>
               <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="truncate px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="truncate px-4 py-2 text-slate-700">
+                {r.title || <span className="text-slate-400">—</span>}
+                {/* Auto-matched styles stay in the list for a "keep matching?" review, but their price is on autopilot — badge them so the
+                    operator knows a manual/bulk price move won't apply (it's review-only for these). */}
+                {r.match_amazon && (
+                  <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (manual price locked)">
+                    Amazon-matched
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
               <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
             </tr>
@@ -409,7 +418,15 @@ function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
               <td className="px-4 py-2 font-semibold text-slate-800">{r.u30}</td>
               <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="truncate px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+              <td className="truncate px-4 py-2 text-slate-700">
+                {r.title || <span className="text-slate-400">—</span>}
+                {/* Same badge as Winners: a matched style here is a candidate to switch OFF if the Amazon-matched price is hurting margin. */}
+                {r.match_amazon && (
+                  <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (turn matching off to cut manually)">
+                    Amazon-matched
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
               <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
             </tr>

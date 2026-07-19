@@ -17,6 +17,9 @@ Definition (agreed with owner):
   - Order: DEAD cluster FIRST (flagged "no recent sales"), then SLOW; within each cluster, MOST STOCK first (stock at risk). Top N.
   - Seasonality + size-residue are deliberately NOT handled here: the human picks an appropriate segment (seasonality) and parks a
     residual style with a long review (size residue) so it stops surfacing.
+  - Auto-matched styles (match_amazon_price) are KEPT in the list (owner): a slow/dead style whose Shopify price is auto-matched to Amazon
+    is exactly where the operator decides the matched price is costing us and switches matching OFF. Their price is on autopilot
+    (pricing-apply refuses a manual change), so the action is "turn matching off" or "keep matching + set a review". Rows carry match_amazon.
 
 Schema landmines respected: stock from localstock (#FREE, not deleted, qty>0), never stockvariants. Human name from title.shopifytitle.
 =======================================================================================================================================
@@ -33,8 +36,8 @@ Success Response:
   "days": 90,
   "coverWeeks": 26,
   "rows": [
-    { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 1, "u90": 2, "cover_weeks": 308.6, "is_dead": false },
-    { "rank": 2, "groupid": "...", "title": "...", "price": 29.95, "stock": 14, "u30": 0, "u90": 0, "cover_weeks": null, "is_dead": true },
+    { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 1, "u90": 2, "cover_weeks": 308.6, "is_dead": false, "match_amazon": false },
+    { "rank": 2, "groupid": "...", "title": "...", "price": 29.95, "stock": 14, "u30": 0, "u90": 0, "cover_weeks": null, "is_dead": true, "match_amazon": false },
     ...  // dead cluster first (cover_weeks null / is_dead true), then slow; most stock first within each
   ]
 }
@@ -95,6 +98,8 @@ router.get('/', async (req, res) => {
              CASE WHEN COALESCE(w.u_win,0)=0 THEN NULL
                   ELSE round(st.stock * ($2::numeric/7.0) / w.u_win, 1) END AS cover_weeks,
              (COALESCE(w.u_win,0)=0) AS is_dead,
+             ss.match_amazon_price AS match_amazon,   -- kept IN the list: a slow/dead matched style is where the operator decides the
+                                                      -- Amazon-matched price is costing us and switches matching OFF (owner). Badged in UI.
              t.shopifytitle
       FROM skusummary ss
       JOIN stk st        ON st.groupid = ss.groupid            -- INNER JOIN: must have stock (nothing to act on otherwise)
@@ -122,7 +127,8 @@ router.get('/', async (req, res) => {
       u30: Number(r.u30),
       u90: Number(r.u_win),                                     // labelled u90 in the payload (default window is 90d)
       cover_weeks: r.cover_weeks === null ? null : Number(r.cover_weeks),
-      is_dead: r.is_dead
+      is_dead: r.is_dead,
+      match_amazon: r.match_amazon === true   // auto-matched styles stay in the list so a margin-hurting match can be spotted + switched off
     }));
 
     return res.json({ return_code: 'SUCCESS', segment, days, coverWeeks, rows });

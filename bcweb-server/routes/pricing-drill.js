@@ -34,7 +34,9 @@ Success Response:
     "now": 36.95, "cost": 20.83, "rrp": 50.00, "minp": 35.99, "maxp": 45.00,
     "margin": 16.12, "margin_pct": 44,        // GROSS: now - cost, and as % of price (null if now/cost unknown)
     "stock": 8, "colour": "Brown", "width": "Narrow", "season": "SS25",
-    "next_review": "2026-07-10"               // cooldown date (or null)
+    "next_review": "2026-07-10",              // cooldown date (or null)
+    "match_amazon": false,                    // true = price is auto-matched to Amazon (manual setter hidden; apply refused)
+    "amazon_lowest": 36.29                    // Amazon's cheapest in-stock size = the match target (null if none in stock)
   },
   "timeline": [
     { "price": 32.95, "units": 17, "profit": 90.44, "profit_wk": 33, "first_at": "2026-04-01", "last_at": "2026-04-20",
@@ -106,6 +108,12 @@ router.get('/', async (req, res) => {
         ${safeNumeric('ss.minshopifyprice')} AS minp,
         ${safeNumeric('ss.maxshopifyprice')} AS maxp,
         ss.colour, ss.width, ss.season, ss.next_shopify_price_review,
+        ss.match_amazon_price AS match_amazon,
+        -- Amazon's cheapest IN-STOCK size for this style (amzlive>0), read via safeNumeric (amzprice is a junk-prone VARCHAR). This is
+        -- exactly what the amz-match cron pins shopifyprice to; surfaced here so the drill can show the live match target. NULL when the
+        -- style has no in-stock Amazon size (not on Amazon FBA, or all sizes out of stock). amzfeed is READ ONLY (CLAUDE.md).
+        (SELECT MIN(${safeNumeric('a.amzprice')}) FROM amzfeed a
+          WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive,0) > 0) AS amazon_lowest,
         t.shopifytitle,
         COALESCE((SELECT SUM(l.qty) FROM localstock l
                   WHERE l.groupid=ss.groupid AND l.ordernum='#FREE'
@@ -140,7 +148,11 @@ router.get('/', async (req, res) => {
       colour: h.colour || null,
       width: h.width || null,
       season: h.season || null,
-      next_review: toIsoDate(h.next_shopify_price_review)
+      next_review: toIsoDate(h.next_shopify_price_review),
+      // Auto-match-to-Amazon state: the flag + the current match target (Amazon lowest in-stock). When match_amazon is true the price
+      // is on autopilot (the amz-match cron owns it), so the UI hides the manual setter and pricing-apply refuses a manual change.
+      match_amazon: h.match_amazon === true,
+      amazon_lowest: num(h.amazon_lowest)
     };
 
     // ---- S4: pricing timeline (CLAUDE.md) — verbatim. Pace computed app-side below. ----

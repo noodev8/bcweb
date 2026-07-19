@@ -82,6 +82,7 @@ app.use('/pricing-all', require('./routes/pricing-all'));           // ALL: the 
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
+app.use('/pricing-match-toggle', require('./routes/pricing-match-toggle')); // turn Shopify "match Amazon price" autopilot on/off for a style
 app.use('/pricing-park', require('./routes/pricing-park'));
 app.use('/pricing-park-bulk', require('./routes/pricing-park-bulk')); // bulk W2: batch "just set review" — park a selection of un-changed styles
 app.use('/pricing-history', require('./routes/pricing-history')); // drill report: recent Shopify price changes (audit log, lazy)

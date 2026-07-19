@@ -84,12 +84,13 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 // Domain types (mirror the server response shapes in routes/*)
 // =============================================================================================================================
 export interface Segment { segment: string; styles: number; }
-export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; }
+export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean; }
 export interface LoserRow {
   rank: number; groupid: string; title: string | null; price: number | null;
   stock: number; u30: number; u90: number;
   cover_weeks: number | null;   // weeks-to-clear at 90d pace; null when dead (no sales in window)
   is_dead: boolean;             // true = 0 sales in the window
+  match_amazon: boolean;        // auto-matched to Amazon — badged; review-only (switch matching off to price/cut manually)
 }
 // ALL: the whole segment, unfiltered, most-recently-changed first. last_change/next_review are YYYY-MM-DD or null.
 export interface AllRow {
@@ -124,6 +125,7 @@ export interface AmzDrillHeader {
   floor: number | null;                 // cost + FBA fee (breakeven)
   margin: number | null; margin_pct: number | null;
   fba_live: number; fba_inbound: number;
+  match_amazon: boolean;                 // read-only: the parent STYLE auto-matches its Shopify price to Amazon lowest in-stock
 }
 // VelocityWeek is the shared weekly-pace shape both drills return (drill-evidence-spec §4). Zero-filled, oldest→newest. profit is NET
 // (from sales.profit). Rendered by the shared VelocityBars component.
@@ -153,6 +155,8 @@ export interface DrillHeader {
   margin: number | null; margin_pct: number | null;   // GROSS (now - cost); net reasoning lives in the timeline profit/wk
   stock: number; colour: string | null; width: string | null; season: string | null;
   next_review: string | null;
+  match_amazon: boolean;                // true = Shopify price is auto-matched to Amazon (manual setter hidden; apply refused)
+  amazon_lowest: number | null;         // Amazon's cheapest in-stock size = the match target (null if none in stock)
 }
 export interface TimelineRow {
   price: number; units: number;
@@ -510,6 +514,16 @@ export function parkStyle(groupid: string, reviewDays: number) {
   return request<ParkData>(
     { url: '/pricing-park', method: 'POST', data: { groupid, reviewDays } },
     (b) => ({ groupid: b.groupid, next_review: b.next_review })
+  );
+}
+
+// Turn the Shopify "match Amazon price" autopilot on/off for a style. This flips the flag only — the price itself is (re)matched by the
+// amz-match cron at its next afternoon sync. amazon_lowest = the current match target (Amazon lowest in stock), null if none in stock.
+export interface MatchAmazonData { groupid: string; match_amazon: boolean; amazon_lowest: number | null; }
+export function setMatchAmazon(groupid: string, enabled: boolean) {
+  return request<MatchAmazonData>(
+    { url: '/pricing-match-toggle', method: 'POST', data: { groupid, enabled } },
+    (b) => ({ groupid: b.groupid, match_amazon: b.match_amazon, amazon_lowest: b.amazon_lowest ?? null })
   );
 }
 
