@@ -35,7 +35,9 @@ function FindContent() {
   const backHref = from || '/pricing';
   const backLabel = from ? prettyPathLabel(from) : 'Segments';
   const { logout } = useAuth();
-  const [term, setTerm] = useState(initialQ);
+  // Search field is forced UPPERCASE (owner) — groupids/codes are uppercase, and the server matches with ILIKE so a title term still
+  // matches case-insensitively. Uppercasing the value (not just CSS) keeps the displayed and submitted term consistent.
+  const [term, setTerm] = useState(initialQ.toUpperCase());
   const [results, setResults] = useState<FindRow[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -77,10 +79,10 @@ function FindContent() {
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input
             value={term}
-            onChange={(e) => setTerm(e.target.value)}
+            onChange={(e) => setTerm(e.target.value.toUpperCase())}
             autoFocus
-            placeholder="Product name or code (e.g. Arizona, 1019051)"
-            className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            placeholder="Product name or code (e.g. ARIZONA, 1019051)"
+            className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
         <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
