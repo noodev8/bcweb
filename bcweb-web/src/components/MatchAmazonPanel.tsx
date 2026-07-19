@@ -61,7 +61,6 @@ export default function MatchAmazonPanel({ groupid, matchAmazon, amazonLowest, c
   // ---- ON: prominent card, replaces the manual setter ----------------------------------------------------------------------------
   if (matchAmazon) {
     const nowStr = currentPrice !== null ? `£${currentPrice.toFixed(2)}` : '—';
-    const matched = amazonLowest !== null && currentPrice !== null && Math.round(amazonLowest * 100) === Math.round(currentPrice * 100);
     return (
       <div className="rounded-xl border border-emerald-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-emerald-200 bg-emerald-50 px-5 py-2.5">
@@ -80,9 +79,7 @@ export default function MatchAmazonPanel({ groupid, matchAmazon, amazonLowest, c
                 <div className="text-2xl font-semibold text-slate-900">{nowStr}</div>
               </div>
               <div className="text-sm">
-                {matched
-                  ? <span className="inline-flex items-center gap-1.5 rounded-md bg-green-50 px-2.5 py-1 font-medium text-green-700"><span className="h-2 w-2 rounded-full bg-green-500" /> In step</span>
-                  : <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 font-medium text-amber-700"><span className="h-2 w-2 rounded-full bg-amber-500" /> Will match at next sync</span>}
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 font-medium text-slate-600">Syncs automatically</span>
               </div>
             </div>
           ) : (
@@ -97,7 +94,7 @@ export default function MatchAmazonPanel({ groupid, matchAmazon, amazonLowest, c
               same park write (W2) as the normal setter; a period must be picked (no None). */}
           <div className="mt-5 border-t border-slate-100 pt-4">
             <div className="mb-1 text-sm font-medium text-slate-700">
-              Keep matching — review again in <span className="font-normal text-slate-400">(hides it from Winners until then)</span>
+              Keep matching — review again in <span className="font-normal text-slate-400">(snoozes it until then)</span>
             </div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               {REVIEW_CHIPS.map((d) => (
@@ -143,7 +140,7 @@ export default function MatchAmazonPanel({ groupid, matchAmazon, amazonLowest, c
         <div>
           <h3 className="text-sm font-semibold text-slate-700">Match Amazon price</h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Auto-keep this style at Amazon&apos;s cheapest in-stock size{lowStr ? <> (now <span className="font-semibold text-slate-700">{lowStr}</span>)</> : <> (none in stock right now)</>}. Locks manual pricing; you still review it from Winners.
+            Auto-keep this style at Amazon&apos;s cheapest in-stock size{lowStr ? <> (now <span className="font-semibold text-slate-700">{lowStr}</span>)</> : <> (none in stock right now)</>}.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
