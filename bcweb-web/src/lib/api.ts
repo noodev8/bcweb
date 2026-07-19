@@ -912,4 +912,114 @@ export function deleteScratchpadNote(id: number) {
   );
 }
 
+// =============================================================================================================================
+// Inventory Management (docs/inventory-spec.md) — read-only stock lookup.
+// =============================================================================================================================
+
+// One style with its headline stock numbers, rolled up across all sizes.
+//   local   = SUM(localstock.qty), ALL states — includes stock already picked for an order (it is still on the shelf).
+//   onOrder = COUNT of not-yet-arrived order lines (local + Amazon).
+//   total   = local + Amazon-held (live at Amazon + inbound + boxed + in transit).
+export interface InvStyleRow {
+  groupid: string;
+  title: string | null;
+  segment: string | null;
+  imagename: string | null;
+  local: number;
+  onOrder: number;
+  total: number;
+}
+
+// The WHOLE style list in one call. Deliberately unfiltered: ~280 styles, so the Inventory screen fetches once on mount and does all
+// its Contains / Does-not-contain narrowing client-side — no round-trip per FIND, and Reset is instant.
+export function getInvStyles() {
+  return request<{ count: number; rows: InvStyleRow[] }>(
+    { url: '/inv-styles', method: 'GET' },
+    (b) => ({ count: b.count ?? 0, rows: (b.rows as InvStyleRow[]) || [] })
+  );
+}
+
+// The twelve places a unit can be (docs/inventory-spec.md §3b, from order-status-lifecycle.pdf p6/p7).
+// The compact local/onOrder/total figures are DERIVED from these server-side, so the two views always reconcile.
+export interface InvBuckets {
+  free: number;          // HERE: unallocated, unpicked
+  picked: number;        // HERE: committed to an order, still on the shelf
+  amzReserved: number;   // HERE: earmarked for Amazon, still in its normal rack
+  amzBay: number;        // HERE: in the C3-Amazon staging bay (STILL pickable for a Shopify customer — lifecycle doc p5)
+  onOrderLocal: number;  // INCOMING: ordertype 2, not arrived
+  onOrderAmz: number;    // INCOMING: ordertype 3, not arrived
+  arrivedLocal: number;  // INCOMING: ordertype 2, arrived, not yet shelved
+  arrivedAmz: number;    // INCOMING: ordertype 3, arrived (held 7 days)
+  amzLive: number;       // AT AMAZON: sellable FBA stock
+  amzInbound: number;    // AT AMAZON: booked in, not yet live
+  boxed: number;         // AT AMAZON: in a box awaiting DPD
+  transit: number;       // AT AMAZON: collected by DPD within the last 2 days
+}
+
+// One size's stock position. `total` = local + Amazon-held; `local` includes stock already picked for an order.
+export interface InvSizeRow {
+  code: string;
+  eu: string;
+  uksize: string | null;
+  local: number;
+  onOrder: number;
+  total: number;
+  buckets: InvBuckets;
+  amazonTotal: number;   // PDF p7 re-order figure — everything at OR heading to Amazon, incl. earmarked stock still in our building
+  demand: number;        // ordertype 1: a CLAIM on stock, not stock. Never add this into a stock figure.
+}
+
+// One physical localstock row — which rack a unit is on, and what state it is in.
+//   FREE         = unallocated and unpicked
+//   PICKED       = committed to a customer order, but still on the shelf until packed
+//   AMZ_RESERVED = allocated to Amazon, still in its normal rack
+//   AMZ_BAY      = allocated to Amazon and moved to the C3-Amazon staging bay. Still pickable for a Shopify customer
+//                  (order-status-lifecycle.pdf p5) — do NOT present this as unavailable.
+export type InvLocationState = 'FREE' | 'PICKED' | 'AMZ_RESERVED' | 'AMZ_BAY';
+
+export interface InvLocationRow {
+  id: string;            // stable key; phase 2 edits these rows in place
+  code: string;
+  eu: string;
+  uksize: string | null;
+  location: string | null;
+  qty: number;
+  ordernum: string | null;
+  state: InvLocationState;
+}
+
+export interface InvStockData {
+  groupid: string;
+  title: string | null;
+  imagename: string | null;
+  totals: {
+    local: number; onOrder: number; total: number;
+    amazonTotal: number; demand: number; buckets: InvBuckets;
+  };
+  sizes: InvSizeRow[];
+  locations: InvLocationRow[];
+}
+
+// One style's stock position at size grain. Sizes come from skumap, so sold-out sizes are present reading 0.
+export function getInvStock(groupid: string) {
+  return request<InvStockData>(
+    { url: '/inv-stock', method: 'GET', params: { groupid } },
+    (b) => ({
+      groupid: b.groupid,
+      title: b.title ?? null,
+      imagename: b.imagename ?? null,
+      totals: b.totals || {
+        local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0,
+        buckets: {
+          free: 0, picked: 0, amzReserved: 0, amzBay: 0,
+          onOrderLocal: 0, onOrderAmz: 0, arrivedLocal: 0, arrivedAmz: 0,
+          amzLive: 0, amzInbound: 0, boxed: 0, transit: 0,
+        },
+      },
+      sizes: (b.sizes as InvSizeRow[]) || [],
+      locations: (b.locations as InvLocationRow[]) || [],
+    })
+  );
+}
+
 export default api;

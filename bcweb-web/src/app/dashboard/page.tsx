@@ -72,7 +72,14 @@ export default function DashboardPage() {
           live
         />
 
-        <ModuleTile title="Inventory" description="Stock levels, allocation and incoming." icon={ArchiveBoxIcon} />
+        {/* Inventory — slice 1 live: find a style by successive Contains / Does-not-contain terms, with headline stock numbers. */}
+        <ModuleTile
+          title="Inventory"
+          description="Find stock fast — search by title, groupid or segment."
+          href="/inventory"
+          icon={ArchiveBoxIcon}
+          live
+        />
         <ModuleTile title="Orders" description="Order search and fulfilment status." icon={ShoppingCartIcon} />
       </div>
     </AppShell>

@@ -1,0 +1,152 @@
+/*
+=======================================================================================================================================
+API Route: inv_styles
+=======================================================================================================================================
+Method: GET
+Purpose: Slice 1 of the Inventory Management module (docs/inventory-spec.md). Returns EVERY style once, with the three headline stock
+         numbers rolled up across all its sizes, so the web /inventory screen can render the full list and then filter it CLIENT-SIDE
+         (the operator's Contains / Does-not-contain drill-down). There is deliberately no `term` parameter: the candidate set is ~280
+         styles, so we ship the lot once and let successive FINDs narrow it in the browser with no round-trip. Requires auth.
+
+         Why all three numbers here and not just on the drill: the list is the triage view ("have we got any of these at all?"), so a
+         style with zero everywhere should be visibly zero before you click it.
+
+THE TWO AGGREGATION RULES (the easiest bug to ship in this module — see spec §3 data facts):
+  - localstock  -> SUM(qty).   qty is NOT always 1: 106 of 2250 live rows exceed it (max 9). COUNT(*) under-reports by ~7%.
+  - orderstatus -> COUNT(*).   qty IS always 1 there (one row per SKU, verified across all live rows). SUM(qty) would be a no-op but
+                               COUNT(*) states the intent, and guards us if a stray qty ever lands.
+They are opposite rules on two similar-looking tables. Do not "tidy" them into one.
+
+DEFINITIONS (owner, 2026-07-19 — reconciled against the legacy PowerBuilder screen):
+  - Local = what is in localstock, whatever its state. INCLUDES stock already picked for an order: a picked unit is still physically
+            on the shelf until it is packed, and "is it in the building" is the question this screen answers. Verified against
+            PowerBuilder for 1005292-ARIZONA (size 37 = 4 free + 1 picked = 5; size 38 = 3 free + 2 picked = 5).
+  - Order = units on the way to us: orderstatus rows not yet arrived, local (type 2) or Amazon (type 3). Taken at face value — no
+            staleness logic here. clean_sales.sql prunes stale rows weekly; cleanup is a human job on another screen (owner).
+  - Total = everything we have of that style wherever it sits = Local + Amazon-held (live at Amazon + inbound + boxed + in transit).
+=======================================================================================================================================
+Request Payload: none (GET)
+
+Success Response:
+{
+  "return_code": "SUCCESS",
+  "count": 280,
+  "rows": [
+    {
+      "groupid": "1005292-ARIZONA",
+      "title": "Birkenstock Arizona Two-Strap Patent Sandals Black Narrow Fit",  // title.shopifytitle; null if none
+      "segment": "ARIZONA-GENERAL",
+      "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
+      "local": 38,                          // SUM(localstock.qty), all states
+      "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
+      "total": 38                           // local + amazon-held
+    },
+    ...
+  ]
+}
+=======================================================================================================================================
+Return Codes:
+"SUCCESS"
+"UNAUTHORIZED"
+"SERVER_ERROR"
+=======================================================================================================================================
+*/
+
+const express = require('express');
+const router = express.Router();
+const { query } = require('../database');
+const { verifyToken } = require('../middleware/verifyToken');
+const logger = require('../utils/logger');
+
+// Every inventory route requires a valid session (CLAUDE.md).
+router.use(verifyToken);
+
+router.get('/', async (req, res) => {
+  try {
+    // One query, no N+1. Each stock source is pre-aggregated to style grain in its own CTE and LEFT JOINed onto the style list, so a
+    // style with no rows in a given source simply reads 0 rather than dropping out of the list.
+    //
+    // Amazon sources are joined to a style via skumap (amzshipment/archive are code-grain); amzfeed already carries groupid, so it
+    // needs no join. amzfeed.amztotal already includes amzlive (verified: amztotal >= amzlive on all 474 live rows, so
+    // "inbound" = amztotal - amzlive is non-negative and amztotal is the correct single figure for live + inbound).
+    const result = await query(`
+      WITH loc AS (
+        -- Local: SUM(qty), ALL states (free, picked, amz-allocated). Excludes soft-deleted rows only.
+        SELECT groupid, SUM(qty) AS units
+        FROM localstock
+        WHERE COALESCE(deleted, 0) = 0 AND qty > 0
+        GROUP BY groupid
+      ),
+      ord AS (
+        -- On order: COUNT of not-yet-arrived local (2) / Amazon (3) order lines. orderstatus.shopifysku = skumap.code (verified 100%).
+        SELECT m.groupid, COUNT(*) AS units
+        FROM orderstatus o
+        JOIN skumap m ON m.code = o.shopifysku
+        WHERE o.arrived = 0 AND o.ordertype IN (2, 3)
+        GROUP BY m.groupid
+      ),
+      feed AS (
+        -- At Amazon: live + inbound, straight from the nightly FBA feed. READ ONLY (CLAUDE.md) — never written by this app.
+        SELECT groupid, SUM(COALESCE(amztotal, 0)) AS units
+        FROM amzfeed
+        GROUP BY groupid
+      ),
+      boxed AS (
+        -- Boxed and waiting for DPD.
+        SELECT m.groupid, SUM(s.qty) AS units
+        FROM amzshipment s
+        JOIN skumap m ON m.code = s.code
+        GROUP BY m.groupid
+      ),
+      transit AS (
+        -- Handed to DPD within the last 2 days — still counted as ours (PDF p7 rule).
+        SELECT m.groupid, SUM(a.qty) AS units
+        FROM amzshipment_archive a
+        JOIN skumap m ON m.code = a.code
+        WHERE a.created_at >= now() - interval '2 days'
+        GROUP BY m.groupid
+      )
+      SELECT
+        s.groupid,
+        t.shopifytitle                                        AS title,
+        s.segment,
+        s.imagename,
+        COALESCE(loc.units, 0)                                AS local_units,
+        COALESCE(ord.units, 0)                                AS order_units,
+        COALESCE(feed.units, 0)
+          + COALESCE(boxed.units, 0)
+          + COALESCE(transit.units, 0)                        AS amazon_units
+      FROM skusummary s
+      LEFT JOIN title   t       ON t.groupid       = s.groupid
+      LEFT JOIN loc             ON loc.groupid     = s.groupid
+      LEFT JOIN ord             ON ord.groupid     = s.groupid
+      LEFT JOIN feed            ON feed.groupid    = s.groupid
+      LEFT JOIN boxed           ON boxed.groupid   = s.groupid
+      LEFT JOIN transit         ON transit.groupid = s.groupid
+      ORDER BY t.shopifytitle NULLS LAST, s.groupid
+    `);
+
+    // pg returns SUM()/COUNT() as strings (numeric/bigint) — coerce so the JSON carries real numbers and the client can sort/compare
+    // without parsing. Total is composed here rather than in SQL so the definition sits next to the comment that explains it.
+    const rows = result.rows.map((r) => {
+      const local = Number(r.local_units) || 0;
+      const amazon = Number(r.amazon_units) || 0;
+      return {
+        groupid: r.groupid,
+        title: r.title || null,
+        segment: r.segment || null,
+        imagename: r.imagename || null,
+        local,
+        onOrder: Number(r.order_units) || 0,
+        total: local + amazon,
+      };
+    });
+
+    return res.json({ return_code: 'SUCCESS', count: rows.length, rows });
+  } catch (err) {
+    logger.error('[inv-styles] error:', err.message);
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load inventory styles' });
+  }
+});
+
+module.exports = router;

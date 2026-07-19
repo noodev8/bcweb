@@ -16,6 +16,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ChartBarIcon,
+  ArchiveBoxIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
@@ -30,6 +31,7 @@ const MODULES: { label: string; href: string; icon: React.ComponentType<{ classN
   { label: 'Shopify Pricing', href: '/pricing', icon: CurrencyPoundIcon },
   { label: 'Amazon Pricing', href: '/amz', icon: BuildingStorefrontIcon },
   { label: 'Add / Modify', href: '/products', icon: TagIcon },
+  { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
   { label: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 

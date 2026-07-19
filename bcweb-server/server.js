@@ -116,6 +116,11 @@ app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
 app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm a Seller Central upload -> stamp those rows uploaded_at (clears them from the basket, team-wide)
 
+// Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
+// Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
+app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + headline Local / Order / Total per style
+app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size grid (Order / Total / Local per size) + image
+
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
 app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)
