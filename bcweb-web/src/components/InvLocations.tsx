@@ -18,7 +18,7 @@ COLUMNS ARE Location / Qty / exception-tag ONLY (owner). No size column (every r
 number, and no "State" heading. Anything beyond "where is it and how many" belongs to a drill-down, not to the screen you read while
 a customer waits. `ordernum` still arrives on the row type — the PICKED tag is derived from it, and phase 2 will want it.
 
-STATE COLOURS: AMZ_BAY is styled as present-but-flagged, NOT as unavailable. Per the order lifecycle doc (p5) a unit sitting in the
+STATE COLOURS: AMZ is styled as present-but-flagged, NOT as unavailable. Per the order lifecycle doc (p5) a unit sitting in the
 C3-Amazon bay can still be picked for a Shopify customer, so greying it out would hide real, takeable stock.
 =======================================================================================================================================
 */
@@ -29,9 +29,11 @@ import { InvLocationRow, InvLocationState } from '@/lib/api';
 // FREE is deliberately absent: it is the normal state, so badging every row adds noise without information (owner). Only the
 // EXCEPTIONS get a tag — a blank State cell means "free to take", which is the common case and reads faster for it.
 const STATE_STYLES: Partial<Record<InvLocationState, { label: string; cls: string }>> = {
-  PICKED: { label: 'Picked', cls: 'bg-amber-50 text-amber-700' },
-  AMZ_RESERVED: { label: 'Amazon reserved', cls: 'bg-sky-50 text-sky-700' },
-  AMZ_BAY: { label: 'Amazon bay', cls: 'bg-indigo-50 text-indigo-700' },
+  // "Pick", not "Picked" (owner) — matches the tag on the Local column in the grid above, and it is how the warehouse says it.
+  PICKED: { label: 'Pick', cls: 'bg-amber-50 text-amber-700' },
+  // ONE Amazon tag, not the old reserved/bay pair (owner, 2026-07-20). The two differed only by location, and the location is right
+  // there in the previous column — "Amazon bay" next to a Location of C3-Amazon was the same fact printed twice.
+  AMZ: { label: 'Amazon', cls: 'bg-sky-50 text-sky-700' },
 };
 
 export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow[]; sizeLabel: string }) {

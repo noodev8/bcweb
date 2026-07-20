@@ -6,7 +6,7 @@
 > as `add-modify-spec.md` / `amz-pricing-spec.md`.
 > **Nothing here is built yet** — this captures the agreed model so it doesn't evaporate.
 
-The source of truth for *where stock can be* is `docs/order-status-lifecycle.pdf` (pages 6 "Stock Position"
+The source of truth for *where stock can be* is `docs/order-status-lifecycle.docx` (pages 6 "Stock Position"
 and 7 "Amazon Total Calculation"). Pages 1–5 describe the order lifecycle and belong to a **different,
 later screen** (order status management). This spec does not re-derive them.
 
@@ -105,7 +105,7 @@ It is a **lookup/diagnostic view**, not a workflow — it does not change order 
 stale rows, does not push anywhere.
 
 **Crucially it must not lie by aggregation.** A unit flagged `allocated='amz'` sitting on a shelf is
-counted in the Amazon Total *and* is physically in the building *and* (per PDF page 5) can still be picked
+counted in the Amazon Total *and* is physically in the building *and* (per page 5) can still be picked
 for a Shopify customer. There is no single honest "total stock" number. The screen shows the buckets side
 by side and lets the human read them.
 
@@ -207,7 +207,7 @@ cheap; we already have better homes for these):
 
 ---
 
-## 3. Stock position — the 12 buckets (from PDF p6/p7)
+## 3. Stock position — the 12 buckets (from lifecycle doc p6/p7)
 
 All at **size grain**. Sizes come from **`skumap`** (one row per variant, `size = RIGHT(code,2)`), LEFT
 JOINed to each source, defaulting to **0** — so sold-out and never-stocked sizes still show a column.
@@ -236,8 +236,7 @@ free/picked split is still available under Show Detail (buckets 1 and 2).
 |---|---|---|---|
 | 1 | Free | `localstock` | `ordernum='#FREE'` AND `allocated='unallocated'` AND `COALESCE(deleted,0)=0` AND `qty>0` |
 | 2 | Picked for order | `localstock` | `ordernum<>'#FREE'` AND `COALESCE(deleted,0)=0` AND `qty>0` |
-| 3 | Amazon reserved | `localstock` | `ordernum='#FREE'` AND `allocated='amz'` AND `location<>'C3-Amazon'` |
-| 4 | Amazon bay | `localstock` | `ordernum='#FREE'` AND `allocated='amz'` AND `location='C3-Amazon'` |
+| 3 | Allocated to Amazon | `localstock` | `ordernum='#FREE'` AND `allocated='amz'` |
 | 5 | On order — local | `orderstatus` | `ordertype=2` AND `arrived=0` |
 | 6 | On order — Amazon | `orderstatus` | `ordertype=3` AND `arrived=0` |
 | 7 | Arrived — local | `orderstatus` | `ordertype=2` AND `arrived=1` |
@@ -247,15 +246,56 @@ free/picked split is still available under Show Detail (buckets 1 and 2).
 | 11 | Boxed | `amzshipment` | `qty` |
 | 12 | In transit | `amzshipment_archive` | `qty` WHERE `created_at >= now() - interval '2 days'` |
 
-Grouped in the UI as **HERE** (1–4), **INCOMING** (5–8), **AT AMAZON** (9–12).
+All twelve buckets are still computed server-side and still returned by `GET /inv-stock`. **What the UI shows
+is a smaller set** — see §3c.
 
-Plus two **DERIVED** rows, shown below a rule:
+- **Amazon Total** = 9 + 10 + 12 + 6 + 3 + 4. The figure that drives Amazon re-ordering, and the reason the
+  Amazon group exists.
 
-- **Amazon Total** = 9 + 10 + 11 + 12 + 6 + 3 + 4 — verbatim from PDF page 7 ("amzfeed total, amzshipment,
-  amzshipment_archive if within 2 days, orderstatus ordertype 3 not arrived, localstock allocated 'amz'").
-  This is the figure that drives Amazon re-ordering, so it is worth showing even though it overlaps HERE.
-- **Customer demand** = `orderstatus` `ordertype=1`. This is a *claim on* stock, not stock. Kept visually
-  separate for that reason.
+  **`amzshipment` (11) is deliberately NOT part of this**, and page 7 of the lifecycle doc was corrected to
+  match (owner, 2026-07-20 — the earlier revision added it). Boxing stock does not take it out of
+  `localstock`: the lifecycle is amz-reserved → moved to the C3-Amazon bay → boxed, and the row stays
+  `ordernum='#FREE'`, `allocated='amz'` throughout. So an `amzshipment` unit is **already** counted in
+  bucket 3, and adding 11 counted the same pairs twice — inflating the very number we re-order against.
+
+  Verified on live data: of the 12 largest `amzshipment` codes, 11 have an exactly matching allocated-`amz`
+  localstock quantity sitting at `C3-Amazon`. Separately confirmed that Goods In is where this originates —
+  a type-3 (Amazon) order marked arrived lands straight in `localstock` at `location='C3-Amazon'`,
+  `allocated='amz'`, `ordernum='#FREE'`, one row per pair. So arrived Amazon stock is inside bucket 3 from
+  the moment it is booked in, which is why buckets 7/8 must not be added either.
+- **The 2-day transit overlap (12) is intentional.** Once a box is collected its localstock rows are gone, so
+  until Amazon books the shipment into `amztotal` those units exist in no source at all. If Amazon reports
+  inside 2 days we briefly double-count — accepted (owner), because the cost is deferring a re-order rather
+  than re-buying stock we already own.
+- **Customer demand** = `orderstatus` `ordertype=1`. A *claim on* stock, not stock — never added into a stock
+  figure, and no longer shown (§3c).
+
+### 3c. What the grid actually shows (revised 2026-07-20, after first real use)
+
+The always-visible columns are **Size / Total / Local**, with a small **“Pick n”** tag on Local when some of
+it is committed to an order. Show Detail adds three groups:
+
+| Group | Columns |
+|---|---|
+| **Amazon** | Amz res (3+4) · Transit (12) · Inbound (10) · Live (9) · **Amz tot** |
+| **Birk PO** | On order |
+| **Incoming** | Shopify (5) · Amazon (6) |
+
+Dropped from the first cut, each for a stated reason:
+
+- **Free (1) / Picked (2)** — Local already *is* 1+2+3+4, so Free restated it. The one thing that mattered,
+  “is any of this spoken for”, became the Pick tag.
+- **Amazon reserved / Amazon bay** — merged into one bucket (3). The two differed *only* by location, and the locations
+  table prints the location on every row, so the split cost a column and a badge to say what was already on screen.
+  Live data settled it: 0 units in a normal rack, all 76 in the C3-Amazon bay, because goods-in writes Amazon
+  arrivals straight there. The same merge applies to the location badge — one `AMZ` state, not `AMZ_RESERVED`/`AMZ_BAY`.
+- **Boxed (11)** — same units as Amz res (see above).
+- **Arrived local/Amazon (7, 8)** — arrived stock is already booked into `localstock`, so it was being read
+  twice: once in Local, again as “incoming”. Incoming now means strictly *not landed yet*.
+- **Customer demand** — a claim on stock; never drove a decision on this screen.
+
+**There is no HERE group.** The Local column is the “here” answer, and a group header over one leftover
+column implied a place stock lives that does not exist.
 
 ### Data facts verified against live prod (2026-07-19)
 
@@ -311,7 +351,7 @@ Size  Location        Qty  State         Order
  39   C3-Front-19      1   Picked        #1043
 ```
 
-- **State** is derived by the same rules as buckets 1–4, so the panel and the grid can never disagree.
+- **State** is derived by the same rules as the localstock buckets, so the panel and the grid can never disagree.
 - Sorted by size, then location.
 - **Phase 2** turns each row into an in-place edit (qty / location / delete). Build the table now with that
   in mind — stable row identity (`localstock.id`), no aggregation that would have to be unpicked.
@@ -335,7 +375,7 @@ No write endpoints in phase 1.
 ## 6. Out of scope for phase 1
 
 - **All writes.** Read-only. Localstock adjustments are phase 2.
-- **Order status management** (PDF pages 1–5) — a separate screen entirely.
+- **Order status management** (lifecycle doc pages 1–5) — a separate screen entirely.
 - **Fixed search terms** like `"Size 38"` → "show groupids that actually have size 38 in stock". Agreed as
   a good idea, explicitly **deferred to phase 2**; get plain filtering working first. When it lands it will
   be a small set of recognised fixed terms, not a general size-search grammar.

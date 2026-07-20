@@ -120,6 +120,7 @@ app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
 app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + headline Local / Order / Total per style
 app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size grid (Order / Total / Local per size) + image
+app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent sales, ALL channels merged, w/ profit (lazy)
 
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).

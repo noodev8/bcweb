@@ -10,7 +10,7 @@ Purpose: A reference report on the drill screen — recent RAW Shopify SALES for
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getSales, SaleRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,9 +25,11 @@ function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
 
-export default function SalesList({ groupid }: { groupid: string }) {
+// defaultOpen: start expanded and fetch on mount. Recent sales is the report the operator goes straight to (owner, 2026-07-20), so on
+// the drill it opens itself; elsewhere it stays a click-to-open dropdown. Still lazy — the fetch fires when it opens, mount or click.
+export default function SalesList({ groupid, defaultOpen = false }: { groupid: string; defaultOpen?: boolean }) {
   const { logout } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,24 +37,32 @@ export default function SalesList({ groupid }: { groupid: string }) {
   const [truncated, setTruncated] = useState(false);
   const [limit, setLimit] = useState(0);
 
-  async function toggle() {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const res = await getSales(groupid);
+    setLoading(false);
+    if (res.success && res.data) {
+      setRows(res.data.rows);
+      setTruncated(res.data.truncated);
+      setLimit(res.data.limit);
+      setLoaded(true);
+    } else {
+      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+      setError(res.error || 'Failed to load sales');
+    }
+  }, [groupid, logout]);
+
+  // Auto-load when it starts open (defaultOpen). Guarded so it fires once.
+  useEffect(() => {
+    if (open && !loaded && !loading) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function toggle() {
     const next = !open;
     setOpen(next);
-    if (next && !loaded && !loading) {
-      setLoading(true);
-      setError(null);
-      const res = await getSales(groupid);
-      setLoading(false);
-      if (res.success && res.data) {
-        setRows(res.data.rows);
-        setTruncated(res.data.truncated);
-        setLimit(res.data.limit);
-        setLoaded(true);
-      } else {
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load sales');
-      }
-    }
+    if (next && !loaded && !loading) load();
   }
 
   return (

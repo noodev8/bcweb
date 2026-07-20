@@ -3,11 +3,18 @@
 =======================================================================================================================================
 Page: /pricing/style/[groupid]  (Stage 2 drill-down + Stage 3 set price)
 =======================================================================================================================================
-Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set price). Shows:
-           - Header: current price, rrp, cost, stock, margin (now-cost and %).
-           - Pricing timeline (units + pace/wk).
-           - Collapsible size curve (default hidden).
-           - The PriceSetter control below.
+Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set price).
+
+         LAYOUT ORDER follows what the operator actually reads (owner, 2026-07-20 — after real use):
+           1. The action — PriceSetter, or the MatchAmazonPanel when the style is on Amazon autopilot (it replaces the setter).
+           2. Recent sales — OPEN BY DEFAULT. The single most-consulted report; the eye goes straight here, so it is up top and
+              already expanded rather than a dropdown to hunt for.
+           3. Price history — the other main report, high but collapsed (one click).
+           4. "Supporting detail" — the evidence blocks the operator was skipping past (pricing timeline, velocity, units-by-price)
+              plus the rarely-opened size curve, demoted below a divider so they are present but out of the main path.
+           5. Match Amazon (enable card) — last, when matching is OFF: it is toggled sparingly, so it lives at the bottom as a
+              settings-style control. When matching is ON it is NOT here — it is the prominent card at step 1.
+
          On Apply -> POST /pricing-apply (W1); on "No change — just set review" -> POST /pricing-park (W2). On success we show the
          new price + review date and return to the segment's triage list (the style is now hidden there until the review date).
 =======================================================================================================================================
@@ -178,11 +185,21 @@ function DrillContent() {
             </div>
           )}
 
-          {/* Set-price control — kept high so the action is reachable without scrolling past the supporting reports below. The card's
-              own channel banner labels it, so no separate heading. When the style auto-matches Amazon the manual setter is hidden (the
-              price is on autopilot) and the MatchAmazonPanel takes its place; otherwise the panel sits below as a compact enable card. */}
-          <section className="space-y-3">
-            {!data.header.match_amazon && (
+          {/* 1. The action — kept at the top so it is reachable without scrolling. When the style is on Amazon autopilot the
+                 MatchAmazonPanel REPLACES the manual setter here (it is the active control for that style); otherwise the manual
+                 PriceSetter sits here and the Match-Amazon ENABLE card drops to the very bottom (see step 5). */}
+          <section>
+            {data.header.match_amazon ? (
+              <MatchAmazonPanel
+                groupid={groupid}
+                matchAmazon
+                amazonLowest={data.header.amazon_lowest}
+                currentPrice={data.header.now}
+                applying={applying}
+                onPark={handlePark}
+                onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
+              />
+            ) : (
               <PriceSetter
                 key={reloadKey}
                 header={data.header}
@@ -193,15 +210,24 @@ function DrillContent() {
                 onCancel={() => router.push(backTo)}
               />
             )}
-            <MatchAmazonPanel
-              groupid={groupid}
-              matchAmazon={data.header.match_amazon}
-              amazonLowest={data.header.amazon_lowest}
-              currentPrice={data.header.now}
-              applying={applying}
-              onPark={handlePark}
-              onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
-            />
+          </section>
+
+          {/* 2. Recent sales — the report the operator goes straight to. Open by default and up top. */}
+          <SalesList key={`sales-${reloadKey}`} groupid={groupid} defaultOpen />
+
+          {/* 3. Price history — the other main report, high but collapsed. */}
+          <PriceHistory key={`hist-${reloadKey}`} groupid={groupid} />
+
+          {/* 4. Supporting detail — the evidence blocks that were being skipped, demoted below a divider but still to hand. */}
+          <div className="flex items-center gap-3 pt-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Supporting detail</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          {/* Timeline */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Pricing timeline</h2>
+            <Timeline rows={data.timeline} />
           </section>
 
           {/* Evidence — velocity trend + units-by-price resistance, shared with the Amazon drill (drill-evidence-spec §3, blocks 2-3). */}
@@ -210,20 +236,22 @@ function DrillContent() {
             <PriceBands bands={data.bands} currentPrice={data.header.now} />
           </section>
 
-          {/* Timeline */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Pricing timeline</h2>
-            <Timeline rows={data.timeline} />
-          </section>
-
-          {/* Recent sales first — the one checked most, so it sits above the other two dropdowns. */}
-          <SalesList key={`sales-${reloadKey}`} groupid={groupid} />
-
-          {/* Size curve (collapsible) */}
+          {/* Size curve (collapsible, rarely opened) */}
           <SizeCurve sizes={data.sizes} />
 
-          {/* Reference reports (collapsible, lazy — fetch on open). Keyed on reloadKey so a write re-fetches them with the change. */}
-          <PriceHistory key={`hist-${reloadKey}`} groupid={groupid} />
+          {/* 5. Match Amazon enable card — only when matching is OFF (when ON it is the prominent card at step 1). Toggled sparingly,
+                 so it lives at the bottom as a settings-style control rather than competing with the day-to-day reports above. */}
+          {!data.header.match_amazon && (
+            <MatchAmazonPanel
+              groupid={groupid}
+              matchAmazon={false}
+              amazonLowest={data.header.amazon_lowest}
+              currentPrice={data.header.now}
+              applying={applying}
+              onPark={handlePark}
+              onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
+            />
+          )}
         </div>
       )}
     </AppShell>

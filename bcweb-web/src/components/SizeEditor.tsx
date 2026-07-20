@@ -4,7 +4,8 @@
 Component: SizeEditor
 =======================================================================================================================================
 Purpose: Editable size list for a product (skumap). Barcode and Size Display are editable inline; Code is locked (derived groupid-<size>).
-         Supports Add (type an EU size), Remove, and manual re-order (Up/Down). Saves the FULL list in order via POST /product-sizes,
+         Supports Add (type the size code, in the brand's own convention — not necessarily EU), Remove, and manual re-order (Up/Down).
+         Saves the FULL list in order via POST /product-sizes,
          which reconciles skumap (renumber optionsize by position, update existing by code, insert new, hard-delete removed).
 
          Self-contained: manages its own edit state and save. Mount with key={groupid} so it resets cleanly when the product changes.
@@ -177,7 +178,10 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
                   <input ref={(el) => { barcodeRefs.current[i] = el; }} value={r.barcode} onChange={(e) => onBarcodeChange(i, e.target.value)} onKeyDown={(e) => onBarcodeKeyDown(i, e)} inputMode="numeric" placeholder="—" className={inputCls} />
                 </td>
                 <td className="px-3 py-1.5">
-                  <input value={r.sizeDisplay} onChange={(e) => setCell(i, 'sizeDisplay', e.target.value)} placeholder="e.g. 42 EU / 8 UK" className={inputCls} />
+                  {/* This is the customer-facing DISPLAY SIZE, shown verbatim on the public site and across the internal screens.
+                      Match the brand's own convention — "42 EU / 8 UK" for an EU-sized brand, just "8 UK" for a UK-sized one — rather
+                      than forcing EU onto a brand that isn't sized that way. */}
+                  <input value={r.sizeDisplay} onChange={(e) => setCell(i, 'sizeDisplay', e.target.value)} placeholder="e.g. 42 EU / 8 UK  ·  or  5 UK" className={inputCls} />
                 </td>
                 <td className="px-3 py-1.5">
                   {/* UK size feeds the Google Merchant feed (size / size_system=UK). Keep the " UK" suffix (e.g. "4 UK"); the feed strips it. */}
@@ -196,13 +200,15 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
         </table>
       </div>
 
-      {/* Add a new size: type the EU size (e.g. 42) -> code becomes groupid-42. */}
+      {/* Add a new size: type the size CODE — the tail that becomes groupid-<code> and is read back as RIGHT(code,2). It follows the
+          brand's coding, not a fixed system: "42" for an EU-sized brand, "08" for a UK-sized one. NOT the customer-facing label (that
+          is the Display Size column); this is the internal key. If it matches the brand/gender template, the display + UK size auto-fill. */}
       <div className="mt-2 flex items-center gap-2">
         <input
           value={newSize}
           onChange={(e) => { setNewSize(e.target.value); setAddError(null); }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRow(); } }}
-          placeholder="Add size (e.g. 42)"
+          placeholder="Add size code (e.g. 42)"
           className="w-40 rounded-md border border-slate-300 px-3 py-1.5 font-mono text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
         />
         <button type="button" onClick={addRow} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">

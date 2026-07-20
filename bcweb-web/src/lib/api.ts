@@ -926,6 +926,10 @@ export interface InvStyleRow {
   segment: string | null;
   imagename: string | null;
   local: number;
+  // {size: localQty} for the sizes this style currently has in LOCAL stock (only in-stock sizes present). Powers the "Size XX"
+  // filter and the per-size count it shows. Keys are the code's size suffix as stored, so they can carry a leading zero ("05") —
+  // the client normalises numerically when matching, so a typed "5" still finds "05".
+  localSizes: Record<string, number>;
   onOrder: number;
   total: number;
 }
@@ -935,17 +939,22 @@ export interface InvStyleRow {
 export function getInvStyles() {
   return request<{ count: number; rows: InvStyleRow[] }>(
     { url: '/inv-styles', method: 'GET' },
-    (b) => ({ count: b.count ?? 0, rows: (b.rows as InvStyleRow[]) || [] })
+    (b) => ({
+      count: b.count ?? 0,
+      // Default localSizes to {} per row so the client never has to guard for a missing map on an older payload.
+      rows: ((b.rows as InvStyleRow[]) || []).map((r) => ({ ...r, localSizes: r.localSizes || {} })),
+    })
   );
 }
 
-// The twelve places a unit can be (docs/inventory-spec.md §3b, from order-status-lifecycle.pdf p6/p7).
+// The twelve places a unit can be (docs/inventory-spec.md §3b, from order-status-lifecycle.docx p6/p7).
 // The compact local/onOrder/total figures are DERIVED from these server-side, so the two views always reconcile.
 export interface InvBuckets {
   free: number;          // HERE: unallocated, unpicked
   picked: number;        // HERE: committed to an order, still on the shelf
-  amzReserved: number;   // HERE: earmarked for Amazon, still in its normal rack
-  amzBay: number;        // HERE: in the C3-Amazon staging bay (STILL pickable for a Shopify customer — lifecycle doc p5)
+  amzAlloc: number;      // HERE: allocated to Amazon (in practice always the C3-Amazon bay). Reserved-vs-bay was merged 2026-07-20 —
+                         // the only difference was the location, which the locations table prints anyway. STILL pickable for a
+                         // Shopify customer (lifecycle doc p5) — never present it as unavailable.
   onOrderLocal: number;  // INCOMING: ordertype 2, not arrived
   onOrderAmz: number;    // INCOMING: ordertype 3, not arrived
   arrivedLocal: number;  // INCOMING: ordertype 2, arrived, not yet shelved
@@ -959,13 +968,17 @@ export interface InvBuckets {
 // One size's stock position. `total` = local + Amazon-held; `local` includes stock already picked for an order.
 export interface InvSizeRow {
   code: string;
-  eu: string;
+  eu: string;          // RIGHT(code,2) — drives ordering; NOT a display value (on a UK-sized brand it is the UK size)
   uksize: string | null;
+  // The human-entered customer-facing label from skumap.optionsize ("38 EU / 5 UK", or just "5 UK" on a UK-sized brand). This is
+  // what the grid prints. Free text, so the UI keeps a fallback — but 100% populated across the catalogue as of 2026-07-20.
+  sizeDisplay: string | null;
   local: number;
   onOrder: number;
   total: number;
   buckets: InvBuckets;
-  amazonTotal: number;   // PDF p7 re-order figure — everything at OR heading to Amazon, incl. earmarked stock still in our building
+  amazonTotal: number;   // The re-order figure — everything at OR heading to Amazon, incl. earmarked stock still in our building.
+                         // Excludes amzshipment: boxed units are still in localstock as allocated 'amz', so they are already counted.
   demand: number;        // ordertype 1: a CLAIM on stock, not stock. Never add this into a stock figure.
   // Birkenstock pre-order book (birktracker): requested MINUS arrived, since an arrived unit is already counted in Local.
   // A separate notion of incoming from orderstatus, which knows nothing about these seasonal POs. NOT part of Total — we do not
@@ -976,10 +989,9 @@ export interface InvSizeRow {
 // One physical localstock row — which rack a unit is on, and what state it is in.
 //   FREE         = unallocated and unpicked
 //   PICKED       = committed to a customer order, but still on the shelf until packed
-//   AMZ_RESERVED = allocated to Amazon, still in its normal rack
-//   AMZ_BAY      = allocated to Amazon and moved to the C3-Amazon staging bay. Still pickable for a Shopify customer
-//                  (order-status-lifecycle.pdf p5) — do NOT present this as unavailable.
-export type InvLocationState = 'FREE' | 'PICKED' | 'AMZ_RESERVED' | 'AMZ_BAY';
+//   AMZ          = allocated to Amazon. Still pickable for a Shopify customer (order-status-lifecycle.docx p5) — do NOT present
+//                  this as unavailable. The rack vs C3-Amazon-bay distinction lives in `location`, not in the state.
+export type InvLocationState = 'FREE' | 'PICKED' | 'AMZ';
 
 export interface InvLocationRow {
   id: string;            // stable key; phase 2 edits these rows in place
@@ -996,6 +1008,8 @@ export interface InvStockData {
   groupid: string;
   title: string | null;
   imagename: string | null;
+  price: number | null;   // live Shopify price; null when the legacy varchar column holds junk/blank
+  rrp: number | null;     // recommended retail, same caveat
   totals: {
     local: number; onOrder: number; total: number;
     amazonTotal: number; demand: number; birkOnOrder: number; buckets: InvBuckets;
@@ -1012,16 +1026,51 @@ export function getInvStock(groupid: string) {
       groupid: b.groupid,
       title: b.title ?? null,
       imagename: b.imagename ?? null,
+      price: typeof b.price === 'number' ? b.price : null,
+      rrp: typeof b.rrp === 'number' ? b.rrp : null,
       totals: b.totals || {
         local: 0, onOrder: 0, total: 0, amazonTotal: 0, demand: 0, birkOnOrder: 0,
         buckets: {
-          free: 0, picked: 0, amzReserved: 0, amzBay: 0,
+          free: 0, picked: 0, amzAlloc: 0,
           onOrderLocal: 0, onOrderAmz: 0, arrivedLocal: 0, arrivedAmz: 0,
           amzLive: 0, amzInbound: 0, boxed: 0, transit: 0,
         },
       },
       sizes: (b.sizes as InvSizeRow[]) || [],
       locations: (b.locations as InvLocationRow[]) || [],
+    })
+  );
+}
+
+// One sale line on the Inventory panel's recent-sales list. ALL channels merged (SHP / AMZ / CM3) — see routes/inv-sales.js for why
+// there is no channel filter. Returns are included and flagged rather than hidden; their `profit` is normally negative.
+export interface InvSaleRow {
+  solddate: string | null;
+  ordertime: string | null;
+  channel: string | null;
+  sizeDisplay: string | null;
+  qty: number;
+  soldprice: number | null;
+  profit: number | null;
+  isReturn: boolean;
+}
+
+export interface InvSalesData {
+  groupid: string;
+  rows: InvSaleRow[];
+  limit: number;
+  truncated: boolean;     // more sales exist than were returned; UI says "showing last N"
+}
+
+// Recent sales for one style. Lazily fetched — only when the operator opens the panel, so the initial stock load stays fast.
+export function getInvSales(groupid: string, limit?: number) {
+  return request<InvSalesData>(
+    { url: '/inv-sales', method: 'GET', params: { groupid, ...(limit ? { limit } : {}) } },
+    (b) => ({
+      groupid: b.groupid,
+      rows: (b.rows as InvSaleRow[]) || [],
+      limit: Number(b.limit) || 0,
+      truncated: !!b.truncated,
     })
   );
 }

@@ -23,7 +23,7 @@ DEFINITIONS (owner, 2026-07-19 — reconciled against the legacy PowerBuilder sc
             PowerBuilder for 1005292-ARIZONA (size 37 = 4 free + 1 picked = 5; size 38 = 3 free + 2 picked = 5).
   - Order = units on the way to us: orderstatus rows not yet arrived, local (type 2) or Amazon (type 3). Taken at face value — no
             staleness logic here. clean_sales.sql prunes stale rows weekly; cleanup is a human job on another screen (owner).
-  - Total = everything we have or have coming = Local + Amazon-held (live + inbound + boxed + in transit) + the Birkenstock pre-order
+  - Total = everything we have or have coming = Local + Amazon-held (live + inbound + in transit) + the Birkenstock pre-order
             book (birktracker: requested - arrived). Birk POs are INCLUDED because the operator already counts a placed Birk order as
             stock they have ("I know it's coming") — it is ordered ~6 months ahead and is the brand's only replenishment.
 =======================================================================================================================================
@@ -40,6 +40,7 @@ Success Response:
       "segment": "ARIZONA-GENERAL",
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
       "local": 38,                          // SUM(localstock.qty), all states
+      "localSizes": { "37": 4, "38": 5, "39": 6 },  // {size: localQty} for in-stock sizes; drives the client "Size XX" filter
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "total": 38                           // local + amazon-held
     },
@@ -79,6 +80,20 @@ router.get('/', async (req, res) => {
         WHERE COALESCE(deleted, 0) = 0 AND qty > 0
         GROUP BY groupid
       ),
+      loc_by_size AS (
+        -- Local stock broken down BY SIZE, so the client can answer "who has a 41 on the shelf" without a round-trip (owner: search
+        -- Size XX near the end of a hunt). Size = the code's last dash-segment (substring '[^-]+$'), which handles half sizes like
+        -- "10.5" correctly where the module's usual RIGHT(code,2) would read ".5". Same row set as loc (deleted=0, qty>0), so the
+        -- per-size counts sum back to the Local total. Emitted as a {size: qty} JSON map, only sizes actually in stock.
+        SELECT groupid, jsonb_object_agg(sz, units) AS sizes
+        FROM (
+          SELECT groupid, substring(code from '[^-]+$') AS sz, SUM(qty) AS units
+          FROM localstock
+          WHERE COALESCE(deleted, 0) = 0 AND qty > 0
+          GROUP BY groupid, substring(code from '[^-]+$')
+        ) per_size
+        GROUP BY groupid
+      ),
       ord AS (
         -- On order: COUNT of not-yet-arrived local (2) / Amazon (3) order lines. orderstatus.shopifysku = skumap.code (verified 100%).
         SELECT m.groupid, COUNT(*) AS units
@@ -93,15 +108,11 @@ router.get('/', async (req, res) => {
         FROM amzfeed
         GROUP BY groupid
       ),
-      boxed AS (
-        -- Boxed and waiting for DPD.
-        SELECT m.groupid, SUM(s.qty) AS units
-        FROM amzshipment s
-        JOIN skumap m ON m.code = s.code
-        GROUP BY m.groupid
-      ),
+      -- NO boxed CTE. amzshipment units are still in localstock (allocated 'amz' at C3-Amazon) until DPD collects, so they are
+      -- already inside loc below — counting them here too inflated Total for any style mid-shipment (owner, 2026-07-20).
+      -- NB: no backticks anywhere in this string; it is a JS template literal, and one would end it mid-query.
       transit AS (
-        -- Handed to DPD within the last 2 days — still counted as ours (PDF p7 rule).
+        -- Handed to DPD within the last 2 days — still counted as ours (lifecycle doc p7 rule).
         SELECT m.groupid, SUM(a.qty) AS units
         FROM amzshipment_archive a
         JOIN skumap m ON m.code = a.code
@@ -125,17 +136,17 @@ router.get('/', async (req, res) => {
         s.segment,
         s.imagename,
         COALESCE(loc.units, 0)                                AS local_units,
+        COALESCE(loc_by_size.sizes, '{}'::jsonb)              AS local_sizes,
         COALESCE(ord.units, 0)                                AS order_units,
         COALESCE(feed.units, 0)
-          + COALESCE(boxed.units, 0)
           + COALESCE(transit.units, 0)                        AS amazon_units,
         COALESCE(birk.units, 0)                               AS birk_units
       FROM skusummary s
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
+      LEFT JOIN loc_by_size     ON loc_by_size.groupid = s.groupid
       LEFT JOIN ord             ON ord.groupid     = s.groupid
       LEFT JOIN feed            ON feed.groupid    = s.groupid
-      LEFT JOIN boxed           ON boxed.groupid   = s.groupid
       LEFT JOIN transit         ON transit.groupid = s.groupid
       LEFT JOIN birk            ON birk.groupid    = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
@@ -153,6 +164,9 @@ router.get('/', async (req, res) => {
         segment: r.segment || null,
         imagename: r.imagename || null,
         local,
+        // {size: localQty} for sizes currently in local stock — drives the client-side "Size XX" filter and the per-size count it
+        // shows. jsonb already parses to an object with numeric values; default to {} so the client never guards for null.
+        localSizes: r.local_sizes || {},
         onOrder: Number(r.order_units) || 0,
         // Total INCLUDES the Birkenstock pre-order book (owner) — a placed Birk order is stock they count on having, since it is the
         // only replenishment that exists for the brand. Local stays strictly "in the building".
