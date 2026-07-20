@@ -121,6 +121,7 @@ export interface AmzAllRow {
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
+  imagename: string | null;             // product image filename (served from images.brookfieldcomfort.com); null = no image
   price: number | null; cost: number | null; fbafee: number | null; rrp: number | null;
   floor: number | null;                 // cost + FBA fee (breakeven)
   margin: number | null; margin_pct: number | null;
@@ -154,6 +155,7 @@ export interface DrillHeader {
   now: number | null; cost: number | null; rrp: number | null; minp: number | null; maxp: number | null;
   margin: number | null; margin_pct: number | null;   // GROSS (now - cost); net reasoning lives in the timeline profit/wk
   stock: number; colour: string | null; width: string | null; season: string | null;
+  imagename: string | null;             // product image filename (served from images.brookfieldcomfort.com); null = no image
   next_review: string | null;
   match_amazon: boolean;                // true = Shopify price is auto-matched to Amazon (manual setter hidden; apply refused)
   amazon_lowest: number | null;         // Amazon's cheapest in-stock size = the match target (null if none in stock)
@@ -1008,6 +1010,7 @@ export interface InvStockData {
   groupid: string;
   title: string | null;
   imagename: string | null;
+  handle: string | null;   // Shopify product-URL slug (brookfieldcomfort.com/products/<handle>); null when the style has no handle
   price: number | null;   // live Shopify price; null when the legacy varchar column holds junk/blank
   rrp: number | null;     // recommended retail, same caveat
   totals: {
@@ -1026,6 +1029,7 @@ export function getInvStock(groupid: string) {
       groupid: b.groupid,
       title: b.title ?? null,
       imagename: b.imagename ?? null,
+      handle: b.handle ?? null,
       price: typeof b.price === 'number' ? b.price : null,
       rrp: typeof b.rrp === 'number' ? b.rrp : null,
       totals: b.totals || {

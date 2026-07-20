@@ -22,6 +22,7 @@ Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set pric
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import AppShell from '@/components/AppShell';
 import Timeline from '@/components/Timeline';
 import SizeCurve from '@/components/SizeCurve';
@@ -82,6 +83,10 @@ function DrillContent() {
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Product image is purely for eyeballing what's being priced (same picture the stock/analytics screens show). Track a load failure
+  // so a missing/dead filename falls back to a placeholder rather than a broken-image icon; reset it whenever the style changes.
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [groupid]);
   // Bumped after a successful write to remount the setter + the lazy reports so they pick up the fresh data (new current price, an
   // empty setter, and a re-fetch of the price-history/sales reports that now include the change).
   const [reloadKey, setReloadKey] = useState(0);
@@ -159,8 +164,23 @@ function DrillContent() {
     }
   }
 
+  // Product thumbnail rendered flush-right of the page title (AppShell headerRight slot) — a small "what am I pricing?" anchor that
+  // uses the title row's empty right side, so it never pushes the price setter down. Same image the stock/analytics screens use.
+  const thumb = data && (data.header.imagename && !imgFailed ? (
+    <div className="relative h-20 w-20 overflow-hidden rounded-md border border-slate-200 bg-white sm:h-24 sm:w-24">
+      <Image
+        src={`https://images.brookfieldcomfort.com/${data.header.imagename}`}
+        alt={data.header.title || groupid}
+        fill
+        sizes="96px"
+        onError={() => setImgFailed(true)}
+        className="object-contain"
+      />
+    </div>
+  ) : null);
+
   return (
-    <AppShell title={data?.header.title || groupid} subtitle={groupid} subtitleCopy backHref={backTo} backLabel={backLabel}>
+    <AppShell title={data?.header.title || groupid} subtitle={groupid} subtitleCopy backHref={backTo} backLabel={backLabel} headerRight={thumb}>
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 

@@ -16,6 +16,7 @@ Purpose: The decision screen for one Amazon SKU (one size), mirroring the Shopif
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import AmzBasketBar from '@/components/AmzBasketBar';
@@ -76,6 +77,10 @@ function DrillContent() {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Bumped after a successful write so the setter remounts (empty) and the lazy reports re-fetch with the fresh change.
   const [reloadKey, setReloadKey] = useState(0);
+  // Product image is purely for eyeballing what's being priced (same picture the Shopify/stock screens show). Track a load failure so a
+  // missing/dead filename simply shows nothing rather than a broken-image icon; reset it whenever the SKU changes.
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [code]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -152,34 +157,53 @@ function DrillContent() {
   const queuedPrice = items[code] ? items[code].new_price : null;
   const title = data?.header.title || code;
 
+  // Product thumbnail rendered flush-right of the page title (AppShell headerRight slot) — a small "what am I pricing?" anchor that
+  // uses the title row's empty right side, so it never pushes the price setter down. Same image the Shopify/stock screens use.
+  const thumb = data && data.header.imagename && !imgFailed ? (
+    <div className="relative h-20 w-20 overflow-hidden rounded-md border border-slate-200 bg-white sm:h-24 sm:w-24">
+      <Image
+        src={`https://images.brookfieldcomfort.com/${data.header.imagename}`}
+        alt={data.header.title || code}
+        fill
+        sizes="96px"
+        onError={() => setImgFailed(true)}
+        className="object-contain"
+      />
+    </div>
+  ) : null;
+
+  // Identity block rendered under the title (AppShell subtitleNode) — Group ID (the style) and Amazon SKU (the Seller Central listing
+  // id) together, each LABELLED and one-click copyable. Keeping both here (rather than one in the subtitle and one orphaned in the body)
+  // fills the header's left column beside the thumbnail, so the image is anchored to real content instead of floating over empty space.
+  const identity = data && (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-slate-500">Group ID</span>
+        <span className="font-mono font-semibold text-slate-800">{data.header.groupid}</span>
+        <CopyButton value={data.header.groupid} label="Group ID" />
+      </span>
+      {data.header.amz_sku && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-slate-500">Amazon SKU</span>
+          <span className="font-mono font-semibold text-slate-800">{data.header.amz_sku}</span>
+          <CopyButton value={data.header.amz_sku} label="Amazon SKU" />
+        </span>
+      )}
+    </div>
+  );
+
   return (
-    <AppShell title={title} backHref={backTo} backLabel={backLabel}>
-      {/* Identity row — Group ID (the style) and Amazon SKU (the Seller Central listing id), each LABELLED (so it's obvious which is
-          which) and one-click copyable. Both come from the loaded header. */}
-      {data && (
-        <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-sm">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="text-slate-500">Group ID</span>
-            <span className="font-mono font-semibold text-slate-800">{data.header.groupid}</span>
-            <CopyButton value={data.header.groupid} label="Group ID" />
+    <AppShell title={title} subtitleNode={identity} backHref={backTo} backLabel={backLabel} headerRight={thumb}>
+      {/* Read-only heads-up: this style's Shopify price auto-follows Amazon's lowest in-stock size. Reminds the operator that an Amazon
+          price change here will pull Shopify down at the next amz-match sync (Amazon itself is priced normally below). Only when on. */}
+      {data && data.header.match_amazon && (
+        <div className="mb-5">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+            title="This style's Shopify price is auto-matched to Amazon's cheapest in-stock size (synced twice daily)."
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Shopify auto-matches Amazon
           </span>
-          {data.header.amz_sku && (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-slate-500">Amazon SKU</span>
-              <span className="font-mono font-semibold text-slate-800">{data.header.amz_sku}</span>
-              <CopyButton value={data.header.amz_sku} label="Amazon SKU" />
-            </span>
-          )}
-          {/* Read-only heads-up: this style's Shopify price auto-follows Amazon's lowest in-stock size. Reminds the operator that an
-              Amazon price change here will pull Shopify down at the next amz-match sync (Amazon itself is priced normally below). */}
-          {data.header.match_amazon && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
-              title="This style's Shopify price is auto-matched to Amazon's cheapest in-stock size (synced twice daily)."
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-500" /> Shopify auto-matches Amazon
-            </span>
-          )}
         </div>
       )}
 

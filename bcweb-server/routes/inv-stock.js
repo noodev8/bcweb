@@ -35,6 +35,7 @@ Success Response:
   "groupid": "1005292-ARIZONA",
   "title": "Birkenstock Arizona Two-Strap Patent Sandals Black Narrow Fit",
   "imagename": "womens-....jpg",              // bare filename; web builds https://images.brookfieldcomfort.com/<imagename>. null if none
+  "handle": "birkenstock-arizona-...-1005292-arizona",  // Shopify handle; web builds https://brookfieldcomfort.com/products/<handle>. null if none
   "price": 46.95,                             // live Shopify price; null if the legacy varchar column holds junk or is blank
   "rrp": 55.00,                               // recommended retail; null on the same terms (rrp = the text 'RRP' on 37 real rows)
   "totals": { "local": 42, "onOrder": 0, "total": 42 },   // column totals, so the operator does not add up 8 rows in their head
@@ -98,7 +99,7 @@ router.get('/', async (req, res) => {
     // hold junk on real rows (rrp = the literal text 'RRP' in 37 of them), and a plain cast throws and 500s the whole request.
     // A bad value degrades to null and the UI simply omits it.
     const head = await query(
-      `SELECT s.groupid, t.shopifytitle AS title, s.imagename,
+      `SELECT s.groupid, t.shopifytitle AS title, s.imagename, s.handle,
               ${safeNumeric('s.shopifyprice')} AS price,
               ${safeNumeric('s.rrp')}          AS rrp
        FROM skusummary s
@@ -372,6 +373,9 @@ router.get('/', async (req, res) => {
       groupid: head.rows[0].groupid,
       title: head.rows[0].title || null,
       imagename: head.rows[0].imagename || null,
+      // Shopify product handle — the public-URL slug (https://brookfieldcomfort.com/products/<handle>). Lets the operator grab the live
+      // product page to email a customer a link. null when the style has no handle (e.g. never pushed to Shopify).
+      handle: head.rows[0].handle || null,
       // Numbers, not strings: safeNumeric already rejected junk, so the client formats and never parses.
       price: head.rows[0].price === null ? null : Number(head.rows[0].price),
       rrp: head.rows[0].rrp === null ? null : Number(head.rows[0].rrp),

@@ -24,11 +24,15 @@ row would read as "we don't stock a 39", which is a different and wrong answer.
 
 import Image from 'next/image';
 import { useState } from 'react';
+import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
 import InvLocations from '@/components/InvLocations';
 import InvSales from '@/components/InvSales';
+import CopyButton from '@/components/CopyButton';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
+// The public storefront product URL is handle-based (skusummary.handle is the slug). Used to email a customer a link to the live page.
+const STORE_PRODUCT_BASE = 'https://brookfieldcomfort.com/products/';
 
 // The Show Detail columns, appended to the RIGHT of Total/Local so the two columns the operator already reads never move when the
 // toggle flips. Labels are short because the row is wide even now.
@@ -141,6 +145,8 @@ function sizeLabel(s: { sizeDisplay: string | null; eu: string; uksize: string |
 export default function InvStockPanel({ data }: { data: InvStockData }) {
   const [imgFailed, setImgFailed] = useState(false);
   const src = data.imagename ? IMAGE_BASE + data.imagename : null;
+  // Live product page (for emailing a customer a link) — only when the style actually has a Shopify handle.
+  const productUrl = data.handle ? STORE_PRODUCT_BASE + data.handle : null;
 
   // Locations are driven by a CHOSEN SIZE, not shown for the whole style (owner). The operator's question is "where are the 38s",
   // not "list every rack this style touches" — a popular style spans a dozen racks across eight sizes, which is noise. Clicking the
@@ -321,6 +327,39 @@ export default function InvStockPanel({ data }: { data: InvStockData }) {
           ) : (
             <div className="flex aspect-square w-full items-center justify-center rounded-md border border-dashed border-slate-200 text-center text-[11px] text-slate-400">
               {data.imagename ? 'Image not found' : 'No image'}
+            </div>
+          )}
+          {/* Download the full-size image (for a social post etc.). A plain link straight to the image URL with `download` — the URL's
+              own basename IS the descriptive imagename, so the saved file is well-named even if the browser ignores the suggested name
+              on a cross-origin download. Opens in a new tab as a fallback if a browser declines the download, so the app is never
+              navigated away from. Only shown when there is an image to fetch. */}
+          {src && !imgFailed && (
+            <a
+              href={src}
+              download={data.imagename || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Download this image"
+              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" /> Download image
+            </a>
+          )}
+          {/* Live product page — for emailing a customer the link. Sits UNDER the image/download (owner) rather than in the header, where
+              it cost a whole row of height. Open the page in a new tab, or copy the URL to paste into an email. Only when the style has a
+              handle. NEW TAB so a mid-lookup jump never loses the operator's place in the list (same rule as Reprice above). */}
+          {productUrl && (
+            <div className="mt-2 flex items-center gap-1.5">
+              <a
+                href={productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open the live product page in a new tab"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                <ArrowTopRightOnSquareIcon className="h-4 w-4" /> Product page
+              </a>
+              <CopyButton value={productUrl} label="product page link" />
             </div>
           )}
         </div>

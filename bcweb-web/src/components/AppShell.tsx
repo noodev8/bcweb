@@ -40,11 +40,15 @@ interface AppShellProps {
   title?: string;
   subtitle?: string;     // optional line under the title (e.g. the style's groupid) — the page's key identifier
   subtitleCopy?: boolean; // when true, shows a copy-icon next to the subtitle that copies it verbatim (e.g. to search elsewhere)
+  subtitleNode?: ReactNode; // richer alternative to `subtitle` for pages whose identity is more than one string (e.g. the Amazon drill's
+                            // Group ID + Amazon SKU); rendered in the same slot, takes precedence over `subtitle` when provided
   backHref?: string;     // when set, shows a single back arrow linking here
   backLabel?: string;
+  headerRight?: ReactNode; // optional node rendered flush-right of the title (e.g. a product thumbnail) — uses the title row's
+                           // otherwise-empty right side so it costs no vertical space in the page body
 }
 
-export default function AppShell({ children, title, subtitle, subtitleCopy, backHref, backLabel }: AppShellProps) {
+export default function AppShell({ children, title, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -120,13 +124,20 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, back
               <ArrowLeftIcon className="h-4 w-4" /> {backLabel || 'Back'}
             </Link>
           )}
-          {title && <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>}
-          {subtitle && (
-            <p className="mt-0.5 flex items-center gap-1 font-mono text-sm text-slate-500">
-              {subtitle}
-              {subtitleCopy && <CopyButton value={subtitle} label={subtitle} />}
-            </p>
-          )}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              {title && <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>}
+              {subtitleNode ? (
+                <div className="mt-0.5">{subtitleNode}</div>
+              ) : subtitle && (
+                <p className="mt-0.5 flex items-center gap-1 font-mono text-sm text-slate-500">
+                  {subtitle}
+                  {subtitleCopy && <CopyButton value={subtitle} label={subtitle} />}
+                </p>
+              )}
+            </div>
+            {headerRight && <div className="shrink-0">{headerRight}</div>}
+          </div>
         </div>
       )}
 

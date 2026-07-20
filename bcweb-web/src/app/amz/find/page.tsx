@@ -54,7 +54,9 @@ function AmzFindContent() {
   const backLabel = from ? prettyPathLabel(from) : 'Segments';
   const { logout } = useAuth();
   const { add } = useAmzBasket();
-  const [term, setTerm] = useState(initialQ);
+  // Search field is forced UPPERCASE (owner) — group ids / SKU codes are uppercase, and the server matches case-insensitively so a title
+  // term still finds its product. Mirrors the Shopify /pricing/find box.
+  const [term, setTerm] = useState(initialQ.toUpperCase());
   const [results, setResults] = useState<AmzFindRow[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -166,10 +168,10 @@ function AmzFindContent() {
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input
             value={term}
-            onChange={(e) => setTerm(e.target.value)}
+            onChange={(e) => setTerm(e.target.value.toUpperCase())}
             autoFocus
             placeholder="Product name, group id or SKU code (e.g. IVES, FLE030-IVES-STONE-06)"
-            className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
         <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">

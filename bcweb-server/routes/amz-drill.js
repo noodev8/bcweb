@@ -30,7 +30,7 @@ Success Response:
   "return_code": "SUCCESS",
   "header": {
     "code": "FLE030-IVES-WHITE-38", "amz_sku": "AD-0XF8D-48L", "groupid": "FLE030-IVES-WHITE", "segment": "IVES-WHITE",
-    "size": "38", "title": "...",
+    "size": "38", "title": "...", "imagename": "ives-white.jpg",  // product image filename (images.brookfieldcomfort.com) or null
     "price": 37.99, "cost": 15.99, "fbafee": 3.06, "rrp": 45.00,
     "floor": 19.05,                            // cost + FBA fee (breakeven)
     "margin": 18.94, "margin_pct": 50,         // net = price - cost - FBA fee, and as % of price (null if any part unknown)
@@ -71,6 +71,7 @@ router.get('/', async (req, res) => {
     const headerResult = await query(`
       SELECT a.code, a.groupid, sk.segment, RIGHT(a.code,2) AS size, a.sku AS amz_sku,
              t.shopifytitle AS title,
+             sk.imagename,
              sk.match_amazon_price AS match_amazon,
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.cost')}    AS cost,
@@ -105,6 +106,9 @@ router.get('/', async (req, res) => {
       segment: h.segment || null,
       size: h.size,
       title: h.title || null,
+      // Filename only (or null) — served from https://images.brookfieldcomfort.com/<imagename> on the web side. Purely so the operator
+      // can eyeball what they're pricing; not used in any decision logic. Lives on skusummary (per style, shared across the SKU's sizes).
+      imagename: h.imagename || null,
       // Read-only flag for the drill badge: the parent STYLE auto-matches its Shopify price to Amazon's lowest in-stock size. Purely
       // informational on the Amazon side (this SKU's Amazon price is set here as usual); it tells the operator Shopify follows Amazon.
       match_amazon: h.match_amazon === true,
