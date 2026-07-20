@@ -1,0 +1,15 @@
+# Python deps for the Google Merchant Center instant price push (Merchant API).
+# Install on the machine that runs the bcweb server (VPS + local dev):
+#     pip install -r requirements.txt
+#
+# Migrated 2026-07 from the Content API for Shopping (google-api-python-client / "content" v2.1),
+# which Google discontinues on 2026-08-18, to the Merchant API gapic client libraries below.
+# Runtime (the price push):
+psycopg2-binary
+python-dotenv
+google-shopping-merchant-products
+google-shopping-merchant-datasources
+
+# Setup-only (one-off scripts create_supplemental_datasource.py / register_gcp.py):
+google-shopping-merchant-accounts
+google-auth-oauthlib

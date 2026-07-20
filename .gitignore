@@ -43,6 +43,10 @@ out/
 .env.production
 .env.development
 
+# Google OAuth secrets / cached tokens (Merchant API one-off registration)
+client_secret*.json
+token.json
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*
