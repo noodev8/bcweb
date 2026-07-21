@@ -1079,4 +1079,61 @@ export function getInvSales(groupid: string, limit?: number) {
   );
 }
 
+// =============================================================================================================================
+// Order Status module — manage open supplier orders in orderstatus (local=2, amazon=3). See docs/order-status-lifecycle.docx.
+// =============================================================================================================================
+export interface OrderStatusSupplierRow { supplier: string; open_batches: number; open_units: number; oldest_days: number; }
+
+export function getOrderStatusSuppliers() {
+  return request<OrderStatusSupplierRow[]>(
+    { url: '/order-status-suppliers', method: 'GET' },
+    (b) => (b.suppliers as OrderStatusSupplierRow[]) || []
+  );
+}
+
+export interface OrderStatusLine {
+  ordernum: string; code: string; groupid: string | null; title: string | null; size: string;
+  arrived: boolean; ponumber: string | null;
+}
+export interface OrderStatusBatch {
+  ordertype: 2 | 3; createddate: string; days: number | null; ponumbers: string[];
+  total: number; arrived: number; waiting: number; lines: OrderStatusLine[];
+}
+
+export function getOrderStatusList(supplier: string) {
+  return request<OrderStatusBatch[]>(
+    { url: '/order-status-list', method: 'GET', params: { supplier } },
+    (b) => (b.batches as OrderStatusBatch[]) || []
+  );
+}
+
+// Re-flag a set of orderstatus rows local <-> amazon (whole batch or a hand-picked subset of its lines).
+export function switchOrderType(ordernums: string[], newOrderType: 2 | 3) {
+  return request<{ updated: number }>(
+    { url: '/order-status-switch-type', method: 'POST', data: { ordernums, newOrderType } },
+    (b) => ({ updated: Number(b.updated) || 0 })
+  );
+}
+
+// +/- the unit count for one SKU/size group. ordernums = every ordernum currently in that group (from OrderStatusBatch.lines);
+// delta > 0 duplicates one of them (new units land in the same batch); delta < 0 archives+removes up to |delta| units, waiting
+// ones first and falling back to arrived ones once waiting runs out.
+export function adjustOrderStatusQty(ordernums: string[], delta: number) {
+  return request<{ added: number; removed: number; qty: number; arrived: number; waiting: number }>(
+    { url: '/order-status-adjust-qty', method: 'POST', data: { ordernums, delta } },
+    (b) => ({
+      added: Number(b.added) || 0, removed: Number(b.removed) || 0,
+      qty: Number(b.qty) || 0, arrived: Number(b.arrived) || 0, waiting: Number(b.waiting) || 0,
+    })
+  );
+}
+
+// Archive + delete an explicit selection of orderstatus rows (whole batch or a subset), any arrival status.
+export function archiveOrderStatus(ordernums: string[]) {
+  return request<{ archived: number }>(
+    { url: '/order-status-archive', method: 'POST', data: { ordernums } },
+    (b) => ({ archived: Number(b.archived) || 0 })
+  );
+}
+
 export default api;

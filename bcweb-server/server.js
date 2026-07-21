@@ -122,6 +122,13 @@ app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + he
 app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size grid (Order / Total / Local per size) + image
 app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent sales, ALL channels merged, w/ profit (lazy)
 
+// --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
+app.use('/order-status-suppliers', require('./routes/order-status-suppliers'));   // Stage 0: suppliers with an order currently open
+app.use('/order-status-list', require('./routes/order-status-list'));             // Stage 1: one supplier's orders, grouped into batches
+app.use('/order-status-switch-type', require('./routes/order-status-switch-type')); // re-flag rows local <-> amazon
+app.use('/order-status-archive', require('./routes/order-status-archive'));       // archive+delete an explicit selection
+app.use('/order-status-adjust-qty', require('./routes/order-status-adjust-qty')); // +/- units for one SKU/size within a batch
+
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
 app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)

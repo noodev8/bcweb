@@ -80,7 +80,14 @@ export default function DashboardPage() {
           icon={ArchiveBoxIcon}
           live
         />
-        <ModuleTile title="Orders" description="Order search and fulfilment status." icon={ShoppingCartIcon} />
+        {/* Order Status — manage open supplier orders (local/Amazon) in orderstatus: which are waiting, which switched type, archive stale ones. */}
+        <ModuleTile
+          title="Order Status"
+          description="Track supplier orders — what's arrived, what's waiting, and clear out stale ones."
+          href="/order-status"
+          icon={ShoppingCartIcon}
+          live
+        />
       </div>
     </AppShell>
   );
