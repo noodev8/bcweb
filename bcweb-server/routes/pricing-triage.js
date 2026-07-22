@@ -3,8 +3,13 @@
 API Route: pricing_triage
 =======================================================================================================================================
 Method: GET
-Purpose: Stage 1 — the shortlist. For a chosen segment, returns the top N in-stock, un-parked styles by units sold in the last
-         `days` on Shopify. This is a sanity shortlist ("which styles are worth a look"), nothing more (CLAUDE.md Stage 1).
+Purpose: Stage 1 — the WINNERS list. For a chosen segment, returns the in-stock, un-parked styles that sold in the last `days` on
+         Shopify, best sellers first (CLAUDE.md Stage 1).
+
+         This used to be a top-10 shortlist. It isn't any more: the operator works through as many as they have time for, so the
+         route returns the WHOLE qualifying set and `limit` is only a safety cap (utils/listLimit.js, default 100) so a pathological
+         segment can't dump thousands of rows into the browser. When the cap does bite, `truncated` is true and `total` carries the
+         real count, so the UI can say "showing 100 of N" instead of silently lying about how much work is in the segment.
 
 Key domain rules baked into the SQL (S2, CLAUDE.md) — do not change without re-reading CLAUDE.md:
   - Shopify only (channel='SHP'); positive sales only (qty>0, soldprice>0).
@@ -19,13 +24,15 @@ Key domain rules baked into the SQL (S2, CLAUDE.md) — do not change without re
 Request Query Params:
   segment  (string, required)  - the segment to shortlist within
   days     (int, optional)     - lookback window in days for sales; default 30 (CLAUDE.md Stage 1)
-  limit    (int, optional)     - shortlist size; default 10
+  limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "segment": "EVA-SEG",
   "days": 30,
+  "total": 19,          // qualifying styles in the segment, BEFORE the cap
+  "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "groupid": "ABC123", "title": "Arizona Birko-Flor", "units": 25, "stock": 8, "price": 36.95, "match_amazon": false },
     ...   // ordered by units desc; rank is 1-based row number for the numbered list (CLAUDE.md). match_amazon=true => auto-matched (badge + review-only).
@@ -45,6 +52,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { parseListLimit } = require('../utils/listLimit');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -52,9 +60,9 @@ router.use(verifyToken);
 router.get('/', async (req, res) => {
   try {
     const { segment } = req.query;
-    // Defaults per CLAUDE.md: 30-day window, top 10. Parse defensively; fall back to the defaults on anything non-numeric.
+    // 30-day window per CLAUDE.md; `limit` is a safety cap, not a shortlist size (see utils/listLimit.js). Parse defensively.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
-    const limit = Number.parseInt(req.query.limit, 10) > 0 ? Number.parseInt(req.query.limit, 10) : 10;
+    const limit = parseListLimit(req.query.limit);
 
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
@@ -81,7 +89,9 @@ router.get('/', async (req, res) => {
       )
       SELECT w.groupid, w.units, st.stock, t.shopifytitle,
              ${safeNumeric('sp.shopifyprice')} AS price,  -- current live price, so the bulk price-editor can compute per-row deltas
-             sp.match_amazon_price AS match_amazon        -- so the list can badge auto-matched styles (kept IN the list for review)
+             sp.match_amazon_price AS match_amazon,       -- so the list can badge auto-matched styles (kept IN the list for review)
+             COUNT(*) OVER () AS total_rows               -- full qualifying count: window functions run BEFORE the LIMIT, so this is
+                                                          -- the pre-cap total (free — no second round-trip to count)
       FROM win w
       JOIN stk st ON st.groupid = w.groupid            -- INNER JOIN drops 0-stock styles
       LEFT JOIN skusummary sp ON sp.groupid = w.groupid -- for the current price (legacy VARCHAR -> safeNumeric)
@@ -102,7 +112,9 @@ router.get('/', async (req, res) => {
       match_amazon: r.match_amazon === true   // auto-matched styles stay in the list for a "keep matching?" review; badged in the UI
     }));
 
-    return res.json({ return_code: 'SUCCESS', segment, days, rows });
+    // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
+    const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
+    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[pricing-triage] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load triage list' });

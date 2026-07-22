@@ -3,10 +3,13 @@
 API Route: amz_winners
 =======================================================================================================================================
 Method: GET
-Purpose: Stage 1 — the WINNERS shortlist for a segment (the Amazon mirror of Shopify's pricing-triage). For a chosen segment, returns the
-         top N in-stock Amazon SKUs by units sold in the last `days`, on the Amazon channel. These are the strong, well-stocked sizes to
-         price UP / harvest (docs/amz-pricing-spec.md §1). SKU-grain: Amazon prices per size, so this is one row PER SKU, not per groupid —
-         a groupid's fast sizes can be WINNERS while its dead sizes are LOSERS.
+Purpose: Stage 1 — the WINNERS list for a segment (the Amazon mirror of Shopify's pricing-triage). For a chosen segment, returns the
+         in-stock Amazon SKUs that sold in the last `days` on the Amazon channel, best sellers first. These are the strong, well-stocked
+         sizes to price UP / harvest (docs/amz-pricing-spec.md §1). SKU-grain: Amazon prices per size, so this is one row PER SKU, not per
+         groupid — a groupid's fast sizes can be WINNERS while its dead sizes are LOSERS.
+
+         Not a top-N shortlist: the operator works through as many as they have time for, so this returns the WHOLE qualifying set and
+         `limit` is only a safety cap (utils/listLimit.js, default 100). `total` + `truncated` say whether the cap bit.
 
 Key domain rules baked into the SQL:
   - Amazon only (channel='AMZ'); positive sales only (qty>0, soldprice>0).
@@ -22,13 +25,15 @@ integer. Size = RIGHT(code,2). Human name from title.shopifytitle (not the overl
 Request Query Params:
   segment  (string, required)  - the segment to shortlist within
   days     (int, optional)     - lookback window in days for sales; default 30
-  limit    (int, optional)     - shortlist size; default 10
+  limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "segment": "IVES-WHITE",
   "days": 30,
+  "total": 23,          // qualifying SKUs in the segment, BEFORE the cap
+  "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "code": "FLE030-IVES-WHITE-38", "amz_sku": "AD-0XF8D-48L", "groupid": "FLE030-IVES-WHITE",
       "size": "38", "title": "...", "price": 37.99, "fba": 96, "u7": 4, "units": 19, "last_sold": "2026-07-08" },
@@ -49,6 +54,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { parseListLimit } = require('../utils/listLimit');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -58,9 +64,9 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
 router.get('/', async (req, res) => {
   try {
     const { segment } = req.query;
-    // Defaults: 30-day window, top 10. Parse defensively; fall back on anything non-numeric.
+    // 30-day window; `limit` is a safety cap, not a shortlist size (utils/listLimit.js). Parse defensively.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
-    const limit = Number.parseInt(req.query.limit, 10) > 0 ? Number.parseInt(req.query.limit, 10) : 10;
+    const limit = parseListLimit(req.query.limit);
 
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
@@ -88,7 +94,9 @@ router.get('/', async (req, res) => {
              COALESCE(a.amzlive,0) AS fba,
              w.units,
              COALESCE(s7.u7,0) AS u7,
-             to_char(w.last_sold,'YYYY-MM-DD') AS last_sold
+             to_char(w.last_sold,'YYYY-MM-DD') AS last_sold,
+             COUNT(*) OVER () AS total_rows              -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
+                                                         -- pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code                    -- for the per-SKU review date (next_amz_price_review); 1:1 (code unique)
@@ -116,7 +124,9 @@ router.get('/', async (req, res) => {
       last_sold: r.last_sold || null,
     }));
 
-    return res.json({ return_code: 'SUCCESS', segment, days, rows });
+    // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
+    const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
+    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[amz-winners] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load winners list' });

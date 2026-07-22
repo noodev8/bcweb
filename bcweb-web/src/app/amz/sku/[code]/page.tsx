@@ -29,7 +29,6 @@ import { getAmzDrill, applyAmzPrice, markAmzReviewed, AmzDrillData } from '@/lib
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
-import { bumpActionedCount } from '@/lib/sessionCounter';
 
 export default function AmzDrillPage() {
   return (
@@ -60,14 +59,6 @@ function DrillContent() {
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
     const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
     return `${seg} · ${modeLabel}`;
-  })();
-
-  // The segment list we'll return to — used to key the session "actioned" counter so the bump lands on the right list (mirrors Shopify).
-  // Null when we didn't come from a segment list (search / deep link), in which case there's no list to count against.
-  const backSegment = (() => {
-    if (!backTo.startsWith('/amz/') || backTo.startsWith('/amz/find')) return null;
-    const [path] = backTo.split('?');
-    return decodeURIComponent(path.replace('/amz/', ''));
   })();
 
   const [data, setData] = useState<AmzDrillData | null>(null);
@@ -127,7 +118,6 @@ function DrillContent() {
       // "download the file" affordance, so we don't restate it on every apply.
       const reviewMsg = d.next_review ? ` Next review ${d.next_review}.` : ' No review set.';
       setNotice({ kind: 'ok', text: `Saved £${d.new_price.toFixed(2)}.${reviewMsg}${warn}` });
-      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {
@@ -145,7 +135,6 @@ function DrillContent() {
     setApplying(false);
     if (res.success && res.data) {
       setNotice({ kind: 'ok', text: `Review set for ${res.data.nextReview} (price unchanged).` });
-      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {

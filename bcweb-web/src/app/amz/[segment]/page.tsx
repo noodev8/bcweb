@@ -8,6 +8,9 @@ Purpose: The list view for a segment, with the same prominent WINNERS | LOSERS s
   - LOSERS:  dead (no Amazon sale in 14 days) / slow (cover >= 16 weeks) FBA stock — candidates to cut and get moving. Dead first, then
              most FBA stock at risk.
   - ALL:     every managed SKU in the segment, most-recently-changed first (browse/lookup).
+WINNERS/LOSERS are the WHOLE qualifying lists, not a top-10 shortlist (a fixed 10 told the operator nothing — it silently refilled as it
+was cleared). The count on each tab is therefore the actual work in front of you and shrinks as you clear it; the server keeps a safety
+cap (utils/listLimit.js, default 100) so a pathological segment can't flood the browser, and the caption says when it bit.
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
 All three lists are fetched up front (so each tab shows a live count) and cached; rows link to the per-SKU drill. The active mode is kept
 in the URL (?mode=) so returning after an apply restores the same tab. A queued SKU (in the upload basket) shows a "queued" badge.
@@ -19,11 +22,11 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
+import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, applyAmzPrice, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
-import { getActionedCount, bumpActionedCount } from '@/lib/sessionCounter';
 
 // Bulk price + review controls — kept identical to the Amazon drill's price-setter (owner: "exactly the same as the individual item").
 // Nudge denominations = the engine's typical £0.30 / £0.50 / £1.00 steps; review chips = the drill's day set. Amber tone throughout.
@@ -87,9 +90,10 @@ function SegmentContent() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
   const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
-  // Session-only "actioned" count for this segment (bumped by the drill on a successful apply/park). Winners/Losers are live shortlists
-  // that refill as you work, so this answers "am I getting anywhere". Re-read on segment change and after returning from the drill.
-  const [actioned, setActioned] = useState(0);
+  // Pre-cap qualifying counts from the server. Normally these equal rows.length, but if the safety cap ever trims a list the tab count
+  // and the caption must show the REAL size — a capped list must never look like the whole job.
+  const [winnersTotal, setWinnersTotal] = useState<number | null>(null);
+  const [losersTotal, setLosersTotal] = useState<number | null>(null);
 
   // Fetch all three lists so each tab can show a count. Re-callable so a mark-reviewed can refetch (parked SKUs drop out, queue refills).
   const loadLists = useCallback(async () => {
@@ -98,8 +102,8 @@ function SegmentContent() {
     const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
     if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
     let err: string | null = null;
-    if (w.success && w.data) setWinners(w.data.rows); else err = err || w.error || 'Failed to load winners';
-    if (l.success && l.data) setLosers(l.data.rows); else err = err || l.error || 'Failed to load losers';
+    if (w.success && w.data) { setWinners(w.data.rows); setWinnersTotal(w.data.total); } else err = err || w.error || 'Failed to load winners';
+    if (l.success && l.data) { setLosers(l.data.rows); setLosersTotal(l.data.total); } else err = err || l.error || 'Failed to load losers';
     if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all SKUs';
     if (err) setError(err);
     setLoading(false);
@@ -108,8 +112,6 @@ function SegmentContent() {
   useEffect(() => { loadLists(); }, [loadLists]);
   // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
   useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
-  // Read the session "actioned" count on mount / segment change — the drill bumps it, and returning here remounts this page so it refreshes.
-  useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openSku(code: string) {
     // Carry the back-context (from/back) through the drill round-trip so returning keeps the right "back" target.
@@ -171,7 +173,6 @@ function SegmentContent() {
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setActioned(bumpActionedCount(segment, applied));
     setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
     setSelected(new Set());
     await loadLists();
@@ -186,7 +187,6 @@ function SegmentContent() {
     setMarking(false);
     if (res.success) {
       const n = res.data ? res.data.updated : selected.size;
-      setActioned(bumpActionedCount(segment, n));
       setResultSummary(`Review set on ${n}`);
       setSelected(new Set());
       await loadLists();
@@ -205,8 +205,8 @@ function SegmentContent() {
       <ListModeSwitcher
         mode={mode}
         onChange={setMode}
-        winnersCount={winners ? winners.length : null}
-        losersCount={losers ? losers.length : null}
+        winnersCount={winnersTotal}
+        losersCount={losersTotal}
         allCount={all ? all.length : null}
         allDescription="every managed SKU in the segment — incl. out of stock, most-recently-changed first"
       />
@@ -244,21 +244,13 @@ function SegmentContent() {
 
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
         <>
-          {actioned > 0 && (
-            <p className="mb-2 text-xs text-slate-400">
-              {actioned} actioned this session — the list refills from the segment as you go, so it always shows the current top {winners.length}.
-            </p>
-          )}
+          <ListNote shown={winners.length} total={winnersTotal} noun="SKU" />
           <WinnersTable rows={winners} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
         <>
-          {actioned > 0 && (
-            <p className="mb-2 text-xs text-slate-400">
-              {actioned} actioned this session — parked SKUs drop off as you work, so the list refills from the segment.
-            </p>
-          )}
+          <ListNote shown={losers.length} total={losersTotal} noun="SKU" />
           <LosersTable rows={losers} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}

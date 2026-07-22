@@ -35,7 +35,6 @@ import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
-import { bumpActionedCount } from '@/lib/sessionCounter';
 
 // useSearchParams (below) must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function DrillPage() {
@@ -68,14 +67,6 @@ function DrillContent() {
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
     const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
     return `${seg} · ${modeLabel}`;
-  })();
-
-  // Segment name (if we came from a segment list), used to key the session "actioned" counter — null for a deep-link/search/cross-
-  // module origin (only a real /pricing/<segment> list carries a segment).
-  const backSegment = (() => {
-    if (!backTo.startsWith('/pricing/') || backTo.startsWith('/pricing/find')) return null;
-    const [path] = backTo.split('?');
-    return decodeURIComponent(path.replace('/pricing/', ''));
   })();
 
   const [data, setData] = useState<DrillData | null>(null);
@@ -139,7 +130,6 @@ function DrillContent() {
       // Success on every channel that applied. Deliberately a single plain "Saved" — we don't spell out Shopify vs Google (both pushed
       // silently) so the operator isn't left wondering why only one channel is named. Errors above are the only per-channel callouts.
       setNotice({ kind: 'ok', text: `Saved £${res.data.new_price}.${reviewMsg}${warn}` });
-      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {
@@ -155,7 +145,6 @@ function DrillContent() {
     setApplying(false);
     if (res.success && res.data) {
       setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged).` });
-      if (backSegment) bumpActionedCount(backSegment);
       await load(true);
       setReloadKey((k) => k + 1);
     } else {

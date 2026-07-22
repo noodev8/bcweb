@@ -14,7 +14,9 @@ Definition (agreed with owner):
   - cover = weeks to clear at current pace = stock / (u_win / weeks_in_window) = stock * (days/7) / u_win.
   - Membership: DEAD (u_win = 0) OR SLOW (cover >= coverWeeks, default 26 ≈ 6 months of stock on hand). The cover gate is what keeps
     healthy high-stock sellers OFF the list — without it, ranking by stock would just surface big winners.
-  - Order: DEAD cluster FIRST (flagged "no recent sales"), then SLOW; within each cluster, MOST STOCK first (stock at risk). Top N.
+  - Order: DEAD cluster FIRST (flagged "no recent sales"), then SLOW; within each cluster, MOST STOCK first (stock at risk).
+  - Size: the WHOLE qualifying set, not a top-N shortlist. `limit` is only a safety cap (utils/listLimit.js, default 100) so a
+    pathological segment can't dump thousands of rows into the browser; `total` + `truncated` say whether it bit.
   - Seasonality + size-residue are deliberately NOT handled here: the human picks an appropriate segment (seasonality) and parks a
     residual style with a long review (size residue) so it stops surfacing.
   - Auto-matched styles (match_amazon_price) are KEPT in the list (owner): a slow/dead style whose Shopify price is auto-matched to Amazon
@@ -26,7 +28,7 @@ Schema landmines respected: stock from localstock (#FREE, not deleted, qty>0), n
 Request Query Params:
   segment    (string, required)
   days       (int, optional)  - sales window for the pace/cover measure; default 90
-  limit      (int, optional)  - list size; default 10
+  limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   coverWeeks (int, optional)  - "too slow" threshold in weeks of cover; default 26 (~6 months). Tunable.
 
 Success Response:
@@ -35,6 +37,8 @@ Success Response:
   "segment": "GIZEH-SEG",
   "days": 90,
   "coverWeeks": 26,
+  "total": 3,           // qualifying styles in the segment, BEFORE the cap
+  "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 1, "u90": 2, "cover_weeks": 308.6, "is_dead": false, "match_amazon": false },
     { "rank": 2, "groupid": "...", "title": "...", "price": 29.95, "stock": 14, "u30": 0, "u90": 0, "cover_weeks": null, "is_dead": true, "match_amazon": false },
@@ -55,6 +59,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { parseListLimit } = require('../utils/listLimit');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -62,9 +67,9 @@ router.use(verifyToken);
 router.get('/', async (req, res) => {
   try {
     const { segment } = req.query;
-    // Defaults: 90d window, top 10, 26-week (~6mo) cover cutoff. Parse defensively; fall back on anything non-numeric.
+    // Defaults: 90d window, 26-week (~6mo) cover cutoff; `limit` is a safety cap, not a list size (utils/listLimit.js).
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 90;
-    const limit = Number.parseInt(req.query.limit, 10) > 0 ? Number.parseInt(req.query.limit, 10) : 10;
+    const limit = parseListLimit(req.query.limit);
     const coverWeeks = Number.parseInt(req.query.coverWeeks, 10) > 0 ? Number.parseInt(req.query.coverWeeks, 10) : 26;
 
     if (!segment) {
@@ -100,7 +105,9 @@ router.get('/', async (req, res) => {
              (COALESCE(w.u_win,0)=0) AS is_dead,
              ss.match_amazon_price AS match_amazon,   -- kept IN the list: a slow/dead matched style is where the operator decides the
                                                       -- Amazon-matched price is costing us and switches matching OFF (owner). Badged in UI.
-             t.shopifytitle
+             t.shopifytitle,
+             COUNT(*) OVER () AS total_rows            -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
+                                                       -- pre-cap total (free — no second round-trip to count)
       FROM skusummary ss
       JOIN stk st        ON st.groupid = ss.groupid            -- INNER JOIN: must have stock (nothing to act on otherwise)
       LEFT JOIN win w    ON w.groupid  = ss.groupid
@@ -131,7 +138,9 @@ router.get('/', async (req, res) => {
       match_amazon: r.match_amazon === true   // auto-matched styles stay in the list so a margin-hurting match can be spotted + switched off
     }));
 
-    return res.json({ return_code: 'SUCCESS', segment, days, coverWeeks, rows });
+    // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
+    const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
+    return res.json({ return_code: 'SUCCESS', segment, days, coverWeeks, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[pricing-losers] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load losers list' });

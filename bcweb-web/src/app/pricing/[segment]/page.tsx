@@ -4,11 +4,16 @@
 Page: /pricing/[segment]  (Stage 1 — the segment's lists)
 =======================================================================================================================================
 Purpose: The list view for a segment, with a prominent WINNERS | LOSERS switch (see CLAUDE.md).
-  - WINNERS: top sellers in the last 30 days (in stock, not parked) — candidates to price UP / harvest.
+  - WINNERS: sellers of the last 30 days (in stock, not parked), best first — candidates to price UP / harvest.
   - LOSERS:  slowest-moving stock over 90 days — dead (no recent sales) first, then the biggest stuck piles — candidates to cut and
              get moving. Ranked by stock at risk.
 Both lists are fetched up front (so each tab shows a live count) and cached; rows link to the same drill page. The active mode is kept
 in the URL (?mode=) so returning after a write restores the same tab.
+
+List size: these are the WHOLE qualifying lists, not a top-10 shortlist. A fixed 10 was meaningless to the operator (clear it and it
+silently refilled, so the number said nothing about how much work the segment held), and a session "actioned" counter didn't fix that
+either. Now the count on each tab IS the work in front of you, and it goes down as you clear it. The server still caps the response
+(utils/listLimit.js, default 100) purely so a pathological segment can't flood the browser; when that cap bites the list says so.
 =======================================================================================================================================
 */
 
@@ -16,10 +21,10 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
+import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { getTriage, getLosers, getAll, applyPrice, parkStyleBulk, TriageRow, LoserRow, AllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { getActionedCount, bumpActionedCount } from '@/lib/sessionCounter';
 
 // Bulk price + review controls — kept identical to the Shopify drill's price-setter (owner: "exactly the same as the individual item").
 // Nudge denominations = the drill's −£1/−50p/+50p/+£1/+£2 steps; review chips = the drill's day set. Shopify green tone throughout.
@@ -83,10 +88,11 @@ function SegmentContent() {
   const [all, setAll] = useState<AllRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Session-only "actioned" count for this segment (bumped by the drill page on a successful apply/park). Winners is a live top-10
-  // that refills as you clear it, so this exists purely to make one sitting feel bounded — re-read on every mount, i.e. every time
-  // you return here from the drill page.
-  const [actioned, setActioned] = useState(0);
+  // Pre-cap qualifying counts from the server. Normally these equal rows.length (today's biggest segment is well under the cap), but if
+  // the safety cap ever trims a list the tab count and the note must show the REAL size — the operator must never think a capped list is
+  // the whole job.
+  const [winnersTotal, setWinnersTotal] = useState<number | null>(null);
+  const [losersTotal, setLosersTotal] = useState<number | null>(null);
 
   // Bulk selection (WINNERS/LOSERS only) — the groupids ticked for a bulk price move and/or review. Cleared on mode/segment change.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -102,8 +108,8 @@ function SegmentContent() {
     const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
     if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
     let err: string | null = null;
-    if (w.success && w.data) setWinners(w.data.rows); else err = err || w.error || 'Failed to load winners';
-    if (l.success && l.data) setLosers(l.data.rows); else err = err || l.error || 'Failed to load losers';
+    if (w.success && w.data) { setWinners(w.data.rows); setWinnersTotal(w.data.total); } else err = err || w.error || 'Failed to load winners';
+    if (l.success && l.data) { setLosers(l.data.rows); setLosersTotal(l.data.total); } else err = err || l.error || 'Failed to load losers';
     if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all styles';
     if (err) setError(err);
     setLoading(false);
@@ -112,7 +118,6 @@ function SegmentContent() {
   useEffect(() => { loadLists(); }, [loadLists]);
   // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
   useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
-  useEffect(() => { setActioned(getActionedCount(segment)); }, [segment]);
 
   function openStyle(groupid: string) {
     // Carry the back-context (from/back) into the return URL so it survives the drill round-trip (returning from a price apply keeps
@@ -168,7 +173,6 @@ function SegmentContent() {
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    if (applied > 0) setActioned(bumpActionedCount(segment, applied));
     setResultSummary(`Applied ${applied}${skipped ? ` · ${skipped} skipped` : ''}${pushIssues ? ` · ${pushIssues} push issue${pushIssues > 1 ? 's' : ''}` : ''}`);
     setSelected(new Set());
     await loadLists();
@@ -183,7 +187,6 @@ function SegmentContent() {
     setMarking(false);
     if (res.success) {
       const n = res.data ? res.data.updated : selected.size;
-      setActioned(bumpActionedCount(segment, n));
       setResultSummary(`Review set on ${n}`);
       setSelected(new Set());
       await loadLists();
@@ -201,8 +204,8 @@ function SegmentContent() {
       <ListModeSwitcher
         mode={mode}
         onChange={setMode}
-        winnersCount={winners ? winners.length : null}
-        losersCount={losers ? losers.length : null}
+        winnersCount={winnersTotal}
+        losersCount={losersTotal}
         allCount={all ? all.length : null}
       />
 
@@ -239,21 +242,13 @@ function SegmentContent() {
 
       {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
         <>
-          {actioned > 0 && (
-            <p className="mb-2 text-xs text-slate-400">
-              {actioned} actioned this session — the list refills from the segment as you go, so it always shows the current top {winners.length}.
-            </p>
-          )}
+          <ListNote shown={winners.length} total={winnersTotal} noun="style" />
           <WinnersTable rows={winners} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}
       {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
         <>
-          {actioned > 0 && (
-            <p className="mb-2 text-xs text-slate-400">
-              {actioned} actioned this session — parked styles drop off as you work, so the list refills from the segment.
-            </p>
-          )}
+          <ListNote shown={losers.length} total={losersTotal} noun="style" />
           <LosersTable rows={losers} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
         </>
       )}

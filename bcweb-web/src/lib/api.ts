@@ -216,17 +216,19 @@ export function getSegments() {
   return request<Segment[]>({ url: '/pricing-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
+// WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
+// `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
 export function getTriage(segment: string, days?: number, limit?: number) {
-  return request<{ segment: string; days: number; rows: TriageRow[] }>(
+  return request<{ segment: string; days: number; total: number; truncated: boolean; rows: TriageRow[] }>(
     { url: '/pricing-triage', method: 'GET', params: { segment, days, limit } },
-    (b) => ({ segment: b.segment, days: b.days, rows: b.rows || [] })
+    (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 export function getLosers(segment: string, days?: number, limit?: number, coverWeeks?: number) {
-  return request<{ segment: string; days: number; coverWeeks: number; rows: LoserRow[] }>(
+  return request<{ segment: string; days: number; coverWeeks: number; total: number; truncated: boolean; rows: LoserRow[] }>(
     { url: '/pricing-losers', method: 'GET', params: { segment, days, limit, coverWeeks } },
-    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, rows: b.rows || [] })
+    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
@@ -243,19 +245,19 @@ export function getAmzSegments() {
   return request<AmzSegment[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
-// Amazon Pricing — Stage 1 WINNERS: top in-stock SKUs by units sold in `days` (default 30). Mirrors getTriage().
+// Amazon Pricing — Stage 1 WINNERS: in-stock SKUs that sold in `days` (default 30), best first. Mirrors getTriage(), incl. total/truncated.
 export function getAmzWinners(segment: string, days?: number, limit?: number) {
-  return request<{ segment: string; days: number; rows: AmzWinnerRow[] }>(
+  return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzWinnerRow[] }>(
     { url: '/amz-winners', method: 'GET', params: { segment, days, limit } },
-    (b) => ({ segment: b.segment, days: b.days, rows: b.rows || [] })
+    (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // Amazon Pricing — Stage 1 LOSERS: dead/slow FBA stock at risk. Mirrors getLosers().
 export function getAmzLosers(segment: string, days?: number, limit?: number, coverWeeks?: number) {
-  return request<{ segment: string; days: number; coverWeeks: number; rows: AmzLoserRow[] }>(
+  return request<{ segment: string; days: number; coverWeeks: number; total: number; truncated: boolean; rows: AmzLoserRow[] }>(
     { url: '/amz-losers', method: 'GET', params: { segment, days, limit, coverWeeks } },
-    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, rows: b.rows || [] })
+    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
