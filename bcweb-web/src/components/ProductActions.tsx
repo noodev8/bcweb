@@ -14,8 +14,11 @@ Purpose: A single, reusable pop-over that lets the operator jump STRAIGHT from a
            - Copy groupid         -> clipboard, for pasting into any other tool.
            - Copy order <num>     -> clipboard, ONLY when the caller supplies `ordernum` (e.g. a Sales row) — absent everywhere else.
 
-         The target carries `?from=<current path>` so its back link returns the operator to exactly where they were (the drill pages
-         already read `from`). Wherever this menu is used, back navigation "just works".
+         Both price actions open in a NEW TAB (2026-07-22, owner). The screens this menu is used from are working lists — a sales ledger,
+         a price-change report — that you scan top-to-bottom, spotting several things worth acting on in one pass. Navigating away lost
+         that place (and any scroll/filter state) every time; a new tab lets you fire off a reprice and come straight back to the list you
+         were reading, or stack up two or three. The `?from=<current path>` param is still carried so the target's "← Back" is a sensible
+         one-click exit if the operator ends up working in that tab instead of closing it (the drill pages already read `from`).
 
 Usage:  const actions = useProductActions();
         <tr onClick={(e) => actions.open(e, groupid, { title, amzCode })}> … </tr>
@@ -28,7 +31,7 @@ Usage:  const actions = useProductActions();
 
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   CurrencyPoundIcon, BuildingStorefrontIcon, ClipboardDocumentIcon, HashtagIcon, CheckIcon,
 } from '@heroicons/react/24/outline';
@@ -63,7 +66,6 @@ export function useProductActions() {
 const MENU_W = 236; // px — used to clamp the pop-over inside the viewport
 
 function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);  // which value was just copied ('groupid' | 'ordernum'), for the tick
 
@@ -82,19 +84,23 @@ function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose:
 
   const from = encodeURIComponent(pathname || '/');
 
-  const goShopify = () => {
-    router.push(`/pricing/style/${encodeURIComponent(menu.groupid)}?from=${from}`);
+  // Open a price screen in a new tab, leaving THIS list exactly where it was (see the header note). 'noopener' both drops the reverse
+  // window.opener handle and lets the browser give the new tab its own process — we never need to talk back to it.
+  const openTab = (url: string) => {
+    window.open(url, '_blank', 'noopener');
     onClose();
+  };
+
+  const goShopify = () => {
+    openTab(`/pricing/style/${encodeURIComponent(menu.groupid)}?from=${from}`);
   };
   const goAmazon = () => {
     // Direct to the SKU drill when we know the exact code (e.g. an Amazon-channel row); otherwise pre-search by groupid so the
     // operator picks the size (Amazon prices are per-size). Either way carry `from` so the target's "← Back" returns where we came
     // from (the search page reads it too — so a not-on-Amazon jump still breadcrumbs back to Analytics, not to the segment picker).
-    const url = menu.amzCode
+    openTab(menu.amzCode
       ? `/amz/sku/${encodeURIComponent(menu.amzCode)}?from=${from}`
-      : `/amz/find?q=${encodeURIComponent(menu.groupid)}&from=${from}`;
-    router.push(url);
-    onClose();
+      : `/amz/find?q=${encodeURIComponent(menu.groupid)}&from=${from}`);
   };
   // Copy any value to the clipboard; `key` drives which row shows the "Copied" tick. Closes shortly after so the tick is seen.
   const copyVal = async (key: string, value: string) => {
