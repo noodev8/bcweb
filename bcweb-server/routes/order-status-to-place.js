@@ -17,8 +17,9 @@ local shelf is our internal routing, not theirs, and the legacy data already pla
 10 local + 2 Amazon rows). `amz_qty`/`local_qty` keep the split visible on screen without fragmenting the order.
 
 `barcode` is `skumap.ean` with the legacy trailing 'B' stripped — that suffix is an Excel guard for the internal spreadsheets, not part
-of the real EAN, so it must never reach a supplier's system. `has_barcode` flags the ~61 live SKUs with no EAN at all: the UI blocks
-those from the CSV rather than exporting a blank barcode line the supplier would silently mis-read.
+of the real EAN, so it must never reach a supplier's system. `has_barcode` flags the ~61 live SKUs with no EAN at all: those rows still
+appear in the sheet and export in the CSV (with a blank barcode cell) so the line isn't forgotten — the operator places it with the
+supplier by hand instead of by barcode lookup.
 
 Cost is `skusummary.cost` via safeNumeric (style-level, correct for footwear), never `skumap.cost` — see order-status-suppliers.js for
 why that column can't be trusted. A row whose cost won't parse returns unit_cost: null and is excluded from the total rather than

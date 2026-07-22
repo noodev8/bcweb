@@ -15,9 +15,9 @@ to solid once you've downloaded — a nudge through the intended order, not a lo
 SELECTION is opt-out, not opt-in: everything starts ticked, because the normal case is "order the lot". Unticking is for the exception —
 a size the supplier can't fulfil — and an unticked row simply stays in the queue for next time rather than being deleted.
 
-BARCODE-LESS ROWS are force-excluded and can't be ticked. `skumap.ean` is empty for ~61 live SKUs, and a CSV line with a blank barcode
-doesn't fail loudly at the supplier's end — it gets mis-read or silently dropped, which is worse. Better to make the operator fix the
-EAN than to send a line nobody can match.
+BARCODE-LESS ROWS are included, ticked by default like everything else, but export with a blank barcode column rather than being
+dropped — the point is to not let a style get silently forgotten just because the EAN is missing. The operator sees "no barcode" in
+the row and on the CSV line, and orders it with the supplier by hand (phone/email) rather than via barcode lookup.
 
 Quantities are editable in place via the existing POST /order-status-adjust-qty (+/- inserts or archives whole units — the same control
 the ON ORDER batch view uses), so the order can be tuned here without bouncing to another screen.
@@ -66,9 +66,8 @@ interface Props {
 interface Placement { placed: number; ponumber: string; time: string; ordernums: string[]; }
 
 export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onUnauthorized }: Props) {
-  // Selection is by SKU code. Rows without a barcode are never selectable, so they're excluded from the derived sets below rather
-  // than tracked here — that way "select all" can't quietly re-add one.
-  const sellable = useMemo(() => rows.filter((r) => r.has_barcode), [rows]);
+  // Selection is by SKU code. Barcode-less rows are selectable like any other — they just export with a blank barcode column.
+  const sellable = rows;
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
   const [busy, setBusy] = useState(false);
@@ -96,14 +95,15 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
   // --- CSV -----------------------------------------------------------------------------------------------------------------
   // Built here from the rows already on screen (same approach as the Analytics sales export), so what downloads is exactly what
   // you're looking at — no second server round-trip that could disagree with the sheet. Columns are the three the supplier needs:
-  // barcode, qty, code. The barcode arrives already stripped of its legacy trailing 'B'.
+  // barcode, qty, code. The barcode arrives already stripped of its legacy trailing 'B'. Barcode-less rows export with an empty
+  // barcode cell rather than being dropped — the line still needs to reach the supplier, just placed by hand instead of scanned.
   const downloadCsv = useCallback(() => {
     if (chosen.length === 0) return;
     const esc = (v: string | number) => {
       const s = String(v ?? '');
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = chosen.map((r) => [r.barcode, r.qty, r.code].map(esc).join(','));
+    const lines = chosen.map((r) => [r.has_barcode ? r.barcode : '', r.qty, r.code].map(esc).join(','));
     const csv = [['barcode', 'qty', 'code'].join(','), ...lines].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -256,8 +256,8 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
         {totals.nobarcode_units > 0 && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
             <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
-            {totals.nobarcode_units} unit{totals.nobarcode_units === 1 ? '' : 's'} have no barcode on file and can&apos;t be exported —
-            add the EAN in Add/Modify, then they&apos;ll join the order.
+            {totals.nobarcode_units} unit{totals.nobarcode_units === 1 ? '' : 's'} have no barcode on file — still included in the CSV
+            (blank barcode cell) so nothing gets forgotten, but the operator will need to order these by hand.
           </div>
         )}
       </div>
@@ -296,16 +296,15 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {s.rows.map((r) => {
-                    const on = r.has_barcode && !excluded.has(r.code);
+                    const on = !excluded.has(r.code);
                     return (
-                      <tr key={r.code} className={r.has_barcode ? (on ? '' : 'opacity-45') : 'bg-amber-50/40'}>
+                      <tr key={r.code} className={(on ? '' : 'opacity-45') + (r.has_barcode ? '' : ' bg-amber-50/40')}>
                         <td className="py-1 pl-4">
                           <input
                             type="checkbox"
                             checked={on}
-                            disabled={!r.has_barcode}
                             onChange={() => toggle(r.code)}
-                            className="h-4 w-4 rounded border-slate-300 disabled:opacity-30"
+                            className="h-4 w-4 rounded border-slate-300"
                             aria-label={`Include ${r.code} in this order`}
                           />
                         </td>
