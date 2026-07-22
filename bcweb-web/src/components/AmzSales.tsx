@@ -6,13 +6,15 @@ Component: AmzSales
 Purpose: A reference report on the Amazon drill — the recent RAW Amazon sales of this SKU, one row per sale line, each with the price it
          actually SOLD at. The velocity/bands views aggregate these; this is the granular view underneath. Collapsible, DEFAULT HIDDEN,
          LAZY-loads (GET /amz-sales on first open). Bounded by most-recent-N rows; newest first. Sold lines only — returns are excluded
-         server-side (noise for pricing intent, owner decision). Mirror of the Shopify SalesList.
+         server-side (noise for pricing intent, owner decision). Mirror of the Shopify SalesList — including its preview: the table shows
+         the first PREVIEW_ROWS (10) and RowsToggle reveals the rest of the loaded rows on one click, so a hot SKU doesn't bury the page.
 =======================================================================================================================================
 */
 
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getAmzSales, AmzSaleRow } from '@/lib/api';
+import RowsToggle, { PREVIEW_ROWS } from '@/components/RowsToggle';
 import { useAuth } from '@/contexts/AuthContext';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -34,6 +36,7 @@ export default function AmzSales({ code }: { code: string }) {
   const [rows, setRows] = useState<AmzSaleRow[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [limit, setLimit] = useState(0);
+  const [showAll, setShowAll] = useState(false);   // preview (10) vs the whole loaded list; reset on every fetch
 
   async function load() {
     setLoading(true);
@@ -44,6 +47,7 @@ export default function AmzSales({ code }: { code: string }) {
       setRows(res.data.rows);
       setTruncated(res.data.truncated);
       setLimit(res.data.limit);
+      setShowAll(false);
       setLoaded(true);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -85,7 +89,7 @@ export default function AmzSales({ code }: { code: string }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {rows.map((r, i) => (
+                    {(showAll ? rows : rows.slice(0, PREVIEW_ROWS)).map((r, i) => (
                       <tr key={i}>
                         <td className="whitespace-nowrap py-1.5 pr-4 text-slate-600">{fmtDate(r.solddate)}</td>
                         <td className="py-1.5 pr-4 font-mono text-xs text-slate-500">{r.size || '—'}</td>
@@ -97,7 +101,10 @@ export default function AmzSales({ code }: { code: string }) {
                   </tbody>
                 </table>
               </div>
-              {truncated && <p className="mt-3 text-xs text-slate-400">Showing the last {limit} sales.</p>}
+              <RowsToggle total={rows.length} showingAll={showAll} onToggle={() => setShowAll((v) => !v)} />
+              {truncated && showAll && (
+                <p className="mt-3 text-xs text-slate-400">The last {limit} sales only — older ones aren&apos;t loaded.</p>
+              )}
             </>
           )}
         </div>

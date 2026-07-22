@@ -5,14 +5,19 @@ Component: SalesList
 =======================================================================================================================================
 Purpose: A reference report on the drill screen — recent RAW Shopify SALES for this style, one row per sale line with the price it sold
          at (date, size, qty, sold price). The pricing timeline above aggregates these by price; this is the granular view beneath it.
-         Collapsible and DEFAULT HIDDEN; LAZY-loads (GET /pricing-sales only on first open) to keep the initial drill fast. Bounded by
-         most-recent-N rows (sales are dense on a hot style) — when more exist, a "showing last N" note appears. Newest first.
+         Collapsible; LAZY-loads (GET /pricing-sales only on first open) to keep the initial drill fast. Bounded by most-recent-N rows
+         (sales are dense on a hot style) — when more exist, a "showing last N" note appears. Newest first.
+
+         On the drill this section is OPEN by default, so its length is the operator's problem: a hot style's 50 sale lines pushed the
+         rest of the page off screen, and what's actually read is the latest handful. So the table renders the first PREVIEW_ROWS (10)
+         and RowsToggle offers the rest on one click — no second fetch, the rows are already loaded.
 =======================================================================================================================================
 */
 
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getSales, SaleRow } from '@/lib/api';
+import RowsToggle, { PREVIEW_ROWS } from '@/components/RowsToggle';
 import { useAuth } from '@/contexts/AuthContext';
 
 function fmtDate(iso: string | null): string {
@@ -36,6 +41,9 @@ export default function SalesList({ groupid, defaultOpen = false }: { groupid: s
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [limit, setLimit] = useState(0);
+  // Preview vs full list. Resets to the preview whenever the style's sales are re-fetched (a new style / after an apply) — the operator
+  // shouldn't inherit the previous style's "expanded" state.
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +54,7 @@ export default function SalesList({ groupid, defaultOpen = false }: { groupid: s
       setRows(res.data.rows);
       setTruncated(res.data.truncated);
       setLimit(res.data.limit);
+      setShowAll(false);
       setLoaded(true);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -95,7 +104,7 @@ export default function SalesList({ groupid, defaultOpen = false }: { groupid: s
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {rows.map((r, i) => (
+                    {(showAll ? rows : rows.slice(0, PREVIEW_ROWS)).map((r, i) => (
                       <tr key={i}>
                         <td className="whitespace-nowrap py-1.5 pr-4 text-slate-600">
                           {fmtDate(r.solddate)}{r.ordertime ? <span className="text-slate-400"> {r.ordertime}</span> : null}
@@ -108,8 +117,11 @@ export default function SalesList({ groupid, defaultOpen = false }: { groupid: s
                   </tbody>
                 </table>
               </div>
-              {truncated && (
-                <p className="mt-3 text-xs text-slate-400">Showing the last {limit} sales.</p>
+              <RowsToggle total={rows.length} showingAll={showAll} onToggle={() => setShowAll((v) => !v)} />
+              {/* The server-side cap note only matters once the whole loaded list is on screen — before that "show all N" already tells
+                  the operator how many rows there are to see. */}
+              {truncated && showAll && (
+                <p className="mt-3 text-xs text-slate-400">The last {limit} sales only — older ones aren&apos;t loaded.</p>
               )}
             </>
           )}
