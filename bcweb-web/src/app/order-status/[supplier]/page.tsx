@@ -28,12 +28,18 @@ import OrderStageSwitch, { OrderStage } from '@/components/OrderStageSwitch';
 import PlaceOrderSheet from '@/components/PlaceOrderSheet';
 import { ageClass } from '@/lib/orderStatusUi';
 import {
-  getOrderStatusList, getOrderToPlace, switchOrderType, archiveOrderStatus, adjustOrderStatusQty,
+  getOrderStatusList, getOrderToPlace, switchOrderType, archiveOrderStatus, adjustOrderStatusQty, restoreOrderStatus,
   OrderStatusBatch, OrderStatusLine, OrderToPlaceRow, OrderToPlaceTotals,
 } from '@/lib/api';
+import { useZeroedLines, spliceZeroed, Zeroed } from '@/lib/zeroedLines';
 import { useAuth } from '@/contexts/AuthContext';
 
 function batchKey(b: OrderStatusBatch): string { return `${b.ordertype}|${b.placeddate}`; }
+// A zeroed line is remembered per BATCH, not per SKU: the same size can legitimately sit in two placements, and only the one the
+// operator emptied should hold a place at 0.
+function zeroKey(batch: string, code: string): string { return `${batch}::${code}`; }
+// What the +/- buttons hand back up: which line was touched, and where it sits, so a line that hits 0 can be re-inserted in place.
+interface ZeroSeed { key: string; group: CodeGroup; index: number; }
 function typeLabel(t: 2 | 3): string { return t === 3 ? 'Amazon' : 'Local'; }
 function typeChipClass(t: 2 | 3): string {
   return t === 3 ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-sky-50 text-sky-700 border-sky-200';
@@ -73,6 +79,9 @@ function SupplierContent() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set()); // ordernums
+  // ON ORDER lines walked down to 0 by "−": kept on screen at 0 rather than disappearing from under the cursor. Display-only — the
+  // units are genuinely archived, and the ghosts go on the next page load.
+  const { zeroed, remember, forget } = useZeroedLines<CodeGroup>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resultSummary, setResultSummary] = useState<string | null>(null);
@@ -150,14 +159,42 @@ function SupplierContent() {
 
   // +/- the unit count for one SKU/size group (owner: "a way to Add/Remove from the count"). Keyed by `code` so only the row being
   // adjusted disables, not the whole page. Ticked units are dropped from the selection if a remove happened to consume one of them.
-  async function doAdjustQty(code: string, ordernums: string[], delta: number) {
-    setAdjustingCode(code); setActionError(null); setResultSummary(null);
-    const res = await adjustOrderStatusQty(ordernums, delta);
+  //
+  // When the last unit goes, the line would simply be absent from the next fetch and the rows under it would jump up mid-click. So a
+  // line that reaches 0 is remembered and kept on screen at 0 (lib/zeroedLines.ts) with the ids its "+" can restore. The new count is
+  // worked out from THIS line (qty + added − removed) rather than the response's `qty`: that recount is scoped to the SKU's
+  // createddate group, which isn't the same set of units as the batch line on screen.
+  async function doAdjustQty(seed: ZeroSeed, delta: number) {
+    setAdjustingCode(seed.group.code); setActionError(null); setResultSummary(null);
+    const res = await adjustOrderStatusQty(seed.group.ordernums, delta);
     setAdjustingCode(null);
     if (res.success && res.data) {
+      const nextQty = seed.group.qty + res.data.added - res.data.removed;
+      if (nextQty <= 0) {
+        remember(seed.key, {
+          payload: { ...seed.group, qty: 0, arrivedCount: 0, waitingCount: 0, ordernums: [] },
+          index: seed.index,
+          removed: res.data.removed_ordernums,
+        });
+      } else {
+        forget(seed.key);
+      }
       await load();
     } else if (res.return_code === 'UNAUTHORIZED') { logout(); }
     else setActionError(res.error || 'Failed to adjust quantity');
+  }
+
+  // "+" on a line sitting at 0. adjust-qty can't help — it adds by cloning one of the group's own rows and there are none left — so the
+  // archived units are moved back instead, which also returns them to the same batch/PO with their arrived state intact.
+  async function doRestoreLine(key: string) {
+    const ghost = zeroed.get(key);
+    if (!ghost || ghost.removed.length === 0) return;
+    setAdjustingCode(ghost.payload.code); setActionError(null); setResultSummary(null);
+    const res = await restoreOrderStatus(ghost.removed, ghost.payload.code);
+    setAdjustingCode(null);
+    if (res.success) { forget(key); await load(); }
+    else if (res.return_code === 'UNAUTHORIZED') { logout(); }
+    else setActionError(res.error || 'Failed to bring the line back');
   }
 
   const onOrderUnits = batches ? batches.reduce((n, b) => n + b.waiting, 0) : null;
@@ -263,7 +300,16 @@ function SupplierContent() {
 
                   {isOpen && (
                     <div className="border-t border-slate-100 px-4 py-2">
-                      <LinesTable lines={b.lines} selected={selected} onToggle={toggleLineGroup} onAdjust={doAdjustQty} adjustingCode={adjustingCode} />
+                      <LinesTable
+                        lines={b.lines}
+                        batch={key}
+                        ghosts={Array.from(zeroed.entries()).filter(([k]) => k.startsWith(`${key}::`)).map(([, z]) => z)}
+                        selected={selected}
+                        onToggle={toggleLineGroup}
+                        onAdjust={doAdjustQty}
+                        onRestore={doRestoreLine}
+                        adjustingCode={adjustingCode}
+                      />
                     </div>
                   )}
                 </div>
@@ -285,9 +331,14 @@ interface CodeGroup {
   qty: number; arrivedCount: number; waitingCount: number; ordernums: string[];
 }
 
-function LinesTable({ lines, selected, onToggle, onAdjust, adjustingCode }: {
-  lines: OrderStatusLine[]; selected: Set<string>; onToggle: (ordernums: string[], checked: boolean) => void;
-  onAdjust: (code: string, ordernums: string[], delta: number) => void; adjustingCode: string | null;
+function LinesTable({ lines, batch, ghosts, selected, onToggle, onAdjust, onRestore, adjustingCode }: {
+  lines: OrderStatusLine[];
+  batch: string;                  // this card's batch key — half of a ghost's identity (the same SKU can sit in two placements)
+  ghosts: Zeroed<CodeGroup>[];    // lines this operator has just walked down to 0; re-inserted at the position they held
+  selected: Set<string>; onToggle: (ordernums: string[], checked: boolean) => void;
+  onAdjust: (seed: ZeroSeed, delta: number) => void;
+  onRestore: (key: string) => void;
+  adjustingCode: string | null;
 }) {
   const groups = new Map<string, CodeGroup>();
   for (const l of lines) {
@@ -299,6 +350,8 @@ function LinesTable({ lines, selected, onToggle, onAdjust, adjustingCode }: {
     if (l.arrived) g.arrivedCount += 1; else g.waitingCount += 1;
     g.ordernums.push(l.ordernum);
   }
+  // Zeroed lines are spliced back into the position they held, so emptying one doesn't pull the rest of the table up.
+  const rows = spliceZeroed(Array.from(groups.values()), ghosts, (g) => g.code);
   // Preserve title on the first row of a run of the same product (matches the earlier per-unit layout's grouping-by-eye).
   let lastGroupid: string | null = null;
   return (
@@ -314,45 +367,50 @@ function LinesTable({ lines, selected, onToggle, onAdjust, adjustingCode }: {
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-50">
-        {Array.from(groups.values()).map((g) => {
+        {rows.map((g, idx) => {
           const showTitle = g.groupid !== lastGroupid;
           lastGroupid = g.groupid;
-          const allSelected = g.ordernums.every((o) => selected.has(o));
+          // A line just walked down to 0: it holds its place, greyed, with nothing to select and nothing left to remove — but its "+"
+          // brings the units back. `qty === 0` can only be a ghost; a real group is built from at least one unit row.
+          const zero = g.qty === 0;
+          const seed: ZeroSeed = { key: zeroKey(batch, g.code), group: g, index: idx };
+          const allSelected = !zero && g.ordernums.every((o) => selected.has(o));
           const someSelected = !allSelected && g.ordernums.some((o) => selected.has(o));
           return (
-            <tr key={g.code}>
+            <tr key={g.code} className={zero ? 'bg-slate-50 text-slate-400' : ''}>
               <td className="py-1">
                 <input
                   type="checkbox"
                   checked={allSelected}
+                  disabled={zero}
                   ref={(el) => { if (el) el.indeterminate = someSelected; }}
                   onChange={() => onToggle(g.ordernums, !allSelected)}
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
                   aria-label="Select all units of this SKU"
                 />
               </td>
-              <td className="py-1 text-slate-700">
+              <td className={'py-1 ' + (zero ? 'text-slate-400' : 'text-slate-700')}>
                 {showTitle ? (g.title || <span className="text-slate-400">{g.groupid}</span>) : ''}
               </td>
-              <td className="py-1 text-slate-600">{g.size}</td>
+              <td className={'py-1 ' + (zero ? 'text-slate-400' : 'text-slate-600')}>{g.size}</td>
               <td className="py-1 font-mono text-xs text-slate-500">{g.code}</td>
               <td className="py-1 text-right">
                 <div className="inline-flex items-center gap-1.5">
                   <button
                     type="button"
-                    disabled={adjustingCode === g.code}
-                    onClick={() => onAdjust(g.code, g.ordernums, -1)}
+                    disabled={zero || adjustingCode === g.code}
+                    onClick={() => onAdjust(seed, -1)}
                     title={g.waitingCount > 0 ? 'Remove one waiting unit' : 'Remove one arrived unit (archives it)'}
                     className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
                   >
                     −
                   </button>
-                  <span className="w-5 text-center font-medium text-slate-700">{g.qty}</span>
+                  <span className={'w-5 text-center font-medium ' + (zero ? 'text-slate-400' : 'text-slate-700')}>{g.qty}</span>
                   <button
                     type="button"
                     disabled={adjustingCode === g.code}
-                    onClick={() => onAdjust(g.code, g.ordernums, 1)}
-                    title="Add one unit to this order"
+                    onClick={() => (zero ? onRestore(seed.key) : onAdjust(seed, 1))}
+                    title={zero ? 'Put this line back' : 'Add one unit to this order'}
                     className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
                   >
                     +
@@ -360,7 +418,9 @@ function LinesTable({ lines, selected, onToggle, onAdjust, adjustingCode }: {
                 </div>
               </td>
               <td className="py-1 text-right">
-                {g.waitingCount === 0
+                {zero
+                  ? <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-400">removed</span>
+                  : g.waitingCount === 0
                   ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">{g.arrivedCount} arrived</span>
                   : g.arrivedCount === 0
                     ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">{g.waitingCount} waiting</span>

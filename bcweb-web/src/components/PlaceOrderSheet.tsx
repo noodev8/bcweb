@@ -21,15 +21,28 @@ the row and on the CSV line, and orders it with the supplier by hand (phone/emai
 
 Quantities are editable in place via the existing POST /order-status-adjust-qty (+/- inserts or archives whole units — the same control
 the ON ORDER batch view uses), so the order can be tuned here without bouncing to another screen.
+
+WHOLE-STYLE REMOVAL sits on the style heading ("Remove style"). Checking real availability at this stage often turns up a style the
+supplier has NOTHING of, in any size — and the only way to bin it used to be "−" per size, per unit. One click archives every unit
+under the heading via POST /order-status-archive. No undo strip (owner): the archive table is the backstop. It IS two-step, though —
+removing a style closes the list up and lands the next style's button under a resting cursor, which nearly cost the owner the wrong
+style. Arming, not asking, is the fix: a button that arrives under the pointer is un-armed, so one stray click can't remove anything.
+
+A LINE WALKED DOWN TO 0 STAYS ON SCREEN (owner, 2026-07-22: the disappearance "feels jerky"). The last "−" deletes the line's final
+orderstatus row, so it drops out of the next fetch and everything below jumps up under the cursor. Instead the row is kept, greyed, at
+qty 0 (lib/zeroedLines.ts) — out of the totals, the CSV and the placement, but holding its place — and its "+" restores the archived
+units via POST /order-status-restore. It's display-only: the units really are archived, and the ghost is gone on the next page load.
 =======================================================================================================================================
 */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownTrayIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import {
-  OrderToPlaceRow, OrderToPlaceTotals, adjustOrderStatusQty, placeOrder, unplaceOrder,
+  OrderToPlaceRow, OrderToPlaceTotals, adjustOrderStatusQty, restoreOrderStatus, archiveOrderStatus, placeOrder, unplaceOrder,
 } from '@/lib/api';
+import { useZeroedLines, spliceZeroed } from '@/lib/zeroedLines';
 import { chosenAgeClass, money } from '@/lib/orderStatusUi';
+import { csvColumnsFor, OrderCsvColumn } from '@/lib/orderCsvFormat';
 import AddOrderLine from '@/components/AddOrderLine';
 
 // Where the units on a line are headed. Amazon and Local get the same colours they carry on the ON ORDER batch cards, so the two
@@ -66,15 +79,50 @@ interface Props {
 interface Placement { placed: number; ponumber: string; time: string; ordernums: string[]; }
 
 export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onUnauthorized }: Props) {
-  // Selection is by SKU code. Barcode-less rows are selectable like any other — they just export with a blank barcode column.
-  const sellable = rows;
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+
+  // Lines walked down to 0 by "−". They stay on screen at qty 0 instead of vanishing from under the cursor (lib/zeroedLines.ts);
+  // `display` is the server list with those ghosts spliced back into the position they held.
+  const { zeroed, remember, forget, clear: clearZeroed } = useZeroedLines<OrderToPlaceRow>();
+  const display = useMemo(
+    () => spliceZeroed(rows, Array.from(zeroed.values()), (r) => r.code),
+    [rows, zeroed]
+  );
+  // Everything real: a ghost has no units and no ordernums, so it must never reach the totals, the CSV or the placement. `qty === 0`
+  // is a safe marker — the server groups by COUNT(*), so a genuine line is never 0.
+  const sellable = useMemo(() => display.filter((r) => r.qty > 0), [display]);
 
   const [busy, setBusy] = useState(false);
   const [adjustingCode, setAdjustingCode] = useState<string | null>(null);
+  const [removingKey, setRemovingKey] = useState<string | null>(null);   // style heading mid-removal, so only that button shows it
+
+  // Which "Remove style" button is armed. Removing a style closes the list up, so the NEXT style's button slides under a cursor that
+  // hasn't moved (owner nearly deleted the wrong style this way, 2026-07-22). Arming is the guard, and not mainly because it asks a
+  // question: a button that arrives under the pointer is always un-armed, so the stray click can only arm it — and the label it then
+  // shows names the style and the units, which is exactly the check the operator needs. Only one can be armed at a time.
+  const [armedKey, setArmedKey] = useState<string | null>(null);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const disarm = useCallback(() => {
+    if (disarmTimer.current) { clearTimeout(disarmTimer.current); disarmTimer.current = null; }
+    setArmedKey(null);
+  }, []);
+
+  // Armed state expires by itself: an armed button left sitting there is exactly the trap this is meant to prevent.
+  const arm = useCallback((key: string) => {
+    if (disarmTimer.current) clearTimeout(disarmTimer.current);
+    setArmedKey(key);
+    disarmTimer.current = setTimeout(() => { setArmedKey(null); disarmTimer.current = null; }, 4000);
+  }, []);
+
+  useEffect(() => () => { if (disarmTimer.current) clearTimeout(disarmTimer.current); }, []);
   const [error, setError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
+
+  // The CSV layout this supplier's system will accept (Lunar drops the trailing `code`). Also drives the footer note, so what the
+  // screen SAYS the file contains can't drift from what it writes.
+  const columns = useMemo(() => csvColumnsFor(supplier), [supplier]);
 
   const chosen = useMemo(() => sellable.filter((r) => !excluded.has(r.code)), [sellable, excluded]);
   const chosenUnits = chosen.reduce((n, r) => n + r.qty, 0);
@@ -94,17 +142,21 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
 
   // --- CSV -----------------------------------------------------------------------------------------------------------------
   // Built here from the rows already on screen (same approach as the Analytics sales export), so what downloads is exactly what
-  // you're looking at — no second server round-trip that could disagree with the sheet. Columns are the three the supplier needs:
-  // barcode, qty, code. The barcode arrives already stripped of its legacy trailing 'B'. Barcode-less rows export with an empty
-  // barcode cell rather than being dropped — the line still needs to reach the supplier, just placed by hand instead of scanned.
+  // you're looking at — no second server round-trip that could disagree with the sheet. The COLUMNS depend on the supplier
+  // (lib/orderCsvFormat.ts): everyone gets barcode + qty, and only some get our `code` on the end — Lunar's system rejects the file
+  // if it's there. The barcode arrives already stripped of its legacy trailing 'B'. Barcode-less rows export with an empty barcode
+  // cell rather than being dropped — the line still needs to reach the supplier, just placed by hand instead of scanned.
   const downloadCsv = useCallback(() => {
     if (chosen.length === 0) return;
     const esc = (v: string | number) => {
       const s = String(v ?? '');
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = chosen.map((r) => [r.has_barcode ? r.barcode : '', r.qty, r.code].map(esc).join(','));
-    const csv = [['barcode', 'qty', 'code'].join(','), ...lines].join('\r\n');
+    const cell = (r: OrderToPlaceRow, col: OrderCsvColumn) => (
+      col === 'barcode' ? (r.has_barcode ? r.barcode : '') : col === 'qty' ? r.qty : r.code
+    );
+    const lines = chosen.map((r) => columns.map((c) => esc(cell(r, c))).join(','));
+    const csv = [columns.join(','), ...lines].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -118,7 +170,7 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setDownloaded(true);
-  }, [chosen, supplier]);
+  }, [chosen, supplier, columns]);
 
   // --- the write -----------------------------------------------------------------------------------------------------------
   async function doPlace() {
@@ -131,6 +183,7 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
       setPlacement({ placed: res.data.placed, ponumber: res.data.ponumber, time: res.data.placed_time, ordernums });
       setDownloaded(false);
       setExcluded(new Set());
+      clearZeroed();   // the sheet has been placed and emptied — holding a place in a list that no longer exists helps nobody
       await onChanged();
     } else if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); }
     else setError(res.error || 'Failed to place the order');
@@ -148,25 +201,81 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
     else setError(res.error || 'Failed to undo the placement');
   }
 
-  async function doAdjust(code: string, ordernums: string[], delta: number) {
-    setAdjustingCode(code); setError(null);
-    const res = await adjustOrderStatusQty(ordernums, delta);
+  // The last "−" deletes the line's final orderstatus row, so it would drop out of the next fetch and the rows below would jump up.
+  // Instead we remember it and keep rendering it at 0, holding its place, with the archived ids its "+" can restore.
+  async function doAdjust(row: OrderToPlaceRow, delta: number) {
+    setAdjustingCode(row.code); setError(null);
+    const index = display.findIndex((r) => r.code === row.code);
+    const res = await adjustOrderStatusQty(row.ordernums, delta);
     setAdjustingCode(null);
-    if (res.success) { await onChanged(); }
+    if (res.success && res.data) {
+      // From THIS line's own count, not the response's `qty`: that recount is scoped to the SKU's createddate group, while a TO PLACE
+      // row aggregates every createddate — so the two disagree for a SKU chosen on more than one day.
+      const nextQty = row.qty + res.data.added - res.data.removed;
+      if (nextQty <= 0) {
+        remember(row.code, { payload: { ...row, qty: 0, line_cost: 0 }, index: Math.max(index, 0), removed: res.data.removed_ordernums });
+      } else {
+        forget(row.code);   // back above zero by any route — the real row takes over again
+      }
+      await onChanged();
+    }
     else if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); }
     else setError(res.error || 'Failed to adjust quantity');
   }
 
-  // Group into styles for display; rows arrive already ordered by title then size, so a simple run-grouping preserves that.
+  // WHOLE-STYLE REMOVAL. The real reason a style leaves the sheet is "the supplier has none of it, in any size" (owner) — and walking
+  // eleven sizes down to zero one "−" at a time is just typing. This archives every unit under the heading in ONE call, through the
+  // same /order-status-archive the ON ORDER side uses, so the rows land in orderstatus_archive rather than being destroyed.
+  //
+  // Deliberately no confirm step and no undo strip (owner: "No need to undo. Not important. Remove the style."). The control is small,
+  // sits away from the +/- and the tick, and says what it does; the archive table is the backstop if someone ever needs the rows back.
+  async function doRemoveStyle(style: { key: string; title: string | null; rows: OrderToPlaceRow[] }) {
+    const ordernums = style.rows.flatMap((r) => r.ordernums);   // ghosts carry none, so they contribute nothing
+    if (ordernums.length === 0) return;
+    disarm();   // nothing stays armed across the re-render this write causes — that's the whole point of the guard
+    setRemovingKey(style.key); setBusy(true); setError(null);
+    const res = await archiveOrderStatus(ordernums);
+    setBusy(false); setRemovingKey(null);
+    if (res.success) {
+      // The whole style is leaving the sheet, so nothing here should hold a place at 0, and no stale "unticked" state should survive
+      // to surprise the operator if the same SKU is added again later.
+      const codes = new Set(style.rows.map((r) => r.code));
+      codes.forEach((code) => forget(code));
+      setExcluded((prev) => {
+        const next = new Set(prev);
+        codes.forEach((code) => next.delete(code));
+        return next;
+      });
+      await onChanged();
+    }
+    else if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); }
+    else setError(res.error || 'Failed to remove the style');
+  }
+
+  // "+" on a zeroed line. It can't go through adjust-qty: that adds by cloning one of the group's own rows and at 0 there are none
+  // left. The units are archived rather than gone, so we move those exact rows back — same batch, same context.
+  async function doRestore(row: OrderToPlaceRow) {
+    const ghost = zeroed.get(row.code);
+    if (!ghost || ghost.removed.length === 0) return;
+    setAdjustingCode(row.code); setError(null);
+    const res = await restoreOrderStatus(ghost.removed, row.code);
+    setAdjustingCode(null);
+    if (res.success) { forget(row.code); await onChanged(); }
+    else if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); }
+    else setError(res.error || 'Failed to bring the line back');
+  }
+
+  // Group into styles for display; rows arrive already ordered by title then size, so a simple run-grouping preserves that. Built from
+  // `display` (server rows + zeroed ghosts) so a line walked to 0 stays under its own style heading rather than vanishing.
   const styles = useMemo(() => {
     const map = new Map<string, { key: string; title: string | null; groupid: string | null; rows: OrderToPlaceRow[] }>();
-    for (const r of rows) {
+    for (const r of display) {
       const key = r.groupid || r.code;
       if (!map.has(key)) map.set(key, { key, title: r.title, groupid: r.groupid, rows: [] });
       map.get(key)!.rows.push(r);
     }
     return Array.from(map.values());
-  }, [rows]);
+  }, [display]);
 
   // Just-placed confirmation. Shown INSTEAD of an empty-state when the queue has drained, so the screen answers "did that work?"
   // rather than just going blank.
@@ -188,7 +297,8 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
     </div>
   );
 
-  if (rows.length === 0) {
+  // Nothing left to show — but a ghost still counts as something on screen (its "+" is the way back), so this is `display`, not `rows`.
+  if (display.length === 0) {
     return (
       <>
         {justPlaced}
@@ -280,6 +390,29 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                 </span>
                 <span className="text-xs text-slate-400">{styleUnits} unit{styleUnits === 1 ? '' : 's'}</span>
                 <span className="text-sm font-medium text-slate-600">{money(styleCost)}</span>
+                {/* Whole-style removal — for "the supplier has none of it, in any size". Deliberately quiet and set apart from the row
+                    controls: it's a different kind of act from a tick (which keeps the line for next time) or a "−" (one unit).
+                    Two-step: the first click arms it and states what will go, the second does it. Moving the pointer off disarms, so
+                    a button that has just slid under a resting cursor can't stay armed behind your back. */}
+                <button
+                  type="button"
+                  disabled={busy || styleUnits === 0}
+                  onClick={() => (armedKey === s.key ? doRemoveStyle(s) : arm(s.key))}
+                  onMouseLeave={() => { if (armedKey === s.key) disarm(); }}
+                  title={`Remove all ${styleUnits} unit${styleUnits === 1 ? '' : 's'} of this style from the order`}
+                  className={
+                    'whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium disabled:opacity-40 ' +
+                    (armedKey === s.key
+                      ? 'border-red-600 bg-red-600 text-white hover:bg-red-700'
+                      : 'border-slate-200 text-slate-500 hover:border-red-300 hover:bg-red-50 hover:text-red-700')
+                  }
+                >
+                  {removingKey === s.key
+                    ? 'Removing…'
+                    : armedKey === s.key
+                      ? `Remove all ${styleUnits}? Click again`
+                      : 'Remove style'}
+                </button>
               </div>
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
@@ -296,23 +429,30 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {s.rows.map((r) => {
-                    const on = !excluded.has(r.code);
+                    // A line walked down to 0 by "−". It holds its place instead of vanishing: greyed, unticked, un-tickable (there are
+                    // no units to include), and its "+" restores the archived units rather than cloning a row that no longer exists.
+                    const zero = r.qty === 0;
+                    const on = !zero && !excluded.has(r.code);
                     return (
-                      <tr key={r.code} className={(on ? '' : 'opacity-45') + (r.has_barcode ? '' : ' bg-amber-50/40')}>
+                      <tr key={r.code} className={(zero ? 'bg-slate-50 text-slate-400' : on ? '' : 'opacity-45') + (r.has_barcode || zero ? '' : ' bg-amber-50/40')}>
                         <td className="py-1 pl-4">
                           <input
                             type="checkbox"
                             checked={on}
+                            disabled={zero}
                             onChange={() => toggle(r.code)}
-                            className="h-4 w-4 rounded border-slate-300"
+                            className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
                             aria-label={`Include ${r.code} in this order`}
                           />
                         </td>
-                        <td className="py-1 text-slate-700">{r.uksize || r.size}</td>
+                        <td className={'py-1 ' + (zero ? 'text-slate-400' : 'text-slate-700')}>{r.uksize || r.size}</td>
                         <td className="py-1">
                           {/* ALWAYS shown, never only-when-mixed. Destination is a decision the operator makes when adding a line
-                              and then can't otherwise verify — an absent chip reads as "no answer", not as "Local". */}
-                          <DestinationChip amz={r.amz_qty} local={r.local_qty} />
+                              and then can't otherwise verify — an absent chip reads as "no answer", not as "Local". A zeroed line has
+                              no units to send anywhere, so it says what actually happened to it instead. */}
+                          {zero
+                            ? <span className="whitespace-nowrap rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-400">removed</span>
+                            : <DestinationChip amz={r.amz_qty} local={r.local_qty} />}
                         </td>
                         <td className="py-1 font-mono text-xs text-slate-500">{r.code}</td>
                         <td className="py-1 font-mono text-xs text-slate-500">
@@ -324,19 +464,19 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
-                              disabled={adjustingCode === r.code || busy}
-                              onClick={() => doAdjust(r.code, r.ordernums, -1)}
+                              disabled={zero || adjustingCode === r.code || busy}
+                              onClick={() => doAdjust(r, -1)}
                               title="Remove one unit from this order"
                               className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
                             >
                               −
                             </button>
-                            <span className="w-5 text-center font-medium text-slate-700">{r.qty}</span>
+                            <span className={'w-5 text-center font-medium ' + (zero ? 'text-slate-400' : 'text-slate-700')}>{r.qty}</span>
                             <button
                               type="button"
                               disabled={adjustingCode === r.code || busy}
-                              onClick={() => doAdjust(r.code, r.ordernums, 1)}
-                              title="Add one unit to this order"
+                              onClick={() => (zero ? doRestore(r) : doAdjust(r, 1))}
+                              title={zero ? 'Put this line back' : 'Add one unit to this order'}
                               className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
                             >
                               +
@@ -344,7 +484,8 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                           </div>
                         </td>
                         <td className="py-1 text-right text-slate-500">{money(r.unit_cost)}</td>
-                        <td className="py-1 pr-4 text-right font-medium text-slate-700">{money(r.line_cost)}</td>
+                        {/* A zeroed line costs nothing — showing £0.00 would read as a real line worth nothing, so it's a dash. */}
+                        <td className={'py-1 pr-4 text-right font-medium ' + (zero ? 'text-slate-300' : 'text-slate-700')}>{zero ? '—' : money(r.line_cost)}</td>
                       </tr>
                     );
                   })}
@@ -357,13 +498,13 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
 
       {/* How long this has been sitting un-ordered. Placed at the foot rather than per-row: it's a property of the queue as a whole
           ("this should have gone out on Monday"), and the per-row ages are almost always identical. */}
-      {rows.length > 0 && (
+      {display.length > 0 && (
         <p className="mt-4 text-xs text-slate-400">
           Oldest choice{' '}
-          <span className={'rounded px-1.5 py-0.5 font-medium ' + chosenAgeClass(Math.max(...rows.map((r) => r.oldest_days)))}>
-            {Math.max(...rows.map((r) => r.oldest_days))}d
+          <span className={'rounded px-1.5 py-0.5 font-medium ' + chosenAgeClass(Math.max(...display.map((r) => r.oldest_days)))}>
+            {Math.max(...display.map((r) => r.oldest_days))}d
           </span>{' '}
-          ago · CSV columns are barcode, qty, code
+          ago · CSV columns are {columns.join(', ')}
         </p>
       )}
     </>

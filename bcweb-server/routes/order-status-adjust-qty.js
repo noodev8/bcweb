@@ -24,8 +24,12 @@ Request Payload:
   "delta": 2                            // required, non-zero integer. Positive = add units, negative = remove waiting units.
 }
 
+The response carries `removed_ordernums` — exactly which rows went to the archive. The UI keeps a line that has hit qty 0 on screen
+showing 0 rather than letting it vanish, and its "+" hands these ids to POST /order-status-restore to bring the units back (at zero
+there's no surviving row left for this route to clone, so restore is the only honest undo).
+
 Success Response:
-{ "return_code": "SUCCESS", "added": 2, "removed": 0, "qty": 7, "arrived": 0, "waiting": 7 }
+{ "return_code": "SUCCESS", "added": 2, "removed": 0, "removed_ordernums": [], "qty": 7, "arrived": 0, "waiting": 7 }
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -86,6 +90,7 @@ router.post('/', async (req, res) => {
 
       let added = 0;
       let removed = 0;
+      let removedOrdernums = [];   // the archived ids, handed back so the UI's "+" on a zeroed line can restore exactly these
 
       if (delta > 0) {
         for (let i = 0; i < delta; i++) {
@@ -113,6 +118,7 @@ router.post('/', async (req, res) => {
           );
           const del = await client.query('DELETE FROM orderstatus WHERE ordernum = ANY($1::text[])', [toRemove]);
           removed = del.rowCount;
+          removedOrdernums = toRemove;
         }
       }
 
@@ -124,7 +130,7 @@ router.post('/', async (req, res) => {
       const qty = Number(totals.rows[0].qty) || 0;
       const arrived = Number(totals.rows[0].arrived) || 0;
 
-      return { added, removed, qty, arrived, waiting: qty - arrived };
+      return { added, removed, removed_ordernums: removedOrdernums, qty, arrived, waiting: qty - arrived };
     });
 
     if (result === null) {

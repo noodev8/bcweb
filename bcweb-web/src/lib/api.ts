@@ -1206,13 +1206,26 @@ export function switchOrderType(ordernums: string[], newOrderType: 2 | 3) {
 // +/- the unit count for one SKU/size group. ordernums = every ordernum currently in that group (from OrderStatusBatch.lines);
 // delta > 0 duplicates one of them (new units land in the same batch); delta < 0 archives+removes up to |delta| units, waiting
 // ones first and falling back to arrived ones once waiting runs out.
+// `removed_ordernums` is what a zeroed line's "+" needs: at qty 0 there's no surviving row for the add path to clone, so the UI keeps
+// the line on screen showing 0 and restores these exact archived ids instead (restoreOrderStatus, below).
 export function adjustOrderStatusQty(ordernums: string[], delta: number) {
-  return request<{ added: number; removed: number; qty: number; arrived: number; waiting: number }>(
+  return request<{ added: number; removed: number; removed_ordernums: string[]; qty: number; arrived: number; waiting: number }>(
     { url: '/order-status-adjust-qty', method: 'POST', data: { ordernums, delta } },
     (b) => ({
       added: Number(b.added) || 0, removed: Number(b.removed) || 0,
+      removed_ordernums: b.removed_ordernums || [],
       qty: Number(b.qty) || 0, arrived: Number(b.arrived) || 0, waiting: Number(b.waiting) || 0,
     })
+  );
+}
+
+// Undo a removal: move archived units back into orderstatus exactly as they were (same batch / orderdate / ponumber / arrived state).
+// Drives the "+" on a line that has been walked down to 0.
+export function restoreOrderStatus(ordernums: string[], code: string) {
+  return request<{ restored: number }>(
+    // `code` completes the key: (ordernum, shopifysku) is the real PK on both tables, and an ordernum alone can cover several SKUs.
+    { url: '/order-status-restore', method: 'POST', data: { ordernums, code } },
+    (b) => ({ restored: Number(b.restored) || 0 })
   );
 }
 
