@@ -123,8 +123,15 @@ app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size gri
 app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent sales, ALL channels merged, w/ profit (lazy)
 
 // --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
-app.use('/order-status-suppliers', require('./routes/order-status-suppliers'));   // Stage 0: suppliers with an order currently open
-app.use('/order-status-list', require('./routes/order-status-list'));             // Stage 1: one supplier's orders, grouped into batches
+// Two stages of one lifecycle, split on the `orderdate` stamp (utils/orderStatus.js): TO PLACE = chosen but not yet bought from the
+// supplier; ON ORDER = placed and now being chased. The picker carries both; the rest of the routes belong to one stage or the other.
+app.use('/order-status-suppliers', require('./routes/order-status-suppliers'));   // Stage 0: suppliers, both stages' counts + order cost
+app.use('/order-status-to-place', require('./routes/order-status-to-place'));     // TO PLACE: one supplier's order-build sheet (SKU grain)
+app.use('/order-status-find', require('./routes/order-status-find'));             // TO PLACE: SKU picker for "add a line", scoped to the supplier
+app.use('/order-status-add', require('./routes/order-status-add'));               // TO PLACE: insert a NEW SKU line into the queue (un-placed)
+app.use('/order-status-place', require('./routes/order-status-place'));           // TO PLACE write: stamp orderdate + mint a BC- ponumber
+app.use('/order-status-unplace', require('./routes/order-status-unplace'));       // TO PLACE undo: clear the stamp (our own orders only)
+app.use('/order-status-list', require('./routes/order-status-list'));             // ON ORDER: one supplier's placed orders, as batches
 app.use('/order-status-switch-type', require('./routes/order-status-switch-type')); // re-flag rows local <-> amazon
 app.use('/order-status-archive', require('./routes/order-status-archive'));       // archive+delete an explicit selection
 app.use('/order-status-adjust-qty', require('./routes/order-status-adjust-qty')); // +/- units for one SKU/size within a batch

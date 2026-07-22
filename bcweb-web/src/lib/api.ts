@@ -1080,9 +1080,23 @@ export function getInvSales(groupid: string, limit?: number) {
 }
 
 // =============================================================================================================================
-// Order Status module — manage open supplier orders in orderstatus (local=2, amazon=3). See docs/order-status-lifecycle.docx.
+// Order Status module — supplier orders in orderstatus (local=2, amazon=3). See docs/order-status-lifecycle.docx.
+//
+// TWO STAGES of one lifecycle (Chosen -> Placed -> Arrived), split on the `orderdate` stamp:
+//   TO PLACE — chosen in the legacy request screen but not yet bought from the supplier. A work queue: export the CSV, place the
+//              order, mark it. Nothing is coming until someone does.
+//   ON ORDER — genuinely with the supplier; a waiting/chasing job.
+// The supplier picker carries both so the module home can headline the un-ordered backlog without a second call.
 // =============================================================================================================================
-export interface OrderStatusSupplierRow { supplier: string; open_batches: number; open_units: number; oldest_days: number; }
+export interface OrderStatusSupplierRow {
+  supplier: string;
+  to_place_units: number; to_place_skus: number; to_place_styles: number;
+  to_place_cost: number | null;   // est. order value; null when nothing to place (or no unit's cost parsed)
+  to_place_nocost: number;        // units whose cost wouldn't parse — excluded from to_place_cost, so it reads "est. £X (+N unpriced)"
+  to_place_oldest_days: number;   // ages from createddate: how long it's sat un-ordered
+  on_order_batches: number; on_order_units: number;
+  on_order_oldest_days: number;   // ages from the orderdate stamp: how long the SUPPLIER has had it
+}
 
 export function getOrderStatusSuppliers() {
   return request<OrderStatusSupplierRow[]>(
@@ -1091,12 +1105,84 @@ export function getOrderStatusSuppliers() {
   );
 }
 
+// --- TO PLACE ----------------------------------------------------------------------------------------------------------------
+// One row per SKU, aggregated across every createddate (the supplier gets one line for 2 pairs, not two orders) and across both
+// ordertypes (Amazon/Local is our internal routing, not theirs — amz_qty/local_qty keep the split visible).
+export interface OrderToPlaceRow {
+  code: string; groupid: string | null; title: string | null; size: string; uksize: string | null;
+  barcode: string;        // skumap.ean with the legacy trailing 'B' already stripped server-side
+  has_barcode: boolean;   // false = no EAN on file; blocked from the CSV rather than exported blank
+  qty: number; amz_qty: number; local_qty: number;
+  unit_cost: number | null; line_cost: number | null;
+  oldest_days: number;
+  ordernums: string[];    // every underlying one-row-per-unit id — what the place write stamps and +/- acts on
+}
+export interface OrderToPlaceTotals {
+  units: number; skus: number; styles: number; cost: number; nocost_units: number; nobarcode_units: number;
+}
+
+export function getOrderToPlace(supplier: string) {
+  return request<{ rows: OrderToPlaceRow[]; totals: OrderToPlaceTotals }>(
+    { url: '/order-status-to-place', method: 'GET', params: { supplier } },
+    (b) => ({
+      rows: (b.rows as OrderToPlaceRow[]) || [],
+      totals: (b.totals as OrderToPlaceTotals) || { units: 0, skus: 0, styles: 0, cost: 0, nocost_units: 0, nobarcode_units: 0 },
+    })
+  );
+}
+
+// SKU picker for "add a line" — scoped to the supplier's own SKUs, so a typo, a non-existent code and another supplier's style are
+// all impossible by construction. `already` = units of this SKU already sitting in the queue (still selectable; the add folds in).
+export interface OrderFindRow {
+  code: string; groupid: string | null; title: string | null; size: string; uksize: string | null;
+  barcode: string; has_barcode: boolean; cost: number | null; already: number;
+}
+
+export function findOrderSkus(supplier: string, term: string) {
+  return request<OrderFindRow[]>(
+    { url: '/order-status-find', method: 'GET', params: { supplier, term } },
+    (b) => (b.results as OrderFindRow[]) || []
+  );
+}
+
+// Add a NEW SKU line to the TO PLACE queue — the "supplier offered a deal mid-order" case. Inserts one un-placed orderstatus row per
+// unit (mirroring the legacy request write). TO PLACE only: it can't add to an order that's already gone in, by construction.
+export function addOrderLine(supplier: string, code: string, qty: number, ordertype: 2 | 3) {
+  return request<{ added: number; code: string; qty: number }>(
+    { url: '/order-status-add', method: 'POST', data: { supplier, code, qty, ordertype } },
+    (b) => ({ added: Number(b.added) || 0, code: String(b.code || ''), qty: Number(b.qty) || 0 })
+  );
+}
+
+// Stamp orderdate on the ticked units — "I've actually put this order in with the supplier". Mints one shared BC-YYYYMMDD-NNN
+// reference for the placement. Already-placed units are skipped, so a double-click can't restamp (and lose the original PO/age).
+export function placeOrder(ordernums: string[]) {
+  return request<{ placed: number; ponumber: string; orderdate: string; placed_time: string }>(
+    { url: '/order-status-place', method: 'POST', data: { ordernums } },
+    (b) => ({
+      placed: Number(b.placed) || 0, ponumber: String(b.ponumber || ''),
+      orderdate: String(b.orderdate || ''), placed_time: String(b.placed_time || ''),
+    })
+  );
+}
+
+// Undo a placement (the CSV bounced, wrong supplier, mis-click) — clears the stamp and returns the units to the TO PLACE queue.
+// Server-side rail: only orders THIS app placed (BC- prefixed) can be undone; legacy supplier-numbered ones are untouchable.
+export function unplaceOrder(ordernums: string[]) {
+  return request<{ unplaced: number }>(
+    { url: '/order-status-unplace', method: 'POST', data: { ordernums } },
+    (b) => ({ unplaced: Number(b.unplaced) || 0 })
+  );
+}
+
+// --- ON ORDER ----------------------------------------------------------------------------------------------------------------
 export interface OrderStatusLine {
   ordernum: string; code: string; groupid: string | null; title: string | null; size: string;
   arrived: boolean; ponumber: string | null;
 }
 export interface OrderStatusBatch {
-  ordertype: 2 | 3; createddate: string; days: number | null; ponumbers: string[];
+  // Batches key on the PLACED date (the day the order actually went in), not createddate — see routes/order-status-list.js.
+  ordertype: 2 | 3; placeddate: string; placedtime: string | null; days: number | null; ponumbers: string[];
   total: number; arrived: number; waiting: number; lines: OrderStatusLine[];
 }
 

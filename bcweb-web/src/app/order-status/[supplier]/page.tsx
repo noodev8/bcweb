@@ -1,49 +1,74 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /order-status/[supplier]  (Stage 1 — one supplier's order batches)
+Page: /order-status/[supplier]  (Stage 1 — one supplier, both halves of the lifecycle)
 =======================================================================================================================================
-Purpose: The grouped order list for a supplier (CLAUDE.md Order Status module). Each card is a "batch" — every orderstatus row
-         created on the same day for this supplier's local or Amazon order (see routes/order-status-list.js for why the grouping key
-         is createddate, not ponumber). Shows the arrived/waiting split and age up front so a stuck batch is obvious; expand a card to
-         see the style/size breakdown. Operators tick a whole batch (or individual lines within it) to switch order type or archive —
-         e.g. select a whole dead batch and archive it in one go, rather than a separate age-based sweep (owner: "feels risky, I can
-         do that by selecting the batch above it").
+Purpose: Everything for one supplier, behind the module's TO PLACE | ON ORDER switch — the two opposite jobs the Order Status module
+         exists for. The switch is repeated here (not just on the module home) so you can flip between "what am I buying" and "what am
+         I chasing" for the same supplier without going back a screen.
+
+  TO PLACE — the order-build sheet (PlaceOrderSheet): tune quantities, export the CSV, stamp it as ordered.
+  ON ORDER — the original batch view. Each card is one PLACEMENT: every orderstatus row that went to the supplier on the same day
+             (see routes/order-status-list.js for why the key is the orderdate stamp rather than createddate or ponumber). Shows the
+             arrived/waiting split and age up front so a stuck batch is obvious; expand a card to see the style/size breakdown.
+             Operators tick a whole batch (or individual lines within it) to switch order type or archive — e.g. select a whole dead
+             batch and archive it in one go, rather than a separate age-based sweep (owner: "feels risky, I can do that by selecting
+             the batch above it").
+
+Both stages load together on mount. They're small queries and the switch is used constantly — refetching on every flip would make the
+control feel heavier than the decision it represents.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import OrderStageSwitch, { OrderStage } from '@/components/OrderStageSwitch';
+import PlaceOrderSheet from '@/components/PlaceOrderSheet';
 import { ageClass } from '@/lib/orderStatusUi';
 import {
-  getOrderStatusList, switchOrderType, archiveOrderStatus, adjustOrderStatusQty,
-  OrderStatusBatch, OrderStatusLine,
+  getOrderStatusList, getOrderToPlace, switchOrderType, archiveOrderStatus, adjustOrderStatusQty,
+  OrderStatusBatch, OrderStatusLine, OrderToPlaceRow, OrderToPlaceTotals,
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
-function batchKey(b: OrderStatusBatch): string { return `${b.ordertype}|${b.createddate}`; }
+function batchKey(b: OrderStatusBatch): string { return `${b.ordertype}|${b.placeddate}`; }
 function typeLabel(t: 2 | 3): string { return t === 3 ? 'Amazon' : 'Local'; }
 function typeChipClass(t: 2 | 3): string {
   return t === 3 ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-sky-50 text-sky-700 border-sky-200';
 }
-// Batches are grouped by (ordertype, createddate) — a supplier with both Amazon and Local orders gets two separate cards, each with
+// Batches are grouped by (ordertype, placed date) — a supplier with both Amazon and Local orders gets two separate cards, each with
 // its own single type badge; the two never merge into one row with two badges.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function fmtOrderedDate(iso: string): string {
+function fmtOrderedDate(iso: string | null): string {
+  if (!iso) return 'date unknown';
   const [y, m, d] = iso.split('-').map(Number);
   const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   return `${weekday} ${d} ${MONTHS[m - 1]}`;
 }
 
+// useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function OrderStatusSupplierPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <SupplierContent />
+    </Suspense>
+  );
+}
+
+function SupplierContent() {
   const params = useParams<{ supplier: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const supplier = decodeURIComponent(params.supplier);
   const { logout } = useAuth();
 
+  const [stage, setStage] = useState<OrderStage>(searchParams.get('stage') === 'order' ? 'order' : 'place');
+
   const [batches, setBatches] = useState<OrderStatusBatch[] | null>(null);
+  const [toPlace, setToPlace] = useState<{ rows: OrderToPlaceRow[]; totals: OrderToPlaceTotals } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -54,21 +79,25 @@ export default function OrderStatusSupplierPage() {
   const [adjustingCode, setAdjustingCode] = useState<string | null>(null); // code currently mid +/-, so only that row's buttons disable
 
   // Only shows the full-page "Loading…" state on the very first fetch (batches === null). Refetches after an action (switch/archive/
-  // adjust) update the data in place instead — the list staying on screen throughout is what stops the "keeps flipping" flash the
+  // adjust/place) update the data in place instead — the list staying on screen throughout is what stops the "keeps flipping" flash the
   // owner flagged; the table simply updates once the new numbers land.
+  // Both stages refetch together: placing an order MOVES units from one to the other, so refreshing only the stage you're on would
+  // leave the other showing figures that are already wrong.
   const load = useCallback(async () => {
     setError(null);
-    const res = await getOrderStatusList(supplier);
-    if (res.success && res.data) {
-      setBatches(res.data);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load orders');
-    }
+    const [listRes, placeRes] = await Promise.all([getOrderStatusList(supplier), getOrderToPlace(supplier)]);
+    if (listRes.return_code === 'UNAUTHORIZED' || placeRes.return_code === 'UNAUTHORIZED') { logout(); return; }
+    if (listRes.success && listRes.data) setBatches(listRes.data); else setError(listRes.error || 'Failed to load orders');
+    if (placeRes.success && placeRes.data) setToPlace(placeRes.data);
     setLoading(false);
   }, [supplier, logout]);
 
   useEffect(() => { load(); }, [load]);
+
+  function pickStage(next: OrderStage) {
+    setStage(next);
+    router.replace(`/order-status/${encodeURIComponent(supplier)}?stage=${next}`, { scroll: false });
+  }
 
   function toggleExpand(key: string) {
     setExpanded((prev) => {
@@ -131,20 +160,41 @@ export default function OrderStatusSupplierPage() {
     else setActionError(res.error || 'Failed to adjust quantity');
   }
 
+  const onOrderUnits = batches ? batches.reduce((n, b) => n + b.waiting, 0) : null;
   const isEmpty = !loading && !error && batches !== null && batches.length === 0;
 
   return (
-    <AppShell title={supplier} backHref="/order-status" backLabel="Suppliers">
+    <AppShell title={supplier} backHref={`/order-status?stage=${stage}`} backLabel="Suppliers">
+      <OrderStageSwitch
+        stage={stage}
+        onChange={pickStage}
+        toPlaceUnits={toPlace ? toPlace.totals.units : null}
+        toPlaceCost={toPlace ? toPlace.totals.cost : null}
+        onOrderUnits={onOrderUnits}
+      />
+
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {isEmpty && (
+      {/* ---------------------------------------------------------------- TO PLACE ---------------------------------------------- */}
+      {!loading && stage === 'place' && toPlace && (
+        <PlaceOrderSheet
+          supplier={supplier}
+          rows={toPlace.rows}
+          totals={toPlace.totals}
+          onChanged={load}
+          onUnauthorized={logout}
+        />
+      )}
+
+      {/* ---------------------------------------------------------------- ON ORDER ---------------------------------------------- */}
+      {!loading && stage === 'order' && isEmpty && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          No open or recent orders for {supplier}.
+          Nothing on order with {supplier} right now.
         </div>
       )}
 
-      {!loading && !error && batches && batches.length > 0 && (
+      {!loading && !error && stage === 'order' && batches && batches.length > 0 && (
         <>
           {/* Selection action bar — always in place (owner: the appear/disappear "felt awkward") so the layout never jumps; the
               buttons themselves disable to 0 selected instead of the whole bar vanishing. */}
@@ -191,9 +241,16 @@ export default function OrderStatusSupplierPage() {
                       {isOpen ? <ChevronDownIcon className="h-4 w-4 text-slate-400" /> : <ChevronRightIcon className="h-4 w-4 text-slate-400" />}
                       <span className={'rounded border px-2 py-0.5 text-xs font-medium ' + typeChipClass(b.ordertype)}>{typeLabel(b.ordertype)}</span>
                       {/* Lead with "how long have I been waiting" (owner's first instinct) — bigger and bolder than the date. The
-                          ordered date is secondary context ("when did I order it"), so it's smaller and muted, right after. */}
-                      <span className={'rounded px-2 py-1 text-sm font-semibold ' + ageClass(b.days ?? 0)}>{b.days}d</span>
-                      <span className="text-xs text-slate-400">ordered {fmtOrderedDate(b.createddate)}</span>
+                          placed date is secondary context ("when did I order it"), so it's smaller and muted, right after. The time
+                          of day is what tells two same-day placements apart. */}
+                      <span className={'rounded px-2 py-1 text-sm font-semibold ' + ageClass(b.days ?? 0)}>{b.days ?? '—'}d</span>
+                      <span className="text-xs text-slate-400">
+                        placed {fmtOrderedDate(b.placeddate)}{b.placedtime ? ` ${b.placedtime}` : ''}
+                      </span>
+                      {/* The reference to quote when chasing. Ours read BC-YYYYMMDD-NNN; legacy ones are the supplier's 6-digit number. */}
+                      {b.ponumbers.length > 0 && (
+                        <span className="font-mono text-xs text-slate-400">{b.ponumbers.join(', ')}</span>
+                      )}
                     </button>
                     {/* Arrived dropped from the header — waiting is the number the operator actually acts on (switch/archive/±).
                         Total kept, small, so expanding a card is never a surprise on size. Arrived-vs-waiting per SKU is still

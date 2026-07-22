@@ -3,13 +3,21 @@
 API Route: order_status_list
 =======================================================================================================================================
 Method: GET
-Purpose: Stage 1 of the Order Status module — every open-or-recent SUPPLIER order (ordertype 2=local, 3=amazon) for one supplier,
-         grouped into "batches" the operator can act on together.
+Purpose: The ON ORDER stage of the Order Status module — every supplier order (ordertype 2=local, 3=amazon) that has genuinely been
+         PLACED and is now being waited on, grouped into "batches" the operator can act on together.
 
-Grouping key: (ordertype, createddate) — NOT ponumber. `ponumber` looks like a natural order id, but the owner is moving away from
-relying on it (operators may place several individual orders a day rather than one batch PO), so it is surfaced as a detail field
-only. `createddate` is the day the rows were written into orderstatus and is always populated, so grouping on it naturally clusters
-"today's order for this supplier" together regardless of whether it came from one PO or several.
+SCOPE — placed only. Rows still sitting in the TO PLACE queue (orderdate = '', chosen but never actually bought) are excluded and
+belong to GET /order-status-to-place. This matters: before the two stages were split, an un-ordered row counted as "waiting 21 days",
+which read as an overdue delivery when in fact nobody had ordered it. "On order" now means on order.
+
+GROUPING KEY: (ordertype, placed-date) — the `orderdate` stamp, i.e. the day the order was actually put in with the supplier. NOT
+`ponumber` (the owner is moving away from relying on it — operators may place several individual orders a day) and no longer
+`createddate` (the day the rows were chosen, which fragments a single real order placed from several days' picks, and conversely
+merges two separate orders that happened to be chosen on the same day). Both the legacy app and POST /order-status-place stamp the
+whole placement with one shared value, so `orderdate` clusters a batch exactly as the order actually went out.
+
+AGE is likewise days since PLACED, not days since chosen — that's the number you'd quote chasing a supplier. A row chosen on the 1st
+and ordered on the 5th is 3 days late today, not 7.
 
 `orderstatus` has one row PER UNIT (qty is always 1, duplicated lines — CLAUDE.md landmine), so batch totals are COUNT(*), and
 "arrived"/"waiting" are COUNT(*) filtered on the arrived flag. Style/size breakdown joins skumap (code -> groupid, size = RIGHT(code,2)
@@ -18,6 +26,9 @@ per CLAUDE.md) and title (human name) so the operator can see WHAT was ordered, 
 Scope: only rows with arrived=0, OR arrived=1 within the last 30 days (createddate) — i.e. everything that could plausibly still be
 on this screen given the legacy auto-cleanup windows (7d for arrived Amazon rows, 30d blanket). Older arrived rows are already gone
 or about to be; no point surfacing them here.
+
+DATES: every date is cast to text IN SQL. Never hand a pg DATE to Date.toISOString() — node-postgres parses it as local midnight and
+the UTC conversion shifts the day back one under BST (this route used to do exactly that, showing every batch a day early).
 =======================================================================================================================================
 Request Query Params:
   supplier  (string, required)
@@ -29,9 +40,10 @@ Success Response:
   "batches": [
     {
       "ordertype": 3,
-      "createddate": "2026-07-13",
-      "days": 8,
-      "ponumbers": ["140832"],
+      "placeddate": "2026-07-15",     // the day the order was actually placed with the supplier
+      "placedtime": "13:09",          // time of day off the legacy stamp, so two orders placed on one day read apart
+      "days": 7,                      // days since PLACED
+      "ponumbers": ["158807"],
       "total": 43,
       "arrived": 27,
       "waiting": 16,
@@ -56,6 +68,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { placed, placedDate } = require('../utils/orderStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -67,29 +80,36 @@ router.get('/', async (req, res) => {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'supplier is required' });
     }
 
+    // placeddate/placedtime are derived from the legacy 'YYYYMMDD HH24:MI:SS' text stamp: the date via placedDate() (regex-guarded
+    // to_date, so a malformed legacy value degrades to NULL rather than throwing), the time by slicing characters 10-14 out of the
+    // string. days counts from the placed date, falling back to nothing when it couldn't be parsed.
     const result = await query(`
-      SELECT o.ordernum, o.shopifysku AS code, o.ordertype, o.createddate, o.ponumber,
+      SELECT o.ordernum, o.shopifysku AS code, o.ordertype, o.ponumber,
              COALESCE(o.arrived,0) AS arrived,
+             ${placedDate()}::text AS placeddate,
+             NULLIF(substring(o.orderdate from 10 for 5), '') AS placedtime,
+             CURRENT_DATE - ${placedDate()} AS days,
              sm.groupid, t.shopifytitle AS title, RIGHT(o.shopifysku, 2) AS size
       FROM orderstatus o
       LEFT JOIN skumap sm ON sm.code = o.shopifysku
       LEFT JOIN title t   ON t.groupid = sm.groupid
       WHERE o.supplier = $1
         AND o.ordertype IN (2,3)
+        AND ${placed()}
         AND (COALESCE(o.arrived,0) = 0 OR o.createddate >= CURRENT_DATE - 30)
-      ORDER BY o.createddate DESC, o.ordertype, sm.groupid, size
+      ORDER BY ${placedDate()} DESC NULLS LAST, o.ordertype, sm.groupid, size
     `, [supplier]);
 
-    // Group rows into batches keyed by (ordertype, createddate). Map preserves first-seen order (already date-desc from the query).
+    // Group rows into batches keyed by (ordertype, placed date). Map preserves first-seen order (already date-desc from the query).
     const batchMap = new Map();
     for (const r of result.rows) {
-      const dateStr = r.createddate ? r.createddate.toISOString().slice(0, 10) : null;
-      const key = `${r.ordertype}|${dateStr}`;
+      const key = `${r.ordertype}|${r.placeddate}`;
       if (!batchMap.has(key)) {
         batchMap.set(key, {
           ordertype: r.ordertype,
-          createddate: dateStr,
-          days: dateStr ? Math.floor((Date.now() - new Date(dateStr + 'T00:00:00Z').getTime()) / 86400000) : null,
+          placeddate: r.placeddate,
+          placedtime: r.placedtime || null,
+          days: r.days === null ? null : Number(r.days),
           ponumbers: new Set(),
           total: 0,
           arrived: 0,

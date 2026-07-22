@@ -3,26 +3,37 @@
 API Route: order_status_suppliers
 =======================================================================================================================================
 Method: GET
-Purpose: Stage 0 of the Order Status module — "which suppliers currently have an order open". A supplier appears here only while it
-         has at least one orderstatus row that is a genuine SUPPLIER order (ordertype 2=local or 3=amazon, per docs/order-status-
-         lifecycle.docx) and still WAITING (arrived=0). Customer orders (ordertype 1) and Amazon Picks (never land in orderstatus)
-         are out of scope for this screen — see CLAUDE.md "Order Status" module notes.
+Purpose: Stage 0 of the Order Status module — the supplier picker, carrying BOTH stages of the order lifecycle so the module home can
+         show either without a second call, and can headline "how much is sitting un-ordered" before you click anything.
 
-Why "open" only: an order that has fully arrived is either already gone (Amazon: deleted 7 days after arrival by update_orders2.py) or
-about to be (Local: deleted after 30 days by clean_sales.sql regardless of arrival). This picker exists to answer "what am I still
-waiting on", so it only surfaces suppliers with something outstanding.
+The lifecycle is Chosen -> Placed -> Arrived (utils/orderStatus.js), and this endpoint splits one aggregate over the middle marker:
 
-`oldest_days` is the age (in days, from createddate) of that supplier's longest-waiting unit — the same number the list screen uses
-to colour-flag a batch (amber >=14d, red >=21d, matching the manual clear-out window before the 30-day auto-purge). Surfacing it here
-lets the operator spot a stuck supplier before opening it.
+  TO PLACE  (orderdate = '')  — chosen in the legacy request screen but NOT yet bought from the supplier. This is a work queue: the
+                               goods don't exist yet and nothing is coming until someone actually places the order.
+  ON ORDER  (orderdate <> '') — genuinely with the supplier, now a waiting/chasing job.
+
+Both sides require arrived=0 (still open). Splitting them fixes a real inaccuracy: before this, un-placed rows were counted as "waiting",
+so a style nobody had ordered yet showed up as an overdue delivery.
+
+`to_place_cost` is the money question — "what will this order cost me" — and comes from `skusummary.cost` via safeNumeric, NOT
+`skumap.cost` (blank on ~1200 of 2046 live SKUs and carrying '1000' placeholders on ~370 more, so it would badly understate a total).
+Cost is style-level, which is correct for footwear — every size of a style costs the same. `to_place_nocost` counts units whose cost
+didn't parse, so the UI can say "est. £412 (+2 unpriced)" rather than silently under-totalling.
+
+Ages come from different clocks by design: a TO PLACE row ages from `createddate` (how long since it was chosen and left un-ordered —
+days matter here), an ON ORDER row from the `orderdate` stamp (how long the SUPPLIER has had it — the real chase number). Before this
+split both used createddate, which overstated delivery waits by however long the order sat in the queue first.
 =======================================================================================================================================
 Success Response:
 {
   "return_code": "SUCCESS",
   "suppliers": [
-    { "supplier": "Rieker", "open_batches": 2, "open_units": 11, "oldest_days": 28 },
+    { "supplier": "Lunar",
+      "to_place_units": 3, "to_place_skus": 2, "to_place_styles": 1, "to_place_cost": 47.97, "to_place_nocost": 0,
+      "to_place_oldest_days": 0,
+      "on_order_batches": 2, "on_order_units": 11, "on_order_oldest_days": 28 },
     ...
-  ]  // ordered oldest-first (most overdue supplier surfaces first)
+  ]  // supplier A-Z; the client sorts per stage (oldest-first) since the two stages want different orders
 }
 =======================================================================================================================================
 Return Codes:
@@ -36,30 +47,50 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { safeNumeric } = require('../utils/sql');
+const { placed, notPlaced, placedDate } = require('../utils/orderStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    // A "batch" = one (ordertype, createddate) group for that supplier (see order-status-list.js for why createddate rather than
-    // ponumber — the owner may stop using PO numbers, so grouping keys off the day the order was created into orderstatus).
+    // One pass over the open rows, every figure a FILTERed aggregate over the same join — cheaper and always self-consistent versus
+    // two queries that could disagree if a row were placed between them.
+    // The join to skumap/skusummary is only for cost; a SKU missing from skumap still counts as a unit (LEFT JOIN), it just lands in
+    // to_place_nocost. An ON ORDER batch = one (ordertype, placed-date) group, matching how order-status-list.js groups its cards.
     const result = await query(`
-      SELECT supplier,
-             COUNT(DISTINCT (ordertype, createddate)) AS open_batches,
-             COUNT(*) AS open_units,
-             MAX(CURRENT_DATE - createddate) AS oldest_days
-      FROM orderstatus
-      WHERE ordertype IN (2,3) AND COALESCE(arrived,0) = 0
-      GROUP BY supplier
-      ORDER BY oldest_days DESC, supplier ASC
+      SELECT o.supplier,
+             COUNT(*)                    FILTER (WHERE ${notPlaced()}) AS to_place_units,
+             COUNT(DISTINCT o.shopifysku) FILTER (WHERE ${notPlaced()}) AS to_place_skus,
+             COUNT(DISTINCT sm.groupid)   FILTER (WHERE ${notPlaced()}) AS to_place_styles,
+             SUM(${safeNumeric('ss.cost')}) FILTER (WHERE ${notPlaced()}) AS to_place_cost,
+             COUNT(*) FILTER (WHERE ${notPlaced()} AND ${safeNumeric('ss.cost')} IS NULL) AS to_place_nocost,
+             MAX(CURRENT_DATE - o.createddate) FILTER (WHERE ${notPlaced()}) AS to_place_oldest_days,
+             COUNT(DISTINCT (o.ordertype, ${placedDate()})) FILTER (WHERE ${placed()}) AS on_order_batches,
+             COUNT(*) FILTER (WHERE ${placed()}) AS on_order_units,
+             MAX(CURRENT_DATE - ${placedDate()}) FILTER (WHERE ${placed()}) AS on_order_oldest_days
+      FROM orderstatus o
+      LEFT JOIN skumap sm     ON sm.code = o.shopifysku
+      LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
+      WHERE o.ordertype IN (2,3) AND COALESCE(o.arrived,0) = 0
+      GROUP BY o.supplier
+      HAVING COUNT(*) > 0
+      ORDER BY o.supplier ASC
     `);
 
     const suppliers = result.rows.map((r) => ({
       supplier: r.supplier,
-      open_batches: Number(r.open_batches),
-      open_units: Number(r.open_units),
-      oldest_days: r.oldest_days === null ? 0 : Number(r.oldest_days),
+      to_place_units: Number(r.to_place_units) || 0,
+      to_place_skus: Number(r.to_place_skus) || 0,
+      to_place_styles: Number(r.to_place_styles) || 0,
+      // NUMERIC comes back as a string from pg; null when every unit's cost was unparseable (or there are no to-place units at all).
+      to_place_cost: r.to_place_cost === null ? null : Number(r.to_place_cost),
+      to_place_nocost: Number(r.to_place_nocost) || 0,
+      to_place_oldest_days: r.to_place_oldest_days === null ? 0 : Number(r.to_place_oldest_days),
+      on_order_batches: Number(r.on_order_batches) || 0,
+      on_order_units: Number(r.on_order_units) || 0,
+      on_order_oldest_days: r.on_order_oldest_days === null ? 0 : Number(r.on_order_oldest_days),
     }));
 
     return res.json({ return_code: 'SUCCESS', suppliers });

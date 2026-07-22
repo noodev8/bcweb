@@ -80,10 +80,11 @@ export default function DashboardPage() {
           icon={ArchiveBoxIcon}
           live
         />
-        {/* Order Status — manage open supplier orders (local/Amazon) in orderstatus: which are waiting, which switched type, archive stale ones. */}
+        {/* Order Status — both halves of the supplier order lifecycle: place what's been chosen (CSV + stamp orderdate), then chase
+            what's on its way (arrived/waiting, switch type, archive stale ones). */}
         <ModuleTile
           title="Order Status"
-          description="Track supplier orders — what's arrived, what's waiting, and clear out stale ones."
+          description="Place supplier orders that are waiting to go out, then track what's on its way."
           href="/order-status"
           icon={ShoppingCartIcon}
           live
