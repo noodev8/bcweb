@@ -1052,6 +1052,24 @@ export function getInvStock(groupid: string) {
   );
 }
 
+// Phase 2 WRITE — the result of a +/- stock adjustment at one location. `units` is that line's new unit total at the code+location;
+// `local` is the size's new local total across every location (drives the card's chip count).
+export interface InvAdjustResult {
+  added: number;
+  removed: number;
+  units: number;
+  local: number;
+}
+
+// Phase 2 WRITE — +/- local stock at ONE location for ONE size. `ids` are every localstock row in that (code, location) cluster (the
+// locations panel already holds them). Positive delta adds units, negative removes them; the server audits each change to bclog.
+export function adjustStock(args: { code: string; location: string; delta: number; ids: string[] }) {
+  return request<InvAdjustResult>(
+    { url: '/inv-adjust', method: 'POST', data: args },
+    (b) => ({ added: b.added ?? 0, removed: b.removed ?? 0, units: b.units ?? 0, local: b.local ?? 0 })
+  );
+}
+
 // One sale line on the Inventory panel's recent-sales list. ALL channels merged (SHP / AMZ / CM3) — see routes/inv-sales.js for why
 // there is no channel filter. Returns are included and flagged rather than hidden; their `profit` is normally negative.
 export interface InvSaleRow {

@@ -28,7 +28,7 @@ still one tap away; we do not auto-fetch 40 styles' worth of detail just because
 import Image from 'next/image';
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronRightIcon } from '@heroicons/react/24/outline';
-import { getInvStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
+import { getInvStock, adjustStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import InvLocations from '@/components/InvLocations';
 import InvBreakdown from '@/components/InvBreakdown';
@@ -117,6 +117,36 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     ensureDetail();
   }, [ensureDetail]);
 
+  // ---- Phase 2: +/- stock adjustments (writes) ----
+  // A per-size override of the chip count, applied right after a successful +/- so the face reflects the new total immediately (the
+  // base counts come from the /inv-styles snapshot, which doesn't know about this edit). Keyed by the chip/size key.
+  const [sizeOverride, setSizeOverride] = useState<Record<string, number>>({});
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  // Force a fresh /inv-stock (bypasses ensureDetail's "already loaded" guard) so the racks reflect a just-made edit.
+  const reloadDetail = useCallback(async () => {
+    const res = await getInvStock(row.groupid);
+    if (res.success && res.data) setDetail(res.data);
+    else if (res.return_code === 'UNAUTHORIZED') logout();
+  }, [row.groupid, logout]);
+
+  // Handle a +/- from the locations panel: call the write endpoint, then update the edited size's chip count from the server's fresh
+  // total and re-pull the racks. On failure, still re-pull, so the screen shows the true state rather than an optimistic guess.
+  const handleAdjust = useCallback(async (args: { code: string; location: string; delta: number; ids: string[] }) => {
+    setAdjustError(null);
+    const res = await adjustStock(args);
+    if (res.success && res.data) {
+      const local = res.data.local;
+      if (openSize) setSizeOverride((p) => ({ ...p, [openSize]: local }));
+      await reloadDetail();
+    } else if (res.return_code === 'UNAUTHORIZED') {
+      logout();
+    } else {
+      setAdjustError(res.error || 'Could not adjust stock');
+      await reloadDetail();
+    }
+  }, [openSize, reloadDetail, logout]);
+
   // The deep breakdown (full size range incl. sold-out zeros, the 12 buckets, reprice/product links, recent sales). Each card owns its
   // own open/close — the operator opens and closes whichever they want, and one card's breakdown never collapses another (an earlier
   // accordion did that, and the collapse-jump was jarring — owner, 2026-07-23). It reads the same /inv-stock the racks use, so opening
@@ -189,7 +219,7 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
               {matchedKey ? (
                 <span className="text-slate-600">
                   Size <span className="font-semibold text-slate-900">{sizeFilter}</span> —{' '}
-                  <span className="font-semibold text-slate-900">{row.localSizes[matchedKey]}</span> on the shelf
+                  <span className="font-semibold text-slate-900">{sizeOverride[matchedKey] ?? row.localSizes[matchedKey]}</span> on the shelf
                 </span>
               ) : (
                 <span className="text-slate-400">No size {sizeFilter} on the shelf</span>
@@ -202,7 +232,9 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
               sold-out size is a plain muted chip — nothing to locate, so it is not a button. */}
           <div className="mt-2 flex flex-wrap gap-1.5">
             {sizes.length === 0 && <span className="text-xs text-slate-400">No sizes set up</span>}
-            {sizes.map(([key, qty]) => {
+            {sizes.map(([key, baseQty]) => {
+              // Prefer a just-edited count over the list snapshot, so a +/- shows on the chip without a page reload.
+              const qty = sizeOverride[key] ?? baseQty;
               if (qty <= 0) {
                 return (
                   <span
@@ -257,7 +289,12 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
         ) : detailError ? (
           <div className="border-t border-slate-200 px-4 py-3 text-center text-sm text-red-600">{detailError}</div>
         ) : (
-          <InvLocations rows={openRacks} sizeLabel={openLabel} />
+          <>
+            {adjustError && (
+              <div className="border-t border-slate-200 bg-rose-50 px-4 py-2 text-center text-xs text-rose-700">{adjustError}</div>
+            )}
+            <InvLocations rows={openRacks} sizeLabel={openLabel} onAdjust={handleAdjust} />
+          </>
         )
       )}
 

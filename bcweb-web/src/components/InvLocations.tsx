@@ -23,7 +23,8 @@ C3-Amazon bay can still be picked for a Shopify customer, so greying it out woul
 =======================================================================================================================================
 */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { MinusSmallIcon, PlusSmallIcon } from '@heroicons/react/24/outline';
 import { InvLocationRow, InvLocationState } from '@/lib/api';
 
 // FREE is deliberately absent: it is the normal state, so badging every row adds noise without information (owner). Only the
@@ -36,7 +37,17 @@ const STATE_STYLES: Partial<Record<InvLocationState, { label: string; cls: strin
   AMZ: { label: 'Amazon', cls: 'bg-sky-50 text-sky-700' },
 };
 
-export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow[]; sizeLabel: string }) {
+export default function InvLocations({ rows, sizeLabel, onAdjust }: {
+  rows: InvLocationRow[];
+  sizeLabel: string;
+  // PHASE 2 (owner, 2026-07-23): when provided, each shelf line gets +/- to fix a wrong real-world count. It hands the WHOLE cluster
+  // of localstock ids for that line up to the parent (a shelf line can be several rows), which calls the write endpoint. Absent =
+  // the read-only lookup view. Every location is editable, including Amazon/picked — the operator is in control (owner).
+  onAdjust?: (args: { code: string; location: string; delta: number; ids: string[] }) => Promise<void> | void;
+}) {
+  // While a +/- request is in flight, disable the controls so a double-tap can't fire two writes against the same line.
+  const [pending, setPending] = useState(false);
+
   // COLLAPSE duplicate shelf lines for the user view. localstock stores stock inconsistently: two pairs on one shelf can be a single
   // row with qty=2, or two rows with qty=1, depending how they were scanned in. Showing "C3-Front-07 / 1" twice is noise — the
   // operator wants "C3-Front-07 / 2", one line per shelf.
@@ -44,10 +55,10 @@ export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow
   // Grouped by location AND state, not location alone: if a shelf holds one free pair and one picked pair, those MUST stay separate.
   // Merging them would read as 2 available when only 1 is takeable — the one error this screen genuinely cannot afford.
   //
-  // Every underlying localstock id is kept on the grouped row. Phase 2 edits real rows, so it needs to expand a collapsed line back
-  // into the individual records it came from.
+  // Every underlying localstock id is kept on the grouped row, plus the code — phase 2's +/- hands the whole cluster to the write
+  // endpoint, which adds/removes against those exact rows.
   const grouped = useMemo(() => {
-    const byKey = new Map<string, { key: string; location: string | null; state: InvLocationState; qty: number; ids: string[] }>();
+    const byKey = new Map<string, { key: string; code: string; location: string | null; state: InvLocationState; qty: number; ids: string[] }>();
     for (const r of rows) {
       const key = `${r.location ?? ''}|${r.state}`;
       const hit = byKey.get(key);
@@ -55,11 +66,22 @@ export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow
         hit.qty += r.qty;
         hit.ids.push(r.id);
       } else {
-        byKey.set(key, { key, location: r.location, state: r.state, qty: r.qty, ids: [r.id] });
+        byKey.set(key, { key, code: r.code, location: r.location, state: r.state, qty: r.qty, ids: [r.id] });
       }
     }
     return [...byKey.values()];
   }, [rows]);
+
+  // Fire one +/- for a shelf line. Guards: needs a handler, a real location, and no other write in flight.
+  async function adjust(g: { code: string; location: string | null; ids: string[] }, delta: number) {
+    if (!onAdjust || pending || !g.location) return;
+    setPending(true);
+    try {
+      await onAdjust({ code: g.code, location: g.location, delta, ids: g.ids });
+    } finally {
+      setPending(false);
+    }
+  }
 
   if (rows.length === 0) {
     return (
@@ -90,7 +112,33 @@ export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow
               <tr key={r.key} className="hover:bg-slate-50">
                 {/* No size column: every row here is the same size, named once in the header above. */}
                 <td className="whitespace-nowrap px-4 py-1.5 font-medium text-slate-800">{r.location || '—'}</td>
-                <td className="px-4 py-1.5 text-right tabular-nums text-slate-700">{r.qty}</td>
+                <td className="px-4 py-1.5 text-right">
+                  {onAdjust && r.location ? (
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => adjust(r, -1)}
+                        disabled={pending}
+                        title={`Remove one ${sizeLabel} from ${r.location}`}
+                        className="rounded border border-slate-200 p-0.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      >
+                        <MinusSmallIcon className="h-4 w-4" />
+                      </button>
+                      <span className="w-6 text-center font-medium tabular-nums text-slate-800">{r.qty}</span>
+                      <button
+                        type="button"
+                        onClick={() => adjust(r, 1)}
+                        disabled={pending}
+                        title={`Add one ${sizeLabel} to ${r.location}`}
+                        className="rounded border border-slate-200 p-0.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-40"
+                      >
+                        <PlusSmallIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="tabular-nums text-slate-700">{r.qty}</span>
+                  )}
+                </td>
                 <td className="px-4 py-1.5">
                   {st && <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>}
                 </td>

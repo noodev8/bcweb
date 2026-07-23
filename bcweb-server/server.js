@@ -121,6 +121,7 @@ app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm
 app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + headline Local / Order / Total per style
 app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size grid (Order / Total / Local per size) + image
 app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent sales, ALL channels merged, w/ profit (lazy)
+app.use('/inv-adjust', require('./routes/inv-adjust'));  // phase 2: +/- local stock at one location, audited to bclog (WRITES)
 
 // --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
 // Two stages of one lifecycle, split on the `orderdate` stamp (utils/orderStatus.js): TO PLACE = chosen but not yet bought from the
