@@ -313,6 +313,34 @@ async function upsertProduct(groupid, { status = 'ACTIVE' } = {}) {
   return { productId: shopProduct.id, handle: shopProduct.handle, variantCount: returnedVariants.length, isNew };
 }
 
+const PRODUCT_DELETE_MUTATION = `
+  mutation productDelete($input: ProductDeleteInput!) {
+    productDelete(input: $input) { deletedProductId userErrors { field message } }
+  }
+`;
+
+/*
+ * deleteByHandle(handle)
+ * Delete a product from the Shopify store by its handle (used by the "Delete product" flow — a product being removed from our catalogue
+ * must not be left live on Shopify). Idempotent-ish: if the store has no product with that handle we return { deleted:false } rather than
+ * erroring, so deleting a product that was never pushed is a no-op. Throws a coded error (SHOPIFY_USER_ERRORS / SHOPIFY_PUSH_FAILED /
+ * SHOPIFY_NOT_CONFIGURED) on a real failure so the caller can ABORT and leave our DB untouched (never orphan a live listing).
+ * Returns { deleted, id }.
+ */
+async function deleteByHandle(handle) {
+  requireConfig(); // SHOPIFY_NOT_CONFIGURED before any network call
+  if (!handle) return { deleted: false, id: null };
+  const id = await findProductIdByHandle(handle);
+  if (!id) return { deleted: false, id: null }; // nothing on Shopify to delete
+  const data = await shopifyGraphQL(PRODUCT_DELETE_MUTATION, { input: { id } });
+  const result = data.productDelete;
+  if (result.userErrors && result.userErrors.length) {
+    throw coded('SHOPIFY_USER_ERRORS', result.userErrors.map((e) => `${(e.field || []).join('.')}: ${e.message}`).join('; '));
+  }
+  logger.info(`[shopify] deleted product ${result.deletedProductId} (handle ${handle})`);
+  return { deleted: true, id: result.deletedProductId };
+}
+
 /*
  * pushIfLive(groupid, { status })
  * The one helper every "save" route uses to keep Shopify in step: if the product is flagged live (skusummary.shopify = 1) and Shopify
@@ -337,4 +365,4 @@ async function pushIfLive(groupid, { status = 'ACTIVE' } = {}) {
   }
 }
 
-module.exports = { isConfigured, buildProductSetInput, upsertProduct, shopifyGraphQL, findProductIdByHandle, pushIfLive };
+module.exports = { isConfigured, buildProductSetInput, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, pushIfLive };

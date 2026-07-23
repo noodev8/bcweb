@@ -7,6 +7,7 @@ Purpose: Thin wrapper around ssh2-sftp-client for pushing/removing product image
          closes its own short-lived connection (image uploads are infrequent; we don't hold a pool).
 
          putImage(filename, buffer)  — upload a buffer to <remoteDir>/<filename> (overwrites in place if it exists).
+         getImage(filename)          — download <remoteDir>/<filename> and return it as a Buffer (used to clone an image on Copy).
          deleteImage(filename)       — remove <remoteDir>/<filename>; a "does not exist" is treated as success (idempotent cleanup).
 
          Both throw a clear Error if the SFTP config is incomplete, so the route can return a meaningful return_code rather than a
@@ -49,6 +50,22 @@ async function putImage(filename, buffer) {
   }
 }
 
+// Download <remoteDir>/<filename> as a Buffer. `sftp.get` with no destination returns the file contents in memory — the images are
+// small (800x800 JPEGs), so we never hit disk. Throws if the file is missing; the caller (Copy) treats that as a best-effort miss.
+async function getImage(filename) {
+  const { remoteDir } = requireConfig();
+  const sftp = new SftpClient();
+  try {
+    await sftp.connect(connectOpts());
+    const remotePath = path.join(remoteDir, filename);
+    const buf = await sftp.get(remotePath);           // Buffer when no dst path is given
+    logger.info(`[sftp] downloaded ${remotePath} (${buf.length} bytes)`);
+    return buf;
+  } finally {
+    try { await sftp.end(); } catch { /* ignore close errors */ }
+  }
+}
+
 // Delete <remoteDir>/<filename>. Missing file = success (idempotent). Other errors bubble up.
 async function deleteImage(filename) {
   const { remoteDir } = requireConfig();
@@ -66,4 +83,4 @@ async function deleteImage(filename) {
   }
 }
 
-module.exports = { putImage, deleteImage };
+module.exports = { putImage, getImage, deleteImage };

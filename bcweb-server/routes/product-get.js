@@ -118,6 +118,14 @@ router.get('/', async (req, res) => {
       ORDER BY (split_part(optionsize, '--', 1))::int
     `, [groupid]);
 
+    // Current sellable stock (total units) — used by the "Delete product" guard (can't delete while stock remains). Per CLAUDE.md,
+    // current stock = localstock rows with ordernum='#FREE', not deleted, qty>0. Fixed second query (not per-row), so not an N+1.
+    const stockResult = await query(`
+      SELECT COALESCE(SUM(qty), 0)::int AS units
+      FROM localstock WHERE groupid = $1 AND ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+    `, [groupid]);
+    const stock = stockResult.rows[0].units;
+
     const sizes = sizeResult.rows.map((s) => ({
       code: s.code,
       barcode: s.barcode || null,
@@ -146,6 +154,8 @@ router.get('/', async (req, res) => {
       // Legacy 0/1 integer flags -> booleans for a clean client contract.
       tax: r.tax === 1,
       shopify: r.shopify === 1,
+      // Current sellable stock (units). The delete guard blocks while this is > 0.
+      stock,
       // Birk order-book price hint (see below) — null unless this is an unpriced Birkenstock style with a match.
       birkPrice: null
     };

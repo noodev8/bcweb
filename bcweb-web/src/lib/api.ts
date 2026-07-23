@@ -194,6 +194,7 @@ export interface ProductDetail {
   title: string | null;
   cost: number | null; rrp: number | null; price: number | null;
   tax: boolean; shopify: boolean;
+  stock: number;          // current sellable stock (units) — the Delete guard blocks while this is > 0
   birkPrice?: BirkPriceHint | null;   // order-book RRP/cost suggestion (see BirkPriceHint); absent/null when not applicable
   sizes: ProductSize[];   // one row per variant (skumap)
 }
@@ -398,6 +399,28 @@ export function createProduct(groupid: string, fields: ProductEditFields) {
   return request<{ groupid: string; handle: string }>(
     { url: '/product-create', method: 'POST', data: { groupid, ...fields } },
     (b) => ({ groupid: b.groupid, handle: b.handle })
+  );
+}
+
+// Copy an existing product to a brand-new groupid (the legacy "Copy" button). Clones the header + pricing + sizes; BLANKS the barcodes;
+// forces Shopify OFF; for Birkenstock swaps the title's width word for the <Narrow/Regular> placeholder; clones the image under a new
+// name (best-effort). Server rejects a target that exists / a clashing handle (ALREADY_EXISTS / HANDLE_TAKEN). Returns the new groupid.
+export interface ProductCopyData { groupid: string; handle: string; image: { copied: boolean; imagename: string | null }; }
+export function copyProduct(sourceGroupid: string, newGroupid: string) {
+  return request<ProductCopyData>(
+    { url: '/product-copy', method: 'POST', data: { sourceGroupid, newGroupid } },
+    (b) => ({ groupid: b.groupid, handle: b.handle, image: b.image })
+  );
+}
+
+// PERMANENTLY delete a product (irreversible, no archive). Removes the Shopify listing + skusummary/title/attributes/skumap + image;
+// keeps sales/report data. `confirm` must equal the groupid (the operator re-typed it) — the server re-checks. On a Shopify failure the
+// server aborts and deletes nothing (return_code SHOPIFY_DELETE_FAILED) so the operator can retry.
+export interface ProductDeleteData { groupid: string; shopifyDeleted: boolean; imageDeleted: boolean; }
+export function deleteProduct(groupid: string, confirm: string) {
+  return request<ProductDeleteData>(
+    { url: '/product-delete', method: 'POST', data: { groupid, confirm } },
+    (b) => ({ groupid: b.groupid, shopifyDeleted: Boolean(b.shopifyDeleted), imageDeleted: Boolean(b.imageDeleted) })
   );
 }
 

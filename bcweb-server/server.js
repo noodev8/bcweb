@@ -93,6 +93,8 @@ app.use('/product-search', require('./routes/product-search'));    // Stage 1: s
 app.use('/product-get', require('./routes/product-get'));          // Stage 2a: load one product's header
 app.use('/product-lookups', require('./routes/product-lookups'));  // edit Stage 1: dropdown option lists
 app.use('/product-create', require('./routes/product-create'));    // create: brand-new product (header basics)
+app.use('/product-copy', require('./routes/product-copy'));        // copy: clone an existing product to a new groupid (barcodes blanked)
+app.use('/product-delete', require('./routes/product-delete'));    // delete: permanently remove a product (Shopify + skusummary/title/attributes/skumap + image)
 app.use('/product-update', require('./routes/product-update'));    // edit: save header attribute/enum fields + title
 app.use('/product-price', require('./routes/product-price'));      // edit: save price fields (cost/rrp/tax/shopifyprice)
 app.use('/product-sizes', require('./routes/product-sizes'));      // edit: save the size list (skumap) + re-push if live on Shopify

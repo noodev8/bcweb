@@ -12,7 +12,7 @@ Purpose: The main product image: shows the current image (from images.brookfield
 =======================================================================================================================================
 */
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import { uploadProductImage, ShopifyPushResult } from '@/lib/api';
@@ -36,6 +36,15 @@ export default function ImageUploader({
   const [failed, setFailed] = useState(false);      // image failed to load (missing file)
   const [bust, setBust] = useState(0);              // cache-buster, bumped after each successful upload
   const [push, setPush] = useState<ShopifyPushResult | null>(null);  // Shopify re-push outcome, when the product is live
+  const [zoom, setZoom] = useState(false);          // lightbox open (click the thumbnail to view it big)
+
+  // Close the lightbox on Escape.
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [zoom]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -57,18 +66,32 @@ export default function ImageUploader({
     setUploading(false);
   }
 
-  const box = 'flex h-44 w-44 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white';
+  const box = 'flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white';
   const src = imagename && !failed ? `${IMAGE_BASE}${encodeURIComponent(imagename)}${bust ? `?v=${bust}` : ''}` : null;
 
   return (
     <div className="flex flex-col items-end gap-1.5">
       {src ? (
-        <div className={'relative ' + box}>
+        // Small, elegant thumbnail — click to open the full-size lightbox.
+        <button type="button" onClick={() => setZoom(true)} title="Click to view larger" className={'relative cursor-zoom-in ' + box}>
           {/* key on bust so next/image re-fetches after an overwrite. Host is whitelisted in next.config.js. */}
-          <Image key={bust} src={src} alt="" fill sizes="176px" onError={() => setFailed(true)} className="object-contain" />
-        </div>
+          <Image key={bust} src={src} alt="" fill sizes="128px" onError={() => setFailed(true)} className="object-contain" />
+        </button>
       ) : (
         <div className={box + ' text-center text-[11px] text-slate-400'}>{imagename ? 'Image not found' : 'No image'}</div>
+      )}
+
+      {/* Lightbox — full image on a dimmed backdrop; click anywhere (or Escape) to close. Plain <img> so it isn't bound by next/image sizing. */}
+      {zoom && src && (
+        <div
+          onClick={() => setZoom(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="" className="max-h-[85vh] max-w-[85vw] rounded-lg bg-white object-contain shadow-2xl" />
+        </div>
       )}
 
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={onFile} className="hidden" />

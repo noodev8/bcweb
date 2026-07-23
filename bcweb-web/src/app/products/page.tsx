@@ -26,7 +26,8 @@ import ImageUploader from '@/components/ImageUploader';
 import ShopifyToggle from '@/components/ShopifyToggle';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 import AmazonExport from '@/components/AmazonExport';
-import CopyButton from '@/components/CopyButton';
+import CopyToNewProduct from '@/components/CopyToNewProduct';
+import DeleteProduct from '@/components/DeleteProduct';
 import {
   searchProducts, getProduct, getProductLookups, updateProduct, createProduct,
   ProductRow, ProductDetail, ProductLookups, ProductEditFields, ShopifyPushResult,
@@ -119,6 +120,31 @@ function SectionHeader({ children, hint }: { children: ReactNode; hint?: ReactNo
       <h2 className="text-base font-semibold text-slate-800">{children}</h2>
       {hint && <span className="shrink-0 text-xs text-slate-400">{hint}</span>}
     </div>
+  );
+}
+
+// The Group ID as the card's hero — and the copy control itself: click it to copy the key to the clipboard (replaces the old clipboard
+// icon). Shows a quiet "Copy" hint on hover, flashing "Copied" for a moment after a click. Clipboard blocked (insecure context) -> no-op.
+function GroupIdHeading({ groupid }: { groupid: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(groupid); } catch { return; }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="Click to copy the Group ID"
+      className="group flex max-w-full items-center gap-2.5 font-mono text-2xl font-semibold text-slate-900 hover:text-brand-700"
+    >
+      <span className="truncate">{groupid}</span>
+      <span className={'shrink-0 font-sans text-[11px] font-normal transition-opacity ' +
+        (copied ? 'text-green-600 opacity-100' : 'text-slate-400 opacity-0 group-hover:opacity-100')}>
+        {copied ? 'Copied' : 'Copy'}
+      </span>
+    </button>
   );
 }
 
@@ -285,6 +311,7 @@ export default function ProductsPage() {
   const [detail, setDetail] = useState<ProductDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [showFilename, setShowFilename] = useState(false);   // reveal the (long) image filename below the action row — off per product
 
   // ---- Edit state (edit Stage 1: attribute/enum fields) --------------------------------------------------------------------------
   const [lookups, setLookups] = useState<ProductLookups | null>(null);       // dropdown options (loaded once)
@@ -421,8 +448,33 @@ export default function ProductsPage() {
     await onSelect(groupid);
   }
 
+  // A product was just CLONED to a new groupid: it now exists, so drop it in as the sole result and load it into the detail panel, so
+  // the user carries straight on finishing the copy (fill the width placeholder, add barcodes, then price/Shopify when ready).
+  async function onCopied(groupid: string) {
+    setResults([{ groupid, title: null }]);
+    setLimited(false);
+    setError(null);
+    setSearched(true);
+    await onSelect(groupid);
+  }
+
+  // A product was just permanently deleted: it no longer exists, so drop it from the results and clear the detail panel. We keep the
+  // search results list (minus the deleted row) so the operator stays oriented; if that empties the list, the empty state shows.
+  function onDeleted(groupid: string) {
+    setResults((prev) => prev.filter((r) => r.groupid !== groupid));
+    setSelected(null);
+    setDetail(null);
+    setDetailError(null);
+    setEdit(null);
+    setBaseline(null);
+    setSaveError(null);
+    setSaveOk(false);
+    setShopifyPush(null);
+  }
+
   async function onSelect(groupid: string) {
     setSelected(groupid);
+    setShowFilename(false);
     setDetail(null);
     setDetailError(null);
     setEdit(null);
@@ -550,16 +602,46 @@ export default function ProductsPage() {
                 </nav>
 
                 <div className="space-y-4">
-                  {/* Identity card — the key + image name on the left, product image on the right (as on the legacy screen). */}
+                  {/* Identity card — the two things that matter (Group ID + image) are the focus; the rare/utility actions (copy the
+                      Group ID, copy the product, peek at the image file name, and — soon — delete) are quiet text below the key. */}
                   <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1 font-mono text-lg font-semibold text-slate-900">
-                        {detail.groupid}
-                        <CopyButton value={detail.groupid} label={detail.groupid} />
+                      {/* Group ID = hero, and click-to-copy. */}
+                      <GroupIdHeading groupid={detail.groupid} />
+                      {/* Secondary actions — small, muted, dot-separated, kept on ONE line. The long image filename doesn't live here;
+                          toggling it reveals it BELOW the row (see next block) so it never skews these three items. */}
+                      <div className="mt-2 flex items-center gap-x-2.5 text-xs text-slate-500">
+                        {/* Clone to a new Group ID (rare — mainly the Birkenstock width twin). */}
+                        <CopyToNewProduct
+                          key={`copy-${detail.groupid}`}
+                          sourceGroupid={detail.groupid}
+                          onCopied={onCopied}
+                          onUnauthorized={logout}
+                        />
+                        <span className="text-slate-300">·</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowFilename((s) => !s)}
+                          className="text-slate-500 transition-colors hover:text-slate-700"
+                        >
+                          {showFilename ? 'Hide filename' : 'Image filename'}
+                        </button>
+                        <span className="text-slate-300">·</span>
+                        {/* Permanent delete (Shopify + definition tables + image). Type-to-confirm modal; sales/report kept. */}
+                        <DeleteProduct
+                          key={`del-${detail.groupid}`}
+                          groupid={detail.groupid}
+                          stock={detail.stock}
+                          onDeleted={onDeleted}
+                          onUnauthorized={logout}
+                        />
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11px] text-slate-400" title={detail.imagename || undefined}>
-                        {detail.imagename || 'No image name'}
-                      </div>
+                      {/* Revealed image filename — its own line below the actions, so it can be as long as it likes. */}
+                      {showFilename && (
+                        <div className="mt-1.5 break-all font-mono text-[11px] text-slate-400">
+                          {detail.imagename || 'No image set'}
+                        </div>
+                      )}
                     </div>
                     {/* Main image + upload/replace. Uses the on-screen title (edit form) to seed the SEO filename server-side. */}
                     <ImageUploader

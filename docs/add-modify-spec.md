@@ -30,7 +30,7 @@ edit note in the Stage log). Title placeholders (`<…>`) are rejected on all ti
    live price ≤ 0; see open decisions). Win/Lose flag lives here too.
 3. **Price edit — remaining:** min/max shopify price (`maxshopifyprice='RRP'` convention), and the direct Shopify API push (the deferred
    "address when ready" piece — `product-price` currently stores the value without pushing).
-4. **Remaining legacy controls** (smaller): Copy button (clone to a new groupid); price-change Log view. (Image upload is done — a
+4. **Remaining legacy controls** (smaller): ~~Copy button (clone to a new groupid)~~ ✅ DONE (Stage log "Copy-1"); ~~Delete button~~ ✅ DONE (Stage log "Delete-1"); price-change Log view. (Image upload is done — a
    pure "rename the file without re-uploading" op isn't built; changing the title + re-uploading regenerates the name and deletes the old.)
 5. ~~**Downstream (later):** Amazon upload file.~~ ✅ DONE — `POST /product-amazon` + `AmazonExport.tsx` button in the detail panel
    (see Stage log "Amazon-1").
@@ -144,6 +144,30 @@ Client fns in `lib/api.ts`. Dashboard tile "Add / Modify Product" → `/products
   re-click doesn't duplicate. Env: optional `PYTHON_BIN` (default `python`); the helper reads DB creds from `bcweb-server/.env`.
   **VPS deploy needs Python 3 + `openpyxl`/`psycopg2`/`python-dotenv` installed and the template present** (the server is otherwise pure Node).
   Verified end-to-end via a throwaway `ZZTEST-AMZ` product (created, generated, skumap-stamp confirmed, then deleted) — no live product touched.
+
+- **Copy-1 — Clone to a new groupid.** ✅ `POST /product-copy {sourceGroupid,newGroupid}` clones a product to a brand-new key — the
+  legacy "Copy" button, rare but saves re-typing a near-identical style (headline case: a Birkenstock's opposite-width twin). In one
+  `withTransaction`: INSERT skusummary (copy the whole header + ALL pricing via `INSERT…SELECT`, override groupid/handle, force
+  `shopify=0`, blank imagename, clear `next_shopify_price_review`), title, attributes, and skumap (clone every non-deleted size; new
+  code/googleid = newGroupid + size suffix; **`ean` BLANKED** — unique per variant; `sku` blanked; `next_amz_price_review` cleared).
+  **Birkenstock title:** the width word (Narrow/Regular) is swapped for the `<Narrow/Regular>` placeholder, so the copy **can't go live
+  until the operator sets the width** (reuses the existing `<…>` guard); other brands copy the title verbatim. **Image:** cloned
+  post-commit + best-effort — `utils/sftp.js getImage()` downloads the source JPEG, re-uploads under a fresh name derived from the new
+  product, sets imagename (own file, immune to the original being re-imaged); a failure leaves the clone image-less (operator uploads
+  one), never rolls back. Web: `components/CopyToNewProduct.tsx` (two-step reveal on the identity card; live groupid-exists guard) +
+  `copyProduct()` in `lib/api.ts`; on success the page loads the new product to finish off (width, barcodes, then price/Shopify).
+  Verified against `1031465-ARIZONA` via manual `BEGIN..ROLLBACK` (nothing committed).
+
+- **Delete-1 — Permanently delete a product.** ✅ `POST /product-delete {groupid,confirm}` — irreversible, **no archive** (owner: clean DB).
+  Used when a style is finished with and confirmed clear, so it removes the product EVERYWHERE the add flow put it: (1) the **Shopify
+  listing** via `utils/shopify.deleteByHandle` (Admin API `productDelete` by handle) — done FIRST, and a failure ABORTS with the DB
+  untouched so a live listing is never orphaned; (2) **skusummary + title + attributes + skumap** in one `withTransaction`; (3) the
+  **image** on one.com (best-effort). **KEEPS all sales/report data** (sales, performance, snapshots, price_change_log, amz_price_log,
+  price_track, …) and the live-stock/operational tables (localstock, incoming_stock, orderstatus, amzfeed, … — owned by the owner's
+  Python/nightly jobs). **Safety:** the operator must TYPE the Group ID to confirm (client modal + server re-checks `confirm===groupid`).
+  Web: `components/DeleteProduct.tsx` (quiet red text in the identity card's secondary action row → type-to-confirm modal) +
+  `deleteProduct()` in `lib/api.ts`; on success the page drops the row + clears the panel. DB removal verified against `1031465-ARIZONA`
+  via `BEGIN..ROLLBACK` (all 4 definition tables cleared; price_change_log + localstock left intact). Shopify/image paths not live-tested.
 
 All writes verified against a live product via manual `BEGIN..ROLLBACK` (nothing committed), per CLAUDE.md.
 
