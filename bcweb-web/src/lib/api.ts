@@ -934,9 +934,9 @@ export interface InvStyleRow {
   price: number | null;
   rrp: number | null;
   local: number;
-  // {size: localQty} for the sizes this style currently has in LOCAL stock (only in-stock sizes present). Powers the "Size XX"
-  // filter and the per-size count it shows. Keys are the code's size suffix as stored, so they can carry a leading zero ("05") —
-  // the client normalises numerically when matching, so a typed "5" still finds "05".
+  // {size: localQty} for EVERY size in skumap (0 = sold out) — so the browse card can show a chip for each size and grey the empty
+  // ones, and the "Size XX" filter (membership = qty > 0) works off the same map. Keys are the code's size suffix as stored, so they
+  // can carry a leading zero ("05") — the client normalises numerically when matching, so a typed "5" still finds "05".
   localSizes: Record<string, number>;
   onOrder: number;
   total: number;

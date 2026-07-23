@@ -14,8 +14,9 @@ fetched ONLY when the operator taps a size to see where it is, and cached after 
 so a screen full of cards costs zero extra round-trips until someone actually asks a question of one.
 
 SIZE CHIP = the 2-digit code suffix (owner) — "38", "06" — which is the canonical EU size in this DB (RIGHT(code,2)). localSizes is
-keyed by that suffix, so the chip prints the key verbatim. Only IN-STOCK sizes are chips (localSizes only carries qty>0); the full
-size range including sold-out zeros is a breakdown job for a later slice, and deliberately not fetched for the face.
+keyed by that suffix, so the chip prints the key verbatim. EVERY size shows a chip — sold-out ones (qty 0) greyed IN PLACE, so a
+missing middle size can't slide a bigger size into the gap and read as a different size (owner, 2026-07-23). localSizes now carries the
+full range (0 for sold-out), so the face still needs no fetch. The count rides on a chip only when qty > 1 — a lone "1" is just noise.
 
 SIZE-FILTER LEAD. When the operator has a size filter on ("the customer's a 41"), the whole result set is already narrowed to styles
 that HOLD a 41, so each card LEADS with that size's count — pulled free from localSizes, no fetch — and the matching chip is ringed.
@@ -26,9 +27,11 @@ still one tap away; we do not auto-fetch 40 styles' worth of detail just because
 
 import Image from 'next/image';
 import { useCallback, useMemo, useState } from 'react';
+import { ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getInvStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import InvLocations from '@/components/InvLocations';
+import InvBreakdown from '@/components/InvBreakdown';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 
@@ -114,6 +117,16 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     ensureDetail();
   }, [ensureDetail]);
 
+  // The deep breakdown (full size range incl. sold-out zeros, the 12 buckets, reprice/product links, recent sales). Each card owns its
+  // own open/close — the operator opens and closes whichever they want, and one card's breakdown never collapses another (an earlier
+  // accordion did that, and the collapse-jump was jarring — owner, 2026-07-23). It reads the same /inv-stock the racks use, so opening
+  // it after a size tap costs nothing more.
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const onToggleBreakdown = useCallback(() => {
+    setShowBreakdown((v) => !v);
+    ensureDetail();
+  }, [ensureDetail]);
+
   // Racks for the open size — matched out of the fetched detail by 2-digit size (loc.eu), numeric so a padded "06" still lines up.
   const openRacks: InvLocationRow[] = useMemo(() => {
     if (!openSize || !detail) return [];
@@ -184,10 +197,23 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
             </div>
           )}
 
-          {/* Size chips — in-stock sizes only, each with its local count. Tap one to see where it is. */}
+          {/* Size chips — EVERY size, sold-out ones greyed IN PLACE so a missing middle size can't read as a different one. In-stock
+              sizes are tappable to see where they are; the count shows only when there is more than one (a lone "1" is noise). A
+              sold-out size is a plain muted chip — nothing to locate, so it is not a button. */}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {sizes.length === 0 && <span className="text-xs text-slate-400">None on the shelf</span>}
+            {sizes.length === 0 && <span className="text-xs text-slate-400">No sizes set up</span>}
             {sizes.map(([key, qty]) => {
+              if (qty <= 0) {
+                return (
+                  <span
+                    key={key}
+                    title={`No size ${key} on the shelf`}
+                    className="inline-flex items-baseline rounded-md border border-slate-100 bg-slate-50 px-2 py-1 text-sm text-slate-300"
+                  >
+                    <span className="tabular-nums">{key}</span>
+                  </span>
+                );
+              }
               const isOpen = openSize === key;
               const isMatch = matchedKey === key;
               return (
@@ -206,11 +232,21 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
                   }
                 >
                   <span className="font-semibold tabular-nums">{key}</span>
-                  <span className="text-xs text-slate-400">{qty}</span>
+                  {qty >= 2 && <span className="text-xs text-slate-400">{qty}</span>}
                 </button>
               );
             })}
           </div>
+
+          {/* Breakdown toggle — the deep view is behind a click so the face stays light (owner: minimal until clicked). */}
+          <button
+            type="button"
+            onClick={onToggleBreakdown}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            <ChevronRightIcon className={`h-3.5 w-3.5 transition-transform ${showBreakdown ? 'rotate-90' : ''}`} />
+            Breakdown
+          </button>
         </div>
       </div>
 
@@ -223,6 +259,17 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
         ) : (
           <InvLocations rows={openRacks} sizeLabel={openLabel} />
         )
+      )}
+
+      {/* ---- The deep breakdown, below the racks. Shares the same fetched detail. ---- */}
+      {showBreakdown && (
+        detailLoading ? (
+          <div className="border-t border-slate-200 px-4 py-3 text-center text-sm text-slate-400">Loading breakdown…</div>
+        ) : detailError ? (
+          <div className="border-t border-slate-200 px-4 py-3 text-center text-sm text-red-600">{detailError}</div>
+        ) : detail ? (
+          <InvBreakdown data={detail} />
+        ) : null
       )}
     </div>
   );

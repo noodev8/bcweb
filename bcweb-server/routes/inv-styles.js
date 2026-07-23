@@ -42,7 +42,7 @@ Success Response:
       "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
       "rrp": 80.00,                         // safeNumeric(rrp); null likewise. Shown struck-through only when above price.
       "local": 38,                          // SUM(localstock.qty), all states
-      "localSizes": { "37": 4, "38": 5, "39": 6 },  // {size: localQty} for in-stock sizes; drives the client "Size XX" filter
+      "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); drives the size chips + "Size XX" filter
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "total": 38                           // local + amazon-held
     },
@@ -84,18 +84,25 @@ router.get('/', async (req, res) => {
         GROUP BY groupid
       ),
       loc_by_size AS (
-        -- Local stock broken down BY SIZE, so the client can answer "who has a 41 on the shelf" without a round-trip (owner: search
-        -- Size XX near the end of a hunt). Size = the code's last dash-segment (substring '[^-]+$'), which handles half sizes like
-        -- "10.5" correctly where the module's usual RIGHT(code,2) would read ".5". Same row set as loc (deleted=0, qty>0), so the
-        -- per-size counts sum back to the Local total. Emitted as a {size: qty} JSON map, only sizes actually in stock.
-        SELECT groupid, jsonb_object_agg(sz, units) AS sizes
+        -- EVERY size the style carries in skumap, each with its LOCAL count (0 for sold-out). The browse card draws a chip per size
+        -- and greys the empty ones, so a sold-out MIDDLE size stays visible in its place instead of vanishing and letting a bigger
+        -- size close the gap (which reads as a different size — owner, 2026-07-23). skumap is the full size range (one row per variant,
+        -- size = last dash-segment '[^-]+$', which handles half sizes like "10.5" where RIGHT(code,2) would read ".5"); LEFT JOIN the
+        -- same in-stock, non-deleted localstock rows loc uses, so the per-size counts still sum back to the Local total. Emitted as a
+        -- {size: localQty} JSON map. Still drives the "Size XX" filter (membership = qty > 0), which a 0 entry correctly fails.
+        SELECT m.groupid, jsonb_object_agg(m.sz, COALESCE(ls.units, 0)) AS sizes
         FROM (
+          SELECT groupid, substring(code from '[^-]+$') AS sz
+          FROM skumap
+          GROUP BY groupid, substring(code from '[^-]+$')
+        ) m
+        LEFT JOIN (
           SELECT groupid, substring(code from '[^-]+$') AS sz, SUM(qty) AS units
           FROM localstock
           WHERE COALESCE(deleted, 0) = 0 AND qty > 0
           GROUP BY groupid, substring(code from '[^-]+$')
-        ) per_size
-        GROUP BY groupid
+        ) ls ON ls.groupid = m.groupid AND ls.sz = m.sz
+        GROUP BY m.groupid
       ),
       ord AS (
         -- On order: COUNT of not-yet-arrived local (2) / Amazon (3) order lines. orderstatus.shopifysku = skumap.code (verified 100%).
@@ -175,8 +182,9 @@ router.get('/', async (req, res) => {
         price: r.price === null ? null : Number(r.price),
         rrp: r.rrp === null ? null : Number(r.rrp),
         local,
-        // {size: localQty} for sizes currently in local stock — drives the client-side "Size XX" filter and the per-size count it
-        // shows. jsonb already parses to an object with numeric values; default to {} so the client never guards for null.
+        // {size: localQty} for EVERY size in skumap (0 for sold-out) — drives the browse card's size chips (greyed at 0) and the
+        // client-side "Size XX" filter. jsonb already parses to an object with numeric values; default to {} so the client never
+        // guards for null.
         localSizes: r.local_sizes || {},
         onOrder: Number(r.order_units) || 0,
         // Total INCLUDES the Birkenstock pre-order book (owner) — a placed Birk order is stock they count on having, since it is the
