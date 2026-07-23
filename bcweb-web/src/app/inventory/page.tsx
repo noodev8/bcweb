@@ -51,6 +51,11 @@ function haystack(r: InvStyleRow): string {
   return `${r.title || ''} ${r.groupid} ${r.segment || ''}`.toLowerCase();
 }
 
+// Escape a user term so it can go inside a RegExp literally (a stray "." or "(" would otherwise be a metachar).
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Normalise a size token for matching, so a typed "5" finds a stored "05" and "41" finds "41".
 function normSize(s: string): string {
   const n = Number.parseFloat(s);
@@ -74,6 +79,10 @@ export default function InventoryPage() {
   const [sizeInput, setSizeInput] = useState('');
   const [sizeFilter, setSizeFilter] = useState<string | null>(null);
   const sizeTarget = useMemo(() => (sizeFilter ? normSize(sizeFilter) : null), [sizeFilter]);
+  // Does the size filter EXCLUDE styles that are sold out in that size? True for the standalone Size box (a "who's got a 41?" browse —
+  // a style with none is noise). FALSE when the size was inferred from a pasted SKU like 0151183-ARIZONA-38: that is a targeted lookup
+  // of ONE style, so we must still show its card (leading with 38, greyed at 0) rather than "No styles match" (owner, 2026-07-23).
+  const [sizeStrict, setSizeStrict] = useState(true);
 
   // CUT: groupids the operator has hidden by hand — the manual trim for a straggler a text step can't drop without over-matching.
   // Purely view state: nothing is written, Restore or Reset brings them back.
@@ -121,11 +130,18 @@ export default function InventoryPage() {
     let out = indexed;
     for (const s of steps) {
       const t = s.term.toLowerCase();
-      out = s.op === 'has'
-        ? out.filter((x) => x.hay.includes(t))
-        : out.filter((x) => !x.hay.includes(t));
+      if (s.op === 'has') {
+        // CONTAINS stays a plain substring — the operator types partials ("ARIZ" must find "Arizona"), so narrowing has to be loose.
+        out = out.filter((x) => x.hay.includes(t));
+      } else {
+        // DOES NOT CONTAIN matches WHOLE WORDS. A plain substring here is a footgun: excluding the colour "SAND" also matched the SAND
+        // inside "SANDALS" and wiped every result (owner, 2026-07-23). \b…\b so an exclusion only drops the word you named, not a longer
+        // word that happens to start with it. Built once per step, not per row.
+        const re = new RegExp(`\\b${escapeRegExp(t)}\\b`);
+        out = out.filter((x) => !re.test(x.hay));
+      }
     }
-    if (sizeTarget !== null) out = out.filter((x) => sizeQtyOf(x.row) > 0);
+    if (sizeTarget !== null && sizeStrict) out = out.filter((x) => sizeQtyOf(x.row) > 0);
     return out.map((x) => x.row);
   }, [indexed, steps, sizeTarget, sizeQtyOf]);
 
@@ -140,12 +156,26 @@ export default function InventoryPage() {
   function onFind(e: React.FormEvent) {
     e.preventDefault();
     const next: FilterStep[] = [];
-    if (contains.trim()) next.push({ op: 'has', term: contains.trim() });
+    // A trailing "-38" / "-42.5" on a groupid-shaped term is a SIZE, not part of the code (operators paste a full SKU like
+    // 0151183-ARIZONA-38 when they mean "that style, in 38"). The groupid never carries the size, so the raw term matches nothing.
+    // Split it off into the Size box: the search then narrows to the style AND each card leads with that size's count / rack (owner,
+    // 2026-07-23). Only fires when the term STARTS with a code (a digit then a dash, i.e. a real groupid), so a hyphen in ordinary
+    // title text isn't mistaken for a size. An explicitly typed Size box always wins over one inferred from the term.
+    let containsTerm = contains.trim();
+    let sizeFromTerm = '';
+    const sizeMatch = containsTerm.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
+    if (sizeMatch) { containsTerm = sizeMatch[1]; sizeFromTerm = sizeMatch[2]; }
+    if (containsTerm) next.push({ op: 'has', term: containsTerm });
     if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
-    const size = sizeInput.trim();
+    const size = sizeInput.trim() || sizeFromTerm;
     if (next.length === 0 && !size) return;
     if (next.length > 0) setSteps((prev) => [...prev, ...next]);
-    if (size) setSizeFilter(size);
+    if (size) {
+      setSizeFilter(size);
+      // Strict (exclude sold-out) only when the size was typed in its own box; a size split off a pasted SKU is a targeted lookup, so
+      // it must not hide the one style it points at just because that size is out.
+      setSizeStrict(!!sizeInput.trim());
+    }
     setContains('');
     setNotContains('');
     setSizeInput('');
@@ -172,6 +202,7 @@ export default function InventoryPage() {
     setNotContains('');
     setSizeInput('');
     setSizeFilter(null);
+    setSizeStrict(true);
     setCut(new Set());
     // Reset also RE-READS the list from the DB, so stock figures are fresh at the start of a new hunt (owner — as in PowerBuilder).
     loadStyles();
@@ -254,7 +285,11 @@ export default function InventoryPage() {
                 </span>
               </>
             )}
-            {sizeFilter && (
+            {/* Only the STRICT size filter (typed in its own box) earns a removable chip here — it actually narrows the list, so its ✕
+                changes the result. A size split off a pasted SKU narrows nothing (it only leads the one card with that size), so a
+                removable "filter" chip would be a no-op affordance — ✕ leaves the same rows on screen (owner, 2026-07-23). That size is
+                shown ON the card instead ("Size 38 — 0 on the shelf"); to drop it, Reset. */}
+            {sizeFilter && sizeStrict && (
               <>
                 <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">
@@ -351,7 +386,10 @@ export default function InventoryPage() {
                 type="button"
                 onClick={() => onCut(r.groupid)}
                 title="Cut from list (Restore or Reset brings it back)"
-                className="absolute right-2 top-2 rounded p-1 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                // Always faintly visible (owner, 2026-07-23) — a muted grey cross so the cut is discoverable without hovering, then
+                // reddens on hover to confirm it's the remove control. The old opacity-0/group-hover made it invisible until the cursor
+                // was over the card, so it read as missing.
+                className="absolute right-2 top-2 rounded p-1 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
               >
                 <XMarkIcon className="h-4 w-4" />
               </button>

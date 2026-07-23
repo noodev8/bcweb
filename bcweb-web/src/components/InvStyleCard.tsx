@@ -197,7 +197,8 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
 
         {/* ---- Face content ---- */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
+          {/* pr-7 reserves the top-right corner for the list's cut cross (page.tsx overlays one there) so the price never sits under it. */}
+          <div className="flex items-start justify-between gap-3 pr-7">
             <div className="min-w-0">
               <div className="truncate font-medium text-slate-800" title={row.title || row.groupid}>
                 {row.title || <span className="text-slate-400">Untitled product</span>}
