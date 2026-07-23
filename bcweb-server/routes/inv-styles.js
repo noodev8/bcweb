@@ -39,6 +39,8 @@ Success Response:
       "title": "Birkenstock Arizona Two-Strap Patent Sandals Black Narrow Fit",  // title.shopifytitle; null if none
       "segment": "ARIZONA-GENERAL",
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
+      "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
+      "rrp": 80.00,                         // safeNumeric(rrp); null likewise. Shown struck-through only when above price.
       "local": 38,                          // SUM(localstock.qty), all states
       "localSizes": { "37": 4, "38": 5, "39": 6 },  // {size: localQty} for in-stock sizes; drives the client "Size XX" filter
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
@@ -58,6 +60,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { safeNumeric } = require('../utils/sql');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -135,6 +138,11 @@ router.get('/', async (req, res) => {
         t.shopifytitle                                        AS title,
         s.segment,
         s.imagename,
+        -- Price + RRP for the card face (owner: "£57" on the card). Legacy character-varying columns that can hold junk, so read via
+        -- safeNumeric (NULL on non-numeric), NEVER a bare ::numeric — same rule as inv-stock.js. rrp only earns its place struck-through
+        -- when it is ABOVE price; the client decides that, we just ship both.
+        ${safeNumeric('s.shopifyprice')}                      AS price,
+        ${safeNumeric('s.rrp')}                               AS rrp,
         COALESCE(loc.units, 0)                                AS local_units,
         COALESCE(loc_by_size.sizes, '{}'::jsonb)              AS local_sizes,
         COALESCE(ord.units, 0)                                AS order_units,
@@ -163,6 +171,9 @@ router.get('/', async (req, res) => {
         title: r.title || null,
         segment: r.segment || null,
         imagename: r.imagename || null,
+        // safeNumeric already rejected junk to NULL, so ship numbers the client formats without parsing.
+        price: r.price === null ? null : Number(r.price),
+        rrp: r.rrp === null ? null : Number(r.rrp),
         local,
         // {size: localQty} for sizes currently in local stock — drives the client-side "Size XX" filter and the per-size count it
         // shows. jsonb already parses to an object with numeric values; default to {} so the client never guards for null.

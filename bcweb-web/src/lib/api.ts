@@ -929,6 +929,10 @@ export interface InvStyleRow {
   title: string | null;
   segment: string | null;
   imagename: string | null;
+  // Live Shopify price + RRP for the card face. Either can be null (junk in the legacy varchar columns → safeNumeric returned NULL);
+  // RRP is only worth showing struck-through when it is above price.
+  price: number | null;
+  rrp: number | null;
   local: number;
   // {size: localQty} for the sizes this style currently has in LOCAL stock (only in-stock sizes present). Powers the "Size XX"
   // filter and the per-size count it shows. Keys are the code's size suffix as stored, so they can carry a leading zero ("05") —

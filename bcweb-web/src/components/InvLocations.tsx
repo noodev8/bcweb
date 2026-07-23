@@ -37,9 +37,6 @@ const STATE_STYLES: Partial<Record<InvLocationState, { label: string; cls: strin
 };
 
 export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow[]; sizeLabel: string }) {
-  // Units, not rows: localstock.qty is not always 1 (see the route header), so one row can be 2 pairs on a single shelf.
-  const units = useMemo(() => rows.reduce((n, r) => n + r.qty, 0), [rows]);
-
   // COLLAPSE duplicate shelf lines for the user view. localstock stores stock inconsistently: two pairs on one shelf can be a single
   // row with qty=2, or two rows with qty=1, depending how they were scanned in. Showing "C3-Front-07 / 1" twice is noise — the
   // operator wants "C3-Front-07 / 2", one line per shelf.
@@ -74,15 +71,8 @@ export default function InvLocations({ rows, sizeLabel }: { rows: InvLocationRow
 
   return (
     <div className="border-t border-slate-200">
-      <div className="flex items-center justify-between px-4 py-2.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          Where the {sizeLabel} is
-        </span>
-        <span className="text-xs text-slate-500">
-          <span className="font-semibold text-slate-700">{units}</span> {units === 1 ? 'unit' : 'units'}
-        </span>
-      </div>
-
+      {/* No header row at all — the highlighted chip names the size, and the per-rack Qty column carries the counts. A "N units"
+          summary line was a whole row for one number (owner, 2026-07-23). Straight to the racks. */}
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
