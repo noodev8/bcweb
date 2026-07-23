@@ -213,11 +213,6 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
                   <span className="text-base font-semibold tabular-nums text-slate-900">£{row.price.toFixed(2)}</span>
                 </div>
               )}
-              {/* On the shelf, not Total: the card answers "have we physically got it". Total (which folds in Amazon + the Birk book)
-                  belongs in the breakdown, a later slice. */}
-              <div className="text-xs text-slate-400">
-                <span className={row.local ? 'font-medium text-slate-600' : ''}>{row.local}</span> on the shelf
-              </div>
             </div>
           </div>
 

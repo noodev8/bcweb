@@ -17,9 +17,9 @@ Guarded by AppShell. Consumes GET /analytics-sales.
 */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { CheckBadgeIcon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSalesReport, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';
 
@@ -54,7 +54,27 @@ const CHANNEL_CHIP: Record<string, { label: string; cls: string }> = {
 
 export default function SalesPage() {
   const { logout } = useAuth();
-  const actions = useProductActions();
+  const pathname = usePathname();
+
+  // Direct, column-aware click behaviour (replaces the shared reprice/copy chooser on this page). The operator told us: don't ask —
+  //   • click the Product cell  -> copy the groupid
+  //   • click the Order cell     -> copy the order number
+  //   • click anything else      -> jump straight to the row's OWN channel pricing page (Shopify rows -> Shopify, Amazon rows -> Amazon).
+  //     A row that isn't Shopify or Amazon (e.g. CM3) has no pricing page here, so a click on it does nothing.
+  // Price pages open in a NEW TAB and carry ?from=<here> so their "← Back" returns to this ledger (same behaviour the old chooser had).
+  const rowAction = useCallback((r: SalesReportRow) => {
+    const from = encodeURIComponent(pathname || '/');
+    if (r.channel === 'SHP' && r.groupid) {
+      window.open(`/pricing/style/${encodeURIComponent(r.groupid)}?from=${from}`, '_blank', 'noopener');
+    } else if (r.channel === 'AMZ') {
+      // SKU-grain: an Amazon row carries its exact code -> deep-link to that size's drill; fall back to a pre-search by groupid.
+      const url = r.code
+        ? `/amz/sku/${encodeURIComponent(r.code)}?from=${from}`
+        : `/amz/find?q=${encodeURIComponent(r.groupid || '')}&from=${from}`;
+      window.open(url, '_blank', 'noopener');
+    }
+    // else: not a priceable channel here — stay put.
+  }, [pathname]);
 
   const [channel, setChannel] = useState<ChannelFilter>('all');
   const [win, setWin] = useState<SalesWindow>('today');
@@ -302,7 +322,7 @@ export default function SalesPage() {
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <SaleRow key={`${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}-${i}`} r={r} actions={actions}
+                    <SaleRow key={`${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}-${i}`} r={r} onAction={rowAction}
                              money={money} pct={pct} fmtDate={fmtDay} />
                   ))}
                 </tbody>
@@ -311,8 +331,6 @@ export default function SalesPage() {
           </>
         )
       )}
-
-      {actions.node}
     </AppShell>
   );
 }
