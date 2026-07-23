@@ -17,6 +17,7 @@ SIZE CHIP = the 2-digit code suffix (owner) — "38", "06" — which is the cano
 keyed by that suffix, so the chip prints the key verbatim. EVERY size shows a chip — sold-out ones (qty 0) greyed IN PLACE, so a
 missing middle size can't slide a bigger size into the gap and read as a different size (owner, 2026-07-23). localSizes now carries the
 full range (0 for sold-out), so the face still needs no fetch. The count rides on a chip only when qty > 1 — a lone "1" is just noise.
+A sold-out chip is still tappable (phase 2): opening it shows the racks panel's "add to a location" control, so stock can be put on it.
 
 SIZE-FILTER LEAD. When the operator has a size filter on ("the customer's a 41"), the whole result set is already narrowed to styles
 that HOLD a 41, so each card LEADS with that size's count — pulled free from localSizes, no fetch — and the matching chip is ringed.
@@ -172,6 +173,13 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     return detail?.sizes.find((x) => normSize(x.eu) === t)?.sizeDisplay || openSize;
   }, [openSize, detail]);
 
+  // The open size's code, for the "add to a location" control — which must work even when the size has no rack rows yet.
+  const openCode = useMemo(() => {
+    if (!openSize) return '';
+    const t = normSize(openSize);
+    return detail?.sizes.find((x) => normSize(x.eu) === t)?.code || '';
+  }, [openSize, detail]);
+
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex gap-4 p-3">
@@ -235,35 +243,29 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
             {sizes.map(([key, baseQty]) => {
               // Prefer a just-edited count over the list snapshot, so a +/- shows on the chip without a page reload.
               const qty = sizeOverride[key] ?? baseQty;
-              if (qty <= 0) {
-                return (
-                  <span
-                    key={key}
-                    title={`No size ${key} on the shelf`}
-                    className="inline-flex items-baseline rounded-md border border-slate-100 bg-slate-50 px-2 py-1 text-sm text-slate-300"
-                  >
-                    <span className="tabular-nums">{key}</span>
-                  </span>
-                );
-              }
               const isOpen = openSize === key;
               const isMatch = matchedKey === key;
+              const soldOut = qty <= 0;
               return (
                 <button
                   key={key}
                   type="button"
                   onClick={() => onTapSize(key)}
-                  title={`Where is size ${key}?`}
+                  // Sold-out sizes stay greyed IN PLACE (so a gap can't read as a different size) but are now TAPPABLE too — opening one
+                  // shows an empty racks panel with the "add to a location" control, so stock can be put on a size that has none.
+                  title={soldOut ? `Size ${key} — none on the shelf (tap to add)` : `Where is size ${key}?`}
                   className={
                     'inline-flex items-baseline gap-1 rounded-md border px-2 py-1 text-sm transition ' +
                     (isOpen
                       ? 'border-brand-500 bg-brand-50 text-brand-800'
-                      : isMatch
-                        ? 'border-brand-300 bg-white text-slate-800 ring-1 ring-brand-200'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+                      : soldOut
+                        ? 'border-slate-100 bg-slate-50 text-slate-300 hover:bg-slate-100 hover:text-slate-500'
+                        : isMatch
+                          ? 'border-brand-300 bg-white text-slate-800 ring-1 ring-brand-200'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
                   }
                 >
-                  <span className="font-semibold tabular-nums">{key}</span>
+                  <span className={soldOut ? 'tabular-nums' : 'font-semibold tabular-nums'}>{key}</span>
                   {qty >= 2 && <span className="text-xs text-slate-400">{qty}</span>}
                 </button>
               );
@@ -293,7 +295,7 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
             {adjustError && (
               <div className="border-t border-slate-200 bg-rose-50 px-4 py-2 text-center text-xs text-rose-700">{adjustError}</div>
             )}
-            <InvLocations rows={openRacks} sizeLabel={openLabel} onAdjust={handleAdjust} />
+            <InvLocations rows={openRacks} sizeLabel={openLabel} code={openCode} onAdjust={handleAdjust} />
           </>
         )
       )}

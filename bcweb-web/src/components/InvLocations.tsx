@@ -23,9 +23,13 @@ C3-Amazon bay can still be picked for a Shopify customer, so greying it out woul
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MinusSmallIcon, PlusSmallIcon } from '@heroicons/react/24/outline';
-import { InvLocationRow, InvLocationState } from '@/lib/api';
+import { getInvLocations, InvLocationRow, InvLocationState } from '@/lib/api';
+
+// Module-level cache: the shelf list is the same for every panel and rarely changes, so the "add to a location" picker fetches it once
+// per session and every card reuses it.
+let LOCATIONS_CACHE: string[] | null = null;
 
 // FREE is deliberately absent: it is the normal state, so badging every row adds noise without information (owner). Only the
 // EXCEPTIONS get a tag — a blank State cell means "free to take", which is the common case and reads faster for it.
@@ -37,12 +41,16 @@ const STATE_STYLES: Partial<Record<InvLocationState, { label: string; cls: strin
   AMZ: { label: 'Amazon', cls: 'bg-sky-50 text-sky-700' },
 };
 
-export default function InvLocations({ rows, sizeLabel, onAdjust }: {
+export default function InvLocations({ rows, sizeLabel, code, onAdjust }: {
   rows: InvLocationRow[];
   sizeLabel: string;
-  // PHASE 2 (owner, 2026-07-23): when provided, each shelf line gets +/- to fix a wrong real-world count. It hands the WHOLE cluster
-  // of localstock ids for that line up to the parent (a shelf line can be several rows), which calls the write endpoint. Absent =
-  // the read-only lookup view. Every location is editable, including Amazon/picked — the operator is in control (owner).
+  // The size's code (e.g. "1005292-ARIZONA-38"). Needed by the "add to a location" control, which must work even when the size has NO
+  // rows yet — so it can't be read off `rows`. Falls back to the first row's code when there is one.
+  code?: string;
+  // PHASE 2 (owner, 2026-07-23): when provided, each shelf line gets +/- to fix a wrong real-world count, plus an "add to a location"
+  // control for shelves this size isn't on yet. +/- hands the WHOLE cluster of localstock ids up to the parent (a shelf line can be
+  // several rows); the add hands an empty id list and a location. Absent = the read-only lookup view. Every location is editable,
+  // including Amazon/picked — the operator is in control (owner).
   onAdjust?: (args: { code: string; location: string; delta: number; ids: string[] }) => Promise<void> | void;
 }) {
   // While a +/- request is in flight, disable the controls so a double-tap can't fire two writes against the same line.
@@ -83,7 +91,43 @@ export default function InvLocations({ rows, sizeLabel, onAdjust }: {
     }
   }
 
-  if (rows.length === 0) {
+  // ---- "Add to a location" (phase 2, slice 2): drop a pair on a shelf this size isn't on yet. ----
+  const codeForAdd = code || rows[0]?.code || '';
+  const [adding, setAdding] = useState(false);
+  const [newLoc, setNewLoc] = useState('');
+  const [locOptions, setLocOptions] = useState<string[]>(LOCATIONS_CACHE || []);
+
+  // Load the shelf list the first time the picker opens; cache it for the rest of the session.
+  useEffect(() => {
+    if (!adding || LOCATIONS_CACHE) return;
+    let alive = true;
+    getInvLocations().then((res) => {
+      if (alive && res.success && res.data) {
+        LOCATIONS_CACHE = res.data.all;
+        setLocOptions(res.data.all);
+      }
+    });
+    return () => { alive = false; };
+  }, [adding]);
+
+  async function addToLocation() {
+    const typed = newLoc.trim();
+    if (!onAdjust || pending || !typed || !codeForAdd) return;
+    // Snap to an existing rack's exact casing if it matches (case-insensitive), so we never fork 'C3-Front-05' into 'C3-FRONT-05'.
+    const location = locOptions.find((l) => l.toLowerCase() === typed.toLowerCase()) || typed;
+    setPending(true);
+    try {
+      await onAdjust({ code: codeForAdd, location, delta: 1, ids: [] });
+      setNewLoc('');
+      setAdding(false);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  // Read-only view with nothing to show keeps the old empty message. With editing on, we still render the panel so the operator can ADD
+  // a location for a size that isn't on any shelf yet.
+  if (rows.length === 0 && !onAdjust) {
     return (
       <div className="border-t border-slate-200 px-4 py-4 text-center text-sm text-slate-400">
         No <span className="font-medium text-slate-500">{sizeLabel}</span> in local stock.
@@ -91,10 +135,17 @@ export default function InvLocations({ rows, sizeLabel, onAdjust }: {
     );
   }
 
+  const listId = `inv-loc-${codeForAdd || 'x'}`;
+
   return (
     <div className="border-t border-slate-200">
-      {/* No header row at all — the highlighted chip names the size, and the per-rack Qty column carries the counts. A "N units"
-          summary line was a whole row for one number (owner, 2026-07-23). Straight to the racks. */}
+      {grouped.length === 0 ? (
+        <div className="px-4 py-3 text-center text-sm text-slate-400">
+          No <span className="font-medium text-slate-500">{sizeLabel}</span> on the shelf yet.
+        </div>
+      ) : (
+      /* No header row at all — the highlighted chip names the size, and the per-rack Qty column carries the counts. A "N units"
+         summary line was a whole row for one number (owner, 2026-07-23). Straight to the racks. */
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -147,6 +198,53 @@ export default function InvLocations({ rows, sizeLabel, onAdjust }: {
           })}
         </tbody>
       </table>
+      )}
+
+      {/* Add to a location — a size can be dropped on any shelf, even one it isn't on yet. Type to filter the real racks (free entry is
+          allowed for a genuinely new shelf); Add mints a free pair there. The datalist gives type-to-filter without a bespoke dropdown. */}
+      {onAdjust && (
+        <div className="border-t border-slate-100 px-4 py-2.5">
+          {adding ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                list={listId}
+                value={newLoc}
+                onChange={(e) => setNewLoc(e.target.value)}
+                autoFocus
+                placeholder="e.g. C3-Front-05"
+                className="w-44 rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+              <datalist id={listId}>
+                {locOptions.map((l) => <option key={l} value={l} />)}
+              </datalist>
+              <button
+                type="button"
+                onClick={addToLocation}
+                disabled={pending || !newLoc.trim()}
+                title={`Add one ${sizeLabel} to this location`}
+                className="rounded-md bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+              >
+                Add a pair
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAdding(false); setNewLoc(''); }}
+                className="rounded-md px-2 py-1 text-sm text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+            >
+              <PlusSmallIcon className="h-4 w-4" /> Add to a location
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

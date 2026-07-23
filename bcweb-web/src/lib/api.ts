@@ -1063,10 +1063,23 @@ export interface InvAdjustResult {
 
 // Phase 2 WRITE — +/- local stock at ONE location for ONE size. `ids` are every localstock row in that (code, location) cluster (the
 // locations panel already holds them). Positive delta adds units, negative removes them; the server audits each change to bclog.
+// `ids` may be EMPTY when adding to a location this size isn't on yet — the server mints a fresh free row from the catalogue.
 export function adjustStock(args: { code: string; location: string; delta: number; ids: string[] }) {
   return request<InvAdjustResult>(
     { url: '/inv-adjust', method: 'POST', data: args },
     (b) => ({ added: b.added ?? 0, removed: b.removed ?? 0, units: b.units ?? 0, local: b.local ?? 0 })
+  );
+}
+
+// Phase 2 — the real shelf locations, grouped by area, for the "add to a location" picker. Fetched once and cached client-side.
+export interface InvLocationsData {
+  areas: { area: string; locations: string[] }[];
+  all: string[];
+}
+export function getInvLocations() {
+  return request<InvLocationsData>(
+    { url: '/inv-locations', method: 'GET' },
+    (b) => ({ areas: (b.areas as InvLocationsData['areas']) || [], all: (b.all as string[]) || [] })
   );
 }
 

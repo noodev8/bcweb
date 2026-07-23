@@ -17,6 +17,10 @@ ADD (delta > 0): the mixed-qty store means we don't have to touch existing rows 
 a cluster row so it inherits that line's location/ordernum/allocated/supplier/brand/code and joins the same cluster (owner: "if easier
 to add a row instead of increasing qty, you can"). id is minted as WEB-<uuid> (localstock.id is a varchar PK; the legacy WS-style id is
 a workstation tag we no longer need — the login name is the audit trail now).
+  ADD TO A NEW LOCATION (delta > 0, ids EMPTY — slice 2): the operator is dropping a pair on a shelf this size isn't on yet (via the
+  location picker, or a zeroed line's "+"). There is no cluster to clone, so the row is built from the catalogue (skumap -> skusummary
+  for groupid/supplier/brand) as a plain free/unallocated placement, pickorder 100. This is the one path that creates a placement
+  somewhere new.
 
 REMOVE (delta < 0): CAREFUL, because the cluster can be a qty=1 row next to a qty=3 row. We walk the cluster smallest-first and peel
 |delta| units off: decrement a row when it has more than we still need, else soft-delete it (deleted=1) and carry on. Capped at what
@@ -37,7 +41,8 @@ Request Payload:
   "code": "1005292-ARIZONA-40",     // required — the size code
   "location": "C3-Front-22",        // required — the shelf line being adjusted
   "delta": -1,                      // required — non-zero integer. + adds units at this location, - removes them.
-  "ids": ["WS7-...", "WS1-..."]     // required — every localstock id in this (code, location, state) cluster (from the panel)
+  "ids": ["WS7-...", "WS1-..."]     // the localstock ids in this (code, location) cluster (from the panel). REQUIRED to remove; may be
+                                    // EMPTY to add to a location this size isn't on yet (a fresh row is minted from the catalogue).
 }
 
 Success Response:
@@ -81,9 +86,10 @@ router.post('/', async (req, res) => {
     if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > MAX_DELTA) {
       return res.json({ return_code: 'MISSING_FIELDS', message: `delta must be a non-zero integer, at most ${MAX_DELTA} in magnitude` });
     }
-    // Slice 1 adjusts EXISTING lines only, so we always have the cluster's ids. Adding to a brand-new location (no ids) is slice 2.
-    if (ids.length === 0) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'ids must list the localstock rows on this line' });
+    // Removing needs the cluster's ids (which rows to peel from). ADDING to a location does not — ids are empty when the operator
+    // drops a pair on a shelf this size isn't on yet (slice 2), where we mint a fresh free/unallocated row from scratch.
+    if (delta < 0 && ids.length === 0) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'ids are required to remove stock' });
     }
 
     // The logged-in operator's display name — resolved server-side by verifyToken, never trusted from the client (CLAUDE.md).
@@ -95,51 +101,71 @@ router.post('/', async (req, res) => {
       const stampRes = await client.query(`SELECT to_char(now() AT TIME ZONE 'Europe/London','YYYYMMDD HH24:MI:SS') AS stamp`);
       const stamp = stampRes.rows[0].stamp;
 
-      // The live cluster: only the given ids that are still this code+location and not deleted. Smallest qty first, so a -1 clears a
-      // stray qty=1 row before nibbling a big one. Row-locked so a concurrent adjust on the same line can't double-spend units.
-      const clusterRes = await client.query(
-        `SELECT id, qty, ordernum, allocated, groupid, supplier, brand, pickorder, assigned
-         FROM localstock
-         WHERE id = ANY($1::text[]) AND code = $2 AND location = $3 AND COALESCE(deleted, 0) = 0
-         ORDER BY qty ASC, id
-         FOR UPDATE`,
-        [ids, code, location]
-      );
-      const cluster = clusterRes.rows;
-      if (cluster.length === 0) {
-        // Every id we were given is gone (another operator cleared the line first). Nothing to add-onto or remove-from.
-        return null;
-      }
-
       let added = 0;
       let removed = 0;
 
-      if (delta > 0) {
-        // Clone a cluster row so the new units inherit this line's exact state (location/ordernum/allocated/supplier/brand/pickorder),
-        // then override only what makes it a fresh "just added" row: a minted id, qty=delta, the new stamp, not-deleted.
-        const t = cluster[0];
+      if (delta > 0 && ids.length === 0) {
+        // ADD TO A (POSSIBLY NEW) LOCATION — no existing row to clone (slice 2). A fresh placement is takeable free stock, so it is
+        // always ordernum '#FREE' / allocated 'unallocated'; groupid/supplier/brand come from the catalogue (skumap -> skusummary),
+        // pickorder defaults to the common 100, assigned NULL. This is the only path that creates a placement somewhere new — and it
+        // is also what a zeroed line's "+" uses to come back.
+        const meta = await client.query(
+          `SELECT s.groupid, s.supplier, s.brand FROM skumap m JOIN skusummary s ON s.groupid = m.groupid WHERE m.code = $1 LIMIT 1`,
+          [code]
+        );
+        if (meta.rows.length === 0) return null; // unknown code — nothing to hang a row off
+        const { groupid, supplier, brand } = meta.rows[0];
         const newId = `WEB-${crypto.randomUUID()}`;
         await client.query(
           `INSERT INTO localstock (id, updated, ordernum, location, groupid, code, supplier, qty, brand, deleted, assigned, pickorder, allocated)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12)`,
-          [newId, stamp, t.ordernum, location, t.groupid, code, t.supplier, delta, t.brand, t.assigned, t.pickorder, t.allocated]
+           VALUES ($1, $2, '#FREE', $3, $4, $5, $6, $7, $8, 0, NULL, 100, 'unallocated')`,
+          [newId, stamp, location, groupid, code, supplier, delta, brand]
         );
         added = delta;
       } else {
-        // Peel |delta| units off the cluster, smallest row first. Decrement a row that has more than we still need; otherwise
-        // soft-delete it and carry the remainder onto the next row. Capped at what the cluster holds.
-        let remaining = Math.abs(delta);
-        for (const r of cluster) {
-          if (remaining <= 0) break;
-          if (r.qty > remaining) {
-            await client.query(`UPDATE localstock SET qty = qty - $1, updated = $2 WHERE id = $3`, [remaining, stamp, r.id]);
-            remaining = 0;
-          } else {
-            await client.query(`UPDATE localstock SET deleted = 1, updated = $1 WHERE id = $2`, [stamp, r.id]);
-            remaining -= r.qty;
-          }
+        // Existing shelf line: the live cluster is the given ids still at this code+location and not deleted. Smallest qty first, so a
+        // -1 clears a stray qty=1 row before nibbling a big one. Row-locked so a concurrent adjust can't double-spend units.
+        const clusterRes = await client.query(
+          `SELECT id, qty, ordernum, allocated, groupid, supplier, brand, pickorder, assigned
+           FROM localstock
+           WHERE id = ANY($1::text[]) AND code = $2 AND location = $3 AND COALESCE(deleted, 0) = 0
+           ORDER BY qty ASC, id
+           FOR UPDATE`,
+          [ids, code, location]
+        );
+        const cluster = clusterRes.rows;
+        if (cluster.length === 0) {
+          // Every id we were given is gone (another operator cleared the line first). Nothing to add-onto or remove-from.
+          return null;
         }
-        removed = Math.abs(delta) - remaining;
+
+        if (delta > 0) {
+          // Add onto an existing line: clone a cluster row so the new units inherit this line's exact state
+          // (location/ordernum/allocated/supplier/brand/pickorder), overriding only id, qty and the stamp.
+          const t = cluster[0];
+          const newId = `WEB-${crypto.randomUUID()}`;
+          await client.query(
+            `INSERT INTO localstock (id, updated, ordernum, location, groupid, code, supplier, qty, brand, deleted, assigned, pickorder, allocated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12)`,
+            [newId, stamp, t.ordernum, location, t.groupid, code, t.supplier, delta, t.brand, t.assigned, t.pickorder, t.allocated]
+          );
+          added = delta;
+        } else {
+          // Peel |delta| units off the cluster, smallest row first. Decrement a row that has more than we still need; otherwise
+          // soft-delete it and carry the remainder onto the next row. Capped at what the cluster holds.
+          let remaining = Math.abs(delta);
+          for (const r of cluster) {
+            if (remaining <= 0) break;
+            if (r.qty > remaining) {
+              await client.query(`UPDATE localstock SET qty = qty - $1, updated = $2 WHERE id = $3`, [remaining, stamp, r.id]);
+              remaining = 0;
+            } else {
+              await client.query(`UPDATE localstock SET deleted = 1, updated = $1 WHERE id = $2`, [stamp, r.id]);
+              remaining -= r.qty;
+            }
+          }
+          removed = Math.abs(delta) - remaining;
+        }
       }
 
       // Audit row — legacy phrasing, login name in place of workstation. x<n> suffix only when more than one unit moved, so a normal
