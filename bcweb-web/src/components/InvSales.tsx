@@ -28,7 +28,7 @@ const CHANNEL_STYLES: Record<string, string> = {
   CM3: 'bg-violet-50 text-violet-700',
 };
 
-// "18 Jul" — short, because the year is noise on a most-recent-20 list where everything is within weeks.
+// "18 Jul" — short, because the year is noise on a most-recent-5 list where everything is within weeks.
 function shortDate(iso: string | null): string {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-').map(Number);
@@ -48,7 +48,7 @@ export default function InvSales({ groupid }: { groupid: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await getInvSales(groupid, 20);
+    const res = await getInvSales(groupid, 5);
     if (res.success && res.data) {
       setRows(res.data.rows);
       setTruncated(res.data.truncated);

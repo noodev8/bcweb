@@ -11,7 +11,9 @@ Purpose: A reference report on the Amazon drill — the recent RAW Amazon sales 
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+// DEFAULT OPEN on the drill (mirrors the Shopify SalesList's `defaultOpen`, owner, 2026-07-23): recent sales is the report the operator
+// goes straight to, so it starts expanded and fetches on mount rather than waiting for a click.
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getAmzSales, AmzSaleRow } from '@/lib/api';
 import RowsToggle, { PREVIEW_ROWS } from '@/components/RowsToggle';
@@ -27,9 +29,9 @@ function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
 
-export default function AmzSales({ code }: { code: string }) {
+export default function AmzSales({ code, defaultOpen = false }: { code: string; defaultOpen?: boolean }) {
   const { logout } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +56,12 @@ export default function AmzSales({ code }: { code: string }) {
       setError(res.error || 'Failed to load sales');
     }
   }
+
+  // Auto-load when it starts open (defaultOpen). Guarded so it fires once.
+  useEffect(() => {
+    if (open && !loaded && !loading) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function toggle() {
     const next = !open;

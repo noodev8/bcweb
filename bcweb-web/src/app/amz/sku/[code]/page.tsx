@@ -232,15 +232,23 @@ function DrillContent() {
             />
           </section>
 
+          {/* Recent sales — the report the operator goes straight to. Open by default and up top, mirroring the Shopify drill. */}
+          <AmzSales key={`sales-${reloadKey}`} code={code} defaultOpen />
+
+          {/* Price history — the other main report, high but collapsed. */}
+          <AmzHistory key={`hist-${reloadKey}`} code={code} />
+
+          {/* Supporting detail — the evidence blocks that were being skipped, demoted below a divider but still to hand. */}
+          <div className="flex items-center gap-3 pt-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Supporting detail</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
           {/* Evidence — the read-only case for a decision: velocity trend + price-band resistance. */}
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <VelocityBars weeks={data.weeks} />
             <PriceBands bands={data.bands} currentPrice={data.header.price} />
           </section>
-
-          {/* Reference reports (collapsible, lazy). Keyed on reloadKey so an apply remounts them (collapsed) to re-fetch with the change. */}
-          <AmzSales key={`sales-${reloadKey}`} code={code} />
-          <AmzHistory key={`hist-${reloadKey}`} code={code} />
         </div>
       )}
     </AppShell>
