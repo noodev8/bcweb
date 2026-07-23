@@ -379,38 +379,57 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------
-// One sale line. Clickable -> the cross-module reprice/copy chooser. Amazon rows pass their exact SKU code so the Amazon action
-// deep-links straight to that size's drill; Shopify/CM3 use the resolved groupid. Returns render red (negative qty + profit).
+// One sale line — column-aware clicks (no chooser menu, owner 2026-07-23):
+//   • Channel badge -> the row's own channel pricing page    • Product cell -> copy groupid    • Order cell -> copy order number.
+// Every other cell does NOTHING (owner: don't send them away from a click with no action). A non-priceable channel (not SHP/AMZ)
+// leaves even the badge inert. Returns render red (negative qty + profit).
 // -------------------------------------------------------------------------------------------------------------------------------
-function SaleRow({ r, actions, money, pct, fmtDate }: {
+function SaleRow({ r, onAction, money, pct, fmtDate }: {
   r: SalesReportRow;
-  actions: ReturnType<typeof useProductActions>;
+  onAction: (r: SalesReportRow) => void;
   money: (v: number | null) => string;
   pct: (v: number | null) => string;
   fmtDate: (d: string | null) => string;
 }) {
   const chip = CHANNEL_CHIP[r.channel] ?? { label: r.channel, cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
   const isReturn = r.qty < 0;
-  const actionKey = r.groupid || r.code || '';
   const profitCls = r.profit === null ? 'text-slate-400' : r.profit < 0 ? 'text-rose-600' : 'text-slate-700';
+  const priceable = (r.channel === 'SHP' && !!r.groupid) || r.channel === 'AMZ';
+
+  // Transient "Copied" flag on whichever copy cell was last clicked.
+  const [copied, setCopied] = useState<null | 'groupid' | 'order'>(null);
+  const copy = (key: 'groupid' | 'order', value: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 900);
+    }).catch(() => {});
+  };
+
+  // The channel badge is the only cell that navigates (and only when priceable). Everything except the copy cells is inert.
+  const go = () => priceable && onAction(r);
+
+  const groupKey = r.groupid || r.code || '';
 
   return (
     <tr
-      onClick={(e) => actionKey && actions.open(e, actionKey, { title: r.productname, amzCode: r.channel === 'AMZ' ? r.code : null, ordernum: r.ordernum })}
-      className={'cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ' + (isReturn ? 'bg-rose-50/40' : '')}
-      title="Click to reprice or copy"
+      className={'border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ' + (isReturn ? 'bg-rose-50/40' : '')}
     >
       <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">
         {fmtDate(r.solddate)}
         {r.ordertime && <span className="ml-2 text-xs text-slate-400">{r.ordertime}</span>}
       </td>
       <td className="px-4 py-2.5">
-        <span className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls}>{chip.label}</span>
+        <span onClick={go}
+              className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls + (priceable ? ' cursor-pointer hover:brightness-95' : '')}
+              title={priceable ? 'Open its pricing page' : undefined}>{chip.label}</span>
       </td>
-      <td className="px-4 py-2.5">
+      <td onClick={() => groupKey && copy('groupid', groupKey)}
+          className={'px-4 py-2.5 ' + (groupKey ? 'cursor-pointer' : '')}
+          title={groupKey ? 'Click to copy the groupid' : undefined}>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs tracking-tight text-slate-900">{r.groupid || r.code || '—'}</span>
+          <span className="font-mono text-xs tracking-tight text-slate-900">{groupKey || '—'}</span>
           {r.size && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{r.size}</span>}
+          {copied === 'groupid' && <span className="text-xs font-medium text-green-600">Copied</span>}
         </div>
         <div className="max-w-[20rem] truncate text-xs text-slate-400">{r.productname || 'Untitled'}</div>
       </td>
@@ -418,7 +437,12 @@ function SaleRow({ r, actions, money, pct, fmtDate }: {
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
       <td className={'px-3 py-2.5 text-right font-medium tabular-nums ' + profitCls}>{money(r.profit)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.marginPct)}</td>
-      <td className="px-4 py-2.5 whitespace-nowrap text-xs text-slate-400">{r.ordernum || '—'}</td>
+      <td onClick={() => r.ordernum && copy('order', r.ordernum)}
+          className={'px-4 py-2.5 whitespace-nowrap text-xs text-slate-400 ' + (r.ordernum ? 'cursor-pointer' : '')}
+          title={r.ordernum ? 'Click to copy the order number' : undefined}>
+        {r.ordernum || '—'}
+        {copied === 'order' && <span className="ml-1.5 font-medium text-green-600">Copied</span>}
+      </td>
     </tr>
   );
 }
