@@ -214,7 +214,7 @@ function AmzFindContent() {
                     onChange={(c) => toggleAll(results.map((r) => r.code), c)}
                   />
                 </th>
-                <th className="px-4 py-2 font-medium">SKU (size)</th>
+                <th className="px-4 py-2 font-medium">Code</th>
                 <th className="px-4 py-2 font-medium">Product</th>
                 <th className="px-4 py-2 font-medium">Segment</th>
                 <th className="px-4 py-2 text-right font-medium">Price</th>

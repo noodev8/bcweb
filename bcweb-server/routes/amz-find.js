@@ -4,15 +4,17 @@ API Route: amz_find
 =======================================================================================================================================
 Method: GET
 Purpose: Direct SKU search for the Amazon Pricing module (the mirror of Shopify's pricing-find; docs/amz-pricing-spec.md). Matches a search
-         term against the SKU code, the groupid, OR the human-readable title (title.shopifytitle — NOT the overloaded colour tag), across
-         ALL styles (segmented or not), so the operator can jump straight to a size's drill without going through segment -> list.
+         term against the internal code, the FULL Amazon Seller SKU (a.sku — internal `code` PLUS the trailing supplier suffix, e.g.
+         'JLH455-CHARL-BLACK-04-2606'; operators paste this straight from Seller Central), the groupid, OR the human-readable title
+         (title.shopifytitle — NOT the overloaded colour tag), across ALL styles (segmented or not), so the operator can jump straight to a
+         size's drill without going through segment -> list.
 
          SKU-grain: a groupid match returns every size under it (each is its own priceable SKU), so results can fan out — capped at 50.
          Any SKU with an amzfeed row is searchable — un-segmented styles included (their `segment` comes back null); this is a deliberate
          "jump to any SKU" escape hatch, NOT limited to styles in a managed segment. Requires auth.
 =======================================================================================================================================
 Request Query Params:
-  term (string, required) - free text; matched with ILIKE %term% against code, groupid and shopifytitle
+  term (string, required) - free text; matched with ILIKE %term% against code, sku (full Amazon Seller SKU), groupid and shopifytitle
 
 Success Response:
 {
@@ -64,7 +66,7 @@ router.get('/', async (req, res) => {
       FROM amzfeed a
       LEFT JOIN skusummary sk ON sk.groupid = a.groupid
       LEFT JOIN title t ON t.groupid = a.groupid
-      WHERE a.code ILIKE $1 OR a.groupid ILIKE $1 OR t.shopifytitle ILIKE $1
+      WHERE a.code ILIKE $1 OR a.sku ILIKE $1 OR a.groupid ILIKE $1 OR t.shopifytitle ILIKE $1
       ORDER BY a.groupid, a.code
       LIMIT 50
     `, [like]);
