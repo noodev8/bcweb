@@ -48,12 +48,21 @@ module.exports = {
     locationId: process.env.SHOPIFY_LOCATION_ID || ''
   },
 
-  // Google Merchant Center Content API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
+  // Google Merchant Center Merchant API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
   // Google Shopping/ads would show the old price until the next nightly C:\scripts\merchant-feed\merchant_feed.py --upload cron run.
   // Same service-account credential the (currently cron-disabled, --no-google) C:\scripts\price_update.py already uses. Optional
   // feature like onecom/shopify above: not validated at boot; utils/googleMerchant.js checks these are present before it does anything.
+  //
+  // The push is now done in-process in Node (utils/googleAuth.js signs a service-account JWT with the built-in crypto module and caches
+  // the access token), replacing the old shell-out to scripts/google-price-push/push_google_price.py — that spawned a fresh Python
+  // interpreter (heavy cold-start) on every apply. supplementalDatasource / contentLanguage / feedLabel mirror the same env vars the
+  // Python helper read: the price-only override is written into an API-type SUPPLEMENTAL data source, matched on (offerId, contentLanguage,
+  // feedLabel). Defaults 'en' / 'GB' match the primary SFTP feed (online:en:GB:<googleid>).
   google: {
     merchantId: process.env.GOOGLE_MERCHANT_ID || '',
-    credentialsJson: process.env.GOOGLE_MERCHANT_CREDENTIALS_JSON || ''
+    credentialsJson: process.env.GOOGLE_MERCHANT_CREDENTIALS_JSON || '',
+    supplementalDatasource: process.env.GOOGLE_SUPPLEMENTAL_DATASOURCE || '',
+    contentLanguage: process.env.GOOGLE_CONTENT_LANGUAGE || 'en',
+    feedLabel: process.env.GOOGLE_FEED_LABEL || 'GB'
   }
 };

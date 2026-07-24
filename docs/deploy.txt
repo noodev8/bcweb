@@ -38,28 +38,33 @@ The VPS is otherwise pure Node, so this needs a one-time setup on the server:
 When you deploy this the first time, ask Claude to help wire up the Python env + verify the button end-to-end.
 
 
-== Python (Google Merchant real-time price push) -- MIGRATED to the MERCHANT API on 2026-07-21
-   (the old Content API for Shopping is discontinued by Google on 2026-08-18)
-Applying a Shopify Pricing price (POST /pricing-apply, W1) shells out to a Python helper so Google Merchant Center's price
-doesn't lag a full day behind the price change (the feed otherwise only refreshes via the nightly C:\scripts\merchant-feed\
-merchant_feed.py --upload cron):
-  bcweb-server/scripts/google-price-push/push_google_price.py
-Uses the SAME PYTHON_BIN / venv as the Amazon upload feature above. TO DEPLOY THE MIGRATION ON THE VPS (do the main
-rsync deploy first so the new files land, then):
-  1. Install the new libs into the prod venv (replaces the old google-api-python-client Content API client):
-       /apps/production/bcweb-server/venv/bin/pip install -r /apps/production/bcweb-server/scripts/google-price-push/requirements.txt
-  2. Add ONE new line to the prod bcweb-server/.env (the supplemental data source, created once on 2026-07-21):
-       GOOGLE_SUPPLEMENTAL_DATASOURCE=10688724635
-     GOOGLE_MERCHANT_ID + GOOGLE_MERCHANT_CREDENTIALS_JSON are already present (same service-account creds) and carry over unchanged.
-  3. pm2 restart bcweb-prod as usual, then verify by running the helper directly against a live-on-Google style
-     (expect JSON like {"updated":14,"failed":0,"total":14}; it re-pushes the CURRENT price, so it changes no real price):
-       /apps/production/bcweb-server/venv/bin/python /apps/production/bcweb-server/scripts/google-price-push/push_google_price.py 0051701-ARIZONA
-  - the scripts/google-price-push/ folder must survive the rsync (only 'docs' etc. are excluded today)
-ONE-TIME ACCOUNT SETUP -- ALREADY DONE 2026-07-21, DO NOT REPEAT and do NOT run per-machine:
-  - GCP project merchant-feed-api-462809 registered with merchant account 124941872 (register_gcp.py, human OAuth --
-    Google forbids service accounts from this registration). "Merchant API" enabled in the Cloud project.
-  - Supplemental data source created (create_supplemental_datasource.py) -> id 10688724635. These are account-level and permanent.
-The old Content API helper is kept as push_google_price.contentapi.bak for instant rollback -- delete it after the new path
-has a few clean days in production.
-This push is best-effort -- a failure here never blocks or rolls back the price already saved to the DB, and the nightly feed run
-is still the eventual fallback. Ask Claude to help verify it end-to-end the first time you deploy this.
+== Google Merchant price sync -- NOW IN-PROCESS NODE + a periodic SWEEP (ported off Python, 2026-07-24)
+No Python, no venv, no google-price-push folder anymore. utils/googleMerchant.js pushes a salePrice-only supplemental override
+to the Merchant API (products/v1) in-process; auth is utils/googleAuth.js (service-account JWT signed with Node's built-in crypto,
+access token cached ~1h). Google is DECOUPLED from the apply: POST /pricing-apply just logs the change to price_change_log; a cron
+SWEEP (scripts/google-price-sweep.js) sends the un-sent ones every ~2h through the day. Nightly merchant_feed.py --upload is the backstop.
+
+Env (unchanged -- already in prod .env; NO new vars to add):
+  GOOGLE_MERCHANT_ID, GOOGLE_MERCHANT_CREDENTIALS_JSON, GOOGLE_SUPPLEMENTAL_DATASOURCE=10688724635
+  (optional GOOGLE_CONTENT_LANGUAGE=en / GOOGLE_FEED_LABEL=GB default to en/GB to match the feed -- leave unset)
+
+DEPLOY STEPS (after the main rsync + npm install + pm2 restart above):
+  1. Apply the DB migration in pgAdmin against brookfield_prod -- adds the sweep's queue marker AND backfills existing rows to now()
+     so the first sweep only sends NEW changes (not the whole price history):
+       bcweb-server/migrations/20260724_price_change_log_google_pushed_at.sql
+  2. Schedule the sweep in cron -- every 2h through the working day, NOT at night.  crontab -e :
+       0 8-20/2 * * *  cd /apps/production/bcweb-server && /usr/bin/node scripts/google-price-sweep.js >> /var/log/bcweb-google-sweep.log 2>&1
+     - fix the node path to `which node` on the box; MUST cd into bcweb-server first (so .env + relative requires resolve).
+  3. Smoke test: make a pricing change in the UI, then run once by hand:
+       cd /apps/production/bcweb-server && node scripts/google-price-sweep.js
+     Expect:  [google-sweep] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
+
+ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine:
+  - GCP project registered with merchant account 124941872; "Merchant API" enabled in the Cloud project.
+  - Supplemental data source id 10688724635 (account-level, permanent).
+  - The supplemental source is LINKED into the PRIMARY feed's defaultRule.takeFromDataSources as
+    [{supplementalDataSourceName: accounts/124941872/dataSources/10688724635}, {self:true}] (done 2026-07-24). WITHOUT this link
+    Google accepts the override inserts (HTTP 200) but silently NEVER merges them. To roll back the whole feature: PATCH the primary
+    data source's default rule back to [{self:true}] (updateMask = primary_product_data_source.default_rule -- snake_case; camelCase
+    is silently a no-op). Only salePrice is overridden, so the primary feed's price (RRP) is preserved.
+This push is best-effort -- a failure leaves the change queued for the next sweep, and the nightly feed run is the ultimate fallback.

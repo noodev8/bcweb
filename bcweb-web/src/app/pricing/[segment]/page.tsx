@@ -167,7 +167,7 @@ function SegmentContent() {
       if (res.success && res.data) {
         applied++;
         // The DB price is saved either way; a failed live push (Shopify hard, Google soft) is noted so the operator can re-check those.
-        if ((res.data.shopify && res.data.shopify.pushed === false) || (res.data.google && res.data.google.pushed === false)) pushIssues++;
+        if (res.data.shopify && res.data.shopify.pushed === false) pushIssues++;   // Google is decoupled (server sweep) — only Shopify can fail here
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
       setProgress({ done: i + 1, total: targets.length });

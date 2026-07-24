@@ -120,15 +120,8 @@ function DrillContent() {
         setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Shopify${push.message ? `: ${push.message}` : ''}. Press Apply again to retry.` });
         return;
       }
-      // Google Merchant push, unlike Shopify, has a nightly fallback (merchant_feed.py --upload), so a failure here doesn't block the
-      // flow — but the owner still wants it flagged if it happens (null = not live on Google, nothing to push — no note).
-      const googlePush = res.data.google;
-      if (googlePush && googlePush.pushed === false) {
-        setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Google Merchant${googlePush.message ? `: ${googlePush.message}` : ''} (tonight's feed run will still catch it).` });
-        return;
-      }
-      // Success on every channel that applied. Deliberately a single plain "Saved" — we don't spell out Shopify vs Google (both pushed
-      // silently) so the operator isn't left wondering why only one channel is named. Errors above are the only per-channel callouts.
+      // Google is decoupled — a periodic server sweep (scripts/google-price-sweep.js) pushes this change to Google Merchant later, so
+      // there's nothing to report here (and no per-Google failure to surface). The plain "Saved" covers the DB + live Shopify push.
       setNotice({ kind: 'ok', text: `Saved £${res.data.new_price}.${reviewMsg}${warn}` });
       await load(true);
       setReloadKey((k) => k + 1);

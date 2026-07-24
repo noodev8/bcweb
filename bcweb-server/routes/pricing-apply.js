@@ -20,10 +20,10 @@ Rules enforced here:
     (utils/shopify.js -> pushIfLive), exactly like the Add/Modify module's product-price route. Setting the nightly-sync flag too
     would double-push (once now, once overnight). The push is best-effort and runs AFTER the DB write commits (owner decision:
     "pure direct push" — on failure we surface it in the response and the operator re-Applies; there is no nightly fallback).
-  - Same reasoning applies to Google: right after the Shopify push, this route also pushes the new price to Google Merchant Center's
-    Content API (utils/googleMerchant.js -> pushIfLive), so Google Shopping/ads doesn't show a stale price until the next nightly
-    C:\scripts\merchant-feed\merchant_feed.py --upload cron run. Best-effort, never blocks/rolls back the DB write; only fires when
-    the style is live on Google (skusummary.googlestatus=1 AND shopify=1) and Google creds are configured.
+  - Google is DECOUPLED (2026-07-24): this route does NOT push to Google. The change is logged to price_change_log; a periodic sweep
+    (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) sends un-sent SHP changes to Google Merchant Center in one
+    deduped pass and stamps price_change_log.google_pushed_at. Keeps Apply fast when thrashing through many changes; nightly
+    merchant_feed.py --upload is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
 =======================================================================================================================================
@@ -43,16 +43,12 @@ Success Response:
   "old_price": 36.95,             // previous numeric price (null if none)
   "next_review": "2026-07-11",    // CURRENT_DATE + reviewDays, or null when review was None / left untouched
   "warnings": ["ABOVE_RRP"],       // any non-blocking flags (ABOVE_RRP); [] if none
-  "shopify": { "pushed": true, "isNew": false, "variantCount": 11 },  // direct Shopify push outcome (see below); null if not live
-  "google": { "pushed": true, "updated": 11, "failed": 0, "total": 11 }  // direct Google Merchant push outcome (see below); null if not applicable
+  "shopify": { "pushed": true, "isNew": false, "variantCount": 11 }  // direct Shopify push outcome (see below); null if not live
 }
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
 { pushed:true, ... } = the new price reached Shopify; { pushed:false, error, message } = DB save stands but the push failed (retry Apply).
-Google push outcome (`google` field): null = legitimately nothing to push — the style is NOT live on Google (skusummary.googlestatus != 1
-/ shopify != 1) or has no googleid mapped yet; { pushed:true, updated, failed, total } = ran (a groupid can have multiple googleids, one per
-size — failed/total > 0 means some sizes' pushes errored, but the DB price stands either way); { pushed:false, error:'GOOGLE_NOT_CONFIGURED' }
-= the style IS live on Google but the server lacks Content API creds so the push was SKIPPED (surfaced, not hidden as a null); { pushed:false,
-error:'GOOGLE_PUSH_FAILED' } = the run failed. In every failure case the DB price stands and the nightly merchant_feed.py --upload catches it.
+Google: NOT in this response — Google is decoupled. The change is logged to price_change_log and sent to Google by the periodic sweep
+(scripts/google-price-sweep.js); the nightly merchant_feed.py --upload is the backstop.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -75,7 +71,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
-const googleMerchant = require('../utils/googleMerchant');
+// Google is NOT pushed here — it's decoupled to the periodic sweep (scripts/google-price-sweep.js). See the push section below.
 
 router.use(verifyToken);
 
@@ -190,9 +186,10 @@ router.post('/', async (req, res) => {
     // Owner decision: no shopifychange fallback — a failure is surfaced here and the operator re-Applies (productSet is idempotent).
     const shopifyResult = await shopify.pushIfLive(groupid);
 
-    // Push the new price to Google Merchant Center NOW too (best-effort, same timing/semantics as the Shopify push above). Without
-    // this, Google Shopping/ads would show the old price until the next nightly merchant_feed.py --upload cron run (utils/googleMerchant.js).
-    const googleResult = await googleMerchant.pushIfLive(groupid);
+    // Google is DECOUPLED (2026-07-24): this route no longer pushes to Google Merchant Center. The change is already recorded in
+    // price_change_log above; the periodic sweep (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) picks up un-sent
+    // SHP changes, pushes each Google-live style's CURRENT price ONCE (dedup), and stamps price_change_log.google_pushed_at. This keeps
+    // Apply fast when thrashing through many changes; the nightly merchant_feed.py --upload remains the ultimate backstop.
 
     return res.json({
       return_code: 'SUCCESS',
@@ -201,8 +198,7 @@ router.post('/', async (req, res) => {
       old_price: oldPrice,
       next_review: nextReviewIso,
       warnings,
-      shopify: shopifyResult,
-      google: googleResult
+      shopify: shopifyResult
     });
   } catch (err) {
     logger.error('[pricing-apply] error:', err.message);

@@ -199,7 +199,9 @@ export interface ProductDetail {
   sizes: ProductSize[];   // one row per variant (skumap)
 }
 export interface LoginData { token: string; display_name: string; }
-export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; google?: GooglePushResult | null; }
+// No `google` field: pricing-apply is decoupled from Google (a periodic server sweep pushes SHP changes to Google Merchant — see
+// scripts/google-price-sweep.js). Only the Shopify push happens inline. (Add/Modify's updateProductPrice still returns a google result.)
+export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; }
 export interface ParkData { groupid: string; next_review: string; }
 
 // =============================================================================================================================
@@ -533,7 +535,7 @@ export function generateAmazonUpload(groupid: string) {
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number | null, note?: string) {
   return request<ApplyData>(
     { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays, note } },
-    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null, google: b.google ?? null })
+    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null })
   );
 }
 
