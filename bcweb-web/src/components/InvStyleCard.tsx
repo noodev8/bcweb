@@ -214,6 +214,22 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
                   <span className="text-base font-semibold tabular-nums text-slate-900">£{row.price.toFixed(2)}</span>
                 </div>
               )}
+              {/* Stock + sales indicators — the two numbers a drop call weighs against each other, tucked under the price so they cost no
+                  vertical row of their own. Stock = local + Amazon (hover splits it); Sales = units sold in the last 30 days, all channels. */}
+              <div className="mt-1 flex flex-wrap justify-end gap-1">
+                <span
+                  title={`${row.local} local + ${row.amazon} at Amazon`}
+                  className="inline-flex items-baseline gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
+                >
+                  <span className="font-semibold tabular-nums text-slate-800">{row.local + row.amazon}</span> in stock
+                </span>
+                <span
+                  title="Units sold in the last 30 days (all channels)"
+                  className="inline-flex items-baseline gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
+                >
+                  <span className="font-semibold tabular-nums text-slate-800">{row.sold30}</span> sold 30d
+                </span>
+              </div>
             </div>
           </div>
 

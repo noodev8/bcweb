@@ -42,9 +42,11 @@ Success Response:
       "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
       "rrp": 80.00,                         // safeNumeric(rrp); null likewise. Shown struck-through only when above price.
       "local": 38,                          // SUM(localstock.qty), all states
+      "amazon": 11,                         // held AT Amazon (live + inbound + transit). Its own field so the client can show/filter "local + Amazon"
       "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); drives the size chips + "Size XX" filter
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
-      "total": 38                           // local + amazon-held
+      "sold30": 7,                          // units sold in the last 30 days, all channels (positive sales only); for the SALES filter
+      "total": 38                           // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
     },
     ...
   ]
@@ -139,6 +141,16 @@ router.get('/', async (req, res) => {
         FROM birktracker b
         JOIN skumap m ON m.code = b.code
         GROUP BY m.groupid
+      ),
+      sold AS (
+        -- Units SOLD in the last 30 days, ALL channels (AMZ + SHP + CM3) — the simple "is this moving" number the operator weighs
+        -- against stock to decide a drop. Deliberately shallow: a fixed 30-day gross unit count, no per-channel or velocity nuance (the
+        -- pricing drills own that). qty > 0 drops returns so a refund doesn't read as a negative sale (mirrors the "positive sales only"
+        -- rule the winners list uses). sales.groupid is already style-grain, so no join. LEFT JOINed below → a style with none reads 0.
+        SELECT groupid, SUM(qty) AS units
+        FROM sales
+        WHERE solddate >= CURRENT_DATE - INTERVAL '30 days' AND qty > 0
+        GROUP BY groupid
       )
       SELECT
         s.groupid,
@@ -155,7 +167,8 @@ router.get('/', async (req, res) => {
         COALESCE(ord.units, 0)                                AS order_units,
         COALESCE(feed.units, 0)
           + COALESCE(transit.units, 0)                        AS amazon_units,
-        COALESCE(birk.units, 0)                               AS birk_units
+        COALESCE(birk.units, 0)                               AS birk_units,
+        COALESCE(sold.units, 0)                               AS sold_units
       FROM skusummary s
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
@@ -164,6 +177,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN feed            ON feed.groupid    = s.groupid
       LEFT JOIN transit         ON transit.groupid = s.groupid
       LEFT JOIN birk            ON birk.groupid    = s.groupid
+      LEFT JOIN sold            ON sold.groupid    = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
     `);
 
@@ -182,11 +196,18 @@ router.get('/', async (req, res) => {
         price: r.price === null ? null : Number(r.price),
         rrp: r.rrp === null ? null : Number(r.rrp),
         local,
+        // Stock held AT Amazon (live + inbound + in-transit). Sent as its own field so the client can show a "local + Amazon" combined
+        // indicator and filter on it (STOCK LESS / STOCK MORE) — the "what have we actually got right now?" number used to decide what
+        // to drop. Deliberately SEPARATE from `total` below, which also folds in the Birk pre-order book (future stock, not in hand).
+        amazon,
         // {size: localQty} for EVERY size in skumap (0 for sold-out) — drives the browse card's size chips (greyed at 0) and the
         // client-side "Size XX" filter. jsonb already parses to an object with numeric values; default to {} so the client never
         // guards for null.
         localSizes: r.local_sizes || {},
         onOrder: Number(r.order_units) || 0,
+        // Units sold in the last 30 days, all channels (positive sales only). The "is it moving" figure the client shows and
+        // SALES LESS / SALES MORE filters on — weighed against stock to decide a drop.
+        sold30: Number(r.sold_units) || 0,
         // Total INCLUDES the Birkenstock pre-order book (owner) — a placed Birk order is stock they count on having, since it is the
         // only replenishment that exists for the brand. Local stays strictly "in the building".
         total: local + amazon + birk,

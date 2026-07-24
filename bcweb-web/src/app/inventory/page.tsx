@@ -29,7 +29,7 @@ The command bar is STICKY: it stays pinned to the top while the cards scroll und
 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
 import InvStyleCard from '@/components/InvStyleCard';
@@ -39,6 +39,49 @@ import { useAuth } from '@/contexts/AuthContext';
 interface FilterStep {
   op: 'has' | 'not';
   term: string;
+}
+
+// A worded quantity command, typed in the Contains box (owner — plain-English keywords, not "<10" symbols, so they never clash with a
+// future "<"/">" meaning and read the same as the SOLD pair): "STOCK LESS 10" / "SOLD MORE 5". `metric` picks which per-row number it
+// compares against (see `metricValue`); `less`/`more` are strict (< / >). One per metric is active at a time; a new command for the
+// same metric replaces it. Kept apart from the text steps (like the size filter) because it is a numeric compare, not a find.
+type QtyMetric = 'stock' | 'sold';
+interface QtyFilter {
+  metric: QtyMetric;
+  op: 'less' | 'more';
+  n: number;
+}
+
+// The per-row number each metric compares against:
+//  - stock = local + Amazon-held: the "what have we got in hand right now" figure. Deliberately NOT row.total (that folds in the Birk
+//    pre-order book — future stock, which shouldn't sway a drop decision).
+//  - sold = sold30: units sold in the last 30 days (all channels), the "is it moving" figure weighed against stock to decide a drop.
+function metricValue(r: InvStyleRow, metric: QtyMetric): number {
+  return metric === 'stock' ? r.local + r.amazon : r.sold30;
+}
+function combinedStock(r: InvStyleRow): number {
+  return r.local + r.amazon;
+}
+
+// SORTING (owner). A visible, click-to-reverse control rather than a worded command: sorting is a MODE you sit in and flip, not a
+// one-shot action like the STOCK/SOLD filters, so it needs a standing affordance that shows the current key + direction. Client-side —
+// the whole list is already in memory, same as the filters. Each key clicks in at a sensible default direction (see DEFAULT_DIR);
+// clicking the active key again reverses it. Keys deliberately limited to Title / Stock / Sold (owner) — the raw numbers, no derived metric.
+type SortKey = 'title' | 'stock' | 'sold';
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'title', label: 'Title' },
+  { key: 'stock', label: 'Stock' },
+  { key: 'sold', label: 'Sold' },
+];
+// The direction a key adopts when first picked: Title A→Z, but Stock/Sold high→low (the drop review wants the big piles and the dead
+// sellers at the top). Re-clicking the active key toggles from here.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { title: 'asc', stock: 'desc', sold: 'desc' };
+
+// The value a row sorts on for a given key. Title falls back to groupid so an untitled style still lands somewhere sensible.
+function sortValue(r: InvStyleRow, key: SortKey): number | string {
+  if (key === 'title') return (r.title || r.groupid).toLowerCase();
+  if (key === 'stock') return r.local + r.amazon;
+  return r.sold30;
 }
 
 // Above this many matches we swap the picture cards for a QUICK TITLE LIST (see the GATE note in the header). The list is cheap — no
@@ -84,6 +127,31 @@ export default function InventoryPage() {
   // of ONE style, so we must still show its card (leading with 38, greyed at 0) rather than "No styles match" (owner, 2026-07-23).
   const [sizeStrict, setSizeStrict] = useState(true);
 
+  // STOCK / SOLD worded filters — one active per metric, keyed by metric so a STOCK command and a SOLD command can both be on at once
+  // (e.g. "loads of stock, barely selling" = STOCK MORE 20 + SOLD LESS 3). Each ✕ clears just its own.
+  const [qtyFilters, setQtyFilters] = useState<Partial<Record<QtyMetric, QtyFilter>>>({});
+  const setQtyFilter = useCallback((f: QtyFilter) => setQtyFilters((prev) => ({ ...prev, [f.metric]: f })), []);
+  const clearQtyFilter = useCallback((metric: QtyMetric) => setQtyFilters((prev) => {
+    const next = { ...prev };
+    delete next[metric];
+    return next;
+  }), []);
+
+  // The command cheatsheet, behind an "i" — the search commands are a niche power feature, so they live in a toggle rather than a
+  // permanent hint that shouts at every operator (owner). Grows as more commands land (SOLD MORE, …).
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Sort mode — default Title A→Z, matching the order the server already returns so the first view is unchanged.
+  const [sortKey, setSortKey] = useState<SortKey>('title');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Pick a key: re-clicking the active one reverses; a new key adopts its default direction. Written as two plain setState calls off the
+  // CURRENT sortKey (not nested inside a setSortKey updater) — nesting made the reverse toggle twice under React StrictMode's double-invoke
+  // and appear to do nothing.
+  const onSort = useCallback((key: SortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
+  }, [sortKey]);
+
   // CUT: groupids the operator has hidden by hand — the manual trim for a straggler a text step can't drop without over-matching.
   // Purely view state: nothing is written, Restore or Reset brings them back.
   const [cut, setCut] = useState<Set<string>>(new Set());
@@ -113,7 +181,8 @@ export default function InventoryPage() {
 
   // Nothing is listed until the operator has searched at least once — a text step OR a size filter counts. The full set is in memory
   // and IS what gets filtered; we simply don't render cards nobody asked for. Reset returns to this blank state.
-  const searched = steps.length > 0 || sizeFilter !== null;
+  const activeQty = useMemo(() => Object.values(qtyFilters).filter(Boolean) as QtyFilter[], [qtyFilters]);
+  const searched = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
 
   // Local stock this style holds in the filtered size (0 if none / no size filter).
   const sizeQtyOf = useCallback((r: InvStyleRow): number => {
@@ -142,12 +211,32 @@ export default function InventoryPage() {
       }
     }
     if (sizeTarget !== null && sizeStrict) out = out.filter((x) => sizeQtyOf(x.row) > 0);
+    // STOCK / SOLD commands, last: numeric compares (ANDed). Strict (< / >), so "STOCK LESS 10" excludes exactly-10.
+    for (const f of activeQty) {
+      out = out.filter((x) => {
+        const v = metricValue(x.row, f.metric);
+        return f.op === 'less' ? v < f.n : v > f.n;
+      });
+    }
     return out.map((x) => x.row);
-  }, [indexed, steps, sizeTarget, sizeQtyOf]);
+  }, [indexed, steps, sizeTarget, sizeStrict, sizeQtyOf, activeQty]);
 
   // What actually shows = the text-filtered rows minus the hand-cut ones.
   const visible = useMemo(() => filtered.filter((r) => !cut.has(r.groupid)), [filtered, cut]);
   const cutInView = filtered.length - visible.length;
+
+  // Apply the sort mode to what's on screen. groupid is the stable tie-break (always ascending) so equal stock/sold rows keep a fixed
+  // order rather than jittering between renders.
+  const sortedVisible = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...visible].sort((a, b) => {
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
+      let d = typeof av === 'string' ? av.localeCompare(bv as string) : av - (bv as number);
+      if (d === 0) return a.groupid.localeCompare(b.groupid);
+      return d * dir;
+    });
+  }, [visible, sortKey, sortDir]);
 
   // Over the gate — too many matches to paint pictures for; show the quick title list instead (below).
   const overGate = visible.length > CARD_GATE;
@@ -163,12 +252,24 @@ export default function InventoryPage() {
     // title text isn't mistaken for a size. An explicitly typed Size box always wins over one inferred from the term.
     let containsTerm = contains.trim();
     let sizeFromTerm = '';
-    const sizeMatch = containsTerm.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
-    if (sizeMatch) { containsTerm = sizeMatch[1]; sizeFromTerm = sizeMatch[2]; }
+    let nextQty: QtyFilter | null = null;
+    // FIRST CHECK (owner): a worded "STOCK/SOLD LESS <n>" / "…MORE <n>" in the Contains box is a quantity filter, not a text find, so it
+    // is matched BEFORE the text/SKU logic — otherwise "STOCK" would leak through as a title substring and match nothing. The keyword is
+    // caps because the box force-uppercases input. Matched, it branches here: set the filter and consume the term (no text step). Any
+    // integer or one decimal place is accepted; STOCK compares combined local+Amazon, SOLD the 30-day sold count.
+    const qtyMatch = containsTerm.match(/^(STOCK|SOLD)\s+(LESS|MORE)\s+(\d+(?:\.\d+)?)$/);
+    if (qtyMatch) {
+      nextQty = { metric: qtyMatch[1] === 'STOCK' ? 'stock' : 'sold', op: qtyMatch[2] === 'LESS' ? 'less' : 'more', n: Number(qtyMatch[3]) };
+      containsTerm = '';
+    } else {
+      const sizeMatch = containsTerm.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
+      if (sizeMatch) { containsTerm = sizeMatch[1]; sizeFromTerm = sizeMatch[2]; }
+    }
     if (containsTerm) next.push({ op: 'has', term: containsTerm });
     if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
     const size = sizeInput.trim() || sizeFromTerm;
-    if (next.length === 0 && !size) return;
+    if (next.length === 0 && !size && !nextQty) return;
+    if (nextQty) setQtyFilter(nextQty);
     if (next.length > 0) setSteps((prev) => [...prev, ...next]);
     if (size) {
       setSizeFilter(size);
@@ -203,6 +304,9 @@ export default function InventoryPage() {
     setSizeInput('');
     setSizeFilter(null);
     setSizeStrict(true);
+    setQtyFilters({});
+    setSortKey('title');
+    setSortDir('asc');
     setCut(new Set());
     // Reset also RE-READS the list from the DB, so stock figures are fresh at the start of a new hunt (owner — as in PowerBuilder).
     loadStyles();
@@ -263,7 +367,35 @@ export default function InventoryPage() {
               <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Reset
             </button>
+            {/* Command cheatsheet toggle — quiet "i" rather than a permanent tip line (owner: the commands are a power feature, don't
+                shout them at everyone). Opens the brief list below. */}
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              title="Search commands"
+              aria-expanded={showHelp}
+              className={`flex items-center rounded-md border px-2 py-2 ${showHelp ? 'border-slate-400 bg-slate-100 text-slate-600' : 'border-slate-300 text-slate-400 hover:bg-slate-50'}`}
+            >
+              <QuestionMarkCircleIcon className="h-5 w-5" />
+            </button>
           </div>
+
+          {/* The cheatsheet — hidden until the "i" is pressed. Kept VERY brief (owner); one line per command. Grows with more commands. */}
+          {showHelp && (
+            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <div className="mb-1 font-medium uppercase tracking-wide text-slate-400">Commands — type in Contains, then Find</div>
+              <ul className="space-y-1">
+                <li>
+                  <span className="font-mono text-slate-700">STOCK LESS 10</span> · <span className="font-mono text-slate-700">STOCK MORE 5</span>
+                  <span className="text-slate-400"> — filter by total stock (local + Amazon)</span>
+                </li>
+                <li>
+                  <span className="font-mono text-slate-700">SOLD LESS 3</span> · <span className="font-mono text-slate-700">SOLD MORE 10</span>
+                  <span className="text-slate-400"> — filter by units sold in the last 30 days</span>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {/* Breadcrumb of applied steps + the row count, at the top where the operator uses it to decide whether to narrow again. */}
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
@@ -296,7 +428,8 @@ export default function InventoryPage() {
                   Size {sizeFilter} · local
                   <button
                     type="button"
-                    onClick={() => setSizeFilter(null)}
+                    // Clearing hands focus straight back to Contains, so the next hunt starts by typing — same as the stock chip (owner).
+                    onClick={() => { setSizeFilter(null); containsRef.current?.focus(); }}
                     title="Clear size filter"
                     className="ml-0.5 rounded text-indigo-400 hover:text-indigo-700"
                   >
@@ -305,6 +438,24 @@ export default function InventoryPage() {
                 </span>
               </>
             )}
+            {/* STOCK / SOLD chips — real narrowing filters, so each earns a removable ✕ like the size chip: clearing changes the result.
+                One chip per active metric; the ✕ clears just that metric and hands focus back to Contains for the next command (owner). */}
+            {activeQty.map((f) => (
+              <span key={f.metric} className="flex items-center gap-1.5">
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                  {f.metric === 'stock' ? 'Stock' : 'Sold 30d'} {f.op === 'less' ? '<' : '>'} {f.n}
+                  <button
+                    type="button"
+                    onClick={() => { clearQtyFilter(f.metric); containsRef.current?.focus(); }}
+                    title={`Clear ${f.metric} filter`}
+                    className="ml-0.5 rounded text-emerald-400 hover:text-emerald-700"
+                  >
+                    <XMarkIcon className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </span>
+            ))}
             {steps.length > 0 && (
               <>
                 <span className="text-slate-300">|</span>
@@ -325,6 +476,33 @@ export default function InventoryPage() {
                 ))}
               </>
             )}
+
+            {/* SORT — inside the command box, pushed to the RIGHT of the breadcrumb (ml-auto) so the filter badges keep the left (owner).
+                Only shown once there is something to sort. Active key is filled and carries its ↑/↓; clicking it again reverses (onSort). */}
+            {searched && filtered.length > 0 && (
+              <span className="ml-auto flex items-center gap-1 whitespace-nowrap">
+                <span className="mr-0.5 text-xs text-slate-400">Sort</span>
+                {SORTS.map((s) => {
+                  const active = sortKey === s.key;
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => onSort(s.key)}
+                      className={
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition ' +
+                        (active
+                          ? 'border-brand-500 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')
+                      }
+                    >
+                      {s.label}
+                      {active && <span className="text-brand-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
           </div>
         </form>
       </div>
@@ -332,6 +510,7 @@ export default function InventoryPage() {
       {/* ---- Results ----------------------------------------------------------------------------------------------------- */}
       {loading && <p className="text-sm text-slate-400">Loading stock…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
 
       {/* Opening state — nothing searched yet. */}
       {!loading && !error && !searched && (
@@ -349,12 +528,20 @@ export default function InventoryPage() {
           </p>
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <ul className="divide-y divide-slate-100">
-              {visible.map((r) => (
+              {sortedVisible.map((r) => (
                 <li key={r.groupid} className="group flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50">
                   <span className="w-32 shrink-0 truncate font-mono text-xs text-slate-500">{r.groupid}</span>
                   <span className="min-w-0 flex-1 truncate text-slate-700">{r.title || <span className="text-slate-400">—</span>}</span>
+                  {/* Combined stock (local + Amazon) — the "what have we got right now" number the STOCK filter works on. */}
+                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-500" title={`${r.local} local + ${r.amazon} at Amazon`}>
+                    <span className={combinedStock(r) ? 'font-semibold text-slate-700' : 'text-slate-400'}>{combinedStock(r)}</span> stock
+                  </span>
+                  {/* Units sold in the last 30 days — the "is it moving" number the SOLD filter works on; read next to stock for a drop call. */}
+                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-500" title="Units sold in the last 30 days (all channels)">
+                    <span className={r.sold30 ? 'font-semibold text-slate-700' : 'text-slate-400'}>{r.sold30}</span> sold
+                  </span>
                   {/* On-shelf count — a size filter makes it the count FOR THAT SIZE, matching the picture cards. */}
-                  <span className="shrink-0 text-right text-xs tabular-nums text-slate-400">
+                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
                     <span className={((sizeFilter ? sizeQtyOf(r) : r.local) ? 'font-medium text-slate-600' : '')}>
                       {sizeFilter ? sizeQtyOf(r) : r.local}
                     </span> on shelf
@@ -378,7 +565,7 @@ export default function InventoryPage() {
       {/* Searched and narrow enough — the browse. */}
       {!loading && !error && searched && !overGate && (
         <div className="space-y-3">
-          {visible.map((r) => (
+          {sortedVisible.map((r) => (
             <div key={r.groupid} className="group relative">
               <InvStyleCard row={r} sizeFilter={sizeFilter} />
               {/* Cut — muted until the card is hovered, then reddens. Sits top-right, out of the way of the picture and sizes. */}

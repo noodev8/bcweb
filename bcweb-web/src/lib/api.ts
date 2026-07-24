@@ -957,11 +957,17 @@ export interface InvStyleRow {
   price: number | null;
   rrp: number | null;
   local: number;
+  // Stock held AT Amazon (live + inbound + in-transit). Combined with `local` gives "what we've actually got right now" — the number the
+  // card's stock indicator shows and STOCK LESS / STOCK MORE filters on. Distinct from `total`, which also includes the Birk pre-order book.
+  amazon: number;
   // {size: localQty} for EVERY size in skumap (0 = sold out) — so the browse card can show a chip for each size and grey the empty
   // ones, and the "Size XX" filter (membership = qty > 0) works off the same map. Keys are the code's size suffix as stored, so they
   // can carry a leading zero ("05") — the client normalises numerically when matching, so a typed "5" still finds "05".
   localSizes: Record<string, number>;
   onOrder: number;
+  // Units sold in the last 30 days, all channels (positive sales only). Shown on the card and filtered by SALES LESS / SALES MORE —
+  // weighed against stock to decide what to drop. A plain 30-day gross count; velocity/per-channel nuance lives on the pricing screens.
+  sold30: number;
   total: number;
 }
 
