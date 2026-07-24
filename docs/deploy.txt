@@ -53,10 +53,11 @@ DEPLOY STEPS (after the main rsync + npm install + pm2 restart above):
      so the first sweep only sends NEW changes (not the whole price history):
        bcweb-server/migrations/20260724_price_change_log_google_pushed_at.sql
   2. Schedule the sweep in cron -- every 2h through the working day, NOT at night.  crontab -e :
-       0 8-20/2 * * *  cd /apps/production/bcweb-server && /usr/bin/node scripts/google-price-sweep.js >> /var/log/bcweb-google-sweep.log 2>&1
-     - fix the node path to `which node` on the box; MUST cd into bcweb-server first (so .env + relative requires resolve).
+       0 7-19/2 * * *  /usr/bin/node /apps/production/bcweb-server/scripts/google-price-sweep.js
+     - fix the node path to `which node` on the box. Cron clock is GMT, so 07-19 = 08-20 BST. No `cd` needed -- the script loads
+       .env by absolute path (relative to itself). Append `>> /apps/scripts/logs/google-sweep.log 2>&1` if you want its output captured.
   3. Smoke test: make a pricing change in the UI, then run once by hand:
-       cd /apps/production/bcweb-server && node scripts/google-price-sweep.js
+       /usr/bin/node /apps/production/bcweb-server/scripts/google-price-sweep.js
      Expect:  [google-sweep] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
 
 ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine:

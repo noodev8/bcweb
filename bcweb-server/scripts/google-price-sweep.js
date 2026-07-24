@@ -24,7 +24,9 @@ Usage (VPS scheduler — every 2h through the day, no point at night):
 =======================================================================================================================================
 */
 
-require('dotenv').config();
+// Load .env by ABSOLUTE path (relative to this file), not the process cwd — so the script can be run from anywhere (e.g. cron, whose cwd
+// is '/') with a plain absolute path, no `cd` needed. dotenv's default is cwd-relative, which is the only reason a cd was ever required.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { query } = require('../database');
 const googleMerchant = require('../utils/googleMerchant');
 
