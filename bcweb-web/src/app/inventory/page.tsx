@@ -232,7 +232,7 @@ export default function InventoryPage() {
     return [...visible].sort((a, b) => {
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
-      let d = typeof av === 'string' ? av.localeCompare(bv as string) : av - (bv as number);
+      const d = typeof av === 'string' ? av.localeCompare(bv as string) : av - (bv as number);
       if (d === 0) return a.groupid.localeCompare(b.groupid);
       return d * dir;
     });
