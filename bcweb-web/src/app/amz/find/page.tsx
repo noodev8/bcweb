@@ -170,6 +170,33 @@ function AmzFindContent() {
     setSelected(new Set());
   }
 
+  // BULK SET PRICE — write ONE absolute price to every ticked SKU. Same per-row loop and the same server bounds as the relative move
+  // (each write is its own POST /amz-apply, so below-cost is still blocked and above-RRP still flagged per SKU); the only difference is
+  // that newPrice is the typed figure rather than the row's price plus a delta. Note the row.price === null skip is NOT needed here —
+  // that guard exists because a relative move can't be computed without a current price, whereas an absolute one can.
+  async function bulkSetPrice(price: number, reviewDays: number | null, note: string) {
+    const targets = results.filter((r) => selected.has(r.code));
+    if (targets.length === 0 || !(price > 0)) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, skipped = 0, aboveRrp = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      const res = await applyAmzPrice(row.code, price, note, reviewDays);
+      if (res.success && res.data) {
+        const d = res.data;
+        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: row.segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
+        applied++;
+      } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+      else { skipped++; }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setSelected(new Set());
+  }
+
   // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). Clears the selection on success.
   async function bulkSetReview(days: number) {
     if (selected.size === 0) return;
@@ -338,6 +365,7 @@ function AmzFindContent() {
           resultSummary={resultSummary}
           error={markError}
           onApplyPrice={bulkApplyPrice}
+          onApplySetPrice={bulkSetPrice}
           onSetReview={bulkSetReview}
         />
       )}

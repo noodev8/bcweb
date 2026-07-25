@@ -32,7 +32,7 @@ Guarded by AppShell. Consumes GET /analytics-sales.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { CheckBadgeIcon, XMarkIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSalesReport, SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';

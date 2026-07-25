@@ -178,6 +178,33 @@ function SegmentContent() {
     await loadLists();
   }
 
+  // BULK SET PRICE — write ONE absolute price to every ticked SKU. Same loop and the same per-row server bounds as the relative move
+  // above; newPrice is simply the typed figure instead of the row's price plus a delta. The `row.price === null` skip is deliberately
+  // absent: that guard exists only because a relative move can't be computed without a current price, which an absolute one doesn't need.
+  async function bulkSetPrice(price: number, reviewDays: number | null, note: string) {
+    const targets = selectedRows();
+    if (targets.length === 0 || !(price > 0)) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, skipped = 0, aboveRrp = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      const res = await applyAmzPrice(row.code, price, note, reviewDays);
+      if (res.success && res.data) {
+        const d = res.data;
+        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
+        applied++;
+      } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+      else { skipped++; }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
   // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). On success clear the selection and refetch so
   // parked SKUs drop off and the queue refills.
   async function bulkSetReview(days: number) {
@@ -238,6 +265,7 @@ function SegmentContent() {
           resultSummary={resultSummary}
           error={markError}
           onApplyPrice={bulkApplyPrice}
+          onApplySetPrice={bulkSetPrice}
           onSetReview={bulkSetReview}
         />
       )}
