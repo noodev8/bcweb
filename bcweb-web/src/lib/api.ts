@@ -867,6 +867,7 @@ export interface SalesReportSummary {
   unitsReturned: number;
   unitsNet: number;
   orders: number;
+  lines: number;             // matched lines BEFORE the row cap ("latest 200 of 318")
   revenue: number;
   profit: number;            // the hero number
   marginPct: number | null;
@@ -874,6 +875,13 @@ export interface SalesReportSummary {
 }
 // Short windows carry the line list; long windows (7/30/90d) are summary-only (totals, no rows).
 export type SalesWindow = 'today' | 'yesterday' | '3d' | '7d' | '30d' | '90d';
+// One committed narrowing step on the Sales screen (same shape as the Inventory filter). `has` = loose substring, `not` = whole-word
+// exclusion. Applied SERVER-side (see routes/analytics-sales.js) so the headline totals stay an uncapped aggregate of the narrowed set
+// rather than a sum over whichever page of lines happens to be loaded.
+export interface SalesFilterStep {
+  op: 'has' | 'not';
+  term: string;
+}
 export interface SalesReportData {
   channel: 'all' | 'shp' | 'amz';
   window: SalesWindow;
@@ -894,9 +902,13 @@ export interface SalesReportData {
 export function getSalesReport(params: {
   channel?: 'all' | 'shp' | 'amz';
   window?: SalesWindow;
-  search?: string | null;
+  steps?: SalesFilterStep[];
   limit?: number;
 }) {
+  // Steps go over as repeatable has=/not= params (axios sends `has[]=A&has[]=B`; the route accepts either spelling). Empty arrays are
+  // dropped so a stepless request is byte-identical to the old one.
+  const has = (params.steps || []).filter((s) => s.op === 'has').map((s) => s.term);
+  const not = (params.steps || []).filter((s) => s.op === 'not').map((s) => s.term);
   return request<SalesReportData>(
     {
       url: '/analytics-sales',
@@ -904,7 +916,8 @@ export function getSalesReport(params: {
       params: {
         channel: params.channel || 'all',
         window: params.window || 'today',
-        search: params.search || undefined,
+        has: has.length > 0 ? has : undefined,
+        not: not.length > 0 ? not : undefined,
         limit: params.limit,
       },
     },
@@ -916,7 +929,7 @@ export function getSalesReport(params: {
       from: b.from ?? null,
       to: b.to ?? null,
       search: b.search ?? null,
-      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, revenue: 0, profit: 0, marginPct: null, products: 0 },
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, profit: 0, marginPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,
       count: b.count ?? 0,

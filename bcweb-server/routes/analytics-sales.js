@@ -13,11 +13,24 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the
                  this mode (nothing fetched), and the response carries `summaryOnly:true` so the UI hides the table and explains why.
              (A product SEARCH overrides the window either way — see below.)
            - channel-filtered (All / Shopify / Amazon — "All" also folds in the minor CM3 channel so the totals reconcile),
-           - searchable to one product (matches product name, style groupid or SKU code). A search (>= 3 chars) flips the screen into
-             PRODUCT MODE: the preset window is replaced by a rolling LAST 12 MONTHS, newest-first, hard-capped at 50 lines — because a
-             search means "how is this product doing lately?", and a recent-year lens gauges current performance without dragging in dead
-             seasons (or scanning the whole table). The summary covers that 12-month matched set, and `products` (distinct styles matched)
-             warns when a loose term spans more than one product,
+           - NARROWED BY SEARCH STEPS (`has` / `not`), the Inventory-style filter ported here (owner, 2026-07-25). Instead of one debounced
+             box, the operator commits terms one at a time and each ANDs onto the last ("ARIZONA" -> not "EVA" -> "BLACK"). Every step is
+             applied HERE, in SQL, not in the browser — the browser only ever holds the capped page of lines, so a client-side narrowing
+             step would be filtering a 200-row sample of a possibly-thousand-row set and the headline totals computed from it would be a
+             partial number wearing an honest label. Server-side, the summary below stays an uncapped aggregate of the fully-narrowed set
+             no matter how many steps are on. Measured cost of the worst case (whole table, no date bound, a contains AND a not-contains,
+             no usable index): ~28ms on a 17.7k-row / 9MB table that lives in shared buffers — so there is nothing to optimise here and
+             deliberately no trigram index (revisit past ~500k rows).
+               * `has` is a loose SUBSTRING (operators type partials — "ARIZ" must find "Arizona").
+               * `not` matches WHOLE WORDS (`\y…\y`), mirroring the Inventory rule learned the hard way: a substring exclusion of the
+                 colour "SAND" also killed "SANDALS" and wiped the results.
+             A `has` step (>= 3 chars on the FIRST one) flips the screen into PRODUCT MODE: the preset window is replaced by a rolling
+             LAST 12 MONTHS, newest-first, capped at 200 lines — because a search means "how is this product doing lately?", and a
+             recent-year lens gauges current performance without blending in last season (the table only reaches back to Aug 2024 anyway,
+             so "all time" would be ~24 months = two seasons in one total). The summary covers that 12-month matched set, `lines` reports
+             how many lines actually matched (so the UI can say "latest 200 of 318" honestly), and `products` (distinct styles matched)
+             warns when a loose term spans more than one product. A `not`-only search does NOT flip modes — it just narrows the window
+             you are already looking at,
            - RETURNS INCLUDED. Unlike the pricing module (which is positive-lines-only, because it's about velocity), a sales/profit
              report must show refunds — a return is a real negative-profit line — and NET them into the totals. The summary therefore
              breaks units into sold / returned / net, mirroring the legacy footer (Sold / Returned / Net).
@@ -37,16 +50,22 @@ Requires auth.
 Request Query Params:
   channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz'. Case-insensitive.
   window  (string, optional)  - 'today' (default) | 'yesterday' | '3d' (these carry the line list) | '7d' | '30d' | '90d' (SUMMARY-ONLY —
-                                totals with no rows). No custom range by design. IGNORED when a search is active (product mode = last 12 months).
-  search  (string, optional)  - >= 3 chars flips to product mode: matches product name / groupid / SKU code (case-insensitive), last 12
-                                months, capped at 50 latest lines. 0-2 chars = no search (pulse mode).
-  limit   (int, optional)     - pulse-mode row cap; default 500, clamped to [1, 5000]. Product mode is fixed at 50.
+                                totals with no rows). No custom range by design. IGNORED when a `has` step is active (product mode = last 12 months).
+  has     (string[], optional)- repeatable. Each term ANDs a substring match over product name / groupid / SKU code (case-insensitive).
+                                The FIRST one must be >= 3 chars (a 1-2 char opener would drag back most of the table); later ones, which
+                                only narrow what the first matched, have no minimum. Any `has` term flips to product mode (last 12 months).
+  not     (string[], optional)- repeatable. Each term ANDs a WHOLE-WORD exclusion over the same three fields. Does not flip modes on its
+                                own, so it can narrow the current window's lines.
+  search  (string, optional)  - legacy alias for a single `has` term (kept so older callers/links keep working).
+  limit   (int, optional)     - pulse-mode row cap; default 500, clamped to [1, 5000]. Product mode is fixed at 200.
+                                Terms are capped at MAX_TERMS each; extras are ignored.
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
-  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640,
+  "has": ["ARIZONA"], "not": ["EVA"],
+  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640, "lines": 318,
                "revenue": 41234.55, "profit": 6120.11, "marginPct": 14.8, "products": 137 },
   "rows": [
     { "solddate": "2026-07-11", "ordertime": "21:37", "channel": "SHP", "code": "0051753-ARIZONA-36", "size": "36",
@@ -90,6 +109,34 @@ const SHORT_WINDOWS = new Set(['today', 'yesterday', '3d']);
 const LONG_WINDOWS = new Set(['7d', '30d', '90d']);
 const WINDOWS = new Set([...SHORT_WINDOWS, ...LONG_WINDOWS]);
 
+// The text every search step is matched against: the same three fields the single-box search always covered, concatenated so one
+// predicate spans all of them (and so a whole-word `not` can't be fooled by a term that straddles two of them). COALESCE because
+// productname/groupid/code are all nullable on legacy rows and a NULL would swallow the whole expression.
+const HAY = `(COALESCE(s.productname,'') || ' ' || COALESCE(s.groupid,'') || ' ' || COALESCE(s.code,''))`;
+
+// Belt-and-braces cap on how many terms one request may carry. The operator UI can't produce more than a handful, and each term is
+// another predicate on the scan — this just stops a hand-built URL turning into a silly query.
+const MAX_TERMS = 8;
+
+// A repeatable query param arrives as a string (one value) or an array (several). Normalise to a trimmed, non-empty, de-duplicated
+// list. `has[]=`-style keys are accepted too, in case a client serialises arrays that way.
+function toTerms(raw, rawBracket) {
+  const src = raw !== undefined ? raw : rawBracket;
+  const list = Array.isArray(src) ? src : src === undefined || src === null ? [] : [src];
+  const out = [];
+  for (const v of list) {
+    const t = String(v).trim();
+    if (t && !out.includes(t)) out.push(t);
+    if (out.length >= MAX_TERMS) break;
+  }
+  return out;
+}
+
+// Escape a term so it sits inside a POSIX regex literally (a stray '.' or '(' from a pasted SKU would otherwise be a metacharacter).
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 router.get('/', async (req, res) => {
   try {
     // Channel: 'all' (no filter, so CM3 is included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ'. Anything else falls back to 'all'.
@@ -102,19 +149,31 @@ router.get('/', async (req, res) => {
     let window = String(req.query.window || 'today').toLowerCase();
     if (!WINDOWS.has(window)) window = 'today';
 
-    // Search: the screen has TWO modes. A search term (>= 3 chars after trim) flips it into PRODUCT MODE — the short window is ignored
-    // and we pull the matched item's sales across ALL TIME (newest-first, hard-capped), because the point of a search is "show me this
-    // product's whole story", not "this product within 3 days". A shorter fragment (0-2 chars) never fires a search (keeps half-typed
-    // rubbish out) and the screen stays in window PULSE MODE. Wrapped in %...% for a contains match so a partial groupid/title works.
-    const searchRaw = typeof req.query.search === 'string' ? req.query.search.trim() : '';
-    const searchActive = searchRaw.length >= 3;
-    const searchLike = searchActive ? `%${searchRaw}%` : null;
+    // Search steps. `has` terms narrow by substring, `not` terms exclude by whole word; all of them AND together. The legacy single
+    // `search` param folds in as a leading `has` so old callers keep working.
+    const hasTerms = toTerms(req.query.has, req.query['has[]']);
+    const notTerms = toTerms(req.query.not, req.query['not[]']);
+    const legacySearch = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (legacySearch && !hasTerms.includes(legacySearch)) hasTerms.unshift(legacySearch);
 
-    // Row cap (the SUMMARY is never capped — it stays honest over the whole set). Product mode is HARD-capped at 50 latest lines (enough
-    // to judge a product; a busy style could have thousands). Pulse mode defaults to 500 (the window is tiny anyway).
+    // The FIRST `has` term still has to clear 3 chars — a 1-2 char opener matches most of the table, which is the half-typed-fragment
+    // case the old debounce guarded against. Below that we drop ALL the has terms and stay in window pulse mode (the UI enforces the
+    // same rule before it ever submits, so this is the backstop). Later terms only narrow what the first already matched, so they carry
+    // no minimum — "38" is a perfectly good second step.
+    if (hasTerms.length > 0 && hasTerms[0].length < 3) hasTerms.length = 0;
+
+    // TWO MODES, and only a `has` term switches them. Product mode ignores the preset window and pulls the matched set across a rolling
+    // LAST 12 MONTHS, because a product search means "how is this doing lately?". A `not`-only search deliberately does NOT flip: it
+    // narrows the lines of whatever window you are already on ("today's sales, excluding EVA"), which is the other half of what the two
+    // boxes are for.
+    const searchActive = hasTerms.length > 0;
+
+    // Row cap (the SUMMARY is never capped — it stays honest over the whole set). Product mode is capped at 200 latest lines: enough
+    // that a couple of narrowing steps usually leave the set COMPLETE on screen (and so the CSV export is complete too), while still
+    // fencing off the busiest style, which carries ~1.6k lines in 12 months. Pulse mode defaults to 500 (the window is tiny anyway).
     let limit;
     if (searchActive) {
-      limit = 50;
+      limit = 200;
     } else {
       limit = Number.parseInt(req.query.limit, 10);
       if (!(limit > 0)) limit = 500;
@@ -126,6 +185,22 @@ router.get('/', async (req, res) => {
     // rolling LAST 12 MONTHS bound — recent enough to gauge how a style is performing NOW (a lifetime total drags in dead seasons and
     // scans far more rows), while still deep enough to see a full year's shape. The short windows end at CURRENT_DATE except 'yesterday',
     // which is that single prior day.
+    // The search steps become one parameterised predicate each, appended to the shared filter. Built before the CTE string so the
+    // placeholder numbers stay in step with the params array (the row query's LIMIT then takes the next index after these).
+    const filterParams = [window, searchActive, channelAll, channelCode];
+    const termClauses = [];
+    for (const t of hasTerms) {
+      filterParams.push(`%${t}%`);
+      termClauses.push(`AND ${HAY} ILIKE $${filterParams.length}`);
+    }
+    for (const t of notTerms) {
+      // \y is the Postgres POSIX word boundary — the SQL twin of the \b…\b the Inventory screen uses, so excluding "SAND" drops the
+      // colour without also dropping "SANDALS".
+      filterParams.push(`\\y${escapeRegExp(t)}\\y`);
+      termClauses.push(`AND ${HAY} !~* $${filterParams.length}`);
+    }
+    const termSql = termClauses.length > 0 ? `\n          ${termClauses.join('\n          ')}` : '';
+
     const filterCte = `
       WITH b AS (
         SELECT
@@ -149,11 +224,8 @@ router.get('/', async (req, res) => {
               ($2::bool AND s.solddate >= (CURRENT_DATE - INTERVAL '12 months'))   -- product mode: rolling last 12 months
               OR (NOT $2::bool AND s.solddate >= b.from_date AND s.solddate <= b.to_date)  -- pulse mode: the chosen preset window
             )
-          AND ($3::bool OR s.channel = $4)
-          AND ($5::text IS NULL OR s.productname ILIKE $5 OR s.groupid ILIKE $5 OR s.code ILIKE $5)
+          AND ($3::bool OR s.channel = $4)${termSql}
       )`;
-
-    const filterParams = [window, searchActive, channelAll, channelCode, searchLike];
 
     // Summary-only when a LONG window is chosen in pulse mode — totals with no line list. A search always shows its (capped) lines, so it
     // is never summary-only even on a long-labelled window (the window is ignored in product mode anyway).
@@ -173,6 +245,7 @@ router.get('/', async (req, res) => {
          (SELECT to_char(to_date,   'YYYY-MM-DD') FROM b) AS window_to,
          to_char(MIN(solddate), 'YYYY-MM-DD')                          AS data_from,
          to_char(MAX(solddate), 'YYYY-MM-DD')                          AS data_to,
+         COUNT(*)::int                                                 AS lines,
          COUNT(DISTINCT groupid)                                       AS products,
          COALESCE(SUM(qty) FILTER (WHERE qty > 0), 0)::int              AS units_sold,
          COALESCE(-SUM(qty) FILTER (WHERE qty < 0), 0)::int             AS units_returned,
@@ -194,7 +267,7 @@ router.get('/', async (req, res) => {
                   qty, soldprice, profit
            FROM f
            ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
-           LIMIT $6::int`,
+           LIMIT $${filterParams.length + 1}::int`,
           [...filterParams, limit + 1]
         );
 
@@ -231,6 +304,8 @@ router.get('/', async (req, res) => {
       unitsReturned: Number(s.units_returned) || 0,
       unitsNet: Number(s.units_net) || 0,
       orders: Number(s.orders) || 0,
+      lines: Number(s.lines) || 0,   // matched lines BEFORE the row cap — lets the UI say "latest 200 of 318" honestly
+
       revenue: revenueTotal,
       profit: profitTotal,
       marginPct: revenueTotal !== 0 ? Math.round((profitTotal / revenueTotal) * 1000) / 10 : null,
@@ -249,7 +324,9 @@ router.get('/', async (req, res) => {
       summaryOnly,      // true = long window, totals only (no rows); UI hides the table and explains
       from,
       to,
-      search: searchRaw || null,
+      search: hasTerms[0] || null,   // legacy echo: the leading `has` term
+      has: hasTerms,
+      not: notTerms,
       summary,
       rows,
       limit,

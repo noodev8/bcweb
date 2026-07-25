@@ -9,6 +9,20 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
          searchable to a single product. Returns are shown (as red negative-profit lines) and netted into the totals — a sales/profit view
          has to tell the truth about refunds, unlike the velocity-only pricing module.
 
+         SEARCH is the Inventory screen's proven filter, ported here (owner, 2026-07-25): two boxes — Contains / Does not contain — and a
+         Find that COMMITS the term as a step, each one narrowing the last ("ARIZONA" -> not "EVA" -> "BLACK"). The old single box
+         debounced and re-queried on every keystroke; this doesn't fire until you ask it to.
+
+         Every step is applied SERVER-side, which is the one thing that matters here and the one place this differs from Inventory.
+         Inventory can narrow in the browser because it holds the entire style list in memory; this screen only ever holds the capped page
+         of lines (200 in product mode) out of a possibly-thousand-line match. Filtering that page client-side would narrow a SAMPLE, and
+         a headline recomputed from it would be a partial number under an honest-looking label — on the one screen whose whole point is
+         net profit. So `steps` go to the API and the summary strip stays the server's uncapped aggregate over the fully-narrowed set.
+         (The scan is ~28ms on a 17.7k-row table, so there is nothing to save by doing it here.)
+
+         A Contains step flips the screen into product mode (last 12 months). A Does-not-contain step on its own does NOT — it just
+         narrows the window you're already on ("today's sales, excluding EVA").
+
          Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel. Row click reuses the
          cross-module ProductActions chooser (reprice / copy), same as Price Changes.
 
@@ -16,12 +30,12 @@ Guarded by AppShell. Consumes GET /analytics-sales.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { CheckBadgeIcon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, XMarkIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
-import { getSalesReport, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';
+import { getSalesReport, SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';
 
 type ChannelFilter = 'all' | 'shp' | 'amz';
 
@@ -78,8 +92,13 @@ export default function SalesPage() {
 
   const [channel, setChannel] = useState<ChannelFilter>('all');
   const [win, setWin] = useState<SalesWindow>('today');
-  const [searchInput, setSearchInput] = useState<string>(''); // raw box value
-  const [search, setSearch] = useState<string>('');           // debounced/committed term sent to the server
+
+  // The two boxes, and the ordered steps committed so far (same model as Inventory). Steps are display-only here too: to drop one, Reset.
+  const [contains, setContains] = useState('');
+  const [notContains, setNotContains] = useState('');
+  const [steps, setSteps] = useState<SalesFilterStep[]>([]);
+  const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
+  const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
 
   const [rows, setRows] = useState<SalesReportRow[]>([]);
   const [summary, setSummary] = useState<SalesReportSummary | null>(null);
@@ -90,19 +109,16 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Search needs >= 3 chars to fire (keeps half-typed fragments from dragging back the whole table). A 1-2 char box holds the screen in
-  // window mode. Debounced so we don't request per keystroke.
-  const typedTerm = searchInput.trim();
-  const willSearch = typedTerm.length >= 3;
-  useEffect(() => {
-    const t = setTimeout(() => setSearch(typedTerm.length >= 3 ? typedTerm : ''), 350);
-    return () => clearTimeout(t);
-  }, [typedTerm]);
+  // A Contains step is what flips the screen into product mode (and so dims the window control); a Does-not-contain step alone doesn't.
+  const hasSteps = useMemo(() => steps.filter((s) => s.op === 'has'), [steps]);
+  const willSearch = hasSteps.length > 0;
+  // The term the result box quotes back — the opening Contains, which is the one that chose the matched set.
+  const leadTerm = hasSteps[0]?.term ?? '';
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await getSalesReport({ channel, window: win, search: search || null });
+    const res = await getSalesReport({ channel, window: win, steps });
     if (res.success && res.data) {
       setRows(res.data.rows);
       setSummary(res.data.summary);
@@ -115,9 +131,47 @@ export default function SalesPage() {
       setError(res.error || 'Failed to load Sales');
     }
     setLoading(false);
-  }, [channel, win, search, logout]);
+  }, [channel, win, steps, logout]);
 
   useEffect(() => { load(); }, [load]);
+
+  // FIND — commit whatever is in the boxes as steps, then clear them (Inventory's behaviour). The re-query falls out of `steps` being a
+  // dependency of load(); nothing fires until this runs, which is the point of dropping the debounce.
+  const onFind = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const c = contains.trim();
+    const n = notContains.trim();
+    if (!c && !n) return;
+    // The 3-char floor applies only to the FIRST Contains — the one that picks the matched set out of the whole table. Later terms just
+    // narrow what it found, so a short one ("38") is fine.
+    if (c && hasSteps.length === 0 && c.length < 3) {
+      setHint('Type 3 or more characters to search a product.');
+      return;
+    }
+    // A Does-not-contain on its own narrows the window you're on. That works in the line windows, but a long window shows no lines to
+    // narrow (totals only) — say so rather than silently appearing to do nothing.
+    if (!c && summaryOnly) {
+      setHint('Pick Today / Yesterday / 3 days, or search a product, before excluding a term.');
+      return;
+    }
+    const next: SalesFilterStep[] = [];
+    if (c) next.push({ op: 'has', term: c });
+    if (n) next.push({ op: 'not', term: n });
+    setSteps((prev) => [...prev, ...next]);
+    setContains('');
+    setNotContains('');
+    setHint(null);
+    containsRef.current?.focus();
+  }, [contains, notContains, hasSteps.length, summaryOnly]);
+
+  // RESET — drop every step, which drops the screen back to the window pulse (load() re-runs off the empty steps array).
+  const onReset = useCallback(() => {
+    setSteps([]);
+    setContains('');
+    setNotContains('');
+    setHint(null);
+    containsRef.current?.focus();
+  }, []);
 
   // --- formatters --------------------------------------------------------------------------------------------------------------
   const money = (v: number | null) =>
@@ -188,15 +242,74 @@ export default function SalesPage() {
 
   return (
     <AppShell title="Sales" backHref="/analytics" backLabel="Analytics">
-      <p className="mb-5 max-w-3xl text-sm text-slate-500">
-        Recent sales with the profit on each line, netted for returns. Watch <strong>net profit</strong> for the window — the short
-        windows list every line; the <strong>7 / 30 / 90-day</strong> windows show the totals only. Or <strong>search a product</strong> to
-        pull its <strong>last 12 months</strong> (latest 50 lines), with the 12-month totals to judge how it&apos;s doing lately. Export
-        the current view to Excel any time.
-      </p>
+      {/* SEARCH SITS FIRST, directly under the title (owner, 2026-07-25: "I just want to search for sales"). It used to sit below the
+          explainer paragraph AND the headline tiles, which pushed the boxes to the fold — on a screen whose primary action is "find this
+          product". The paragraph went entirely: two labelled boxes and a Find need no instructions, and the one genuinely non-obvious
+          rule (long windows show totals, no lines) is already explained in place, by the panel that replaces the table. */}
+      <form onSubmit={onFind} className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[200px] flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Contains</label>
+            <div className="relative">
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+              <input
+                ref={containsRef}
+                value={contains}
+                onChange={(e) => { setContains(e.target.value.toUpperCase()); setHint(null); }}
+                placeholder="e.g. ARIZONA"
+                className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+          </div>
+          <div className="min-w-[200px] flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Does not contain</label>
+            <input
+              value={notContains}
+              onChange={(e) => { setNotContains(e.target.value.toUpperCase()); setHint(null); }}
+              placeholder="e.g. EVA"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+          <button type="submit" className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Find
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            title="Clear the search — back to the date windows"
+            className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Reset
+          </button>
+        </div>
 
-      {/* Filters: channel · window. Searching (its own bar, just above the results) flips to product mode, so the window control dims. */}
-      <div className="mb-5 flex flex-wrap items-center gap-3">
+        {/* Breadcrumb of committed steps — the record of how the current set was narrowed. Contains is brand-tinted, Does-not-contain
+            struck through, same vocabulary as Inventory so the two screens read alike. */}
+        {(steps.length > 0 || hint) && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
+            {steps.map((s, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-slate-300">›</span>}
+                <span
+                  className={
+                    s.op === 'has'
+                      ? 'rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700'
+                      : 'rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500 line-through decoration-slate-400'
+                  }
+                >
+                  {s.op === 'not' && <span className="mr-0.5 no-underline">¬</span>}
+                  {s.term}
+                </span>
+              </span>
+            ))}
+            {hint && <span className="text-xs text-amber-600">{hint}</span>}
+          </div>
+        )}
+      </form>
+
+      {/* Filters: channel · window. A Contains search flips to product mode, so the window control dims. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Segmented options={CHANNEL_TABS} value={channel} onChange={setChannel} />
 
         {/* Window: short group (with lines) · long group (totals only). Split so the different behaviour is visible before clicking. */}
@@ -211,10 +324,12 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* Headline strip — net profit is the hero; revenue / margin / units support it. */}
+      {/* Headline strip — net profit is the hero; revenue / margin / units support it. Tiles run tighter than the rest of the module
+          (p-3, supporting values one step down at text-xl) to buy back vertical space above the fold — which also widens the gap
+          between the hero and its supporting numbers rather than flattening it. */}
       {summary && !error && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-          <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:col-span-1 lg:col-span-2">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+          <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:col-span-1 lg:col-span-2">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Net profit{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
             <div className={'mt-1 text-3xl font-bold tabular-nums ' + (summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600')}>
               {money(summary.profit)}
@@ -232,32 +347,6 @@ export default function SalesPage() {
           <Stat label="Orders" value={int(summary.orders)} />
         </div>
       )}
-
-      {/* Search — its own full-width bar, sitting right on top of the result box (it's the primary way in: a product's whole story).
-          Flips the screen to product mode, so the window control above dims. */}
-      <div className="relative mb-3">
-        <MagnifyingGlassIcon className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
-          placeholder="Search a product, style or SKU to see its last 12 months…"
-          className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-24 text-base text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30"
-        />
-        {typedTerm.length > 0 && typedTerm.length < 3 && (
-          <span className="pointer-events-none absolute right-12 top-1/2 -translate-y-1/2 text-xs text-slate-400">type 3+ chars</span>
-        )}
-        {searchInput.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setSearchInput('')}
-            title="Clear search — back to the date windows"
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-          >
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        )}
-      </div>
 
       {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -277,13 +366,23 @@ export default function SalesPage() {
 
       {!loading && !error && !summaryOnly && (
         rows.length === 0 ? (
-          <p className="text-sm text-slate-400">No sales match this filter.</p>
+          <p className="text-sm text-slate-400">
+            No sales match this filter.
+            {steps.length > 0 && (
+              <> <button type="button" onClick={onReset} className="text-brand-600 underline">Reset</button> to start again.</>
+            )}
+          </p>
         ) : (
           <>
             <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
               <span>
+                {/* Product mode quotes the real matched-line count from the server (summary.lines), so "latest 200 of 318" is honest —
+                    and once a narrowing step brings the set under the cap it says "All 47", which is the signal that what you're looking
+                    at (and what Export CSV will write) is the complete set, not a page of it. */}
                 {searchActive
-                  ? `Latest ${int(rows.length)} sales for “${search}”, last 12 months${truncated ? ' (more in this window)' : ''}`
+                  ? truncated
+                    ? `Latest ${int(rows.length)} of ${int(summary?.lines ?? rows.length)} sales for “${leadTerm}”, last 12 months`
+                    : `All ${int(rows.length)} sales for “${leadTerm}”, last 12 months`
                   : truncated
                     ? `Showing the latest ${int(rows.length)} lines (more exist — narrow the window or search)`
                     : `${int(rows.length)} lines`}
@@ -370,9 +469,9 @@ function Segmented<T extends string>({ options, value, onChange, disabled = fals
 // A supporting stat tile in the headline strip.
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-800">{value}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-800">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-400">{sub}</div>}
     </div>
   );
