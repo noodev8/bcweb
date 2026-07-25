@@ -146,6 +146,21 @@ export interface AmzFindRow {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
   price: number | null; fba: number;
 }
+// One committed narrowing step on the Amazon Find screen. Same idea as SalesFilterStep but kept as its own type (owner, 2026-07-25):
+// the two screens are deliberately NOT sharing a search implementation, so they can diverge without breaking each other.
+export interface AmzFindStep {
+  op: 'has' | 'not';
+  term: string;
+}
+// `total` is the TRUE match count, uncapped — the page shows "N of total" and warns before a bulk action when truncated, because
+// select-all only ever reaches the rows actually returned.
+export interface AmzFindData {
+  rows: AmzFindRow[];
+  total: number;
+  count: number;
+  limit: number;
+  truncated: boolean;
+}
 // Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the client-built upload file, not this call.
 // amz_sku + rrp let the session basket build that file straight from this response.
 export interface AmzApplyResult { log_id: number; code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; }
@@ -296,9 +311,21 @@ export function getAmzSales(code: string, limit?: number) {
   );
 }
 
-// Amazon Pricing — direct SKU search across all managed segments. Mirrors findProducts().
-export function findAmzSkus(term: string) {
-  return request<AmzFindRow[]>({ url: '/amz-find', method: 'GET', params: { term } }, (b) => b.results || []);
+// Amazon Pricing — direct SKU search across all managed segments (and un-segmented styles). Narrowing steps go over as repeatable
+// has=/not= params; the route still accepts the legacy single `term`, which is what cross-module ?q= deep links rely on.
+export function findAmzSkus(steps: AmzFindStep[]) {
+  const has = steps.filter((s) => s.op === 'has').map((s) => s.term);
+  const not = steps.filter((s) => s.op === 'not').map((s) => s.term);
+  return request<AmzFindData>(
+    { url: '/amz-find', method: 'GET', params: { has: has.length > 0 ? has : undefined, not: not.length > 0 ? not : undefined } },
+    (b) => ({
+      rows: (b.results as AmzFindRow[]) || [],
+      total: b.total ?? (b.results ? b.results.length : 0),
+      count: b.count ?? (b.results ? b.results.length : 0),
+      limit: b.limit ?? 200,
+      truncated: !!b.truncated,
+    })
+  );
 }
 
 // Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; the price reaches Amazon via the client upload file, not

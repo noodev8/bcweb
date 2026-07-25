@@ -3,20 +3,31 @@
 =======================================================================================================================================
 Page: /amz/find  (direct SKU search)
 =======================================================================================================================================
-Purpose: Search box matching product name, group id or SKU code via GET /amz-find?term= (mirror of Shopify /pricing/find). Pick a result
-         -> that SKU's drill. Lets the operator jump straight to a size without going through segment -> list. SKU-grain, so a group id
-         match returns each of its sizes as a separate row. Accepts `?q=<term>` to pre-fill and auto-run the search, so a cross-module
+Purpose: Search matching product name, group id, Amazon Seller SKU or code via GET /amz-find (mirror of Shopify /pricing/find). Pick a
+         result -> that SKU's drill. Lets the operator jump straight to a size without going through segment -> list. SKU-grain, so a group
+         id match returns each of its sizes as a separate row. Accepts `?q=<term>` to pre-fill and auto-run the search, so a cross-module
          jump (e.g. Analytics' "reprice this" chooser, which only knows the groupid) lands here with the sizes already listed to pick from.
+
+         CONTAINS / DOES NOT CONTAIN (2026-07-25). One box could only ever widen, but the set an operator wants is often a subtraction:
+         "Rieker, but not the womens ones". That can't be done through segments — a style sits in exactly ONE segment, so the scheme
+         expresses a single cut of the catalogue (currently seasonal), and mens Rieker is 5 styles spread across RIEKER-WIN and RIEKER-SUM.
+         Gender lives only in the title, so a whole-word exclusion here is the only way to make that cut. This screen is already the
+         cross-segment escape hatch, which is why it gets the capability and the segment LISTS deliberately don't: search is a lens over
+         segments, not a rival to them — hence results keep showing each row's home Segment, and a search is never saved or named.
+
+         COUNT + TRUNCATION WARNING. The route used to cap at 50 silently, so RIEKER showed 50 of 121 looking complete — above a select-all
+         and a bulk price bar. Every search now states "N of TOTAL", and a capped result gets an amber warning that selecting all reaches
+         only the rows shown. Steps also round-trip through the URL, so the drill's "← Search" returns to the narrowed list.
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
-import { findAmzSkus, applyAmzPrice, markAmzReviewed, AmzFindRow } from '@/lib/api';
+import { findAmzSkus, applyAmzPrice, markAmzReviewed, AmzFindRow, AmzFindStep } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
@@ -54,10 +65,34 @@ function AmzFindContent() {
   const backLabel = from ? prettyPathLabel(from) : 'Segments';
   const { logout } = useAuth();
   const { add } = useAmzBasket();
-  // Search field is forced UPPERCASE (owner) — group ids / SKU codes are uppercase, and the server matches case-insensitively so a title
-  // term still finds its product. Mirrors the Shopify /pricing/find box.
-  const [term, setTerm] = useState(initialQ.toUpperCase());
+  // Search boxes are forced UPPERCASE (owner) — group ids / SKU codes are uppercase, and the server matches case-insensitively so a title
+  // term still finds its product. Two boxes rather than one: a single box can only ever WIDEN, and the set an operator actually wants is
+  // often a subtraction ("Rieker, but not the womens ones") that segments can't express — a style lives in exactly one segment, so a
+  // cross-cutting cut has no home in the segment scheme and has to be made here. Same Contains / Does-not-contain vocabulary as Inventory
+  // and Analytics Sales, deliberately NOT a shared component (owner, 2026-07-25) so the screens can diverge without breaking each other.
+  const [contains, setContains] = useState('');
+  const [notContains, setNotContains] = useState('');
+  const containsRef = useRef<HTMLInputElement>(null);
+
+  // Steps restore from the URL so the drill's "← Search" returns to the NARROWED list, not just the opening term. `?q=` is the legacy
+  // single-term form every cross-module deep link uses (Analytics "reprice this", the Sales row-click) — it becomes the first Contains.
+  const initialSteps = useMemo<AmzFindStep[]>(() => {
+    const has = searchParams.getAll('has');
+    const not = searchParams.getAll('not');
+    const out: AmzFindStep[] = [];
+    if (has.length > 0 || not.length > 0) {
+      has.forEach((t) => out.push({ op: 'has', term: t.toUpperCase() }));
+      not.forEach((t) => out.push({ op: 'not', term: t.toUpperCase() }));
+    } else if (initialQ) {
+      out.push({ op: 'has', term: initialQ.toUpperCase() });
+    }
+    return out;
+  }, [searchParams, initialQ]);
+
+  const [steps, setSteps] = useState<AmzFindStep[]>(initialSteps);
   const [results, setResults] = useState<AmzFindRow[]>([]);
+  const [total, setTotal] = useState(0);          // TRUE match count, uncapped
+  const [truncated, setTruncated] = useState(false);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,19 +104,22 @@ function AmzFindContent() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
   const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
-  const runSearch = useCallback(async (raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
+  const runSearch = useCallback(async (activeSteps: AmzFindStep[]) => {
+    if (activeSteps.length === 0) return;
     setLoading(true);
     setError(null);
-    setSelected(new Set()); setMarkError(null); setResultSummary(null);   // a new result set is a new selection — never carry ticks over
-    const res = await findAmzSkus(t);
+    // A changed result set is a new selection — never carry ticks over. Critically this fires on every STEP change too, not just a fresh
+    // search: a tick that survived a narrowing would still be applied by the bulk bar even though its row is no longer on screen.
+    setSelected(new Set()); setMarkError(null); setResultSummary(null);
+    const res = await findAmzSkus(activeSteps);
     if (res.success && res.data) {
-      setResults(res.data);
+      setResults(res.data.rows);
+      setTotal(res.data.total);
+      setTruncated(res.data.truncated);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setError(res.error || 'Search failed');
-      setResults([]);
+      setResults([]); setTotal(0); setTruncated(false);
     }
     setSearched(true);
     setLoading(false);
@@ -147,42 +185,143 @@ function AmzFindContent() {
     else setMarkError(res.error || 'Failed to set review');
   }
 
-  // Arrived with ?q= (e.g. from a cross-module jump by groupid) — run that search once on mount.
-  useEffect(() => { if (initialQ) runSearch(initialQ); }, [initialQ, runSearch]);
+  // Re-run whenever the step list changes — including the initial ?q= / ?has= arrival from a cross-module jump. Clearing back to no
+  // steps (Reset) empties the screen rather than firing a term-less search.
+  useEffect(() => {
+    if (steps.length > 0) runSearch(steps);
+    else { setResults([]); setTotal(0); setTruncated(false); setSearched(false); setSelected(new Set()); }
+  }, [steps, runSearch]);
 
-  function onSearch(e: React.FormEvent) {
+  // FIND — commit the boxes as steps, then clear them. Each Find narrows what the last one found.
+  function onFind(e: React.FormEvent) {
     e.preventDefault();
-    runSearch(term);
+    const c = contains.trim();
+    const n = notContains.trim();
+    if (!c && !n) return;
+    // A Does-not-contain on its own would mean "every SKU except…" — the server rejects it, so guide rather than fire a doomed request.
+    if (!c && steps.every((s) => s.op !== 'has')) {
+      setError('Search for something first, then exclude from it.');
+      return;
+    }
+    const next: AmzFindStep[] = [];
+    if (c) next.push({ op: 'has', term: c });
+    if (n) next.push({ op: 'not', term: n });
+    setSteps((prev) => [...prev, ...next]);
+    setContains('');
+    setNotContains('');
+    setError(null);
+    containsRef.current?.focus();
   }
 
-  // This search as it currently stands (query + origin) — handed to the SKU drill as its `from`, so "← Search" from the drill returns
-  // to this populated list (not an empty box), and this list's own breadcrumb still points back to wherever we started.
-  const selfUrl = `/amz/find?q=${encodeURIComponent(term)}${from ? `&from=${encodeURIComponent(from)}` : ''}`;
+  function onReset() {
+    setSteps([]);
+    setContains('');
+    setNotContains('');
+    setError(null);
+    containsRef.current?.focus();
+  }
+
+  // This search as it currently stands (every step + origin) — handed to the SKU drill as its `from`, so "← Search" from the drill
+  // returns to this NARROWED list (not an empty box, and not just the opening term), and this list's own breadcrumb still points back
+  // to wherever we started.
+  const selfUrl = useMemo(() => {
+    const qs = steps.map((s) => `${s.op === 'has' ? 'has' : 'not'}=${encodeURIComponent(s.term)}`);
+    if (from) qs.push(`from=${encodeURIComponent(from)}`);
+    return `/amz/find?${qs.join('&')}`;
+  }, [steps, from]);
 
   return (
     <AppShell title="Find a SKU" backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
 
-      <form onSubmit={onSearch} className="mb-5 flex gap-2">
-        <div className="relative flex-1">
-          <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-          <input
-            value={term}
-            onChange={(e) => setTerm(e.target.value.toUpperCase())}
-            autoFocus
-            placeholder="Product name, group id or SKU code (e.g. IVES, FLE030-IVES-STONE-06)"
-            className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          />
+      <form onSubmit={onFind} className="mb-5 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[220px] flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Contains</label>
+            <div className="relative">
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+              <input
+                ref={containsRef}
+                value={contains}
+                onChange={(e) => setContains(e.target.value.toUpperCase())}
+                autoFocus
+                placeholder="Product name, group id or SKU code (e.g. RIEKER, 17659-23)"
+                className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+          </div>
+          <div className="min-w-[180px] flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Does not contain</label>
+            <input
+              value={notContains}
+              onChange={(e) => setNotContains(e.target.value.toUpperCase())}
+              placeholder="e.g. WOMENS"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+          <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Find
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            title="Clear the search and start again"
+            className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Reset
+          </button>
         </div>
-        <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-          Search
-        </button>
+
+        {/* Applied steps — the record of how this set was narrowed. Contains brand-tinted, Does-not-contain struck through. */}
+        {steps.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
+            {steps.map((s, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-slate-300">›</span>}
+                <span
+                  className={
+                    s.op === 'has'
+                      ? 'rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700'
+                      : 'rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500 line-through decoration-slate-400'
+                  }
+                >
+                  {s.op === 'not' && <span className="mr-0.5 no-underline">¬</span>}
+                  {s.term}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </form>
 
       {loading && <p className="text-sm text-slate-400">Searching…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {searched && !loading && !error && results.length === 0 && (
         <p className="text-sm text-slate-400">No matches.</p>
+      )}
+
+      {/* Match count, always shown once searched. The count used to be absent entirely and the route silently capped at 50 — so a broad
+          term (RIEKER matches 121 SKUs) returned a partial list that LOOKED complete, directly above a select-all and a bulk price bar.
+          Stating "N of TOTAL" on every search is what makes the cap visible at all. */}
+      {searched && !loading && !error && results.length > 0 && (
+        <p className="mb-2 text-xs text-slate-500">
+          Showing <span className="font-semibold text-slate-700">{results.length}</span>
+          {truncated ? <> of <span className="font-semibold text-slate-700">{total}</span> matching SKUs</> : <> matching {results.length === 1 ? 'SKU' : 'SKUs'}</>}
+        </p>
+      )}
+
+      {/* TRUNCATION WARNING — the sharp edge on this screen. Select-all ticks only what was RETURNED, so on a capped result an operator
+          could bulk-apply believing they had covered the whole match. Say so in the operator's terms, right above the bulk bar. */}
+      {truncated && !loading && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            <strong>{total - results.length}</strong> more {total - results.length === 1 ? 'SKU matches' : 'SKUs match'} than are listed.
+            Selecting all only picks the <strong>{results.length}</strong> shown, so a bulk price move would miss the rest — add another
+            term to narrow the search until everything fits.
+          </span>
+        </div>
       )}
 
       {/* Bulk edit control — tick some result rows (e.g. all of a groupid's sizes) and apply one relative price move and/or a review across
@@ -208,7 +347,9 @@ function AmzFindContent() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2">
+                {/* Scope is spelled out rather than the box being disabled on a truncated result: disabling would block the common,
+                    perfectly safe case. The risk here is misunderstanding what "all" covers, so name it. */}
+                <th className="px-4 py-2" title={`Select the ${results.length} SKUs shown${truncated ? ` (not all ${total} matches)` : ''}`}>
                   <SelectAllBox
                     checked={results.length > 0 && results.every((r) => selected.has(r.code))}
                     onChange={(c) => toggleAll(results.map((r) => r.code), c)}
