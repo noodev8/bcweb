@@ -971,6 +971,9 @@ export interface InvStyleRow {
   // weighed against stock to decide what to drop. A plain 30-day gross count; velocity/per-channel nuance lives on the pricing screens.
   sold30: number;
   total: number;
+  // Space-joined full Amazon Seller SKUs held under this style (skumap.sku, e.g. "17659-23-42-2607 …"), so the Contains box can find a
+  // style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon-mapped variants.
+  amazonSkus: string | null;
 }
 
 // The WHOLE style list in one call. Deliberately unfiltered: ~280 styles, so the Inventory screen fetches once on mount and does all

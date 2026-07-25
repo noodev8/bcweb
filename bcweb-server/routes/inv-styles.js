@@ -46,7 +46,9 @@ Success Response:
       "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); drives the size chips + "Size XX" filter
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "sold30": 7,                          // units sold in the last 30 days, all channels (positive sales only); for the SALES filter
-      "total": 38                           // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
+      "total": 38,                          // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
+      "amazonSkus": "17659-23-42-2607 17659-23-43-2607"  // space-joined skumap.sku for every variant; null if none. Lets the client's
+                                             // Contains search find a style by a pasted Amazon SKU
     },
     ...
   ]
@@ -120,6 +122,16 @@ router.get('/', async (req, res) => {
         FROM amzfeed
         GROUP BY groupid
       ),
+      amz_skus AS (
+        -- Full Amazon Seller SKUs (skumap.sku = internal code + supplier suffix, e.g. 17659-23-42-2607) held under each style, so a
+        -- pasted Amazon SKU can be found by the Contains box even though it isn't the internal code (owner request 2026-07-25). skumap
+        -- is one row per variant and always carries sku, unlike amzfeed (live FBA rows only) — this way a style search still works even
+        -- when the size isn't currently live on Amazon. Space-joined so the client's plain-substring haystack search works unchanged.
+        SELECT groupid, string_agg(sku, ' ') AS skus
+        FROM skumap
+        WHERE sku IS NOT NULL
+        GROUP BY groupid
+      ),
       -- NO boxed CTE. amzshipment units are still in localstock (allocated 'amz' at C3-Amazon) until DPD collects, so they are
       -- already inside loc below — counting them here too inflated Total for any style mid-shipment (owner, 2026-07-20).
       -- NB: no backticks anywhere in this string; it is a JS template literal, and one would end it mid-query.
@@ -168,7 +180,8 @@ router.get('/', async (req, res) => {
         COALESCE(feed.units, 0)
           + COALESCE(transit.units, 0)                        AS amazon_units,
         COALESCE(birk.units, 0)                               AS birk_units,
-        COALESCE(sold.units, 0)                               AS sold_units
+        COALESCE(sold.units, 0)                               AS sold_units,
+        amz_skus.skus                                         AS amz_skus
       FROM skusummary s
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
@@ -178,6 +191,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN transit         ON transit.groupid = s.groupid
       LEFT JOIN birk            ON birk.groupid    = s.groupid
       LEFT JOIN sold            ON sold.groupid    = s.groupid
+      LEFT JOIN amz_skus        ON amz_skus.groupid = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
     `);
 
@@ -205,6 +219,9 @@ router.get('/', async (req, res) => {
         // guards for null.
         localSizes: r.local_sizes || {},
         onOrder: Number(r.order_units) || 0,
+        // Space-joined full Amazon Seller SKUs held under this style (e.g. "JLH455-CHARL-BLACK-04-2606 …"), so the Contains box can
+        // find a style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon presence.
+        amazonSkus: r.amz_skus || null,
         // Units sold in the last 30 days, all channels (positive sales only). The "is it moving" figure the client shows and
         // SALES LESS / SALES MORE filters on — weighed against stock to decide a drop.
         sold30: Number(r.sold_units) || 0,

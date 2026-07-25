@@ -56,7 +56,10 @@ const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
         'Here but earmarked for Amazon — in practice the C3-Amazon bay. The locations above give the exact shelf. '
         + 'Still pickable for a Shopify customer.'),
       bucket('transit', 'Transit', 'Collected by DPD within the last 2 days — gone from our racks, not yet on Amazon’s books'),
-      bucket('amzInbound', 'Inbound', 'Booked in at Amazon, not yet live'),
+      // 'Inbound' (amztotal - amzlive) deliberately NOT shown (owner, 2026-07-25): amzfeed only stores the live/total split, not
+      // Amazon's real reason for the gap (reserved-but-sold, unsellable, researching, or genuinely inbound all read the same), so the
+      // label was frequently wrong — e.g. a unit sold minutes ago reads as "1 inbound" until Amazon's next feed sync ships it out.
+      // Live and Tot are both raw amzfeed values and stay trustworthy on their own; the gap is still folded into Tot below, just unlabelled.
       bucket('amzLive', 'Live', 'Sellable FBA stock at Amazon'),
       {
         // "Tot", not "Total": the headline Total column must be the only thing on this grid called Total.

@@ -90,8 +90,10 @@ function sortValue(r: InvStyleRow, key: SortKey): number | string {
 const CARD_GATE = 50;
 
 // The text a filter step is matched against. Built once per row and cached. Lowercased here so each step is a plain indexOf.
+// Includes the style's Amazon Seller SKUs (skumap.sku) so a pasted Amazon SKU like 17659-23-42-2607 — which doesn't share the internal
+// code — still finds its style (owner, 2026-07-25).
 function haystack(r: InvStyleRow): string {
-  return `${r.title || ''} ${r.groupid} ${r.segment || ''}`.toLowerCase();
+  return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.amazonSkus || ''}`.toLowerCase();
 }
 
 // Escape a user term so it can go inside a RegExp literally (a stray "." or "(" would otherwise be a metachar).
