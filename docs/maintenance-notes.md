@@ -113,7 +113,28 @@ bcweb-web:     npx tsc --noEmit   AND   npm run lint   AND   npm run build   —
 
 ---
 
-## 4. Other things worth knowing
+## 4. OPEN: one Google price push stuck failing (found 2026-07-26, not yet diagnosed)
+
+`0552683-ARIZONA` — £60.19 → £63.19, by Andreas, `2026-07-25 23:21` — is the only row in `price_change_log` with
+`channel='SHP' AND google_pushed_at IS NULL` (1,324 of 1,325 stamped). Its price has therefore **not reached Google**.
+
+It is not being skipped. The style qualifies for the sweep's queue (`googlestatus=1`, `shopify=1`, 9 mapped `googleid`s, all
+`shopifyprice` values numeric), so `pushIfLive` is returning a failure and the sweep is correctly leaving it queued to retry. It
+has been retrying on every run since.
+
+A theory that did NOT hold, recorded so nobody re-runs it: this style has one odd `googleid` (size 43 is
+`0552683-ARIZONA-43`; its eight siblings drop the leading zero), and 13 Google-live styles share that mixed-shape pattern. But
+`0552681-ARIZONA` has the same defect, was changed one minute earlier, and pushed fine — so the leading zero is not the cause on
+that evidence.
+
+**To diagnose:** the real error goes to the sweep's stderr on the VPS. Read `/apps/scripts/logs/google-sweep.log`, or run it by
+hand on the box — `node /apps/production/bcweb-server/scripts/google-price-sweep.js` — which will retry that one style and print
+the reason. `pushIfLive` can fail as `GOOGLE_NOT_CONFIGURED` (ruled out — other styles pushed in the same run),
+`GOOGLE_PUSH_FAILED` (whole run), or `pushed:true` with `failed > 0` (individual sizes rejected), which is the likely one.
+
+---
+
+## 5. Other things worth knowing
 
 **ESLint 10 on the server adds `preserve-caught-error` to its recommended set.** It caught a real bug in `utils/googleAuth.js` (a
 `JSON.parse` failure rethrown without `cause`, losing the parse position — now fixed). Expect it to flag more bare rethrows as

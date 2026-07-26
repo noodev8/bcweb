@@ -23,9 +23,10 @@ vercel --prod
 ==== EXTRA Server deploys done once
 
 NOTE: the venv below lives only on the production box (/apps/production/bcweb-server/venv), never in the
-git-tracked source at /apps/bcweb/bcweb-server. The rsync in the main deploy step above now excludes 'venv'
-so --delete doesn't wipe it on every deploy -- it did exactly this once (2026-07-10), breaking the Google
-Merchant push until the venv was recreated. Don't remove that --exclude.
+git-tracked source at /apps/bcweb/bcweb-server. The rsync in the main deploy step above excludes 'venv' so
+--delete doesn't wipe it on every deploy -- it did exactly this once (2026-07-10). Don't remove that --exclude.
+(That incident broke the Google Merchant push, which was Python at the time; it is Node now and no longer
+needs the venv. The venv is still required for the Python Amazon upload helper below.)
 
 == Python (Amazon upload file feature) -- ASK CLAUDE FOR HELP WHEN DEPLOYING THIS
 The "Amazon upload file" button (POST /product-amazon) shells out to a Python helper:
@@ -38,27 +39,22 @@ The VPS is otherwise pure Node, so this needs a one-time setup on the server:
 When you deploy this the first time, ask Claude to help wire up the Python env + verify the button end-to-end.
 
 
-== Google Merchant price sync -- NOW IN-PROCESS NODE + a periodic SWEEP (ported off Python, 2026-07-24)
+== Google Merchant price sync -- in-process Node (ported off Python, 2026-07-24)
 No Python, no venv, no google-price-push folder anymore. utils/googleMerchant.js pushes a salePrice-only supplemental override
 to the Merchant API (products/v1) in-process; auth is utils/googleAuth.js (service-account JWT signed with Node's built-in crypto,
-access token cached ~1h). Google is DECOUPLED from the apply: POST /pricing-apply just logs the change to price_change_log; a cron
-SWEEP (scripts/google-price-sweep.js) sends the un-sent ones every ~2h through the day. Nightly merchant_feed.py --upload is the backstop.
+access token cached ~1h). Google is DECOUPLED from the apply: POST /pricing-apply just logs the change to price_change_log; the
+sweep (scripts/google-price-sweep.js) sends the un-sent ones.
+
+SCHEDULING IS NOT DOCUMENTED HERE. crontab.txt is the definitive source for when the sweep runs -- full stop. Do not restate the
+schedule in this file; the copy that used to live here had drifted from the real one.
 
 Env (unchanged -- already in prod .env; NO new vars to add):
   GOOGLE_MERCHANT_ID, GOOGLE_MERCHANT_CREDENTIALS_JSON, GOOGLE_SUPPLEMENTAL_DATASOURCE=10688724635
   (optional GOOGLE_CONTENT_LANGUAGE=en / GOOGLE_FEED_LABEL=GB default to en/GB to match the feed -- leave unset)
 
-DEPLOY STEPS (after the main rsync + npm install + pm2 restart above):
-  1. Apply the DB migration in pgAdmin against brookfield_prod -- adds the sweep's queue marker AND backfills existing rows to now()
-     so the first sweep only sends NEW changes (not the whole price history):
-       bcweb-server/migrations/20260724_price_change_log_google_pushed_at.sql
-  2. Schedule the sweep in cron -- every 2h through the working day, NOT at night.  crontab -e :
-       0 7-19/2 * * *  /usr/bin/node /apps/production/bcweb-server/scripts/google-price-sweep.js
-     - fix the node path to `which node` on the box. Cron clock is GMT, so 07-19 = 08-20 BST. No `cd` needed -- the script loads
-       .env by absolute path (relative to itself). Append `>> /apps/scripts/logs/google-sweep.log 2>&1` if you want its output captured.
-  3. Smoke test: make a pricing change in the UI, then run once by hand:
-       /usr/bin/node /apps/production/bcweb-server/scripts/google-price-sweep.js
-     Expect:  [google-sweep] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
+SMOKE TEST after a deploy -- make a pricing change in the UI, then run the sweep by hand on the box:
+  node /apps/production/bcweb-server/scripts/google-price-sweep.js
+  Expect:  [google-sweep] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
 
 ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine:
   - GCP project registered with merchant account 124941872; "Merchant API" enabled in the Cloud project.
@@ -68,7 +64,7 @@ ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine
     Google accepts the override inserts (HTTP 200) but silently NEVER merges them. To roll back the whole feature: PATCH the primary
     data source's default rule back to [{self:true}] (updateMask = primary_product_data_source.default_rule -- snake_case; camelCase
     is silently a no-op). Only salePrice is overridden, so the primary feed's price (RRP) is preserved.
-This push is best-effort -- a failure leaves the change queued for the next sweep, and the nightly feed run is the ultimate fallback.
+This push is best-effort -- a failure leaves the change queued for the next sweep run.
 
 
 -- Non-deployment notes (dependency landmines, the frontend data-layer rule, build gotchas, domain quirks) moved out of
