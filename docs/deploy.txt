@@ -69,3 +69,48 @@ ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine
     data source's default rule back to [{self:true}] (updateMask = primary_product_data_source.default_rule -- snake_case; camelCase
     is silently a no-op). Only salePrice is overridden, so the primary feed's price (RRP) is preserved.
 This push is best-effort -- a failure leaves the change queued for the next sweep, and the nightly feed run is the ultimate fallback.
+
+
+== PENDING: upgrade Next.js 15 -> 16 -- GIVE THIS ITS OWN SESSION, DO NOT BOLT IT ONTO ANOTHER JOB
+Status 2026-07-26 (commit e724293): both apps are at `npm audit` = 0. Nothing here is urgent or a live security hole.
+This is planned maintenance, not a fix.
+
+Why it needs its own session: 15 -> 16 is a framework major. It touches routing/caching defaults and needs the whole app
+CLICK-TESTED afterwards -- a green `npm run build` proves the code compiles, not that the pages behave. Never do this at the
+end of a session as a "quick dependency bump".
+
+Already in our favour -- React is on 19 and Tailwind stays on 3, so those aren't blockers.
+
+What the upgrade buys us (both are currently held together by version overrides in bcweb-web/package.json):
+  - "sharp": "^0.35.0"          -- next@15 declares sharp ^0.34.3 as an OPTIONAL dep, pinned below the libvips CVE fix
+                                   (CVE-2026-33327/33328/35590/35591). 0.35 satisfies how next uses it. next 16 should ship a
+                                   sharp range that's already patched, at which point this override can go.
+  - "brace-expansion": "^5.0.8" -- the proper fix is eslint 10, but it is BLOCKED in bcweb-web: eslint-config-next@15 peers
+                                   eslint "^7 || ^8 || ^9". Only brace-expansion 5.0.8+ is patched (there is no fixed 1.x or 2.x),
+                                   so the override is the only route on next 15. next 16 ships an eslint-config-next that allows
+                                   eslint 10, so bcweb-web can then match the server and this override can go too.
+  ==> DO NOT casually delete either override before the upgrade. Both are load-bearing; removing them reintroduces high-severity
+      advisories. After upgrading, drop them ONE AT A TIME and re-run `npm audit` to confirm next 16 really covers it.
+
+Verification checklist for any dependency bump in this repo (build is the one that catches a bad Next bump):
+  bcweb-server:  npm run lint   AND a boot check (node -e "require('./server.js')" -- must print the listening line)
+  bcweb-web:     npx tsc --noEmit   AND   npm run build   -- then `npm audit` in both
+
+
+== OTHER THINGS FOUND 2026-07-26, worth knowing but NOT urgent
+
+eslint 10 on the server adds `preserve-caught-error` to its recommended set. It caught a real bug in utils/googleAuth.js
+(a JSON.parse failure was rethrown without `cause`, losing the parse position -- now fixed). EXPECT THIS RULE TO FLAG MORE
+bare rethrows as older files get touched. The fix is always the same shape: throw new Error(msg, { cause: e }). It is a
+genuine improvement, not lint noise -- don't disable the rule.
+
+price_change_log holds rows where old_price = new_price. These are NOT a bug and NOT review-date updates (pricing-park writes
+no log row at all). They are HOLDS: Apply pressed with the price left unchanged, which is the only way to record WHY a style
+was left alone, because park sets the review date but stores no note. The Analytics > Price Changes "Impact" panel counts them
+in its Holds column. DO NOT add an old==new guard to pricing-apply -- it would discard the note, which is the whole point of
+the action. If a cleaner route is ever wanted, let pricing-park accept a note; be aware that would move holds out of
+price_change_log and change what the activity summary counts.
+
+Watch for accidental double-Applies. 1015399-BARBADOS logged the same no-op twice, 18s and 57s after a genuine raise, same
+note each time (ids 1772/1773, to be deleted). If that pattern recurs it inflates the Holds count with things that aren't
+really analysis, and may mean Apply isn't confirming clearly enough that it worked.
