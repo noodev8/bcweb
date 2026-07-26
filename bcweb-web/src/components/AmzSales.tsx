@@ -11,13 +11,13 @@ Purpose: A reference report on the Amazon drill — the recent RAW Amazon sales 
 =======================================================================================================================================
 */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 // DEFAULT OPEN on the drill (mirrors the Shopify SalesList's `defaultOpen`, owner, 2026-07-23): recent sales is the report the operator
 // goes straight to, so it starts expanded and fetches on mount rather than waiting for a click.
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getAmzSales, AmzSaleRow } from '@/lib/api';
 import RowsToggle, { PREVIEW_ROWS } from '@/components/RowsToggle';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDate(iso: string | null): string {
@@ -29,45 +29,30 @@ function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
 
+const NO_ROWS: AmzSaleRow[] = [];
+
 export default function AmzSales({ code, defaultOpen = false }: { code: string; defaultOpen?: boolean }) {
-  const { logout } = useAuth();
+  // Opening the panel IS the fetch trigger: a null key means "don't fetch yet", so the old loaded/loading guards and the
+  // auto-load effect (which existed only to cover defaultOpen) are gone. defaultOpen now simply starts `open` true.
   const [open, setOpen] = useState(defaultOpen);
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<AmzSaleRow[]>([]);
-  const [truncated, setTruncated] = useState(false);
-  const [limit, setLimit] = useState(0);
-  const [showAll, setShowAll] = useState(false);   // preview (10) vs the whole loaded list; reset on every fetch
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    open ? ['amz-sales', code] : null,
+    () => getAmzSales(code),
+  );
+  const rows: AmzSaleRow[] = data?.rows ?? NO_ROWS;
+  const truncated = data?.truncated ?? false;
+  const limit = data?.limit ?? 0;
+  const error = loadError?.message ?? null;
 
-  async function load() {
-    setLoading(true);
-    setError(null);
-    const res = await getAmzSales(code);
-    setLoading(false);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setTruncated(res.data.truncated);
-      setLimit(res.data.limit);
-      setShowAll(false);
-      setLoaded(true);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load sales');
-    }
-  }
+  // "Show all" is stored as WHICH code it was expanded for, not a bare boolean. That makes the collapse-on-new-code behaviour fall
+  // out of a pure comparison instead of needing an effect to reset it (react-hooks/set-state-in-effect), and it is what the old code
+  // achieved by calling setShowAll(false) inside every fetch.
+  const [showAllFor, setShowAllFor] = useState<string | null>(null);
+  const showAll = showAllFor === code;
+  const setShowAll = (v: boolean | ((prev: boolean) => boolean)) => setShowAllFor((typeof v === 'function' ? v(showAll) : v) ? code : null);
 
-  // Auto-load when it starts open (defaultOpen). Guarded so it fires once.
-  useEffect(() => {
-    if (open && !loaded && !loading) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && !loaded && !loading) await load();
-  }
+  const toggle = () => setOpen((v) => !v);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">

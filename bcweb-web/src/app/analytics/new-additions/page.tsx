@@ -14,11 +14,12 @@ Guarded by AppShell. Consumes GET /analytics-new-additions.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getNewAdditions,
   NewAdditionRow,
@@ -30,34 +31,33 @@ import {
 
 const DAYS = 30; // fixed window (owner decision — no lens toggle)
 
+// Stable identities for "nothing loaded yet". A fresh [] each render would change the identity of everything derived from it
+// (the sortedRows useMemo below), defeating the memo.
+const NO_ROWS: NewAdditionRow[] = [];
+const NO_NOTES: ScratchpadNote[] = [];
+
 export default function NewAdditionsPage() {
   const { logout } = useAuth();
   const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
-  const [rows, setRows] = useState<NewAdditionRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'added' | 'sold' | 'stock'>('added'); // which column the list is sorted by
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');            // direction; default desc (newest / most first)
-  // "Now" is captured when the rows are fetched, NOT read during render. Date.now() is impure, so calling it while rendering makes
-  // the output depend on when React happens to re-render (react-hooks/purity). Snapshotting it here also reads better: the ages
-  // shown are "as at the time we loaded the list", which is what the numbers next to each row actually mean.
-  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getNewAdditions(DAYS);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setLoadedAt(Date.now());
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load New Additions');
-    }
-    setLoading(false);
-  }, [logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // "Now" is captured HERE, inside the fetcher, not during render. Date.now() is impure, so reading it while rendering makes the
+  // output depend on when React happens to re-render (react-hooks/purity). Capturing it alongside the rows also reads better: the
+  // ages shown are "as at the time we loaded the list", which is what the numbers next to each row actually mean.
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    ['new-additions', DAYS],
+    async () => {
+      const res = await getNewAdditions(DAYS);
+      if (res.success && res.data) {
+        return { success: true, data: { rows: res.data.rows, loadedAt: Date.now() }, return_code: 'SUCCESS' };
+      }
+      return { success: false, error: res.error || 'Failed to load New Additions', return_code: res.return_code };
+    },
+  );
+  const rows: NewAdditionRow[] = data?.rows ?? NO_ROWS;
+  const loadedAt = data?.loadedAt ?? null;
+  const error = loadError?.message ?? null;
 
   // Totals across the additions — a quick read of how much the new lines have contributed.
   const totalUnits = rows.reduce((s, r) => s + r.units, 0);
@@ -216,53 +216,47 @@ export default function NewAdditionsPage() {
 // own fetch/state), so a slow report never blocks jotting. Add + delete only (no edit): to change a note, delete and re-add.
 // -------------------------------------------------------------------------------------------------------------------------------------
 function Scratchpad({ onUnauthorized }: { onUnauthorized: () => void }) {
-  const [notes, setNotes] = useState<ScratchpadNote[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null); // note just copied (brief "Copied" flash)
+  // Errors raised by add/delete. Separate from the query's own error so a failed save doesn't blank the list of existing notes.
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getScratchpad();
-    if (res.success && res.data) {
-      setNotes(res.data);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setError(res.error || 'Failed to load scratchpad');
-    }
-    setLoading(false);
-  }, [onUnauthorized]);
-
-  useEffect(() => { load(); }, [load]);
+  const { data: notesData, error: loadError, busy: loading, mutate } = useApiQuery(
+    ['scratchpad'],
+    () => getScratchpad(),
+  );
+  const notes: ScratchpadNote[] = notesData ?? NO_NOTES;
+  const error = actionError ?? loadError?.message ?? null;
 
   const add = async () => {
     const body = draft.trim();
     if (!body || saving) return;
     setSaving(true);
-    setError(null);
+    setActionError(null);
     const res = await addScratchpadNote(body);
     if (res.success && res.data) {
-      setNotes((n) => [res.data as ScratchpadNote, ...n]);
+      // Write the new note straight into the cache (revalidate: false) — the POST already returned the saved row, so a refetch
+      // would only cost a round trip to learn what we already know.
+      const saved = res.data as ScratchpadNote;
+      await mutate((n) => [saved, ...(n ?? NO_NOTES)], { revalidate: false });
       setDraft('');
     } else {
       if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setError(res.error || 'Failed to save note');
+      setActionError(res.error || 'Failed to save note');
     }
     setSaving(false);
   };
 
   const remove = async (id: number) => {
-    // Optimistic — drop it immediately; restore on failure.
+    // Optimistic — drop it from the cache immediately; SWR rolls back automatically if the delete throws.
     const prev = notes;
-    setNotes((n) => n.filter((x) => x.id !== id));
+    await mutate((n) => (n ?? NO_NOTES).filter((x) => x.id !== id), { revalidate: false });
     const res = await deleteScratchpadNote(id);
     if (!res.success) {
       if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setNotes(prev);
-      setError(res.error || 'Failed to delete note');
+      await mutate(prev, { revalidate: false });
+      setActionError(res.error || 'Failed to delete note');
     }
   };
 

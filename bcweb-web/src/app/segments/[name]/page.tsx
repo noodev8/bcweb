@@ -9,36 +9,25 @@ Purpose: The screen behind clicking a segment (docs/segments-spec.md §3). Heade
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ClockIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { useAuth } from '@/contexts/AuthContext';
-import { getSegmentDetail, logSegmentWork, renameSegment, SegmentDetail, SegmentAreaCell } from '@/lib/api';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { getSegmentDetail, logSegmentWork, renameSegment, SegmentAreaCell } from '@/lib/api';
 import { SEGMENT_REVIEW_CHIPS, dueTone, dueText, fmtMoney, fmtDate, fmtDateTime } from '@/lib/segmentUi';
 
 export default function SegmentDetailPage() {
   const router = useRouter();
-  const { logout } = useAuth();
   const params = useParams<{ name: string }>();
   const name = decodeURIComponent(params.name);
 
-  const [detail, setDetail] = useState<SegmentDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    const res = await getSegmentDetail(name);
-    if (res.success && res.data) { setDetail(res.data); setError(null); }
-    else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load segment');
-    }
-    setLoading(false);
-  }, [name, logout]);
-
-  useEffect(() => { reload(); }, [reload]);
+  const { data: detail, error: loadError, isLoading: loading, refresh: reload } = useApiQuery(
+    ['segment-detail', name],
+    () => getSegmentDetail(name),
+  );
+  const error = loadError?.message ?? null;
 
   return (
     <AppShell title={name} subtitle="Segment" backHref="/segments" backLabel="All segments">

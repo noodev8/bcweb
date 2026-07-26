@@ -22,14 +22,18 @@ Guarded by AppShell. Consumes GET /analytics-stock-position.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import AppShell from '@/components/AppShell';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getStockPosition, updateStockPosition, getStockPositionList,
   StockPositionRow, StockListItem, StockBucket,
 } from '@/lib/api';
+
+// Stable identity for "no history yet" — a fresh [] each render would change the identity of everything derived from it.
+const NO_HISTORY: StockPositionRow[] = [];
 
 // Bucket display metadata (shared by the panels' bar + breakdown). Order = healthiest -> not alive.
 const BUCKETS = [
@@ -53,37 +57,28 @@ function prevSelling(hist: StockPositionRow[], today: string): number | null {
 
 export default function StockPositionPage() {
   const { logout } = useAuth();
-  const [shp, setShp] = useState<StockPositionRow | null>(null);
-  const [amz, setAmz] = useState<StockPositionRow | null>(null);
-  const [histShp, setHistShp] = useState<StockPositionRow[]>([]);
-  const [histAmz, setHistAmz] = useState<StockPositionRow[]>([]);
-  const [asOf, setAsOf] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Errors from the actions on this page (drill-open, "Update now") — kept apart from the query's own error so a failed drill
+  // doesn't tear down the headline that loaded fine.
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // Drill: which bucket (of which channel) is open, and the products behind it.
+  // Drill: which bucket (of which channel) is open, and the products behind it. Event-driven (a click), so it stays imperative —
+  // only the on-mount load moves to useApiQuery.
   const [sel, setSel] = useState<{ channel: 'SHP' | 'AMZ'; bucket: StockBucket } | null>(null);
   const [listRows, setListRows] = useState<StockListItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    const res = await getStockPosition(90);
-    if (res.success && res.data) {
-      setShp(res.data.today.shp);
-      setAmz(res.data.today.amz);
-      setHistShp(res.data.history.shp);
-      setHistAmz(res.data.history.amz);
-      setAsOf(res.data.today.shp?.date || '');
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load Stock Position');
-    }
-    setLoading(false);
-  }, [logout]);
-
-  useEffect(() => { load(); }, [load]);
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+    ['stock-position', 90],
+    () => getStockPosition(90),
+  );
+  const shp = data?.today.shp ?? null;
+  const amz = data?.today.amz ?? null;
+  const histShp = data?.history.shp ?? NO_HISTORY;
+  const histAmz = data?.history.amz ?? NO_HISTORY;
+  const asOf = data?.today.shp?.date || '';
+  const error = actionError ?? loadError?.message ?? null;
 
   // Open (or toggle closed) a bucket's product list.
   const openBucket = useCallback(async (channel: 'SHP' | 'AMZ', bucket: StockBucket) => {
@@ -96,7 +91,7 @@ export default function StockPositionPage() {
       setListRows(res.data.rows);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load list');
+      setActionError(res.error || 'Failed to load list');
     }
     setListLoading(false);
   }, [sel, logout]);
@@ -104,15 +99,15 @@ export default function StockPositionPage() {
   async function onUpdate() {
     setUpdating(true);
     setNotice(null);
-    setError(null);
+    setActionError(null);
     const res = await updateStockPosition();
     if (res.success && res.data) {
       const { shp: s, amz: a } = res.data.today;
       setNotice(`Snapshot recorded — Shopify ${s.in_stock_selling} in stock + selling (of ${s.alive} active), Amazon ${a.in_stock_selling} (of ${a.alive} active).`);
-      await load();
+      await refresh();
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to record snapshot');
+      setActionError(res.error || 'Failed to record snapshot');
     }
     setUpdating(false);
   }

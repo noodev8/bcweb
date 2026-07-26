@@ -30,11 +30,11 @@ Guarded by AppShell. Consumes GET /analytics-sales.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { getSalesReport, SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';
 
 type ChannelFilter = 'all' | 'shp' | 'amz';
@@ -66,8 +66,10 @@ const CHANNEL_CHIP: Record<string, { label: string; cls: string }> = {
   CM3: { label: 'CM3', cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
 };
 
+// Stable identity for "no rows yet" — a fresh [] each render would defeat the memos that derive from it.
+const NO_ROWS: SalesReportRow[] = [];
+
 export default function SalesPage() {
-  const { logout } = useAuth();
   const pathname = usePathname();
 
   // Direct, column-aware click behaviour (replaces the shared reprice/copy chooser on this page). The operator told us: don't ask —
@@ -100,40 +102,26 @@ export default function SalesPage() {
   const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
   const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
 
-  const [rows, setRows] = useState<SalesReportRow[]>([]);
-  const [summary, setSummary] = useState<SalesReportSummary | null>(null);
-  const [range, setRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
-  const [searchActive, setSearchActive] = useState(false); // reflects the loaded result (product mode vs window pulse)
-  const [summaryOnly, setSummaryOnly] = useState(false);   // long window: totals only, no line list
-  const [truncated, setTruncated] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   // A Contains step is what flips the screen into product mode (and so dims the window control); a Does-not-contain step alone doesn't.
   const hasSteps = useMemo(() => steps.filter((s) => s.op === 'has'), [steps]);
   const willSearch = hasSteps.length > 0;
   // The term the result box quotes back — the opening Contains, which is the one that chose the matched set.
   const leadTerm = hasSteps[0]?.term ?? '';
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getSalesReport({ channel, window: win, steps });
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setSummary(res.data.summary);
-      setRange({ from: res.data.from, to: res.data.to });
-      setSearchActive(res.data.searchActive);
-      setSummaryOnly(res.data.summaryOnly);
-      setTruncated(res.data.truncated);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load Sales');
-    }
-    setLoading(false);
-  }, [channel, win, steps, logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // The key carries channel + window + every committed step, so committing a Find (or Reset) IS the re-query — there is no separate
+  // "now go fetch" call. `steps` is an array of objects; SWR hashes it structurally, so a new array with equal contents won't refetch.
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    ['sales-report', channel, win, steps],
+    () => getSalesReport({ channel, window: win, steps }),
+  );
+  const rows: SalesReportRow[] = data?.rows ?? NO_ROWS;
+  const summary: SalesReportSummary | null = data?.summary ?? null;
+  // Memoised because a fresh object each render would re-run the CSV-export callback and the summary memo below.
+  const range = useMemo(() => ({ from: data?.from ?? null, to: data?.to ?? null }), [data?.from, data?.to]);
+  const searchActive = data?.searchActive ?? false; // reflects the loaded result (product mode vs window pulse)
+  const summaryOnly = data?.summaryOnly ?? false;   // long window: totals only, no line list
+  const truncated = data?.truncated ?? false;
+  const error = loadError?.message ?? null;
 
   // FIND — commit whatever is in the boxes as steps, then clear them (Inventory's behaviour). The re-query falls out of `steps` being a
   // dependency of load(); nothing fires until this runs, which is the point of dropping the debounce.

@@ -18,7 +18,8 @@ to notice about a product; a list that quietly dropped them would overstate how 
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { getInvSales, InvSaleRow } from '@/lib/api';
 
 // Channel chips. Muted on purpose: the channel is context for the row, not its headline — the price and profit are.
@@ -40,28 +41,16 @@ const money = (v: number | null) => (v === null ? '—' : `£${v.toFixed(2)}`);
 
 export default function InvSales({ groupid }: { groupid: string }) {
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<InvSaleRow[] | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getInvSales(groupid, 5);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setTruncated(res.data.truncated);
-    } else {
-      setError(res.error || 'Could not load sales');
-    }
-    setLoading(false);
-  }, [groupid]);
-
-  // Fetch on first open only. The parent re-keys this component per style, so switching product resets to collapsed+unfetched.
-  useEffect(() => {
-    if (open && rows === null && !loading) load();
-  }, [open, rows, loading, load]);
+  // A null key means "don't fetch yet", so simply opening the panel IS the trigger — no effect, no "have I already loaded?" guard.
+  // The parent re-keys this component per style, so switching product resets to collapsed+unfetched.
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    open ? ['inv-sales', groupid, 5] : null,
+    () => getInvSales(groupid, 5),
+  );
+  const rows: InvSaleRow[] | null = data?.rows ?? null;
+  const truncated = data?.truncated ?? false;
+  const error = loadError?.message ?? null;
 
   return (
     <div className="border-t border-slate-200">

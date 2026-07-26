@@ -19,47 +19,45 @@ Guarded by AppShell. Consumes GET /birk-tracker + POST /birk-tracker-update.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { getBirkTracker, updateBirkTracker, BirkSnapshot } from '@/lib/api';
+
+// Stable identity for "no rows yet". A fresh `[]` on every render would change the identity of anything derived from it (the
+// tableRows useMemo below), defeating the memo and re-running it on every render.
+const NO_ROWS: BirkSnapshot[] = [];
 
 export default function BirkTrackerPage() {
   const { logout } = useAuth();
-  const [rows, setRows] = useState<BirkSnapshot[]>([]);
-  const [latest, setLatest] = useState<BirkSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Errors from the "Update now" POST. Kept separate from the query's own error (below) because they have different lifetimes:
+  // a failed update must not blank out a table that loaded perfectly well.
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const res = await getBirkTracker(90);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setLatest(res.data.latest);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load Birk Tracker');
-    }
-    setLoading(false);
-  }, [logout]);
-
-  useEffect(() => { load(); }, [load]);
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+    ['birk-tracker', 90],
+    () => getBirkTracker(90),
+  );
+  const rows: BirkSnapshot[] = data?.rows ?? NO_ROWS;
+  const latest = data?.latest ?? null;
+  const error = actionError ?? loadError?.message ?? null;
 
   async function onUpdate() {
     setUpdating(true);
     setNotice(null);
-    setError(null);
+    setActionError(null);
     const res = await updateBirkTracker();
     if (res.success && res.data) {
       const l = res.data.latest;
       const stock = l.total_free != null ? `, ${l.total_free} units in stock` : '';
       setNotice(`Snapshot updated — ${l.full} Full of ${l.styles} styles (${l.full_pct}%)${stock}.`);
-      await load();
+      await refresh();
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to update snapshot');
+      setActionError(res.error || 'Failed to update snapshot');
     }
     setUpdating(false);
   }

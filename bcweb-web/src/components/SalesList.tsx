@@ -14,11 +14,11 @@ Purpose: A reference report on the drill screen — recent RAW Shopify SALES for
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { getSales, SaleRow } from '@/lib/api';
 import RowsToggle, { PREVIEW_ROWS } from '@/components/RowsToggle';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -32,47 +32,30 @@ function money(v: number | null): string {
 
 // defaultOpen: start expanded and fetch on mount. Recent sales is the report the operator goes straight to (owner, 2026-07-20), so on
 // the drill it opens itself; elsewhere it stays a click-to-open dropdown. Still lazy — the fetch fires when it opens, mount or click.
+const NO_ROWS: SaleRow[] = [];
+
 export default function SalesList({ groupid, defaultOpen = false }: { groupid: string; defaultOpen?: boolean }) {
-  const { logout } = useAuth();
+  // Opening the panel IS the fetch trigger: a null key means "don't fetch yet", so the old loaded/loading guards and the
+  // auto-load effect (which existed only to cover defaultOpen) are gone. defaultOpen now simply starts `open` true.
   const [open, setOpen] = useState(defaultOpen);
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<SaleRow[]>([]);
-  const [truncated, setTruncated] = useState(false);
-  const [limit, setLimit] = useState(0);
-  // Preview vs full list. Resets to the preview whenever the style's sales are re-fetched (a new style / after an apply) — the operator
-  // shouldn't inherit the previous style's "expanded" state.
-  const [showAll, setShowAll] = useState(false);
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    open ? ['sales', groupid] : null,
+    () => getSales(groupid),
+  );
+  const rows: SaleRow[] = data?.rows ?? NO_ROWS;
+  const truncated = data?.truncated ?? false;
+  const limit = data?.limit ?? 0;
+  const error = loadError?.message ?? null;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getSales(groupid);
-    setLoading(false);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setTruncated(res.data.truncated);
-      setLimit(res.data.limit);
-      setShowAll(false);
-      setLoaded(true);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load sales');
-    }
-  }, [groupid, logout]);
+  // "Show all" is stored as WHICH groupid it was expanded for, not a bare boolean. That makes the collapse-on-new-groupid behaviour fall
+  // out of a pure comparison instead of needing an effect to reset it (react-hooks/set-state-in-effect), and it is what the old code
+  // achieved by calling setShowAll(false) inside every fetch.
+  const [showAllFor, setShowAllFor] = useState<string | null>(null);
+  const showAll = showAllFor === groupid;
+  const setShowAll = (v: boolean | ((prev: boolean) => boolean)) => setShowAllFor((typeof v === 'function' ? v(showAll) : v) ? groupid : null);
 
-  // Auto-load when it starts open (defaultOpen). Guarded so it fires once.
-  useEffect(() => {
-    if (open && !loaded && !loading) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && !loaded && !loading) load();
-  }
+  const toggle = () => setOpen((v) => !v);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
