@@ -19,6 +19,9 @@ Purpose: The "Copy" control on the Add / Modify identity card — clone the load
 */
 
 import { useState, useEffect, useRef } from 'react';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
+import { useDebounced } from '@/lib/useDebounced';
 import { copyProduct, getProduct } from '@/lib/api';
 
 export default function CopyToNewProduct({
@@ -29,17 +32,14 @@ export default function CopyToNewProduct({
   onUnauthorized: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [newGroupid, setNewGroupid] = useState('');
   const [copying, setCopying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Live "does this Group ID already exist?" guard (a copy can't reuse a key).
-  const [exists, setExists] = useState(false);
-  const [checking, setChecking] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Reset the little form whenever it's closed or the source product changes underneath us.
-  useEffect(() => { setNewGroupid(''); setError(null); setNote(null); setExists(false); }, [sourceGroupid, open]);
+  // The whole little form belongs to ONE opening of the popover for ONE source product, so it is scoped rather than reset by an effect.
+  const scope = `${sourceGroupid}|${open}`;
+  const [newGroupid, setNewGroupid] = useScopedState<string>(scope, '');
+  const [error, setError] = useScopedState<string | null>(scope, null);
+  const [note, setNote] = useScopedState<string | null>(scope, null);
 
   // Close the popover on an outside click or Escape (it overlaps content, so it shouldn't linger).
   useEffect(() => {
@@ -51,22 +51,21 @@ export default function CopyToNewProduct({
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  useEffect(() => {
-    const gid = newGroupid.trim().toUpperCase();
-    if (!gid) { setExists(false); setChecking(false); return; }
-    let cancelled = false;
-    setChecking(true);
-    const t = setTimeout(async () => {
-      const res = await getProduct(gid);
-      if (cancelled) return;
-      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setExists(res.success);
-      setChecking(false);
-    }, 400);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [newGroupid, onUnauthorized]);
-
   const gid = newGroupid.trim().toUpperCase();
+
+  // Live "does this Group ID already exist?" guard (a copy can't reuse a key). Debounced so it doesn't fire per keystroke, then a null
+  // key while the box is empty means no request at all. A NOT_FOUND is the ANSWER here, not a failure — it means the id is free — so
+  // retries are off and the error is simply read as "doesn't exist".
+  const settledGid = useDebounced(gid, 400);
+  const { data: found, busy: lookingUp } = useApiQuery(
+    settledGid ? ['product-exists', settledGid] : null,
+    () => getProduct(settledGid),
+    { shouldRetryOnError: false },
+  );
+  const exists = settledGid !== '' && found !== undefined;
+  // "Checking" must also cover the debounce window, otherwise the button flickers to enabled between the last keystroke and the request.
+  const checking = gid !== settledGid || lookingUp;
+
   const sameAsSource = gid === sourceGroupid.toUpperCase();
   const blocked = copying || checking || exists || sameAsSource || !gid;
 

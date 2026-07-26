@@ -28,12 +28,12 @@ The command bar is STICKY: it stays pinned to the top while the cards scroll und
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
 import InvStyleCard from '@/components/InvStyleCard';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 // One applied narrowing step. `has` keeps matching rows; `not` drops them.
 interface FilterStep {
@@ -107,12 +107,13 @@ function normSize(s: string): string {
   return Number.isFinite(n) ? String(n) : s.trim().toLowerCase();
 }
 
-export default function InventoryPage() {
-  const { logout } = useAuth();
+// Stable "no rows yet" identity — the list feeds the `indexed` useMemo, so a fresh [] each render would rebuild the whole
+// search index on every render.
+const NO_ROWS: InvStyleRow[] = [];
 
-  const [rows, setRows] = useState<InvStyleRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function InventoryPage() {
+
+
 
   // The two input boxes, and the ordered list of steps applied so far.
   const [contains, setContains] = useState('');
@@ -161,22 +162,15 @@ export default function InventoryPage() {
   // Reset hands focus straight back to Contains so the next hunt starts by typing.
   const containsRef = useRef<HTMLInputElement>(null);
 
-  // Fetch the whole list. On mount and again on Reset — Reset is the "start a fresh hunt" moment, so it doubles as refresh-from-DB
-  // (mirrors PowerBuilder). Between refreshes the list is a snapshot filtered in the browser with no round-trip.
-  const loadStyles = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await getInvStyles();
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load inventory');
-    }
-    setLoading(false);
-  }, [logout]);
-
-  useEffect(() => { loadStyles(); }, [loadStyles]);
+  // Fetch the whole list. On mount, and again on Reset — Reset is the "start a fresh hunt" moment, so it doubles as refresh-from-DB
+  // (mirrors PowerBuilder). Between refreshes the list is a snapshot filtered in the browser with no round-trip. `busy` (not
+  // isLoading) drives the spinner so a Reset re-fetch shows it too, matching the old setLoading(true) at the top of the loader.
+  const { data, error: loadError, busy: loading, refresh: loadStyles } = useApiQuery(
+    ['inv-styles'],
+    () => getInvStyles(),
+  );
+  const rows: InvStyleRow[] = data?.rows ?? NO_ROWS;
+  const error = loadError?.message ?? null;
 
   // Pre-compute each row's haystack once per fetch, not once per filter pass.
   const indexed = useMemo(() => rows.map((r) => ({ row: r, hay: haystack(r) })), [rows]);

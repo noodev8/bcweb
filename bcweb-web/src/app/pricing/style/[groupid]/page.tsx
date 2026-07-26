@@ -20,7 +20,7 @@ Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set pric
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
@@ -32,9 +32,11 @@ import PriceSetter from '@/components/PriceSetter';
 import MatchAmazonPanel from '@/components/MatchAmazonPanel';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
-import { getDrill, applyPrice, parkStyle, DrillData } from '@/lib/api';
+import { getDrill, applyPrice, parkStyle } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
 
 // useSearchParams (below) must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function DrillPage() {
@@ -69,35 +71,24 @@ function DrillContent() {
     return `${seg} · ${modeLabel}`;
   })();
 
-  const [data, setData] = useState<DrillData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Product image is purely for eyeballing what's being priced (same picture the stock/analytics screens show). Track a load failure
-  // so a missing/dead filename falls back to a placeholder rather than a broken-image icon; reset it whenever the style changes.
-  const [imgFailed, setImgFailed] = useState(false);
-  useEffect(() => { setImgFailed(false); }, [groupid]);
+  // so a missing/dead filename falls back to a placeholder rather than a broken-image icon. SCOPED to the style, so changing style
+  // clears it during render instead of via a reset effect.
+  const [imgFailed, setImgFailed] = useScopedState<boolean>(groupid, false);
   // Bumped after a successful write to remount the setter + the lazy reports so they pick up the fresh data (new current price, an
   // empty setter, and a re-fetch of the price-history/sales reports that now include the change).
   const [reloadKey, setReloadKey] = useState(0);
 
-  // silent=true is used for the post-write in-place refresh: it updates the data without the full-page "Loading…" flash (the existing
-  // content stays put while the fresh drill loads underneath).
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    const res = await getDrill(groupid);
-    if (res.success && res.data) {
-      setData(res.data);
-      setError(null);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load style');
-    }
-    if (!silent) setLoading(false);
-  }, [groupid, logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // `isLoading` (not `busy`) is the full-page "Loading…" gate, which reproduces the old load(silent) split for free: SWR reports
+  // isLoading only when there is no cached data, so a post-write refresh() revalidates underneath the existing content with no flash --
+  // exactly what silent=true was hand-rolling.
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+    ['shp-drill', groupid],
+    () => getDrill(groupid),
+  );
+  const error = loadError?.message ?? null;
 
   // Return after a successful write to the list we came from (style now hidden there until its review date).
   function goBackToList() {
@@ -123,7 +114,7 @@ function DrillContent() {
       // Google is decoupled — a periodic server sweep (scripts/google-price-sweep.js) pushes this change to Google Merchant later, so
       // there's nothing to report here (and no per-Google failure to surface). The plain "Saved" covers the DB + live Shopify push.
       setNotice({ kind: 'ok', text: `Saved £${res.data.new_price}.${reviewMsg}${warn}` });
-      await load(true);
+      await refresh();
       setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -138,7 +129,7 @@ function DrillContent() {
     setApplying(false);
     if (res.success && res.data) {
       setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged).` });
-      await load(true);
+      await refresh();
       setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -199,7 +190,7 @@ function DrillContent() {
                 currentPrice={data.header.now}
                 applying={applying}
                 onPark={handlePark}
-                onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
+                onChanged={async () => { await refresh(); setReloadKey((k) => k + 1); }}
               />
             ) : (
               <PriceSetter
@@ -251,7 +242,7 @@ function DrillContent() {
               currentPrice={data.header.now}
               applying={applying}
               onPark={handlePark}
-              onChanged={async () => { await load(true); setReloadKey((k) => k + 1); }}
+              onChanged={async () => { await refresh(); setReloadKey((k) => k + 1); }}
             />
           )}
         </div>

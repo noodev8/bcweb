@@ -29,7 +29,8 @@ POST /amz-apply response and GET /amz-basket return amz_sku + rrp. Format (from 
 =======================================================================================================================================
 */
 
-import { createContext, useContext, useCallback, useEffect, useMemo, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useMemo, useState, ReactNode } from 'react';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { getAmzBasket, markAmzUploaded, AmzLastUpload } from '@/lib/api';
 
 // One queued change. Everything the Seller Central file needs lives on the item (amz_sku, new_price, rrp) so it's built without a fetch.
@@ -67,6 +68,16 @@ interface AmzBasketValue {
 
 const AmzBasketContext = createContext<AmzBasketValue | null>(null);
 
+// Stable "empty basket" identity — the value flows into a useMemo, so a fresh {} each render would churn the whole context value.
+const NO_ITEMS: Record<string, AmzBasketItem> = {};
+
+// What the basket query resolves to. Named so the fetcher (which returns the same shape down two branches) infers one type rather than
+// a union of the success shape and the silent-fallback shape.
+interface BasketSnapshot {
+  items: Record<string, AmzBasketItem>;
+  lastUpload: AmzLastUpload | null;
+}
+
 // Build the ONE tab-separated upload file from the queued items and trigger a browser download.
 function buildAndDownload(items: AmzBasketItem[]) {
   const header = 'sku\tprice\tminimum-seller-allowed-price\tmaximum-seller-allowed-price';
@@ -84,33 +95,44 @@ function buildAndDownload(items: AmzBasketItem[]) {
 }
 
 export function AmzBasketProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<Record<string, AmzBasketItem>>({});
-  const [lastUpload, setLastUpload] = useState<AmzLastUpload | null>(null);
   const [pending, setPending] = useState<PendingUpload | null>(null);
 
+  // The basket IS the server's view of the team's recent pending changes, so SWR's cache is the single source of truth rather than a
+  // local copy seeded by an effect. It loads on mount, so a hard refresh / reopen restores the file. Rows without an Amazon SKU are
+  // dropped (no file line can be built for them).
+  const { data, refresh, mutate } = useApiQuery<BasketSnapshot>(
+    ['amz-basket'],
+    async () => {
+      const res = await getAmzBasket();
+      if (!res.success || !res.data) {
+        // DELIBERATELY SILENT, including on UNAUTHORIZED. This provider wraps every /amz page, so it must never be the thing that
+        // drives a logout redirect — the page chrome owns auth. An empty basket is the right fallback, and matches what the previous
+        // `if (!res.success) return;` left behind.
+        return { success: true, return_code: 'SUCCESS', data: { items: NO_ITEMS, lastUpload: null } };
+      }
+      const next: Record<string, AmzBasketItem> = {};
+      for (const r of res.data.items) {
+        if (!r.amz_sku) continue;
+        next[r.code] = {
+          id: r.id, code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title,
+          segment: r.segment, old_price: r.old_price, new_price: r.new_price, rrp: r.rrp,
+        };
+      }
+      return { success: true, return_code: 'SUCCESS', data: { items: next, lastUpload: res.data.lastUpload } };
+    },
+    { shouldRetryOnError: false },
+  );
+  const items = data?.items ?? NO_ITEMS;
+  const lastUpload = data?.lastUpload ?? null;
+
+  // An applied price is already on the server (that's what /amz-apply just did) — this only reflects it in the basket immediately, so
+  // it's a cache write with no revalidation rather than a fetch.
   const add = useCallback((item: AmzBasketItem) => {
-    setItems((prev) => ({ ...prev, [item.code]: item }));
-  }, []);
-
-  // Rebuild the basket from the audit log (the team's recent PENDING changes) + the last confirmed upload. Runs on mount so a hard refresh
-  // / reopen restores the file; drops any row without an Amazon SKU (can't build a file line for it). Silent on failure/UNAUTHORIZED — the
-  // page chrome handles auth.
-  const refresh = useCallback(async () => {
-    const res = await getAmzBasket();
-    if (!res.success || !res.data) return;
-    const next: Record<string, AmzBasketItem> = {};
-    for (const r of res.data.items) {
-      if (!r.amz_sku) continue;
-      next[r.code] = {
-        id: r.id, code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title,
-        segment: r.segment, old_price: r.old_price, new_price: r.new_price, rrp: r.rrp,
-      };
-    }
-    setItems(next);
-    setLastUpload(res.data.lastUpload);
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
+    mutate(
+      (prev) => ({ items: { ...(prev?.items ?? NO_ITEMS), [item.code]: item }, lastUpload: prev?.lastUpload ?? null }),
+      { revalidate: false },
+    );
+  }, [mutate]);
 
   // Download the file AND snapshot exactly what it contained, so the confirm step marks only those rows (not anything applied afterwards).
   const download = useCallback(() => {

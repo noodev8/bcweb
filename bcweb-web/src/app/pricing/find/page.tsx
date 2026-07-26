@@ -9,13 +9,16 @@ Purpose: Search box matching groupid or title via GET /pricing-find?term= (CLAUD
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { findProducts, FindRow } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+
+// Stable "no results" identity so the table's reads don't allocate a new array each render.
+const NO_RESULTS: FindRow[] = [];
 
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function FindPage() {
@@ -34,38 +37,25 @@ function FindContent() {
   const from = searchParams.get('from') || '';
   const backHref = from || '/pricing';
   const backLabel = from ? prettyPathLabel(from) : 'Segments';
-  const { logout } = useAuth();
   // Search field is forced UPPERCASE (owner) — groupids/codes are uppercase, and the server matches with ILIKE so a title term still
   // matches case-insensitively. Uppercasing the value (not just CSS) keeps the displayed and submitted term consistent.
   const [term, setTerm] = useState(initialQ.toUpperCase());
-  const [results, setResults] = useState<FindRow[]>([]);
-  const [searched, setSearched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The COMMITTED search, separate from what's being typed. Seeding it from ?q= is what makes a cross-module arrival search on mount:
+  // the key is already non-null on the first render, so there is no "run it once" effect at all.
+  const [query, setQuery] = useState(initialQ.trim());
 
-  const runSearch = useCallback(async (raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    setLoading(true);
-    setError(null);
-    const res = await findProducts(t);
-    if (res.success && res.data) {
-      setResults(res.data);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Search failed');
-      setResults([]);
-    }
-    setSearched(true);
-    setLoading(false);
-  }, [logout]);
-
-  // Arrived with ?q= (e.g. from a cross-module jump) — run that search once on mount.
-  useEffect(() => { if (initialQ) runSearch(initialQ); }, [initialQ, runSearch]);
+  const { data: results, error: searchError, busy: loading } = useApiQuery(
+    query ? ['find-products', query] : null,
+    () => findProducts(query),
+  );
+  const error = searchError?.message ?? null;
+  // "We have run a search" — true as soon as one is committed. The no-results line is additionally gated on !loading && !error below,
+  // so this reads the same as the old post-fetch flag.
+  const searched = query !== '';
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault();
-    runSearch(term);
+    setQuery(term.trim());
   }
 
   // This search as it currently stands (query + origin) — handed to the drill as its `from` so back returns to the populated list,
@@ -92,11 +82,11 @@ function FindContent() {
 
       {loading && <p className="text-sm text-slate-400">Searching…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {searched && !loading && !error && results.length === 0 && (
+      {searched && !loading && !error && (results ?? NO_RESULTS).length === 0 && (
         <p className="text-sm text-slate-400">No matches.</p>
       )}
 
-      {results.length > 0 && (
+      {(results ?? NO_RESULTS).length > 0 && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -108,7 +98,7 @@ function FindContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {results.map((r) => (
+              {(results ?? NO_RESULTS).map((r) => (
                 <tr
                   key={r.groupid}
                   onClick={() => router.push(`/pricing/style/${encodeURIComponent(r.groupid)}?from=${encodeURIComponent(selfUrl)}`)}

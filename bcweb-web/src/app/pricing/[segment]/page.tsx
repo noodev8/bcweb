@@ -17,7 +17,7 @@ either. Now the count on each tab IS the work in front of you, and it goes down 
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
@@ -25,6 +25,8 @@ import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { getTriage, getLosers, getAll, applyPrice, parkStyleBulk, TriageRow, LoserRow, AllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
 
 // Bulk price + review controls — kept identical to the Shopify drill's price-setter (owner: "exactly the same as the individual item").
 // Nudge denominations = the drill's −£1/−50p/+50p/+£1/+£2 steps; review chips = the drill's day set. Shopify green tone throughout.
@@ -33,6 +35,10 @@ const SHP_NUDGES: Nudge[] = [
   { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 }, { label: '+£2', delta: 2 },
 ];
 const SHP_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+
+// Stable "nothing ticked" identity for useScopedState (it requires a stable initial — see that module's header). Never mutated:
+// every toggle builds a new Set from the previous one.
+const NO_SELECTION: Set<string> = new Set();
 const SHP_TONE: BulkTone = {
   chipOn: 'border-brand-600 bg-brand-600 text-white',
   applyBtn: 'bg-emerald-600 hover:bg-emerald-700',
@@ -83,41 +89,56 @@ function SegmentContent() {
   const backHref = searchParams.get('from') || '/pricing';
   const backLabel = searchParams.get('back') || 'Segments';
 
-  const [winners, setWinners] = useState<TriageRow[] | null>(null);
-  const [losers, setLosers] = useState<LoserRow[] | null>(null);
-  const [all, setAll] = useState<AllRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Pre-cap qualifying counts from the server. Normally these equal rows.length (today's biggest segment is well under the cap), but if
-  // the safety cap ever trims a list the tab count and the note must show the REAL size — the operator must never think a capped list is
-  // the whole job.
-  const [winnersTotal, setWinnersTotal] = useState<number | null>(null);
-  const [losersTotal, setLosersTotal] = useState<number | null>(null);
-
-  // Bulk selection (WINNERS/LOSERS only) — the groupids ticked for a bulk price move and/or review. Cleared on mode/segment change.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marking, setMarking] = useState(false);                        // a bulk write is in flight (disables the bar)
-  const [markError, setMarkError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-style apply progress
-  const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
-  // Fetch all three lists so each tab can show a count. Re-callable so a bulk write can refetch (parked/changed styles drop out, list refills).
-  const loadLists = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
-    if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
-    let err: string | null = null;
-    if (w.success && w.data) { setWinners(w.data.rows); setWinnersTotal(w.data.total); } else err = err || w.error || 'Failed to load winners';
-    if (l.success && l.data) { setLosers(l.data.rows); setLosersTotal(l.data.total); } else err = err || l.error || 'Failed to load losers';
-    if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all styles';
-    if (err) setError(err);
-    setLoading(false);
-  }, [segment, logout]);
+  // All three lists in ONE query so each tab can show a count. The three calls stay a single Promise.all inside the fetcher rather
+  // than three useApiQuery calls, because the PARTIAL-TOLERANCE behaviour matters and has to be preserved exactly: if one list fails
+  // the other two must still render, under one shared error line. Three separate queries would give three independent error states.
+  const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
+    ['pricing-lists', segment],
+    async () => {
+      const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
+      // Any one of the three coming back UNAUTHORIZED means the JWT is gone — surface it as such so the hook logs out once.
+      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') {
+        return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+      }
+      let err: string | null = null;
+      if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
+      if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
+      if (!(a.success && a.data)) err = err || a.error || 'Failed to load all styles';
+      return {
+        success: true,
+        return_code: 'SUCCESS',
+        data: {
+          // Pre-cap qualifying counts from the server. Normally these equal rows.length (today's biggest segment is well under the
+          // cap), but if the safety cap ever trims a list the tab count and the note must show the REAL size — the operator must
+          // never think a capped list is the whole job.
+          winners: w.success && w.data ? w.data.rows : null,
+          winnersTotal: w.success && w.data ? w.data.total : null,
+          losers: l.success && l.data ? l.data.rows : null,
+          losersTotal: l.success && l.data ? l.data.total : null,
+          all: a.success && a.data ? a.data.rows : null,
+          partialError: err,
+        },
+      };
+    },
+  );
+  const winners: TriageRow[] | null = data?.winners ?? null;
+  const losers: LoserRow[] | null = data?.losers ?? null;
+  const all: AllRow[] | null = data?.all ?? null;
+  const winnersTotal = data?.winnersTotal ?? null;
+  const losersTotal = data?.losersTotal ?? null;
 
-  useEffect(() => { loadLists(); }, [loadLists]);
-  // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
-  useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
+  // Bulk selection + the last run's feedback belong to ONE tab of ONE segment. Scoping them means switching tab or segment discards
+  // them during render — no reset effect, and no frame where the previous segment's ticks are still visible.
+  const scope = `${mode}|${segment}`;
+  const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
+  const [markError, setMarkError] = useScopedState<string | null>(scope, null);
+  const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
+
+  // A failed bulk write must not blank a list that loaded fine, so the two error sources stay distinct and are merged only for display.
+  const error = markError ?? data?.partialError ?? loadError?.message ?? null;
 
   function openStyle(groupid: string) {
     // Carry the back-context (from/back) into the return URL so it survives the drill round-trip (returning from a price apply keeps

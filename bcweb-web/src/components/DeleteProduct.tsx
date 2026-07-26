@@ -15,6 +15,7 @@ Purpose: The "Delete product" control on the Add / Modify identity card — PERM
 */
 
 import { useState, useEffect, useRef } from 'react';
+import { useScopedState } from '@/lib/useScopedState';
 import { deleteProduct } from '@/lib/api';
 
 export default function DeleteProduct({
@@ -26,13 +27,14 @@ export default function DeleteProduct({
   onUnauthorized: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Reset whenever the popover opens/closes or the product changes underneath us.
-  useEffect(() => { setTyped(''); setError(null); }, [open, groupid]);
+  // The typed confirmation and any error belong to ONE opening of the popover for ONE product. Scoping them on `open|groupid` clears
+  // them during render, so re-opening never shows the previous attempt's text for a frame first.
+  const scope = `${open}|${groupid}`;
+  const [typed, setTyped] = useScopedState<string>(scope, '');
+  const [error, setError] = useScopedState<string | null>(scope, null);
 
   // Close on an outside click or Escape (matches the Copy popover), unless a delete is in flight.
   useEffect(() => {

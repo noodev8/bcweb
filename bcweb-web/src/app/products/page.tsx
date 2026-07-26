@@ -19,6 +19,8 @@ Purpose: Entry screen for the Add / Modify Product module. Master-detail:
 
 import { useState, useEffect, ReactNode } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useDebounced } from '@/lib/useDebounced';
 import AppShell from '@/components/AppShell';
 import SizeEditor from '@/components/SizeEditor';
 import PriceEditor from '@/components/PriceEditor';
@@ -180,24 +182,18 @@ function NewProductForm({
   // Live "does this Group ID already exist?" check. The field is editable (the search term may be a fragment/typo), so we guard
   // against pointing a NEW product at an existing key: create is an INSERT and the server rejects a clash, but we check here too so
   // the user finds out immediately (Create is blocked) instead of after clicking.
-  const [exists, setExists] = useState(false);
-  const [checking, setChecking] = useState(false);
-
-  useEffect(() => {
-    const gid = groupid.trim().toUpperCase();
-    if (!gid) { setExists(false); setChecking(false); return; }
-    let cancelled = false;
-    setChecking(true);
-    // Debounce so we don't hit the API on every keystroke. getProduct succeeds iff the groupid exists.
-    const t = setTimeout(async () => {
-      const res = await getProduct(gid);
-      if (cancelled) return;
-      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setExists(res.success);
-      setChecking(false);
-    }, 400);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [groupid, onUnauthorized]);
+  // Debounced so it doesn't fire per keystroke; an empty box gives a null key, i.e. no request at all. getProduct succeeding IS the
+  // "it exists" answer, and a NOT_FOUND is the answer we want rather than a failure — hence retries off.
+  const typedGid = groupid.trim().toUpperCase();
+  const settledGid = useDebounced(typedGid, 400);
+  const { data: found, busy: lookingUp } = useApiQuery(
+    settledGid ? ['product-exists', settledGid] : null,
+    () => getProduct(settledGid),
+    { shouldRetryOnError: false },
+  );
+  const exists = settledGid !== '' && found !== undefined;
+  // Cover the debounce window too, so Create doesn't flicker to enabled between the last keystroke and the request.
+  const checking = typedGid !== settledGid || lookingUp;
 
   const set = (k: keyof ProductEditFields, v: string) => { setFields((p) => ({ ...p, [k]: v })); setError(null); };
 

@@ -19,10 +19,15 @@ only produce a line that silently can't be ordered. Better to say why at the poi
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { OrderFindRow, addOrderLine, findOrderSkus } from '@/lib/api';
 import { money } from '@/lib/orderStatusUi';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useDebounced } from '@/lib/useDebounced';
+
+// Stable "searched, found nothing" identity.
+const NO_RESULTS: OrderFindRow[] = [];
 
 interface Props {
   supplier: string;
@@ -33,8 +38,6 @@ interface Props {
 export default function AddOrderLine({ supplier, onAdded, onUnauthorized }: Props) {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState('');
-  const [results, setResults] = useState<OrderFindRow[] | null>(null);
-  const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<OrderFindRow | null>(null);
   const [qty, setQty] = useState(1);
   // Amazon by default, matching the legacy request screen — most added lines are FBA. Local is the deliberate alternative.
@@ -44,25 +47,20 @@ export default function AddOrderLine({ supplier, onAdded, onUnauthorized }: Prop
   const [note, setNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Debounced search. The 250ms wait keeps a fast typist from firing a query per keystroke; `cancelled` stops an earlier, slower
-  // response from overwriting the results of a later one.
-  useEffect(() => {
-    if (term.trim().length < 2) { setResults(null); return; }
-    let cancelled = false;
-    setSearching(true);
-    const t = setTimeout(async () => {
-      const res = await findOrderSkus(supplier, term.trim());
-      if (cancelled) return;
-      setSearching(false);
-      if (res.success && res.data) setResults(res.data);
-      else if (res.return_code === 'UNAUTHORIZED') onUnauthorized();
-      else setResults([]);
-    }, 250);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [term, supplier, onUnauthorized]);
+  // Debounced search. The 250ms wait keeps a fast typist from firing a query per keystroke. Under 2 characters the key is null, so no
+  // request happens and there are no results to show — which is what the old early return did by hand. SWR also removes the need for
+  // the `cancelled` flag: results are keyed by term, so a slow earlier response can no longer overwrite a later one.
+  const settledTerm = useDebounced(term.trim(), 250);
+  const searchable = settledTerm.length >= 2;
+  const { data: found, busy: searching } = useApiQuery(
+    searchable ? ['order-find', supplier, settledTerm] : null,
+    () => findOrderSkus(supplier, settledTerm),
+  );
+  // null = "haven't searched" (shows nothing); [] = "searched, found nothing" (shows the empty message). Preserved exactly.
+  const results: OrderFindRow[] | null = !searchable ? null : found ?? (searching ? null : NO_RESULTS);
 
   const reset = useCallback(() => {
-    setTerm(''); setResults(null); setPicked(null); setQty(1); setError(null);
+    setTerm(''); setPicked(null); setQty(1); setError(null);
   }, []);
 
   async function doAdd() {

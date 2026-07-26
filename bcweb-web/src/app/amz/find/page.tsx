@@ -21,7 +21,7 @@ Purpose: Search matching product name, group id, Amazon Seller SKU or code via G
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
@@ -30,6 +30,8 @@ import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { findAmzSkus, applyAmzPrice, markAmzReviewed, AmzFindRow, AmzFindStep } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
 // Bulk price + review controls — identical set to the Amazon segment lists' bulk bar (same denominations, review chips, amber tone), so
@@ -53,6 +55,10 @@ export default function AmzFindPage() {
     </Suspense>
   );
 }
+
+// Stable identities for "nothing yet" — these feed memos and a scoped-state initial, both of which need a fixed reference.
+const NO_RESULTS: AmzFindRow[] = [];
+const NO_SELECTION: Set<string> = new Set();
 
 function AmzFindContent() {
   const router = useRouter();
@@ -89,41 +95,33 @@ function AmzFindContent() {
     return out;
   }, [searchParams, initialQ]);
 
+  // Seeded from ?q= / ?has= so a cross-module arrival searches on the FIRST render (the key is already non-null) — no mount effect.
   const [steps, setSteps] = useState<AmzFindStep[]>(initialSteps);
-  const [results, setResults] = useState<AmzFindRow[]>([]);
-  const [total, setTotal] = useState(0);          // TRUE match count, uncapped
-  const [truncated, setTruncated] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // No steps => null key => no request and no results, which is what Reset used to achieve by clearing five pieces of state by hand.
+  const { data, error: searchError, busy: loading } = useApiQuery(
+    steps.length > 0 ? ['amz-find', steps] : null,
+    () => findAmzSkus(steps),
+  );
+  const results: AmzFindRow[] = data?.rows ?? NO_RESULTS;
+  const total = data?.total ?? 0;                 // TRUE match count, uncapped
+  const truncated = data?.truncated ?? false;
+  const searched = steps.length > 0;
+  // Client-side validation hints ("search for something first") are NOT fetch errors — they must show without a request having failed,
+  // and must clear on the next Find/Reset. Kept separate and merged only for display.
+  const [hint, setHint] = useState<string | null>(null);
+  const error = hint ?? searchError?.message ?? null;
 
   // Bulk selection — the codes ticked for a bulk price move and/or review. Cleared whenever a fresh search runs.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // A changed result set is a NEW selection, so the ticks are SCOPED to the exact step list. This matters beyond tidiness: a tick that
+  // survived a narrowing would still be applied by the bulk bar even though its row is no longer on screen. Scoping makes that
+  // impossible by construction rather than relying on a reset firing first.
+  const stepScope = JSON.stringify(steps);
+  const [selected, setSelected] = useScopedState<Set<string>>(stepScope, NO_SELECTION);
   const [marking, setMarking] = useState(false);                          // a bulk write is in flight (disables the bar)
-  const [markError, setMarkError] = useState<string | null>(null);
+  const [markError, setMarkError] = useScopedState<string | null>(stepScope, null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
-  const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
-
-  const runSearch = useCallback(async (activeSteps: AmzFindStep[]) => {
-    if (activeSteps.length === 0) return;
-    setLoading(true);
-    setError(null);
-    // A changed result set is a new selection — never carry ticks over. Critically this fires on every STEP change too, not just a fresh
-    // search: a tick that survived a narrowing would still be applied by the bulk bar even though its row is no longer on screen.
-    setSelected(new Set()); setMarkError(null); setResultSummary(null);
-    const res = await findAmzSkus(activeSteps);
-    if (res.success && res.data) {
-      setResults(res.data.rows);
-      setTotal(res.data.total);
-      setTruncated(res.data.truncated);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Search failed');
-      setResults([]); setTotal(0); setTruncated(false);
-    }
-    setSearched(true);
-    setLoading(false);
-  }, [logout]);
+  const [resultSummary, setResultSummary] = useScopedState<string | null>(stepScope, null);  // outcome line from the last bulk run
 
   function toggle(code: string) {
     setSelected((prev) => {
@@ -212,13 +210,6 @@ function AmzFindContent() {
     else setMarkError(res.error || 'Failed to set review');
   }
 
-  // Re-run whenever the step list changes — including the initial ?q= / ?has= arrival from a cross-module jump. Clearing back to no
-  // steps (Reset) empties the screen rather than firing a term-less search.
-  useEffect(() => {
-    if (steps.length > 0) runSearch(steps);
-    else { setResults([]); setTotal(0); setTruncated(false); setSearched(false); setSelected(new Set()); }
-  }, [steps, runSearch]);
-
   // FIND — commit the boxes as steps, then clear them. Each Find narrows what the last one found.
   function onFind(e: React.FormEvent) {
     e.preventDefault();
@@ -227,7 +218,7 @@ function AmzFindContent() {
     if (!c && !n) return;
     // A Does-not-contain on its own would mean "every SKU except…" — the server rejects it, so guide rather than fire a doomed request.
     if (!c && steps.every((s) => s.op !== 'has')) {
-      setError('Search for something first, then exclude from it.');
+      setHint('Search for something first, then exclude from it.');
       return;
     }
     const next: AmzFindStep[] = [];
@@ -236,7 +227,7 @@ function AmzFindContent() {
     setSteps((prev) => [...prev, ...next]);
     setContains('');
     setNotContains('');
-    setError(null);
+    setHint(null);
     containsRef.current?.focus();
   }
 
@@ -244,7 +235,7 @@ function AmzFindContent() {
     setSteps([]);
     setContains('');
     setNotContains('');
-    setError(null);
+    setHint(null);
     containsRef.current?.focus();
   }
 

@@ -20,7 +20,7 @@ control feel heavier than the decision it represents.
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
@@ -33,6 +33,7 @@ import {
 } from '@/lib/api';
 import { useZeroedLines, spliceZeroed, Zeroed } from '@/lib/zeroedLines';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 function batchKey(b: OrderStatusBatch): string { return `${b.ordertype}|${b.placeddate}`; }
 // A zeroed line is remembered per BATCH, not per SKU: the same size can legitimately sit in two placements, and only the one the
@@ -73,10 +74,7 @@ function SupplierContent() {
 
   const [stage, setStage] = useState<OrderStage>(searchParams.get('stage') === 'order' ? 'order' : 'place');
 
-  const [batches, setBatches] = useState<OrderStatusBatch[] | null>(null);
-  const [toPlace, setToPlace] = useState<{ rows: OrderToPlaceRow[]; totals: OrderToPlaceTotals } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set()); // ordernums
   // ON ORDER lines walked down to 0 by "−": kept on screen at 0 rather than disappearing from under the cursor. Display-only — the
@@ -87,21 +85,35 @@ function SupplierContent() {
   const [resultSummary, setResultSummary] = useState<string | null>(null);
   const [adjustingCode, setAdjustingCode] = useState<string | null>(null); // code currently mid +/-, so only that row's buttons disable
 
-  // Only shows the full-page "Loading…" state on the very first fetch (batches === null). Refetches after an action (switch/archive/
-  // adjust/place) update the data in place instead — the list staying on screen throughout is what stops the "keeps flipping" flash the
-  // owner flagged; the table simply updates once the new numbers land.
-  // Both stages refetch together: placing an order MOVES units from one to the other, so refreshing only the stage you're on would
-  // leave the other showing figures that are already wrong.
-  const load = useCallback(async () => {
-    setError(null);
-    const [listRes, placeRes] = await Promise.all([getOrderStatusList(supplier), getOrderToPlace(supplier)]);
-    if (listRes.return_code === 'UNAUTHORIZED' || placeRes.return_code === 'UNAUTHORIZED') { logout(); return; }
-    if (listRes.success && listRes.data) setBatches(listRes.data); else setError(listRes.error || 'Failed to load orders');
-    if (placeRes.success && placeRes.data) setToPlace(placeRes.data);
-    setLoading(false);
-  }, [supplier, logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // `isLoading` shows the full-page "Loading…" ONLY on the very first fetch (nothing cached). Refetches after an action
+  // (switch/archive/adjust/place) revalidate underneath the existing table instead — the list staying on screen throughout is what
+  // stops the "keeps flipping" flash the owner flagged; the numbers simply update once the new data lands.
+  // Both stages are fetched together in one query: placing an order MOVES units from one to the other, so refreshing only the stage
+  // you're on would leave the other showing figures that are already wrong.
+  const { data, error: loadError, isLoading: loading, refresh: load } = useApiQuery(
+    ['order-status', supplier],
+    async () => {
+      const [listRes, placeRes] = await Promise.all([getOrderStatusList(supplier), getOrderToPlace(supplier)]);
+      if (listRes.return_code === 'UNAUTHORIZED' || placeRes.return_code === 'UNAUTHORIZED') {
+        return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+      }
+      // The ON ORDER list is the one that must exist; TO PLACE failing quietly yields null, exactly as before.
+      if (!(listRes.success && listRes.data)) {
+        return { success: false, return_code: listRes.return_code, error: listRes.error || 'Failed to load orders' };
+      }
+      return {
+        success: true,
+        return_code: 'SUCCESS',
+        data: {
+          batches: listRes.data,
+          toPlace: placeRes.success && placeRes.data ? placeRes.data : null,
+        },
+      };
+    },
+  );
+  const batches: OrderStatusBatch[] | null = data?.batches ?? null;
+  const toPlace: { rows: OrderToPlaceRow[]; totals: OrderToPlaceTotals } | null = data?.toPlace ?? null;
+  const error = loadError?.message ?? null;
 
   function pickStage(next: OrderStage) {
     setStage(next);
@@ -219,7 +231,7 @@ function SupplierContent() {
           supplier={supplier}
           rows={toPlace.rows}
           totals={toPlace.totals}
-          onChanged={load}
+          onChanged={async () => { await load(); }}
           onUnauthorized={logout}
         />
       )}

@@ -14,7 +14,7 @@ Purpose: The decision screen for one Amazon SKU (one size), mirroring the Shopif
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
@@ -25,9 +25,11 @@ import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
-import { getAmzDrill, applyAmzPrice, markAmzReviewed, AmzDrillData } from '@/lib/api';
+import { getAmzDrill, applyAmzPrice, markAmzReviewed } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
 export default function AmzDrillPage() {
@@ -61,32 +63,23 @@ function DrillContent() {
     return `${seg} · ${modeLabel}`;
   })();
 
-  const [data, setData] = useState<AmzDrillData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Bumped after a successful write so the setter remounts (empty) and the lazy reports re-fetch with the fresh change.
   const [reloadKey, setReloadKey] = useState(0);
   // Product image is purely for eyeballing what's being priced (same picture the Shopify/stock screens show). Track a load failure so a
-  // missing/dead filename simply shows nothing rather than a broken-image icon; reset it whenever the SKU changes.
-  const [imgFailed, setImgFailed] = useState(false);
-  useEffect(() => { setImgFailed(false); }, [code]);
+  // missing/dead filename simply shows nothing rather than a broken-image icon. SCOPED to the SKU, so changing SKU clears it during
+  // render instead of via a reset effect.
+  const [imgFailed, setImgFailed] = useScopedState<boolean>(code, false);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    const res = await getAmzDrill(code);
-    if (res.success && res.data) {
-      setData(res.data);
-      setError(null);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load SKU');
-    }
-    if (!silent) setLoading(false);
-  }, [code, logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // `isLoading` (not `busy`) is the full-page "Loading…" gate, which gives the old load(silent) split for free: SWR only reports
+  // isLoading when there is no cached data, so a post-write refresh() revalidates underneath the existing content with no flash --
+  // exactly what silent=true was hand-rolling.
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+    ['amz-drill', code],
+    () => getAmzDrill(code),
+  );
+  const error = loadError?.message ?? null;
 
   function goBackToList() {
     router.push(backTo);
@@ -118,7 +111,7 @@ function DrillContent() {
       // "download the file" affordance, so we don't restate it on every apply.
       const reviewMsg = d.next_review ? ` Next review ${d.next_review}.` : ' No review set.';
       setNotice({ kind: 'ok', text: `Saved £${d.new_price.toFixed(2)}.${reviewMsg}${warn}` });
-      await load(true);
+      await refresh();
       setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -135,7 +128,7 @@ function DrillContent() {
     setApplying(false);
     if (res.success && res.data) {
       setNotice({ kind: 'ok', text: `Review set for ${res.data.nextReview} (price unchanged).` });
-      await load(true);
+      await refresh();
       setReloadKey((k) => k + 1);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }

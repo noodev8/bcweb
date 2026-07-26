@@ -32,6 +32,7 @@ Usage:  const actions = useProductActions();
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
+import { useScopedState } from '@/lib/useScopedState';
 import {
   CurrencyPoundIcon, BuildingStorefrontIcon, ClipboardDocumentIcon, HashtagIcon, CheckIcon,
 } from '@heroicons/react/24/outline';
@@ -67,10 +68,12 @@ const MENU_W = 236; // px — used to clamp the pop-over inside the viewport
 
 function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   const pathname = usePathname();
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);  // which value was just copied ('groupid' | 'ordernum'), for the tick
-
-  // Fresh copy state each time the menu (re)opens for a different row.
-  useEffect(() => { setCopiedKey(null); }, [menu?.groupid, menu?.x, menu?.y]);
+  // Which value was just copied ('groupid' | 'ordernum'), for the tick. Scoped to the menu's identity (row + position) so re-opening
+  // for a different row starts fresh during render rather than via a reset effect.
+  const [copiedKey, setCopiedKey] = useScopedState<string | null>(
+    `${menu?.groupid ?? ''}|${menu?.x ?? ''}|${menu?.y ?? ''}`,
+    null,
+  );
 
   // Escape closes.
   useEffect(() => {

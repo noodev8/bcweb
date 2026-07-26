@@ -17,7 +17,7 @@ in the URL (?mode=) so returning after an apply restores the same tab. A queued 
 =======================================================================================================================================
 */
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
@@ -26,6 +26,8 @@ import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, applyAmzPrice, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { useScopedState } from '@/lib/useScopedState';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
 // Bulk price + review controls — kept identical to the Amazon drill's price-setter (owner: "exactly the same as the individual item").
@@ -35,6 +37,9 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+
+// Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
+const NO_SELECTION: Set<string> = new Set();
 const AMZ_TONE: BulkTone = {
   chipOn: 'border-amber-600 bg-amber-600 text-white',
   applyBtn: 'bg-amber-600 hover:bg-amber-700',
@@ -77,41 +82,53 @@ function SegmentContent() {
   const backHref = searchParams.get('from') || '/amz';
   const backLabel = searchParams.get('back') || 'Segments';
 
-  const [winners, setWinners] = useState<AmzWinnerRow[] | null>(null);
-  const [losers, setLosers] = useState<AmzLoserRow[] | null>(null);
-  const [all, setAll] = useState<AmzAllRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Bulk selection (WINNERS/LOSERS only) — the codes ticked for a bulk price move and/or review. Cleared on mode/segment change.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marking, setMarking] = useState(false);                         // a bulk write is in flight (disables the bar)
-  const [markError, setMarkError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
-  const [resultSummary, setResultSummary] = useState<string | null>(null);                 // outcome line from the last bulk run
 
-  // Pre-cap qualifying counts from the server. Normally these equal rows.length, but if the safety cap ever trims a list the tab count
-  // and the caption must show the REAL size — a capped list must never look like the whole job.
-  const [winnersTotal, setWinnersTotal] = useState<number | null>(null);
-  const [losersTotal, setLosersTotal] = useState<number | null>(null);
+  // All three lists in ONE query so each tab can show a count. Kept as a single Promise.all inside the fetcher (rather than three
+  // useApiQuery calls) to preserve the PARTIAL TOLERANCE exactly: one list failing must still render the other two, under one shared
+  // error line. Mirrors /pricing/[segment].
+  const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
+    ['amz-lists', segment],
+    async () => {
+      const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
+      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') {
+        return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+      }
+      let err: string | null = null;
+      if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
+      if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
+      if (!(a.success && a.data)) err = err || a.error || 'Failed to load all SKUs';
+      return {
+        success: true,
+        return_code: 'SUCCESS',
+        data: {
+          // Pre-cap qualifying counts from the server. Normally these equal rows.length, but if the safety cap ever trims a list the
+          // tab count and the caption must show the REAL size — a capped list must never look like the whole job.
+          winners: w.success && w.data ? w.data.rows : null,
+          winnersTotal: w.success && w.data ? w.data.total : null,
+          losers: l.success && l.data ? l.data.rows : null,
+          losersTotal: l.success && l.data ? l.data.total : null,
+          all: a.success && a.data ? a.data.rows : null,
+          partialError: err,
+        },
+      };
+    },
+  );
+  const winners: AmzWinnerRow[] | null = data?.winners ?? null;
+  const losers: AmzLoserRow[] | null = data?.losers ?? null;
+  const all: AmzAllRow[] | null = data?.all ?? null;
+  const winnersTotal = data?.winnersTotal ?? null;
+  const losersTotal = data?.losersTotal ?? null;
 
-  // Fetch all three lists so each tab can show a count. Re-callable so a mark-reviewed can refetch (parked SKUs drop out, queue refills).
-  const loadLists = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
-    if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') { logout(); return; }
-    let err: string | null = null;
-    if (w.success && w.data) { setWinners(w.data.rows); setWinnersTotal(w.data.total); } else err = err || w.error || 'Failed to load winners';
-    if (l.success && l.data) { setLosers(l.data.rows); setLosersTotal(l.data.total); } else err = err || l.error || 'Failed to load losers';
-    if (a.success && a.data) setAll(a.data.rows); else err = err || a.error || 'Failed to load all SKUs';
-    if (err) setError(err);
-    setLoading(false);
-  }, [segment, logout]);
+  // Bulk selection + last-run feedback belong to ONE tab of ONE segment, so they're scoped and discarded during render on a switch —
+  // no reset effect, and no frame showing the previous segment's ticks.
+  const scope = `${mode}|${segment}`;
+  const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
+  const [markError, setMarkError] = useScopedState<string | null>(scope, null);
+  const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
 
-  useEffect(() => { loadLists(); }, [loadLists]);
-  // A different tab / segment is a different selection — never carry ticks (or a stale result line) across.
-  useEffect(() => { setSelected(new Set()); setMarkError(null); setResultSummary(null); }, [mode, segment]);
+  const error = markError ?? data?.partialError ?? loadError?.message ?? null;
 
   function openSku(code: string) {
     // Carry the back-context (from/back) through the drill round-trip so returning keeps the right "back" target.
