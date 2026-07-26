@@ -32,11 +32,11 @@ Guarded by AppShell. Consumes GET /analytics-change-impact.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import AppShell from '@/components/AppShell';
 import ChannelBadge from '@/components/ChannelBadge';
 import { useProductActions } from '@/components/ProductActions';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getPriceChanges,
   PriceChangeImpactFilter,
@@ -65,60 +65,56 @@ const WINDOW_TABS: { days: number; label: string }[] = [
 
 const EMPTY_SUMMARY: PriceChangeSummary = { total: 0, up: 0, down: 0, flat: 0, shp: 0, amz: 0, byUser: [] };
 
+// Stable "nothing yet" identities, so the memos derived from these aren't invalidated on every render.
+const NO_ROWS: PriceChangeRow[] = [];
+const NO_SCORECARDS: PriceChangeScorecard[] = [];
+const NO_USERS: string[] = [];
+
 export default function PriceChangesPage() {
-  const { logout } = useAuth();
   const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
 
   const [channel, setChannel] = useState<ChannelFilter>('all');
   const [days, setDays] = useState<number>(DEFAULT_DAYS);
   const [user, setUser] = useState<string>(''); // '' = all users
   const [impact, setImpact] = useState<PriceChangeImpactFilter>('all'); // detail list: all / old enough to judge / actually sold
-  const [rows, setRows] = useState<PriceChangeRow[]>([]);
-  const [summary, setSummary] = useState<PriceChangeSummary>(EMPTY_SUMMARY);
-  const [total, setTotal] = useState(0);        // matches for the CURRENT filters (incl. user), pre-limit
-  const [scorecards, setScorecards] = useState<PriceChangeScorecard[]>([]);
-  const [settleDays, setSettleDays] = useState(21);
-  const [scoreWindowDays, setScoreWindowDays] = useState(90);
-  const [users, setUsers] = useState<string[]>([]); // dropdown options (stable across channel/window switches)
-  const [loading, setLoading] = useState(true);
   // Splitting "a fetch is in flight" from "we have never had data" is what stops the screen flicking on every filter change: after the
   // first successful load the previous results stay mounted and just dim while the new ones arrive, so nothing unmounts and the page
   // never collapses to a one-line "Loading…" and jumps back. Only the very first paint shows a placeholder.
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Only CHANNEL and WINDOW can change the summary and the scorecards — both of those layers deliberately ignore the user filter, and the
   // impact filter only ever cuts the detail list. So when the user switches "21+ days" or picks an operator, the top of the page is already
   // correct and must not dim: dimming it would make the whole screen pulse for a change that only affects the table below.
   const scopeKey = `${channel}|${days}`;
-  const scopeRef = useRef(scopeKey);
-  const [scopeBusy, setScopeBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    const scopeChanged = scopeRef.current !== scopeKey;
-    setScopeBusy(scopeChanged);
-    setLoading(true);
-    setError(null);
-    const res = await getPriceChanges(channel, user || null, days, LIMIT, impact);
-    if (res.success && res.data) {
-      setRows(res.data.rows);
-      setSummary(res.data.summary);
-      setTotal(res.data.total);
-      setScorecards(res.data.scorecards);
-      setSettleDays(res.data.settleDays);
-      setScoreWindowDays(res.data.scoreWindowDays);
-      setUsers(res.data.users);
-      setHasLoaded(true);
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-      setError(res.error || 'Failed to load Price Changes');
-    }
-    scopeRef.current = scopeKey;
-    setScopeBusy(false);
-    setLoading(false);
-  }, [channel, days, user, impact, scopeKey, logout]);
-
-  useEffect(() => { load(); }, [load]);
+  // keepPreviousData is what stops the screen flicking on a filter change: the previous results stay mounted and just dim while the
+  // new ones arrive, so nothing unmounts and the page never collapses to a one-line "Loading..." and jump back. It also keeps the
+  // operator dropdown populated across channel/window switches.
+  // The payload carries the scopeKey it was fetched under, which is how `scopeBusy` below can tell "the summary/scorecards are stale"
+  // from "only the table below is reloading" -- previously a useRef mutated inside the loader.
+  const { data, error: loadError, busy: loading } = useApiQuery(
+    ['price-changes', channel, user, days, impact],
+    async () => {
+      const res = await getPriceChanges(channel, user || null, days, LIMIT, impact);
+      if (!(res.success && res.data)) {
+        return { success: false, error: res.error || 'Failed to load Price Changes', return_code: res.return_code };
+      }
+      return { success: true, return_code: 'SUCCESS', data: { ...res.data, scopeKey } };
+    },
+    { keepPreviousData: true },
+  );
+  const rows: PriceChangeRow[] = data?.rows ?? NO_ROWS;
+  const summary: PriceChangeSummary = data?.summary ?? EMPTY_SUMMARY;
+  const total = data?.total ?? 0;               // matches for the CURRENT filters (incl. user), pre-limit
+  const scorecards: PriceChangeScorecard[] = data?.scorecards ?? NO_SCORECARDS;
+  const settleDays = data?.settleDays ?? 21;
+  const scoreWindowDays = data?.scoreWindowDays ?? 90;
+  const users: string[] = data?.users ?? NO_USERS;  // dropdown options (stable across channel/window switches)
+  const hasLoaded = data !== undefined;
+  const error = loadError?.message ?? null;
+  // Dim the top of the page ONLY when the channel/window it depends on has actually changed. Switching operator or the impact filter
+  // leaves the summary and scorecards already correct, so dimming them would make the whole screen pulse for a change that only
+  // affects the table below.
+  const scopeBusy = loading && data?.scopeKey !== scopeKey;
 
   const money = (v: number | null) => (v === null ? '—' : `£${v.toFixed(2)}`);
   const n = (v: number) => v.toLocaleString('en-GB');

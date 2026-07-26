@@ -23,13 +23,15 @@ C3-Amazon bay can still be picked for a Shopify customer, so greying it out woul
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { MinusSmallIcon, PlusSmallIcon } from '@heroicons/react/24/outline';
 import { getInvLocations, InvLocationRow, InvLocationState } from '@/lib/api';
 
 // Module-level cache: the shelf list is the same for every panel and rarely changes, so the "add to a location" picker fetches it once
 // per session and every card reuses it.
-let LOCATIONS_CACHE: string[] | null = null;
+// Stable "not loaded yet" identity (the previous module-level LOCATIONS_CACHE is gone -- SWR's cache does that job now).
+const NO_LOCATIONS: string[] = [];
 
 // FREE is deliberately absent: it is the normal state, so badging every row adds noise without information (owner). Only the
 // EXCEPTIONS get a tag — a blank State cell means "free to take", which is the common case and reads faster for it.
@@ -95,20 +97,17 @@ export default function InvLocations({ rows, sizeLabel, code, onAdjust }: {
   const codeForAdd = code || rows[0]?.code || '';
   const [adding, setAdding] = useState(false);
   const [newLoc, setNewLoc] = useState('');
-  const [locOptions, setLocOptions] = useState<string[]>(LOCATIONS_CACHE || []);
 
   // Load the shelf list the first time the picker opens; cache it for the rest of the session.
-  useEffect(() => {
-    if (!adding || LOCATIONS_CACHE) return;
-    let alive = true;
-    getInvLocations().then((res) => {
-      if (alive && res.success && res.data) {
-        LOCATIONS_CACHE = res.data.all;
-        setLocOptions(res.data.all);
-      }
-    });
-    return () => { alive = false; };
-  }, [adding]);
+  // Rack list, fetched the first time the operator opens "add to location" and then reused. SWR's cache replaces the module-level
+  // LOCATIONS_CACHE this used to keep by hand: a null key means no request until `adding`, the cache is shared across every mounted
+  // instance of this component, and revalidation is off because the rack list changes about never.
+  const { data: locData } = useApiQuery(
+    adding ? ['inv-locations'] : null,
+    () => getInvLocations(),
+    { revalidateIfStale: false, revalidateOnReconnect: false },
+  );
+  const locOptions: string[] = locData?.all ?? NO_LOCATIONS;
 
   async function addToLocation() {
     const typed = newLoc.trim();

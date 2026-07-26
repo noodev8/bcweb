@@ -18,16 +18,19 @@ TO PLACE tile must land on the order-build sheet, not the chase list.
 =======================================================================================================================================
 */
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import OrderStageSwitch, { OrderStage } from '@/components/OrderStageSwitch';
 import { getOrderStatusSuppliers, OrderStatusSupplierRow } from '@/lib/api';
 import { ageClass, chosenAgeClass, money } from '@/lib/orderStatusUi';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
+// Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
+const NO_ROWS: OrderStatusSupplierRow[] = [];
+
 export default function OrderStatusHome() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
@@ -39,24 +42,16 @@ export default function OrderStatusHome() {
 function OrderStatusHomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { logout } = useAuth();
-  const [suppliers, setSuppliers] = useState<OrderStatusSupplierRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<OrderStage>(searchParams.get('stage') === 'order' ? 'order' : 'place');
 
-  useEffect(() => {
-    (async () => {
-      const res = await getOrderStatusSuppliers();
-      if (res.success && res.data) {
-        setSuppliers(res.data);
-      } else {
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load suppliers');
-      }
-      setLoading(false);
-    })();
-  }, [logout]);
+  // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
+  // the caller decides, and for this whole module the decision is the same one).
+  const { data, error: loadError, isLoading: loading } = useApiQuery(
+    ['order-suppliers'],
+    () => getOrderStatusSuppliers(),
+  );
+  const suppliers: OrderStatusSupplierRow[] = data ?? NO_ROWS;
+  const error = loadError?.message ?? null;
 
   const totals = useMemo(() => ({
     toPlaceUnits: suppliers.reduce((n, s) => n + s.to_place_units, 0),

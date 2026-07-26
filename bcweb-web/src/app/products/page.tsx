@@ -310,7 +310,6 @@ export default function ProductsPage() {
   const [showFilename, setShowFilename] = useState(false);   // reveal the (long) image filename below the action row — off per product
 
   // ---- Edit state (edit Stage 1: attribute/enum fields) --------------------------------------------------------------------------
-  const [lookups, setLookups] = useState<ProductLookups | null>(null);       // dropdown options (loaded once)
   const [edit, setEdit] = useState<ProductEditFields | null>(null);          // current form values
   const [baseline, setBaseline] = useState<ProductEditFields | null>(null);  // loaded values — for dirty-check + reset
   const [saving, setSaving] = useState(false);
@@ -354,14 +353,15 @@ export default function ProductsPage() {
   // Shared prefix for the result pills (see commonGroupPrefix) — computed each render; results are capped at 25 so this is cheap.
   const groupPrefix = commonGroupPrefix(results);
 
-  // Load the dropdown option lists once. If this fails (non-auth), the selects still work with each product's current value.
-  useEffect(() => {
-    (async () => {
-      const res = await getProductLookups();
-      if (res.success && res.data) setLookups(res.data);
-      else if (res.return_code === 'UNAUTHORIZED') logout();
-    })();
-  }, [logout]);
+  // Dropdown option lists. Fetched once and then served from cache for the rest of the session (they change about never), so the
+  // revalidate-on-mount SWR would otherwise do is switched off. If it fails, `lookups` stays null and every select still works with
+  // each product's current value -- which is why nothing here surfaces the error.
+  const { data: lookupsData } = useApiQuery(
+    ['product-lookups'],
+    () => getProductLookups(),
+    { revalidateIfStale: false, revalidateOnReconnect: false },
+  );
+  const lookups: ProductLookups | null = lookupsData ?? null;
 
   // Update one field in the form and clear the "Saved" flash (so it doesn't linger over fresh edits).
   function setField(k: keyof ProductEditFields, v: string) {

@@ -8,34 +8,27 @@ Purpose: Stage 0 — the segment picker (CLAUDE.md). Lists segments from GET /pr
 =======================================================================================================================================
 */
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MagnifyingGlassIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getSegments, Segment } from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+
+// Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
+const NO_ROWS: Segment[] = [];
 
 export default function PricingHome() {
   const router = useRouter();
-  const { logout } = useAuth();
-  const [segments, setSegments] = useState<Segment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const res = await getSegments();
-      if (res.success && res.data) {
-        setSegments(res.data);
-      } else {
-        // An expired/invalid session -> back to login; anything else -> inline error (API-RULES: caller decides).
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load segments');
-      }
-      setLoading(false);
-    })();
-  }, [logout]);
+  // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
+  // the caller decides, and for this whole module the decision is the same one).
+  const { data, error: loadError, isLoading: loading } = useApiQuery(
+    ['shp-segments'],
+    () => getSegments(),
+  );
+  const segments: Segment[] = data ?? NO_ROWS;
+  const error = loadError?.message ?? null;
 
   return (
     <AppShell title="Shopify Pricing" backHref="/dashboard" backLabel="Dashboard">

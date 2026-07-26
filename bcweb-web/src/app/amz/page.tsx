@@ -10,34 +10,28 @@ Purpose: Stage 0 — the segment picker, mirroring the Shopify /pricing home. Li
 =======================================================================================================================================
 */
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MagnifyingGlassIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import { getAmzSegments, AmzSegment } from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
+
+// Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
+const NO_ROWS: AmzSegment[] = [];
 
 export default function AmzHome() {
   const router = useRouter();
-  const { logout } = useAuth();
-  const [segments, setSegments] = useState<AmzSegment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const res = await getAmzSegments();
-      if (res.success && res.data) {
-        setSegments(res.data);
-      } else {
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load segments');
-      }
-      setLoading(false);
-    })();
-  }, [logout]);
+  // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
+  // the caller decides, and for this whole module the decision is the same one).
+  const { data, error: loadError, isLoading: loading } = useApiQuery(
+    ['amz-segments'],
+    () => getAmzSegments(),
+  );
+  const segments: AmzSegment[] = data ?? NO_ROWS;
+  const error = loadError?.message ?? null;
 
   return (
     <AppShell title="Amazon Pricing" backHref="/dashboard" backLabel="Dashboard">

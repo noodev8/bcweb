@@ -12,36 +12,31 @@ Guarded by AppShell. Consumes GET /segments.
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppShell from '@/components/AppShell';
-import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import { getSegmentsOverview, SegmentOverviewRow, SegmentAreaCell } from '@/lib/api';
 import { dueTone, dueCellLabel, cellTitle, worstDueScore, fmtMoney } from '@/lib/segmentUi';
 
 type SortMode = 'revenue' | 'overdue';
 
+// Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
+const NO_ROWS: SegmentOverviewRow[] = [];
+
 export default function SegmentsHeatmap() {
   const router = useRouter();
-  const { logout } = useAuth();
-  const [rows, setRows] = useState<SegmentOverviewRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('revenue');
   const [onlyDue, setOnlyDue] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const res = await getSegmentsOverview();
-      if (res.success && res.data) {
-        setRows(res.data.segments);
-      } else {
-        if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
-        setError(res.error || 'Failed to load segments');
-      }
-      setLoading(false);
-    })();
-  }, [logout]);
+  // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
+  // the caller decides, and for this whole module the decision is the same one).
+  const { data, error: loadError, isLoading: loading } = useApiQuery(
+    ['segments-overview'],
+    () => getSegmentsOverview(),
+  );
+  const rows: SegmentOverviewRow[] = data?.segments ?? NO_ROWS;
+  const error = loadError?.message ?? null;
 
   // Column headers = the area list (same order on every row; derive from the first).
   const areaNames = rows[0]?.areas.map((a) => a.area) ?? [];
