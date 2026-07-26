@@ -116,11 +116,26 @@ WHAT CHANGED
 !! and the advisory (GHSA-f88m-g3jw-g9cj, CVE-2026-33327/33328/35590/35591) is `sharp <0.35.0` -- the WHOLE 0.34.x line. Removing
 !! the override reintroduces a high. Re-test only when a next 16.x ships a sharp ^0.35 range.
 
-NEW LINT ERRORS THE UPGRADE SURFACED -- 31 of them, all pre-existing code newly flagged, none a regression and none build-blocking
-(Next 16 removed `next lint`, so `next build` no longer runs eslint at all). eslint-config-next@16 pulls eslint-plugin-react-hooks@7,
-which adds: react-hooks/set-state-in-effect (29), react-hooks/purity (1), react-hooks/immutability (1), across 23 files. The big one
-is the setState-inside-useEffect pattern used all over the page components (and AuthContext.tsx:42). NOT yet triaged -- decide per
-case whether to fix the pattern or scope the rule off; don't bulk-disable it, the cascading-render warning is legitimate.
+NEW LINT ERRORS THE UPGRADE SURFACED -- 31 of them, all pre-existing code newly flagged (eslint-config-next@16 pulls
+eslint-plugin-react-hooks@7): set-state-in-effect x29, purity x1, immutability x1, across 23 files. ALL FIXED, none suppressed.
+`npm run lint` is now silent. What was done, and why it was not just a rule-disable:
+  - purity + immutability were REAL BUGS: order-status/[supplier] carried a `let lastGroupid` across rows.map() and reassigned it
+    mid-render; analytics/new-additions called Date.now() during render. Both fixed (commit 8c3d248).
+  - the 29 set-state-in-effect were the rule objecting to CLIENT-SIDE FETCHING IN AN EFFECT, which has no local fix -- so the fetching
+    moved out, to SWR (swr@2.4.2) behind src/lib/useApiQuery.ts. 21 sites. See that file's header for why an adapter is needed at all
+    (api.ts deliberately never throws; SWR decides "error" by catching a throw) and why revalidateOnFocus is OFF (live production DB,
+    heavy aggregates -- do not turn it on casually).
+  - the rest were NOT fetches and SWR does not address them. src/lib/useScopedState.ts replaces `useEffect(() => setX(init), [dep])`
+    by deriving the reset during render; src/lib/useDebounced.ts trails a value for search-as-you-type and KEEPS its effect on purpose
+    (its setState is in a setTimeout callback, i.e. a later tick -- the rule objects to SYNCHRONOUS setState, not to that).
+  - AuthContext now reads localStorage via useSyncExternalStore, not a mount effect. Gained cross-tab logout for free.
+==> RULE OF THUMB GOING FORWARD: there is now NO data fetching in a useEffect anywhere in bcweb-web, and it should stay that way.
+    Every remaining useEffect in src/ is a genuine external-system subscription (route guards, Escape/outside-click listeners, a timer
+    cleanup, an IntersectionObserver, useDebounced's timer). New screens fetch with useApiQuery.
+!! The rule does NOT catch everything -- do not trust a green lint as proof. Seven effect-fetches were never flagged: the four picker
+!! pages hid theirs in an async IIFE (setState lands after the await), and analytics/price-changes calls setState synchronously before
+!! its await and STILL slipped through, because the rule could not see through the useCallback. They were found by grepping for
+!! `await get[A-Z]` in files containing useEffect, and migrated in 4296193.
 
 WHAT WAS VERIFIED, AND WHAT WASN'T: npx tsc --noEmit clean; npm run build green (all 25 routes, Turbopack); npm audit --omit=dev 0.
 Turbopack-as-default building the Tailwind 3 / postcss pipeline was the one thing I expected to bite -- it did NOT: verified the
