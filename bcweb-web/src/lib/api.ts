@@ -839,6 +839,13 @@ export interface PriceChangeRow {
   changedAt: string | null;
   daysSince: number | null;
   unitsSince: number;
+  // The bounded view of the same row — what THIS move can actually be credited with. `unitsLive` counts only what sold while this price
+  // was live (up to the next change on the same item), so a twice-repriced style doesn't credit both moves with the same sales;
+  // `cashImpact` is signed by direction (+ cash taken on a raise, − discount handed over on a cut), null when a price is missing.
+  // `settled` = old enough to judge (see `settleDays`); below that the figures are real but too early to read anything into.
+  settled: boolean;
+  unitsLive: number;
+  cashImpact: number | null;
 }
 
 // One operator's repricing activity in the window. `user` is null for unattributed legacy rows. `up`/`down` are the direction split
@@ -864,15 +871,58 @@ export interface PriceChangeSummary {
   byUser: PriceChangeUserStat[];
 }
 
+// One channel's worth of an operator's scored changes. Counts, never averages — see PriceChangeScorecard for why.
+export interface PriceChangeChannelBlock {
+  raises: number;          // raises made (the denominator)
+  raisesSold: number;      // ...of which sold at least one unit at the new price
+  raiseUnits: number;      // units sold at raised prices
+  raiseCash: number;       // £ those units brought in above the old price. Gross, VAT-inclusive
+  cuts: number;
+  cutsMoved: number;       // ...of which shifted at least one unit
+  cutUnits: number;        // units cleared
+  cutDiscount: number;     // £ given up. Context only — NEVER net this against raiseCash, they're different jobs
+}
+
+// One operator's STAFF SCORECARD — "did their repricing time pay for itself?". Own fixed basis: last `scoreWindowDays`, both channels,
+// every user, regardless of the window/channel/user filters above. Settled changes only, each credited solely with sales made while its
+// price was live. GROSS: a raise is credited with units that sold at the raised price, assuming they'd have sold anyway.
+//
+// The headline is a HIT RATE — `raisesSold` of `raises`, `cutsMoved` of `cuts` — always rendered with its denominator. Money-per-change
+// was tried and removed: "£7.46 per raise" had a £1.40 median behind it, 94 of 277 raises sold nothing, and ten raises made 47% of the
+// quarter's cash. Counts and totals survive that skew; an average implies a typical case that doesn't exist. Do not reintroduce one.
+//
+// RAISE RATES MUST STAY SPLIT BY CHANNEL — Shopify 51% vs Amazon 76% over the same period, so a blended figure mostly measures channel
+// mix and can't be compared between operators. Cut rates matched (81/82), so the UI sums the blocks for display; the data stays split so
+// a future divergence is visible. The Amazon-match cron is excluded server-side — a cron has no time to justify.
+export interface PriceChangeScorecard {
+  user: string | null;     // null = unattributed legacy rows
+  settled: number;         // scored changes across both channels — the sample size behind every rate on the row
+  shp: PriceChangeChannelBlock;
+  amz: PriceChangeChannelBlock;
+  // Logged, but not a reprice, so excluded from every RATE above — and counted over the whole window rather than settled-only, since
+  // neither is waiting on a sale to prove itself. `level` = a HOLD: price deliberately left alone, usually with the reasoning in the note
+  // (park sets a review date but can't store one, so Apply-at-the-same-price is how a hold gets recorded). Shown because it evidences
+  // that someone looked. `newPrice` = first price on a new product, no "before" to compare against.
+  excluded: { level: number; newPrice: number };
+}
+
+// Detail-list filter: 'all' = every change, 'settled' = only those old enough to judge, 'moved' = settled AND something sold at that
+// price ("show me the changes that did something"). Applied server-side before the row limit, so it cuts the whole window.
+export type PriceChangeImpactFilter = 'all' | 'settled' | 'moved';
+
 export interface PriceChangesData {
   channel: 'all' | 'shp' | 'amz';
   user: string | null;
   days: number;
+  impact: PriceChangeImpactFilter;
   limit: number;
   count: number;             // detail rows returned (<= limit)
   total: number;             // changes matching window + channel + user, before the limit
   truncated: boolean;        // total > count -> the table is the newest slice, the summary is the whole window
   summary: PriceChangeSummary;
+  settleDays: number;        // a change must be this old to reach the scorecards
+  scoreWindowDays: number;   // the scorecards' OWN look-back, fixed and independent of `days` (which only drives summary + rows)
+  scorecards: PriceChangeScorecard[]; // per-operator staff read, best yield first
   users: string[];           // distinct operators across both logs, for the "filter by user" dropdown
   rows: PriceChangeRow[];
 }
@@ -885,18 +935,23 @@ export function getPriceChanges(
   user?: string | null,
   days?: number,
   limit?: number,
+  impact: PriceChangeImpactFilter = 'all',
 ) {
   return request<PriceChangesData>(
-    { url: '/analytics-change-impact', method: 'GET', params: { channel, user: user || undefined, days, limit } },
+    { url: '/analytics-change-impact', method: 'GET', params: { channel, user: user || undefined, days, limit, impact } },
     (b) => ({
       channel: (b.channel as 'all' | 'shp' | 'amz') || 'all',
       user: b.user ?? null,
       days: b.days ?? 30,
+      impact: (b.impact as PriceChangeImpactFilter) || 'all',
       limit: b.limit ?? 50,
       count: b.count ?? 0,
       total: b.total ?? 0,
       truncated: !!b.truncated,
       summary: (b.summary as PriceChangeSummary) || { total: 0, up: 0, down: 0, flat: 0, shp: 0, amz: 0, byUser: [] },
+      settleDays: b.settleDays ?? 21,
+      scoreWindowDays: b.scoreWindowDays ?? 90,
+      scorecards: (b.scorecards as PriceChangeScorecard[]) || [],
       users: b.users || [],
       rows: b.rows || [],
     })
