@@ -113,37 +113,49 @@ bcweb-web:     npx tsc --noEmit   AND   npm run lint   AND   npm run build   —
 
 ---
 
-## 4. OPEN: one Google price push stuck failing (found 2026-07-26, not yet diagnosed)
+## 4. The Google sweep and the feed must agree on what's "on Google" (fixed 2026-07-26 — NEEDS A VPS DEPLOY)
 
-`0552683-ARIZONA` — £60.19 → £63.19, by Andreas, `2026-07-25 23:21` — is the only row in `price_change_log` with
-`channel='SHP' AND google_pushed_at IS NULL` (1,324 of 1,325 stamped). Its price has therefore **not reached Google**.
+**The rule: `googleMerchant.fetchTargets` must mirror `merchant_feed.py`'s filters exactly.** If bcweb pushes an offerId the feed
+never published, Google 404s it, and that used to block the style forever.
 
-It is not being skipped. The style qualifies for the sweep's queue (`googlestatus=1`, `shopify=1`, 9 mapped `googleid`s, all
-`shopifyprice` values numeric), so `pushIfLive` is returning a failure and the sweep is correctly leaving it queued to retry. It
-has been retrying on every run since.
+What happened: `0552683-ARIZONA` was repriced (£60.19 → £63.19) on 2026-07-25 23:21 and never stamped, retrying every sweep for a
+day. Size 35 has a **blank `ean`**. `merchant_feed.py` only emits rows whose `skumap.ean` yields a valid 12/13-digit GTIN once the
+legacy trailing `B` is stripped, so size 35 was never in the feed, so Google had no such product, so the supplemental override
+returned `404 "The resource with name 'Product' was not found."` `fetchTargets` filtered only on `googleid`, counted the 404 as a
+push failure, and the sweep therefore refused to stamp. **69 sizes across 49 Google-live styles were in the same position** —
+only one had been repriced since the 2026-07-24 backfill cleared the queue, so it would have grown quietly.
 
-A theory that did NOT hold, recorded so nobody re-runs it: this style has one odd `googleid` (size 43 is
-`0552683-ARIZONA-43`; its eight siblings drop the leading zero), and 13 Google-live styles share that mixed-shape pattern. But
-`0552681-ARIZONA` has the same defect, was changed one minute earlier, and pushed fine — so the leading zero is not the cause on
-that evidence.
+Two changes, both in `bcweb-server`:
+- `utils/googleMerchant.js` — `fetchTargets` now also requires `rtrim(COALESCE(m.ean,''),'B') ~ '^[0-9]{12,13}$'`. Verified: the
+  targets for that style drop 9 → 8 and match the generated feed exactly; across the catalogue 2,017 → 1,948, excluding precisely
+  the 69 that could only 404, and no style loses all its targets (278 before, 278 after).
+- A 404 is now counted as `absent` and kept **out** of `failed`, so it can never block a stamp again. Retrying a 404 can never
+  succeed, so treating it as retryable was the actual defect. It's logged at error level (so it survives `LOG_LEVEL=error` in
+  production) and tallied in the sweep's summary line.
 
-**To diagnose, run the cron line by hand on the box.** It is what fires every couple of hours anyway, so this is not a special
-operation — it will retry the one stuck style and print the reason to the terminal:
+Note the price still reached Google throughout — the other 8 sizes pushed fine. The damage was a permanently stuck queue entry
+and a `pending` count that stopped meaning anything.
+
+**Not live until `bcweb-server` is deployed to the VPS** (the sweep runs from `/apps/production/bcweb-server`). After deploying,
+the stuck row clears itself on the next run.
+
+A theory that did NOT hold, recorded so nobody re-runs it: the style has one odd `googleid` (size 43 is `0552683-ARIZONA-43`, its
+siblings drop the leading zero) and 13 Google-live styles share that mixed shape — but `0552681-ARIZONA` has the same quirk, was
+changed a minute earlier, and pushed fine. The leading zero is irrelevant.
+
+### There is no sweep log file — don't go looking for one
+
+No entry in `crontab.txt` redirects output (none of the 16 use `>>`). The other files in `/apps/scripts/logs/` exist because the
+Python jobs self-log via `logging_utils`; `google-price-sweep.js` only writes `console.log`/`console.error`, so under cron its
+output goes to stdout/stderr and is mailed to root or dropped. To see it, run the cron line by hand:
 
 ```
 cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
 ```
 
-Expect a `[google-sweep] pending=1 pushed=0 noop=0 failed=1 stamped=0` summary plus a `console.error` naming the style and the
-API error. `pushIfLive` can fail as `GOOGLE_NOT_CONFIGURED` (ruled out — other styles pushed in the same run),
-`GOOGLE_PUSH_FAILED` (whole run), or `pushed:true` with `failed > 0` (individual sizes rejected), which is the likely one.
-
-**THERE IS NO SWEEP LOG FILE — don't go looking for one.** No entry in `crontab.txt` redirects output (none of the 16 use `>>`).
-The other scripts in `/apps/scripts/logs/` are there because the Python ones self-log via `logging_utils`; `google-price-sweep.js`
-only writes to `console.log`/`console.error`, so under cron its output goes to stdout/stderr and is mailed to root or dropped.
-**This is a real gap:** every failure so far has been invisible, which is why a change sat unsent for a day without anyone
-noticing. Worth fixing by making the script self-log the way the Python jobs do, rather than by bolting a `>>` onto the crontab —
-the schedule file shouldn't have to know about logging.
+**This is still an open gap.** Every sweep failure so far has been invisible — which is precisely why the above sat unnoticed for
+a day. Worth fixing by having the script self-log the way the Python jobs do, rather than bolting a `>>` onto the crontab; the
+schedule file shouldn't have to know about logging.
 
 ---
 

@@ -53,8 +53,16 @@ function resourceNames() {
   return { parent, dataSource };
 }
 
-// googleid + current shopifyprice for every active, google-eligible size under groupid. Mirrors merchant_feed.py / the old Python helper's
-// WHERE clause (sm.googlestatus=1 AND sm.shopify=1 AND m.googlestatus=1) so we only ever push products meant to be in the Google feed.
+// googleid + current shopifyprice for every active, google-eligible size under groupid. Mirrors merchant_feed.py's WHERE clause so we
+// only ever push products that are actually IN the Google feed.
+//
+// THE GTIN CONDITION IS LOAD-BEARING — do not drop it as redundant. A supplemental override is matched to an existing product by
+// (offerId, contentLanguage, feedLabel), so pushing an offerId Google has never seen returns 404 "The resource with name `Product` was
+// not found". merchant_feed.py only emits rows whose skumap.ean yields a valid 12/13-digit GTIN once the legacy trailing 'B' is
+// stripped (see its "Only process rows with valid GTIN" guard) — so a size with a googleid but a blank/short ean is NOT on Google, and
+// pushing it can only ever 404. This filter previously only checked googleid, and the resulting 404 counted as a push failure, which
+// stopped the sweep stamping the row: the style then retried every couple of hours forever. Found 2026-07-26 via 0552683-ARIZONA
+// (size 35, blank ean); 69 sizes across 49 Google-live styles were in the same position.
 async function fetchTargets(groupid) {
   const r = await query(`
     SELECT m.googleid, sm.shopifyprice
@@ -64,6 +72,7 @@ async function fetchTargets(groupid) {
       AND sm.googlestatus = 1 AND sm.shopify = 1 AND m.googlestatus = 1
       AND COALESCE(m.deleted, 0) = 0
       AND m.googleid IS NOT NULL AND m.googleid <> ''
+      AND rtrim(COALESCE(m.ean, ''), 'B') ~ '^[0-9]{12,13}$'
   `, [groupid]);
   return r.rows;
 }
@@ -89,7 +98,11 @@ async function insertPriceOverride(token, parent, dataSource, offerId, amountMic
   });
   if (!resp.ok) {
     const body = await resp.text();
-    throw new Error(`${offerId}: ${resp.status} ${body.slice(0, 200)}`);
+    const err = new Error(`${offerId}: ${resp.status} ${body.slice(0, 200)}`);
+    // Carry the status so the caller can tell "this offer isn't on Google at all" (404) from a genuine push failure, without
+    // string-matching the message.
+    err.status = resp.status;
+    throw err;
   }
 }
 
@@ -101,7 +114,9 @@ async function insertPriceOverride(token, parent, dataSource, offerId, amountMic
  *                                                  != 1) or has no googleid mapped yet. A genuine no-op — stays silent in the UI.
  *    { pushed: false, error: 'GOOGLE_NOT_CONFIGURED', ... } -> the style IS live on Google but the server isn't configured, so the push
  *                                                  was SKIPPED. Deliberately NOT folded into null (which would hide it) — the UI surfaces it.
- *    { pushed: true, updated, failed, total }   -> ran (failed/total may be > 0 if some sizes' individual pushes errored)
+ *    { pushed: true, updated, absent, failed, total } -> ran. `failed` counts sizes whose push genuinely errored and is worth retrying.
+ *                                                  `absent` counts sizes Google 404'd (no such product) — nothing to push, never
+ *                                                  retryable, so callers must NOT treat it as a failure.
  *    { pushed: false, error: 'GOOGLE_PUSH_FAILED', ... }    -> the whole run failed before/during the API calls (DB write still stands)
  * Call it AFTER the DB write has committed (same timing as shopify.pushIfLive) — best-effort, never throws.
  */
@@ -142,14 +157,24 @@ async function pushIfLive(groupid) {
       targets.map((t) => insertPriceOverride(token, parent, dataSource, t.googleid, amountMicros))
     );
     let updated = 0;
+    const absent = [];   // 404 — Google has no such product, so there is nothing to override. NOT a failure (see below).
     const errors = [];
     for (const res of results) {
-      if (res.status === 'fulfilled') updated += 1;
-      else errors.push(res.reason && res.reason.message ? res.reason.message : String(res.reason));
+      if (res.status === 'fulfilled') { updated += 1; continue; }
+      const reason = res.reason;
+      if (reason && reason.status === 404) absent.push(reason.message);
+      else errors.push(reason && reason.message ? reason.message : String(reason));
+    }
+    // A 404 is counted separately and deliberately kept OUT of `failed`. Retrying it can never succeed — the product genuinely isn't in
+    // Merchant Center — so folding it into `failed` would stop the sweep stamping the row and make the style retry forever. The
+    // fetchTargets GTIN filter should now prevent the known cause; anything still landing here is real drift (e.g. an ean added since
+    // the last nightly feed run, or a product Google removed), so it is logged at error level to stay visible in production.
+    if (absent.length) {
+      logger.error(`[googleMerchant] ${groupid}: ${absent.length}/${targets.length} offer(s) not in Merchant Center (404) — skipped, not treated as a push failure: ${absent.slice(0, 5).join(' | ')}`);
     }
     if (errors.length) logger.error(`[googleMerchant] ${groupid}: ${errors.length}/${targets.length} offer push(es) failed: ${errors.slice(0, 5).join(' | ')}`);
 
-    return { pushed: true, updated, failed: errors.length, total: targets.length };
+    return { pushed: true, updated, absent: absent.length, failed: errors.length, total: targets.length };
   } catch (err) {
     // Wholesale failure (token mint / DB read) — the DB write still stands; nightly merchant_feed.py --upload is the backstop.
     logger.error(`[googleMerchant] pushIfLive failed for ${groupid}: ${err.message}`);

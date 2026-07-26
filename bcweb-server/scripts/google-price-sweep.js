@@ -47,7 +47,7 @@ async function main() {
     return;
   }
 
-  let pushed = 0, noop = 0, failed = 0;
+  let pushed = 0, noop = 0, failed = 0, absent = 0;
   const done = []; // groupids whose pending rows we may stamp (cleanly pushed OR a legit no-op)
 
   // Sequential per style — each pushIfLive already fires its sizes concurrently, and a cron job needn't hammer the Merchant API.
@@ -58,11 +58,15 @@ async function main() {
       done.push(groupid);
       noop += 1;
     } else if (res.pushed === true && res.failed === 0) {
+      // `absent` (Google 404 -- no such product) is NOT a failure: retrying can never succeed, so the row still gets stamped. It is
+      // tallied only so a run that quietly skipped some sizes still says so out loud.
+      absent += res.absent || 0;
       done.push(groupid);
       pushed += 1;
     } else {
       // Partial or wholesale failure (incl. GOOGLE_NOT_CONFIGURED) — leave queued so the next sweep retries. Log for visibility.
       failed += 1;
+      absent += res.absent || 0;
       console.error(`[google-sweep] ${groupid} not stamped: ${res.error || 'partial failure'}${res.message ? ` (${res.message})` : ''}`);
     }
   }
@@ -77,7 +81,7 @@ async function main() {
     `, [done]);
   }
 
-  console.log(`[google-sweep] pending=${groupids.length} pushed=${pushed} noop=${noop} failed=${failed} stamped=${done.length}`);
+  console.log(`[google-sweep] pending=${groupids.length} pushed=${pushed} noop=${noop} absent=${absent} failed=${failed} stamped=${done.length}`);
 }
 
 main()
