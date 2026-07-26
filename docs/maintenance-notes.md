@@ -127,10 +127,23 @@ A theory that did NOT hold, recorded so nobody re-runs it: this style has one od
 `0552681-ARIZONA` has the same defect, was changed one minute earlier, and pushed fine — so the leading zero is not the cause on
 that evidence.
 
-**To diagnose:** the real error goes to the sweep's stderr on the VPS. Read `/apps/scripts/logs/google-sweep.log`, or run it by
-hand on the box — `node /apps/production/bcweb-server/scripts/google-price-sweep.js` — which will retry that one style and print
-the reason. `pushIfLive` can fail as `GOOGLE_NOT_CONFIGURED` (ruled out — other styles pushed in the same run),
+**To diagnose, run the cron line by hand on the box.** It is what fires every couple of hours anyway, so this is not a special
+operation — it will retry the one stuck style and print the reason to the terminal:
+
+```
+cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
+```
+
+Expect a `[google-sweep] pending=1 pushed=0 noop=0 failed=1 stamped=0` summary plus a `console.error` naming the style and the
+API error. `pushIfLive` can fail as `GOOGLE_NOT_CONFIGURED` (ruled out — other styles pushed in the same run),
 `GOOGLE_PUSH_FAILED` (whole run), or `pushed:true` with `failed > 0` (individual sizes rejected), which is the likely one.
+
+**THERE IS NO SWEEP LOG FILE — don't go looking for one.** No entry in `crontab.txt` redirects output (none of the 16 use `>>`).
+The other scripts in `/apps/scripts/logs/` are there because the Python ones self-log via `logging_utils`; `google-price-sweep.js`
+only writes to `console.log`/`console.error`, so under cron its output goes to stdout/stderr and is mailed to root or dropped.
+**This is a real gap:** every failure so far has been invisible, which is why a change sat unsent for a day without anyone
+noticing. Worth fixing by making the script self-log the way the Python jobs do, rather than by bolting a `>>` onto the crontab —
+the schedule file shouldn't have to know about logging.
 
 ---
 
