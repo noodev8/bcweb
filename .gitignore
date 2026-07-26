@@ -118,3 +118,10 @@ nul
 # Python bytecode (Amazon upload helper)
 __pycache__/
 *.pyc
+
+# Next.js generates this and rewrites it with a DIFFERENT path depending on which command last ran:
+#   next build -> import "./.next/types/routes.d.ts"
+#   next dev   -> import "./.next/dev/types/routes.d.ts"
+# So whichever variant is committed, the other one leaves a permanently dirty tree. tsconfig.json includes BOTH paths, so neither
+# breaks anything. The file is marked "should not be edited" and is regenerated on any dev/build, hence ignored rather than committed.
+bcweb-web/next-env.d.ts
