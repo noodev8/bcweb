@@ -330,13 +330,12 @@ export default function SalesPage() {
       {summary && !error && (
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
           <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:col-span-1 lg:col-span-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Net profit{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
-            <div className={'mt-1 text-3xl font-bold tabular-nums ' + (summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600')}>
-              {money(summary.profit)}
-            </div>
-            <div className="mt-1 text-xs text-slate-400">{pct(summary.marginPct)} margin</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
+            <div className="mt-1 text-3xl font-bold tabular-nums text-slate-800">{money(summary.revenue)}</div>
           </div>
-          <Stat label="Revenue" value={money(summary.revenue)} />
+          <Stat label="Net profit" value={money(summary.profit)}
+            valueClassName={summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}
+            sub={`${pct(summary.marginPct)} margin`} />
           {/* Units lead with SOLD (gross) — the same basis as Orders — so the pair reads naturally (units >= orders). Returns are netted
               into the money tiles above and shown here as a sub-line (with the return rate = returned / sold), so they stay visible
               without dragging the headline below Orders. */}
@@ -467,11 +466,11 @@ function Segmented<T extends string>({ options, value, onChange, disabled = fals
 }
 
 // A supporting stat tile in the headline strip.
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub, valueClassName }: { label: string; value: string; sub?: string; valueClassName?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-800">{value}</div>
+      <div className={'mt-1 text-xl font-semibold tabular-nums ' + (valueClassName ?? 'text-slate-800')}>{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-400">{sub}</div>}
     </div>
   );
