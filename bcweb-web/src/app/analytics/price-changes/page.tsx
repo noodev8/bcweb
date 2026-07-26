@@ -289,15 +289,7 @@ function SummaryPanel({
               <UserCard key={u.user ?? '__none'} u={u} active={!!u.user && u.user === activeUser} onPick={onPickUser} n={n} />
             ))}
           </div>
-          {activeUser && (
-            <button
-              type="button"
-              onClick={() => onPickUser(null)}
-              className="mt-3 text-xs font-medium text-brand-600 hover:underline"
-            >
-              Clear user filter
-            </button>
-          )}
+          {/* No "clear filter" link here — the filter row at the top clears it, and clicking the active card toggles it off. */}
         </div>
       )}
     </div>
