@@ -71,26 +71,64 @@ ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine
 This push is best-effort -- a failure leaves the change queued for the next sweep, and the nightly feed run is the ultimate fallback.
 
 
-== PENDING: upgrade Next.js 15 -> 16 -- GIVE THIS ITS OWN SESSION, DO NOT BOLT IT ONTO ANOTHER JOB
-Status 2026-07-26 (commit e724293): both apps are at `npm audit` = 0. Nothing here is urgent or a live security hole.
-This is planned maintenance, not a fix.
+== DONE 2026-07-26: upgraded Next.js 15 -> 16.2.12 (bcweb-web). NOT YET CLICK-TESTED -- see the checklist at the end.
+Rationale was COMPOUNDING COST, not security: 15.5.22 was still the actively-backported line and still getting patches, so there
+was no security argument and nothing was broken. But the migration surface only ever grows -- every module added on 15 is a module
+that has to be re-verified on 16 later -- and it was as small as it would ever be. Did it early and deliberately, to build on 16.
 
-Why it needs its own session: 15 -> 16 is a framework major. It touches routing/caching defaults and needs the whole app
-CLICK-TESTED afterwards -- a green `npm run build` proves the code compiles, not that the pages behave. Never do this at the
-end of a session as a "quick dependency bump".
+WHAT CHANGED
+  bcweb-web/package.json:      next ^15.5.20 -> ^16.2.12 | eslint-config-next ^15.5.20 -> ^16.2.12
+                               REMOVED devDep @eslint/eslintrc | REMOVED override "brace-expansion" (see below -- important)
+                               eslint STAYS on ^9.39.4 (see below) | overrides postcss + sharp both STAY
+  bcweb-web/eslint.config.mjs: dropped the FlatCompat bridge; eslint-config-next@16 ships NATIVE FLAT CONFIG arrays
+                               (core-web-vitals + typescript), imported and spread directly. Default imports, because the dist is
+                               CJS `export =` which Node's ESM interop hands back as the array itself, not a {default} wrapper.
+  bcweb-web/tsconfig.json:     REWRITTEN BY `next build` ITSELF, not by hand. It mandates "jsx": "preserve" -> "react-jsx" (React
+                               automatic runtime) and adds ".next/dev/types/**/*.ts" to include. It also reflows every array onto
+                               multiple lines -- cosmetic churn, don't bother reverting it, the next build just redoes it.
+  UNCHANGED: next.config.js, postcss.config.js, tailwind config, and every page/component/<Image> call site.
 
-Already in our favour -- React is on 19 and Tailwind stays on 3, so those aren't blockers.
+!! THE "brace-expansion": "^5.0.8" OVERRIDE WAS NEVER A REAL FIX AND HAS BEEN REMOVED. READ THIS BEFORE RE-ADDING IT.
+!! brace-expansion 1.1.x exports the function DIRECTLY (`module.exports = expandTop`). 5.0.8 exports an OBJECT
+!! ({EXPANSION_MAX, EXPANSION_MAX_LENGTH, expand}). minimatch@3.1.5 does `var expand = require('brace-expansion')` and then calls
+!! `expand(pattern)`. So forcing 5.0.8 into minimatch 3.x's declared "^1.1.7" slot makes minimatch throw
+!! "TypeError: expand is not a function" -- it silences `npm audit` by BREAKING the library rather than patching it.
+!! It appeared to work on Next 15 PURELY BY LUCK: minimatch 3.x short-circuits (`if (options.nobrace || !/\{...\}/.test(pattern))
+!! return [pattern]`) and only calls expand() when the pattern ACTUALLY CONTAINS BRACES. Nothing in the old config array had any
+!! (`.next/**`, `node_modules/**`). eslint-config-next@16's flat config declares files: ['**/*.{js,jsx,mjs,ts,tsx,mts,cts}'] --
+!! braces -- so it detonated on the first file match and `npm run lint` died outright.
+!! There is NO API-compatible patched version to use instead: latest of every major below 5 is 1.1.16 / 2.1.2 / 3.0.2 / 4.0.1,
+!! and the advisory (GHSA-mh99-v99m-4gvg, DoS via unbounded expansion) covers everything <=5.0.7. The patch IS the breaking major.
+!! ==> CONSEQUENCE, ACCEPTED DELIBERATELY: bcweb-web now reports 9 high dev-only advisories. `npm audit --omit=dev` is 0 --
+!!     the SHIPPED BUNDLE IS CLEAN. The whole chain is lint tooling (eslint-plugin-import / -jsx-a11y / -react -> minimatch ->
+!!     brace-expansion 1.1.16) that never reaches a browser, and exploiting it means feeding hostile glob patterns to your own
+!!     linter. This is the one place in this repo where "dev-only" is the honest answer rather than an excuse, BECAUSE THERE IS NO
+!!     FIX TO APPLY. Real fix is upstream: @eslint/config-array@0.21.2 still depends on minimatch ^3.1.5 (EOL). Re-check later.
 
-What the upgrade buys us (both are currently held together by version overrides in bcweb-web/package.json):
-  - "sharp": "^0.35.0"          -- next@15 declares sharp ^0.34.3 as an OPTIONAL dep, pinned below the libvips CVE fix
-                                   (CVE-2026-33327/33328/35590/35591). 0.35 satisfies how next uses it. next 16 should ship a
-                                   sharp range that's already patched, at which point this override can go.
-  - "brace-expansion": "^5.0.8" -- the proper fix is eslint 10, but it is BLOCKED in bcweb-web: eslint-config-next@15 peers
-                                   eslint "^7 || ^8 || ^9". Only brace-expansion 5.0.8+ is patched (there is no fixed 1.x or 2.x),
-                                   so the override is the only route on next 15. next 16 ships an eslint-config-next that allows
-                                   eslint 10, so bcweb-web can then match the server and this override can go too.
-  ==> DO NOT casually delete either override before the upgrade. Both are load-bearing; removing them reintroduces high-severity
-      advisories. After upgrading, drop them ONE AT A TIME and re-run `npm audit` to confirm next 16 really covers it.
+!! ESLINT STAYS ON 9 IN bcweb-web (bcweb-server is on 10). This mismatch is deliberate -- do not "align" it.
+!! eslint-config-next@16 advertises peer eslint ">=9.0.0", which looks like the 15-era blocker (peer "^7||^8||^9") is gone. It is
+!! not really: eslint-config-next depends on eslint-plugin-react, whose LATEST release 7.37.5 peers eslint "...||^9.7" and still
+!! calls the context.getFilename() API that ESLint 10 REMOVED. With eslint 10 installed, `npm run lint` dies with
+!! "TypeError: contextOrFilename.getFilename is not a function" while loading rule 'react/display-name'. There is no newer
+!! eslint-plugin-react to override to. Re-test when one ships eslint 10 support.
+
+!! THE "sharp": "^0.35.0" OVERRIDE STAYS -- STILL LOAD-BEARING ON 16. next@16.2.12 STILL declares optional "sharp": "^0.34.5",
+!! and the advisory (GHSA-f88m-g3jw-g9cj, CVE-2026-33327/33328/35590/35591) is `sharp <0.35.0` -- the WHOLE 0.34.x line. Removing
+!! the override reintroduces a high. Re-test only when a next 16.x ships a sharp ^0.35 range.
+
+NEW LINT ERRORS THE UPGRADE SURFACED -- 31 of them, all pre-existing code newly flagged, none a regression and none build-blocking
+(Next 16 removed `next lint`, so `next build` no longer runs eslint at all). eslint-config-next@16 pulls eslint-plugin-react-hooks@7,
+which adds: react-hooks/set-state-in-effect (29), react-hooks/purity (1), react-hooks/immutability (1), across 23 files. The big one
+is the setState-inside-useEffect pattern used all over the page components (and AuthContext.tsx:42). NOT yet triaged -- decide per
+case whether to fix the pattern or scope the rule off; don't bulk-disable it, the cascading-render warning is legitimate.
+
+WHAT WAS VERIFIED, AND WHAT WASN'T: npx tsc --noEmit clean; npm run build green (all 25 routes, Turbopack); npm audit --omit=dev 0.
+Turbopack-as-default building the Tailwind 3 / postcss pipeline was the one thing I expected to bite -- it did NOT: verified the
+emitted CSS at .next/static/chunks/*.css is 34,838 bytes / 566 rules, contains preflight, all sampled utilities, 8 media queries
+across all five breakpoints and 40 :hover rules, and is correctly referenced from the built HTML. Note Turbopack emits CSS into
+static/chunks/, NOT static/css/ as on 15 -- if you go looking for it, that's why it seems missing.
+==> STILL NEEDS A HUMAN AT THE BROWSER. A green build proves compilation, not behaviour. Check an unstyled-page smoke first, then
+    the image-heavy screens (Inventory cards, a pricing drill, an Amazon SKU drill) since next/image is the other 16 change area.
 
 Verification checklist for any dependency bump in this repo (build is the one that catches a bad Next bump):
   bcweb-server:  npm run lint   AND a boot check (node -e "require('./server.js')" -- must print the listening line)
