@@ -202,8 +202,8 @@ function FullChart({ rows }: { rows: BirkSnapshot[] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-brand-600" /> Full</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-slate-300" /> Styles (ceiling)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-brand-600" /> Full</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-amber-500" /> Sales 7d (units, right)</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-600" /> Stock (units, far right)</span>
       </div>
