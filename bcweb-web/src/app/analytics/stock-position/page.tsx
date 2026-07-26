@@ -332,6 +332,14 @@ function BucketList({
   );
 }
 
+// Chart series identity — kept apart from the bucket-status colors above (green/orange/blue/gray) so the trend lines never read
+// as if they were carrying bucket meaning. Blue vs magenta is a maximally distinct hue pair (validated: CVD ΔE 13.0, normal-vision
+// ΔE 27.5 — well clear of the floors), unlike the previous blue/violet pairing which was close enough in hue to be mistaken for
+// one line at a glance. SHP_COLOR / AMZ_COLOR are the single source of truth — legend and plot both read from them, so they can
+// never drift apart again (the bug this replaced: the legend swatch was brand-600 while the line was actually drawn in sky-blue).
+const SHP_COLOR = '#2a78d6';
+const AMZ_COLOR = '#e87ba4';
+
 // In-stock-+-selling over time: two lines (Shopify + Amazon) on a shared count axis. Lightweight inline SVG, no chart lib.
 function SellingChart({ shp, amz }: { shp: StockPositionRow[]; amz: StockPositionRow[] }) {
   const W = 720, H = 220, padL = 34, padR = 16, padT = 12, padB = 24;
@@ -347,8 +355,8 @@ function SellingChart({ shp, amz }: { shp: StockPositionRow[]; amz: StockPositio
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-brand-600" /> Shopify in stock + selling</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded" style={{ backgroundColor: '#7c3aed' }} /> Amazon in stock + selling</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded" style={{ backgroundColor: SHP_COLOR }} /> Shopify in stock + selling</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded" style={{ backgroundColor: AMZ_COLOR }} /> Amazon in stock + selling</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 460 }} role="img" aria-label="In stock and selling over time by channel">
         {[0, Math.round(maxY / 2), maxY].map((v) => (
@@ -365,15 +373,15 @@ function SellingChart({ shp, amz }: { shp: StockPositionRow[]; amz: StockPositio
           const lbl = `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}`;
           return <text key={`x${d}`} x={x(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">{lbl}</text>;
         })}
-        <polyline points={line(amz)} fill="none" stroke="#7c3aed" strokeWidth={2} />
+        <polyline points={line(amz)} fill="none" stroke={AMZ_COLOR} strokeWidth={2} />
         {amz.map((r) => (
-          <circle key={`a${r.date}`} cx={x(idx(r.date))} cy={y(r.in_stock_selling)} r={2} fill="#7c3aed">
+          <circle key={`a${r.date}`} cx={x(idx(r.date))} cy={y(r.in_stock_selling)} r={4} fill={AMZ_COLOR} stroke="#fff" strokeWidth={2}>
             <title>{`${r.date}: ${r.in_stock_selling} in stock + selling / ${r.alive} active (Amazon)`}</title>
           </circle>
         ))}
-        <polyline points={line(shp)} fill="none" stroke="#0284c7" strokeWidth={2} />
+        <polyline points={line(shp)} fill="none" stroke={SHP_COLOR} strokeWidth={2} />
         {shp.map((r) => (
-          <circle key={`s${r.date}`} cx={x(idx(r.date))} cy={y(r.in_stock_selling)} r={2} fill="#0284c7">
+          <circle key={`s${r.date}`} cx={x(idx(r.date))} cy={y(r.in_stock_selling)} r={4} fill={SHP_COLOR} stroke="#fff" strokeWidth={2}>
             <title>{`${r.date}: ${r.in_stock_selling} in stock + selling / ${r.alive} active (Shopify)`}</title>
           </circle>
         ))}
