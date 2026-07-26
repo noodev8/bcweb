@@ -841,29 +841,62 @@ export interface PriceChangeRow {
   unitsSince: number;
 }
 
+// One operator's repricing activity in the window. `user` is null for unattributed legacy rows. `up`/`down` are the direction split
+// (rows with an unknown or unchanged price are in neither); `shp`/`amz` split the same total by channel.
+export interface PriceChangeUserStat {
+  user: string | null;
+  total: number;
+  up: number;
+  down: number;
+  shp: number;
+  amz: number;
+}
+
+// The window's report layer — every change in the last `days` (channel filter applied, user filter NOT), so the per-operator breakdown
+// stays whole while you drill into one operator's rows. `flat` = changes that were neither up nor down.
+export interface PriceChangeSummary {
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  shp: number;
+  amz: number;
+  byUser: PriceChangeUserStat[];
+}
+
 export interface PriceChangesData {
   channel: 'all' | 'shp' | 'amz';
   user: string | null;
+  days: number;
   limit: number;
-  count: number;
-  users: string[];          // distinct operators across both logs, for the "filter by user" dropdown
+  count: number;             // detail rows returned (<= limit)
+  total: number;             // changes matching window + channel + user, before the limit
+  truncated: boolean;        // total > count -> the table is the newest slice, the summary is the whole window
+  summary: PriceChangeSummary;
+  users: string[];           // distinct operators across both logs, for the "filter by user" dropdown
   rows: PriceChangeRow[];
 }
 
-// Load the Price Changes report — the latest `limit` price moves for the selected `channel` (default all), optionally filtered to one
-// `user`, newest first, each with units sold since the change. `channel`: 'all' | 'shp' | 'amz'.
+// Load the Price Changes report — a WINDOW of repricing activity: `summary` covers every change in the last `days` (default 30) for the
+// selected `channel`, and `rows` is the newest `limit` (default 50) of it, optionally filtered to one `user`, each with units sold since
+// the change. `channel`: 'all' | 'shp' | 'amz'.
 export function getPriceChanges(
   channel: 'all' | 'shp' | 'amz' = 'all',
   user?: string | null,
+  days?: number,
   limit?: number,
 ) {
   return request<PriceChangesData>(
-    { url: '/analytics-change-impact', method: 'GET', params: { channel, user: user || undefined, limit } },
+    { url: '/analytics-change-impact', method: 'GET', params: { channel, user: user || undefined, days, limit } },
     (b) => ({
       channel: (b.channel as 'all' | 'shp' | 'amz') || 'all',
       user: b.user ?? null,
+      days: b.days ?? 30,
       limit: b.limit ?? 50,
       count: b.count ?? 0,
+      total: b.total ?? 0,
+      truncated: !!b.truncated,
+      summary: (b.summary as PriceChangeSummary) || { total: 0, up: 0, down: 0, flat: 0, shp: 0, amz: 0, byUser: [] },
       users: b.users || [],
       rows: b.rows || [],
     })
