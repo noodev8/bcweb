@@ -6,8 +6,8 @@ A modular internal platform for Brookfield Comfort (UK footwear e-commerce). Log
 
 ```
 bcweb-server/   Express API — owns the Postgres connection and all SQL. Runs on a VPS (PM2).
-bcweb-web/      Next.js 15 (App Router, TS, Tailwind) front end. Deploys to Vercel.
-docs/                API-RULES.md (house style), deploy.txt
+bcweb-web/      Next.js 16 (App Router, TS, Tailwind) front end. Deploys to Vercel.
+docs/                API-RULES.md (house style), deploy.txt, maintenance-notes.md
 ```
 
 The web app talks to the API over HTTP only — it never connects to Postgres directly.

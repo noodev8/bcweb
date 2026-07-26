@@ -10,8 +10,11 @@ A **modular internal platform** for Brookfield Comfort (UK footwear e-commerce �
 
 ```
 bcweb-server/   Express API — owns the Postgres connection and ALL SQL. Runs on a VPS (PM2).
-bcweb-web/      Next.js 15 (App Router, src/app, TS, Tailwind 3) front end. Deploys to Vercel.
-docs/           API-RULES.md (authoritative conventions), deploy.txt, legacy PowerBuilder/DB reference.
+bcweb-web/      Next.js 16 (App Router, src/app, TS, Tailwind 3) front end. Deploys to Vercel. Data fetching is SWR via
+                src/lib/useApiQuery.ts — never in a useEffect (see docs/maintenance-notes.md).
+docs/           API-RULES.md (authoritative conventions), deploy.txt (deployment procedure ONLY),
+                maintenance-notes.md (dependency landmines, the no-fetching-in-effects rule, build gotchas),
+                legacy PowerBuilder/DB reference.
 ```
 
 The web app **never** connects to Postgres — only the server does. Web → HTTP (axios) → server → PostgreSQL (`brookfield_prod`, the same DB the owner's Python scripts use).
