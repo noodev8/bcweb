@@ -518,7 +518,7 @@ function ScorecardPanel({
                 <th className="pb-2 pr-3 text-left font-medium">Who</th>
                 <th className="pb-2 px-3 text-left font-medium" colSpan={2}>Raises that sold</th>
                 <th className="pb-2 px-3 text-left font-medium">Cuts that moved</th>
-                <th className="pb-2 px-3 text-left font-medium">Holds</th>
+                <th className="pb-2 px-3 text-right font-medium">Holds</th>
                 <th className="pb-2 px-3 text-right font-medium">Cash in</th>
                 <th className="pb-2 pl-3 text-right font-medium">Cleared</th>
               </tr>
@@ -527,7 +527,7 @@ function ScorecardPanel({
                 <th className="pb-2 px-3 text-left font-normal">Shopify</th>
                 <th className="pb-2 px-3 text-left font-normal">Amazon</th>
                 <th className="pb-2 px-3 text-left font-normal">both channels</th>
-                <th className="pb-2 px-3 text-left font-normal">looked, left alone</th>
+                <th className="pb-2 px-3 text-right font-normal">left alone</th>
                 <th className="pb-2 px-3 text-right font-normal">from raises</th>
                 <th className="pb-2 pl-3 text-right font-normal">by cuts</th>
               </tr>
@@ -590,14 +590,10 @@ function OperatorRow({
       <td className="px-3 align-top"><HitRate made={c.shp.raises} hit={c.shp.raisesSold} n={n} tone="emerald" /></td>
       <td className="px-3 align-top"><HitRate made={c.amz.raises} hit={c.amz.raisesSold} n={n} tone="emerald" /></td>
       <td className="px-3 align-top"><HitRate made={cuts} hit={cutsMoved} n={n} tone="sky" /></td>
-      {/* Holds: a count, never a rate. There is no outcome to hit — the style was deliberately left where it was — so a percentage would
-          be meaningless. It sits with the other two verbs because it's the same act of judgement, just one that concluded "leave it". */}
-      <td className="px-3 pt-2.5 align-top">
-        {c.excluded.level ? (
-          <span className="text-xl font-bold leading-none tabular-nums text-slate-600">{n(c.excluded.level)}</span>
-        ) : (
-          <span className="text-sm text-slate-300">—</span>
-        )}
+      {/* Holds: a count, never a rate — there's no outcome to hit, the style was deliberately left where it was. Kept visually quiet and
+          grouped right with the other plain counts: it's context on how much was reviewed, not a result to be weighed against the rates. */}
+      <td className="px-3 pt-2.5 text-right align-top tabular-nums text-slate-400">
+        {c.excluded.level ? n(c.excluded.level) : '—'}
       </td>
       <td className="px-3 pt-2.5 text-right align-top tabular-nums text-slate-700">{money(cashIn)}</td>
       <td className="pl-3 pt-2.5 text-right align-top tabular-nums text-slate-700">{cleared ? n(cleared) : '—'}</td>
