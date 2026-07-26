@@ -46,7 +46,9 @@ function loadServiceAccount() {
   try {
     sa = JSON.parse(raw);
   } catch (e) {
-    throw new Error(`GOOGLE_MERCHANT_CREDENTIALS_JSON is not valid JSON: ${e.message}`);
+    // `cause` keeps the original SyntaxError (with its position in the JSON) attached for debugging, while the message stays the clear
+    // operator-facing one. Without it the parse detail is lost the moment we rethrow.
+    throw new Error(`GOOGLE_MERCHANT_CREDENTIALS_JSON is not valid JSON: ${e.message}`, { cause: e });
   }
   if (!sa.client_email || !sa.private_key) {
     throw new Error('GOOGLE_MERCHANT_CREDENTIALS_JSON is missing client_email / private_key');
