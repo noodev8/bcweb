@@ -352,8 +352,6 @@ function LinesTable({ lines, batch, ghosts, selected, onToggle, onAdjust, onRest
   }
   // Zeroed lines are spliced back into the position they held, so emptying one doesn't pull the rest of the table up.
   const rows = spliceZeroed(Array.from(groups.values()), ghosts, (g) => g.code);
-  // Preserve title on the first row of a run of the same product (matches the earlier per-unit layout's grouping-by-eye).
-  let lastGroupid: string | null = null;
   return (
     <table className="w-full text-sm">
       <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
@@ -368,8 +366,10 @@ function LinesTable({ lines, batch, ghosts, selected, onToggle, onAdjust, onRest
       </thead>
       <tbody className="divide-y divide-slate-50">
         {rows.map((g, idx) => {
-          const showTitle = g.groupid !== lastGroupid;
-          lastGroupid = g.groupid;
+          // Preserve title on the first row of a run of the same product (matches the earlier per-unit layout's grouping-by-eye).
+          // Read the previous row rather than carrying a `let` across the map — mutating a variable during render is impure and
+          // breaks React's memoisation assumptions (react-hooks/immutability); comparing to rows[idx-1] is the same test, pure.
+          const showTitle = idx === 0 || rows[idx - 1].groupid !== g.groupid;
           // A line just walked down to 0: it holds its place, greyed, with nothing to select and nothing left to remove — but its "+"
           // brings the units back. `qty === 0` can only be a ghost; a real group is built from at least one unit row.
           const zero = g.qty === 0;

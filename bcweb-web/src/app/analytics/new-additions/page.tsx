@@ -38,6 +38,10 @@ export default function NewAdditionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'added' | 'sold' | 'stock'>('added'); // which column the list is sorted by
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');            // direction; default desc (newest / most first)
+  // "Now" is captured when the rows are fetched, NOT read during render. Date.now() is impure, so calling it while rendering makes
+  // the output depend on when React happens to re-render (react-hooks/purity). Snapshotting it here also reads better: the ages
+  // shown are "as at the time we loaded the list", which is what the numbers next to each row actually mean.
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +49,7 @@ export default function NewAdditionsPage() {
     const res = await getNewAdditions(DAYS);
     if (res.success && res.data) {
       setRows(res.data.rows);
+      setLoadedAt(Date.now());
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setError(res.error || 'Failed to load New Additions');
@@ -89,10 +94,11 @@ export default function NewAdditionsPage() {
     const dt = new Date(d);
     return `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}`;
   };
-  // Whole days between the creation date and today — how long the line has been live.
+  // Whole days between the creation date and when the list was loaded — how long the line has been live. Uses the `loadedAt`
+  // snapshot rather than Date.now() so this stays a pure function of state (see the note on loadedAt above).
   const daysLive = (d: string | null) => {
-    if (!d) return null;
-    const ms = Date.now() - new Date(d).getTime();
+    if (!d || loadedAt === null) return null;
+    const ms = loadedAt - new Date(d).getTime();
     return Math.max(0, Math.floor(ms / 86400000));
   };
   return (
