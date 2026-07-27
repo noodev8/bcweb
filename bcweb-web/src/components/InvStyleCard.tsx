@@ -9,9 +9,13 @@ Purpose: One result in the Inventory BROWSE. The redesign (2026-07-23) drops the
          how a human tells them apart. The image stops being something you summon and becomes the result itself.
 
 STAY LIGHT UNTIL CLICKED (owner, 2026-07-23). The whole face paints from the /inv-styles row already in memory — image, title, price,
-and the size chips with their LOCAL counts (row.localSizes). The heavy per-style detail (/inv-stock: every rack, the 12 buckets) is
-fetched ONLY when the operator taps a size to see where it is, and cached after the first tap. Nothing here fires a request on render,
-so a screen full of cards costs zero extra round-trips until someone actually asks a question of one.
+and the size chips with their LOCAL counts (row.localSizes). The heavy per-style detail (/inv-stock: every rack, the buckets) is fetched
+ONLY once something is OPEN on this card — a size's racks or the Detail panel — and cached thereafter. The fetch is DERIVED from that
+open state (a null SWR key while nothing is open), not fired from the click handlers, so any new way of opening the card gets the data
+without remembering to ask for it. Nothing fires a request on render, so a screen full of cards costs zero extra round-trips until
+someone actually asks a question of one.
+
+Detail's open/closed flag is the LIST's state, passed in — see the props and the keyboard cursor on /inventory.
 
 SIZE CHIP = the 2-digit code suffix (owner) — "38", "06" — which is the canonical EU size in this DB (RIGHT(code,2)). localSizes is
 keyed by that suffix, so the chip prints the key verbatim. EVERY size shows a chip — sold-out ones (qty 0) greyed IN PLACE, so a
@@ -28,9 +32,10 @@ still one tap away; we do not auto-fetch 40 styles' worth of detail just because
 
 import Image from 'next/image';
 import { useCallback, useMemo, useState } from 'react';
-import { ChevronRightIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getInvStock, adjustStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApiQuery } from '@/lib/useApiQuery';
 import InvLocations from '@/components/InvLocations';
 import InvBreakdown from '@/components/InvBreakdown';
 
@@ -53,7 +58,20 @@ function sortedSizes(localSizes: Record<string, number>): [string, number][] {
   });
 }
 
-export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; sizeFilter: string | null }) {
+export default function InvStyleCard({
+  row,
+  sizeFilter,
+  detailOpen,
+  onToggleDetail,
+}: {
+  row: InvStyleRow;
+  sizeFilter: string | null;
+  // Detail's open/closed state is OWNED BY THE LIST, not the card, so the keyboard cursor's Enter can open the current card (see
+  // useListCursor on /inventory). Each card still opens and closes independently — the list keeps a set of open groupids, so one
+  // card's Detail never collapses another's (owner, 2026-07-23).
+  detailOpen: boolean;
+  onToggleDetail: () => void;
+}) {
   const { logout } = useAuth();
 
   const src = row.imagename ? IMAGE_BASE + row.imagename : null;
@@ -76,14 +94,30 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     });
   }, []);
 
-  // Lazy detail — the racks and buckets — fetched on the FIRST size tap and cached. Never on render.
-  const [detail, setDetail] = useState<InvStockData | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  // Click-to-enlarge. The face image is deliberately small enough to scroll a lot of list; this is the pressure valve for the times
+  // two colourways really do need looking at properly.
+  const [zoom, setZoom] = useState(false);
 
   // Which size's racks are open, as a localSizes key ("38"/"06"); null = none. Set ONLY by a tap, so opening a card's racks is always
-  // a deliberate act (and the only thing that triggers the /inv-stock fetch).
+  // a deliberate act.
   const [openSize, setOpenSize] = useState<string | null>(null);
+
+  // Lazy detail — the racks and buckets. A NULL KEY means "don't fetch yet", so OPENING SOMETHING IS THE TRIGGER: tap a size, or open
+  // Detail, and the fetch follows on its own. Nothing on render, so a screen full of cards still costs zero round-trips.
+  //
+  // It is deliberately DERIVED from what is open rather than fired imperatively from the tap handler. The imperative version had a
+  // hole: Enter on the keyboard cursor sets `detailOpen` from the LIST, which never ran the card's fetch call — so the chevron
+  // flipped open onto an empty panel, and only worked if a size tap had already loaded the data (owner, 2026-07-27). Derived, there
+  // is no call for a new way of opening the card to forget. Same pattern as InvSales.
+  const needDetail = openSize !== null || detailOpen;
+  const {
+    data: detailData,
+    error: detailLoadError,
+    busy: detailLoading,
+    refresh: reloadDetail,
+  } = useApiQuery(needDetail ? ['inv-stock', row.groupid] : null, () => getInvStock(row.groupid));
+  const detail: InvStockData | null = detailData ?? null;
+  const detailError = detailLoadError?.message ?? null;
 
   const sizes = useMemo(() => sortedSizes(row.localSizes), [row.localSizes]);
 
@@ -95,41 +129,16 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     return Object.keys(row.localSizes).find((k) => normSize(k) === t) || null;
   }, [sizeFilter, row.localSizes]);
 
-  // Fetch detail once, idempotently. Called only from a tap.
-  const ensureDetail = useCallback(async () => {
-    if (detail || detailLoading) return;
-    setDetailLoading(true);
-    setDetailError(null);
-    const res = await getInvStock(row.groupid);
-    if (res.success && res.data) {
-      setDetail(res.data);
-    } else if (res.return_code === 'UNAUTHORIZED') {
-      logout();
-      return;
-    } else {
-      setDetailError(res.error || 'Could not load locations');
-    }
-    setDetailLoading(false);
-  }, [detail, detailLoading, row.groupid, logout]);
-
-  // Tap a size chip: toggle its racks open/closed, fetching detail the first time.
+  // Tap a size chip: toggle its racks open/closed. The fetch follows from `openSize` (see above) — nothing to trigger by hand.
   const onTapSize = useCallback((key: string) => {
     setOpenSize((prev) => (prev === key ? null : key));
-    ensureDetail();
-  }, [ensureDetail]);
+  }, []);
 
   // ---- Phase 2: +/- stock adjustments (writes) ----
   // A per-size override of the chip count, applied right after a successful +/- so the face reflects the new total immediately (the
   // base counts come from the /inv-styles snapshot, which doesn't know about this edit). Keyed by the chip/size key.
   const [sizeOverride, setSizeOverride] = useState<Record<string, number>>({});
   const [adjustError, setAdjustError] = useState<string | null>(null);
-
-  // Force a fresh /inv-stock (bypasses ensureDetail's "already loaded" guard) so the racks reflect a just-made edit.
-  const reloadDetail = useCallback(async () => {
-    const res = await getInvStock(row.groupid);
-    if (res.success && res.data) setDetail(res.data);
-    else if (res.return_code === 'UNAUTHORIZED') logout();
-  }, [row.groupid, logout]);
 
   // Handle a +/- from the locations panel: call the write endpoint, then update the edited size's chip count from the server's fresh
   // total and re-pull the racks. On failure, still re-pull, so the screen shows the true state rather than an optimistic guess.
@@ -148,15 +157,10 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
     }
   }, [openSize, reloadDetail, logout]);
 
-  // The deep breakdown (full size range incl. sold-out zeros, the 12 buckets, reprice/product links, recent sales). Each card owns its
-  // own open/close — the operator opens and closes whichever they want, and one card's breakdown never collapses another (an earlier
-  // accordion did that, and the collapse-jump was jarring — owner, 2026-07-23). It reads the same /inv-stock the racks use, so opening
-  // it after a size tap costs nothing more.
-  const [showBreakdown, setShowBreakdown] = useState(false);
-  const onToggleBreakdown = useCallback(() => {
-    setShowBreakdown((v) => !v);
-    ensureDetail();
-  }, [ensureDetail]);
+  // The deep breakdown (full size range incl. sold-out zeros, the buckets, reprice/product links, recent sales). Open/closed is the
+  // LIST's state (see the props) so Enter on the keyboard cursor can drive it; the fetch stays here. It reads the same /inv-stock the
+  // racks use, so opening it after a size tap costs nothing more.
+  const showBreakdown = detailOpen;
 
   // Racks for the open size — matched out of the fetched detail by 2-digit size (loc.eu), numeric so a padded "06" still lines up.
   const openRacks: InvLocationRow[] = useMemo(() => {
@@ -182,18 +186,29 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex gap-4 p-3">
+      <div className="flex gap-3 p-3">
         {/* ---- Image: furniture, always drawn. next/image is lazy by default, so a stack of cards only fetches the pictures actually
-                on screen. Square, big enough to tell two black Arizonas apart. ---- */}
-        <div className="relative aspect-square w-28 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white sm:w-32">
+                on screen. Square, and it SETS THE CARD'S HEIGHT — the face's text is shorter than the picture, so the picture is the
+                only real lever on how many cards fit on a screen. Trimmed from w-28/32 to w-24/28 (owner, 2026-07-27) to scroll more
+                of the list at once: still big enough to tell two black Arizonas apart at a glance, and CLICK TO ENLARGE covers the
+                times it isn't. Any smaller and the browse stops working as a browse. ---- */}
+        <button
+          type="button"
+          onClick={() => src && setZoom(true)}
+          title={src ? 'Click to enlarge' : undefined}
+          className={
+            'relative aspect-square w-24 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white sm:w-28 '
+            + (src ? 'cursor-zoom-in hover:border-slate-300' : 'cursor-default')
+          }
+        >
           {src && !imgFailed ? (
-            <Image key={reloadKey} src={src} alt="" fill sizes="128px" onError={onImgError} className="object-contain" />
+            <Image key={reloadKey} src={src} alt="" fill sizes="112px" onError={onImgError} className="object-contain" />
           ) : (
             <div className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">
               {row.imagename ? 'Image not found' : 'No image'}
             </div>
           )}
-        </div>
+        </button>
 
         {/* ---- Face content ---- */}
         <div className="min-w-0 flex-1">
@@ -203,7 +218,24 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
               <div className="truncate font-medium text-slate-800" title={row.title || row.groupid}>
                 {row.title || <span className="text-slate-400">Untitled product</span>}
               </div>
-              <div className="font-mono text-xs text-slate-500">{row.groupid}</div>
+              {/* The groupid line doubles as the Detail toggle's home. Detail used to own a whole row below the size chips for one
+                  word; the code line is short and the space beside it was dead, so the card loses a row for nothing (owner,
+                  2026-07-27). Kept off the chips row on purpose — a control that wraps in among the sizes reads as another size. */}
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-slate-500">{row.groupid}</span>
+                <span className="text-slate-200">|</span>
+                <button
+                  type="button"
+                  // blur(): a mouse click leaves focus sitting on this button, and the operator's next keystroke is almost always an
+                  // arrow meant for the list cursor — after opening and closing Detail with the mouse, up/down were scrolling the page
+                  // instead of moving to the next card (owner, 2026-07-27). Handing focus back to the page removes the question.
+                  onClick={(e) => { onToggleDetail(); e.currentTarget.blur(); }}
+                  className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  <ChevronRightIcon className={`h-3 w-3 transition-transform ${showBreakdown ? 'rotate-90' : ''}`} />
+                  Detail
+                </button>
+              </div>
             </div>
             <div className="shrink-0 text-right">
               {row.price !== null && (
@@ -284,15 +316,6 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
             })}
           </div>
 
-          {/* Breakdown toggle — the deep view is behind a click so the face stays light (owner: minimal until clicked). */}
-          <button
-            type="button"
-            onClick={onToggleBreakdown}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
-          >
-            <ChevronRightIcon className={`h-3.5 w-3.5 transition-transform ${showBreakdown ? 'rotate-90' : ''}`} />
-            Breakdown
-          </button>
         </div>
       </div>
 
@@ -321,6 +344,41 @@ export default function InvStyleCard({ row, sizeFilter }: { row: InvStyleRow; si
         ) : detail ? (
           <InvBreakdown data={detail} />
         ) : null
+      )}
+
+      {/* ---- Enlarged image. Click anywhere or press Escape to close.
+              data-list-cursor="off" tells the list's keyboard cursor to keep its hands off while this is open — otherwise Escape
+              would close the zoom AND clear the operator's place in the list, which is the exact thing the cursor exists to protect.
+              It takes focus on mount so the keystroke actually originates inside the overlay. ---- */}
+      {zoom && src && (
+        <div
+          data-list-cursor="off"
+          tabIndex={-1}
+          ref={(el) => { el?.focus(); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') setZoom(false); }}
+          onClick={() => setZoom(false)}
+          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-slate-900/70 p-6 outline-none"
+        >
+          {/* A visible way out. Click-anywhere and Escape both already close this, but neither is VISIBLE — an operator who doesn't
+              know that is stuck looking at a full-screen picture, so the X earns its place even as the third route (owner, 2026-07-27). */}
+          <button
+            type="button"
+            onClick={() => setZoom(false)}
+            title="Close (or press Escape)"
+            className="absolute right-4 top-4 rounded-full bg-white/90 p-1.5 text-slate-600 shadow-lg transition hover:bg-white hover:text-slate-900"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+
+          {/* Intrinsic size is unknown (legacy image library), so give next/image a generous box and let object-contain letterbox it. */}
+          <Image
+            src={src}
+            alt={row.title || row.groupid}
+            width={1400}
+            height={1400}
+            className="h-auto max-h-[88vh] w-auto max-w-[92vw] rounded-lg bg-white object-contain shadow-2xl"
+          />
+        </div>
       )}
     </div>
   );

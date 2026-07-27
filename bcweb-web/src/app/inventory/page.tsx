@@ -12,6 +12,8 @@ Purpose: "Have we got this, in my size, and where is it?" The operator filters t
 THE FILTER IS UNCHANGED — it is the proven part of this screen and the redesign leaves it exactly as it was:
   - Two boxes: Contains / Does not contain. Either or both may be filled. Enter or Find applies them, then clears them; each Find
     narrows what is ALREADY on screen ("Arizona" -> not "EVA" -> "black"). Steps are display-only; to undo, Reset.
+    EXCEPT when the narrowing would empty the list: then the Find is treated as a brand-new search instead (see onFind) — the
+    operator was starting a new hunt, not narrowing ("ARIZONA" then "IVES" = just IVES).
   - Size box: narrow to styles holding that size in LOCAL stock, and each card then LEADS with that size's count (InvStyleCard). A
     single value kept apart from the text steps, since it is the criterion swapped mid-call.
   - Cut: a per-row manual hide for stragglers a text step can't drop without over-matching. View-only; Restore or Reset brings them back.
@@ -24,7 +26,15 @@ TWO THINGS KEEP THE BROWSE FAST (owner, 2026-07-23 — "ensure we don't over-ret
   2. Detail is lazy. The heavy per-style /inv-stock (racks, buckets) is fetched by InvStyleCard only when a size is tapped, never on
      render. So even a full page of cards costs zero detail round-trips until someone asks a question of one.
 
-The command bar is STICKY: it stays pinned to the top while the cards scroll under it, so the filter is always to hand mid-browse.
+The command bar scrolls away with the page. It was sticky until the keyboard cursor landed (below) — a pinned bar plus cards moving
+under it was too much motion to read while arrowing (owner, 2026-07-27, on trial). See the bar's own comment to pin it again.
+
+KEYBOARD CURSOR over the cards (owner, 2026-07-27): up/down move a highlight that STAYS where it was left, Enter opens the current
+card's Detail. This is the legacy PowerBuilder gesture, and it is here for one reason — the operator walks off to the racks mid-task
+and comes back having forgotten which of a dozen near-identical black Arizonas they were on. Cards only (above the gate there is
+nothing painted to move through). The mechanics live in the shared `useListCursor` hook; this page supplies the keys, when it is
+enabled, what Enter does, and the look of the highlight. Detail's open/closed state had to move UP here for Enter to drive it, so
+InvStyleCard now takes it as a prop.
 =======================================================================================================================================
 */
 
@@ -34,6 +44,7 @@ import AppShell from '@/components/AppShell';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
 import InvStyleCard from '@/components/InvStyleCard';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useListCursor } from '@/lib/useListCursor';
 
 // One applied narrowing step. `has` keeps matching rows; `not` drops them.
 interface FilterStep {
@@ -111,6 +122,57 @@ function normSize(s: string): string {
 // search index on every render.
 const NO_ROWS: InvStyleRow[] = [];
 
+// An indexed row: the row plus its pre-built lowercase haystack (see `haystack`).
+interface IndexedRow { row: InvStyleRow; hay: string }
+
+// The full set of narrowings in force. Bundled into one shape because onFind has to be able to TRY a set of criteria (see the
+// start-fresh rule there) before committing it to state — so the filter pass has to be callable on criteria that aren't the
+// current state yet.
+interface Criteria {
+  steps: FilterStep[];
+  sizeTarget: string | null;
+  sizeStrict: boolean;
+  qty: QtyFilter[];
+}
+
+// Local stock a style holds in the filtered size (0 if none / no size filter).
+function sizeQtyIn(r: InvStyleRow, sizeTarget: string | null): number {
+  if (sizeTarget === null) return 0;
+  let q = 0;
+  for (const [k, v] of Object.entries(r.localSizes)) {
+    if (normSize(k) === sizeTarget) q += v;
+  }
+  return q;
+}
+
+// Apply every text step in order (ANDed), then the size filter, then the numeric commands. The one place the narrowing is defined,
+// so the on-screen list and onFind's "would this find anything?" probe can never drift apart.
+function applyCriteria(indexed: IndexedRow[], c: Criteria): IndexedRow[] {
+  let out = indexed;
+  for (const s of c.steps) {
+    const t = s.term.toLowerCase();
+    if (s.op === 'has') {
+      // CONTAINS stays a plain substring — the operator types partials ("ARIZ" must find "Arizona"), so narrowing has to be loose.
+      out = out.filter((x) => x.hay.includes(t));
+    } else {
+      // DOES NOT CONTAIN matches WHOLE WORDS. A plain substring here is a footgun: excluding the colour "SAND" also matched the SAND
+      // inside "SANDALS" and wiped every result (owner, 2026-07-23). \b…\b so an exclusion only drops the word you named, not a longer
+      // word that happens to start with it. Built once per step, not per row.
+      const re = new RegExp(`\\b${escapeRegExp(t)}\\b`);
+      out = out.filter((x) => !re.test(x.hay));
+    }
+  }
+  if (c.sizeTarget !== null && c.sizeStrict) out = out.filter((x) => sizeQtyIn(x.row, c.sizeTarget) > 0);
+  // STOCK / SOLD commands, last: numeric compares (ANDed). Strict (< / >), so "STOCK LESS 10" excludes exactly-10.
+  for (const f of c.qty) {
+    out = out.filter((x) => {
+      const v = metricValue(x.row, f.metric);
+      return f.op === 'less' ? v < f.n : v > f.n;
+    });
+  }
+  return out;
+}
+
 export default function InventoryPage() {
 
 
@@ -181,41 +243,12 @@ export default function InventoryPage() {
   const searched = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
 
   // Local stock this style holds in the filtered size (0 if none / no size filter).
-  const sizeQtyOf = useCallback((r: InvStyleRow): number => {
-    if (sizeTarget === null) return 0;
-    let q = 0;
-    for (const [k, v] of Object.entries(r.localSizes)) {
-      if (normSize(k) === sizeTarget) q += v;
-    }
-    return q;
-  }, [sizeTarget]);
+  const sizeQtyOf = useCallback((r: InvStyleRow): number => sizeQtyIn(r, sizeTarget), [sizeTarget]);
 
-  // Apply every text step in order (ANDed), then the size filter last: keep only styles with that size on the shelf.
-  const filtered = useMemo(() => {
-    let out = indexed;
-    for (const s of steps) {
-      const t = s.term.toLowerCase();
-      if (s.op === 'has') {
-        // CONTAINS stays a plain substring — the operator types partials ("ARIZ" must find "Arizona"), so narrowing has to be loose.
-        out = out.filter((x) => x.hay.includes(t));
-      } else {
-        // DOES NOT CONTAIN matches WHOLE WORDS. A plain substring here is a footgun: excluding the colour "SAND" also matched the SAND
-        // inside "SANDALS" and wiped every result (owner, 2026-07-23). \b…\b so an exclusion only drops the word you named, not a longer
-        // word that happens to start with it. Built once per step, not per row.
-        const re = new RegExp(`\\b${escapeRegExp(t)}\\b`);
-        out = out.filter((x) => !re.test(x.hay));
-      }
-    }
-    if (sizeTarget !== null && sizeStrict) out = out.filter((x) => sizeQtyOf(x.row) > 0);
-    // STOCK / SOLD commands, last: numeric compares (ANDed). Strict (< / >), so "STOCK LESS 10" excludes exactly-10.
-    for (const f of activeQty) {
-      out = out.filter((x) => {
-        const v = metricValue(x.row, f.metric);
-        return f.op === 'less' ? v < f.n : v > f.n;
-      });
-    }
-    return out.map((x) => x.row);
-  }, [indexed, steps, sizeTarget, sizeStrict, sizeQtyOf, activeQty]);
+  const filtered = useMemo(
+    () => applyCriteria(indexed, { steps, sizeTarget, sizeStrict, qty: activeQty }).map((x) => x.row),
+    [indexed, steps, sizeTarget, sizeStrict, activeQty],
+  );
 
   // What actually shows = the text-filtered rows minus the hand-cut ones.
   const visible = useMemo(() => filtered.filter((r) => !cut.has(r.groupid)), [filtered, cut]);
@@ -236,6 +269,33 @@ export default function InventoryPage() {
 
   // Over the gate — too many matches to paint pictures for; show the quick title list instead (below).
   const overGate = visible.length > CARD_GATE;
+
+  // ---- Keyboard cursor over the cards (owner, 2026-07-27) --------------------------------------------------------------------
+  // The operators work this screen from the keyboard and walk away from it mid-task ("find the 39, go to the rack, come back") —
+  // and were losing their place in the stack. So the browse gets the legacy list gesture back: up/down moves a highlight that STAYS
+  // until moved, Enter opens the current card's Detail. Cards only: above the gate there is nothing painted to move through.
+  const cursorKeys = useMemo(() => sortedVisible.map((r) => r.groupid), [sortedVisible]);
+
+  // Detail open/closed now lives HERE rather than inside each card, so Enter can drive it (InvStyleCard takes it as a prop). A set,
+  // not a single id, because cards open independently — one card's Detail must never collapse another's.
+  const [detailOpen, setDetailOpen] = useState<Set<string>>(new Set());
+  const toggleDetail = useCallback((groupid: string) => {
+    setDetailOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(groupid)) next.add(groupid);
+      return next;
+    });
+  }, []);
+
+  const cursor = useListCursor({
+    keys: cursorKeys,
+    enabled: searched && !overGate && !loading && !error,
+    onEnter: toggleDetail,
+    // 'center': the list moves under a highlight that sits mid-screen, the way the legacy grid felt — you always have the next few
+    // cards in view rather than arrowing into the bottom edge. Trying this against the default 'nearest' (owner, 2026-07-27); the
+    // cards are tall, which is what makes the difference noticeable here.
+    scrollBlock: 'center',
+  });
 
   // FIND: turn whatever is in the boxes into steps, then clear the boxes. Blank boxes are ignored.
   function onFind(e: React.FormEvent) {
@@ -265,13 +325,41 @@ export default function InventoryPage() {
     if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
     const size = sizeInput.trim() || sizeFromTerm;
     if (next.length === 0 && !size && !nextQty) return;
-    if (nextQty) setQtyFilter(nextQty);
-    if (next.length > 0) setSteps((prev) => [...prev, ...next]);
-    if (size) {
-      setSizeFilter(size);
-      // Strict (exclude sold-out) only when the size was typed in its own box; a size split off a pasted SKU is a targeted lookup, so
-      // it must not hide the one style it points at just because that size is out.
-      setSizeStrict(!!sizeInput.trim());
+
+    // Strict (exclude sold-out) only when the size was typed in its own box; a size split off a pasted SKU is a targeted lookup, so
+    // it must not hide the one style it points at just because that size is out.
+    const nextStrict = !!sizeInput.trim();
+
+    // START FRESH WHEN THE NARROWING WOULD EMPTY THE LIST (owner, 2026-07-27). Each Find normally narrows what is already on screen,
+    // but the operator often uses the box to start a NEW hunt ("ARIZONA" … then "IVES"), and stacked on the old steps that can only
+    // ever find nothing. So: probe the merged criteria first; if they match no styles AND something was already applied, treat this
+    // Find as a brand-new entry — drop every existing step/size/qty/cut and run the new terms alone. Only if THAT is also empty does
+    // "No styles match" appear. Probing (rather than reacting to an empty render) means the dead intermediate state never paints.
+    const hadFilters = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
+    const mergedQty = nextQty ? { ...qtyFilters, [nextQty.metric]: nextQty } : qtyFilters;
+    const merged: Criteria = {
+      steps: [...steps, ...next],
+      sizeTarget: size ? normSize(size) : sizeTarget,
+      sizeStrict: size ? nextStrict : sizeStrict,
+      qty: Object.values(mergedQty).filter(Boolean) as QtyFilter[],
+    };
+    const startFresh = hadFilters && applyCriteria(indexed, merged).length === 0;
+
+    if (startFresh) {
+      setSteps(next);
+      setQtyFilters(nextQty ? { [nextQty.metric]: nextQty } : {});
+      setSizeFilter(size || null);
+      setSizeStrict(size ? nextStrict : true);
+      setCut(new Set());
+      // No announcement (owner, 2026-07-27): the breadcrumb already shows exactly the one step now in force, and the operator has the
+      // rows they wanted — a banner explaining what didn't happen is just something to read.
+    } else {
+      if (nextQty) setQtyFilter(nextQty);
+      if (next.length > 0) setSteps((prev) => [...prev, ...next]);
+      if (size) {
+        setSizeFilter(size);
+        setSizeStrict(nextStrict);
+      }
     }
     setContains('');
     setNotContains('');
@@ -311,9 +399,12 @@ export default function InventoryPage() {
 
   return (
     <AppShell title="Inventory" subtitle="Find stock by title, groupid or segment">
-      {/* ---- Command bar (sticky) ------------------------------------------------------------------------------------------
-          Stays pinned to the top while cards scroll under it. -mx-4 px-4 + a solid backdrop so scrolling cards don't show through. */}
-      <div className="sticky top-0 z-20 -mx-4 mb-4 border-b border-slate-200 bg-slate-50/95 px-4 pb-3 pt-1 backdrop-blur">
+      {/* ---- Command bar ---------------------------------------------------------------------------------------------------
+          NOT sticky (owner, 2026-07-27, on trial). It used to stay pinned so the filter was always to hand mid-browse, but once the
+          keyboard cursor arrived the bar sat still while cards streamed under it — too much happening at once to read comfortably
+          while arrowing. Scrolling it away leaves the moving cards as the only thing moving. To pin it again: `sticky top-0 z-20`
+          plus the solid backdrop (`bg-slate-50/95 backdrop-blur`) that stops cards showing through. */}
+      <div className="-mx-4 mb-4 border-b border-slate-200 px-4 pb-3 pt-1">
         <form onSubmit={onFind} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-[200px] flex-1">
@@ -402,6 +493,14 @@ export default function InventoryPage() {
                 <span className="text-slate-400">{rows.length} styles ready to search</span>
               )}
             </span>
+            {/* Keyboard hint — only where the cursor actually works (cards painted). Nothing announces the gesture otherwise, and an
+                operator who never presses ↓ never discovers the thing that stops them losing their place. */}
+            {searched && !overGate && visible.length > 0 && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span className="whitespace-nowrap text-xs text-slate-400">↑↓ move · Enter opens detail</span>
+              </>
+            )}
             {cutInView > 0 && (
               <>
                 <span className="text-slate-300">|</span>
@@ -562,8 +661,30 @@ export default function InventoryPage() {
       {!loading && !error && searched && !overGate && (
         <div className="space-y-3">
           {sortedVisible.map((r) => (
-            <div key={r.groupid} className="group relative">
-              <InvStyleCard row={r} sizeFilter={sizeFilter} />
+            <div
+              key={r.groupid}
+              ref={cursor.itemRef(r.groupid)}
+              // Clicking anywhere on a card takes the cursor with it, so the keyboard picks up from wherever the mouse left off.
+              onClick={() => cursor.setCursor(r.groupid)}
+              // scroll-mt is the clearance for a STICKY command bar (a card scrolled to the viewport top would otherwise sit under
+              // it). The bar is unstuck at the moment and 'center' scrolling barely uses this — kept so pinning the bar again is a
+              // one-line change that doesn't quietly start hiding the current card.
+              className={
+                'group relative scroll-mt-36 rounded-lg ' +
+                (cursor.isCursor(r.groupid) ? 'ring-2 ring-brand-500' : '')
+              }
+            >
+              {/* The "you are here" bar. The ring alone reads as focus; this reads across a room, which is the actual job — the
+                  operator comes back from the racks and has to re-find their place at a glance. */}
+              {cursor.isCursor(r.groupid) && (
+                <div className="absolute left-0 top-0 z-10 h-full w-1 rounded-l-lg bg-brand-500" />
+              )}
+              <InvStyleCard
+                row={r}
+                sizeFilter={sizeFilter}
+                detailOpen={detailOpen.has(r.groupid)}
+                onToggleDetail={() => toggleDetail(r.groupid)}
+              />
               {/* Cut — muted until the card is hovered, then reddens. Sits top-right, out of the way of the picture and sizes. */}
               <button
                 type="button"

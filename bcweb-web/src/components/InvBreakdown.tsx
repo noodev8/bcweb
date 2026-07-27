@@ -6,8 +6,8 @@ Component: InvBreakdown
 Purpose: The "why is that number what it is" deep view for one style on the Inventory browse — opened from a card's Breakdown toggle,
          one card at a time, so the browse itself stays light. It answers the rarer questions the card face deliberately omits:
            - the FULL size range including sold-out zeros (the face chips show only in-stock sizes),
-           - where every unit sits across the twelve buckets, the Amazon re-order figure included (shown in full — opening Breakdown IS
-             the request for detail, so there is no second "Show detail" toggle to click),
+           - where every unit sits across the buckets worth acting on (shown in full — opening Breakdown IS the request for detail, so
+             there is no second "Show detail" toggle to click; see DETAIL_GROUPS for the buckets deliberately left off),
            - jumping off to reprice the style, open its live product page, or grab its image,
            - and whether it is actually selling (recent sales).
 
@@ -36,8 +36,8 @@ type DetailCol = {
   title: string;
   get: (s: InvSizeRow) => number;
   getTotal: (t: InvStockData['totals']) => number;
-  // Set on a column that is a CONCLUSION rather than a raw bucket (today: Amz tot). Drawn heavier, because in a wall of small numbers
-  // the one you actually act on must not look like the four you skim past.
+  // Set on a column that is a CONCLUSION rather than a raw bucket, so it is drawn heavier than the buckets around it. Nothing uses it
+  // since Amz tot was dropped; kept because the next conclusion column will want it.
   strong?: boolean;
 };
 
@@ -52,24 +52,17 @@ const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
   {
     group: 'AMZ',
     cols: [
-      bucket('amzAlloc', 'Res',
-        'Here but earmarked for Amazon — in practice the C3-Amazon bay. The locations above give the exact shelf. '
-        + 'Still pickable for a Shopify customer.'),
-      bucket('transit', 'Transit', 'Collected by DPD within the last 2 days — gone from our racks, not yet on Amazon’s books'),
+      // 'Res' (amzAlloc — here but earmarked for Amazon, the C3-Amazon bay) and 'Transit' (collected by DPD in the last 2 days)
+      // deliberately NOT shown (owner, 2026-07-27): both are small, rarely acted on directly, and made the AMZ group read as four
+      // numbers to weigh when only Live and Tot are decisions. Per-size Res still shows as a LOCATION on the card face, and both
+      // buckets are still folded into Tot below — the re-order figure is unchanged, just less noisily explained.
       // 'Inbound' (amztotal - amzlive) deliberately NOT shown (owner, 2026-07-25): amzfeed only stores the live/total split, not
       // Amazon's real reason for the gap (reserved-but-sold, unsellable, researching, or genuinely inbound all read the same), so the
       // label was frequently wrong — e.g. a unit sold minutes ago reads as "1 inbound" until Amazon's next feed sync ships it out.
       // Live and Tot are both raw amzfeed values and stay trustworthy on their own; the gap is still folded into Tot below, just unlabelled.
+      // 'Tot' (amazonTotal, the re-order figure) dropped with them (owner, 2026-07-27): once its components were hidden it was an
+      // unexplained roll-up, and with Live the only AMZ number left on the grid the roll-up had nothing left to summarise.
       bucket('amzLive', 'Live', 'Sellable FBA stock at Amazon'),
-      {
-        // "Tot", not "Total": the headline Total column must be the only thing on this grid called Total.
-        key: 'amazonTotal', label: 'Tot',
-        title: 'THE RE-ORDER FIGURE: everything at, heading to, or set aside for Amazon — Live + Inbound + Transit + Amazon on '
-             + 'order + Amz res. This is what you go by when deciding how many to send.',
-        get: (s) => s.amazonTotal,
-        getTotal: (t) => t.amazonTotal,
-        strong: true,
-      },
     ],
   },
   {
@@ -159,9 +152,14 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
         )}
       </div>
 
+      {/* Is it actually selling — collapsed, lazily fetched (see InvSales). Sits ABOVE the grid (owner, 2026-07-27): the grid is tall,
+          and a sales question parked under it was a scroll away from the size chips that prompt it. */}
+      <InvSales groupid={data.groupid} />
+
       {/* ---- Full size grid: EVERY size from skumap, sold-out ones reading 0 (the face chips show only in-stock sizes). Show detail
               expands the same grid to the twelve buckets, scrolling inside its own box so the card never scrolls sideways. ---- */}
-      <div className="px-4 pb-3">
+      {/* border-t: InvSales brings its own top rule, so with it moved above the grid this is what now separates the two. */}
+      <div className="border-t border-slate-200 px-4 pb-3 pt-3">
         {/* Always scrolls inside its own box — the bucket grid is wide, but the card/page never scrolls sideways. */}
         <div className="overflow-x-auto">
           {/* w-auto, not w-full: every numeric column is fixed width, so a full-width table would dump the slack into the Size column. */}
@@ -170,8 +168,15 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
               <tr className="text-[10px] text-slate-400">
                 <th className="py-1 pr-3" />
                 <th className="border-r-2 border-slate-200 py-1 px-3" colSpan={2} />
+                {/* Group label alignment follows the group's width: a ONE-column group right-aligns, so the group word, its column
+                    label and the numbers below all sit on the same right edge (centring it left the word visibly adrift of its own
+                    data). Two or more columns still centre, spanning them. Padding matches the column cells either way. */}
                 {DETAIL_GROUPS.map((g) => (
-                  <th key={g.group} colSpan={g.cols.length} className="border-l border-slate-200 py-1 px-2 text-center font-medium">
+                  <th
+                    key={g.group}
+                    colSpan={g.cols.length}
+                    className={`border-l border-slate-200 py-1 px-2 font-medium ${g.cols.length === 1 ? 'text-right' : 'text-center'}`}
+                  >
                     {g.group}
                   </th>
                 ))}
@@ -195,8 +200,11 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {/* NO row hover. These rows are read-only: locations and +/- live on the size chips on the card face. A hover highlight
+                  advertised a click that never landed, and operators were tapping size rows here expecting the racks panel (owner,
+                  2026-07-27). If these rows are ever made to open that panel, bring the hover back with it. */}
               {data.sizes.map((s) => (
-                <tr key={s.code} className="hover:bg-slate-50">
+                <tr key={s.code}>
                   <td className="whitespace-nowrap py-1.5 pr-6 text-slate-700">{sizeLabel(s)}</td>
                   {/* Zeros greyed rather than blank. Local carries a "Pick n" tag when some of it is committed to an order — the units
                       are still on the shelf, but an operator about to promise the last pair needs to see it is spoken for. */}
@@ -233,9 +241,6 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
           </table>
         </div>
       </div>
-
-      {/* Is it actually selling — collapsed, lazily fetched (see InvSales). */}
-      <InvSales groupid={data.groupid} />
     </div>
   );
 }
