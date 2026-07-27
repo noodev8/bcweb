@@ -348,7 +348,7 @@ function SummaryPanel({
             </span>
             {summary.flat > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-500">
-                {n(summary.flat)} not changed
+                {n(summary.flat)} held
               </span>
             )}
           </>
