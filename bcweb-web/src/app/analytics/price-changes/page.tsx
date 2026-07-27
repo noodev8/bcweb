@@ -15,7 +15,8 @@ Purpose: The "did our repricing take effect?" report, over a TIME WINDOW (defaul
               with its denominator — never an average of money; see the panel comment for why that was tried and removed. Raise rates are
               split Shopify/Amazon because the two differ structurally (51% vs 76%) and a blend would just measure channel mix.
            3. DETAIL — the newest 50 changes matching the current filters, each showing BEFORE -> AFTER, who changed it, when, and its
-              IMPACT: units sold while that exact price was live, plus the cash that moved. Labelled "newest 50 of N" so the table is never
+              SOLD: how many units sold while that exact price was live (the cash effect was dropped — one number per row reads at a glance,
+              two did not). Labelled "newest 50 of N" so the table is never
               mistaken for the whole window. Its own filter (All / 21+ days / Sold) answers "which of my changes actually did something?" —
               applied server-side, so it cuts the whole window before the 50-row slice rather than just re-filtering this page.
 
@@ -25,7 +26,7 @@ Purpose: The "did our repricing take effect?" report, over a TIME WINDOW (defaul
          Filters: WINDOW (7/30/90d), CHANNEL (All / Shopify / Amazon — the per-row logo chip carries the same identity) and USER. Channel
          and window re-cut the summary; the user filter narrows only the table, so the operator breakdown stays whole while you drill.
 
-         Row click reuses the cross-module ProductActions chooser (Change Shopify price / Change Amazon price / Copy). Amazon rows carry
+         Row click reuses the cross-module ProductActions chooser (Shopify price / Amazon price / Copy). Amazon rows carry
          their exact SKU `code`, so the Amazon action deep-links straight to that size's drill.
 
 Guarded by AppShell. Consumes GET /analytics-change-impact.
@@ -33,6 +34,7 @@ Guarded by AppShell. Consumes GET /analytics-change-impact.
 */
 
 import { useState } from 'react';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import ChannelBadge from '@/components/ChannelBadge';
 import { useProductActions } from '@/components/ProductActions';
@@ -77,6 +79,7 @@ export default function PriceChangesPage() {
   const [days, setDays] = useState<number>(DEFAULT_DAYS);
   const [user, setUser] = useState<string>(''); // '' = all users
   const [impact, setImpact] = useState<PriceChangeImpactFilter>('all'); // detail list: all / old enough to judge / actually sold
+  const [showAbout, setShowAbout] = useState(false);                    // the "what is this screen" blurb — off by default
   // Splitting "a fetch is in flight" from "we have never had data" is what stops the screen flicking on every filter change: after the
   // first successful load the previous results stay mounted and just dim while the new ones arrive, so nothing unmounts and the page
   // never collapses to a one-line "Loading…" and jumps back. Only the very first paint shows a placeholder.
@@ -134,21 +137,36 @@ export default function PriceChangesPage() {
   const windowLabel = WINDOW_TABS.find((w) => w.days === days)?.label ?? `${days} days`;
 
   return (
-    <AppShell title="Price Changes" backHref="/analytics" backLabel="Analytics">
-      {/* Collapsed by default — it's orientation, read once, and it was pushing the actual numbers down the page on every visit. Same
-          disclosure pattern as the Impact panel and the Birk Tracker intro. */}
-      <details className="group mb-5 max-w-2xl">
-        <summary className="cursor-pointer list-none text-sm text-slate-400 transition hover:text-slate-600">
-          <span className="inline-flex items-center gap-1">
-            What is this? <span className="transition group-open:rotate-180">▾</span>
-          </span>
-        </summary>
-        <p className="mt-2 text-sm text-slate-500">
+    <AppShell
+      title="Price Changes"
+      backHref="/analytics"
+      backLabel="Analytics"
+      /* The blurb is orientation — read once, then it is just text in the way. Behind this header-row toggle it costs no vertical
+         space at all (same pattern as New Additions). */
+      headerRight={
+        <button
+          type="button"
+          onClick={() => setShowAbout((v) => !v)}
+          aria-expanded={showAbout}
+          title={showAbout ? 'Hide what this screen shows' : 'What does this screen show?'}
+          className={
+            'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition ' +
+            (showAbout
+              ? 'border-slate-300 bg-slate-100 text-slate-700'
+              : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700')
+          }
+        >
+          <InformationCircleIcon className="h-4 w-4" /> About
+        </button>
+      }
+    >
+      {showAbout && (
+        <p className="mb-5 max-w-3xl rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">
           Repricing activity over the last <strong>{windowLabel}</strong> — how much was moved, in which direction, and by whom.{' '}
           <strong>Impact</strong> then scores the changes old enough to judge, on its own fixed period. Below that, the changes themselves:{' '}
           <strong>before → after</strong> and what sold while each price was live.
         </p>
-      </details>
+      )}
 
       {/* Filters: window + channel segmented controls, then the user dropdown. */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -208,17 +226,15 @@ export default function PriceChangesPage() {
           {/* ---- DETAIL: the newest slice, explicitly labelled as a slice. Dims on ANY refetch — every filter can change these rows. ---- */}
           <div className={'transition-opacity duration-200 ' + (loading ? 'opacity-60' : 'opacity-100')}>
           <div className="mb-2 mt-7 flex flex-wrap items-center justify-between gap-3">
+            {/* No heading and no "all N" — the table plainly is the list of changes, and the All / 21+ days / Sold control opposite
+                already says which cut it is. The count survives ONLY when the list is a slice, because "newest 50 of 1,482" is the
+                one thing the table itself cannot tell you. */}
             <div className="flex flex-wrap items-baseline gap-2">
-              <h2 className="text-sm font-semibold text-slate-700">
-                {impact === 'all' ? 'Latest changes' : impact === 'settled' ? 'Changes old enough to judge' : 'Changes that sold'}
-              </h2>
-              <span className="text-xs text-slate-400">
-                {total === 0
-                  ? 'nothing matches these filters'
-                  : total > rows.length
-                    ? `newest ${rows.length} of ${n(total)}${user ? ` by ${user}` : ''}`
-                    : `all ${n(total)}${user ? ` by ${user}` : ''}`}
-              </span>
+              {total > rows.length && (
+                <span className="text-xs text-slate-400">
+                  {`newest ${rows.length} of ${n(total)}${user ? ` by ${user}` : ''}`}
+                </span>
+              )}
             </div>
             {/* The "which of my changes actually did something?" control. Server-side, so it cuts the whole window before the 50-row slice
                 — otherwise it would only filter whatever happened to be on this page. */}
@@ -232,13 +248,6 @@ export default function PriceChangesPage() {
               onChange={(k) => setImpact(k as PriceChangeImpactFilter)}
             />
           </div>
-          {impact !== 'all' && (
-            <p className="mb-2 text-xs text-slate-400">
-              {impact === 'settled'
-                ? `Only changes at least ${settleDays} days old — the ones that have had a fair chance to sell.`
-                : `Changes at least ${settleDays} days old that sold at least one unit at the new price.`}
-            </p>
-          )}
 
           {rows.length === 0 ? (
             // A window shorter than the settle period can NEVER satisfy the 21+/Sold filters — spell that out rather than leaving the
@@ -258,8 +267,11 @@ export default function PriceChangesPage() {
                     <th className="px-4 py-2.5 font-medium">Channel</th>
                     <th className="px-4 py-2.5 font-medium">Product</th>
                     <th className="px-4 py-2.5 font-medium">Before → After</th>
-                    <th className="px-3 py-2.5 text-right font-medium" title="Units sold while this price was live, and the cash effect">
-                      Impact
+                    <th className="px-3 py-2.5 text-right font-medium" title="Units sold while this price was live">
+                      Sold
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Profit on the latest sale made at the new price — blank if nothing has sold since the change">
+                      Profit
                     </th>
                     <th className="px-4 py-2.5 font-medium">By</th>
                   </tr>
@@ -645,6 +657,12 @@ function ChangeRow({
     : r.newPrice > r.oldPrice ? 'up'
     : r.newPrice < r.oldPrice ? 'down'
     : 'flat';
+  // "24 Jul" — only ever used inside the latest-profit tooltip, so it stays local to the row.
+  const fmtDay = (d: string) => {
+    const dt = new Date(d);
+    return `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}`;
+  };
+
   const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→';
   const arrowClass = dir === 'up' ? 'text-emerald-600' : dir === 'down' ? 'text-rose-600' : 'text-slate-400';
 
@@ -657,9 +675,11 @@ function ChangeRow({
       className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
       title="Click to reprice or copy"
     >
+      {/* Date over age rather than side by side: the age is secondary, and on one line it forced the column wide enough for the longest
+          "13 Jul, 00:55 · 21d ago" on the page, stealing width from the product name that actually needs it. */}
       <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">
-        {fmtWhen(r.changedAt)}
-        <span className="ml-2 text-xs text-slate-400">{fmtAge(r.daysSince)}</span>
+        <div>{fmtWhen(r.changedAt)}</div>
+        <div className="text-xs text-slate-400">{fmtAge(r.daysSince)}</div>
       </td>
       <td className="px-4 py-2.5">
         <ChannelBadge channel={r.channel === 'AMZ' ? 'amazon' : 'shopify'} />
@@ -679,21 +699,27 @@ function ChangeRow({
         <span className={'mx-1.5 ' + arrowClass}>{arrow}</span>
         <span className="font-medium text-slate-800">{money(r.newPrice)}</span>
       </td>
-      {/* Impact = the BOUNDED figures: units sold while this exact price was live, and the cash that moved as a result. A change too young
-          to judge shows its units greyed with the day count, so it reads as "not yet", not "failed". */}
-      <td className="px-3 py-2.5 text-right tabular-nums">
-        <div className={r.settled ? 'text-slate-800' : 'text-slate-400'}>
-          {r.unitsLive} {r.unitsLive === 1 ? 'unit' : 'units'}
-        </div>
-        {r.settled ? (
-          r.cashImpact !== null && r.unitsLive > 0 && (
-            <div className={'text-xs ' + (r.cashImpact >= 0 ? 'text-emerald-600' : 'text-sky-600')}>
-              {r.cashImpact >= 0 ? '+' : '−'}£{Math.abs(r.cashImpact).toFixed(2)}
-            </div>
-          )
-        ) : (
-          <div className="text-xs text-slate-400">too soon</div>
-        )}
+      {/* Units sold while this exact price was live — the bounded figure, and nothing else. The cash effect used to sit under it but it
+          was a second number per row for a column read at a glance. A change too young to judge is greyed (with the reason on hover),
+          so it still reads as "not yet" rather than "failed". */}
+      <td
+        className={'px-3 py-2.5 text-right tabular-nums ' + (r.settled ? 'text-slate-800' : 'text-slate-400')}
+        title={r.settled ? 'Units sold while this price was live' : 'Too soon to judge — this price has not been live long enough'}
+      >
+        {r.unitsLive}
+      </td>
+      {/* Profit on the latest sale made AT THE NEW PRICE — bounded to the same run as the Sold count beside it, so the two always agree
+          (0 sold -> dash here). Deliberately NOT the New Additions unbounded latest sale: on a row repriced last week that would show a
+          sale from March at the old price. A loss is called out in rose — a change that left the line selling below cost is the one
+          thing in this table worth interrupting for. */}
+      <td
+        className={
+          'px-3 py-2.5 text-right tabular-nums ' +
+          (r.lastProfit === null ? 'text-slate-300' : r.lastProfit < 0 ? 'font-medium text-rose-600' : 'text-slate-700')
+        }
+        title={r.lastSold ? `Profit on the latest sale at this price — ${fmtDay(r.lastSold)}` : 'Nothing sold since the change'}
+      >
+        {money(r.lastProfit)}
       </td>
       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{r.changedBy || '—'}</td>
     </tr>

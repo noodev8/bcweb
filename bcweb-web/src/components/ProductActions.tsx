@@ -8,8 +8,8 @@ Purpose: A single, reusable pop-over that lets the operator jump STRAIGHT from a
          through a module front door. It's the answer to "I'm in Analytics, I found a style I want to reprice, take me there."
 
          Given a groupid it offers three actions:
-           - Change Shopify price -> /pricing/style/<groupid>  (the price-change screen itself; deep-link is already supported there).
-           - Change Amazon price  -> /amz/sku/<code> when the exact SKU code is known (e.g. an Amazon-channel row), else /amz/find?q=
+           - Shopify price -> /pricing/style/<groupid>  (the price-change screen itself; deep-link is already supported there).
+           - Amazon price  -> /amz/sku/<code> when the exact SKU code is known (e.g. an Amazon-channel row), else /amz/find?q=
              <groupid> which pre-searches so the operator picks which size to reprice (Amazon is SKU-grain — one price per size).
            - Copy groupid         -> clipboard, for pasting into any other tool.
            - Copy order <num>     -> clipboard, ONLY when the caller supplies `ordernum` (e.g. a Sales row) — absent everywhere else.
@@ -141,11 +141,11 @@ function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose:
         </div>
         <button type="button" role="menuitem" onClick={goShopify} className={item}>
           <CurrencyPoundIcon className="h-4 w-4 text-slate-400" />
-          Change Shopify price
+          Shopify price
         </button>
         <button type="button" role="menuitem" onClick={goAmazon} className={item}>
           <BuildingStorefrontIcon className="h-4 w-4 text-slate-400" />
-          Change Amazon price
+          Amazon price
         </button>
         <button type="button" role="menuitem" onClick={() => copyVal('groupid', menu.groupid)} className={item + ' border-t border-slate-100'}>
           {copiedKey === 'groupid' ? <CheckIcon className="h-4 w-4 text-green-600" /> : <ClipboardDocumentIcon className="h-4 w-4 text-slate-400" />}

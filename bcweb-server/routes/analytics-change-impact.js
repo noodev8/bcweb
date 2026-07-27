@@ -49,7 +49,9 @@ Purpose: Analytics module — Price Changes. A "did our repricing take effect?" 
                  owns only the sales that happened WHILE ITS PRICE WAS LIVE — from the change date up to the next change on the same key.
                  Without this a style repriced three times has its sales counted three times and old changes accrue credit just for being
                  old; over 90 days that inflated the raise figure 3.6x (£8.6k -> £2.4k). LEAD() over the windowed set is sufficient: any
-                 change that supersedes one inside the window is itself later, hence also inside the window (which runs to today).
+                 change that supersedes one inside the window is itself later, hence also inside the window (which runs to today). The
+                 boundary days are settled by the price actually paid rather than by date alone — see `saleInRun`, which every attribution
+                 LATERAL on this route shares.
 
               b) SETTLED ONLY, ON A FIXED PERIOD. A change made yesterday has not had a chance to earn and dilutes the average toward zero,
                  so only changes at least `settleDays` (21) old are scored. Crucially this layer ignores the `days` selector and always
@@ -79,7 +81,9 @@ Purpose: Analytics module — Price Changes. A "did our repricing take effect?" 
 
 Schema notes (CLAUDE.md): old_price/new_price are NUMERIC on both logs (no safeNumeric needed). `changed_at` (timestamptz) carries the exact
 instant for newer rows; older rows fall back to the bare DATE (`change_date` / `log_date`) cast to midnight — COALESCE handles the mix.
-`days_since` is computed in SQL as (CURRENT_DATE - change_date) so we never round-trip a DATE through JS date parsing. Amazon size =
+`days_since` is computed in SQL as (CURRENT_DATE - change_date) so we never round-trip a DATE through JS date parsing. The change DAY is
+derived from the instant in Europe/London, never read from the stored change_date/log_date column — the DB session is UTC, so those columns
+hold the UTC day and an after-11pm apply is stamped a day early (see the comment on the detail query). Amazon size =
 RIGHT(code,2). Human name from title.shopifytitle (via the resolved groupid). Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -120,7 +124,8 @@ Success Response:
     { "channel": "AMZ", "groupid": "FLE030-IVES-RED", "amzCode": "FLE030-IVES-RED-04", "size": "04",
       "title": "Womens ...", "oldPrice": 36.49, "newPrice": 35.49, "changedBy": "Andreas",
       "changedAt": "2026-07-13T00:55:00.000Z", "note": "creep 0.30 — 4u/7d", "daysSince": 1, "unitsSince": 0,
-      "settled": false, "unitsLive": 0, "cashImpact": 0.00 },   // unitsLive/cashImpact = bounded to this price's own run
+      "settled": false, "unitsLive": 0, "cashImpact": 0.00,     // unitsLive/cashImpact = bounded to this price's own run
+      "lastProfit": 5.60, "lastSold": "2026-07-24" },           // profit on the latest sale AT THIS PRICE (null = none since the change)
     ... // newest change first
   ]
 }
@@ -142,6 +147,14 @@ router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
+// pg date/timestamp -> 'YYYY-MM-DD' from local components (no UTC day-shift — a pg DATE handed to toISOString() parses as local midnight
+// and BST drags it back a day). null-safe.
+function toIsoDate(d) {
+  if (!d) return null;
+  const dt = d instanceof Date ? d : new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
 // A change must be this many days old before it is scored on the staff cards: a raise made yesterday hasn't had a chance to earn, and
 // including it only drags the average toward zero. 21 days ~ three sales weeks, which clears the longest suggested review period (14d cut).
 const SETTLE_DAYS = 21;
@@ -160,6 +173,38 @@ const SCORE_WINDOW_DAYS = 90;
 // panel answers "was this person's time well spent", and a cron has no time to justify — scoring it just adds a card nobody reads. It
 // still appears in the summary's BY USER counts, which are activity, not a staff judgement.
 const AUTOMATED_WRITER = 'Amazon match (auto)';
+
+// ------------------------------------------------------------------------------------------------------------------------------------
+// "Did this sale happen at THIS change's price?" — the attribution predicate, in one place because three different LATERALs need to agree
+// (units_live on the detail rows, the latest-sale profit beside it, and the scorecards). Two of them sit side by side in the same table
+// row, so any drift between them shows up on screen as a row that contradicts itself.
+//
+// The whole difficulty is the BOUNDARY DAY. `sales.solddate` is a bare DATE and legacy log rows carry no `changed_at` at all, so on the day
+// a price changed there is no timestamp that can say which side of the switch a sale fell on. A plain `solddate >= change_date` credited
+// this change with everything that sold that day INCLUDING the sales made hours earlier at the old price — a 6 Jul raise 63.99 -> 70.43
+// read as 5 units when the drill's price timeline (which groups by the price actually paid) said 4.
+//
+// So the day is used for the coarse window and the PRICE PAID settles the two boundary days:
+//   - on the change day, a sale at the OLD price was transacted before the switch -> not ours;
+//   - on the day the NEXT change landed, a sale at OUR price was transacted before that switch -> still ours (the old rule dropped these
+//     silently, which is why some runs were also under-counting their tail).
+// The two halves are exact complements — the next change's own lower bound excludes precisely what our upper bound claims — so every sale
+// has exactly one owner and nothing is double counted.
+//
+// `c` is the change row's alias; `col` maps the four columns it needs, because the scorecards query names them differently (d/o/nw). All
+// of it is fixed source text — no request input reaches this string.
+// ------------------------------------------------------------------------------------------------------------------------------------
+const saleInRun = (c, col = {}) => {
+  const day = col.day || 'change_date';
+  const next = col.next || 'next_d';
+  const oldP = col.oldPrice || 'old_price';
+  const newP = col.newPrice || 'new_price';
+  return `
+            s.solddate >= ${c}.${day}
+            AND (${c}.${next} IS NULL OR s.solddate <= ${c}.${next})
+            AND NOT (s.solddate = ${c}.${day} AND ${c}.${oldP} IS NOT NULL AND s.soldprice = ${c}.${oldP})
+            AND (${c}.${next} IS NULL OR s.solddate < ${c}.${next} OR (${c}.${newP} IS NOT NULL AND s.soldprice = ${c}.${newP}))`;
+};
 
 router.get('/', async (req, res) => {
   try {
@@ -197,7 +242,12 @@ router.get('/', async (req, res) => {
 
     // Unified change list -> window + channel filter -> optional user filter -> newest-first -> limit -> attach title + units-since.
     //   sort_ts    = exact change instant (changed_at) or the bare change date at midnight for legacy rows.
-    //   change_date is kept separately (a real DATE) purely to compute days_since and bound the sales-since sum by day.
+    //   change_date is the LONDON calendar day of that instant, derived here rather than read from the stored change_date/log_date column.
+    //     The DB session runs in UTC, so the stored column (written as CURRENT_DATE by the apply routes) is the UTC day: a change applied
+    //     at 00:14 BST is stamped with YESTERDAY. Every consumer of change_date compares it against sales.solddate, which is a LOCAL trading
+    //     day — so an evening apply used to credit itself with the whole of the previous day's sales, all made at the OLD price, and the row
+    //     read "changed 26 Jul, sold 25 Jul". Deriving the day from the instant in Europe/London puts both sides on the same calendar.
+    //     Legacy rows (changed_at NULL) are unaffected: their date goes to UTC midnight and converts back to the same day.
     //   The window predicate sits INSIDE each UNION branch so it can use each log's own date index rather than filtering after the merge.
     //   total      = COUNT(*) OVER () evaluated in `picked` BEFORE the LIMIT -> how many changes the filters really match ("50 of 1,327").
     //   units-since LATERAL: same channel + key, positive lines, solddate on/after the change day.
@@ -220,7 +270,7 @@ router.get('/', async (req, res) => {
                p.reason_notes     AS note,
                p.changed_by       AS changed_by,
                COALESCE(p.changed_at, p.change_date::timestamptz) AS sort_ts,
-               p.change_date      AS change_date,
+               (COALESCE(p.changed_at, p.change_date::timestamptz) AT TIME ZONE 'Europe/London')::date AS change_date,
                p.id               AS id
         FROM price_change_log p
         WHERE p.channel = 'SHP' AND $1::bool
@@ -234,7 +284,7 @@ router.get('/', async (req, res) => {
                a.notes,
                a.changed_by,
                COALESCE(a.changed_at, a.log_date::timestamptz),
-               a.log_date,
+               (COALESCE(a.changed_at, a.log_date::timestamptz) AT TIME ZONE 'Europe/London')::date,
                a.id
         FROM amz_price_log a
         LEFT JOIN amzfeed f ON f.code = a.code
@@ -259,8 +309,7 @@ router.get('/', async (req, res) => {
           FROM sales s
           WHERE s.channel = b.channel
             AND s.qty > 0 AND s.soldprice > 0
-            AND s.solddate >= b.change_date
-            AND (b.next_d IS NULL OR s.solddate < b.next_d)
+            AND ${saleInRun('b')}
             AND ( (b.channel = 'SHP' AND s.groupid = b.groupid)
                OR (b.channel = 'AMZ' AND s.code = b.amz_code) )
         ) lu ON true
@@ -289,7 +338,9 @@ router.get('/', async (req, res) => {
              (CURRENT_DATE - pk.change_date) AS days_since,
              pk.is_settled,
              pk.units_live,
-             su.units                AS units_since
+             su.units                AS units_since,
+             ls.last_profit,
+             ls.last_solddate
       FROM picked pk
       LEFT JOIN title t ON t.groupid = pk.groupid
       LEFT JOIN LATERAL (
@@ -301,6 +352,24 @@ router.get('/', async (req, res) => {
           AND ( (pk.channel = 'SHP' AND s.groupid = pk.groupid)
              OR (pk.channel = 'AMZ' AND s.code = pk.amz_code) )
       ) su ON true
+      -- Profit on the most recent sale MADE AT THIS PRICE — bounded to exactly the same run as units_live (change date -> the next change
+      -- on the same key), so it answers "what is the NEW price earning?" and not "what has this style ever earned". An unbounded latest-sale
+      -- profit (the New Additions technique) reads as history here: on a row repriced last week it would happily show a sale from March at
+      -- the old price, which is the opposite of the question this screen asks. NULL when nothing has sold since the change — the column then
+      -- shows a dash, which lines up with the 0 in the Sold column beside it. Positive lines only so a return can't become the "latest"; tie-break
+      -- (solddate, then ordertime blank-last, then id) matches the Sales screen so "latest" means the same thing everywhere.
+      -- Runs over the picked rows only (<= limit), so it's a top-1 lookup per displayed row, not per window row.
+      LEFT JOIN LATERAL (
+        SELECT s.profit AS last_profit, s.solddate AS last_solddate
+        FROM sales s
+        WHERE s.channel = pk.channel
+          AND s.qty > 0 AND s.soldprice > 0
+          AND ${saleInRun('pk')}
+          AND ( (pk.channel = 'SHP' AND s.groupid = pk.groupid)
+             OR (pk.channel = 'AMZ' AND s.code = pk.amz_code) )
+        ORDER BY s.solddate DESC, NULLIF(s.ordertime, '') DESC NULLS LAST, s.id DESC
+        LIMIT 1
+      ) ls ON true
       ORDER BY pk.sort_ts DESC, pk.id DESC
       `,
       [wantShp, wantAmz, days, user, limit, SETTLE_DAYS, impact]
@@ -393,7 +462,7 @@ router.get('/', async (req, res) => {
                     WHEN p.new_price < p.old_price THEN 'CUT'
                     ELSE 'LEVEL' END AS kind,
                COALESCE(p.changed_at, p.change_date::timestamptz)      AS ts,
-               COALESCE(p.changed_at, p.change_date::timestamptz)::date AS d,
+               (COALESCE(p.changed_at, p.change_date::timestamptz) AT TIME ZONE 'Europe/London')::date AS d,
                p.id AS id
         FROM price_change_log p
         WHERE p.channel = 'SHP'
@@ -406,7 +475,7 @@ router.get('/', async (req, res) => {
                     WHEN a.new_price < a.old_price THEN 'CUT'
                     ELSE 'LEVEL' END,
                COALESCE(a.changed_at, a.log_date::timestamptz),
-               COALESCE(a.changed_at, a.log_date::timestamptz)::date,
+               (COALESCE(a.changed_at, a.log_date::timestamptz) AT TIME ZONE 'Europe/London')::date,
                a.id
         FROM amz_price_log a
         WHERE COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - $1::int)::timestamptz
@@ -423,8 +492,7 @@ router.get('/', async (req, res) => {
           FROM sales s
           WHERE s.channel = b.chan
             AND s.qty > 0 AND s.soldprice > 0
-            AND s.solddate >= b.d
-            AND (b.next_d IS NULL OR s.solddate < b.next_d)
+            AND ${saleInRun('b', { day: 'd', oldPrice: 'o', newPrice: 'nw' })}
             AND ( (b.chan = 'SHP' AND s.groupid = b.k) OR (b.chan = 'AMZ' AND s.code = b.k) )
         ) su ON true
       )
@@ -523,6 +591,9 @@ router.get('/', async (req, res) => {
       // on a raise, negative = discount handed over on a cut. Null when a price is missing, so the UI shows "—" rather than a fake 0.
       settled: !!r.is_settled,
       unitsLive: Number(r.units_live) || 0,
+      // Profit on the latest sale made AT THIS PRICE — same bounded run as unitsLive. null = nothing has sold since the change.
+      lastProfit: num(r.last_profit),
+      lastSold: toIsoDate(r.last_solddate),
       cashImpact:
         num(r.old_price) === null || num(r.new_price) === null
           ? null

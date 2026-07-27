@@ -848,6 +848,11 @@ export interface PriceChangeRow {
   settled: boolean;
   unitsLive: number;
   cashImpact: number | null;
+  // Profit on the latest sale made AT THE NEW PRICE — bounded to the same run as `unitsLive` (the change date up to the next change on this
+  // item), so it reads "what is this price earning?" rather than "what has this style ever earned". null = nothing sold since the change,
+  // which always pairs with unitsLive 0. `lastSold` is that sale's date ('YYYY-MM-DD'), shown as the tooltip on the profit.
+  lastProfit: number | null;
+  lastSold: string | null;
 }
 
 // One operator's repricing activity in the window. `user` is null for unattributed legacy rows. `up`/`down` are the direction split
