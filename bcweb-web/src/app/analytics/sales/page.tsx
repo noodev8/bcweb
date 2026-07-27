@@ -399,7 +399,6 @@ export default function SalesPage() {
                     <th className="px-4 py-2.5 font-medium">When</th>
                     <th className="px-4 py-2.5 font-medium">Channel</th>
                     <th className="px-4 py-2.5 font-medium">Product</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Qty</th>
                     <th className="px-3 py-2.5 text-right font-medium">Sold</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
                     <th className="px-3 py-2.5 text-right font-medium">Margin</th>
@@ -468,7 +467,7 @@ function Stat({ label, value, sub, valueClassName }: { label: string; value: str
 // One sale line — column-aware clicks (no chooser menu, owner 2026-07-23):
 //   • Channel badge -> the row's own channel pricing page    • Product cell -> copy groupid    • Order cell -> copy order number.
 // Every other cell does NOTHING (owner: don't send them away from a click with no action). A non-priceable channel (not SHP/AMZ)
-// leaves even the badge inert. Returns render red (negative qty + profit).
+// leaves even the badge inert. Returns render red (negative qty + profit) — the row tint carries that, not a Qty column.
 // -------------------------------------------------------------------------------------------------------------------------------
 function SaleRow({ r, onAction, money, pct, fmtDate }: {
   r: SalesReportRow;
@@ -515,11 +514,16 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs tracking-tight text-slate-900">{groupKey || '—'}</span>
           {r.size && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{r.size}</span>}
+          {/* No Qty column (owner 2026-07-27: it is 1 on ~every line). The rare non-1 line still says so, inline. */}
+          {r.qty !== 1 && (
+            <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (isReturn ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600')}>
+              ×{r.qty}
+            </span>
+          )}
           {copied === 'groupid' && <span className="text-xs font-medium text-green-600">Copied</span>}
         </div>
         <div className="max-w-[20rem] truncate text-xs text-slate-400">{r.productname || 'Untitled'}</div>
       </td>
-      <td className={'px-3 py-2.5 text-right tabular-nums ' + (isReturn ? 'font-medium text-rose-600' : 'text-slate-700')}>{r.qty}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
       <td className={'px-3 py-2.5 text-right font-medium tabular-nums ' + profitCls}>{money(r.profit)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.marginPct)}</td>
