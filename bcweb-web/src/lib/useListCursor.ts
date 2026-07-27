@@ -22,6 +22,9 @@ KEYS ARE IDENTITIES, NOT INDEXES. The cursor tracks a key (a groupid, an order i
 same ROW rather than sliding it to whatever now sits at position 7. If the current key disappears from the list entirely, the cursor
 falls back to the nearest surviving position.
 
+THE ENDS ARE NOT WALLS. At the first/last row the cursor clamps, and the keystroke is handed back to the browser to scroll the page as
+usual — so arrowing past the bottom of the list carries on down the screen instead of stopping dead. The cursor stays put while you do.
+
 TYPING ALWAYS WINS, but only as far as it has to. A focused FIELD swallows every key (arrows move its caret, Enter submits it). A
 focused BUTTON or LINK swallows only Enter — arrows still move the cursor, because focus lands on a button the moment the operator
 clicks anything on a row, and eating arrows there would silently kill the keyboard until they clicked bare page.
@@ -48,10 +51,22 @@ export interface ListCursor {
   itemRef: (key: string) => (el: HTMLElement | null) => void;
 }
 
+// Anything that has taken the keyboard over while it is open — a pop-over menu, a lightbox — marks itself with this. Two effects:
+// a focused element inside one keeps the list out entirely (the `closest` test below), and while ANY of them is mounted the list
+// leaves Escape alone, because Escape belongs to the thing on top. Without that, one Escape closes the overlay AND wipes the cursor,
+// costing the operator the very place the cursor exists to hold.
+const OWNS_KEYBOARD = '[data-list-cursor="off"]';
+
 export function useListCursor(opts: {
   keys: string[];
   enabled?: boolean;
   onEnter?: (key: string) => void;
+  /**
+   * Fired whenever a KEYPRESS moves the cursor (not when a click places it — the click's own handler already knows). For dismissing
+   * anything anchored to the row you are leaving: a pop-over pinned at the old click point would otherwise sit there while the list
+   * scrolls under it, pointing at one style and floating over another.
+   */
+  onMove?: () => void;
   /**
    * How the current row is scrolled into view — the feel of the whole gesture, so it is a per-screen choice:
    *   'nearest' (default) the page only moves when the cursor would otherwise leave the viewport. Conventional, minimal movement,
@@ -61,7 +76,7 @@ export function useListCursor(opts: {
    */
   scrollBlock?: ScrollLogicalPosition;
 }): ListCursor {
-  const { keys, enabled = true, onEnter, scrollBlock = 'nearest' } = opts;
+  const { keys, enabled = true, onEnter, onMove, scrollBlock = 'nearest' } = opts;
 
   const [cursorKey, setCursorKey] = useState<string | null>(null);
 
@@ -70,6 +85,7 @@ export function useListCursor(opts: {
   const keysRef = useRef(keys);
   const enabledRef = useRef(enabled);
   const onEnterRef = useRef(onEnter);
+  const onMoveRef = useRef(onMove);
   const scrollBlockRef = useRef(scrollBlock);
   const cursorRef = useRef<string | null>(null);
   // Where the cursor sat last, so a row vanishing under a filter can fall back to the nearest position instead of jumping to the top.
@@ -84,6 +100,7 @@ export function useListCursor(opts: {
     keysRef.current = keys;
     enabledRef.current = enabled;
     onEnterRef.current = onEnter;
+    onMoveRef.current = onMove;
     scrollBlockRef.current = scrollBlock;
     cursorRef.current = cursorKey;
   });
@@ -111,7 +128,7 @@ export function useListCursor(opts: {
       // Escape hatch for anything that takes over the keyboard while it is open — a modal, a lightbox. Without it, that thing's own
       // Escape-to-close ALSO clears the cursor, losing the operator the place the cursor exists to keep. Put the attribute on the
       // overlay and give it focus (see the zoom overlay in InvStyleCard).
-      if (t?.closest('[data-list-cursor="off"]')) return;
+      if (t?.closest(OWNS_KEYBOARD)) return;
 
       const list = keysRef.current;
       if (list.length === 0) return;
@@ -134,6 +151,9 @@ export function useListCursor(opts: {
           }
           return;
         case 'Escape':
+          // Escape belongs to whatever is on top. If an overlay is mounted at all — focused or not, since a click-away backdrop takes
+          // no focus — it gets this press to close itself, and the cursor stays where it is. A second Escape then clears the cursor.
+          if (document.querySelector(OWNS_KEYBOARD)) return;
           if (cur) {
             e.preventDefault();
             setCursorKey(null);
@@ -143,9 +163,16 @@ export function useListCursor(opts: {
           return;
       }
 
-      // Arrows scroll the page by default; here they move the cursor and the cursor does the scrolling.
-      e.preventDefault();
       if (next === undefined) return;
+
+      // AT THE ENDS, THE KEY GOES BACK TO THE BROWSER. The cursor clamps at the first/last row — so once it is there, pressing on in
+      // the same direction would eat the keystroke and leave the screen dead still, which reads as a hang. Instead we return without
+      // preventDefault and let the arrow do its ordinary thing: scroll the page on past the list (to the hero above it, or whatever
+      // sits below). The cursor stays exactly where it was, so no place is lost by scrolling off it (owner, 2026-07-28).
+      if (next === cur) return;
+
+      // Otherwise the arrow belongs to us: it moves the cursor, and the cursor does the scrolling (below).
+      e.preventDefault();
 
       // MOVING THE CURSOR TAKES THE KEYBOARD. A mouse click leaves focus sitting on whatever was clicked, and Enter on a focused
       // button belongs to that button (we skip it above, deliberately) — so without this, arrowing away from a card and pressing
@@ -153,6 +180,9 @@ export function useListCursor(opts: {
       // starts arrowing means the next Enter is unambiguously the list's.
       const active = document.activeElement as HTMLElement | null;
       if (active && active !== document.body) active.blur();
+
+      // Leaving the old row: anything anchored to it (the reprice pop-over, pinned at the click point) is now stale and must go.
+      onMoveRef.current?.();
 
       scrollPendingRef.current = true;
       lastIndexRef.current = list.indexOf(next);

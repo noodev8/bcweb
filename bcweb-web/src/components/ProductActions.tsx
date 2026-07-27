@@ -128,10 +128,13 @@ function ProductActionMenu({ menu, onClose }: { menu: MenuState | null; onClose:
 
   return createPortal(
     <>
-      {/* Click-away backdrop (transparent). */}
-      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden="true" />
+      {/* Click-away backdrop (transparent). `data-list-cursor="off"` marks the whole pop-over as owning the keyboard while it is up:
+          on a screen with a keyboard cursor (see lib/useListCursor), it means THIS is what Escape closes — the cursor keeps its place
+          rather than being wiped by the same press. Inert everywhere else. */}
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden="true" data-list-cursor="off" />
       <div
         role="menu"
+        data-list-cursor="off"
         className="fixed z-50 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
         style={{ left, top, width: MENU_W }}
       >

@@ -20,6 +20,7 @@ import AppShell from '@/components/AppShell';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useListCursor } from '@/lib/useListCursor';
 import {
   getNewAdditions,
   NewAdditionRow,
@@ -114,6 +115,24 @@ export default function NewAdditionsPage() {
     return [...visibleRows].sort(cmp);
   }, [visibleRows, sortBy, sortDir]);
 
+  // KEYBOARD CURSOR over the table — the same gesture the operators have on Inventory, via the same shared hook (a per-screen copy
+  // would drift). Deliberately the LEAN version: up/down (plus Home/End) move a highlight that STAYS where it was left, and that is
+  // all. No Enter action here — the row's action is the reprice/copy chooser, which is a pop-over anchored at the mouse pointer and
+  // has no sensible keyboard anchor; clicking the highlighted row still opens it.
+  //
+  // Keys are groupids, so re-sorting a column or ticking the maturity filter leaves the highlight on the SAME style rather than on
+  // whatever slid into that position. Enabled only once the table is actually painted.
+  const cursorKeys = useMemo(() => sortedRows.map((r) => r.groupid), [sortedRows]);
+  const cursor = useListCursor({
+    keys: cursorKeys,
+    enabled: !loading && !error && sortedRows.length > 0,
+    // Arrowing away closes the reprice/copy pop-over. It is pinned at the point you clicked, so the moment the list moves under it
+    // it is hovering over one style while still acting on another — a mis-click waiting to happen (owner, 2026-07-28).
+    onMove: actions.close,
+    // 'nearest' (the default), unlike Inventory's 'center': table rows are one line tall, so a whole screen of them is in view at
+    // once and re-centering the page on every keypress would be constant motion for no gain.
+  });
+
   // Click a sortable header: same column flips direction; a new column switches to it, defaulting to descending (most / newest first).
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -203,7 +222,11 @@ export default function NewAdditionsPage() {
                 <input
                   type="checkbox"
                   checked={matureOnly}
-                  onChange={(e) => setMatureOnly(e.target.checked)}
+                  // Changing the lens CLEARS the cursor, both ways round (owner, 2026-07-28). The list you get back is a different
+                  // list, so a highlight carried over from the old one is meaningless — worse than meaningless when the row it was on
+                  // has just been filtered away, because the hook would otherwise re-seat it on whatever now sits at that position and
+                  // that looks like a selection you made. Start clean and let the operator place it again.
+                  onChange={(e) => { cursor.setCursor(null); setMatureOnly(e.target.checked); }}
                   className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
                 />
                 <span>
@@ -274,9 +297,30 @@ export default function NewAdditionsPage() {
                   {sortedRows.map((r) => (
                     <tr
                       key={r.groupid}
-                      onClick={(e) => actions.open(e, r.groupid, { title: r.title })}
-                      className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
-                      title="Click to reprice or copy"
+                      ref={cursor.itemRef(r.groupid)}
+                      // TWO-STAGE CLICK (owner, 2026-07-28 — trying the feel): a tap on a row only PLACES the cursor; the reprice/copy
+                      // chooser opens on a second tap of the row that is already current. The reason is how the screen is actually
+                      // worked — you tap a row to mark your place while reading down the list, and most of those taps are not "act on
+                      // this", so a pop-over on every one of them is in the way. Acting is the deliberate second press.
+                      //
+                      // It also keeps mouse and keyboard agreeing about where you are: arrow on from the row you just tapped, not from
+                      // wherever the highlight happened to be left.
+                      onClick={(e) => {
+                        if (cursor.isCursor(r.groupid)) actions.open(e, r.groupid, { title: r.title });
+                        else cursor.setCursor(r.groupid);
+                      }}
+                      className={
+                        // scroll-mt clears the sticky header row, which would otherwise cover a row scrolled to the very top.
+                        'cursor-pointer scroll-mt-12 border-b border-slate-100 last:border-0 ' +
+                        (cursor.isCursor(r.groupid)
+                          // The highlight is a tinted row + a solid left bar (inset shadow — a border would shift every cell by 3px
+                          // as the cursor passes). Strong enough to find after walking away from the screen, which is its whole job.
+                          ? 'bg-brand-50 shadow-[inset_3px_0_0_0_theme(colors.brand.500)]'
+                          : 'hover:bg-slate-50/60')
+                      }
+                      /* Spells the second press out — with the chooser no longer on the first click, nothing else would tell you it
+                         exists. The hint changes on the current row so it reads as an instruction for the row you are on. */
+                      title={cursor.isCursor(r.groupid) ? 'Click again to reprice or copy' : 'Click to select'}
                     >
                       <td className="px-4 py-2 whitespace-nowrap text-slate-500">
                         {fmtDate(r.created)}
