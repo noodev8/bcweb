@@ -6,6 +6,9 @@ cd /apps/production/bcweb-server
 npm install
 pm2 restart server.js --name bcweb-prod
 
+-- Check if needed
+npm audit --omit=dev  →  Should find 0 vulnerabilities
+
 
 == Vercel
 cd C:\bcweb
