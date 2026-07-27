@@ -793,6 +793,8 @@ export interface NewAdditionRow {
   units: number;
   revenue: number;
   profit: number;
+  lastProfit: number | null; // profit on the style's MOST RECENT sale (null = never sold) — what it earns at the price it's on now
+  lastSold: string | null;   // date of that sale, 'YYYY-MM-DD'
 }
 
 export interface NewAdditionsData { days: number; count: number; rows: NewAdditionRow[]; }

@@ -12,7 +12,7 @@ Purpose: Analytics module — New Additions. The catalogue-GROWTH pulse: which S
          Amazon (amzfeed is rebuilt nightly with no birth date), so this is a Shopify-catalogue view by nature.
 
          Created date: prefer the going-forward `created_at timestamptz` (added for real date logic); fall back to the legacy `created`
-         TEXT stamp ('YYYYMMDD HH24:MI:SS', Europe/London) for rows written before created_at existed. A 30-day window only ever catches
+         TEXT stamp ('YYYYMMDD HH24:MI:SS', Europe/London) for rows written before created_at existed. A short window only ever catches
          freshly-added rows, which all have created_at — the COALESCE is belt-and-braces so a wider window still behaves.
 
          Sales figures are LIFETIME (all sales for that style to date). Because these are brand-new products, lifetime ≈ "since it was
@@ -32,7 +32,8 @@ Success Response:
   "count": 17,
   "rows": [
     { "groupid": "ABC123", "title": "...", "created": "2026-07-08", "price": 36.95, "stock": 12,
-      "units": 4, "revenue": 147.80, "profit": 22.40 },   // newest-created first; sales are lifetime
+      "units": 4, "revenue": 147.80, "profit": 22.40,     // newest-created first; sales are lifetime
+      "lastProfit": 5.60, "lastSold": "2026-07-24" },     // the MOST RECENT sale's profit (null = never sold)
     ...
   ]
 }
@@ -64,8 +65,11 @@ function toIsoDate(d) {
 
 router.get('/', async (req, res) => {
   try {
-    // Fixed 30-day creation window (owner decision — no lens toggle).
-    const days = 30;
+    // Creation window — 30 days (owner decision, re-confirmed 2026-07-27 after trying 60). The month is the unit the owner reads
+    // these numbers in; a wider default just made the hero count harder to place. The screen's "21+ days live" filter is left to eat
+    // into it. Honours ?days= within [1, 365] as documented; the query cost is flat whatever the window.
+    const raw = parseInt(req.query.days, 10);
+    const days = Number.isInteger(raw) && raw >= 1 ? Math.min(raw, 365) : 30;
 
     // Effective creation date = created_at, else parse the legacy text stamp.
     //   stk  = current sellable stock across BOTH channels per style: localstock #FREE (Shopify/local warehouse) PLUS amzfeed.amzlive
@@ -100,6 +104,19 @@ router.get('/', async (req, res) => {
         FROM sales
         WHERE qty > 0 AND soldprice > 0
         GROUP BY groupid
+      ),
+      -- Most recent sale per style. The lifetime profit above blends the launch price with any later discounting; this is what the
+      -- line made on its LAST sale, i.e. what it is earning at the price it is on now. Same positive-line filter as sold, so a return
+      -- can't become the "latest". DISTINCT ON is the cheap top-1-per-group here; ordering matches the Sales screen
+      -- (solddate, then ordertime blank-last, then id) so "latest" means the same thing on both screens.
+      last_sale AS (
+        SELECT DISTINCT ON (groupid)
+               groupid,
+               profit   AS last_profit,
+               solddate AS last_solddate
+        FROM sales
+        WHERE qty > 0 AND soldprice > 0
+        ORDER BY groupid, solddate DESC, NULLIF(ordertime, '') DESC NULLS LAST, id DESC
       )
       SELECT c.groupid,
              t.shopifytitle              AS title,
@@ -109,11 +126,14 @@ router.get('/', async (req, res) => {
              COALESCE(st.stock, 0)       AS stock,
              COALESCE(s.units, 0)        AS units,
              COALESCE(s.revenue, 0)      AS revenue,
-             COALESCE(s.profit, 0)       AS profit
+             COALESCE(s.profit, 0)       AS profit,
+             ls.last_profit,
+             ls.last_solddate
       FROM created c
       JOIN skusummary ss ON ss.groupid = c.groupid
       LEFT JOIN stk   st ON st.groupid = c.groupid
       LEFT JOIN sold  s  ON s.groupid  = c.groupid
+      LEFT JOIN last_sale ls ON ls.groupid = c.groupid
       LEFT JOIN title t  ON t.groupid  = c.groupid
       WHERE c.created_ts >= CURRENT_DATE - ($1::int - 1)
       ORDER BY c.created_ts DESC, c.groupid
@@ -131,6 +151,9 @@ router.get('/', async (req, res) => {
       units: Number(r.units) || 0,
       revenue: num(r.revenue) ?? 0,
       profit: num(r.profit) ?? 0,
+      // Latest sale — null on a style that has not sold yet (the front end shows a dash).
+      lastProfit: num(r.last_profit),
+      lastSold: toIsoDate(r.last_solddate),
     }));
 
     return res.json({ return_code: 'SUCCESS', days, count: rows.length, rows });
