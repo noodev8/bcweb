@@ -113,6 +113,11 @@ screenshot*.*
 # Windows reserved device names
 nul
 
+# Throwaway scratch folder for the Update-Amazon PowerBuilder port (legacy code dumps,
+# real Amazon report CSVs, working design notes). Nothing here is a deliverable — the
+# finished spec graduates to docs/ and this folder gets deleted.
+_amz-port/
+
 .vercel
 
 # Python bytecode (Amazon upload helper)

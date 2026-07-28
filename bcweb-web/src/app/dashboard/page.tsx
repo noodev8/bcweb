@@ -13,6 +13,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -87,6 +88,17 @@ export default function DashboardPage() {
           description="Place supplier orders that are waiting to go out, then track what's on its way."
           href="/order-status"
           icon={ShoppingCartIcon}
+          live
+        />
+
+        {/* Update Amazon — the data-ingest job that replaces the legacy PowerBuilder UPDATE AMAZON button. Drop the Seller Central
+            reports in, see exactly what they'll do, then apply. Deliberately its own tile rather than a corner of Amazon Pricing:
+            it's an ingest job, not a pricing job. See _amz-port/design/update-amazon-port.md. */}
+        <ModuleTile
+          title="Update Amazon"
+          description="Load the Seller Central reports — sales, returns, FBA stock and fees."
+          href="/update-amazon"
+          icon={ArrowUpTrayIcon}
           live
         />
       </div>

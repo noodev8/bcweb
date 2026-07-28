@@ -118,6 +118,12 @@ app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
 app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm a Seller Central upload -> stamp those rows uploaded_at (clears them from the basket, team-wide)
 
+// --- Update Amazon module (data ingest; replaces the PowerBuilder UPDATE AMAZON button — see _amz-port/design/update-amazon-port.md) ---
+// Two stages over the same uploaded files: preview reads and writes nothing, commit does the lot in one transaction. Files are
+// identified by HEADER, never filename (Seller Central names them 118981020662.txt). Any subset of the four reports may be uploaded.
+app.use('/amz-import-preview', require('./routes/amz-import-preview')); // stage 1: what a commit would do — READ ONLY
+app.use('/amz-import-commit', require('./routes/amz-import-commit'));   // stage 2: ingest -> derive -> project, one transaction
+
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
 app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + headline Local / Order / Total per style

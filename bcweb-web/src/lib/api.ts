@@ -1441,4 +1441,96 @@ export function archiveOrderStatus(ordernums: string[]) {
   );
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------
+// Update Amazon — the data-ingest module (_amz-port/design/update-amazon-port.md).
+//
+// Two calls over the SAME uploaded files: preview writes nothing, commit does the lot in one transaction. The files are sent twice
+// on purpose — nothing is stashed server-side between the two, so there is no temp-file lifecycle to expire or leak, and the commit
+// re-derives its plan from the database inside its own transaction rather than trusting a preview that may now be stale.
+//
+// Reports are identified by their HEADER, never by filename: Seller Central hands them over as opaque numbers (118981020662.txt).
+// Any subset of the four may be uploaded — whatever is absent simply isn't touched.
+// -------------------------------------------------------------------------------------------------------------------------------
+
+export interface AmzSkipReason { reason: string; label: string; count: number; examples: string[] }
+export interface AmzFileSummary {
+  type: 'ORDERS' | 'INVENTORY' | 'RETURNS' | 'FEES';
+  label: string;
+  rowsInFile: number;
+  usable: number;
+  skipped: number;
+  skipReasons: AmzSkipReason[];
+  window: { from: string; to: string } | null;
+  newColumns: string[];
+  droppedColumns: string[];
+}
+export interface AmzUnknownSku { sku: string; lines?: number; units?: number; fnsku?: string; asin?: string; live?: number; total?: number }
+export interface AmzImportSummary {
+  committed: boolean;
+  files: AmzFileSummary[];
+  sales: { written: number; units: number; value: number; alreadyImported: number; alreadyInDbFromLegacy: number; withoutProfit: number; unknownSku: AmzUnknownSku[] };
+  returns: {
+    written: number; units: number; alreadyImported: number; alreadyInDbFromLegacy: number;
+    withoutOriginalSale: number; unknownSku: AmzUnknownSku[];
+    // Stock that came back DEFECTIVE / CUSTOMER_DAMAGED — never resells, so the whole cost of goods is lost, not just the margin.
+    writeOffUnits: number; writeOffValue: number; dispositions: Record<string, number>;
+  };
+  cancellations: { rows: number; units: number; value: number; detail: { id: number; ordernum: string; code: string; qty: number; solddate: string; soldprice: number }[] };
+  fees: { updated: number; unchanged: number; firstRealFee: number; unknownSku: string[]; biggestMoves: { sku: string; from: number; to: number; delta: number }[] };
+  stock: { rowsInReport: number; matched: number; liveUnits: number; totalUnits: number };
+  reconciliation: {
+    unknownSku: AmzUnknownSku[]; unknownSkuCount: number;
+    virtual: { sku: string; live: number; total: number }[]; virtualCount: number;
+    goneFromAmazon: { code: string; sku: string }[]; goneFromAmazonCount: number;
+  };
+}
+export interface AmzRejectedFile { filename: string; reason: string }
+export interface AmzImportPreview { rejected: AmzRejectedFile[]; summary: AmzImportSummary }
+export interface AmzImportCommit extends AmzImportPreview {
+  applied: { salesInserted: number; returnsInserted: number; salesRetracted: number; feesUpdated: number; stockRowsWritten: number; stockRowsZeroed: number };
+  derived: { skusTouched: number; skumapTouched: number; windowDays: number };
+}
+
+function amzImportForm(files: File[]): FormData {
+  const form = new FormData();
+  files.forEach((f) => form.append('files', f));
+  return form;
+}
+
+// A 12-month backfill (decision D7 allows any window) is a much bigger job than the usual 30 days, and the shared instance's 15s
+// timeout is sized for ordinary reads. 120s here so a legitimate large import isn't killed mid-flight — which for the COMMIT would
+// leave the operator unsure whether it landed, even though the transaction guarantees it either did or didn't.
+const AMZ_IMPORT_TIMEOUT = 120000;
+
+const pickAmzImport = (b: Record<string, unknown>): AmzImportPreview => ({
+  rejected: (b.rejected as AmzRejectedFile[]) || [],
+  summary: b.summary as AmzImportSummary,
+});
+
+// Stage 1: what a commit WOULD do. Writes nothing.
+export function previewAmzImport(files: File[]) {
+  return request<AmzImportPreview>(
+    {
+      url: '/amz-import-preview', method: 'POST', data: amzImportForm(files),
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: AMZ_IMPORT_TIMEOUT,
+    },
+    pickAmzImport
+  );
+}
+
+// Stage 2: do it. One transaction — a run either lands completely or not at all.
+export function commitAmzImport(files: File[]) {
+  return request<AmzImportCommit>(
+    {
+      url: '/amz-import-commit', method: 'POST', data: amzImportForm(files),
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: AMZ_IMPORT_TIMEOUT,
+    },
+    (b) => ({
+      ...pickAmzImport(b),
+      applied: b.applied as AmzImportCommit['applied'],
+      derived: b.derived as AmzImportCommit['derived'],
+    })
+  );
+}
+
 export default api;
