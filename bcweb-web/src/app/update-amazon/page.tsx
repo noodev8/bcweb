@@ -31,7 +31,8 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzImportSummary from '@/components/AmzImportSummary';
-import { previewAmzImport, commitAmzImport, AmzImportSummary as Summary, AmzRejectedFile } from '@/lib/api';
+import { previewAmzImport, commitAmzImport, getAmzImportLast, AmzImportSummary as Summary, AmzRejectedFile } from '@/lib/api';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 const MAX_FILES = 4;
 
@@ -46,6 +47,10 @@ export default function UpdateAmazonPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Just a "when did this last run" line — one lightweight read on mount, not a heavy aggregate, so it's fine to fetch here despite
+  // the file's usual no-SWR stance (see header note).
+  const { data: lastRun, refresh: refreshLastRun } = useApiQuery('amz-import-last', getAmzImportLast);
 
   /** Adding or removing a file invalidates any check already done — the summary must never outlive the files it describes. */
   const resetCheck = useCallback(() => {
@@ -110,6 +115,7 @@ export default function UpdateAmazonPage() {
     setSummary(res.data.summary);
     setRejected(res.data.rejected);
     setStage('done');
+    refreshLastRun();
   }
 
   function startOver() {
@@ -124,6 +130,9 @@ export default function UpdateAmazonPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Update Amazon</h1>
         <p className="mt-1 text-sm text-slate-500">
           Drop the Seller Central reports in. Nothing is written until you have seen what they will do.
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          Last processed: {lastRun?.lastRun ? `${lastRun.lastRun}${lastRun.by ? ` — ${lastRun.by}` : ''}` : 'unknown'}
         </p>
       </div>
 
@@ -142,8 +151,7 @@ export default function UpdateAmazonPage() {
           <p className="mt-1 text-xs text-slate-500">
             Orders · FBA Inventory · FBA Returns · FBA Fee Preview — any combination, up to {MAX_FILES} files.
           </p>
-          {/* Worth saying out loud: the operator does not have to know which numbered file is which report. */}
-          <p className="mt-1 text-xs text-slate-400">Each file is recognised by its contents, so the filename doesn&apos;t matter.</p>
+          <p className="mt-1 text-xs text-slate-400">Safe to re-run any file as often as you like — reprocessing the same data won&apos;t cause issues.</p>
           <button
             type="button"
             onClick={() => inputRef.current?.click()}

@@ -123,6 +123,7 @@ app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm
 // identified by HEADER, never filename (Seller Central names them 118981020662.txt). Any subset of the four reports may be uploaded.
 app.use('/amz-import-preview', require('./routes/amz-import-preview')); // stage 1: what a commit would do — READ ONLY
 app.use('/amz-import-commit', require('./routes/amz-import-commit'));   // stage 2: ingest -> derive -> project, one transaction
+app.use('/amz-import-last', require('./routes/amz-import-last'));       // when was this last run — READ ONLY
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.

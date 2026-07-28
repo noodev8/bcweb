@@ -1533,4 +1533,13 @@ export function commitAmzImport(files: File[]) {
   );
 }
 
+// When this last ran (bclog row written by the commit above) — for the "last processed" line on the page.
+export interface AmzImportLast { lastRun: string | null; by: string | null }
+export function getAmzImportLast() {
+  return request<AmzImportLast>({ url: '/amz-import-last', method: 'GET' }, (b) => ({
+    lastRun: (b.lastRun as string) || null,
+    by: (b.by as string) || null,
+  }));
+}
+
 export default api;

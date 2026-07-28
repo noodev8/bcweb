@@ -121,6 +121,15 @@ router.post('/', (req, res) => {
         // stale — which is the whole point of being able to run one system instead of two.
         const skumapTouched = await projectDerivedToSkumap(client);
 
+        // Audit row so the screen can tell the operator when this last ran (read back by /amz-import-last). Same bclog shape as the
+        // Inventory module's log line — created_at is UTC, date/time text stamps are Europe/London for the legacy PowerBuilder log view.
+        await client.query(
+          `INSERT INTO bclog (workstation, section, log, date, time, created_at)
+           VALUES ($1, 'Amazon Update', $2,
+                   (now() AT TIME ZONE 'Europe/London')::date, to_char(now() AT TIME ZONE 'Europe/London','HH24:MI'), now())`,
+          [req.user.display_name, `Amazon Update: +${salesInserted} sales, +${returnsInserted} returns, ${feesUpdated} fees, ${stockResult.upserted} stock rows`]
+        );
+
         return { plan, retracted, salesInserted, returnsInserted, feesUpdated, stockResult, skusTouched, skumapTouched };
       });
 
