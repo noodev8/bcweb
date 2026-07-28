@@ -170,6 +170,13 @@ app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));     
 app.use('/analytics-scratchpad-add', require('./routes/analytics-scratchpad-add'));       // POST {body}: insert a note
 app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-delete')); // POST {id}: remove a note
 
+// --- Shopify order sync (the "Sync orders" button on Analytics -> Sales) ---
+// !! THE LOGIC BEHIND /order-sync ALSO LIVES IN C:\scripts\orders\update_orders.py, WHICH IS STILL IN CRON. Both are live and must
+// stay in step — see the banner at the top of utils/orderSync.js before changing either. !!
+// One POST does the whole pipeline (sync -> sales -> archive -> pick allocation -> cleanup) in a single transaction.
+app.use('/order-sync', require('./routes/order-sync'));           // POST: run the pipeline now — WRITES
+app.use('/order-sync-last', require('./routes/order-sync-last')); // GET: when the button was last pressed — READ ONLY
+
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
   res.json({ return_code: 'NOT_FOUND', message: `No such endpoint: ${req.method} ${req.originalUrl}` });

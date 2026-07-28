@@ -26,16 +26,28 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
          Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel. Row click reuses the
          cross-module ProductActions chooser (reprice / copy), same as Price Changes.
 
-Guarded by AppShell. Consumes GET /analytics-sales.
+         SYNC ORDERS (2026-07-28) sits at the right-hand end of the filter row — deliberately quiet, and deliberately NOT its own
+         row. This screen is where you notice today's sales look thin, so this is where the "is that real, or has the sync not run?"
+         button belongs. It runs the whole Shopify order pipeline (orders -> orderstatus, sales booked, shipped orders archived, picks
+         allocated, housekeeping) in one server-side transaction.
+
+         !! THAT PIPELINE ALSO RUNS FROM CRON as C:\scripts\orders\update_orders.py — two implementations of one business process,
+            both live. Before changing what a run does, read the banner at the top of bcweb-server/utils/orderSync.js. !!
+
+Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order-sync-last.
 =======================================================================================================================================
 */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSalesReport, SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow } from '@/lib/api';
+import {
+  getSalesReport, runOrderSync, getOrderSyncLast,
+  SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow,
+} from '@/lib/api';
 
 type ChannelFilter = 'all' | 'shp' | 'amz';
 
@@ -110,7 +122,7 @@ export default function SalesPage() {
 
   // The key carries channel + window + every committed step, so committing a Find (or Reset) IS the re-query — there is no separate
   // "now go fetch" call. `steps` is an array of objects; SWR hashes it structurally, so a new array with equal contents won't refetch.
-  const { data, error: loadError, busy: loading } = useApiQuery(
+  const { data, error: loadError, busy: loading, refresh } = useApiQuery(
     ['sales-report', channel, win, steps],
     () => getSalesReport({ channel, window: win, steps }),
   );
@@ -121,7 +133,61 @@ export default function SalesPage() {
   const searchActive = data?.searchActive ?? false; // reflects the loaded result (product mode vs window pulse)
   const summaryOnly = data?.summaryOnly ?? false;   // long window: totals only, no line list
   const truncated = data?.truncated ?? false;
-  const error = loadError?.message ?? null;
+
+  // --- Sync orders ----------------------------------------------------------------------------------------------------------
+  // Pulls unfulfilled orders from Shopify and runs the whole order pipeline (orderstatus, sales, archive, pick allocation,
+  // housekeeping) in one transaction. It lives HERE, on the sales ledger, because this is the screen where you notice that today's
+  // sales look light and want to know whether that is the truth or just a sync that hasn't run yet.
+  //
+  // !! The same pipeline also runs unattended from cron as C:\scripts\orders\update_orders.py. Pressing this does not replace that
+  //    and does not conflict with it — it is a "do it now". See bcweb-server/utils/orderSync.js for the shared-logic warning. !!
+  const { logout } = useAuth();
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // "Last run" is its own tiny query so the button can carry a stamp without the sales report having to reload for it.
+  const { data: syncLast, refresh: refreshSyncLast } = useApiQuery(['order-sync-last'], getOrderSyncLast);
+
+  const onSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncNote(null);
+    setSyncError(null);
+    const res = await runOrderSync();
+    if (res.success && res.data) {
+      setSyncNote(res.data.headline);
+      // The one outcome that is a success but still needs saying out loud: too many open orders for a single fetch, so the archive
+      // phase stood down rather than archive orders it never read. Everything else in the run happened.
+      if (res.data.summary.archive.skipped) {
+        setSyncError('Shopify had more open orders than one fetch could read — archiving was skipped this run. Everything else ran.');
+      }
+      // New orders mean new sale rows, so the ledger under this button is now stale. Refresh both.
+      await Promise.all([refresh(), refreshSyncLast()]);
+    } else if (res.return_code === 'UNAUTHORIZED') {
+      logout();
+      return;                       // page is redirecting; leave `syncing` set so the button can't be pressed again on the way out
+    } else {
+      setSyncError(res.error || 'Order sync failed');
+    }
+    setSyncing(false);
+  }, [refresh, refreshSyncLast, logout]);
+
+  // '2026-07-28T13:32:07Z' -> '2h ago'. Renders nothing until the query resolves client-side, so there is no SSR/hydration mismatch
+  // from reading the clock during render.
+  const lastSyncLabel = useMemo(() => {
+    const iso = syncLast?.lastRunIso;
+    if (!iso) return null;
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  }, [syncLast?.lastRunIso]);
+
+  // A failed sync must not blank out a ledger that loaded perfectly well, so it takes precedence in the existing banner rather than
+  // getting a banner of its own.
+  const error = syncError ?? loadError?.message ?? null;
 
   // FIND — commit whatever is in the boxes as steps, then clear them (Inventory's behaviour). The re-query falls out of `steps` being a
   // dependency of load(); nothing fires until this runs, which is the point of dropping the debounce.
@@ -309,6 +375,31 @@ export default function SalesPage() {
             <Segmented options={LONG_WINDOW_TABS} value={win} onChange={setWin} disabled={willSearch} />
             <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">totals</span>
           </div>
+        </div>
+
+        {/* Sync orders — parked at the right-hand end of the filter row that was already here, so it costs no vertical space. The
+            result of a run appears as a chip beside it (transient, one line); failures go to the shared error banner below. */}
+        <div className="ml-auto flex items-center gap-2">
+          {syncNote && (
+            <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+              {syncNote}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={syncing}
+            title={
+              'Pull unfulfilled orders from Shopify now — records the orders, books the sales, archives what has shipped and '
+              + 'allocates picks. The same job the scheduled sync does; safe to press any time.'
+              + (syncLast?.lastRun ? `\n\nLast pressed: ${syncLast.lastRun}${syncLast.by ? ` by ${syncLast.by}` : ''}` : '')
+            }
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <CloudArrowDownIcon className={`h-4 w-4 ${syncing ? 'animate-pulse' : ''}`} />
+            {syncing ? 'Syncing…' : 'Sync orders'}
+            {!syncing && lastSyncLabel && <span className="font-normal text-slate-400">· {lastSyncLabel}</span>}
+          </button>
         </div>
       </div>
 

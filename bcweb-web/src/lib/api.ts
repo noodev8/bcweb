@@ -1542,4 +1542,63 @@ export function getAmzImportLast() {
   }));
 }
 
+// =============================================================================================================================
+// Shopify order sync — the "Sync orders" button on Analytics -> Sales.
+//
+// !! The server-side logic behind this ALSO exists as C:\scripts\orders\update_orders.py, which is still in cron. Both are live.
+//    See the banner at the top of bcweb-server/utils/orderSync.js before changing anything about what a run does. !!
+//
+// One POST runs the whole pipeline: pull unfulfilled orders from Shopify -> orderstatus, book the sales, archive what Shopify no
+// longer has, allocate picks against free stock, then housekeeping. All in one transaction.
+// =============================================================================================================================
+
+// Same 120s ceiling the Amazon import uses: a big first run walks every order line and every pick one at a time, and the default
+// axios timeout would give up on a run that is actually succeeding.
+const ORDER_SYNC_TIMEOUT = 120000;
+
+export interface OrderSyncSummary {
+  orders: { inserted: number; updated: number; linesWithoutSku: number; linesFolded: number };
+  sales: { inserted: number; skippedNoGroupid: number; skippedDuplicate: number };
+  // `skipped` is true when the Shopify fetch came back truncated: archiving is decided by ABSENCE from the fetched list, so a partial
+  // fetch must never be allowed to archive. Everything else in the run still happened.
+  archive: { archived: number; picksRemoved: number; skipped: boolean };
+  picks: {
+    considered: number; fullyAllocated: number; partiallyAllocated: number; alreadyAllocated: number;
+    picksTaken: number; splits: number; amzMarked: number; ukdMarked: number; ukdToOrder: number;
+    otherMarked: number; unfulfillable: number;
+  };
+  housekeeping: Record<string, number>;
+  // Per-line warnings (partial picks, unmatched SKUs, nothing in stock anywhere) — what the cron would have buried in a log file.
+  notes: string[];
+}
+export interface OrderSyncResult {
+  fetched: { orders: number; pages: number; truncated: boolean };
+  summary: OrderSyncSummary;
+  headline: string;   // the one line the button shows, e.g. '+3 orders · +3 sales · 3 picks'
+}
+
+// Run it now. Writes — but it is safe to press twice: an order already in orderstatus is refreshed rather than re-inserted, and its
+// sale is not re-booked. A failure rolls the whole run back, so a retry after an error starts from a clean slate.
+export function runOrderSync() {
+  return request<OrderSyncResult>(
+    { url: '/order-sync', method: 'POST', timeout: ORDER_SYNC_TIMEOUT },
+    (b) => ({
+      fetched: b.fetched as OrderSyncResult['fetched'],
+      summary: b.summary as OrderSyncSummary,
+      headline: (b.headline as string) || '',
+    })
+  );
+}
+
+// When the button was last pressed. NOT when the pipeline last ran — the cron writes no audit row, so this only ever reflects bcweb.
+export interface OrderSyncLast { lastRun: string | null; lastRunIso: string | null; by: string | null; log: string | null }
+export function getOrderSyncLast() {
+  return request<OrderSyncLast>({ url: '/order-sync-last', method: 'GET' }, (b) => ({
+    lastRun: (b.lastRun as string) || null,
+    lastRunIso: (b.lastRunIso as string) || null,
+    by: (b.by as string) || null,
+    log: (b.log as string) || null,
+  }));
+}
+
 export default api;

@@ -45,7 +45,17 @@ module.exports = {
     shop: process.env.SHOPIFY_SHOP || '',
     apiVersion: process.env.SHOPIFY_API_VERSION || '2025-04',
     accessToken: process.env.SHOPIFY_ACCESS_TOKEN || '',
-    locationId: process.env.SHOPIFY_LOCATION_ID || ''
+    locationId: process.env.SHOPIFY_LOCATION_ID || '',
+
+    // ORDER SYNC uses a DIFFERENT token and a DIFFERENT API version from everything above — deliberately, on both counts.
+    //   token:   the product push above needs write_products; reading orders needs read_orders. They are two separate custom-app
+    //            tokens in Shopify (verified: SHOPIFY_ACCESS_TOKEN and SHOPIFY_ORDERS_ACCESS_TOKEN in C:\scripts\.env are different
+    //            values). Sending the product token at the Orders endpoint returns 401, so they must not be conflated.
+    //   version: pinned to the exact REST version C:\scripts\orders\update_orders.py calls (2024-01). That script and utils/orderSync.js
+    //            are two implementations of one business process (see the banner in utils/orderSync.js) and must see the SAME payload
+    //            shape — a field renamed between API versions would silently diverge the two. Bump this only when the Python bumps too.
+    ordersAccessToken: process.env.SHOPIFY_ORDERS_ACCESS_TOKEN || '',
+    ordersApiVersion: process.env.SHOPIFY_ORDERS_API_VERSION || '2024-01'
   },
 
   // Google Merchant Center Merchant API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
