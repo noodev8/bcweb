@@ -45,7 +45,7 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getSalesReport, runOrderSync, getOrderSyncLast,
+  getSalesReport, runOrderSync,
   SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow,
 } from '@/lib/api';
 
@@ -146,9 +146,6 @@ export default function SalesPage() {
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // "Last run" is its own tiny query so the button can carry a stamp without the sales report having to reload for it.
-  const { data: syncLast, refresh: refreshSyncLast } = useApiQuery(['order-sync-last'], getOrderSyncLast);
-
   const onSync = useCallback(async () => {
     setSyncing(true);
     setSyncNote(null);
@@ -161,8 +158,8 @@ export default function SalesPage() {
       if (res.data.summary.archive.skipped) {
         setSyncError('Shopify had more open orders than one fetch could read — archiving was skipped this run. Everything else ran.');
       }
-      // New orders mean new sale rows, so the ledger under this button is now stale. Refresh both.
-      await Promise.all([refresh(), refreshSyncLast()]);
+      // New orders mean new sale rows, so the ledger under this button is now stale.
+      await refresh();
     } else if (res.return_code === 'UNAUTHORIZED') {
       logout();
       return;                       // page is redirecting; leave `syncing` set so the button can't be pressed again on the way out
@@ -170,20 +167,7 @@ export default function SalesPage() {
       setSyncError(res.error || 'Order sync failed');
     }
     setSyncing(false);
-  }, [refresh, refreshSyncLast, logout]);
-
-  // '2026-07-28T13:32:07Z' -> '2h ago'. Renders nothing until the query resolves client-side, so there is no SSR/hydration mismatch
-  // from reading the clock during render.
-  const lastSyncLabel = useMemo(() => {
-    const iso = syncLast?.lastRunIso;
-    if (!iso) return null;
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.round(hrs / 24)}d ago`;
-  }, [syncLast?.lastRunIso]);
+  }, [refresh, logout]);
 
   // A failed sync must not blank out a ledger that loaded perfectly well, so it takes precedence in the existing banner rather than
   // getting a banner of its own.
@@ -389,16 +373,10 @@ export default function SalesPage() {
             type="button"
             onClick={onSync}
             disabled={syncing}
-            title={
-              'Pull unfulfilled orders from Shopify now — records the orders, books the sales, archives what has shipped and '
-              + 'allocates picks. The same job the scheduled sync does; safe to press any time.'
-              + (syncLast?.lastRun ? `\n\nLast pressed: ${syncLast.lastRun}${syncLast.by ? ` by ${syncLast.by}` : ''}` : '')
-            }
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <CloudArrowDownIcon className={`h-4 w-4 ${syncing ? 'animate-pulse' : ''}`} />
             {syncing ? 'Syncing…' : 'Sync orders'}
-            {!syncing && lastSyncLabel && <span className="font-normal text-slate-400">· {lastSyncLabel}</span>}
           </button>
         </div>
       </div>

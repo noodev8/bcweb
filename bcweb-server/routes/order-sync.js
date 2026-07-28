@@ -28,7 +28,7 @@ Success Response:
 { "return_code": "SUCCESS",
   "fetched": { "orders": 41, "pages": 1, "truncated": false },
   "summary": { "orders": {...}, "sales": {...}, "archive": {...}, "picks": {...}, "housekeeping": {...}, "notes": [...] },
-  "headline": "+3 orders · +3 sales · 3 picks" }
+  "headline": "+3 orders" }
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "SHOPIFY_NOT_CONFIGURED" · "SHOPIFY_FETCH_FAILED" · "UNAUTHORIZED" · "SERVER_ERROR"
@@ -51,16 +51,9 @@ router.use(verifyToken);
  * (varchar(500)), which is what /order-sync-last reads back for the "last run" stamp.
  */
 function headlineOf(s) {
-  const bits = [];
-  if (s.orders.inserted) bits.push(`+${s.orders.inserted} order${s.orders.inserted === 1 ? '' : 's'}`);
-  if (s.orders.updated) bits.push(`${s.orders.updated} updated`);
-  if (s.sales.inserted) bits.push(`+${s.sales.inserted} sale${s.sales.inserted === 1 ? '' : 's'}`);
-  if (s.picks.picksTaken) bits.push(`${s.picks.picksTaken} pick${s.picks.picksTaken === 1 ? '' : 's'}`);
-  if (s.archive.archived) bits.push(`${s.archive.archived} archived`);
-  if (s.picks.amzMarked || s.picks.ukdMarked || s.picks.ukdToOrder || s.picks.otherMarked) {
-    bits.push(`${s.picks.amzMarked + s.picks.ukdMarked + s.picks.ukdToOrder + s.picks.otherMarked} to source`);
-  }
-  return bits.length ? bits.join(' · ') : 'Up to date — nothing to do';
+  return s.orders.inserted
+    ? `+${s.orders.inserted} order${s.orders.inserted === 1 ? '' : 's'}`
+    : 'Up to date';
 }
 
 router.post('/', async (req, res) => {
