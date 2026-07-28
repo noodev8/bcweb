@@ -62,11 +62,12 @@ export function useListCursor(opts: {
   enabled?: boolean;
   onEnter?: (key: string) => void;
   /**
-   * Fired whenever a KEYPRESS moves the cursor (not when a click places it — the click's own handler already knows). For dismissing
-   * anything anchored to the row you are leaving: a pop-over pinned at the old click point would otherwise sit there while the list
-   * scrolls under it, pointing at one style and floating over another.
+   * Fired whenever a KEYPRESS moves the cursor (not when a click places it — the click's own handler already knows), with the key it
+   * is moving TO. For dismissing anything anchored to the row you are leaving (a pop-over pinned at the old click point would
+   * otherwise sit there while the list scrolls under it, pointing at one style and floating over another), and for reacting to WHERE
+   * the cursor has landed — /inventory grows its rendered window when the cursor reaches the last painted row.
    */
-  onMove?: () => void;
+  onMove?: (key: string) => void;
   /**
    * How the current row is scrolled into view — the feel of the whole gesture, so it is a per-screen choice:
    *   'nearest' (default) the page only moves when the cursor would otherwise leave the viewport. Conventional, minimal movement,
@@ -182,7 +183,8 @@ export function useListCursor(opts: {
       if (active && active !== document.body) active.blur();
 
       // Leaving the old row: anything anchored to it (the reprice pop-over, pinned at the click point) is now stale and must go.
-      onMoveRef.current?.();
+      // Handed the row being moved TO, so a listener can also react to where the cursor has landed.
+      onMoveRef.current?.(next);
 
       scrollPendingRef.current = true;
       lastIndexRef.current = list.indexOf(next);

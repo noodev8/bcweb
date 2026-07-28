@@ -47,8 +47,10 @@ Success Response:
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "sold30": 7,                          // units sold in the last 30 days, all channels (positive sales only); for the SALES filter
       "total": 38,                          // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
-      "amazonSkus": "17659-23-42-2607 17659-23-43-2607"  // space-joined skumap.sku for every variant; null if none. Lets the client's
+      "amazonSkus": "17659-23-42-2607 17659-23-43-2607", // space-joined skumap.sku for every variant; null if none. Lets the client's
                                              // Contains search find a style by a pasted Amazon SKU
+      "created": "20260724 11:07:30"          // skusummary.created_at as 'YYYYMMDD HH24:MI:SS' (Europe/London); null if unstamped.
+                                             // Sortable as plain text — the browse opens newest-first on it
     },
     ...
   ]
@@ -181,7 +183,17 @@ router.get('/', async (req, res) => {
           + COALESCE(transit.units, 0)                        AS amazon_units,
         COALESCE(birk.units, 0)                               AS birk_units,
         COALESCE(sold.units, 0)                               AS sold_units,
-        amz_skus.skus                                         AS amz_skus
+        amz_skus.skus                                         AS amz_skus,
+        -- WHEN THE STYLE WAS ADDED — the Inventory browse opens on newest-first, so this is its default sort key (owner, 2026-07-28).
+        -- Read from created_at, the proper timestamptz column: it is the one being built on, and the legacy created varchar is only a
+        -- text stamp kept for the older systems. (No backticks in this comment — the whole query is a JS template literal.) migrations/20260728_skusummary_created_at_backfill.sql filled created_at for the
+        -- styles that predate it, so there are no NULLs to work around; a style somehow lacking one still can't fall out of the list,
+        -- it just sorts to the bottom (see the COALESCE).
+        --
+        -- Rendered to 'YYYYMMDD HH24:MI:SS' in EUROPE/LONDON here, not shipped as a Date: that shape sorts correctly as plain text, so
+        -- the client compares strings and never parses. Handing a pg timestamp to the client to run through toISOString() is the BST
+        -- day-shift landmine in CLAUDE.md — doing the conversion in SQL, in the business timezone, is the whole point.
+        COALESCE(to_char(s.created_at AT TIME ZONE 'Europe/London', 'YYYYMMDD HH24:MI:SS'), '')  AS created_sort
       FROM skusummary s
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
@@ -228,6 +240,9 @@ router.get('/', async (req, res) => {
         // Total INCLUDES the Birkenstock pre-order book (owner) — a placed Birk order is stock they count on having, since it is the
         // only replenishment that exists for the brand. Local stays strictly "in the building".
         total: local + amazon + birk,
+        // skusummary.created_at as 'YYYYMMDD HH24:MI:SS' (Europe/London). Null only if the style has no created_at at all, which the
+        // 2026-07-28 backfill removed — and which would simply sort last on "newest first" rather than break anything.
+        created: r.created_sort || null,
       };
     });
 

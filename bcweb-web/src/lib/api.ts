@@ -1109,6 +1109,10 @@ export interface InvStyleRow {
   // Space-joined full Amazon Seller SKUs held under this style (skumap.sku, e.g. "17659-23-42-2607 …"), so the Contains box can find a
   // style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon-mapped variants.
   amazonSkus: string | null;
+  // When the style was added: skusummary.created_at, rendered server-side as 'YYYYMMDD HH24:MI:SS' (Europe/London) — a plain string,
+  // NOT a Date, and it sorts correctly as one. The Inventory browse opens newest-first on this. Null only if the style has no
+  // created_at, which sorts it to the bottom.
+  created: string | null;
 }
 
 // The WHOLE style list in one call. Deliberately unfiltered: ~280 styles, so the Inventory screen fetches once on mount and does all

@@ -19,11 +19,24 @@ THE FILTER IS UNCHANGED — it is the proven part of this screen and the redesig
   - Cut: a per-row manual hide for stragglers a text step can't drop without over-matching. View-only; Restore or Reset brings them back.
   - Reset clears everything AND re-reads from the DB (the refresh), mirroring PowerBuilder.
 
-TWO THINGS KEEP THE BROWSE FAST (owner, 2026-07-23 — "ensure we don't over-retrieve and slow things down"):
-  1. The GATE. Card faces are cheap (they paint from the /inv-styles list already in memory), but a wall of picture cards is still a
-     lot to render and scroll. Above CARD_GATE matches we DON'T paint cards — we show the count and ask for one more word. So the
-     operator is nudged to filter down to a handful before the pictures load, which is the natural way to use this screen anyway.
-  2. Detail is lazy. The heavy per-style /inv-stock (racks, buckets) is fetched by InvStyleCard only when a size is tapped, never on
+THE LIST IS ALWAYS THERE (owner, 2026-07-28). The screen used to open blank and stay blank until the first Find. It now opens on the
+WHOLE catalogue, NEWEST ADDED FIRST, and Reset returns to exactly that rather than to nothing. The filter narrows a list that already
+exists instead of conjuring one. Two reasons: a blank screen reads as switched off, and "what came in recently" is a question the
+operator has constantly but would never think to type. The default sort key is `created` (skusummary.created_at — see sortValue for
+why it is compared as text). The sort SURVIVES filtering: narrowing changes which styles are listed, never their order, so the newest
+match is always the top card.
+
+EVERY MATCH GETS A CARD (owner, 2026-07-28). There used to be a GATE: over 50 matches the pictures were swapped for a compact title
+list, on the theory that the operator should narrow further before loading images. That has been dropped — the pictures ARE the screen,
+and being sent back to a text list at the moment the list gets interesting was the wrong trade. The title list is gone with it.
+What keeps the browse fast instead:
+  1. A RENDERED WINDOW (CARD_CHUNK). Every match is available, but only the first chunk is in the DOM; a sentinel below the last card
+     extends the window as it scrolls into view, so the DOM grows only as far as the operator has actually walked. "Show all" paints
+     the rest in one go for a Ctrl+F over the lot. The window resets to one chunk whenever the criteria or the sort change.
+  2. Images are lazy (next/image), so the pictures fetched are the ones on screen, not the ones matched — the window mostly matters
+     for paint cost, and it also keeps the load burst small (see the retry note in InvStyleCard: a big simultaneous burst is what makes
+     images transiently fail).
+  3. Detail is lazy. The heavy per-style /inv-stock (racks, buckets) is fetched by InvStyleCard only when a size is tapped, never on
      render. So even a full page of cards costs zero detail round-trips until someone asks a question of one.
 
 The command bar scrolls away with the page. It was sticky until the keyboard cursor landed (below) — a pinned bar plus cards moving
@@ -31,14 +44,15 @@ under it was too much motion to read while arrowing (owner, 2026-07-27, on trial
 
 KEYBOARD CURSOR over the cards (owner, 2026-07-27): up/down move a highlight that STAYS where it was left, Enter opens the current
 card's Detail. This is the legacy PowerBuilder gesture, and it is here for one reason — the operator walks off to the racks mid-task
-and comes back having forgotten which of a dozen near-identical black Arizonas they were on. Cards only (above the gate there is
-nothing painted to move through). The mechanics live in the shared `useListCursor` hook; this page supplies the keys, when it is
+and comes back having forgotten which of a dozen near-identical black Arizonas they were on. It walks the RENDERED window, and
+arrowing onto the last rendered card extends it — so the keyboard can reach the whole list without touching the mouse, and never
+points at a card that isn't painted. The mechanics live in the shared `useListCursor` hook; this page supplies the keys, when it is
 enabled, what Enter does, and the look of the highlight. Detail's open/closed state had to move UP here for Enter to drive it, so
 InvStyleCard now takes it as a prop.
 =======================================================================================================================================
 */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
@@ -70,35 +84,39 @@ interface QtyFilter {
 function metricValue(r: InvStyleRow, metric: QtyMetric): number {
   return metric === 'stock' ? r.local + r.amazon : r.sold30;
 }
-function combinedStock(r: InvStyleRow): number {
-  return r.local + r.amazon;
-}
 
 // SORTING (owner). A visible, click-to-reverse control rather than a worded command: sorting is a MODE you sit in and flip, not a
 // one-shot action like the STOCK/SOLD filters, so it needs a standing affordance that shows the current key + direction. Client-side —
 // the whole list is already in memory, same as the filters. Each key clicks in at a sensible default direction (see DEFAULT_DIR);
 // clicking the active key again reverses it. Keys deliberately limited to Title / Stock / Sold (owner) — the raw numbers, no derived metric.
-type SortKey = 'title' | 'stock' | 'sold';
+type SortKey = 'created' | 'title' | 'stock' | 'sold';
 const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'created', label: 'Added' },
   { key: 'title', label: 'Title' },
   { key: 'stock', label: 'Stock' },
   { key: 'sold', label: 'Sold' },
 ];
-// The direction a key adopts when first picked: Title A→Z, but Stock/Sold high→low (the drop review wants the big piles and the dead
-// sellers at the top). Re-clicking the active key toggles from here.
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { title: 'asc', stock: 'desc', sold: 'desc' };
+// The direction a key adopts when first picked: Title A→Z, but Added/Stock/Sold high→low (newest first; and the drop review wants the
+// big piles and the dead sellers at the top). Re-clicking the active key toggles from here.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { created: 'desc', title: 'asc', stock: 'desc', sold: 'desc' };
 
 // The value a row sorts on for a given key. Title falls back to groupid so an untitled style still lands somewhere sensible.
 function sortValue(r: InvStyleRow, key: SortKey): number | string {
+  // `created` is skusummary.created_at, already rendered server-side as 'YYYYMMDD HH24:MI:SS' — that shape sorts correctly as plain
+  // text, so no Date parsing here and no BST day-shift. An unstamped style reads as '' and lands at the bottom of newest-first, which
+  // is where an unknown date belongs.
+  if (key === 'created') return r.created || '';
   if (key === 'title') return (r.title || r.groupid).toLowerCase();
   if (key === 'stock') return r.local + r.amazon;
   return r.sold30;
 }
 
-// Above this many matches we swap the picture cards for a QUICK TITLE LIST (see the GATE note in the header). The list is cheap — no
-// images — and its job is to show what is in the pile so the operator knows the next word to filter off (owner, 2026-07-23: "a quick
-// title list that then prompts me to know what to filter off" — better than just raising the number and loading 74 pictures).
-const CARD_GATE = 50;
+// How many cards are painted at a time (see the window note in the header). Every match is shown eventually; this is only how far the
+// DOM has been built so far. One chunk comfortably overfills a screen, so the next is painted well before the operator reaches it.
+const CARD_CHUNK = 40;
+// How early the sentinel extends the window — about a screen of slack, so the next chunk is already there when it is scrolled to and
+// the list never visibly stops.
+const CHUNK_ROOT_MARGIN = '800px';
 
 // The text a filter step is matched against. Built once per row and cached. Lowercased here so each step is a plain indexOf.
 // Includes the style's Amazon Seller SKUs (skumap.sku) so a pasted Amazon SKU like 17659-23-42-2607 — which doesn't share the internal
@@ -206,9 +224,11 @@ export default function InventoryPage() {
   // permanent hint that shouts at every operator (owner). Grows as more commands land (SOLD MORE, …).
   const [showHelp, setShowHelp] = useState(false);
 
-  // Sort mode — default Title A→Z, matching the order the server already returns so the first view is unchanged.
-  const [sortKey, setSortKey] = useState<SortKey>('title');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Sort mode — default NEWEST ADDED FIRST (owner, 2026-07-28). Now that the screen opens on the whole catalogue rather than a blank
+  // box, the opening order is a real editorial choice: what has just come in is what the operator most often has a question about,
+  // and it puts the styles nobody has looked at yet in front of them without anyone searching for something they don't know is there.
+  const [sortKey, setSortKey] = useState<SortKey>('created');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   // Pick a key: re-clicking the active one reverses; a new key adopts its default direction. Written as two plain setState calls off the
   // CURRENT sortKey (not nested inside a setSortKey updater) — nesting made the reverse toggle twice under React StrictMode's double-invoke
   // and appear to do nothing.
@@ -237,13 +257,13 @@ export default function InventoryPage() {
   // Pre-compute each row's haystack once per fetch, not once per filter pass.
   const indexed = useMemo(() => rows.map((r) => ({ row: r, hay: haystack(r) })), [rows]);
 
-  // Nothing is listed until the operator has searched at least once — a text step OR a size filter counts. The full set is in memory
-  // and IS what gets filtered; we simply don't render cards nobody asked for. Reset returns to this blank state.
+  // THE LIST IS THE OPENING VIEW (owner, 2026-07-28). It used to stay blank until the first Find, on the reasoning that a wall of
+  // pictures nobody asked for was noise. That is reversed: the catalogue newest-first IS a useful thing to land on, and the blank box
+  // made the screen feel switched off. So filters now narrow a list that is always there, and Reset returns to the whole catalogue
+  // rather than to nothing. (Which is affordable because of the rendered window below — only a chunk is ever painted.)
   const activeQty = useMemo(() => Object.values(qtyFilters).filter(Boolean) as QtyFilter[], [qtyFilters]);
-  const searched = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
-
-  // Local stock this style holds in the filtered size (0 if none / no size filter).
-  const sizeQtyOf = useCallback((r: InvStyleRow): number => sizeQtyIn(r, sizeTarget), [sizeTarget]);
+  // Is anything narrowing the list? No longer gates the display — it only decides whether to show the "of N" total and the ✕ chips.
+  const filtering = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
 
   const filtered = useMemo(
     () => applyCriteria(indexed, { steps, sizeTarget, sizeStrict, qty: activeQty }).map((x) => x.row),
@@ -267,14 +287,35 @@ export default function InventoryPage() {
     });
   }, [visible, sortKey, sortDir]);
 
-  // Over the gate — too many matches to paint pictures for; show the quick title list instead (below).
-  const overGate = visible.length > CARD_GATE;
+  // ---- The rendered window (owner, 2026-07-28) ---------------------------------------------------------------------------------
+  // How many of the matches are actually in the DOM. Every match is reachable — this is paint budget, not a filter, so nothing here
+  // may ever change WHICH styles count (the breadcrumb still reports the full match count).
+  //
+  // The window is STAMPED WITH THE CRITERIA it was grown under, and a stamp that no longer matches simply reads as one chunk. That
+  // makes "start again at the top when the search changes" a derived value rather than a reset effect — no second render, and no
+  // window of one render where a new result set is still showing the old scroll depth. Deliberately keyed on the CRITERIA and not on
+  // `visible`/`sortedVisible`: cutting one straggler must not throw away everything already scrolled, which is the opposite of what a
+  // cut is for.
+  const criteriaKey = useMemo(
+    () => JSON.stringify([steps, sizeFilter, sizeStrict, activeQty, sortKey, sortDir]),
+    [steps, sizeFilter, sizeStrict, activeQty, sortKey, sortDir],
+  );
+  const [win, setWin] = useState<{ key: string; n: number }>({ key: '', n: CARD_CHUNK });
+  const shown = win.key === criteriaKey ? win.n : CARD_CHUNK;
+  const rendered = useMemo(() => sortedVisible.slice(0, shown), [sortedVisible, shown]);
+  const moreCount = sortedVisible.length - rendered.length;
+  const extend = useCallback(
+    () => setWin((w) => ({ key: criteriaKey, n: (w.key === criteriaKey ? w.n : CARD_CHUNK) + CARD_CHUNK })),
+    [criteriaKey],
+  );
+  const showAll = useCallback(() => setWin({ key: criteriaKey, n: sortedVisible.length }), [criteriaKey, sortedVisible.length]);
 
   // ---- Keyboard cursor over the cards (owner, 2026-07-27) --------------------------------------------------------------------
   // The operators work this screen from the keyboard and walk away from it mid-task ("find the 39, go to the rack, come back") —
   // and were losing their place in the stack. So the browse gets the legacy list gesture back: up/down moves a highlight that STAYS
-  // until moved, Enter opens the current card's Detail. Cards only: above the gate there is nothing painted to move through.
-  const cursorKeys = useMemo(() => sortedVisible.map((r) => r.groupid), [sortedVisible]);
+  // until moved, Enter opens the current card's Detail. Keys are the RENDERED rows only — the cursor must never point at a card that
+  // isn't painted (it would scroll to nothing) — and landing on the last one extends the window, so ↓ alone walks the whole list.
+  const cursorKeys = useMemo(() => rendered.map((r) => r.groupid), [rendered]);
 
   // Detail open/closed now lives HERE rather than inside each card, so Enter can drive it (InvStyleCard takes it as a prop). A set,
   // not a single id, because cards open independently — one card's Detail must never collapse another's.
@@ -287,15 +328,41 @@ export default function InventoryPage() {
     });
   }, []);
 
+  // Arrowing onto the LAST rendered card pulls the next chunk in, so the keyboard can walk the whole list without ever touching the
+  // mouse. It hangs off the cursor's own move event (which reports the row being moved TO) rather than watching cursorKey in an
+  // effect — the growth is caused by the keypress, and doing it in the handler avoids a cascading render. Extending only ADDS keys,
+  // so the cursor keeps its place.
+  const lastRenderedKey = rendered.length > 0 ? rendered[rendered.length - 1].groupid : null;
+  const onCursorMove = useCallback(
+    (key: string) => { if (moreCount > 0 && key === lastRenderedKey) extend(); },
+    [moreCount, lastRenderedKey, extend],
+  );
+
   const cursor = useListCursor({
     keys: cursorKeys,
-    enabled: searched && !overGate && !loading && !error,
+    enabled: !loading && !error,
     onEnter: toggleDetail,
+    onMove: onCursorMove,
     // 'center': the list moves under a highlight that sits mid-screen, the way the legacy grid felt — you always have the next few
     // cards in view rather than arrowing into the bottom edge. Trying this against the default 'nearest' (owner, 2026-07-27); the
     // cards are tall, which is what makes the difference noticeable here.
     scrollBlock: 'center',
   });
+
+  // Auto-extend on scroll: a sentinel below the last card, watched with an IntersectionObserver. Re-armed on each `shown` change
+  // because the sentinel moves down the page as the window grows. (No data fetching here — everything is already in memory; this only
+  // decides how much of it is painted.)
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || moreCount === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) extend(); },
+      { rootMargin: CHUNK_ROOT_MARGIN },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [moreCount, shown, extend]);
 
   // FIND: turn whatever is in the boxes into steps, then clear the boxes. Blank boxes are ignored.
   function onFind(e: React.FormEvent) {
@@ -381,6 +448,8 @@ export default function InventoryPage() {
     setCut(new Set());
   }
 
+  // Reset = back to the opening view: the WHOLE catalogue, newest first. Not a blank screen — the list is the resting state of this
+  // screen now, so Reset is "show me everything again", the same thing the operator sees on arrival.
   function onReset() {
     setSteps([]);
     setContains('');
@@ -389,9 +458,16 @@ export default function InventoryPage() {
     setSizeFilter(null);
     setSizeStrict(true);
     setQtyFilters({});
-    setSortKey('title');
-    setSortDir('asc');
+    setSortKey('created');
+    setSortDir('desc');
     setCut(new Set());
+    // Drop the keyboard cursor and any open Detail (owner, 2026-07-28). Clearing the steps does NOT empty the underlying list — with no
+    // filters `sortedVisible` is every style — so the cursor's row survives Reset and the highlight would reappear on the previous
+    // hunt's row. Reset means "start again", so the place-keeping the cursor exists to provide is exactly what should go.
+    cursor.setCursor(null);
+    setDetailOpen(new Set());
+    // Stamp the window with a key no criteria can produce, so it reads as one chunk again from a standing start.
+    setWin({ key: '', n: CARD_CHUNK });
     // Reset also RE-READS the list from the DB, so stock figures are fresh at the start of a new hunt (owner — as in PowerBuilder).
     loadStyles();
     containsRef.current?.focus();
@@ -487,15 +563,15 @@ export default function InventoryPage() {
           {/* Breadcrumb of applied steps + the row count, at the top where the operator uses it to decide whether to narrow again. */}
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
             <span className="mr-1 whitespace-nowrap text-slate-500">
-              {searched ? (
+              {filtering ? (
                 <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
               ) : (
-                <span className="text-slate-400">{rows.length} styles ready to search</span>
+                <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> styles</span></>
               )}
             </span>
             {/* Keyboard hint — only where the cursor actually works (cards painted). Nothing announces the gesture otherwise, and an
                 operator who never presses ↓ never discovers the thing that stops them losing their place. */}
-            {searched && !overGate && visible.length > 0 && (
+            {visible.length > 0 && (
               <>
                 <span className="text-slate-300">|</span>
                 <span className="whitespace-nowrap text-xs text-slate-400">↑↓ move · Enter opens detail</span>
@@ -574,7 +650,7 @@ export default function InventoryPage() {
 
             {/* SORT — inside the command box, pushed to the RIGHT of the breadcrumb (ml-auto) so the filter badges keep the left (owner).
                 Only shown once there is something to sort. Active key is filled and carries its ↑/↓; clicking it again reverses (onSort). */}
-            {searched && filtered.length > 0 && (
+            {filtered.length > 0 && (
               <span className="ml-auto flex items-center gap-1 whitespace-nowrap">
                 <span className="mr-0.5 text-xs text-slate-400">Sort</span>
                 {SORTS.map((s) => {
@@ -607,60 +683,11 @@ export default function InventoryPage() {
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
 
-      {/* Opening state — nothing searched yet. */}
-      {!loading && !error && !searched && (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
-          Type what you are looking for and press Find.
-        </div>
-      )}
-
-      {/* Searched, but too many for pictures — the QUICK TITLE LIST. No images (that is the over-fetch guard); it exists to show what
-          is in the pile so the operator can spot the word to filter off. Once narrowed under the gate, the picture cards take over. */}
-      {!loading && !error && searched && overGate && (
-        <div>
-          <p className="mb-2 text-sm text-slate-600">
-            <span className="font-semibold text-slate-800">{visible.length}</span> styles match — narrow under {CARD_GATE} to see the pictures. What can you rule out?
-          </p>
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            <ul className="divide-y divide-slate-100">
-              {sortedVisible.map((r) => (
-                <li key={r.groupid} className="group flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50">
-                  <span className="w-32 shrink-0 truncate font-mono text-xs text-slate-500">{r.groupid}</span>
-                  <span className="min-w-0 flex-1 truncate text-slate-700">{r.title || <span className="text-slate-400">—</span>}</span>
-                  {/* Combined stock (local + Amazon) — the "what have we got right now" number the STOCK filter works on. */}
-                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-500" title={`${r.local} local + ${r.amazon} at Amazon`}>
-                    <span className={combinedStock(r) ? 'font-semibold text-slate-700' : 'text-slate-400'}>{combinedStock(r)}</span> stock
-                  </span>
-                  {/* Units sold in the last 30 days — the "is it moving" number the SOLD filter works on; read next to stock for a drop call. */}
-                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-500" title="Units sold in the last 30 days (all channels)">
-                    <span className={r.sold30 ? 'font-semibold text-slate-700' : 'text-slate-400'}>{r.sold30}</span> sold
-                  </span>
-                  {/* On-shelf count — a size filter makes it the count FOR THAT SIZE, matching the picture cards. */}
-                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                    <span className={((sizeFilter ? sizeQtyOf(r) : r.local) ? 'font-medium text-slate-600' : '')}>
-                      {sizeFilter ? sizeQtyOf(r) : r.local}
-                    </span> on shelf
-                  </span>
-                  {/* Cut straight from the list — rule a style out here without waiting to see its picture. */}
-                  <button
-                    type="button"
-                    onClick={() => onCut(r.groupid)}
-                    title="Cut from list (Restore or Reset brings it back)"
-                    className="shrink-0 rounded p-1 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
-                  >
-                    <XMarkIcon className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* Searched and narrow enough — the browse. */}
-      {!loading && !error && searched && !overGate && (
+      {/* The browse. Shown from the first paint, whether or not anything is filtering — EVERY match gets a card, and `rendered` is
+          just how far the window has been painted (see the header). */}
+      {!loading && !error && (
         <div className="space-y-3">
-          {sortedVisible.map((r) => (
+          {rendered.map((r) => (
             <div
               key={r.groupid}
               ref={cursor.itemRef(r.groupid)}
@@ -699,6 +726,24 @@ export default function InventoryPage() {
               </button>
             </div>
           ))}
+
+          {/* The window's foot. The sentinel sits here and pulls the next chunk in as it nears the viewport, so scrolling just works;
+              the line is what the operator sees while that happens, and "Show all" paints the remainder in one go for a Ctrl+F over
+              the whole result. Rendered only while there IS more — at the end of the list there is nothing to say. */}
+          {moreCount > 0 && (
+            <div ref={sentinelRef} className="flex items-center justify-center gap-3 py-4 text-sm text-slate-400">
+              <span>
+                Showing {rendered.length} of {sortedVisible.length} — loading more…
+              </span>
+              <button
+                type="button"
+                onClick={showAll}
+                className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                Show all {sortedVisible.length}
+              </button>
+            </div>
+          )}
 
           {visible.length === 0 && cutInView > 0 && (
             <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">

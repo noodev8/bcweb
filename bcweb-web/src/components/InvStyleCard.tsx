@@ -31,11 +31,12 @@ still one tap away; we do not auto-fetch 40 styles' worth of detail just because
 */
 
 import Image from 'next/image';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getInvStock, adjustStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useImageSlot } from '@/lib/imageSlot';
 import InvLocations from '@/components/InvLocations';
 import InvBreakdown from '@/components/InvBreakdown';
 
@@ -76,23 +77,77 @@ export default function InvStyleCard({
 
   const src = row.imagename ? IMAGE_BASE + row.imagename : null;
 
-  // Image load WITH RETRY. A single onError used to latch "Image not found" forever — but on a fast scroll a burst of lazy images
-  // loads at once and some transiently fail (the optimizer/CDN under load, or an aborted request), not because the file is missing
-  // (owner: "the image has always been there and is showing now — did I scroll too fast?"). So we retry a few times with a short,
-  // growing backoff by remounting the <Image> (key=reloadKey), and only fall back to the placeholder once retries are genuinely
-  // exhausted. A truly missing file just fails all attempts and lands on the same placeholder, a beat later.
+  // ---- Loading the picture, in three parts (owner, 2026-07-28) ------------------------------------------------------------------
+  // The card face is a remote image through Next's optimizer, and a fast scroll used to leave "Image not found" on files that were
+  // plainly there (owner: "the image has always been there and is showing now — did I scroll too fast?"). A burst of simultaneous
+  // requests overruns the optimizer and some come back as errors. Three things now stand between that and the operator:
+  //
+  //   1. THE LANE (lib/imageSlot) — at most a handful of images load at once, app-wide, so the burst never forms. This is the actual
+  //      fix; the other two are what happens when one gets through anyway.
+  //   2. RETRY WITH BACKOFF — an error is not final. We remount the <Image> (key=reloadKey) after a growing pause, and only show the
+  //      placeholder once the attempts are spent.
+  //   3. RETRY ON RE-ENTRY — even a spent card gets a fresh set of attempts when it is scrolled away from and come back to. Without
+  //      this a transient failure was permanent for the session: the card stays mounted, so nothing ever asked again, and only a
+  //      Reset cleared it. Capped at MAX_RETRY_CYCLES so a genuinely missing file cannot be re-requested on every scroll-past.
+  //
+  // A truly missing file fails everything and lands on the same placeholder, a beat later.
   const MAX_RETRIES = 3;
+  const MAX_RETRY_CYCLES = 2;
   const [imgErrors, setImgErrors] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const imgFailed = imgErrors >= MAX_RETRIES;
+  // Mirrors of the two counters for the observer callback below, which fires outside React's render and must read what is true NOW.
+  // Written only from handlers/callbacks, never during render.
+  const errorsRef = useRef(0);
+  const cyclesRef = useRef(0);
   const onImgError = useCallback(() => {
     setImgErrors((n) => {
       const next = n + 1;
+      errorsRef.current = next;
       // Retries left — schedule a remount after a growing delay, giving a momentary saturation time to clear before we try again.
       if (next < MAX_RETRIES) window.setTimeout(() => setReloadKey((k) => k + 1), 400 * next);
       return next;
     });
   }, []);
+
+  // NEAR THE VIEWPORT? next/image's own lazy loading can't drive the lane — it starts requests on its own schedule, which is exactly
+  // the stampede we are trying to order — so the card decides for itself when its picture is wanted, and the <Image> is rendered
+  // eager once a slot comes free. One screen of margin, so the queue is always working slightly ahead of the scroll.
+  const frameRef = useRef<HTMLButtonElement | null>(null);
+  const [near, setNear] = useState(false);
+  const leftViewRef = useRef(false);
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0];
+        if (!e) return;
+        if (!e.isIntersecting) {
+          leftViewRef.current = true;
+          return;
+        }
+        setNear(true);
+        // Come back to a card whose picture gave up: give it another go (part 3 above). Only on a real leave-and-return, so a card
+        // sitting on screen can't loop, and only while cycles remain.
+        if (leftViewRef.current) {
+          leftViewRef.current = false;
+          if (errorsRef.current >= MAX_RETRIES && cyclesRef.current < MAX_RETRY_CYCLES) {
+            cyclesRef.current += 1;
+            errorsRef.current = 0;
+            setImgErrors(0);
+            setReloadKey((k) => k + 1);
+          }
+        }
+      },
+      { rootMargin: '600px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  // Take a place in the lane once the picture is wanted. Released the moment it settles either way, so the next card can start.
+  const { granted: imgSlot, done: imgSettled } = useImageSlot(near && !!row.imagename && !imgFailed);
 
   // Click-to-enlarge. The face image is deliberately small enough to scroll a lot of list; this is the pressure valve for the times
   // two colourways really do need looking at properly.
@@ -187,12 +242,15 @@ export default function InvStyleCard({
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex gap-3 p-3">
-        {/* ---- Image: furniture, always drawn. next/image is lazy by default, so a stack of cards only fetches the pictures actually
-                on screen. Square, and it SETS THE CARD'S HEIGHT — the face's text is shorter than the picture, so the picture is the
-                only real lever on how many cards fit on a screen. Trimmed from w-28/32 to w-24/28 (owner, 2026-07-27) to scroll more
-                of the list at once: still big enough to tell two black Arizonas apart at a glance, and CLICK TO ENLARGE covers the
-                times it isn't. Any smaller and the browse stops working as a browse. ---- */}
+        {/* ---- Image: furniture, always drawn — the box is there from the first paint whether or not the picture has loaded, so the
+                list never reflows under a scroll. Square, and it SETS THE CARD'S HEIGHT — the face's text is shorter than the picture,
+                so the picture is the only real lever on how many cards fit on a screen. Trimmed from w-28/32 to w-24/28 (owner,
+                2026-07-27) to scroll more of the list at once: still big enough to tell two black Arizonas apart at a glance, and
+                CLICK TO ENLARGE covers the times it isn't. Any smaller and the browse stops working as a browse.
+                Three states: waiting for a slot in the lane (a quiet tint — NOT a spinner per card, which on a scrolling list reads as
+                the screen being broken), loaded, or given up. ---- */}
         <button
+          ref={frameRef}
           type="button"
           onClick={() => src && setZoom(true)}
           title={src ? 'Click to enlarge' : undefined}
@@ -202,7 +260,23 @@ export default function InvStyleCard({
           }
         >
           {src && !imgFailed ? (
-            <Image key={reloadKey} src={src} alt="" fill sizes="112px" onError={onImgError} className="object-contain" />
+            imgSlot ? (
+              <Image
+                key={reloadKey}
+                src={src}
+                alt=""
+                fill
+                sizes="112px"
+                // Eager because the lane has already decided this one's turn has come — leaving it lazy would hand the scheduling
+                // back to the browser and undo the queue.
+                loading="eager"
+                onLoad={imgSettled}
+                onError={() => { imgSettled(); onImgError(); }}
+                className="object-contain"
+              />
+            ) : (
+              <div className="h-full w-full animate-pulse bg-slate-50" />
+            )
           ) : (
             <div className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">
               {row.imagename ? 'Image not found' : 'No image'}
