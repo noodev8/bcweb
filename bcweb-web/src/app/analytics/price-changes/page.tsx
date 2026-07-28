@@ -476,15 +476,19 @@ function ScorecardPanel({
   n: (v: number) => string;
 }) {
   const totalSettled = cards.reduce((a, c) => a + c.settled, 0);
+  const totalPending = cards.reduce((a, c) => a + c.pending, 0);
 
   return (
     <div className="mt-7 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-700">Impact</h2>
         {/* Glance-level only. This panel has its own fixed period and does NOT follow the switches above; showing a period that disagrees
-            with the window switch is itself the signal, and the reasoning sits in the toggle below for anyone who wants it. */}
+            with the window switch is itself the signal, and the reasoning sits in the toggle below for anyone who wants it.
+            The old label read "Last 90 days · 551 changes", which was wrong in the way that matters: 551 is the SCORED subset, not the
+            window's activity, so a month of hard repricing appeared to have produced nothing and the panel read as stale. Stating the
+            fraction ("551 of 899") makes the missing work visible in the number itself rather than only in the explainer below. */}
         <span className="text-xs text-slate-400">
-          Last {scoreWindowDays} days · {n(totalSettled)} changes
+          Scoring {n(totalSettled)} of {n(totalSettled + totalPending)} changes · last {scoreWindowDays} days
         </span>
       </div>
 
@@ -497,8 +501,9 @@ function ScorecardPanel({
         </summary>
         <div className="mt-2 max-w-2xl space-y-2 text-xs leading-relaxed text-slate-500">
           <p>
-            Always the <strong>last {scoreWindowDays} days</strong> and both channels, whatever the switches above say. A change counts once
-            it&rsquo;s <strong>{settleDays} days</strong> old — before that it hasn&rsquo;t had a chance to sell.
+            Always the <strong>last {scoreWindowDays} days</strong> and both channels, whatever the switches above say. A change is scored
+            once it&rsquo;s <strong>{settleDays} days</strong> old — before that it hasn&rsquo;t had a chance to sell, so it sits as
+            <em> pending</em> and joins the figures as it ages.
           </p>
           <p>
             <strong>Sold</strong> means the item shifted at least one unit while that price was live. Raises are split Shopify from Amazon
@@ -548,6 +553,7 @@ function ScorecardPanel({
                   active={!!c.user && c.user === activeUser}
                   onPick={onPickUser}
                   n={n}
+                  settleDays={settleDays}
                 />
               ))}
             </tbody>
@@ -560,12 +566,13 @@ function ScorecardPanel({
 
 // One operator's row. Clicking the name filters the detail table below to them (same toggle the summary's user cards use).
 function OperatorRow({
-  c, active, onPick, n,
+  c, active, onPick, n, settleDays,
 }: {
   c: PriceChangeScorecard;
   active: boolean;
   onPick: (u: string | null) => void;
   n: (v: number) => string;
+  settleDays: number;
 }) {
   const label = c.user ?? 'Unattributed';
   const money = (v: number) => (v ? `£${Math.round(v).toLocaleString('en-GB')}` : '—');
@@ -593,7 +600,15 @@ function OperatorRow({
         ) : (
           <span className="text-sm font-semibold text-slate-500">{label}</span>
         )}
-        <div className="text-[11px] tabular-nums text-slate-400">{n(c.settled)} counted</div>
+        {/* Per-operator, because the panel header can't answer "is it MY work that's missing?" — the question a busy operator asks when
+            their row looks thin.
+            Phrased as a FRACTION, the same shape the hit rates below it and the panel header already use ("53 of 112", "Scoring 551 of
+            899"). A separate "pending" figure made the same fact a third vocabulary on one panel and needed a tone of its own to sit
+            beside the scored count — which then had to be tuned so the aside didn't outshout the sample size. "of" removes the problem
+            rather than balancing it: one number, one denominator, no second colour, and the shortfall is legible without being named. */}
+        <div className="text-[11px] tabular-nums text-slate-400" title={c.pending > 0 ? `${c.pending} changed in the last ${settleDays} days — not yet old enough to score` : undefined}>
+          {n(c.settled)} scored{c.pending > 0 && <> of {n(c.settled + c.pending)}</>}
+        </div>
       </td>
       <td className="px-3 align-top"><HitRate made={c.shp.raises} hit={c.shp.raisesSold} n={n} tone="emerald" /></td>
       <td className="px-3 align-top"><HitRate made={c.amz.raises} hit={c.amz.raisesSold} n={n} tone="emerald" /></td>
@@ -627,10 +642,9 @@ function HitRate({
 
   return (
     <div className="py-1">
-      <div className="flex items-baseline gap-1.5">
-        <span className={'text-xl font-bold leading-none tabular-nums ' + colour}>{pct}%</span>
-        {thin && <span className="text-[10px] font-medium text-amber-700">few</span>}
-      </div>
+      {/* A thin sample no longer carries a "few" label — the "x of y" line directly under the percentage already states the denominator,
+          which is the same warning said in numbers. The greyed-out colour still marks it, so the signal survives without the clutter. */}
+      <div className={'text-xl font-bold leading-none tabular-nums ' + colour}>{pct}%</div>
       <div className="text-[11px] tabular-nums text-slate-500">
         {n(hit)} of {n(made)}
       </div>

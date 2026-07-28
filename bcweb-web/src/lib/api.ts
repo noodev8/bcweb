@@ -904,6 +904,10 @@ export interface PriceChangeChannelBlock {
 export interface PriceChangeScorecard {
   user: string | null;     // null = unattributed legacy rows
   settled: number;         // scored changes across both channels — the sample size behind every rate on the row
+  // Changes made inside the same window but still under `settleDays` old, so they appear NOWHERE in the figures on this row. Rendered
+  // beside `settled` because the gap between the two is what makes a busy month look like an empty scorecard: someone who repriced 92
+  // styles in the last three weeks is scored on none of them. settled + pending = everything they logged in the window.
+  pending: number;
   shp: PriceChangeChannelBlock;
   amz: PriceChangeChannelBlock;
   // Logged, but not a reprice, so excluded from every RATE above — and counted over the whole window rather than settled-only, since

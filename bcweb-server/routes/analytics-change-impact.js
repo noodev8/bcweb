@@ -111,7 +111,7 @@ Success Response:
   "settleDays": 21,                       // a change must be this old to be scored (see SCORECARDS rule b)
   "scoreWindowDays": 90,                  // the scorecards' OWN look-back — fixed; this layer ignores days, channel AND user
   "scorecards": [                         // one entry per operator, most-scored first; automated writers excluded
-    { "user": "Andreas", "settled": 518,
+    { "user": "Andreas", "settled": 518, "pending": 256,   // pending = in-window but < settleDays old, so scored nowhere on this panel
       "shp": { "raises": 112, "raisesSold": 57, "raiseUnits": 690, "raiseCash": 1707.40,
                "cuts": 74, "cutsMoved": 60, "cutUnits": 520, "cutDiscount": 1900.00 },
       "amz": { "raises": 165, "raisesSold": 126, "raiseUnits": 535, "raiseCash": 358.30,
@@ -500,6 +500,12 @@ router.get('/', async (req, res) => {
       -- is not (raises). Every aggregate is settled-only, so the settled count is the denominator the rates below can be trusted against.
       SELECT who, chan,
              COUNT(*) FILTER (WHERE is_settled)::int                                       AS settled,
+             -- The counterweight to "settled": changes made INSIDE the window but still under SETTLE_DAYS old, so scored nowhere on this
+             -- panel. Surfaced (rather than left as an invisible gap) because it is the single most misread thing here — someone repricing
+             -- hard all month sees a scorecard built on the three-week-old work only, and reads it as the panel being stale or broken.
+             -- Reporting it turns "why isn't my week in this?" into "my week is in the queue", and settled + pending reconciles to the
+             -- window total, so no row can silently vanish between the two.
+             COUNT(*) FILTER (WHERE NOT is_settled)::int                                    AS pending,
              COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE')::int                     AS raises,
              COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND units > 0)::int       AS raises_sold,
              COALESCE(SUM(units) FILTER (WHERE is_settled AND kind = 'RAISE'), 0)::int      AS raise_units,
@@ -531,6 +537,7 @@ router.get('/', async (req, res) => {
         byOperator.set(key, {
           user: r.who || null,                        // null = unattributed legacy rows
           settled: 0,
+          pending: 0,                                 // in-window but too new to score — see the `pending` column above
           shp: emptyBlock(),
           amz: emptyBlock(),
           excluded: { level: 0, newPrice: 0 },        // logged but not a reprice — surfaced so the counts reconcile
@@ -540,6 +547,7 @@ router.get('/', async (req, res) => {
       const block = r.chan === 'AMZ' ? entry.amz : entry.shp;
 
       entry.settled += Number(r.settled) || 0;
+      entry.pending += Number(r.pending) || 0;
       entry.excluded.level += Number(r.level_changes) || 0;
       entry.excluded.newPrice += Number(r.new_prices) || 0;
 
