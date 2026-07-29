@@ -33,8 +33,10 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, behind 
 **Business context:** ~95% of Shopify sales are Birkenstock, which **cannot be re-ordered on demand** (ordered ~6 months ahead; stock in hand is all there is). There is no "sold out → restock" lever — **the job is to squeeze maximum margin from stock already held.** A fast-selling style with thin stock is a **price-up / harvest** candidate, NOT a restock flag.
 
 Work always starts from a **segment**, with a **WINNERS | LOSERS** switch:
-- **WINNERS** — in-stock styles that sold recently (Shopify 30d), best sellers first; drop 0-stock and "parked" styles → price **up** / harvest.
-- **LOSERS** — slow/stuck stock to price **down** (measured over 90d). Membership = DEAD (`u_win=0`) or SLOW (`cover ≥ coverWeeks`, default 26). DEAD cluster first, then SLOW; most stock first.
+- **WINNERS** — in-stock, un-parked styles that sold **≥2 units in 30d AND averaged ≥£2 realised net profit per unit** (`AVG(sales.profit)`), best sellers first → price **up** / harvest. Drop 0-stock and "parked" styles.
+- **LOSERS** — in-stock, un-parked stock that sold **nothing in 30d**; most stock first → price **down**. That single test is the whole membership rule.
+- Both bars are **identical on Shopify and Amazon** (owner's call — one team-wide definition), differing only in grain. They are named constants in the route files, **not** query params yet. The old LOSERS machinery (90d window, `cover ≥ coverWeeks`, `cover_weeks`/`is_dead`/`u90`/`u14` fields) was removed in the 2026-07-29 simplification — the route headers record the accuracy trade-off that was knowingly accepted, read those before reinstating any of it.
+- A style/SKU that sells 1 unit, or sells well on thin margin, is now on **neither** list. That gap is known and deliberate; it is another module's job, not something to "fix" here by loosening a bar.
 - **Lists are the whole qualifying set, not a top-N** (the tab count IS the job; it shrinks as cleared). `limit` survives only as a safety cap (`utils/listLimit.js`, default 100 / max 500); routes return `total` + `truncated`.
 - **Drill-down** shows header + pricing timeline (one row per distinct price, with pace `/wk`) + size curve. Pace = `units / max(span_days,7)/7 weeks`, computed app-side. Size curve shows ALL sizes (0 for sold-out) as a guardrail before a cut.
 

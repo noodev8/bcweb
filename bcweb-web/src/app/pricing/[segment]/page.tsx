@@ -4,9 +4,9 @@
 Page: /pricing/[segment]  (Stage 1 — the segment's lists)
 =======================================================================================================================================
 Purpose: The list view for a segment, with a prominent WINNERS | LOSERS switch (see CLAUDE.md).
-  - WINNERS: sellers of the last 30 days (in stock, not parked), best first — candidates to price UP / harvest.
-  - LOSERS:  slowest-moving stock over 90 days — dead (no recent sales) first, then the biggest stuck piles — candidates to cut and
-             get moving. Ranked by stock at risk.
+  - WINNERS: styles that sold >= 2 units in the last 30 days AND averaged >= £2 net profit per unit (in stock, not parked), best
+             first — candidates to price UP / harvest.
+  - LOSERS:  stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Biggest stuck piles first.
 Both lists are fetched up front (so each tab shows a live count) and cached; rows link to the same drill page. The active mode is kept
 in the URL (?mode=) so returning after a write restores the same tab.
 
@@ -283,11 +283,13 @@ function SegmentContent() {
 // Shared, FIXED column geometry for the WINNERS and LOSERS tables (owner: they must line up when you switch tabs). Without table-fixed
 // each table auto-sizes its columns to its own content — two-digit unit counts vs one-digit made the headers/Code wrap differently and
 // the columns drift between tabs. A fixed colgroup + matching widths pins both tables to the same layout regardless of the data.
-const ListCols = () => (
+// `units` drops the "Units (30d)" column for LOSERS, where the figure is 0 on every row by definition (membership IS "sold nothing in
+// 30d") — a column of zeroes told the operator nothing. Every other width is unchanged, so the tabs still align on the shared columns.
+const ListCols = ({ units = true }: { units?: boolean }) => (
   <colgroup>
     <col className="w-12" />{/* checkbox */}
     <col className="w-12" />{/* # */}
-    <col className="w-24" />{/* Units (30d) */}
+    {units && <col className="w-24" />}{/* Units (30d) — WINNERS only */}
     <col className="w-40" />{/* Code */}
     <col />{/* Product — takes the remaining width */}
     <col className="w-28" />{/* Price */}
@@ -412,15 +414,16 @@ function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      {/* Columns AND their fixed widths are kept identical to WinnersTable (owner: "use the Winners columns for LOSERS" + they must
-          line up when switching tabs). LoserRow.u30 is the 30-day units figure that maps onto the shared "Units (30d)" column. */}
+      {/* Columns still mirror WinnersTable (owner: "use the Winners columns for LOSERS" + they must line up when switching tabs) with
+          ONE deliberate exception: no "Units (30d)". Under the current rule a loser is a style that sold nothing in 30d, so that cell
+          was 0 on every row — the column carried no information and cost width the Product name wanted. Removed on the owner's
+          instruction when the rule changed. LoserRow.u30 is still in the payload; nothing renders it. */}
       <table className="w-full table-fixed text-sm">
-        <ListCols />
+        <ListCols units={false} />
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium">Units (30d)</th>
             <th className="px-4 py-2 font-medium">Code</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
@@ -432,7 +435,6 @@ function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
             <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
               <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="px-4 py-2 font-semibold text-slate-800">{r.u30}</td>
               <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
               <td className="truncate px-4 py-2 text-slate-700">
                 {r.title || <span className="text-slate-400">—</span>}

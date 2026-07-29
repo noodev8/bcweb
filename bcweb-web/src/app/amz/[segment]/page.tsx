@@ -4,9 +4,9 @@
 Page: /amz/[segment]  (Stage 1 — the segment's SKU lists)
 =======================================================================================================================================
 Purpose: The list view for a segment, with the same prominent WINNERS | LOSERS switch as Shopify — but SKU-grain (Amazon prices per size).
-  - WINNERS: top in-stock SKUs by units sold in the last 30 days — candidates to price UP / harvest.
-  - LOSERS:  dead (no Amazon sale in 14 days) / slow (cover >= 16 weeks) FBA stock — candidates to cut and get moving. Dead first, then
-             most FBA stock at risk.
+  - WINNERS: in-stock SKUs that sold >= 2 units in the last 30 days AND averaged >= £2 net profit per unit — candidates to price UP /
+             harvest. Best sellers first.
+  - LOSERS:  FBA stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Most FBA stock at risk first.
   - ALL:     every managed SKU in the segment, most-recently-changed first (browse/lookup).
 WINNERS/LOSERS are the WHOLE qualifying lists, not a top-10 shortlist (a fixed 10 told the operator nothing — it silently refilled as it
 was cleared). The count on each tab is therefore the actual work in front of you and shrinks as you clear it; the server keeps a safety
@@ -387,13 +387,14 @@ function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: 
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      {/* No "Units 30d" / "7d" columns here, unlike WinnersTable: a loser is a SKU that sold nothing in 30d, so both cells were 0 on
+          every row (7d being a subset of the window that must be empty). Two columns of zeroes told the operator nothing. Matches the
+          same removal on the Shopify LOSERS table — the owner wants the two channels reading the same way. */}
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
             <th className="px-4 py-2 font-medium">SKU (size)</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
@@ -405,8 +406,6 @@ function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: 
             <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
               <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
               <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.u30}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u7 || <span className="text-slate-300">0</span>}</td>
               <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
                 {r.code}{!!queued[r.code] && <QueuedPill />}
               </td>

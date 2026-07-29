@@ -84,12 +84,14 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 // Domain types (mirror the server response shapes in routes/*)
 // =============================================================================================================================
 export interface Segment { segment: string; styles: number; }
+// WINNERS: styles that sold >= 2 units in the window AND averaged >= £2 realised net profit per unit. Same bar on Amazon.
 export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean; }
+// LOSERS: styles that sold NOTHING in the window (default 30d), most stock first. u90/cover_weeks/is_dead were dropped when the rule
+// was simplified to that single test — every row is "dead" by definition, so they carried no information. u30 is always 0 and is kept
+// only because the LOSERS table shares its column layout with WINNERS and renders it into the shared "Units (30d)" cell.
 export interface LoserRow {
   rank: number; groupid: string; title: string | null; price: number | null;
-  stock: number; u30: number; u90: number;
-  cover_weeks: number | null;   // weeks-to-clear at 90d pace; null when dead (no sales in window)
-  is_dead: boolean;             // true = 0 sales in the window
+  stock: number; u30: number;
   match_amazon: boolean;        // auto-matched to Amazon — badged; review-only (switch matching off to price/cut manually)
 }
 // ALL: the whole segment, unfiltered, most-recently-changed first. last_change/next_review are YYYY-MM-DD or null.
@@ -100,17 +102,18 @@ export interface AllRow {
 // --- Amazon Pricing module (SKU-grain; mirrors the Shopify flow — segment picker -> WINNERS|LOSERS -> per-SKU drill) -----------
 // Stage 0: one managed segment (has live amzfeed SKUs) + its SKU count.
 export interface AmzSegment { segment: string; skus: number; }
-// Stage 1 WINNERS: top in-stock SKUs by units sold in the window (candidates to price UP / harvest).
+// Stage 1 WINNERS: in-stock SKUs that sold >= 2 units in the window AND averaged >= £2 net profit per unit (candidates to price UP /
+// harvest). Same bar as Shopify's TriageRow — the owner's instruction is that both channels share one definition of a winner.
 export interface AmzWinnerRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
 }
-// Stage 1 LOSERS: dead (no sale in 14d) / slow (cover >= coverWeeks) FBA stock at risk (candidates to price DOWN / cut).
+// Stage 1 LOSERS: FBA stock that sold NOTHING in the window (default 30d), most stock first. Same simplification as the Shopify
+// LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /
+// days_since_sale are the useful signal here (every row is quiet — these say for how long).
 export interface AmzLoserRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
-  price: number | null; fba: number; u7: number; u30: number; u90: number; u14: number;
-  cover_weeks: number | null;   // weeks-to-clear at the cover-window pace; null when no sales in the window
-  is_dead: boolean;             // true = no Amazon sale in the last 14 days
+  price: number | null; fba: number; u7: number; u30: number;
   last_sold: string | null; days_since_sale: number | null;
 }
 // Stage 1 ALL: every managed SKU in the segment, most-recently-changed first (browse/lookup view).
@@ -243,10 +246,11 @@ export function getTriage(segment: string, days?: number, limit?: number) {
   );
 }
 
-export function getLosers(segment: string, days?: number, limit?: number, coverWeeks?: number) {
-  return request<{ segment: string; days: number; coverWeeks: number; total: number; truncated: boolean; rows: LoserRow[] }>(
-    { url: '/pricing-losers', method: 'GET', params: { segment, days, limit, coverWeeks } },
-    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
+// LOSERS = sold nothing in `days` (server default 30). `coverWeeks` is gone — there is no cover calculation left to threshold.
+export function getLosers(segment: string, days?: number, limit?: number) {
+  return request<{ segment: string; days: number; total: number; truncated: boolean; rows: LoserRow[] }>(
+    { url: '/pricing-losers', method: 'GET', params: { segment, days, limit } },
+    (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
@@ -271,11 +275,11 @@ export function getAmzWinners(segment: string, days?: number, limit?: number) {
   );
 }
 
-// Amazon Pricing — Stage 1 LOSERS: dead/slow FBA stock at risk. Mirrors getLosers().
-export function getAmzLosers(segment: string, days?: number, limit?: number, coverWeeks?: number) {
-  return request<{ segment: string; days: number; coverWeeks: number; total: number; truncated: boolean; rows: AmzLoserRow[] }>(
-    { url: '/amz-losers', method: 'GET', params: { segment, days, limit, coverWeeks } },
-    (b) => ({ segment: b.segment, days: b.days, coverWeeks: b.coverWeeks, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
+// Amazon Pricing — Stage 1 LOSERS: FBA stock that sold nothing in `days` (server default 30). Mirrors getLosers(), coverWeeks dropped.
+export function getAmzLosers(segment: string, days?: number, limit?: number) {
+  return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzLoserRow[] }>(
+    { url: '/amz-losers', method: 'GET', params: { segment, days, limit } },
+    (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 

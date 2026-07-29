@@ -7,43 +7,53 @@ Purpose: The LOSERS list for a segment — the mirror of the Amazon WINNERS shor
          fast, well-stocked sizes to price UP, LOSERS finds slow / stuck FBA stock to price DOWN — "cut to get it moving"
          (docs/amz-pricing-spec.md §1). SKU-grain: one row per SKU (size), so a dead size shows up even when its groupid looks healthy.
 
-Definition (Amazon-native windows — faster than Shopify's, matching the engine's velocity lens):
-  - Candidates: in FBA stock (amzfeed.amzlive > 0), channel='AMZ', in the chosen segment.
-  - DEAD  = no Amazon sale in the last 14 days (stock sitting, gone quiet). Flagged "no recent sales".
-  - SLOW  = cover >= coverWeeks, where cover = weeks-to-clear at current pace = amzlive * (days/7) / u_win, and u_win = units sold in the
-            cover window `days` (default 90 — a longer lens so a slow-but-alive size isn't mistaken for dead). The cover gate is what keeps
-            healthy high-stock sellers OFF the list.
-  - Membership: DEAD OR SLOW.
-  - Order: DEAD cluster FIRST (flagged), then SLOW; within each cluster, MOST FBA STOCK first (stock at risk).
+Definition (owner, 2026-07-29 — SIMPLIFIED, and now IDENTICAL to Shopify's pricing-losers by explicit instruction that both channels
+share one definition):
+  - Candidates: in FBA stock (amzfeed.amzlive > 0), channel='AMZ', in the chosen segment, un-parked.
+  - Membership: ZERO units sold in the last `days` (default 30). That is the whole test.
+  - Order: MOST FBA STOCK first (stock at risk).
+
+WHAT THIS REPLACED. The old rule was DEAD (no sale in 14d) OR SLOW (cover >= coverWeeks, default 16) measured over a 90d cover window.
+The cover calculation, the `coverWeeks` param, and the cover_weeks / is_dead response fields are GONE — under a single "sold nothing in
+30d" test is_dead is uniformly true and cover_weeks uniformly null, so both were noise. The u90 and u14 fields go with them: u90 existed
+only to feed the cover sum and u14 only to be the DEAD test, and neither is rendered by the UI. Reintroducing any of these means
+reintroducing the windows they were derived from.
+
+Note the 14d -> 30d move makes the DEAD test LESS trigger-happy, while losing the cover gate makes the list wider overall: measured on
+the run when this changed, 74 SKUs -> 88, of which 16 had sold within 90d. Same trade-off the Shopify route documents at length — a
+simple rule the operator can hold in their head, at the cost of occasionally cutting something that would have sold anyway.
+
+There is deliberately NO minimum FBA stock depth (offered; declined) — one leftover unit qualifies like forty. Most-stock-first ordering
+is what keeps the SKUs that actually matter at the top.
   - Size: the WHOLE qualifying set, not a top-N shortlist. `limit` is only a safety cap (utils/listLimit.js, default 100) so a
     pathological segment can't dump thousands of rows into the browser; `total` + `truncated` say whether it bit.
 
-There is NO park / review concept on Amazon (docs/amz-pricing-spec.md §4), so nothing is hidden for a cooldown — the equivalent of
-"leave it alone" is simply not changing the price.
+On parking: the spec text (docs/amz-pricing-spec.md §4) says Amazon has no park/review concept, but the SQL below DOES honour
+skumap.next_amz_price_review (§10.4 added it later, and /amz-review writes it). The code is the truth here — parked SKUs are hidden.
 
 Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeric; amzlive a real integer. Size = RIGHT(code,2). Human
 name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
 Request Query Params:
   segment    (string, required)
-  days       (int, optional)  - sales window for the pace/cover measure; default 90
+  days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
-  coverWeeks (int, optional)  - "too slow" threshold in weeks of cover; default 16 (tighter than Shopify's 26 — Amazon moves faster)
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "segment": "IVES-WHITE",
-  "days": 90,
-  "coverWeeks": 16,
+  "days": 30,
   "total": 5,           // qualifying SKUs in the segment, BEFORE the cap
   "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "code": "...-52", "amz_sku": "...", "groupid": "...", "size": "52", "title": "...", "price": 38.49,
-      "fba": 22, "u30": 0, "u90": 1, "u14": 0, "cover_weeks": 282.9, "is_dead": true, "last_sold": "2026-05-20", "days_since_sale": 51 },
-    ...  // dead cluster first (is_dead true), then slow; most FBA stock first within each
+      "fba": 22, "u7": 0, "u30": 0, "last_sold": "2026-05-20", "days_since_sale": 51 },
+    ...  // most FBA stock first
   ]
 }
+u7 and u30 are always 0 by construction (u30 IS the membership test, and u7 is a subset of it). Both are kept because the LOSERS table
+shares its column layout with the WINNERS table and renders them into the shared unit cells.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -68,40 +78,32 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
 router.get('/', async (req, res) => {
   try {
     const { segment } = req.query;
-    // Defaults: 90d cover window, 16-week cover cutoff; `limit` is a safety cap, not a list size (utils/listLimit.js).
-    const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 90;
+    // Default window is now 30d (was a 90d cover window + a 14d dead test). `limit` is a safety cap, not a list size
+    // (utils/listLimit.js). `coverWeeks` is gone — nothing left for it to threshold. It is ignored rather than rejected if an old
+    // client still sends it, so a stale browser tab degrades to the new behaviour instead of erroring.
+    const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
     const limit = parseListLimit(req.query.limit);
-    const coverWeeks = Number.parseInt(req.query.coverWeeks, 10) > 0 ? Number.parseInt(req.query.coverWeeks, 10) : 16;
 
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
     }
 
-    // $1 segment, $2 days (cover window), $3 limit, $4 coverWeeks.
-    // cover = amzlive * (days/7) / u_win. Guard the denominator with NULLIF so a size with no sales in the window (u_win NULL) never
-    // divides by zero; a genuinely dead size (no sale in 14d) is caught by the DEAD branch instead.
+    // $1 segment, $2 days, $3 limit.
+    // Membership is the LEFT JOIN + "no sales row in the window" test: a SKU with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
-      WITH cover AS (   -- units in the cover window (default 90d)
+      WITH win AS (     -- units in the window (default 30d) — the ONLY sales measure this route needs now
         SELECT code, SUM(qty) AS u_win FROM sales
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - $2::int
         GROUP BY code
       ),
-      s30 AS (          -- 30d units, context so the human can spot a size waking back up
-        SELECT code, SUM(qty) AS u30 FROM sales
-        WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 30
-        GROUP BY code
-      ),
-      s7 AS (           -- 7d units — same short-window column the WINNERS list shows (matched headers)
+      s7 AS (           -- 7d units — same short-window column the WINNERS list shows (matched headers). Always 0 here (subset of the
+                        -- window that must be empty), kept so the shared table layout has a value to render.
         SELECT code, SUM(qty) AS u7 FROM sales
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 7
         GROUP BY code
       ),
-      s14 AS (          -- 14d units — the DEAD test (no recent sale)
-        SELECT code, SUM(qty) AS u14 FROM sales
-        WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 14
-        GROUP BY code
-      ),
-      ls AS (           -- last sold (ignores returns) for the "days since sale" context
+      ls AS (           -- last sold (ignores returns) for the "days since sale" context — the one genuinely useful signal left, since
+                        -- every row here is by definition quiet: this says whether it went quiet last month or last year.
         SELECT code, MAX(solddate) AS last_sold FROM sales
         WHERE channel='AMZ' AND qty>0
         GROUP BY code
@@ -110,13 +112,8 @@ router.get('/', async (req, res) => {
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              COALESCE(a.amzlive,0) AS fba,
-             COALESCE(s30.u30,0)   AS u30,
-             COALESCE(s7.u7,0)     AS u7,
-             COALESCE(c.u_win,0)   AS u_win,
-             COALESCE(s14.u14,0)   AS u14,
-             CASE WHEN COALESCE(c.u_win,0)=0 THEN NULL
-                  ELSE round(COALESCE(a.amzlive,0) * ($2::numeric/7.0) / c.u_win, 1) END AS cover_weeks,
-             (COALESCE(s14.u14,0)=0) AS is_dead,
+             COALESCE(w.u_win,0)   AS u30,   -- always 0 (that IS the test); kept for the shared units column
+             COALESCE(s7.u7,0)     AS u7,    -- likewise always 0
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              (CURRENT_DATE - ls.last_sold)::int AS days_since_sale,
              COUNT(*) OVER () AS total_rows                 -- full qualifying count: window functions run BEFORE the LIMIT, so this is
@@ -124,24 +121,18 @@ router.get('/', async (req, res) => {
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m      ON m.code   = a.code                                            -- per-SKU review date (next_amz_price_review); 1:1
-      LEFT JOIN cover c  ON c.code   = a.code
-      LEFT JOIN s30      ON s30.code = a.code
+      LEFT JOIN win w    ON w.code   = a.code
       LEFT JOIN s7       ON s7.code  = a.code
-      LEFT JOIN s14      ON s14.code = a.code
       LEFT JOIN ls       ON ls.code  = a.code
       LEFT JOIN title t  ON t.groupid = a.groupid
       WHERE sk.segment = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
         AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only (drops reviewed SKUs; §10.4)
-        AND (
-              COALESCE(s14.u14,0) = 0                                                     -- DEAD (no sale in 14d)
-              OR COALESCE(a.amzlive,0) * ($2::numeric/7.0) / NULLIF(c.u_win,0) >= $4::numeric  -- SLOW (cover >= coverWeeks)
-            )
-      ORDER BY is_dead DESC,   -- dead cluster first
-               fba DESC,       -- most stock at risk first, within each cluster
-               u_win ASC       -- tie-break: slower first
+        AND COALESCE(w.u_win,0) = 0                                                      -- sold NOTHING in the window — the whole test
+      ORDER BY fba DESC,       -- most stock at risk first
+               a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [segment, days, limit, coverWeeks]);
+    `, [segment, days, limit]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -152,19 +143,15 @@ router.get('/', async (req, res) => {
       title: r.title || null,
       price: num(r.price),
       fba: Number(r.fba),
-      u30: Number(r.u30),
-      u7: Number(r.u7),
-      u90: Number(r.u_win),                                    // labelled u90 in the payload (default window is 90d)
-      u14: Number(r.u14),
-      cover_weeks: r.cover_weeks === null ? null : Number(r.cover_weeks),
-      is_dead: r.is_dead,
+      u30: Number(r.u30),                                      // always 0 — see the header note
+      u7: Number(r.u7),                                        // likewise
       last_sold: r.last_sold || null,
       days_since_sale: r.days_since_sale === null ? null : Number(r.days_since_sale),
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', segment, days, coverWeeks, total, truncated: rows.length < total, rows });
+    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[amz-losers] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load losers list' });

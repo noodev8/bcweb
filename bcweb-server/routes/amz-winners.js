@@ -4,9 +4,18 @@ API Route: amz_winners
 =======================================================================================================================================
 Method: GET
 Purpose: Stage 1 — the WINNERS list for a segment (the Amazon mirror of Shopify's pricing-triage). For a chosen segment, returns the
-         in-stock Amazon SKUs that sold in the last `days` on the Amazon channel, best sellers first. These are the strong, well-stocked
-         sizes to price UP / harvest (docs/amz-pricing-spec.md §1). SKU-grain: Amazon prices per size, so this is one row PER SKU, not per
-         groupid — a groupid's fast sizes can be WINNERS while its dead sizes are LOSERS.
+         in-stock Amazon SKUs that sold WELL ENOUGH in the last `days` on the Amazon channel, best sellers first. These are the strong,
+         well-stocked sizes to price UP / harvest (docs/amz-pricing-spec.md §1). SKU-grain: Amazon prices per size, so this is one row PER
+         SKU, not per groupid — a groupid's fast sizes can be WINNERS while its dead sizes are LOSERS.
+
+WHAT "WELL ENOUGH" MEANS (owner, 2026-07-29) — was "sold at least once"; now the SAME two-part bar as Shopify's pricing-triage, by
+explicit instruction that both channels share one definition of a winner:
+  - MIN_UNITS (2): one sale in a month is noise; two says the size is moving.
+  - MIN_PROFIT (£2 per unit): AVG(sales.profit) over the window — REALISED per-unit net (Amazon profit is net of cost AND FBA fee,
+    utils/amzProfit.js), not profit at the current list price.
+NOTE the bar is deliberately identical to Shopify's despite the finer grain. 2 units of ONE SIZE in a month is a materially harder test
+than 2 units of a whole style; the owner chose one shared number over a per-channel tuning. Measured when this changed, it takes the
+Amazon list from 50 SKUs to 30 (the £2 part excludes 2 of those 32).
 
          Not a top-N shortlist: the operator works through as many as they have time for, so this returns the WHOLE qualifying set and
          `limit` is only a safety cap (utils/listLimit.js, default 100). `total` + `truncated` say whether the cap bit.
@@ -61,6 +70,11 @@ router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
+// The WINNERS bar (owner, 2026-07-29). Kept in step with routes/pricing-triage.js — the owner's instruction is that Shopify and Amazon
+// use the SAME numbers, so if one of these changes the other must change with it. Not query params yet (one fixed team-wide definition).
+const MIN_UNITS = 2;     // units sold in the window before a SKU counts as moving
+const MIN_PROFIT = 2;    // £ realised net profit per unit (AVG of sales.profit) before it is worth harvesting
+
 router.get('/', async (req, res) => {
   try {
     const { segment } = req.query;
@@ -77,10 +91,13 @@ router.get('/', async (req, res) => {
     // with no sales in the window; the amzlive>0 filter drops out-of-stock SKUs; LIMIT tops the shortlist back up to N.
     const result = await query(`
       WITH win AS (
-        SELECT code, SUM(qty) AS units, MAX(solddate) AS last_sold
+        SELECT code, SUM(qty) AS units, AVG(profit) AS avg_profit, MAX(solddate) AS last_sold
         FROM sales
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - $2::int
         GROUP BY code
+        -- The WINNERS bar. AVG() ignores NULL profit rows; a SKU with NO known margin averages to NULL, fails the >= and drops out
+        -- (deliberate — unknown margin must not be promoted to a winner).
+        HAVING SUM(qty) >= $4::int AND AVG(profit) >= $5::numeric
       ),
       s7 AS (
         SELECT code, SUM(qty) AS u7
@@ -108,7 +125,7 @@ router.get('/', async (req, res) => {
         AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only (drops reviewed SKUs; §10.4)
       ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
-    `, [segment, days, limit]);
+    `, [segment, days, limit, MIN_UNITS, MIN_PROFIT]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
