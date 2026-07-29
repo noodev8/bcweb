@@ -562,7 +562,9 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
   // The channel badge is the only cell that navigates (and only when priceable). Everything except the copy cells is inert.
   const go = () => priceable && onAction(r);
 
-  const groupKey = r.groupid || r.code || '';
+  // Show the FULL code (owner 2026-07-29) — it already ends in the size (RIGHT(code,2)), so a separate size element was repeating it.
+  // Fall back to the groupid on a row with no code. The copy click copies whatever is displayed.
+  const groupKey = r.code || r.groupid || '';
 
   return (
     <tr
@@ -579,10 +581,9 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
       </td>
       <td onClick={() => groupKey && copy('groupid', groupKey)}
           className={'px-4 py-2.5 ' + (groupKey ? 'cursor-pointer' : '')}
-          title={groupKey ? 'Click to copy the groupid' : undefined}>
+          title={groupKey ? 'Click to copy the code' : undefined}>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs tracking-tight text-slate-900">{groupKey || '—'}</span>
-          {r.size && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{r.size}</span>}
           {/* No Qty column (owner 2026-07-27: it is 1 on ~every line). The rare non-1 line still says so, inline. */}
           {r.qty !== 1 && (
             <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (isReturn ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600')}>
@@ -591,7 +592,6 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
           )}
           {copied === 'groupid' && <span className="text-xs font-medium text-green-600">Copied</span>}
         </div>
-        <div className="max-w-[20rem] truncate text-xs text-slate-400">{r.productname || 'Untitled'}</div>
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
       <td className={'px-3 py-2.5 text-right font-medium tabular-nums ' + profitCls}>{money(r.profit)}</td>
