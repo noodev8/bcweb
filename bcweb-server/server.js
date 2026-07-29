@@ -124,6 +124,7 @@ app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm
 app.use('/amz-import-preview', require('./routes/amz-import-preview')); // stage 1: what a commit would do — READ ONLY
 app.use('/amz-import-commit', require('./routes/amz-import-commit'));   // stage 2: ingest -> derive -> project, one transaction
 app.use('/amz-import-last', require('./routes/amz-import-last'));       // when was this last run — READ ONLY
+app.use('/amz-barcode-check', require('./routes/amz-barcode-check')); // FNSKUs that need a barcode image; the BROWSER diffs the folder
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.

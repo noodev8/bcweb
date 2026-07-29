@@ -352,10 +352,22 @@ async function planFees(db, feeRows, ref) {
  *   unknownSku    — Amazon holds stock/a listing we have no skumap record of. The only bucket that is a to-do list.
  *   virtual       — 'amzn.gr.*', Amazon's own generated bundle/group SKUs. Expected, never matchable, hidden by default.
  *   goneFromAmazon— in amzfeed today but absent from this report: the listing has gone.
+ *
+ * It also answers "did this report introduce a product we have never seen?" (`newBarcodes`). That matters because every FNSKU needs a
+ * printable barcode image in the operator's barcode folder, and a brand-new product is the ONLY thing that creates one that doesn't
+ * exist yet. Deciding it here — from data the plan already has — is what lets the barcode panel stay completely silent on the ~90% of
+ * imports that introduce nothing, instead of asking the operator to go and look every time.
+ *
+ * A CHANGED fnsku on an existing code counts too: Amazon does re-issue them, and the new one needs an image just as much as a new
+ * product does.
  */
 async function planStock(db, stockRows, ref) {
-  const out = { rows: stockRows.length, matched: 0, unknownSku: [], virtual: [], goneFromAmazon: [], liveUnits: 0, totalUnits: 0 };
+  const out = { rows: stockRows.length, matched: 0, unknownSku: [], virtual: [], goneFromAmazon: [], liveUnits: 0, totalUnits: 0, newBarcodes: [] };
   if (stockRows.length === 0) return out;
+
+  // Read amzfeed first — the loop below needs to know each code's CURRENT fnsku to spot new and re-issued ones.
+  const current = await db.query(`SELECT code, sku, fnsku FROM amzfeed`);
+  const fnskuByCode = new Map(current.rows.map((r) => [r.code, (r.fnsku || '').toUpperCase()]));
 
   const seenCodes = new Set();
   for (const row of stockRows) {
@@ -369,9 +381,15 @@ async function planStock(db, stockRows, ref) {
     out.liveUnits += row.live;
     out.totalUnits += row.total;
     seenCodes.add(m.code);
+
+    // Unknown code = a product amzfeed has never held; known code with a different fnsku = Amazon re-issued it. Either way the
+    // barcode folder can't have an image for it yet.
+    const fnsku = (row.fnsku || '').toUpperCase();
+    if (fnsku && fnsku !== fnskuByCode.get(m.code)) {
+      out.newBarcodes.push({ fnsku: row.fnsku, sku: row.sku, code: m.code });
+    }
   }
 
-  const current = await db.query(`SELECT code, sku FROM amzfeed`);
   for (const r of current.rows) {
     if (!seenCodes.has(r.code)) out.goneFromAmazon.push({ code: r.code, sku: r.sku });
   }

@@ -31,6 +31,7 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzImportSummary from '@/components/AmzImportSummary';
+import AmzBarcodePanel from '@/components/AmzBarcodePanel';
 import { previewAmzImport, commitAmzImport, getAmzImportLast, AmzImportSummary as Summary, AmzRejectedFile } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
@@ -271,6 +272,18 @@ export default function UpdateAmazonPage() {
         <div className="mt-6">
           <AmzImportSummary summary={summary} />
         </div>
+      )}
+
+      {/* Barcode labels — an occasional add-on to the import, not a feature of it.
+
+          Nothing at all until files have been checked: nobody comes to this page to look at barcodes, they come to process the latest
+          Amazon file, so an empty page has no business mentioning them. From then on it is a single muted line, and it only speaks up
+          when the import has actually introduced a product.
+
+          `newProducts` is passed ONLY at the 'done' stage, never after a check: until the import is committed the product isn't in
+          amzfeed, so there would be nothing for the panel to write and the prompt would be a lie. */}
+      {stage !== 'choose' && (
+        <AmzBarcodePanel newProducts={stage === 'done' ? summary?.stock?.newBarcodes ?? [] : []} />
       )}
     </AppShell>
   );
