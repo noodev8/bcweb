@@ -69,7 +69,7 @@ Success Response:
                "revenue": 41234.55, "profit": 6120.11, "marginPct": 14.8, "products": 137 },
   "rows": [
     { "solddate": "2026-07-11", "ordertime": "21:37", "channel": "SHP", "code": "0051753-ARIZONA-36", "size": "36",
-      "groupid": "0051753-ARIZONA", "productname": "Birkenstock Arizona ...", "ordernum": "BC18292",
+      "groupid": "0051753-ARIZONA", "productname": "Birkenstock Arizona ...", "brand": "Birkenstock", "ordernum": "BC18292",
       "qty": 1, "soldprice": 64.95, "profit": 10.07, "marginPct": 15.5 },
     ... // newest first
   ],
@@ -263,7 +263,7 @@ router.get('/', async (req, res) => {
       ? { rows: [] }
       : await query(
           `${filterCte}
-           SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, ordernum,
+           SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, brand, ordernum,
                   qty, soldprice, profit
            FROM f
            ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
@@ -287,6 +287,9 @@ router.get('/', async (req, res) => {
         size: r.size || null,
         groupid: r.groupid || null,
         productname: r.productname || null,
+        // Stamped onto the sale line at booking time (orderSync copies skusummary.brand), so no join — and it stays right even if the
+        // style is re-branded later. Nullable: legacy rows and some non-Shopify channels never had it set.
+        brand: r.brand || null,
         ordernum: r.ordernum || null,
         qty,
         soldprice,

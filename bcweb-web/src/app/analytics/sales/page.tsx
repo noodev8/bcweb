@@ -240,14 +240,14 @@ export default function SalesPage() {
   // --- CSV export (current filtered view) --------------------------------------------------------------------------------------
   const exportCsv = useCallback(() => {
     if (rows.length === 0) return;
-    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Product', 'Order', 'Qty', 'Sold price', 'Profit', 'Margin %'];
+    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'Sold price', 'Profit', 'Margin %'];
     const esc = (v: string | number | null) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const lines = rows.map((r) => [
       r.solddate, r.ordertime, CHANNEL_CHIP[r.channel]?.label ?? r.channel, r.code, r.size, r.groupid,
-      r.productname, r.ordernum, r.qty,
+      r.brand, r.productname, r.ordernum, r.qty,
       r.soldprice === null ? '' : r.soldprice.toFixed(2),
       r.profit === null ? '' : r.profit.toFixed(2),
       r.marginPct === null ? '' : r.marginPct.toFixed(1),
@@ -467,6 +467,7 @@ export default function SalesPage() {
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-4 py-2.5 font-medium">When</th>
                     <th className="px-4 py-2.5 font-medium">Channel</th>
+                    <th className="px-4 py-2.5 font-medium">Brand</th>
                     <th className="px-4 py-2.5 font-medium">Product</th>
                     <th className="px-3 py-2.5 text-right font-medium">Sold</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
@@ -579,6 +580,9 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
               className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls + (priceable ? ' cursor-pointer hover:brightness-95' : '')}
               title={priceable ? 'Open its pricing page' : undefined}>{chip.label}</span>
       </td>
+      {/* Brand as its own column (trying it, owner 2026-07-29 — the alternative was a grey word inline next to the code). Nullable on
+          legacy rows, hence the dash. */}
+      <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">{r.brand || '—'}</td>
       <td onClick={() => groupKey && copy('groupid', groupKey)}
           className={'px-4 py-2.5 ' + (groupKey ? 'cursor-pointer' : '')}
           title={groupKey ? 'Click to copy the code' : undefined}>

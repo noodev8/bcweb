@@ -985,6 +985,7 @@ export interface SalesReportRow {
   size: string | null;       // EU size (RIGHT(code,2))
   groupid: string | null;    // style key
   productname: string | null;
+  brand: string | null;      // stamped on the sale line at booking; null on legacy rows
   ordernum: string | null;
   qty: number;               // negative on a return
   soldprice: number | null;  // per unit
