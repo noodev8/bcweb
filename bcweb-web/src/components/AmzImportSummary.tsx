@@ -50,21 +50,6 @@ function Disclosure({ label, count, children }: { label: string; count: number; 
   );
 }
 
-/** One line of the account. `tone` marks the rows that mean something happened, so the eye lands on those first. */
-function Line({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'good' | 'warn' | 'muted' }) {
-  const toneClass =
-    tone === 'good' ? 'text-slate-900 font-semibold'
-      : tone === 'warn' ? 'text-amber-700 font-semibold'
-        : tone === 'muted' ? 'text-slate-400'
-          : 'text-slate-700';
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-0.5">
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className={`text-xs tabular-nums ${toneClass}`}>{value}</span>
-    </div>
-  );
-}
-
 function Card({ icon: Icon, title, accent, children }: {
   icon: React.ComponentType<{ className?: string }>; title: string; accent?: 'amber'; children: React.ReactNode;
 }) {
@@ -183,12 +168,6 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
               {done ? '' : '+'}{num(s.written)}
             </div>
             <div className="text-[11px] text-slate-400">{num(s.units)} units · {money(s.value)}</div>
-            <div className="mt-2 border-t border-slate-100 pt-1">
-              <Line label="already imported" value={num(s.alreadyImported)} tone={s.alreadyImported ? 'plain' : 'muted'} />
-              {/* While PowerBuilder still runs (decision D1) it writes unkeyed rows; this is how many the guard caught. */}
-              <Line label="already there (legacy)" value={num(s.alreadyInDbFromLegacy)} tone={s.alreadyInDbFromLegacy ? 'plain' : 'muted'} />
-              <Line label="no profit figure" value={num(s.withoutProfit)} tone={s.withoutProfit ? 'warn' : 'muted'} />
-            </div>
             <Disclosure label="products we don't know" count={s.unknownSku.length}>
               <ul className="space-y-0.5 font-mono text-[11px]">
                 {s.unknownSku.slice(0, 20).map((u) => <li key={u.sku}>{u.sku} — {u.units} units</li>)}
@@ -201,19 +180,6 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
               {done ? '' : '+'}{num(r.written)}
             </div>
             <div className="text-[11px] text-slate-400">{num(r.units)} units reversed</div>
-            <div className="mt-2 border-t border-slate-100 pt-1">
-              <Line label="already imported" value={num(r.alreadyImported)} tone={r.alreadyImported ? 'plain' : 'muted'} />
-              <Line label="already there (legacy)" value={num(r.alreadyInDbFromLegacy)} tone={r.alreadyInDbFromLegacy ? 'plain' : 'muted'} />
-              {/* Normal on a backfill: the sale being reversed can predate the window. Those get a NULL profit, never a guessed one. */}
-              <Line label="original sale not found" value={num(r.withoutOriginalSale)} tone={r.withoutOriginalSale ? 'warn' : 'muted'} />
-              {/* The one return cost that is measured rather than estimated, and the one worth watching: a rising number here is a
-                  supplier or listing-accuracy problem, not a pricing one. */}
-              <Line
-                label="stock written off"
-                value={r.writeOffUnits ? `${num(r.writeOffUnits)} · ${money(r.writeOffValue)}` : '0'}
-                tone={r.writeOffUnits ? 'warn' : 'muted'}
-              />
-            </div>
             <Disclosure label="condition returned in" count={Object.keys(r.dispositions || {}).length}>
               <ul className="space-y-0.5">
                 {Object.entries(r.dispositions || {})
@@ -230,10 +196,6 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
           <Card icon={BanknotesIcon} title="FBA fees">
             <div className="text-2xl font-semibold tabular-nums text-slate-900">{num(summary.fees.updated)}</div>
             <div className="text-[11px] text-slate-400">{done ? 'updated' : 'to update'}</div>
-            <div className="mt-2 border-t border-slate-100 pt-1">
-              <Line label="unchanged" value={num(summary.fees.unchanged)} tone="muted" />
-              <Line label="first real fee" value={num(summary.fees.firstRealFee)} tone={summary.fees.firstRealFee ? 'good' : 'muted'} />
-            </div>
             <Disclosure label="biggest moves" count={summary.fees.biggestMoves.length}>
               <ul className="space-y-0.5 font-mono text-[11px]">
                 {summary.fees.biggestMoves.map((m) => (
@@ -246,10 +208,6 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
           <Card icon={CubeIcon} title="FBA stock">
             <div className="text-2xl font-semibold tabular-nums text-slate-900">{num(summary.stock.liveUnits)}</div>
             <div className="text-[11px] text-slate-400">sellable units</div>
-            <div className="mt-2 border-t border-slate-100 pt-1">
-              <Line label="total units" value={num(summary.stock.totalUnits)} />
-              <Line label="SKUs matched" value={`${num(summary.stock.matched)} of ${num(summary.stock.rowsInReport)}`} />
-            </div>
           </Card>
         </div>
       </section>

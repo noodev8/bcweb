@@ -92,14 +92,6 @@ export default function SegmentsHeatmap() {
           <input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
           Only what&apos;s due
         </label>
-
-        <div className="ml-auto flex items-center gap-3 text-xs text-slate-500">
-          <Legend tone="bg-red-100 text-red-700 border-red-200" label="Overdue" />
-          <Legend tone="bg-amber-100 text-amber-700 border-amber-200" label="Due soon" />
-          <Legend tone="bg-green-100 text-green-700 border-green-200" label="OK" />
-          <Legend tone="bg-slate-100 text-slate-400 border-slate-200" label="Never" />
-          <Legend tone="bg-slate-200 text-slate-500 border-slate-300 border-dashed" label="Off" />
-        </div>
       </div>
 
       {loading && <p className="text-sm text-slate-400">Loading segments…</p>}
@@ -156,14 +148,5 @@ export default function SegmentsHeatmap() {
         </div>
       )}
     </AppShell>
-  );
-}
-
-function Legend({ tone, label }: { tone: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={'h-3 w-3 rounded border ' + tone} />
-      {label}
-    </span>
   );
 }
