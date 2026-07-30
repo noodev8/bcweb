@@ -81,6 +81,11 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
+// The Shopify WINNERS bar, mirrored from routes/pricing-triage.js (MIN_UNITS / MIN_PROFIT) so the heatmap's actionable count matches
+// the job list it's meant to summarise.
+const SHP_MIN_UNITS = 2;    // Shopify units sold in 30d before a style counts as moving
+const SHP_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.profit)
+
 // The Amazon WINNERS bar, mirrored from routes/amz-winners.js (MIN_UNITS / MIN_PROFIT) so the heatmap's actionable count matches the
 // job list exactly. These MUST be changed together — see the note on block 2c below.
 const AMZ_MIN_UNITS = 2;    // AMZ units sold in 30d before a SKU counts as moving
@@ -123,40 +128,36 @@ router.get('/', async (req, res) => {
     //     this, "healthy-middle" styles (in stock, un-parked, but neither a fast recent seller nor dead/slow) counted as outstanding
     //     yet appeared in no job-list — the segment could never go green and "0/9" looked like unclearable work (owner-reported).
     //
-    //     A style is ACTIONABLE when it is one of (mirrors pricing-triage / pricing-losers membership, same default windows):
-    //       - WINNER: sold > 0 units on Shopify in the last 30 days, OR
-    //       - DEAD:   no Shopify sales in the last 90 days (u90 = 0), OR
-    //       - SLOW:   cover = stock × (90/7) / u90 ≥ 26 weeks (~6 months).
-    //     The healthy middle (some 90d sales, nothing in 30d, cover < 26wk) is excluded — genuinely nothing to do. `instock` here is
-    //     therefore the ACTIONABLE count (the denominator the cell shows), not the raw in-stock count. Parking is unaffected by sales,
-    //     so a parked-but-actionable style is "done" (drops out of outstanding) until its review lapses. COUNT..FILTER counts a
-    //     winner-and-slow style once (no double-count). Same candidate stock pool as triage/losers (localstock #FREE).
+    //     A style is ACTIONABLE when it is one of (mirrors pricing-triage / pricing-losers membership EXACTLY, since the 2026-07-29
+    //     simplification — single 30d window, no more 90d/cover/SLOW/DEAD machinery):
+    //       - WINNER: >= SHP_MIN_UNITS Shopify units in 30d AND AVG(profit) >= SHP_MIN_PROFIT   (routes/pricing-triage.js)
+    //       - LOSER:  ZERO Shopify units in 30d                                                  (routes/pricing-losers.js)
+    //     `instock` here is therefore the ACTIONABLE count (the denominator the cell shows), not the raw in-stock count. Parking is
+    //     unaffected by sales, so a parked-but-actionable style is "done" (drops out of outstanding) until its review lapses.
+    //     Same candidate stock pool as triage/losers (localstock #FREE).
+    //     LANDMINE (owner-reported 2026-07-30, same class of bug as block 2c below): these two rules must stay in step with
+    //     pricing-triage.js / pricing-losers.js. If the WINNERS bar or the LOSERS window moves there, move it here too — otherwise a
+    //     style that qualifies for neither list (e.g. exactly 1 unit in 30d) counts as outstanding here but shows "all done" on drill-down.
     const shp = await query(`
       WITH stk AS (
         SELECT groupid, SUM(qty) AS stock FROM localstock
         WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
         GROUP BY groupid
       ),
-      s30 AS (   -- 30d Shopify units (winner test)
-        SELECT groupid, SUM(qty) AS u30 FROM sales
+      s30 AS (   -- 30d Shopify units + realised per-unit margin (same predicates as pricing-triage / pricing-losers)
+        SELECT groupid, SUM(qty) AS u30, AVG(profit) AS avg_profit FROM sales
         WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 30
-        GROUP BY groupid
-      ),
-      s90 AS (   -- 90d Shopify units (dead / slow test)
-        SELECT groupid, SUM(qty) AS u90 FROM sales
-        WHERE channel = 'SHP' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 90
         GROUP BY groupid
       ),
       cand AS (
         SELECT ss.segment AS name,
                ss.next_shopify_price_review AS review,
-               ( COALESCE(s30.u30, 0) > 0                                              -- WINNER
-                 OR COALESCE(s90.u90, 0) = 0                                           -- DEAD
-                 OR stk.stock * (90 / 7.0) / NULLIF(s90.u90, 0) >= 26 ) AS actionable  -- SLOW (cover >= 26wk)
+               ( ( COALESCE(s30.u30, 0) >= $1::int
+                   AND s30.avg_profit >= $2::numeric )   -- WINNER (NULL avg_profit fails, as in pricing-triage)
+                 OR COALESCE(s30.u30, 0) = 0 ) AS actionable   -- LOSER
         FROM skusummary ss
         JOIN stk ON stk.groupid = ss.groupid          -- INNER JOIN drops 0-stock styles (nothing to price)
         LEFT JOIN s30 ON s30.groupid = ss.groupid
-        LEFT JOIN s90 ON s90.groupid = ss.groupid
         WHERE ss.shopify = 1                           -- live on Shopify only
       )
       SELECT name,
@@ -166,7 +167,7 @@ router.get('/', async (req, res) => {
              MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
       FROM cand
       GROUP BY name
-    `);
+    `, [SHP_MIN_UNITS, SHP_MIN_PROFIT]);
     const shopifyByName = new Map();
     for (const r of shp.rows) {
       shopifyByName.set(r.name, { instock: r.instock, outstanding: r.outstanding, nextWake: r.next_wake });
