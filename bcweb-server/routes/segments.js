@@ -30,7 +30,8 @@ can't disagree with its styles (§9.2). One extra set-based query (grouped by ss
 in-stock styles) and `outstanding` (of those, un-parked → still need pricing). utils/segmentDerived.js maps those to dueState
 'due' (outstanding>0, RED, cell shows "12 / 30 waiting") / 'ok' (all parked, GREEN, cell shows when the soonest parked style returns),
 with the operator's `off` flag still short-circuiting. The AMAZON area derives the same way at SKU grain (§10 — FBA-in-stock SKUs from
-amzfeed, per-SKU review date on skumap.next_amz_price_review). Both pricing cells carry the extra `outstanding`/`instock` counts; only
+amzfeed, per-SKU review date on skumap.next_amz_price_review), and — since 2026-07-30 — applies its own WINNERS ∪ LOSERS actionable
+filter for the same reason Shopify does (block 2c explains what broke). Both pricing cells carry the extra `outstanding`/`instock` counts; only
 the manual clock (Housekeeping) leaves them null and keeps the classifyDue path above.
 
 Heat (🔥) is a deferred fast-follow (spec §3/§7) — returned as null for now.
@@ -79,6 +80,11 @@ const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
+
+// The Amazon WINNERS bar, mirrored from routes/amz-winners.js (MIN_UNITS / MIN_PROFIT) so the heatmap's actionable count matches the
+// job list exactly. These MUST be changed together — see the note on block 2c below.
+const AMZ_MIN_UNITS = 2;    // AMZ units sold in 30d before a SKU counts as moving
+const AMZ_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.profit)
 
 router.get('/', async (req, res) => {
   try {
@@ -171,27 +177,45 @@ router.get('/', async (req, res) => {
     //     (next_amz_price_review). code is unique in skumap and every in-stock amzfeed SKU has a skumap row, so the join is 1:1
     //     and can't double-count. Keyed by segment name; merged onto the Amazon area cell below via the same deriveShopify helper.
     //
-    //     NOTE — unlike Shopify (block 2b), this deliberately counts EVERY un-parked in-stock SKU, with NO "actionable" sales filter,
-    //     because on Amazon that filter would be a no-op: every in-stock un-parked SKU is already a WINNER or a LOSER, so
-    //     un-parked-in-stock == WINNERS ∪ LOSERS and there is no "healthy middle" to exclude. Why it holds: WINNER = sold in 30d
-    //     (amz-winners), DEAD = NO sale in 14d (amz-losers). The 14d dead window is NESTED inside the 30d winner window, so a SKU with
-    //     no 30d sale necessarily has no 14d sale → it's DEAD (a loser). No gap. (Shopify's gap existed only because its DEAD window,
-    //     90d, is LONGER than its 30d winner window.) VERIFIED on prod 2026-07-12: IVES-COLOUR 51 in-stock, healthy-middle gap = 0.
-    //     LANDMINE: if the Amazon DEAD window in amz-losers.js is ever lengthened past 30d, this nesting breaks and a gap reappears —
-    //     at that point mirror block 2b's actionable-count CTEs here.
+    //     Like Shopify, `instock` is the ACTIONABLE count, not the raw in-stock count: it is exactly WINNERS ∪ LOSERS, so the cell can
+    //     always be driven to zero by working those two lists.
+    //       - WINNER: >= MIN_UNITS AMZ units in 30d AND AVG(profit) >= MIN_PROFIT   (routes/amz-winners.js)
+    //       - LOSER:  ZERO AMZ units in 30d                                          (routes/amz-losers.js)
+    //     HISTORY / WHY THE FILTER EXISTS (owner-reported 2026-07-30): this block used to count EVERY un-parked in-stock SKU, on the
+    //     then-correct reasoning that un-parked-in-stock == WINNERS ∪ LOSERS (old WINNER = "sold at least once in 30d", old DEAD = "no
+    //     sale in 14d" — the dead window nested inside the winner window, leaving no gap; verified on prod 2026-07-12). The 2026-07-29
+    //     simplification broke that: WINNERS gained the two-part >=2 units / >=£2 bar, so a SKU selling 1 unit in 30d (or 2+ on thin
+    //     margin) is now a winner NO and a loser NO — it sat in the heatmap denominator but appeared in neither job list, and the
+    //     segment could never go green (IVES-COLOUR showed 50/51 with nothing to action).
+    //     LANDMINE: these two rules must stay in step with the route files. If the WINNERS bar or the LOSERS window moves there, move
+    //     it here too — otherwise the gap silently reopens.
     const amz = await query(`
-      SELECT sk.segment AS name,
-             COUNT(*)::int AS instock,
-             COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
-                                 OR m.next_amz_price_review <= CURRENT_DATE)::int AS outstanding,
-             MIN(m.next_amz_price_review)
-               FILTER (WHERE m.next_amz_price_review > CURRENT_DATE) AS next_wake
-      FROM amzfeed a
-      JOIN skusummary sk ON sk.groupid = a.groupid
-      JOIN skumap m ON m.code = a.code               -- 1:1 (code unique in skumap; every in-stock amzfeed SKU has a skumap row)
-      WHERE COALESCE(a.amzlive, 0) > 0               -- in FBA stock now (nothing to price on an out-of-stock SKU)
-      GROUP BY sk.segment
-    `);
+      WITH w30 AS (   -- 30d Amazon units + realised per-unit margin, per SKU (same predicates as amz-winners / amz-losers)
+        SELECT code, SUM(qty) AS u30, AVG(profit) AS avg_profit
+        FROM sales
+        WHERE channel = 'AMZ' AND qty > 0 AND soldprice > 0 AND solddate >= CURRENT_DATE - 30
+        GROUP BY code
+      ),
+      cand AS (
+        SELECT sk.segment AS name,
+               m.next_amz_price_review AS review,
+               ( ( COALESCE(w30.u30, 0) >= $1::int
+                   AND w30.avg_profit >= $2::numeric )   -- WINNER (NULL avg_profit fails, as in amz-winners)
+                 OR COALESCE(w30.u30, 0) = 0 ) AS actionable   -- LOSER
+        FROM amzfeed a
+        JOIN skusummary sk ON sk.groupid = a.groupid
+        JOIN skumap m ON m.code = a.code             -- 1:1 (code unique in skumap; every in-stock amzfeed SKU has a skumap row)
+        LEFT JOIN w30 ON w30.code = a.code
+        WHERE COALESCE(a.amzlive, 0) > 0             -- in FBA stock now (nothing to price on an out-of-stock SKU)
+      )
+      SELECT name,
+             COUNT(*) FILTER (WHERE actionable)::int AS instock,
+             COUNT(*) FILTER (WHERE actionable
+                                AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
+             MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
+      FROM cand
+      GROUP BY name
+    `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT]);
     const amazonByName = new Map();
     for (const r of amz.rows) {
       amazonByName.set(r.name, { instock: r.instock, outstanding: r.outstanding, nextWake: r.next_wake });
