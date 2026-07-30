@@ -54,7 +54,7 @@ Purpose: Analytics module — Price Changes. A "did our repricing take effect?" 
                  LATERAL on this route shares.
 
               b) SETTLED ONLY, ON A FIXED PERIOD. A change made yesterday has not had a chance to earn and dilutes the average toward zero,
-                 so only changes at least `settleDays` (21) old are scored. Crucially this layer ignores the `days` selector and always
+                 so only changes at least `settleDays` (14) old are scored. Crucially this layer ignores the `days` selector and always
                  looks back `scoreWindowDays` (90) — see SCORE_WINDOW_DAYS. Tying it to the selector meant a 30-day view scored 8 changes
                  out of 299 and put three different day counts (7/30/90, 21, "8 of 299") on one screen for the operator to reconcile.
 
@@ -108,7 +108,7 @@ Success Response:
     "total": 1484, "up": 900, "down": 560, "flat": 24, "shp": 1327, "amz": 157,
     "byUser": [ { "user": "Andreas", "total": 1032, "up": 700, "down": 320, "shp": 980, "amz": 52 }, ... ]
   },
-  "settleDays": 21,                       // a change must be this old to be scored (see SCORECARDS rule b)
+  "settleDays": 14,                       // a change must be this old to be scored (see SCORECARDS rule b)
   "scoreWindowDays": 90,                  // the scorecards' OWN look-back — fixed; this layer ignores days, channel AND user
   "scorecards": [                         // one entry per operator, most-scored first; automated writers excluded
     { "user": "Andreas", "settled": 518, "pending": 256,   // pending = in-window but < settleDays old, so scored nowhere on this panel
@@ -156,8 +156,11 @@ function toIsoDate(d) {
 }
 
 // A change must be this many days old before it is scored on the staff cards: a raise made yesterday hasn't had a chance to earn, and
-// including it only drags the average toward zero. 21 days ~ three sales weeks, which clears the longest suggested review period (14d cut).
-const SETTLE_DAYS = 21;
+// including it only drags the average toward zero. 14 days ~ two sales weeks, matched to the WINNERS bar's own cadence (>=2 units/30d,
+// i.e. roughly one sale every two weeks for a borderline-fine item) so a settled change has had a fair chance to show a sale either way.
+// Owner call (2026-07-30): review-period clearance (the old 21d rationale) was dropped as the deciding factor — the panel answers "is it
+// working", not "is it out of review", so scoring a change still inside its own review window is fine.
+const SETTLE_DAYS = 14;
 
 // The scorecards run on a FIXED 90-day look-back, deliberately ignoring the `days` window selector. That selector is an ACTIVITY control
 // ("how much repricing happened this month"); impact needs a MATURITY basis, and the two fight each other: on a 30-day window only the
