@@ -4,7 +4,8 @@
 Page: /analytics/sales  (Analytics module — Sales)
 =======================================================================================================================================
 Purpose: The sales ledger an analyst opens to answer "how are we doing?" — recent sale lines with the PROFIT already computed downstream,
-         under a headline strip whose hero is NET PROFIT (with revenue, margin and units supporting). The reframed successor to the legacy
+         under a headline strip whose hero is NET PROFIT (with revenue, margin and net units sold supporting; there is no Orders tile —
+         on this catalogue an order is nearly always one pair, so it just restated units). The reframed successor to the legacy
          PowerBuilder "Sales" screen: windowed (Today / Yesterday / 7·30·90d / custom), channel-filtered (All / Shopify / Amazon), and
          searchable to a single product. Returns are shown (as red negative-profit lines) and netted into the totals — a sales/profit view
          has to tell the truth about refunds, unlike the velocity-only pricing module.
@@ -22,6 +23,12 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
 
          A Contains step flips the screen into product mode (last 12 months). A Does-not-contain step on its own does NOT — it just
          narrows the window you're already on ("today's sales, excluding EVA").
+
+         START FRESH WHEN THE NARROWING WOULD EMPTY THE LIST — Inventory's rule, ported (owner, 2026-07-27 there, 2026-07-30 here).
+         Steps only ever shrink the set, but the box is also how you start a NEW hunt ("ARIZONA" … then "IVES"), and stacked on the old
+         steps that can only find nothing. So a merged filter that comes back empty is re-run with the NEWEST Find's terms alone and
+         that is what's shown, silently — the breadcrumb already shows what's in force. If that is empty too, the screen says there are
+         no sales. See the fetcher for the 3-char departure from Inventory, and for why the retry isn't in an effect.
 
          Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel. Row click reuses the
          cross-module ProductActions chooser (reprice / copy), same as Price Changes.
@@ -46,8 +53,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getSalesReport, runOrderSync,
-  SalesFilterStep, SalesReportRow, SalesReportSummary, SalesWindow,
+  SalesFilterStep, SalesReportData, SalesReportRow, SalesReportSummary, SalesWindow,
 } from '@/lib/api';
+
+// What the screen actually renders: the API payload, plus which steps produced it. The two can differ — see START FRESH below. Every part of
+// the UI that talks about "the current filter" (the chips, the next Find, the empty state) reads `usedSteps`, never the raw `steps`
+// state, so the screen can never describe itself with a filter that isn't the one on display.
+type SalesView = SalesReportData & { usedSteps: SalesFilterStep[] };
 
 type ChannelFilter = 'all' | 'shp' | 'amz';
 
@@ -111,28 +123,76 @@ export default function SalesPage() {
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
   const [steps, setSteps] = useState<SalesFilterStep[]>([]);
+  // The terms committed by the MOST RECENT Find, kept apart from the merged list because the start-fresh rule below has to be able to
+  // re-run them on their own. Inventory doesn't need this — it rebuilds the criteria inside its own handler — but here the retry happens
+  // in the fetcher, which only ever sees the merged `steps`.
+  const [lastFind, setLastFind] = useState<SalesFilterStep[]>([]);
   const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
   const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
 
+  // The key carries channel + window + every committed step, so committing a Find (or Reset) IS the re-query — there is no separate
+  // "now go fetch" call. `steps` is an array of objects; SWR hashes it structurally, so a new array with equal contents won't refetch.
+  //
+  // START FRESH WHEN THE NARROWING WOULD EMPTY THE LIST — the same rule the Inventory screen already runs (owner, 2026-07-27; see
+  // src/app/inventory/page.tsx onFind). Each Find normally narrows what's on screen, but the operator often uses the box to start a NEW
+  // hunt ("ARIZONA" … then "IVES"), and stacked on the old steps that can only ever find nothing. So when the merged filter comes back
+  // empty we re-run the terms from THIS Find alone, dropping everything before them, and show that.
+  //
+  // Keeping the newest terms, not the opening one, is the whole point: the operator has just told us what they now want to look at. An
+  // earlier cut of this kept the FIRST Contains instead, which answered a question nobody had asked any more — type ARIZONA then IVES
+  // and you got Arizonas back (owner, 2026-07-30).
+  //
+  // The one place this departs from Inventory is the 3-CHAR FLOOR. Inventory filters in memory with no minimum, but here the server
+  // ignores a leading Contains under 3 chars, so starting fresh on a short narrowing term ("38") would drop the filter entirely and
+  // return the whole window — the exact opposite of narrowing. Those retries are skipped and the empty state stands instead.
+  //
+  // Never fires in summary-only mode: a long window returns no lines BY DESIGN, so there is no empty result to rescue.
+  //
+  // It lives in the FETCHER, not an effect: the retry exists only as the continuation of the first request, `steps` stays the cache key,
+  // and there is no setState-in-effect (docs/maintenance-notes.md — no data fetching in effects, anywhere). Inventory probes before it
+  // applies so the dead intermediate state never paints; the same holds here, because both requests resolve before SWR publishes.
+  const { data, error: loadError, busy: loading, refresh } = useApiQuery<SalesView>(
+    ['sales-report', channel, win, steps, lastFind],
+    async () => {
+      const res = await getSalesReport({ channel, window: win, steps });
+      if (!res.success || !res.data) return res as { success: false; error?: string; return_code?: string };
+
+      // Viable on its own = either no Contains at all, or one the server won't reject for being too short.
+      const freshLead = lastFind.find((s) => s.op === 'has');
+      const freshViable = lastFind.length > 0 && (!freshLead || freshLead.term.length >= 3);
+      const startFresh =
+        res.data.rows.length === 0 && !res.data.summaryOnly && freshViable && lastFind.length < steps.length;
+
+      // Adopt the fresh result WHETHER OR NOT it found anything — Inventory commits the new terms unconditionally once the merge is
+      // empty, and the same has to hold here: if "IVES" turns out to have no sales either, the screen must say so about IVES. Keeping
+      // the merged result on an empty retry would leave the chips and the empty message quoting ARIZONA, a term the operator had
+      // already moved on from. Only a failed REQUEST falls through to the original.
+      if (startFresh) {
+        const fresh = await getSalesReport({ channel, window: win, steps: lastFind });
+        if (fresh.success && fresh.data) {
+          return { ...fresh, data: { ...fresh.data, usedSteps: lastFind } };
+        }
+      }
+      return { ...res, data: { ...res.data, usedSteps: steps } };
+    },
+  );
+  // The filter the loaded result actually used. After a start-fresh this is the newest terms alone, not the merged list — the chips, the
+  // next Find and the empty state all build off it, so the screen always describes the filter that is actually on display.
+  const usedSteps = data?.usedSteps ?? steps;
+
   // A Contains step is what flips the screen into product mode (and so dims the window control); a Does-not-contain step alone doesn't.
-  const hasSteps = useMemo(() => steps.filter((s) => s.op === 'has'), [steps]);
+  const hasSteps = useMemo(() => usedSteps.filter((s) => s.op === 'has'), [usedSteps]);
   const willSearch = hasSteps.length > 0;
   // The term the result box quotes back — the opening Contains, which is the one that chose the matched set.
   const leadTerm = hasSteps[0]?.term ?? '';
 
-  // The key carries channel + window + every committed step, so committing a Find (or Reset) IS the re-query — there is no separate
-  // "now go fetch" call. `steps` is an array of objects; SWR hashes it structurally, so a new array with equal contents won't refetch.
-  const { data, error: loadError, busy: loading, refresh } = useApiQuery(
-    ['sales-report', channel, win, steps],
-    () => getSalesReport({ channel, window: win, steps }),
-  );
   const rows: SalesReportRow[] = data?.rows ?? NO_ROWS;
   const summary: SalesReportSummary | null = data?.summary ?? null;
   // Memoised because a fresh object each render would re-run the CSV-export callback and the summary memo below.
   const range = useMemo(() => ({ from: data?.from ?? null, to: data?.to ?? null }), [data?.from, data?.to]);
   const searchActive = data?.searchActive ?? false; // reflects the loaded result (product mode vs window pulse)
   const summaryOnly = data?.summaryOnly ?? false;   // long window: totals only, no line list
-  const truncated = data?.truncated ?? false;
+  const truncated = data?.truncated ?? false;       // more lines matched than the cap — the only thing the row above the table says now
 
   // --- Sync orders ----------------------------------------------------------------------------------------------------------
   // Pulls unfulfilled orders from Shopify and runs the whole order pipeline (orderstatus, sales, archive, pick allocation,
@@ -195,16 +255,21 @@ export default function SalesPage() {
     const next: SalesFilterStep[] = [];
     if (c) next.push({ op: 'has', term: c });
     if (n) next.push({ op: 'not', term: n });
-    setSteps((prev) => [...prev, ...next]);
+    // Build on `usedSteps`, not the raw `steps` state: after a start-fresh those differ, and appending to the filter that found nothing
+    // would silently re-apply the steps that were just dropped — the operator would add a term and get an empty screen again for a
+    // reason not on display anywhere. `lastFind` is what the start-fresh retry re-runs on its own if this narrowing empties the list.
+    setSteps([...usedSteps, ...next]);
+    setLastFind(next);
     setContains('');
     setNotContains('');
     setHint(null);
     containsRef.current?.focus();
-  }, [contains, notContains, hasSteps.length, summaryOnly]);
+  }, [contains, notContains, hasSteps.length, summaryOnly, usedSteps]);
 
   // RESET — drop every step, which drops the screen back to the window pulse (load() re-runs off the empty steps array).
   const onReset = useCallback(() => {
     setSteps([]);
+    setLastFind([]);
     setContains('');
     setNotContains('');
     setHint(null);
@@ -324,9 +389,9 @@ export default function SalesPage() {
 
         {/* Breadcrumb of committed steps — the record of how the current set was narrowed. Contains is brand-tinted, Does-not-contain
             struck through, same vocabulary as Inventory so the two screens read alike. */}
-        {(steps.length > 0 || hint) && (
+        {(usedSteps.length > 0 || hint) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
-            {steps.map((s, i) => (
+            {usedSteps.map((s, i) => (
               <span key={i} className="flex items-center gap-1.5">
                 {i > 0 && <span className="text-slate-300">›</span>}
                 <span
@@ -341,6 +406,9 @@ export default function SalesPage() {
                 </span>
               </span>
             ))}
+            {/* A start-fresh is announced by NOTHING, matching Inventory (owner, 2026-07-27): the breadcrumb already shows exactly the
+                steps now in force, and the operator has the rows they asked for — a banner explaining what didn't happen is just
+                something to read. */}
             {hint && <span className="text-xs text-amber-600">{hint}</span>}
           </div>
         )}
@@ -385,7 +453,10 @@ export default function SalesPage() {
           (p-3, supporting values one step down at text-xl) to buy back vertical space above the fold — which also widens the gap
           between the hero and its supporting numbers rather than flattening it. */}
       {summary && !error && (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+        // Three tiles, not four: ORDERS was dropped (owner, 2026-07-30) because on this catalogue an order is almost always a single
+        // pair, so it tracked Units sold closely enough to be a second copy of it taking up a column. Grid drops a column to match
+        // (5->4 on lg, 4->3 on sm) so Revenue keeps its double width and the row stays full rather than leaving a hole.
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:col-span-1 lg:col-span-2">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-slate-800">{money(summary.revenue)}</div>
@@ -393,14 +464,23 @@ export default function SalesPage() {
           <Stat label="Net profit" value={money(summary.profit)}
             valueClassName={summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}
             sub={`${pct(summary.marginPct)} margin`} />
-          {/* Units lead with SOLD (gross) — the same basis as Orders — so the pair reads naturally (units >= orders). Returns are netted
-              into the money tiles above and shown here as a sub-line (with the return rate = returned / sold), so they stay visible
-              without dragging the headline below Orders. */}
-          <Stat label="Units" value={int(summary.unitsSold)}
+          {/* Units lead with NET (owner, 2026-07-30) — the gross figure was the headline until the returns badge went on, and with a
+              45%-returned style the big number was then the one that hadn't happened. Net is what the money tiles beside it are already
+              netted to, so the row now reads on one basis throughout. The gross is spelled out underneath as the equation it came from,
+              so nothing is hidden — just demoted.
+              "SOLD" labels the NET figure because that is what was actually sold and kept; the gross is "total" in the sub-line rather
+              than "sold" precisely so the two can't both claim the word. Kept to one word each — this is a 3-line tile, and "20
+              transactions − 9 returned" wraps at the tile's width on a laptop.
+              The RETURN RATE rides on the label as a colour-graded pill — it's the number you want to catch without reading, and on this
+              catalogue it's a real signal (a style returning at 45% is a sizing problem, not a pricing one). The bands are deliberately
+              coarse: quiet grey under 15%, amber to 30%, red above — a traffic light, not a measurement. */}
+          <Stat label="Sold" value={int(summary.unitsNet)}
+            badge={summary.unitsSold > 0 && summary.unitsReturned > 0
+              ? { text: `${pct((summary.unitsReturned / summary.unitsSold) * 100)} returned`, tone: returnTone((summary.unitsReturned / summary.unitsSold) * 100) }
+              : undefined}
             sub={summary.unitsReturned
-              ? `${int(summary.unitsNet)} net · ${int(summary.unitsReturned)} returned${summary.unitsSold > 0 ? ` (${pct((summary.unitsReturned / summary.unitsSold) * 100)})` : ''}`
+              ? `${int(summary.unitsSold)} total − ${int(summary.unitsReturned)} returned`
               : undefined} />
-          <Stat label="Orders" value={int(summary.orders)} />
         </div>
       )}
 
@@ -422,31 +502,53 @@ export default function SalesPage() {
 
       {!loading && !error && !summaryOnly && (
         rows.length === 0 ? (
+          // Reaching here means the widen already ran and came back empty too (or there was nothing left to widen to), so this is the
+          // end of the line: the set really is empty. Say that once, plainly, and don't hint at a retry that has already happened.
+          //
+          // The horizon is read from the RESPONSE (`searchActive`), not inferred from the term: a Contains puts the server in product
+          // mode and the window tabs stop applying, so quoting "last 12 months" is only true in that mode. A not-only filter is still
+          // on the window, and gets the window wording.
+          //
+          // "No sales MATCHING x" — not "no sales FOR x" — on purpose. `sales` only holds things that sold, so an empty result cannot
+          // tell a real product that hasn't sold from a term that matches no product at all (a typo returns exactly this). The looser
+          // phrasing reports the search, which is all we actually know. Saying "for" would assert the product exists.
           <p className="text-sm text-slate-400">
-            No sales match this filter.
-            {steps.length > 0 && (
+            {searchActive && leadTerm
+              ? <>No sales matching “{leadTerm}” in the last 12 months.</>
+              : <>No sales match this filter.</>}
+            {usedSteps.length > 0 && (
               <> <button type="button" onClick={onReset} className="text-brand-600 underline">Reset</button> to start again.</>
             )}
           </p>
         ) : (
           <>
             <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
-              <span>
-                {/* Product mode quotes the real matched-line count from the server (summary.lines), so "latest 200 of 318" is honest —
-                    and once a narrowing step brings the set under the cap it says "All 47", which is the signal that what you're looking
-                    at (and what Export CSV will write) is the complete set, not a page of it. */}
-                {searchActive
-                  ? truncated
-                    ? `Latest ${int(rows.length)} of ${int(summary?.lines ?? rows.length)} sales for “${leadTerm}”, last 12 months`
-                    : `All ${int(rows.length)} sales for “${leadTerm}”, last 12 months`
-                  : truncated
-                    ? `Showing the latest ${int(rows.length)} lines (more exist — narrow the window or search)`
-                    : `${int(rows.length)} lines`}
+              <span className="flex flex-wrap items-center gap-2">
+                {/* NO ROW COUNT HERE (owner, 2026-07-30). This line used to lead with "All 29 lines…", and it was doing more harm than
+                    work: it restated something the table itself shows, and it spent the word "sales"/"lines" on the GROSS count while
+                    the Sold tile above spends it on the NET one — two numbers a few inches apart, same vocabulary, different meaning.
+                    That collision was the original confusion this whole pass started from, so the line is gone rather than reworded.
+                    What survives is the pair of badges: they aren't a count, they answer "did my search land on ONE product?", which is
+                    the thing you can't tell by looking at the rows.
+
+                    THE ONE EXCEPTION is truncation, which nothing else on the screen can tell you. The tiles are uncapped server-side
+                    aggregates, so they stay right; the TABLE is a page of at most `limit` rows and Export CSV writes only what's
+                    loaded — so a capped list hands over a partial file that looks complete. This warns, and only then. It repeats none
+                    of what's already above it (no term, no horizon, no product) and doesn't explain the cap: it says which rows these
+                    are and what the export will hold, then stops.
+
+                    Both badges lose the leading "· " and the ml-2 they used to need — with the count gone the row is a flex with a gap,
+                    and a dangling separator in front of the first thing on the line reads as a rendering fault. */}
+                {truncated && summary && (
+                  <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 ring-1 ring-amber-200">
+                    Latest {int(rows.length)} of {int(summary.lines)} — CSV exports these {int(rows.length)}
+                  </span>
+                )}
                 {searchActive && summary && summary.products > 1 && (
-                  <span className="ml-2 text-amber-600">· spans {int(summary.products)} products — refine to isolate one</span>
+                  <span className="text-amber-600">Spans {int(summary.products)} products — refine to isolate one</span>
                 )}
                 {searchActive && summary && summary.products === 1 && rows[0].groupid && (
-                  <span className="ml-2 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-200">
+                  <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-200">
                     <CheckBadgeIcon className="h-3.5 w-3.5" /> One product · {rows[0].groupid}
                     <span className="font-normal text-emerald-600/70">(all sizes)</span>
                   </span>
@@ -522,11 +624,39 @@ function Segmented<T extends string>({ options, value, onChange, disabled = fals
   );
 }
 
-// A supporting stat tile in the headline strip.
-function Stat({ label, value, sub, valueClassName }: { label: string; value: string; sub?: string; valueClassName?: string }) {
+// Return-rate traffic light. Coarse on purpose — the pill answers "is this normal?", and a footwear catalogue sold online carries a
+// double-digit return rate as a matter of course, so the quiet band has to be generous or every tile would shout.
+type StatTone = 'quiet' | 'warn' | 'bad';
+function returnTone(ratePct: number): StatTone {
+  if (ratePct >= 30) return 'bad';
+  if (ratePct >= 15) return 'warn';
+  return 'quiet';
+}
+const TONE_CLASS: Record<StatTone, string> = {
+  quiet: 'bg-slate-100 text-slate-500',
+  warn: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  bad: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+};
+
+// A supporting stat tile in the headline strip. The optional badge sits on the LABEL row, not next to the value: it's a qualifier on
+// the number, and putting it beside the value would make two figures compete for the same glance.
+function Stat({ label, value, sub, valueClassName, badge }: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueClassName?: string;
+  badge?: { text: string; tone: StatTone };
+}) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+        {badge && (
+          <span className={'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' + TONE_CLASS[badge.tone]}>
+            {badge.text}
+          </span>
+        )}
+      </div>
       <div className={'mt-1 text-xl font-semibold tabular-nums ' + (valueClassName ?? 'text-slate-800')}>{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-400">{sub}</div>}
     </div>
