@@ -197,6 +197,8 @@ export default function CustomerOrderList() {
           onClick={() => setFilter(filter === 'pending' ? 'all' : 'pending')}
         />
 
+        <PackProgress packed={lines.length - outstanding} total={lines.length} />
+
         {/* --- refresh ---------------------------------------------------------------------------------------------------------
             NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
             that checking pick progress through the busy part of the day — which is done constantly — costs nothing and can't hammer
@@ -371,6 +373,52 @@ export default function CustomerOrderList() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
+
+/*
+ * PackProgress — how much of today's list is boxed, as a bar.
+ *
+ * Pure decoration in the sense that it adds no information: `All` and `Pending` already carry both numbers. It earns its place by
+ * making them a SHAPE. "Pending 9" is a number you have to think about; a bar two-thirds full is a glance, and on a screen worked
+ * all day in short visits, the glance is what you actually want.
+ *
+ * Kept to the height of the chips beside it and given a fixed-ish width so the row it sits in doesn't reflow every time the count
+ * changes — this block is pinned to the top of the viewport, and anything that resizes in place makes the whole grid twitch.
+ *
+ * The fill animates its width rather than snapping, which is the entire "nice" of it: press Refresh after packing a couple and the
+ * bar visibly moves. `transition-[width]` and not `transition-all`, so only the geometry animates and the colour swap at 100% lands
+ * at once instead of fading through a muddy in-between.
+ *
+ * Hidden entirely on an empty list: a 0-of-0 bar is a progress indicator for no work, which reads as broken rather than as done.
+ */
+function PackProgress({ packed, total }: { packed: number; total: number }) {
+  if (total === 0) return null;
+
+  const pct = Math.round((packed / total) * 100);
+  const done = packed === total;
+
+  return (
+    <div
+      className="ml-1 flex min-w-[150px] max-w-[240px] flex-1 items-center gap-2"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={packed}
+      aria-label={`${packed} of ${total} packed`}
+    >
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={'h-full rounded-full transition-[width] duration-700 ease-out ' +
+            (done ? 'bg-emerald-500' : 'bg-emerald-400')}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {/* tabular-nums so the label can't change width as the digits change and nudge the bar — same reason as the fixed track. */}
+      <span className={'shrink-0 text-xs font-medium tabular-nums ' + (done ? 'text-emerald-700' : 'text-slate-400')}>
+        {done ? 'All packed' : `${packed}/${total}`}
+      </span>
+    </div>
+  );
+}
 
 // The `stripe` dot this used to take went with the per-state chips — with only All and Pending left there is no state to colour.
 function Chip({ label, count, active, onClick }: {
