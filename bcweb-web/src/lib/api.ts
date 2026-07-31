@@ -562,6 +562,18 @@ export function generateAmazonUpload(groupid: string) {
   );
 }
 
+// Build the Seller Central .xlsm that DE-LISTS the given SKUs — the counterpart to generateAmazonUpload above, for the zero-stock
+// "on Amazon, unknown to us" listings the Update Amazon import turns up. Writes NOTHING: the server is a pure formatter and the delete
+// only happens when the operator uploads the file to Seller Central. Caller decodes `file` to a Blob to trigger a download.
+// Non-SUCCESS codes to surface: MISSING_FIELDS, NO_ROWS, TOO_MANY, GENERATE_FAILED.
+export interface AmzDeleteFileData { filename: string; skus: number; file: string }
+export function generateAmzDeleteFile(skus: string[]) {
+  return request<AmzDeleteFileData>(
+    { url: '/amz-delete-file', method: 'POST', data: { skus } },
+    (b) => ({ filename: b.filename, skus: b.skus, file: b.file })
+  );
+}
+
 // reviewDays null = "None" (leave the review date untouched). note optional -> price_change_log.reason_notes.
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number | null, note?: string) {
   return request<ApplyData>(
@@ -1599,6 +1611,9 @@ export interface AmzImportSummary {
   };
   reconciliation: {
     unknownSku: AmzUnknownSku[]; unknownSkuCount: number;
+    // The de-listable subset of unknownSku (afn-total-quantity = 0), computed server-side because `unknownSku` above is capped at 200
+    // and sorted most-stock-first — the zero-stock rows are the first to be truncated. Feeds the "Delete file" button.
+    deletableSku: string[]; deletableSkuCount: number;
     virtual: { sku: string; live: number; total: number }[]; virtualCount: number;
     goneFromAmazon: { code: string; sku: string }[]; goneFromAmazonCount: number;
   };

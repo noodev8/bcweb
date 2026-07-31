@@ -130,6 +130,18 @@ function shapePlan(parsed, plan, opts = {}) {
     reconciliation: {
       unknownSku: plan.stock.unknownSku.slice(0, 200),
       unknownSkuCount: plan.stock.unknownSku.length,
+
+      // The de-listable subset of unknownSku, as its own field rather than something the client filters out of the array above.
+      // Two reasons it cannot be derived client-side:
+      //   1. `unknownSku` is capped at 200 and sorted MOST STOCK FIRST (amzImport.js -> planStock), so zero-stock rows sort last and
+      //      are the first to be truncated away — exactly the ones wanted here. Filtering the capped array would silently under-report.
+      //   2. The bar belongs with the data that can enforce it. `total` is afn-total-quantity: Amazon will not remove a listing while
+      //      ANY units — fulfillable, reserved, unsellable or inbound — sit in a fulfilment centre, so anything above zero is not
+      //      deletable yet however dead the listing looks.
+      // Feeds the "Delete file" button, which posts these to /amz-delete-file. Capped at that route's own per-file limit, so a list
+      // this reports can always be built in one go.
+      deletableSku: plan.stock.unknownSku.filter((u) => u.total === 0).map((u) => u.sku).slice(0, 1000),
+      deletableSkuCount: plan.stock.unknownSku.filter((u) => u.total === 0).length,
       virtual: plan.stock.virtual.slice(0, 50),
       virtualCount: plan.stock.virtual.length,
       goneFromAmazon: plan.stock.goneFromAmazon.slice(0, 200),

@@ -23,10 +23,25 @@ import {
   ArrowDownTrayIcon, ArrowUturnLeftIcon, BanknotesIcon, CubeIcon, ExclamationTriangleIcon,
   ChevronDownIcon, ChevronRightIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { generateAmzDeleteFile } from '@/lib/api';
 import type { AmzImportSummary as Summary, AmzFileSummary } from '@/lib/api';
 
 const money = (n: number) => `£${(n || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n: number) => (n || 0).toLocaleString('en-GB');
+
+/** Turn the base64 the server sent into a real file download in the browser (same pattern as AmazonExport). */
+function downloadBase64(filename: string, base64: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /* ------------------------------------------------------------------------------------------------------------------------------ */
 /* Small building blocks                                                                                                           */
@@ -46,6 +61,64 @@ function Disclosure({ label, count, children }: { label: string; count: number; 
         {label} ({num(count)})
       </button>
       {open && <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs text-slate-600">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * "Delete file" — builds the Seller Central .xlsm that de-lists the dead unknown SKUs.
+ *
+ * Scope is deliberately narrow: ONLY the unknown SKUs holding zero total FBA quantity (`deletableSku`, decided server-side — see
+ * amzImportShape.js for why it cannot be filtered out of the capped `unknownSku` array). Amazon will not remove a listing while units
+ * are still in a fulfilment centre, so an unknown SKU with stock is a "deal with the stock first" problem, not a delete.
+ *
+ * Nothing is written by clicking this — neither here nor on the server. The file downloads, and the de-listing happens only when the
+ * operator uploads it to Seller Central themselves. That is why it is safe to offer after a Check as well as after an Apply: it
+ * describes Amazon's catalogue, not our database, so it does not depend on the import having been committed.
+ */
+function DeleteFileButton({ skus, total }: { skus: string[]; total: number }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (total === 0) return null;
+
+  // The server caps how many SKUs one file may carry, so a very large run comes back short. Say so rather than let the operator
+  // assume the file cleared everything.
+  const capped = skus.length < total;
+
+  async function onClick() {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    const res = await generateAmzDeleteFile(skus);
+    setBusy(false);
+    if (!res.success || !res.data) {
+      setError(res.error || 'Could not build the delete file');
+      return;
+    }
+    downloadBase64(res.data.filename, res.data.file);
+    setNote(`Downloaded ${res.data.filename} · ${num(res.data.skus)} SKUs`);
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+        {busy ? 'Building…' : `Delete file (${num(skus.length)})`}
+      </button>
+      <p className="mt-1.5 text-[11px] text-slate-400">
+        {num(skus.length)}{' '}of these hold no FBA stock at all. Builds the Seller Central .xlsm that de-lists them — upload it yourself
+        under Catalogue &gt; Upload via File. Nothing is changed until you do.
+        {capped && ` Capped at ${num(skus.length)} of ${num(total)} — run it again after uploading for the rest.`}
+      </p>
+      {note && <p className="mt-1 text-[11px] font-medium text-emerald-700">{note}</p>}
+      {error && <p className="mt-1 text-[11px] font-medium text-red-700">{error}</p>}
     </div>
   );
 }
@@ -256,6 +329,8 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
                   {rec.unknownSku.slice(0, 50).map((u) => <li key={u.sku}>{u.sku} — {u.total} units</li>)}
                 </ul>
               </Disclosure>
+              {/* The one action available on this bucket. Zero-stock only — see DeleteFileButton. */}
+              <DeleteFileButton skus={rec.deletableSku || []} total={rec.deletableSkuCount || 0} />
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-white p-4">
