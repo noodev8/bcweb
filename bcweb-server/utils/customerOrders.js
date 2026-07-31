@@ -27,6 +27,8 @@ same derivation plus the two flags that sit on top of it.
   waiting    customerwaiting = 1                  known unfulfillable, customer has been told. The legacy yellow row.
   sourcing   ukd > 0 OR othersupplier > 0         flagged to a supplier
   fba        amz > 0                              coming from Amazon FBA
+  packed     batch = '2'                          boxed and ready to go — see PACKED below
+  picked     every held shelf row at qty = 0      off the shelf, not yet packed — see PICKED below
   pending    localstock > 0                       ALLOCATED against a shelf row, awaiting pick — see the warning below
   parked     orderdate ~ 'do not order'           phase E skips it (see CANDIDATE_SKIP below)
 
@@ -39,21 +41,64 @@ same derivation plus the two flags that sit on top of it.
   of play must not mask a sibling line that nobody has dealt with. This module used to export its own roll-up helper with the
   rowState precedence baked in; it was unused, it contradicted the client's, and it was removed rather than left as a trap.
 
-  !! pending DOES NOT MEAN PICKED, AND THIS SCREEN CANNOT KNOW WHETHER SOMETHING HAS BEEN PICKED. !!
+  !! `orderstatus.localstock > 0` DOES NOT MEAN PICKED. THE PICK SIGNAL IS IN A DIFFERENT TABLE. !!
 
-  `localstock > 0` means phase E found a free unit on a shelf and reserved it against this order line. Nobody has walked to the
-  shelf. Three facts make that unambiguous:
-    - `pickedqty` is 0 on ALL 3,177 archived customer rows and every live one. It is REDUNDANT LEGACY (owner, confirmed): picking is
-      tracked through `localstock` now, not through this column. Nothing writes it, and there is no "has been picked" signal anywhere
-      in `orderstatus`. It is still written as 0 by the FBA route only because PowerBuilder is live in parallel.
+  `orderstatus.localstock > 0` means phase E found a free unit on a shelf and RESERVED it against this order line. Nobody has walked
+  to the shelf. Two facts make that unambiguous, and both are still true:
+    - `pickedqty` is 0 on ALL 3,177 archived customer rows and every live one. It is REDUNDANT LEGACY (owner, confirmed). Nothing
+      writes it. There is no "has been picked" column anywhere in `orderstatus`. It is still written as 0 by the FBA route only
+      because PowerBuilder is live in parallel.
     - 3,065 of those 3,177 (96%) ended their life at localstock = 1. It is the ordinary resting state of a customer order line, not
-      a milestone reached by a few.
-    - This screen only ever shows UNFULFILLED Shopify orders. The instant one is genuinely picked and posted it leaves Shopify's
-      unfulfilled list, and orderSync phase C archives it off this screen. A picked order is not here to be labelled.
+      a milestone reached by a few. The flag never comes back down.
 
-  The state has been named twice, and both earlier names were wrong in the same direction — they claimed progress the data doesn't
-  record. `picked` read as "done, ready to pack". `in_stock` was true but described the STOCK when the column describes the ORDER
-  LINE. `pending` (owner's word) is what the line actually is: everything needed is reserved, and it is waiting on us.
+  PICKED — where the signal actually is (verified against the live DB, 2026-07-31):
+
+  Phase E reserves by stamping `localstock.ordernum` on a shelf row and leaving it at `qty = 1` (see orderSync.js ~line 534). When
+  the unit is PHYSICALLY TAKEN off the shelf, that row goes to `qty = 0` while keeping its `ordernum` and `deleted = 0`. Confirmed on
+  a real pick: of eleven live customer-order shelf rows, ten sat at qty 1 and the one just picked sat at qty 0 — and all eleven
+  `orderstatus` rows still read `localstock = 1`. The orderstatus row genuinely knows nothing; the `localstock` TABLE does.
+
+  So `rowState` needs two extra fields the flag columns can't give it — how many shelf rows are held for this line, and how many of
+  those are at qty 0 — which is why order-status-customer-list.js carries a join for them. A line is `picked` only when EVERY held
+  row is at qty 0; a part-picked line stays `pending`, because it still needs someone to walk to a shelf.
+
+  !! THIN EVIDENCE, HANDLE WITH CARE. That is ONE observed pick. There is no history to widen it with: phase D deletes an order's
+     shelf rows the moment phase C archives it, so a picked-and-fulfilled line leaves nothing behind. If a non-'#FREE' row can reach
+     qty = 0 by some other route (an inventory adjustment, a PowerBuilder screen nobody here has read), this state will occasionally
+     claim a pick that never happened. It is deliberately a DISPLAY state only — nothing branches on it, no write depends on it — so
+     the blast radius of being wrong is a mislabelled row, not a mis-shipped order. Keep it that way. !!
+
+  PACKED — the second half of the same story (verified against the live DB, 2026-07-31):
+
+  `batch = '2'` is written when the unit is BOXED. Evidence, and it is much stronger than the pick signal's:
+    - 3,098 of the 3,178 archived customer rows are batch '2'; the other 80 are '0'. Packed is the normal end of a line's life.
+    - A line packed minutes before this was written went '0' -> '2' and nothing else on the row changed.
+    - `batch = '1'` DOES NOT EXIST — not on a live row, not on any of the 3,178 archived ones. If you are looking for it because
+      somebody remembered it that way, it isn't there.
+
+  PICKED AND PACKED ARE NOT THE SAME STEP and both were observable at once when this was written: BC18668 was picked AND packed
+  (batch '2', shelf row emptied), while BC18671 was picked and NOT packed (batch '0', shelf row emptied). That is the whole reason
+  both states exist rather than one. The progression is: pending -> picked -> packed -> archived.
+
+  BUT A LINE MAY GO STRAIGHT TO PACKED, and rowState is built for that (owner). `packed` is tested on its own, first, and never asks
+  whether the line was seen as `picked` first. `picked` is an inference from a table that gets cleaned up; `packed` is a flag written
+  on the row itself. The strong signal must never be gated behind the weak one.
+
+  !! `batch` MEANS SOMETHING ELSE ON SUPPLIER ORDERS. On ordertype 2/3 it groups the lines of one purchase batch (utils/orderStatus.js
+     counts on_order_batches with it). This is the SAME trap as `orderdate`, one column two meanings, and the same guard applies: one
+     file per meaning, and nothing in this file may be reused there. !!
+
+  The one batch value both meanings share is '-1', the legacy discard marker — excluded from this screen by notDiscarded() and
+  deleted outright by orderSync phase F.
+
+  Not to be confused with the archive: a packed line stays on this screen until Shopify reports the order FULFILLED, at which point
+  phase C moves it to orderstatus_archive. `picked` and `packed` are exactly the window between the shelf and that fulfilment, which
+  is the reason they exist — it's what the operator wants to see before the courier arrives.
+
+  The `pending` state has been named three times and the first two were wrong in the same direction — they claimed progress the data
+  didn't record. `picked` (the old name) read as done-and-packed while meaning only "reserved". `in_stock` was true but described the
+  STOCK when the column describes the ORDER LINE. `pending` (owner's word) is what the line actually is: everything needed is
+  reserved, and it is waiting on us. Note the name `picked` is now in use again — but for the state that genuinely means it.
 
 PARKED is display-only in bcweb: the action that sets it was dropped from this module (owner's call), but the string is still honoured
 by phase E's candidate filter and BOTH PowerBuilder and the cron are still live and can still write it. So we render the state without
@@ -72,16 +117,22 @@ function notDiscarded(alias = 'o') { return `COALESCE(${alias}.batch, '') <> '-1
 function parked(alias = 'o') { return `LOWER(COALESCE(${alias}.orderdate, '')) LIKE '%do not order%'`; }
 
 /*
- * rowState(row) -> 'parked' | 'no_stock' | 'waiting' | 'sourcing' | 'fba' | 'pending'
+ * rowState(row) -> 'parked' | 'no_stock' | 'waiting' | 'sourcing' | 'fba' | 'packed' | 'picked' | 'pending'
  *
- * Takes a row already selected with the flag columns. Kept in JS rather than a SQL CASE so the list route and any future consumer
- * can't derive it two different ways, and so the priority order is readable in one place.
+ * Takes a row already selected with the flag columns and `batch`, PLUS `held_rows` / `picked_rows` from the localstock join (see the
+ * PICKED note in the header — those two cannot be derived from orderstatus at all). A row selected without them simply never reaches
+ * `picked`, which is the safe direction to fail: an un-joined consumer sees the earlier states, not a wrong new one.
+ *
+ * Kept in JS rather than a SQL CASE so the list route and any future consumer can't derive it two different ways, and so the
+ * priority order is readable in one place.
  */
 function rowState(row) {
   const local = Number(row.localstock) || 0;
   const amz = Number(row.amz) || 0;
   const ukd = Number(row.ukd) || 0;
   const other = Number(row.othersupplier) || 0;
+  const held = Number(row.held_rows) || 0;
+  const picked = Number(row.picked_rows) || 0;
 
   if (String(row.orderdate || '').toLowerCase().includes('do not order')) return 'parked';
   // The legacy li_outofstock derivation, unchanged.
@@ -89,7 +140,18 @@ function rowState(row) {
   if (Number(row.customerwaiting) === 1) return 'waiting';
   if (ukd > 0 || other > 0) return 'sourcing';
   if (amz > 0) return 'fba';
-  return 'pending';   // localstock > 0: reserved on a shelf, awaiting pick — NOT picked; see the warning in the header
+  // The last three are one progression, newest step first. All sit below the exception states on purpose: `waiting` and the two
+  // sourcing states are decisions someone MADE about this line, and they outrank an observation about where the goods physically are.
+  //
+  // PACKED IS TESTED ALONE AND FIRST. It deliberately does NOT require the pick signal as a precondition (owner): if the line is
+  // boxed, the operator is satisfied, and how it got there is not this screen's business. That matters practically as well as
+  // philosophically — the pick signal is the weak one (a single observed case, and the shelf row can be gone entirely by the time
+  // anyone looks), so making the strong signal depend on the weak one would let a missing shelf row hide a packed order. Do not
+  // "tidy" this into `if (packed && picked)`.
+  if (String(row.batch || '') === '2') return 'packed';
+  // `held > 0` guards the empty case — with no shelf rows at all, 0 === 0 would otherwise read as "all picked".
+  if (held > 0 && picked === held) return 'picked';
+  return 'pending';   // localstock > 0: reserved on a shelf, awaiting pick — NOT picked; see the header
 }
 
 /*

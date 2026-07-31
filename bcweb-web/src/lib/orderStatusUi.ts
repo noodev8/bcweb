@@ -58,7 +58,8 @@ export function money(v: number | null | undefined): string {
 // single-colour OrderStageSwitch, where colour only means "this one").
 //
 // The pairing is: red = nobody has dealt with this; amber = someone has, and it's held on purpose; blue/indigo = in motion, sourced
-// from elsewhere; green = everything's reserved, nothing to worry about; slate = deliberately out of play.
+// from elsewhere; teal/green = the goods are ours and moving; grey = nothing is happening to this line (either waiting its turn, or
+// deliberately out of play).
 //
 // "Pending" (owner's word) is the label for `pending`, and it is the THIRD name this state has had. The flag means a shelf unit is
 // RESERVED against the line and ~96% of customer order lines sit in it for their whole life, so the two earlier names both claimed
@@ -69,8 +70,24 @@ export const CUSTOMER_STATES: Record<CustomerOrderState, { label: string; stripe
   waiting:  { label: 'Waiting',  stripe: 'bg-amber-400',  pill: 'bg-amber-50 text-amber-800 ring-amber-200' },
   sourcing: { label: 'Sourcing', stripe: 'bg-indigo-500', pill: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
   fba:      { label: 'FBA',      stripe: 'bg-sky-500',    pill: 'bg-sky-50 text-sky-700 ring-sky-200' },
-  pending:  { label: 'Pending',  stripe: 'bg-emerald-500',pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  parked:   { label: 'Do not order', stripe: 'bg-slate-400', pill: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  // PENDING -> PICKED -> PACKED is one progression, but it is NOT one hue at three depths. That was tried (2026-07-31) and rejected
+  // immediately: at a 1px stripe, three tints of green are three shades of the same smudge — the two you most need to tell apart
+  // (has this moved or not) were the two hardest to separate. Depth is too weak a signal at this size, whatever the theory says.
+  //
+  // So the progression is carried by MOVEMENT INTO COLOUR instead, which reads at a glance:
+  //   pending  GREY   — reserved on a shelf, nobody has moved. It is also the resting state of ~96% of lines, so grey is honest
+  //                     twice over: nothing has happened, and there is nothing here to look at. The eye should skip it.
+  //   picked   teal   — off the shelf. First colour, because it is the first thing anyone actually did.
+  //   packed   SOLID  — boxed, done with. The only filled pill on the screen, because it's the only state that means "finished".
+  packed:   { label: 'Packed',   stripe: 'bg-emerald-600', pill: 'bg-emerald-600 text-white ring-emerald-700' },
+  picked:   { label: 'Picked',   stripe: 'bg-teal-500',    pill: 'bg-teal-50 text-teal-700 ring-teal-200' },
+  // Styled to look DISABLED (owner) — the flat grey of a control that isn't in play: faint stripe, washed-out text, barely-there
+  // ring. It is the resting state of ~96% of lines, so the more it recedes the more the handful of rows that HAVE moved stand out.
+  // This is the one pill deliberately built to be skipped over rather than read.
+  pending:  { label: 'Pending',  stripe: 'bg-slate-200',   pill: 'bg-slate-100 text-slate-400 ring-slate-200' },
+  // Deepened from slate-400 so it can't be mistaken for the now-grey `pending` beside it. It keeps a grey because it is the other
+  // "nothing is happening here" state, but a line taken deliberately out of play must not read as one merely waiting its turn.
+  parked:   { label: 'Do not order', stripe: 'bg-slate-600', pill: 'bg-slate-200 text-slate-700 ring-slate-400' },
 };
 
 // Chip order for the filter bar, and the ranking for the order-level "worst state" roll-up: lower index wins.
@@ -79,7 +96,35 @@ export const CUSTOMER_STATES: Record<CustomerOrderState, { label: string; stripe
 // It is NOT the same order as rowState()'s internal precedence, and the difference is load-bearing: `parked` comes FIRST there (the
 // 'Do Not Order' string overrides every other flag on that row) but LAST here, so a line taken deliberately out of play can never
 // mask a sibling line in the same order that nobody has dealt with. See utils/customerOrders.js for the full reasoning.
-export const CUSTOMER_STATE_ORDER: CustomerOrderState[] = ['no_stock', 'waiting', 'sourcing', 'fba', 'pending', 'parked'];
+//
+// The progression states run pending -> picked -> packed here, which is the opposite of how they read: packed is furthest along, so
+// surely it "wins"? No — this ranking answers "what still needs doing on this order", and lower index = more outstanding. A two-pair
+// order with one pair boxed and one still on the shelf is a PENDING order; letting the packed line colour it would call it done
+// while a pair is unpicked. Only `parked` ranks lower, for the reason above.
+export const CUSTOMER_STATE_ORDER: CustomerOrderState[] =
+  ['no_stock', 'waiting', 'sourcing', 'fba', 'pending', 'picked', 'packed', 'parked'];
+
+/*
+ * isOutstanding(state) -> is this line still to be packed?
+ *
+ * THE WHOLE FILTER MODEL OF THIS SCREEN, deliberately reduced to one question (owner, 2026-07-31). It used to offer a chip per
+ * state — No stock, Waiting, Sourcing, FBA, Pending, Picked, Packed, Do not order — which was eight ways to slice a list that on a
+ * normal day is one job: pack what hasn't been packed. The eight chips answered questions nobody was asking while the answer to the
+ * one being asked had to be assembled from several of them.
+ *
+ * So: packed, or not. Everything that isn't boxed is outstanding, whatever the reason it isn't — a line waiting on stock and a line
+ * sitting picked on the bench are both work left to do, and the row itself says which is which when you get to it.
+ *
+ * The six states still EXIST and are still derived server-side (utils/customerOrders.js); this is only about what the top of the
+ * screen offers to filter by. They remain in CUSTOMER_STATES for the row stripe, and in CUSTOMER_STATE_ORDER for the roll-up.
+ *
+ * `parked` ('Do not order') counts as outstanding, which is arguable — it's deliberately out of play, so it will never be packed and
+ * will sit in the Pending count forever. It is left in because the alternative is a line that has silently vanished from both chips,
+ * and there are zero such rows today. Revisit if that changes.
+ */
+export function isOutstanding(state: CustomerOrderState): boolean {
+  return state !== 'packed';
+}
 
 // The states that mean "someone needs to do something" — everything else is already handled and only needs to be findable.
 // Lives here rather than in the list component because the stage switch headlines the same number.

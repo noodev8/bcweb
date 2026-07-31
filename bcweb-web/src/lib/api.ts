@@ -1469,7 +1469,14 @@ export function archiveOrderStatus(ordernums: string[]) {
 // screen has no way to know whether something has been picked: `pickedqty` is redundant legacy (0 on all 3,177 archived rows;
 // picking is tracked through `localstock` now), and a genuinely picked order leaves Shopify's unfulfilled list and is archived off
 // this screen entirely. See the warning in utils/customerOrders.js.
-export type CustomerOrderState = 'parked' | 'no_stock' | 'waiting' | 'sourcing' | 'fba' | 'pending';
+// pending -> picked -> packed is one progression and the three must not be conflated:
+//   pending  a shelf unit is RESERVED against the line (orderstatus.localstock > 0). Nobody has moved.
+//   picked   it has physically left the shelf — every held localstock row is at qty 0. Derived from the localstock TABLE, which is
+//            the only place that signal exists; orderstatus has no pick column at all.
+//   packed   boxed (orderstatus.batch = '2'). Still on this screen until Shopify reports the order fulfilled and it archives.
+// See utils/customerOrders.js on the server for the evidence behind each.
+export type CustomerOrderState =
+  'parked' | 'no_stock' | 'waiting' | 'sourcing' | 'fba' | 'packed' | 'picked' | 'pending';
 
 export interface CustomerOrderLine {
   ordernum: string;

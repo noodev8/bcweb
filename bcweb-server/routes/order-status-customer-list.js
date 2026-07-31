@@ -65,7 +65,11 @@ Success Response:
       "fba": 0,                           // amz — units to come from FBA
       "courier": "5",
       "note": "",
-      "state": "pending"        // reserved against a shelf row, awaiting pick — NOT picked; see utils/customerOrders.js
+      // One of: no_stock | waiting | sourcing | fba | picked | pending | parked.
+      // "pending" = reserved against a shelf row, awaiting pick. "picked" = every held shelf row is emptied, i.e. the units are off
+      // the shelf but Shopify hasn't reported the order fulfilled yet. See the PICKED note in utils/customerOrders.js — the two are
+      // NOT the same flag and the second one doesn't live in orderstatus at all.
+      "state": "pending"
     }
   ]
 }
@@ -95,8 +99,19 @@ router.get('/', async (req, res) => {
     // skumap -> title is a fallback for rows where it was never populated. LEFT JOINs so a SKU missing from skumap (a deleted or
     // renamed product) still shows its order line rather than dropping it off a fulfilment screen.
     //
-    // Ordered ordernum ASC = oldest order first, matching the legacy `setsort("ordernum A, code A")` and the oldest-first working
-    // order the module's other two stages use. ordernum is 'BC' + a zero-padded counter, so lexical order IS chronological order.
+    // NEWEST ORDER FIRST (owner, 2026-07-31). ordernum is 'BC' + a zero-padded counter, so lexical DESC is chronological DESC and no
+    // date parsing is needed to sort by when the customer ordered.
+    //
+    // This REVERSES the legacy `setsort("ordernum A, code A")` and the oldest-first order the module's procurement stages use, and the
+    // difference is not an inconsistency — it's the two screens answering different questions. TO PLACE / ON ORDER are work queues
+    // where the oldest item is the most overdue and belongs at the top. This is a live list watched through the day: the thing you
+    // came to check is almost always the order that just landed, and it was arriving at the BOTTOM of a long grid.
+    //
+    // It also improves what the safety cap drops. Under ASC a truncated list lost the NEWEST orders — the ones being actively worked.
+    // Under DESC it loses the oldest, which are the stalest.
+    //
+    // `shopifysku` stays ASC within an order so a multi-line order's sizes read in a stable order. The client's group-header logic
+    // (print the ordernum on a group's first visible row) only needs the rows of one order to be adjacent, which they still are.
     const result = await query(`
       SELECT o.ordernum,
              o.shopifysku                              AS code,
@@ -114,21 +129,42 @@ router.get('/', async (req, res) => {
              COALESCE(o.ukd, 0)            AS ukd,
              COALESCE(o.othersupplier, 0)  AS othersupplier,
              COALESCE(o.customerwaiting, 0) AS customerwaiting,
+             COALESCE(o.batch, '')         AS batch,
+             COALESCE(ls.held, 0)          AS held_rows,
+             COALESCE(ls.picked, 0)        AS picked_rows,
              COUNT(*) OVER ()                          AS total
         FROM orderstatus o
         LEFT JOIN skumap sm ON sm.code = o.shopifysku
         LEFT JOIN title t   ON t.groupid = sm.groupid
+        -- THE PICK SIGNAL. It is not in orderstatus and cannot be derived from it — see the PICKED note in utils/customerOrders.js.
+        -- Phase E reserves a shelf row by stamping it with the ordernum and leaving qty = 1; taking the unit off the shelf drops that
+        -- row to qty = 0 while it keeps its ordernum. So per (ordernum, code): how many rows are held, and how many are emptied.
+        -- Aggregated in a subquery rather than joined row-for-row because a multi-unit line holds several shelf rows and a plain join
+        -- would multiply the order lines by them.
+        -- Keyed on (ordernum, code) because that is the exact key phase E allocates by (orderSync.js: WHERE ordernum = $2 AND
+        -- shopifysku = $3), so the two can't disagree about which rows belong to which line.
+        -- deleted = 0 matches the sellable-stock predicate used everywhere else (CLAUDE.md); '#FREE' is unallocated shelf stock and
+        -- is never a pick.
+        LEFT JOIN (
+          SELECT ordernum, code,
+                 COUNT(*)                                       AS held,
+                 COUNT(*) FILTER (WHERE COALESCE(qty, 0) = 0)   AS picked
+            FROM localstock
+           WHERE ordernum <> '#FREE'
+             AND COALESCE(deleted, 0) = 0
+           GROUP BY ordernum, code
+        ) ls ON ls.ordernum = o.ordernum AND ls.code = o.shopifysku
        WHERE o.ordertype = $1
          AND ${notDiscarded('o')}
-       ORDER BY o.ordernum, o.shopifysku
+       ORDER BY o.ordernum DESC, o.shopifysku
        LIMIT $2
     `, [CUSTOMER_ORDERTYPE, limit]);
 
     const total = result.rows.length ? Number(result.rows[0].total) : 0;
 
-    // rowState() reads the four sourcing flags + customerwaiting + orderdate; they are selected above purely to feed it and are not
-    // returned individually, because every consumer wants the derived state and two consumers deriving it separately is how the
-    // legacy screen and its reports drifted apart in the first place.
+    // rowState() reads the four sourcing flags + customerwaiting + orderdate + the two pick counts; they are selected above purely to
+    // feed it and are not returned individually, because every consumer wants the derived state and two consumers deriving it
+    // separately is how the legacy screen and its reports drifted apart in the first place.
     const lines = result.rows.map((r) => ({
       ordernum: r.ordernum,
       code: r.code,

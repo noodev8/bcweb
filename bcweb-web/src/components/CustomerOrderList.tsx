@@ -54,8 +54,8 @@ import {
   setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote, setCustomerOrderWaiting,
 } from '@/lib/api';
 import {
-  COURIERS, CUSTOMER_ORDERS_KEY, CUSTOMER_STATES, CUSTOMER_STATE_ORDER,
-  courierShort, orderedAt, worstCustomerState,
+  COURIERS, CUSTOMER_ORDERS_KEY, CUSTOMER_STATES,
+  courierShort, isOutstanding, orderedAt, worstCustomerState,
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 
@@ -81,7 +81,8 @@ export default function CustomerOrderList() {
   const truncated = data?.truncated ?? false;
 
   const [selected, setSelected] = useState<string | null>(null);
-  const [filter, setFilter] = useState<CustomerOrderState | 'all'>('all');
+  // Two positions, not eight. See isOutstanding() — the screen asks one question and this is it.
+  const [filter, setFilter] = useState<'all' | 'pending'>('all');
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -129,11 +130,8 @@ export default function CustomerOrderList() {
     return map;
   }, [lines]);
 
-  const counts = useMemo(() => {
-    const byState: Record<string, number> = {};
-    for (const l of lines) byState[l.state] = (byState[l.state] || 0) + 1;
-    return byState;
-  }, [lines]);
+  // The only tally the screen shows: how much is left to pack. The per-state breakdown it used to keep went with the chips.
+  const outstanding = useMemo(() => lines.reduce((n, l) => n + (isOutstanding(l.state) ? 1 : 0), 0), [lines]);
 
   // Search spans everything you'd have in your hand when looking an order up: the order number off a picking note, the customer's
   // name off an email, a postcode off a label, or the SKU. Case-insensitive substring, no term parsing — this is a find box, not a
@@ -141,7 +139,8 @@ export default function CustomerOrderList() {
   const shown = useMemo(() => {
     const q = term.trim().toLowerCase();
     return lines.filter((l) => {
-      if (filter !== 'all' && l.state !== filter) return false;
+      // The same isOutstanding() the chip counted with, so what the chip says and what it shows can never disagree.
+      if (filter === 'pending' && !isOutstanding(l.state)) return false;
       if (!q) return true;
       return (
         l.ordernum.toLowerCase().includes(q) ||
@@ -188,19 +187,15 @@ export default function CustomerOrderList() {
       <div ref={controlsRef} className="sticky -top-px z-30 -mx-4 border-b border-slate-200 bg-white px-4 pb-3 pt-1">
       {/* --- filter chips + find box ------------------------------------------------------------------------------------------ */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* TWO CHIPS. Pending is always rendered, even at zero — a day finished is worth seeing as "Pending 0", and a chip that
+            disappears when it empties takes the reassurance with it. */}
         <Chip label="All" count={lines.length} active={filter === 'all'} onClick={() => setFilter('all')} />
-        {CUSTOMER_STATE_ORDER.map((s) => (
-          counts[s] ? (
-            <Chip
-              key={s}
-              label={CUSTOMER_STATES[s].label}
-              count={counts[s]}
-              active={filter === s}
-              stripe={CUSTOMER_STATES[s].stripe}
-              onClick={() => setFilter(filter === s ? 'all' : s)}
-            />
-          ) : null
-        ))}
+        <Chip
+          label="Pending"
+          count={outstanding}
+          active={filter === 'pending'}
+          onClick={() => setFilter(filter === 'pending' ? 'all' : 'pending')}
+        />
 
         {/* --- refresh ---------------------------------------------------------------------------------------------------------
             NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
@@ -287,10 +282,11 @@ export default function CustomerOrderList() {
               <th className="px-2 py-2 font-medium">Post code</th>
               {/* One date column, not two. The old "Ordered" showed createddate and "Order date" showed the orderdate stamp — the
                   same event at two precisions, in two columns, which is why one of them had to go. FBA lost its column too: it is
-                  one of the six states, so the status pill already says it and a mostly-empty integer column said it twice. */}
+                  one of the states, so the stripe already says it and a mostly-empty integer column said it twice. */}
               <th className="px-2 py-2 font-medium">Ordered</th>
               <th className="px-2 py-2 font-medium">Courier</th>
-              <th className="px-2 py-2 font-medium">Status</th>
+              {/* Only ever holds "Packed" now — hence the heading, which says what the column is for rather than what it contains. */}
+              <th className="px-2 py-2 font-medium">Packed</th>
             </tr>
           </thead>
           <tbody>
@@ -342,8 +338,14 @@ export default function CustomerOrderList() {
                   <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{l.postcode || '—'}</td>
                   <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-slate-500">{orderedAt(l.created)}</td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{courierShort(l.courier)}</td>
+                  {/* ONE PILL, AND ONLY FOR PACKED (owner). A pill on every row meant the column was a wall of badges you had to
+                      read to find the few that mattered; with only the finished lines badged, "what's done" is a shape you can see
+                      without reading a word, and an empty cell means "not yet" — which is the other half of the same answer.
+                      The other states haven't gone: they still colour the stripe on the left of the row. */}
                   <td className="whitespace-nowrap px-2 py-1.5">
-                    <span className={'rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ' + s.pill}>{s.label}</span>
+                    {l.state === 'packed' && (
+                      <span className={'rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ' + s.pill}>{s.label}</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -370,8 +372,9 @@ export default function CustomerOrderList() {
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 
-function Chip({ label, count, active, stripe, onClick }: {
-  label: string; count: number; active: boolean; stripe?: string; onClick: () => void;
+// The `stripe` dot this used to take went with the per-state chips — with only All and Pending left there is no state to colour.
+function Chip({ label, count, active, onClick }: {
+  label: string; count: number; active: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -383,7 +386,6 @@ function Chip({ label, count, active, stripe, onClick }: {
         (active ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
       }
     >
-      {stripe && <span className={'h-2 w-2 rounded-full ' + stripe} />}
       {label}
       <span className={active ? 'text-white/70' : 'text-slate-400'}>{count}</span>
     </button>
