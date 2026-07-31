@@ -27,12 +27,27 @@ SELECTION drives one action bar above the table rather than a control per row: 1
 legacy screen worked exactly this way (pick a row, choose from the dropdown, Apply). The note lives in that bar too — it's the blank
 strip across the top of the legacy grid, which is where the feature came from.
 
+STICKY CONTROLS: filters + find box + action bar are pinned to the top of the viewport (`position: sticky`), because the two halves
+of every job on this screen are 80 rows apart — you find the row down the list, then act on it in a bar that used to be off-screen by
+then. Scrolling back up to reach the bar, with the selection made blind, was the friction. Now the bar follows.
+
+The column header sticks BELOW that block, which is why its `top` is measured at runtime rather than written as a class: the block
+grows and shrinks (error line, confirm box, chips wrapping), so a hard-coded offset would either overlap the headings or leave a gap.
+Sticky only bites when no ancestor is a scroll container, hence `lg:overflow-visible` on the table wrapper — below lg the table needs
+its horizontal scroller more than it needs a pinned heading row.
+
+TWO REFRESH-SHAPED THINGS, AND THEY ARE NOT THE SAME (see the Refresh button for the full note): REFRESH here re-reads our own DB —
+free, read-only, press it all day. UPDATE ORDERS in the title row calls Shopify and writes. Only the second one can make a packed
+order leave the list, because that's the archive phase of the sync.
+
 DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenance-notes.md.
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
-import { ExclamationTriangleIcon, MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowPathIcon, ChevronDownIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, TrashIcon,
+} from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon } from '@heroicons/react/24/solid';
 import {
   CustomerOrderLine, CustomerOrderState, deleteCustomerOrder, getCustomerOrders,
@@ -46,6 +61,12 @@ import { useApiQuery } from '@/lib/useApiQuery';
 
 // Stable "nothing loaded yet" identity so the derived memos below aren't invalidated on every render.
 const NO_LINES: CustomerOrderLine[] = [];
+
+// Pack-only is a courier CODE on the row ('0', see COURIERS) but not a courier CHOICE on this screen — it has its own button on the
+// action bar, so it's split out of the dropdown's options here. COURIERS stays the full list: the grid's Courier column still has to
+// render 'Pack', and the server still validates '0' like any other code.
+const PACK_ONLY = '0';
+const SHIPPING = COURIERS.filter((c) => c.code !== PACK_ONLY);
 
 export default function CustomerOrderList() {
   // Same SWR key the module home uses to headline the counts on the stage switch. SWR dedupes by key, so the two call sites share
@@ -64,6 +85,22 @@ export default function CustomerOrderList() {
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+
+  // How tall the pinned control block currently is, so the table's heading row can stick directly underneath it instead of behind it.
+  // Measured rather than assumed because the block changes height in normal use: selecting an order fills the bar, a failed write adds
+  // an error line, a confirm swaps a button for a wider box, and the filter chips wrap on a narrow window.
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  useEffect(() => {
+    const el = controlsRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setControlsHeight(el.offsetHeight));
+    ro.observe(el);
+    setControlsHeight(el.offsetHeight);
+    return () => ro.disconnect();
+    // The ref is null on the loading/error renders (the block isn't mounted), so the effect has to run again once the grid appears —
+    // that is what these deps are for, not the values themselves.
+  }, [isLoading, loadError]);
 
   // --- derived -----------------------------------------------------------------------------------------------------------------
 
@@ -143,6 +180,12 @@ export default function CustomerOrderList() {
 
   return (
     <div>
+      {/* --- the pinned control block ------------------------------------------------------------------------------------------
+          Everything you can DO on this screen, held at the top of the viewport while the list scrolls under it. The negative margin
+          + matching padding let the opaque background span the full width of AppShell's container, so rows disappear cleanly behind
+          it rather than showing through at the edges. -top-px kills the hairline gap some browsers leave at fractional scroll
+          offsets. z-30 keeps it above the table's own sticky heading row (z-10). */}
+      <div ref={controlsRef} className="sticky -top-px z-30 -mx-4 border-b border-slate-200 bg-white px-4 pb-3 pt-1">
       {/* --- filter chips + find box ------------------------------------------------------------------------------------------ */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Chip label="All" count={lines.length} active={filter === 'all'} onClick={() => setFilter('all')} />
@@ -159,13 +202,39 @@ export default function CustomerOrderList() {
           ) : null
         ))}
 
-        <div className="relative ml-auto">
+        {/* --- refresh ---------------------------------------------------------------------------------------------------------
+            NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
+            that checking pick progress through the busy part of the day — which is done constantly — costs nothing and can't hammer
+            the Shopify API. Update orders stays in the title row, deliberately further away, because it writes.
+
+            WHAT IT DOES AND DOESN'T SHOW, because the difference matters and isn't obvious:
+              it DOES show   progress the team makes in our own DB — notes, courier / Pack only, Waiting, and the localstock
+                             allocation PowerBuilder writes as things are picked.
+              it does NOT    make a packed order leave the list. A line only disappears once Shopify reports it fulfilled and the
+                             ARCHIVE phase moves it to orderstatus_archive — and that phase is part of the sync, so it needs an
+                             Update orders (or the cron run, which fires around the dispatch window).
+            So: Refresh to see how the picking is going, Update orders when you want the count to come down. */}
+        <button
+          type="button"
+          onClick={() => refresh()}
+          disabled={busy}
+          title="Re-read our order list. Doesn't contact Shopify."
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          <ArrowPathIcon className={'h-4 w-4 ' + (busy ? 'animate-spin' : '')} />
+          Refresh
+        </button>
+
+        <div className="relative">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          {/* Forced UPPERCASE, like the Pricing and Inventory find boxes (owner) — order numbers and SKUs are uppercase, so typing
+              matches what's on the screen and on the picking note. Purely cosmetic to the filter: `shown` lowercases both sides, so
+              a lowercase customer name or title still matches. `placeholder:normal-case` keeps the hint readable. */}
           <input
             value={term}
-            onChange={(e) => setTerm(e.target.value)}
+            onChange={(e) => setTerm(e.target.value.toUpperCase())}
             placeholder="Order, customer, postcode, SKU…"
-            className="w-64 rounded-md border border-slate-200 py-1.5 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none"
+            className="w-64 rounded-md border border-slate-200 py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:border-brand-500 focus:outline-none"
           />
         </div>
       </div>
@@ -186,17 +255,28 @@ export default function CustomerOrderList() {
         onFba={() => active && run(() => setCustomerOrderFba(active.ordernum))}
         onDelete={async () => { if (active && await run(() => deleteCustomerOrder(active.ordernum))) setSelected(null); }}
       />
+      </div>
 
+      {/* Outside the pinned block on purpose: it's a one-off notice, not a control, and it would cost the grid a permanent strip of
+          the viewport for something you read once. */}
       {truncated && (
-        <div className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="mb-2 mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Showing the first {lines.length} lines — there are more. Narrow it down with the search box.
         </div>
       )}
 
       {/* --- the grid ---------------------------------------------------------------------------------------------------------- */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      {/* `overflow-x-auto` makes this a scroll container, and a sticky child positions against its nearest scrolling ancestor — which
+          would pin the heading row to a box that never scrolls, i.e. not at all. From lg up the table fits the container outright, so
+          the scroller is dropped and the heading sticks to the window like it's meant to. Below lg the horizontal scroll is worth
+          more than a pinned heading. */}
+      <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white lg:overflow-visible">
         <table className="w-full min-w-[760px] border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          {/* `top` is the live height of the pinned control block above — see the note on controlsHeight. */}
+          <thead
+            style={{ top: controlsHeight }}
+            className="sticky z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"
+          >
             <tr>
               <th className="w-1 p-0" aria-label="Status" />
               <th className="px-3 py-2 font-medium">Order</th>
@@ -313,9 +393,18 @@ function Chip({ label, count, active, stripe, onClick }: {
 /*
  * OrderActionBar — everything you can do to the selected order, in the strip above the grid.
  *
- * Note first and widest: it's the feature the legacy top bar existed for, and the one used most. The two destructive/irreversible
- * actions (FBA, Delete) sit apart on the right behind a confirm step, because both are one click from a consequence that this screen
- * cannot undo.
+ * ACTIONS ARE RANKED BY HOW OFTEN THEY'RE ACTUALLY USED (all owner's calls), not by how interesting they are:
+ *
+ *   Note, Pack only, Courier      on the face of the bar, always visible, no click to reach them.
+ *   Waiting, Send from FBA, Delete  rare. Behind a "More" disclosure.
+ *
+ * PACK ONLY is promoted OUT of the courier dropdown and onto the bar as its own button — it's one of the two things done most on
+ * this screen ("deal with this, don't send it out"), and it isn't really a shipping choice at all: it's the decision NOT to ship
+ * yet. Buried as one of three options in a select, a main action cost two clicks and read as a courier. It still writes the same
+ * `courier='0'` through the same route, so the table column and the legacy screen are unaffected — only the control moved.
+ *
+ * The disclosure is the ONE thing here allowed to change the bar's height. Everything else is pinned (see below), but this only
+ * expands on an explicit click on "More", when the operator is aiming at the bar rather than at the table.
  *
  * `order` is NULLABLE and the bar renders either way — see the note at the call site. Every control is simply disabled when nothing
  * is selected, which keeps the footprint identical between the two states; that is the whole point, so don't "tidy" this into an
@@ -339,13 +428,16 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   const [note, setNote] = useState(order?.note ?? '');
   const [noteFor, setNoteFor] = useState(order?.ordernum ?? null);
   const [confirm, setConfirm] = useState<'fba' | 'delete' | null>(null);
+  const [more, setMore] = useState(false);
 
   if (noteFor !== (order?.ordernum ?? null)) {
     setNoteFor(order?.ordernum ?? null);
     setNote(order?.note ?? '');
     // Clear any half-answered confirm too. Without this, arming "Delete?" on one order and then clicking a different row would
-    // leave the confirm showing against the new selection — one more click and the wrong order is gone.
+    // leave the confirm showing against the new selection — one more click and the wrong order is gone. The disclosure re-closes
+    // for the same reason: the rare actions should be a deliberate choice per order, never left standing open from the last one.
     setConfirm(null);
+    setMore(false);
   }
 
   const idle = order === null;
@@ -353,9 +445,11 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   const off = idle || working;
   const multiLine = (order?.lines.length ?? 0) > 1;
   const noteChanged = !idle && note.trim() !== order.note.trim();
+  const packOnly = order?.courier === PACK_ONLY;
 
   return (
-    <div className={'mb-3 rounded-lg border p-3 transition-colors ' +
+    // No bottom margin: the pinned block that wraps this owns the gap to the grid, and a margin here would be dead pinned pixels.
+    <div className={'rounded-lg border p-3 transition-colors ' +
       (idle ? 'border-slate-200 bg-slate-50/60' : 'border-brand-200 bg-brand-50/50')}>
       {/* ONE header structure for both states, never a branch between two different layouts — that branch was the flip. Every slot
           is always present and always occupies its space: the order number falls back to a placeholder dash, the hint takes the
@@ -404,19 +498,23 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
           </div>
         </div>
 
-        {/* --- waiting -------------------------------------------------------------------------------------------------------- */}
+        {/* --- pack only ------------------------------------------------------------------------------------------------------ */}
+        {/* A main action, so it gets a button. Toggle-styled rather than fire-and-forget because it's a STATE the order is in — you
+            need to see at a glance that the selected order is already held back. There's no "un-pack": you leave it by picking a
+            real courier next door, which is exactly what the operator does. */}
         <button
           type="button"
           disabled={off}
-          onClick={() => onWaiting(!order?.waiting)}
+          aria-pressed={packOnly}
+          onClick={() => onCourier(PACK_ONLY)}
           className={
             'rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ' +
-            (order?.waiting
+            (packOnly
               ? 'border-amber-300 bg-amber-100 text-amber-900'
               : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
           }
         >
-          {order?.waiting ? 'Waiting ✓' : 'Waiting'}
+          {packOnly ? 'Pack only ✓' : 'Pack only'}
         </button>
 
         {/* --- courier -------------------------------------------------------------------------------------------------------- */}
@@ -424,26 +522,61 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
           <label htmlFor="cust-courier" className="mb-1 block text-xs font-medium text-slate-500">Courier</label>
           <select
             id="cust-courier"
-            value={COURIERS.some((c) => c.code === order?.courier) ? (order!.courier as string) : ''}
+            value={SHIPPING.some((c) => c.code === order?.courier) ? (order!.courier as string) : ''}
             disabled={off}
             onChange={(e) => e.target.value && onCourier(e.target.value)}
             className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none disabled:bg-slate-100 disabled:opacity-60"
           >
-            {/* Present only when the stored code isn't one we offer — so an unexpected value is visible rather than silently
-                re-labelled as something we do offer. Also covers the nothing-selected state. */}
-            {!COURIERS.some((c) => c.code === order?.courier) && (
-              <option value="">{order?.courier ? `Other (${order.courier})` : idle ? '—' : 'Not set'}</option>
+            {/* Present whenever the stored code isn't one of the shipping services — pack-only (now the button's job), an
+                unexpected value, or nothing selected. An unrecognised code is shown raw rather than silently re-labelled as
+                something we do offer. */}
+            {!SHIPPING.some((c) => c.code === order?.courier) && (
+              <option value="">
+                {packOnly ? 'Pack only' : order?.courier ? `Other (${order.courier})` : idle ? '—' : 'Not set'}
+              </option>
             )}
-            {COURIERS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+            {SHIPPING.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
 
-        {/* --- the two that bite ---------------------------------------------------------------------------------------------- */}
-        <div className="ml-auto flex items-end gap-2">
-          {confirm === 'fba' && order ? (
+        {/* --- the way through to the rare three ------------------------------------------------------------------------------ */}
+        {/* Quiet on purpose: a plain text button, no border, no colour. It isn't an action, it's a door — and the whole point of
+            moving Waiting, FBA and Delete behind it was to stop rarely-used buttons drawing the eye on every selection. */}
+        <button
+          type="button"
+          disabled={off}
+          aria-expanded={more}
+          onClick={() => { setMore(!more); setConfirm(null); }}
+          className="ml-auto flex items-center gap-1 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 disabled:opacity-40"
+        >
+          More
+          <ChevronDownIcon className={'h-4 w-4 transition-transform ' + (more ? 'rotate-180' : '')} />
+        </button>
+      </div>
+
+      {/* --- the rare three ----------------------------------------------------------------------------------------------------
+          Waiting, FBA and Delete. The two that can't be undone from this screen keep their confirm step; that's the whole warning,
+          there's no prose telling the operator what they already know. */}
+      {more && order && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
+          <button
+            type="button"
+            disabled={off}
+            aria-pressed={order.waiting}
+            onClick={() => onWaiting(!order.waiting)}
+            className={
+              'rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ' +
+              (order.waiting
+                ? 'border-amber-300 bg-amber-100 text-amber-900'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+            }
+          >
+            {order.waiting ? 'Waiting ✓' : 'Waiting'}
+          </button>
+
+          {confirm === 'fba' ? (
             <ConfirmBox
-              // Spelled out because the sync can never re-source the line afterwards and this screen has no undo for it.
-              message="Send from FBA? This can't be undone here."
+              message="Send from FBA?"
               onYes={() => { setConfirm(null); onFba(); }}
               onNo={() => setConfirm(null)}
             />
@@ -459,13 +592,11 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
             </button>
           )}
 
-          {confirm === 'delete' && order ? (
+          {confirm === 'delete' ? (
             <ConfirmBox
-              // The only place the line count still appears, now that the header doesn't repeat it — and the one place it matters,
-              // because deleting is per-order and a multi-line order takes its siblings with it.
-              message={order.lines.length === 1
-                ? 'Delete this order? Shopify will re-add it on the next sync.'
-                : `Delete all ${order.lines.length} lines? Shopify will re-add them on the next sync.`}
+              // The line count is the one thing the confirm has to say: deleting is per-ORDER, so a multi-line order takes its
+              // siblings with it and the count is what tells you that.
+              message={order.lines.length === 1 ? 'Delete this order?' : `Delete all ${order.lines.length} lines?`}
               onYes={() => { setConfirm(null); onDelete(); }}
               onNo={() => setConfirm(null)}
             />
@@ -480,7 +611,7 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
             </button>
           )}
         </div>
-      </div>
+      )}
 
       {error && (
         <p className="mt-2 flex items-center gap-1.5 text-sm text-red-700">
@@ -491,8 +622,7 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   );
 }
 
-// Inline confirm rather than window.confirm: a native modal blocks the whole tab and reads as a browser error, and this one needs to
-// state a consequence the operator may not know.
+// Inline confirm rather than window.confirm: a native modal blocks the whole tab and reads as a browser error.
 function ConfirmBox({ message, onYes, onNo }: { message: string; onYes: () => void; onNo: () => void }) {
   return (
     // nowrap on the message: if it wrapped, the confirm would grow taller than the button it replaced and shunt the table down —

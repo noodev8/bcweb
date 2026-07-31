@@ -6,7 +6,7 @@
 >
 > | | Where | Trigger |
 > |---|---|---|
-> | 1 | `C:\bcweb\bcweb-server\utils\orderSync.js` | **Sync orders** button, Analytics → Sales (`POST /order-sync`) |
+> | 1 | `C:\bcweb\bcweb-server\utils\orderSync.js` | **Update orders** button, Analytics → Sales + Customer Orders (`POST /order-sync`) |
 > | 2 | `C:\scripts\orders\update_orders.py` | cron — `C:\scripts\crontab.txt` (09:00, 12:00, 13:00/13:30/13:45, 14:00/14:10, 21:00) |
 >
 > **The cron was deliberately NOT switched off** (owner's decision, 2026-07-28). The button is a

@@ -13,7 +13,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
-  ArrowUpTrayIcon,
+  ArrowUpTrayIcon, UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -81,13 +81,23 @@ export default function DashboardPage() {
           icon={ArchiveBoxIcon}
           live
         />
-        {/* Order Status — three stages over one table. Two are procurement (place what's been chosen, then chase what's on its way);
-            the third is fulfilment (customer orders, ported from the legacy PowerBuilder Status screen). */}
+        {/* Order Status — PROCUREMENT only: place what's been chosen, then chase what's on its way. Two stages, split on `orderdate`. */}
         <ModuleTile
           title="Order Status"
-          description="Place supplier orders, chase what's on its way, and fulfil what customers have bought."
+          description="Place supplier orders and chase what's on its way."
           href="/order-status"
           icon={ShoppingCartIcon}
+          live
+        />
+
+        {/* Customer Orders — FULFILMENT, ported from the legacy PowerBuilder Status screen. Its own tile rather than a stage inside
+            Order Status: it's the opposite direction of trade (what we owe the customer, not what we owe a supplier), it's worked
+            daily against a long grid, and sharing a screen cost it the viewport space that grid needs. */}
+        <ModuleTile
+          title="Customer Orders"
+          description="Fulfil what customers have bought — what's picked, what's short, what's waiting."
+          href="/customer-orders"
+          icon={UserGroupIcon}
           live
         />
 

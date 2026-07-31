@@ -16,7 +16,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ChartBarIcon,
-  ArchiveBoxIcon,
+  ArchiveBoxIcon, UserGroupIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
@@ -32,6 +32,10 @@ const MODULES: { label: string; href: string; icon: React.ComponentType<{ classN
   { label: 'Amazon Pricing', href: '/amz', icon: BuildingStorefrontIcon },
   { label: 'Add / Modify', href: '/products', icon: TagIcon },
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
+  // Customer Orders earns a header slot on frequency alone: it's the one screen worked every day, and it's also the one you're most
+  // often pulled INTO from somewhere else ("has that order gone?"). Order Status deliberately isn't here — placing and chasing
+  // supplier orders is a sit-down job you start from the dashboard, not something you dip into mid-task.
+  { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
   { label: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 

@@ -3,9 +3,8 @@
 =======================================================================================================================================
 Page: /order-status  (Order Status module home)
 =======================================================================================================================================
-Purpose: The module home. Three stages, two of which are a supplier picker and one of which is a list in its own right.
-
-PROCUREMENT — what we're buying, split across the two halves of the order lifecycle (Chosen -> Placed -> Arrived):
+Purpose: The module home — a supplier picker over two PROCUREMENT stages. This module is now procurement ONLY: what we're buying, split
+         across the two halves of the order lifecycle (Chosen -> Placed -> Arrived).
 
   TO PLACE — chosen in the legacy order screen but not yet bought from the supplier. A work queue with a clock on it: nothing is coming
              until someone exports the CSV and places the order. Tiles lead with the ORDER VALUE, because "what will this cost" is the
@@ -15,29 +14,22 @@ PROCUREMENT — what we're buying, split across the two halves of the order life
 Both come from one call (GET /order-status-suppliers returns both aggregates per supplier), so the switch is instant and the headline
 counts are always consistent with the tiles beneath them.
 
-FULFILMENT — the other direction entirely:
+FULFILMENT (customer orders) used to be a third stage here. It is its own module now — /customer-orders — because it has no supplier
+dimension, no buying decision, and a daily grid that needed the vertical space these stage cards take. A ?stage=customer link still
+lands on it: the redirect below keeps every bookmark made while it lived here working.
 
-  CUSTOMERS — what customers have bought and whether we can send it, ported from the legacy PowerBuilder Status screen. It has NO
-              supplier dimension, so it renders its grid inline here instead of routing on to a picker. That asymmetry is deliberate:
-              inventing a per-supplier split for customer orders would add a click that answers no question anybody asks.
-
-CUSTOMERS is the DEFAULT stage and sits leftmost — it's worked daily, so the module opens on it rather than making the everyday job
-the one you have to click for. The stage still lives in the URL (?stage=place) so it survives a refresh and, more importantly, carries
-into the supplier page: clicking a TO PLACE tile must land on the order-build sheet, not the chase list. An explicit ?stage= always
-wins over the default, so existing links and bookmarks into the procurement stages keep working.
+The stage lives in the URL (?stage=place) so it survives a refresh and, more importantly, carries into the supplier page: clicking a
+TO PLACE tile must land on the order-build sheet, not the chase list. ON ORDER is the default — it's the question asked most often.
 =======================================================================================================================================
 */
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import CustomerOrderList from '@/components/CustomerOrderList';
 import OrderStageSwitch, { OrderStage } from '@/components/OrderStageSwitch';
-import { getCustomerOrders, getOrderStatusSuppliers, OrderStatusSupplierRow } from '@/lib/api';
-import {
-  ageClass, chosenAgeClass, customerAttentionCount, CUSTOMER_ORDERS_KEY, money,
-} from '@/lib/orderStatusUi';
+import { getOrderStatusSuppliers, OrderStatusSupplierRow } from '@/lib/api';
+import { ageClass, chosenAgeClass, money } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
@@ -55,22 +47,16 @@ export default function OrderStatusHome() {
 function OrderStatusHomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // CUSTOMERS is the default landing stage (owner): it's the daily job, so opening the module should already be showing it. The two
-  // procurement stages are reached by an explicit click, or by a ?stage= link — which is why the param is still honoured first, so
-  // an existing /order-status?stage=place bookmark keeps working.
   const stageParam = searchParams.get('stage');
-  const [stage, setStage] = useState<OrderStage>(
-    stageParam === 'order' ? 'order' : stageParam === 'place' ? 'place' : 'customer'
-  );
+  const [stage, setStage] = useState<OrderStage>(stageParam === 'place' ? 'place' : 'order');
 
-  // The SAME SWR key CustomerOrderList uses, so the stage switch can headline the fulfilment numbers. SWR dedupes by key: this is one
-  // request shared between the two components, not a second fetch, and an action taken in the list updates these counts for free.
-  // (Deliberately not a callback prop from the child — that meant setting this component's state during the child's render, which
-  // React rejects.) Loads on all three stages, which is the point: the "N to sort" badge has to be visible from the other two.
-  const { data: customerData } = useApiQuery(CUSTOMER_ORDERS_KEY, () => getCustomerOrders());
-  const customerCounts = useMemo(() => (customerData
-    ? { units: customerData.lines.length, attention: customerAttentionCount(customerData.lines) }
-    : null), [customerData]);
+  // Customer orders were once this module's third stage, so ?stage=customer links and bookmarks exist in the wild (and in people's
+  // history bar). Forward them to the module they now belong to rather than silently dropping them onto the chase list, which looks
+  // like the app losing your place. `replace`, so Back doesn't bounce you straight back here.
+  const toCustomerModule = stageParam === 'customer';
+  useEffect(() => {
+    if (toCustomerModule) router.replace('/customer-orders');
+  }, [toCustomerModule, router]);
 
   // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
   // the caller decides, and for this whole module the decision is the same one).
@@ -109,18 +95,12 @@ function OrderStatusHomeContent() {
         toPlaceUnits={loading ? null : totals.toPlaceUnits}
         toPlaceCost={loading ? null : totals.toPlaceCost}
         onOrderUnits={loading ? null : totals.onOrderUnits}
-        customerUnits={customerCounts?.units ?? null}
-        customerAttention={customerCounts?.attention ?? null}
       />
 
-      {/* The fulfilment stage owns its own data and its own loading/error states — the supplier query below is procurement-only and
-          says nothing about it, so it is rendered instead of, not alongside, the picker. */}
-      {stage === 'customer' && <CustomerOrderList />}
+      {loading && <p className="text-sm text-slate-400">Loading…</p>}
+      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {stage !== 'customer' && loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {stage !== 'customer' && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-
-      {stage !== 'customer' && !loading && !error && shown.length === 0 && (
+      {!loading && !error && shown.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
           {stage === 'place'
             ? 'Nothing waiting to be ordered. Styles land here once they’re chosen in the legacy order screen.'
@@ -128,7 +108,7 @@ function OrderStatusHomeContent() {
         </div>
       )}
 
-      {stage !== 'customer' && !loading && !error && shown.length > 0 && (
+      {!loading && !error && shown.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((s) => (
             <button

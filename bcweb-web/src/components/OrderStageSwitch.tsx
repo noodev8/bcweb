@@ -6,16 +6,15 @@ Component: OrderStageSwitch
 Purpose: The stage switch at the top of the Order Status module. Like the Pricing module's WINNERS | LOSERS control this isn't a minor
          toggle — it flips between genuinely different jobs.
 
-  CUSTOMERS — what customers have bought and whether we can send it. Sits LEFT: it is worked DAILY (owner), so it gets the position
-              the eye lands on first. Frequency of use beats narrative order here.
   ON ORDER  — genuinely with the supplier. Waiting/chasing.
   TO PLACE  — chosen but not yet bought. Nothing is on its way; someone has to act.
 
-The last two are PROCUREMENT and are two halves of one lifecycle (Chosen -> Placed -> Arrived), split on the `orderdate` stamp. The
-first is FULFILMENT — the other direction entirely, ported from the legacy PowerBuilder Status screen. It shares the `orderstatus`
-table with them and almost nothing else, which is exactly why it lives here rather than in its own module: same table, same operators,
-same screen furniture. It carries no cost figure — there is no buying decision to make on an order the customer has already paid for —
-so its second number is the count of lines needing attention instead.
+Both are PROCUREMENT and are two halves of one lifecycle (Chosen -> Placed -> Arrived), split on the `orderdate` stamp. ON ORDER leads
+because it is the question asked most often ("what am I still waiting on"); TO PLACE is the queue you work when you sit down to buy.
+
+There was a third stage here, CUSTOMERS (fulfilment). It is now its own module at /customer-orders — it shared the `orderstatus`
+table with these two and nothing else, and its daily 100+ row grid could not afford the strip of viewport these cards occupy. See the
+header of that page for the full reasoning.
 
 ONE COLOUR (sky) for all panels, not a colour per stage (owner): the selected panel is already obvious from the ring/fill, so tinting
 the stages differently only adds noise — and an alarm-coloured TO PLACE reads as a warning when it's really just another part of a
@@ -27,10 +26,10 @@ that headline is the whole reason the TO PLACE stage exists. The cost line is on
 =======================================================================================================================================
 */
 
-import { ClipboardDocumentListIcon, TruckIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentListIcon, TruckIcon } from '@heroicons/react/24/outline';
 import { money } from '@/lib/orderStatusUi';
 
-export type OrderStage = 'place' | 'order' | 'customer';
+export type OrderStage = 'place' | 'order';
 
 interface Props {
   stage: OrderStage;
@@ -38,27 +37,13 @@ interface Props {
   toPlaceUnits?: number | null;
   toPlaceCost?: number | null;
   onOrderUnits?: number | null;
-  customerUnits?: number | null;
-  /** Customer lines needing attention (no stock / waiting). Shown instead of a cost — it's the only number that decides anything here. */
-  customerAttention?: number | null;
 }
 
 export default function OrderStageSwitch({
-  stage, onChange, toPlaceUnits, toPlaceCost, onOrderUnits, customerUnits, customerAttention,
+  stage, onChange, toPlaceUnits, toPlaceCost, onOrderUnits,
 }: Props) {
   return (
-    <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <StagePanel
-        active={stage === 'customer'}
-        onClick={() => onChange('customer')}
-        icon={<UserGroupIcon className="h-6 w-6" />}
-        title="Customers"
-        subtitle="Orders to fulfil — what we owe the customer"
-        count={customerUnits}
-        // Only the problem count earns a place next to the total: everything else on this stage is already fine.
-        detail={customerAttention ? `${customerAttention} to sort` : null}
-        detailTone={customerAttention ? 'alert' : undefined}
-      />
+    <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
       <StagePanel
         active={stage === 'order'}
         onClick={() => onChange('order')}
@@ -88,7 +73,7 @@ const ACTIVE = 'border-sky-400 bg-sky-50/70 text-slate-900 ring-1 ring-sky-400';
 const ACTIVE_ACCENT = 'text-sky-700';
 
 function StagePanel({
-  active, onClick, icon, title, subtitle, count, detail, detailTone,
+  active, onClick, icon, title, subtitle, count, detail,
 }: {
   active: boolean;
   onClick: () => void;
@@ -97,9 +82,6 @@ function StagePanel({
   subtitle: string;
   count?: number | null;
   detail?: string | null;
-  // The one sanctioned exception to "colour means selected here". A detail that reports a PROBLEM (lines needing attention) stays
-  // amber whether or not the panel is selected — otherwise the number you most need to see goes quiet the moment you look away.
-  detailTone?: 'alert';
 }) {
   return (
     <button
@@ -123,9 +105,7 @@ function StagePanel({
             </span>
           )}
           {detail && (
-            <span className={'text-sm font-semibold ' + (
-              detailTone === 'alert' ? 'text-amber-700' : active ? ACTIVE_ACCENT : 'text-slate-500'
-            )}>{detail}</span>
+            <span className={'text-sm font-semibold ' + (active ? ACTIVE_ACCENT : 'text-slate-500')}>{detail}</span>
           )}
         </span>
         <span className={'block text-sm ' + (active ? 'opacity-80' : 'text-slate-400')}>{subtitle}</span>

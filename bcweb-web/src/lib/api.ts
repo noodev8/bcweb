@@ -1667,7 +1667,8 @@ export function getAmzBarcodeCheck() {
 }
 
 // =============================================================================================================================
-// Shopify order sync — the "Sync orders" button on Analytics -> Sales.
+// Shopify order sync — the "Update orders" button (Analytics -> Sales and Customer Orders; the LABEL is the legacy term, this
+// route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).
 //
 // !! The server-side logic behind this ALSO exists as C:\scripts\orders\update_orders.py, which is still in cron. Both are live.
 //    See the banner at the top of bcweb-server/utils/orderSync.js before changing anything about what a run does. !!
