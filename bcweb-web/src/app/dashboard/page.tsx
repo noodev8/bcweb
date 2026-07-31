@@ -81,11 +81,11 @@ export default function DashboardPage() {
           icon={ArchiveBoxIcon}
           live
         />
-        {/* Order Status — both halves of the supplier order lifecycle: place what's been chosen (CSV + stamp orderdate), then chase
-            what's on its way (arrived/waiting, switch type, archive stale ones). */}
+        {/* Order Status — three stages over one table. Two are procurement (place what's been chosen, then chase what's on its way);
+            the third is fulfilment (customer orders, ported from the legacy PowerBuilder Status screen). */}
         <ModuleTile
           title="Order Status"
-          description="Place supplier orders that are waiting to go out, then track what's on its way."
+          description="Place supplier orders, chase what's on its way, and fulfil what customers have bought."
           href="/order-status"
           icon={ShoppingCartIcon}
           live

@@ -149,6 +149,18 @@ app.use('/order-status-archive', require('./routes/order-status-archive'));     
 app.use('/order-status-adjust-qty', require('./routes/order-status-adjust-qty')); // +/- units for one SKU/size within a batch
 app.use('/order-status-restore', require('./routes/order-status-restore'));       // undo: pull archived units back (the "+" on a 0 line)
 
+// --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
+// The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the
+// `orderstatus` table and little else — utils/customerOrders.js opens with why `orderdate` must NOT be read through
+// utils/orderStatus.js here (it means "allocated off the shelf" for ordertype 1, "bought from the supplier" for 2/3).
+// Every write is per-ORDER (all lines sharing the ordernum) and scoped to ordertype = 1 in its own WHERE clause.
+app.use('/order-status-customer-list', require('./routes/order-status-customer-list'));       // the dense fulfilment grid
+app.use('/order-status-customer-note', require('./routes/order-status-customer-note'));       // the working note (legacy's top bar)
+app.use('/order-status-customer-waiting', require('./routes/order-status-customer-waiting')); // hold flag — the legacy yellow row
+app.use('/order-status-customer-courier', require('./routes/order-status-customer-courier')); // override the derived shipping service
+app.use('/order-status-customer-fba', require('./routes/order-status-customer-fba'));         // re-route to FBA (ONE-WAY: no Reset)
+app.use('/order-status-customer-delete', require('./routes/order-status-customer-delete'));   // plain delete; Shopify re-feeds it
+
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
 app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)

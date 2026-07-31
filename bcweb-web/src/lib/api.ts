@@ -1454,6 +1454,100 @@ export function archiveOrderStatus(ordernums: string[]) {
   );
 }
 
+// --- CUSTOMER ORDERS (ordertype 1) ---------------------------------------------------------------------------------------------
+// The FULFILMENT stage, ported from the legacy PowerBuilder Status screen. Everything above this line is PROCUREMENT (what we're
+// buying from suppliers); this is what the customer bought and whether we can send it. They share the `orderstatus` table and very
+// little else — server-side, utils/customerOrders.js documents why `orderdate` means something different for ordertype 1.
+//
+// One row per PHYSICAL UNIT (orderstatus grain, qty always 1), so a 2-pair order is two lines sharing an ordernum. Returned flat and
+// grouped in the UI, because customer/postcode/courier/note are per-order while code/state are per-unit.
+
+// The six states, derived server-side by utils/customerOrders.js rowState() so nothing derives them twice. Ordered here by the same
+// priority the server uses for an order's overall state: worst first.
+//
+// `pending` means ALLOCATED and waiting on us — phase E reserved a shelf unit against the line. It does NOT mean picked, and this
+// screen has no way to know whether something has been picked: `pickedqty` is redundant legacy (0 on all 3,177 archived rows;
+// picking is tracked through `localstock` now), and a genuinely picked order leaves Shopify's unfulfilled list and is archived off
+// this screen entirely. See the warning in utils/customerOrders.js.
+export type CustomerOrderState = 'parked' | 'no_stock' | 'waiting' | 'sourcing' | 'fba' | 'pending';
+
+export interface CustomerOrderLine {
+  ordernum: string;
+  code: string;
+  title: string | null;
+  qty: number;
+  // TWO TIMESTAMPS, DIFFERENT QUESTIONS — see the route header for the evidence:
+  created: string;             // when the CUSTOMER ordered. Always a full 'YYYYMMDD HH24:MI:SS'. This is the "Ordered" column.
+  orderdate: string;           // when WE last acted: '' when unallocated, or the free text 'Do Not Order'. State marker, not a date
+                               // to print — it matches `created` on only ~63% of rows.
+  supplier: string | null;
+  customer: string | null;
+  postcode: string | null;
+  fba: number;                 // units coming from Amazon FBA
+  courier: string | null;      // code, not label — '0' | '4' | '5'; see COURIERS in orderStatusUi.ts
+  note: string;
+  state: CustomerOrderState;
+}
+
+export interface CustomerOrderList { lines: CustomerOrderLine[]; total: number; truncated: boolean }
+
+// No filter params: the status chips and search are client-side over the whole set (a few hundred rows at most). `limit` is the
+// server's safety cap only, surfaced through `truncated` so a clipped list is visible rather than quietly short.
+export function getCustomerOrders() {
+  return request<CustomerOrderList>(
+    { url: '/order-status-customer-list', method: 'GET' },
+    (b) => ({
+      lines: (b.lines as CustomerOrderLine[]) || [],
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
+    })
+  );
+}
+
+// All four writes are PER ORDER — they hit every line sharing the ordernum. That's the grain the operator thinks in, and it's what
+// the legacy screen did.
+
+// '' clears the note. There is no separate delete.
+export function setCustomerOrderNote(ordernum: string, note: string) {
+  return request<{ updated: number }>(
+    { url: '/order-status-customer-note', method: 'POST', data: { ordernum, note } },
+    (b) => ({ updated: Number(b.updated) || 0 })
+  );
+}
+
+// Explicit value, not a toggle — two operators on one order would otherwise race to the opposite of what either wanted.
+export function setCustomerOrderWaiting(ordernum: string, waiting: boolean) {
+  return request<{ updated: number }>(
+    { url: '/order-status-customer-waiting', method: 'POST', data: { ordernum, waiting } },
+    (b) => ({ updated: Number(b.updated) || 0 })
+  );
+}
+
+export function setCustomerOrderCourier(ordernum: string, courier: string) {
+  return request<{ updated: number }>(
+    { url: '/order-status-customer-courier', method: 'POST', data: { ordernum, courier } },
+    (b) => ({ updated: Number(b.updated) || 0 })
+  );
+}
+
+// ONE-WAY. Sets amz > 0, which permanently removes the line from the order-sync's candidate set — the legacy undo ("Reset") was not
+// ported. Returns FBA_GROUP for a multi-line order, which the legacy guard also refused.
+export function setCustomerOrderFba(ordernum: string) {
+  return request<{ picksReleased: number; fba: number }>(
+    { url: '/order-status-customer-fba', method: 'POST', data: { ordernum } },
+    (b) => ({ picksReleased: Number(b.picksReleased) || 0, fba: Number(b.fba) || 0 })
+  );
+}
+
+// Plain delete, no archive — the order still exists in Shopify and the next sync re-inserts it. That's the point: it's how you ask
+// for a corrected order to be re-read.
+export function deleteCustomerOrder(ordernum: string) {
+  return request<{ deleted: number }>(
+    { url: '/order-status-customer-delete', method: 'POST', data: { ordernum } },
+    (b) => ({ deleted: Number(b.deleted) || 0 })
+  );
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------
 // Update Amazon — the data-ingest module (_amz-port/design/update-amazon-port.md).
 //
