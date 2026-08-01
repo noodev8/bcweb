@@ -55,6 +55,25 @@ const CAMPAIGNS = [
 // are exactly where tracking parameters get dropped by an intermediary.
 const SITE = 'https://brookfieldcomfort.com/collections/';
 
+/*
+ * The caption every post starts from. Only the opening hook changes — it is the one line that depends on which product this is, and it
+ * gets written by hand once you know. Everything below it is fixed by docs/social/README.md: the range line states depth without any
+ * perishable fact (no counts, no prices, no colours, nothing that expires), and the delivery footer is word-for-word the same every
+ * time, because consistency is what makes it stick.
+ *
+ * It OPENS WITH TWO BLANK LINES on purpose — that is where the hook goes, and it leaves the blank line between hook and body already
+ * in place. Deliberately no placeholder text in that gap: prefilled prompt text is the kind of thing that gets published by accident,
+ * and this posts to a live 3.3K-follower Page. Forgetting the hook just yields the body (the caption is trimmed before sending), which
+ * is dull but never embarrassing.
+ */
+const CAPTION_TEMPLATE = `
+
+We stock them in depth. Actual stock on the shelf.
+
+Order by 2pm Mon–Fri and it's with you the next working day.
+
+Have a look →`;
+
 // MIRROR of utils/socialMeta.js -> buildTrackedLink. Preview only; the server builds the real one at publish time. If you change the
 // rule, change it there FIRST — that is the canonical copy.
 function buildPreviewLink(linkUrl: string, campaign: string): string | null {
@@ -110,7 +129,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
   const fileRef = useRef<HTMLInputElement>(null);
   const [asset, setAsset] = useState<SocialAsset | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState(CAPTION_TEMPLATE);
   const [campaign, setCampaign] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   // Initialised from the clock once, on mount — nextAvailable() is impure, so calling it during render would make the form's opening
@@ -123,6 +142,8 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
   const preview = useMemo(() => buildPreviewLink(linkUrl, campaign), [linkUrl, campaign]);
   // The chosen slot must still be in the future — picking today then a slot that has already passed is the one way to build an
   // invalid schedule here, and it should disable Save rather than fail on the server.
+  // Still the bare template — the product-specific opening line hasn't been written yet.
+  const hookMissing = caption.trim() === CAPTION_TEMPLATE.trim();
   const slotStillValid = slotIsFuture(when.date, when.hour);
   const canSave = !!asset && caption.trim().length > 0 && slotStillValid && !saving;
 
@@ -191,9 +212,10 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
 
     if (res.success) {
       setOkMsg(`Queued for ${scheduledAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.`);
-      // Reset for the next post, but keep the campaign — posts tend to come in runs for the same collection.
+      // Reset for the next post, but keep the campaign — posts tend to come in runs for the same collection. The caption goes back to
+      // the template rather than to empty, so the next post starts from the house format instead of a blank box.
       setAsset(null);
-      setCaption('');
+      setCaption(CAPTION_TEMPLATE);
       setLinkUrl('');
       setWhen(nextAvailable());
       if (fileRef.current) fileRef.current.value = '';
@@ -262,12 +284,16 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
           </div>
           <textarea
             id="social-caption"
-            rows={6}
+            rows={9}
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             placeholder="What's the post about?"
             className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
           />
+          {/* A nudge, not a block — the body alone is a valid post, just a dull one. */}
+          {hookMissing && (
+            <p className="mt-1 text-xs text-amber-600">Add your opening line at the top — the bit about this particular product.</p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
