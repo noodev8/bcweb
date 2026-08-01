@@ -22,6 +22,15 @@ import { useMemo, useRef, useState } from 'react';
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { uploadSocialAsset, createSocialPost, SocialAsset } from '@/lib/api';
 
+// Matches the server's multer source cap (routes/social-asset-upload.js). Checked here purely for UX, never as enforcement — a browser
+// check is trivially bypassed, so nginx (client_max_body_size) and multer remain the real limits.
+//
+// The reason it is worth having: nginx sits in front of the API in production and rejects an oversized body with a 413 BEFORE it
+// reaches Node. A 413 carries no `return_code` envelope, so src/lib/api.ts can only report it as "Network error - please check your
+// connection", which sends you looking at the wrong thing entirely. Catching it here gives an accurate message instantly, without
+// spending thirty seconds uploading first.
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
 // Known collection slugs, offered as a dropdown with free text still allowed. These double as utm_campaign values, so keeping them to
 // a short known list is what makes the GA4 report readable later.
 const CAMPAIGNS = ['birkenstock', 'arizona', 'gizeh', 'boston', 'sale', 'new-in'];
@@ -89,11 +98,31 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
     if (!file) return;
     setError(null);
     setOkMsg(null);
+
+    // Reject before the request is made — see MAX_UPLOAD_BYTES for why this is worth doing client-side.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024}MB. ` +
+        'Export it smaller and try again.'
+      );
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
     const res = await uploadSocialAsset(file);
     setUploading(false);
     if (res.success && res.data) {
       setAsset(res.data);
+    } else if (res.return_code === 'NETWORK_ERROR') {
+      // The request never came back with an envelope. For an UPLOAD specifically, the most likely cause is a proxy in front of the API
+      // rejecting the body size (nginx answers 413 with no return_code, which api.ts can only report as a network error). Say so,
+      // rather than sending the operator off to check their wifi.
+      setError(
+        'The upload didn\'t reach the server. If the image is large this is usually a size limit on the server, not your connection — ' +
+        'try a smaller export, and tell Andreas if it keeps happening.'
+      );
+      setAsset(null);
     } else {
       // The server's message is specific and actionable here (exact dimensions, the allowed ratio window) — show it verbatim rather
       // than flattening it to "upload failed".

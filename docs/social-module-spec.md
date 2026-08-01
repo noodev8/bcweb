@@ -161,6 +161,18 @@ works. It would also put the files inside reach of the `rsync -av --delete`
 deploy, which has silently wiped a non-source directory on the VPS once already
 (`venv`, 2026-07-10). one.com sidesteps that entirely and survives a VPS rebuild.
 
+**nginx `client_max_body_size` — the upload landmine.** nginx defaults to **1MB**
+and the bcweb server block did not set it, so in production any image over 1MB was
+rejected with a **413 before ever reaching Node**. A 413 carries no `return_code`
+envelope, so `src/lib/api.ts` could only surface it as *"Network error — please
+check your connection"*, which points the operator at entirely the wrong thing.
+Found and fixed 2026-08-01 by adding `client_max_body_size 25M;` to the server
+block. Dev never showed it — there is no proxy in front of `localhost:3020`.
+**This is not Social-specific: `routes/product-image.js` uploads through the same
+nginx and had the same ceiling.** The Compose screen now also size-checks
+client-side, purely so the message is accurate and instant; nginx and multer remain
+the real limits.
+
 - Filename is a generated UUID, never the user's — no collisions, no path tricks.
 - **The UUID also defeats one.com's Varnish cache.** That host sits behind a CDN,
   and `product-image.js` already works around it the same way: a re-used filename
