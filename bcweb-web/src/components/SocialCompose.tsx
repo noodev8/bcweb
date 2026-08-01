@@ -13,14 +13,15 @@ WHY THE UPLOAD HAPPENS BEFORE THE POST IS SAVED
 
 WHY THE TRACKED URL IS SHOWN READ-ONLY
          What actually goes out should never be a surprise. The server builds the canonical UTM at publish time (utils/socialMeta.js);
-         the preview here is a deliberate MIRROR of that rule — see buildPreviewLink. Keep the two in step: utm_medium is always
-         'social', utm_source is the platform, utm_campaign is the campaign slug.
+         the preview here comes from src/lib/socialLink.ts, which is a deliberate MIRROR of that rule and is shared with the Queue.
+         Keep it in step with the server: utm_medium is always 'social', utm_source is the platform, utm_campaign is the campaign slug.
 =======================================================================================================================================
 */
 
 import { useMemo, useRef, useState } from 'react';
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { uploadSocialAsset, createSocialPost, SocialAsset } from '@/lib/api';
+import { buildTrackedLink } from '@/lib/socialLink';
 
 // Matches the server's multer source cap (routes/social-asset-upload.js). Checked here purely for UX, never as enforcement — a browser
 // check is trivially bypassed, so nginx (client_max_body_size) and multer remain the real limits.
@@ -74,21 +75,6 @@ Order by 2pm Mon–Fri and it's with you the next working day.
 
 Have a look →`;
 
-// MIRROR of utils/socialMeta.js -> buildTrackedLink. Preview only; the server builds the real one at publish time. If you change the
-// rule, change it there FIRST — that is the canonical copy.
-function buildPreviewLink(linkUrl: string, campaign: string): string | null {
-  if (!linkUrl) return null;
-  try {
-    const u = new URL(linkUrl);
-    u.searchParams.set('utm_source', 'facebook');
-    u.searchParams.set('utm_medium', 'social');
-    if (campaign) u.searchParams.set('utm_campaign', campaign);
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
 const pad = (n: number) => String(n).padStart(2, '0');
 const toDateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
@@ -139,7 +125,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
-  const preview = useMemo(() => buildPreviewLink(linkUrl, campaign), [linkUrl, campaign]);
+  const preview = useMemo(() => buildTrackedLink(linkUrl, campaign, 'FB'), [linkUrl, campaign]);
   // The chosen slot must still be in the future — picking today then a slot that has already passed is the one way to build an
   // invalid schedule here, and it should disable Save rather than fail on the server.
   // Still the bare template — the product-specific opening line hasn't been written yet.
@@ -288,7 +274,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             placeholder="What's the post about?"
-            className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
+            className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           {/* A nudge, not a block — the body alone is a valid post, just a dull one. */}
           {hookMissing && (
@@ -311,7 +297,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
                 if (v && CAMPAIGNS.includes(v) && !linkUrl) setLinkUrl(SITE + v);
               }}
               placeholder="birkenstock"
-              className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
+              className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             <datalist id="social-campaigns">
               {CAMPAIGNS.map((c) => <option key={c} value={c} />)}
@@ -333,7 +319,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
                   : (SLOT_HOURS.find((h) => slotIsFuture(date, h)) ?? when.hour);
                 setWhen({ date, hour });
               }}
-              className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
+              className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             {/* Only four times exist, so they are shown as choices rather than as a free time field that would have to be corrected. */}
             <div className="mt-1.5 flex gap-1">
@@ -373,7 +359,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
             value={linkUrl}
             onChange={(e) => setLinkUrl(e.target.value)}
             placeholder={SITE + 'birkenstock'}
-            className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
+            className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           {/* What actually goes out, before it goes out. */}
           {linkUrl && (

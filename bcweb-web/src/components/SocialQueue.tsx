@@ -20,6 +20,7 @@ WHY POSTED ROWS HAVE NO DELETE
 import { useState } from 'react';
 import { ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import { SocialPost, SocialStatus, cancelSocialPost, publishSocialNow } from '@/lib/api';
+import { buildTrackedLink } from '@/lib/socialLink';
 
 // No CANCELLED group: a post that never went out is DELETED outright rather than parked as a dead row (owner, 2026-08-01) — the queue
 // is a worklist, not an archive. Who removed what is recorded in `bclog` instead. CANCELLED survives only for the Phase 3 case where a
@@ -132,7 +133,20 @@ export default function SocialQueue({ posts, onChanged }: { posts: SocialPost[];
                         {post.campaign && <span className="text-xs text-slate-400">· {post.campaign}</span>}
                       </div>
 
-                      <p className="mt-1.5 line-clamp-2 text-sm text-slate-700">{post.caption}</p>
+                      {/* whitespace-pre-line keeps the paragraph breaks. Without it the blank lines collapse and the caption reads as
+                          one run-on sentence ("...the more you wear it We stock them in depth"), which looks like the post itself is
+                          malformed when it is only the preview. line-clamp-4 rather than 2, since the house template is four blocks. */}
+                      <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-sm text-slate-700">{post.caption}</p>
+
+                      {/* The link, shown because THIS is where you check something scheduled days out — Compose's preview is long gone
+                          by then. The UTM is rebuilt here rather than stored (it is per-platform, added at publish time), so what is
+                          shown is what will actually go out. */}
+                      {post.link_url && (
+                        <p className="mt-1.5 break-all font-mono text-[11px] text-slate-400">
+                          {/* v1 is Facebook-only. When IG lands, each target carries its own utm_source and this becomes per-target. */}
+                          {buildTrackedLink(post.link_url, post.campaign, 'FB')}
+                        </p>
+                      )}
 
                       {/* Meta's own words, on the row. Not flattened into a generic failure chip. */}
                       {failedTarget?.error && (
