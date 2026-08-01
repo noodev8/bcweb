@@ -196,6 +196,12 @@ Three tables, `social_` prefix, in `brookfield_prod`. New tables — no legacy
 landmines, so proper types throughout: real `numeric`, real `timestamptz`, and
 none of the `character varying` price nonsense from `skusummary`.
 
+**The DATABASE is the schema of record, not this section and not a setup script.**
+The one-off creation script was deleted once it had run (owner, 2026-08-01): a
+setup script nobody re-runs when the schema really changes drifts out of step and
+then misleads, which is worse than not having one. The summary below is a reading
+aid — when it matters, check the live table.
+
 **`social_asset`** — one row per uploaded image.
 `id`, `filename`, `public_url`, `width`, `height`, `bytes`, `uploaded_by`,
 `created_at timestamptz`.
@@ -364,8 +370,8 @@ Each phase is independently useful and independently abandonable.
   by hand into the queue for two weeks. This is the real test: not whether it
   works, but whether *you actually use it*.
 
-  **Backend BUILT 2026-08-01** (uncommitted): `scripts/setup-social.js` (tables
-  **applied to prod**), `utils/socialMeta.js`, `utils/socialPublish.js`,
+  **Backend BUILT 2026-08-01** (shipped `6db5c03`): the three tables are **applied
+  to prod**, `utils/socialMeta.js`, `utils/socialPublish.js`,
   `scripts/social-publish-sweep.js`, and routes `social-asset-upload`,
   `social-post-create`, `social-posts`, `social-post-cancel`,
   `social-post-publish-now` — all mounted in `server.js`. Lint and syntax clean;
@@ -373,7 +379,7 @@ Each phase is independently useful and independently abandonable.
   Page-token derivation and caching, upload + public fetch, the conditional-claim
   double-post guard, stale reclaim, the queue's single-query shape).
 
-  **Front end BUILT 2026-08-01** (uncommitted): `app/social/page.tsx` (Compose |
+  **Front end BUILT 2026-08-01** (shipped `6db5c03`): `app/social/page.tsx` (Compose |
   Queue tabs, one `useApiQuery` owning the data), `components/SocialCompose.tsx`,
   `components/SocialQueue.tsx`, the Social client functions in `lib/api.ts`, and a
   **Marketing** tile on the dashboard. `tsc --noEmit` and eslint both clean.

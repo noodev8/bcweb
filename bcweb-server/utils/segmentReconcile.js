@@ -14,7 +14,9 @@ What it does (idempotent — safe to run on every /segments read, spec §6-A):
      segment that emptied out or was renamed away).
   4. SEED a clock row (`segment_area_state`) for every active segment × active area that doesn't have one yet — cadence copied
      from the area's default, next_review_date NULL (never worked). ON CONFLICT DO NOTHING preserves any per-segment cadence
-     override / review date already set. (Requires the `area` + `segment_area_state` tables — created by scripts/setup-segments.js.)
+     override / review date already set. (Requires the `area` + `segment_area_state` tables, which already exist in the DB — the
+     one-off script that created and seeded them was removed once it had run, since a setup script nobody re-runs on a real schema
+     change just drifts out of step with the database. The DB is the schema of record.)
 
 SAFETY GUARD (spec §8): if the DISTINCT read returns ZERO rows we do NOTHING. A transient empty read must never be allowed to
 deactivate the entire registry. (INSERT/REACTIVATE would no-op anyway; DEACTIVATE is the dangerous one, so we bail before it.)
