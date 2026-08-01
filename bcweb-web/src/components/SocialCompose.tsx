@@ -31,10 +31,29 @@ import { uploadSocialAsset, createSocialPost, SocialAsset } from '@/lib/api';
 // spending thirty seconds uploading first.
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-// Known collection slugs, offered as a dropdown with free text still allowed. These double as utm_campaign values, so keeping them to
-// a short known list is what makes the GA4 report readable later.
-const CAMPAIGNS = ['birkenstock', 'arizona', 'gizeh', 'boston', 'sale', 'new-in'];
-const SITE = 'https://www.brookfieldcomfort.com/collections/';
+/*
+ * Known collection slugs, offered as a datalist with free text still allowed. These double as utm_campaign values (docs/social:
+ * "utm_campaign = the collection slug"), so a short known list is what keeps the GA4 report readable instead of a spray of one-off
+ * campaign names for the same collection.
+ *
+ * EVERY SLUG HERE IS VERIFIED TO RETURN 200 (checked 2026-08-01). If you add one, curl it first.
+ * The earlier list was written from memory and five of its six entries 404'd — 'arizona', 'gizeh', 'boston', 'sale', 'new-in' do not
+ * exist; the real ones are all prefixed 'birkenstock-'. Picking one from the dropdown would have published a post pointing at a dead
+ * page, which is public and not quietly fixable after the fact. Guessing a URL is not acceptable here.
+ * Note there is no birkenstock-boston collection (404), so Boston is deliberately absent rather than forgotten.
+ */
+const CAMPAIGNS = [
+  'birkenstock',
+  'birkenstock-arizona',
+  'birkenstock-gizeh',
+  'birkenstock-mayari',
+  'birkenstock-milano',
+  'birkenstock-eva',
+];
+
+// Non-www: the www host 301-redirects. Harmless in a browser, but it is an avoidable hop on a link we are publishing, and redirects
+// are exactly where tracking parameters get dropped by an intermediary.
+const SITE = 'https://brookfieldcomfort.com/collections/';
 
 // MIRROR of utils/socialMeta.js -> buildTrackedLink. Preview only; the server builds the real one at publish time. If you change the
 // rule, change it there FIRST — that is the canonical copy.
