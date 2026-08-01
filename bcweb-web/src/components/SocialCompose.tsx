@@ -52,31 +52,39 @@ function buildPreviewLink(linkUrl: string, campaign: string): string | null {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const toLocalValue = (d: Date) =>
-  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const toDateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-// Default the schedule to tomorrow morning — the common case is "queue tomorrow's post", and an empty datetime field is a small
-// friction every single time. Returns the value shape <input type="datetime-local"> wants (local time, no zone).
-function defaultWhen(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return toLocalValue(d);
+/*
+ * THE PUBLISH SLOTS.
+ *
+ * The sweep is the ONLY thing that publishes, and it runs four times a day, not continuously. So these are the only times a post can
+ * actually go out — offering a free-text time would let the screen promise 11:00 for something that would really appear at 13:00.
+ * Hence a date + a slot, rather than a datetime: the picker cannot express a time the scheduler will not honour.
+ *
+ * THESE MUST MATCH THE CRONTAB ON THE SERVER. The cron entries are written in GMT (the box's timezone) and hand-shifted so the LOCAL
+ * time stays put across BST — the same convention as the update_orders.py entries. These hours are therefore Europe/London local
+ * hours, which is also what the operator's browser shows. If the crontab times ever change, change them here in the same commit.
+ */
+const SLOT_HOURS = [4, 9, 13, 19] as const;
+const slotLabel = (h: number) => `${pad(h)}:00`;
+
+// Is this slot on this date still in the future? A date+slot in the past is rejected by the server, so we never offer one.
+function slotIsFuture(dateValue: string, hour: number): boolean {
+  if (!dateValue) return false;
+  const d = new Date(`${dateValue}T${pad(hour)}:00:00`);
+  return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
 }
 
-// The publish sweep runs HOURLY, ON THE HOUR. So a post scheduled at 09:20 would not go out at 09:20 — it would sit until 10:00.
-// Rather than let the screen promise a time the scheduler cannot honour, we snap the picked time down to the hour and say so. The
-// time shown is then genuinely the time it goes out. If the sweep cadence ever changes, this is the other half of that decision.
-function snapToHour(value: string): string {
-  if (!value) return value;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  d.setMinutes(0, 0, 0);
-  // Snapping DOWN can land in the past — pick 14:30 while it is 14:10 and you get 14:00, which the server rejects as not-future.
-  // Rolling forward to the next hour keeps the "on the hour" promise while giving the user the soonest slot that can actually fire.
-  // (Called only from event handlers, never during render, so reading the clock here is fine.)
-  if (d.getTime() <= Date.now()) d.setHours(d.getHours() + 1);
-  return toLocalValue(d);
+// The soonest slot that can still fire: today's next remaining slot, else the first slot tomorrow. Used for the initial state so the
+// form opens on something valid rather than on a time that has already passed.
+function nextAvailable(): { date: string; hour: number } {
+  const now = new Date();
+  const today = toDateValue(now);
+  const remaining = SLOT_HOURS.find((h) => slotIsFuture(today, h));
+  if (remaining !== undefined) return { date: today, hour: remaining };
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return { date: toDateValue(tomorrow), hour: SLOT_HOURS[0] };
 }
 
 export default function SocialCompose({ onCreated }: { onCreated: () => void }) {
@@ -86,13 +94,18 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
   const [caption, setCaption] = useState('');
   const [campaign, setCampaign] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
-  const [when, setWhen] = useState(defaultWhen);
+  // Initialised from the clock once, on mount — nextAvailable() is impure, so calling it during render would make the form's opening
+  // state depend on when React happens to re-render.
+  const [when, setWhen] = useState(nextAvailable);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
   const preview = useMemo(() => buildPreviewLink(linkUrl, campaign), [linkUrl, campaign]);
-  const canSave = !!asset && caption.trim().length > 0 && !!when && !saving;
+  // The chosen slot must still be in the future — picking today then a slot that has already passed is the one way to build an
+  // invalid schedule here, and it should disable Save rather than fail on the server.
+  const slotStillValid = slotIsFuture(when.date, when.hour);
+  const canSave = !!asset && caption.trim().length > 0 && slotStillValid && !saving;
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -137,14 +150,13 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
     setError(null);
     setOkMsg(null);
 
-    // <input type="datetime-local"> gives a zone-less local string. new Date() reads it in the browser's zone (Europe/London for this
-    // team) and toISOString() converts to UTC — which is what the server stores. Passing the raw string would make the server read it
-    // as UTC and silently shift the post by an hour during BST.
-    // Snap again here: blur may never have fired (picking a time then clicking straight to the button), and the sweep is hourly.
-    const scheduledAt = new Date(snapToHour(when));
-    if (Number.isNaN(scheduledAt.getTime())) {
+    // Build the instant from the chosen date + slot. `new Date('YYYY-MM-DDTHH:00:00')` (no zone suffix) is read in the BROWSER's zone
+    // — Europe/London for this team — and toISOString() converts to UTC, which is what the server stores. Appending a 'Z' or passing
+    // the bare string would make it UTC and silently shift the post by an hour during BST.
+    const scheduledAt = new Date(`${when.date}T${pad(when.hour)}:00:00`);
+    if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
       setSaving(false);
-      setError('That date and time is not valid');
+      setError('That slot has already passed — pick a later one.');
       return;
     }
 
@@ -164,7 +176,7 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
       setAsset(null);
       setCaption('');
       setLinkUrl('');
-      setWhen(defaultWhen());
+      setWhen(nextAvailable());
       if (fileRef.current) fileRef.current.value = '';
       onCreated();
     } else {
@@ -262,18 +274,49 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
           </div>
 
           <div>
-            <label htmlFor="social-when" className="block text-sm font-medium text-slate-700">Goes out</label>
+            <label htmlFor="social-date" className="block text-sm font-medium text-slate-700">Goes out</label>
             <input
-              id="social-when"
-              type="datetime-local"
-              step={3600}
-              value={when}
-              // Snap on blur, not on change: snapping mid-keystroke fights the user as they type the minutes.
-              onChange={(e) => setWhen(e.target.value)}
-              onBlur={(e) => setWhen(snapToHour(e.target.value))}
+              id="social-date"
+              type="date"
+              value={when.date}
+              min={toDateValue(new Date())}
+              onChange={(e) => {
+                const date = e.target.value;
+                // Changing to today can strand the chosen slot in the past — move to the first slot that still works that day.
+                const hour = slotIsFuture(date, when.hour)
+                  ? when.hour
+                  : (SLOT_HOURS.find((h) => slotIsFuture(date, h)) ?? when.hour);
+                setWhen({ date, hour });
+              }}
               className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
             />
-            <p className="mt-1 text-xs text-slate-400">Posts go out on the hour.</p>
+            {/* Only four times exist, so they are shown as choices rather than as a free time field that would have to be corrected. */}
+            <div className="mt-1.5 flex gap-1">
+              {SLOT_HOURS.map((h) => {
+                const usable = slotIsFuture(when.date, h);
+                const active = when.hour === h;
+                return (
+                  <button
+                    key={h}
+                    type="button"
+                    disabled={!usable}
+                    onClick={() => setWhen({ ...when, hour: h })}
+                    title={usable ? undefined : 'That time has already passed today'}
+                    className={
+                      'flex-1 rounded border px-1 py-1 text-xs font-medium ' +
+                      (active
+                        ? 'border-brand-500 bg-brand-50 text-brand-700'
+                        : usable
+                          ? 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                          : 'cursor-not-allowed border-slate-200 text-slate-300')
+                    }
+                  >
+                    {slotLabel(h)}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">Posts go out at one of these four times.</p>
           </div>
         </div>
 

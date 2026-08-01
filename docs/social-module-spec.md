@@ -283,19 +283,31 @@ question and it should have one answer.
 
 ## The publish sweep
 
-`scripts/social-publish-sweep.js`, cron **hourly, on the hour** — `0 * * * *`
-(owner, 2026-08-01; a post a day does not need a sweep every few minutes). The
-crontab on the server is the definitive source for the schedule.
+`scripts/social-publish-sweep.js`, cron **four times a day** (owner, 2026-08-01 —
+briefly hourly, cut down because at one or two posts a day the other 20 runs were
+pure overhead). The crontab on the server is the definitive source.
 
-Two consequences of that cadence, both deliberate:
+| Slot (local) | Purpose |
+|---|---|
+| **04:00** | housekeeping — the monthly asset cleanup gate, and anything queued overnight |
+| **09:00** | morning |
+| **13:00** | lunch |
+| **19:00** | evening |
 
-- **Compose snaps its time picker to `:00`**, rolling forward to the next hour if
-  snapping down would land in the past. Otherwise the screen would promise 09:20
-  and the post would actually appear at 10:00. If the cadence ever changes, that
-  snap is the other half of the decision.
-- **The cron entry needs no GMT/BST adjustment.** The server runs on GMT and the
-  fixed-time entries around it are hand-shifted by an hour; an hourly entry fires
-  every hour regardless of zone, and needs no re-editing when BST ends.
+Three consequences, all deliberate:
+
+- **These are the ONLY times a post can go out**, because the sweep is the only
+  thing that publishes. So **Compose offers a date plus these four slots**, not a
+  free time field — a picker that cannot express an unhonourable time beats one
+  that silently corrects itself. `SLOT_HOURS` in `SocialCompose.tsx` **must match
+  the crontab**; change them in the same commit.
+- **The 04:00 entry must stay at server-hour 3** (`0 3 * * *` in GMT). The cleanup
+  gate checks the server's hour, so moving that line silently disables the monthly
+  cleanup while everything else keeps working.
+- **Fixed times cost a twice-yearly edit.** The box runs GMT and these entries are
+  hand-shifted to keep the LOCAL times stable across BST, exactly like the
+  `update_orders.py` lines. The earlier hourly entry needed no such maintenance;
+  that was the trade accepted for cutting the redundant runs.
 
 **No output redirection**, matching every other entry on the box. That is a
 positive choice, not an omission: this sweep's durable record is in the database —
@@ -341,6 +353,40 @@ built that way.
 
 **Anything `FAILED` is loud in the Queue** — count on the tile, red row, the error
 text visible. Silent failure is the way a daily-posting habit dies.
+
+## Asset housekeeping (built 2026-08-01)
+
+`utils/socialAssets.js → sweepOrphanAssets()`, called from the publish sweep and
+gated to **the 15th at 03:00 server time** (GMT — so 04:00 BST in summer).
+
+**It has no cron entry of its own, deliberately.** A standalone housekeeping
+script that has to be remembered is one that quietly stops being run. The publish
+sweep already runs hourly and its failure is obvious (posts stop going out), so
+hanging the cleanup off it means nothing new to remember and nothing new to
+maintain. If the sweep happens to miss that hour, cleanup waits a month — accepted,
+since worst case is a handful of ~150KB files sitting around 30 days longer.
+
+**An orphan is a `social_asset` row no `social_post` references, older than 7
+days.** Assets attached to any post are untouchable, *including* POSTED ones:
+Facebook serves its own copy by then, but the file is our record of what went out.
+The grace period stops us deleting an image someone uploaded minutes ago and is
+still captioning.
+
+**Delete order is file first, then row** — the opposite of upload, and the one
+detail worth protecting. If the row went first and the SFTP delete failed, the file
+would become permanently *untracked*: nothing points at it, so no future run could
+ever find it, and the cleanup would have manufactured the mess it was clearing.
+File-first means a failure just leaves the row for next month. Self-healing.
+
+**Untracked files are reported, never deleted.** Files with no row shouldn't exist
+(the row is written after a successful upload), so one appearing means something
+we don't understand happened. It is logged at error level and left alone —
+deleting unexplained files unsupervised on a marketing image host is not a trade
+worth making.
+
+`bclog` gets a `Social Cleanup:` row **only when it actually did something**; a
+monthly "cleaned nothing" entry would be pure noise. `--gc` forces a run for
+testing, and `--dry-run` reports without deleting.
 
 ## The metrics sweep
 

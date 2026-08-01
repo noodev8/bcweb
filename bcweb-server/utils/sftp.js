@@ -9,6 +9,7 @@ Purpose: Thin wrapper around ssh2-sftp-client for pushing/removing product image
          putImage(filename, buffer, dir?)  — upload a buffer to <dir>/<filename> (overwrites in place if it exists).
          getImage(filename, dir?)          — download <dir>/<filename> and return it as a Buffer (used to clone an image on Copy).
          deleteImage(filename, dir?)       — remove <dir>/<filename>; a "does not exist" is treated as success (idempotent cleanup).
+         listImages(dir?)                  — list the regular files in <dir> (read-only; used by the Social asset GC).
 
          `dir` is OPTIONAL and defaults to config.onecom.remoteDir — the product-image webroot, which is what every Add/Modify caller
          wants and passes nothing for. The Social module passes config.social.remoteDir instead, so marketing graphics live in their own
@@ -63,6 +64,24 @@ async function putImage(filename, buffer, dir) {
   }
 }
 
+// List the FILES in <dir> (directories and dot-entries excluded), newest-agnostic, as { name, size, modifyTime }. Used by the Social
+// asset GC to spot files on the host that no DB row points at — those are invisible to any DB-driven cleanup and could otherwise sit
+// there forever. Read-only; nothing here deletes.
+async function listImages(dir) {
+  const { remoteDir } = requireConfig(dir);
+  const sftp = new SftpClient();
+  try {
+    await sftp.connect(connectOpts());
+    const entries = await sftp.list(remoteDir);
+    // ssh2-sftp-client marks regular files as type '-'. Skip anything else so a stray subdirectory can never be treated as an asset.
+    return entries
+      .filter((e) => e.type === '-' && !e.name.startsWith('.'))
+      .map((e) => ({ name: e.name, size: e.size, modifyTime: e.modifyTime }));
+  } finally {
+    try { await sftp.end(); } catch { /* ignore close errors */ }
+  }
+}
+
 // Download <remoteDir>/<filename> as a Buffer. `sftp.get` with no destination returns the file contents in memory — the images are
 // small (800x800 JPEGs), so we never hit disk. Throws if the file is missing; the caller (Copy) treats that as a best-effort miss.
 async function getImage(filename, dir) {
@@ -96,4 +115,4 @@ async function deleteImage(filename, dir) {
   }
 }
 
-module.exports = { putImage, getImage, deleteImage };
+module.exports = { putImage, getImage, deleteImage, listImages };
