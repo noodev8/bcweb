@@ -13,7 +13,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
-  ArrowUpTrayIcon, UserGroupIcon,
+  ArrowUpTrayIcon, UserGroupIcon, MegaphoneIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -109,6 +109,17 @@ export default function DashboardPage() {
           description="Load the Seller Central reports — sales, returns, FBA stock and fees."
           href="/update-amazon"
           icon={ArrowUpTrayIcon}
+          live
+        />
+
+        {/* Marketing -> Social. The job is a post a day without it costing thirty minutes: queue a graphic + caption, a sweep
+            publishes it to the Facebook Page at the due minute. Instagram is phase 3. The scoreboard stays GA4/UTM clicks — Meta's
+            reach numbers are diagnostic only. See docs/social-module-spec.md. */}
+        <ModuleTile
+          title="Marketing"
+          description="Queue and publish the daily Facebook post — graphic, caption, link, scheduled."
+          href="/social"
+          icon={MegaphoneIcon}
           live
         />
       </div>

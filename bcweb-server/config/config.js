@@ -36,6 +36,31 @@ module.exports = {
     remoteDir: process.env.ONECOM_SFTP_REMOTE_DIR || ''
   },
 
+  // Social (Marketing module) — Meta publishing + where the marketing graphics live. Optional like onecom/shopify above: not validated
+  // at boot, so a server with no Meta creds still runs and serves pricing. utils/socialMeta.js checks before it calls out.
+  //
+  // IMAGE HOSTING reuses the one.com CREDENTIALS above but a DIFFERENT webroot (/webroots/d760f67f -> social.brookfieldcomfort.com), so
+  // marketing graphics never mix with product shots. Verified end-to-end 2026-08-01: uploaded, fetched back over HTTPS byte-identical,
+  // and Meta itself successfully fetched an image from that host during the publish gate test.
+  //
+  // TOKEN NOTE: systemUserToken is the CREDENTIAL, not what you publish with. The Page edges want a PAGE access token derived from it
+  // (GET /{page-id}?fields=access_token). utils/socialMeta.js does that derivation and caches it in-process. Deriving beats storing:
+  // it is one cheap call and it survives a token regeneration in Business Settings without a redeploy.
+  social: {
+    // one.com webroot for marketing graphics. Do NOT create subdirectories under it from code — these webroots are symlinks and
+    // ssh2-sftp-client's recursive mkdir fails on them (see utils/sftp.js).
+    remoteDir: process.env.ONECOM_SOCIAL_REMOTE_DIR || '',
+    assetBaseUrl: (process.env.SOCIAL_ASSET_BASE_URL || '').replace(/\/+$/, ''),
+    meta: {
+      appId: process.env.META_APP_ID || '',
+      appSecret: process.env.META_APP_SECRET || '',
+      pageId: process.env.META_PAGE_ID || '',
+      systemUserToken: process.env.META_SYSTEM_USER_TOKEN || '',
+      graphVersion: process.env.META_GRAPH_VERSION || 'v26.0',
+      igUserId: process.env.META_IG_USER_ID || ''      // Phase 3 only; unset in v1
+    }
+  },
+
   // Shopify Admin API — the Add/Modify product push (utils/shopify.js). Like onecom above, this is an OPTIONAL feature: not validated
   // at boot (a server with no Shopify creds still runs and serves pricing). utils/shopify.js checks these are present when it actually
   // makes a call, and the calling route surfaces SHOPIFY_NOT_CONFIGURED rather than a confusing fetch error. Same custom-app token the

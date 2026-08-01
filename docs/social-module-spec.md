@@ -87,15 +87,41 @@ unchanged.
 
 **Env vars** — already set in `bcweb-server/.env` (gitignored, verified):
 `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`, `META_SYSTEM_USER_TOKEN`,
-`META_GRAPH_VERSION` (`v26.0`). Still to add at Phase 1: `SOCIAL_ASSET_DIR`,
-`SOCIAL_ASSET_BASE_URL`. Phase 3 adds `META_IG_USER_ID`.
+`META_GRAPH_VERSION` (`v26.0`). Still to add at Phase 1:
+`ONECOM_SOCIAL_REMOTE_DIR`, `SOCIAL_ASSET_BASE_URL` (the `ONECOM_SFTP_*`
+credentials the upload needs are already there and in use). Phase 3 adds
+`META_IG_USER_ID`.
 
-**Verified by curl:** `GET /{page-id}?fields=name,fan_count` returns the Page and
-~3.3K. **Publishing is NOT yet proven** — the scheduled-post-then-delete test was
-deliberately deferred into the Phase 1 build, where a failure is easier to read.
-**First publish attempt is the real gate**; if it fails on a permission
-(`(#200) Requires pages_manage_posts` or similar), regenerate the system user
-token with the scopes re-ticked before debugging anything in our code.
+**Publishing is PROVEN — gate cleared 2026-08-01.** Two posts were created with
+`published=false` + `scheduled_publish_time` (so never visible to followers),
+confirmed to exist, then deleted (`{"success":true}` both). `POST /{page-id}/feed`
+and `POST /{page-id}/photos` **both succeeded**. No App Review was needed.
+
+### The Page token — the sweep must derive one
+
+**Do not call the publishing edges with `META_SYSTEM_USER_TOKEN` directly.** The
+system user token is the *credential*; the Page endpoints want a **Page access
+token** derived from it:
+
+```
+GET /{page-id}?fields=access_token   →  the Page token   (also via GET /me/accounts)
+```
+
+Both routes work and were verified. The derived token is `type: PAGE` and
+**never expires**, and the grant carries `tasks=[ADVERTISE, ANALYZE,
+CREATE_CONTENT, MESSAGING, MODERATE, MANAGE, VIEW_MONETIZATION_INSIGHTS]` —
+`CREATE_CONTENT` is the one publishing needs. Derive it per sweep run and hold it
+in memory; do not store it in `.env` (deriving is one cheap call and survives a
+token regeneration without a redeploy).
+
+**Known limitation, harmless for v1:** `GET /{page-id}/feed` fails with
+`(#10) requires pages_read_engagement or Page Public Content Access` — **with the
+Page token too**, despite the scope being granted. This is the app being in
+Development mode. It does **not** affect publishing, which is a different
+permission path and is proven above. Flagged because Phase 2's metrics sweep
+reads insight edges: **verify `/{post-id}/insights` early in Phase 2** rather than
+assuming read access, since the scoped read edges behave differently from the
+publish edges here.
 
 ### If the token ever breaks
 
@@ -104,16 +130,56 @@ token** → app **BCWEB Social** → re-tick the three scopes → replace
 `META_SYSTEM_USER_TOKEN` in the VPS `.env` → restart under PM2. Nothing else to
 redo — the app, use case and asset assignments persist.
 
-## Image hosting — VPS static
+## Image hosting — one.com, reusing the product-image pipeline
 
-**Decision: uploads land on the VPS running the API**, in `SOCIAL_ASSET_DIR`,
-served publicly at `SOCIAL_ASSET_BASE_URL` (e.g.
-`https://<api-host>/social-assets/<uuid>.jpg`). No FTP, no second set of
-credentials, no gap between "uploaded" and "reachable". one.com was the original
-thought; it adds a failure mode between upload and publish for no benefit we can
-name.
+**Decision (revised 2026-08-01): uploads go to one.com over SFTP**, into a
+**dedicated social webroot**, served publicly at
+`https://social.brookfieldcomfort.com/<uuid>.jpg`.
+
+**Verified end-to-end 2026-08-01** — a 1200×628 JPEG uploaded to
+`/webroots/d760f67f` came back over public HTTPS byte-identical, `200`,
+`content-type: image/jpeg`. The probe file was deleted; the webroot is empty and
+used by nothing else.
+
+An earlier draft of this spec chose VPS static serving and dismissed one.com as
+"a second set of credentials for no benefit we can name". **That was written
+without checking the code and it is wrong.** The one.com path is already built,
+shipped and running in production:
+
+- `utils/sftp.js` — `putImage` / `getImage` / `deleteImage`, credentials from
+  `config.onecom` (`ONECOM_SFTP_*`, already in `.env`).
+- `routes/product-image.js` — multer memory upload → `sharp` convert → unique
+  filename → `putImage` → public URL. **The Social upload route is a close copy of
+  this file**, which is the single strongest reason to choose it.
+- `images.brookfieldcomfort.com` serves valid TLS and is already fetched by the
+  **Google Merchant feed**, so third-party crawler reachability — the actual
+  requirement Meta imposes — is proven rather than assumed.
+
+Choosing VPS static would mean writing an nginx `location` block, a new asset
+directory, and a static-serve path, in order to reproduce something that already
+works. It would also put the files inside reach of the `rsync -av --delete`
+deploy, which has silently wiped a non-source directory on the VPS once already
+(`venv`, 2026-07-10). one.com sidesteps that entirely and survives a VPS rebuild.
 
 - Filename is a generated UUID, never the user's — no collisions, no path tricks.
+- **The UUID also defeats one.com's Varnish cache.** That host sits behind a CDN,
+  and `product-image.js` already works around it the same way: a re-used filename
+  gets served stale, a fresh one appears immediately. Assets being immutable (see
+  below) means we never overwrite, so this is free.
+- **Social has its own webroot**, never mixed in with product shots.
+  `ONECOM_SFTP_REMOTE_DIR` (`/webroots/5fc50976`) points at the product-image
+  directory and must keep doing so — add `ONECOM_SOCIAL_REMOTE_DIR`
+  (`/webroots/d760f67f`) and give `utils/sftp.js` an optional explicit-directory
+  argument defaulting to the existing config value, so the product-image callers
+  are untouched.
+- **Upload straight into the webroot — do not create subdirectories under it.**
+  These one.com webroot paths are **symlinks** (`sftp.exists()` returns `'l'`, not
+  `'d'`), and `ssh2-sftp-client`'s recursive `mkdir` stats the parent, sees a
+  non-directory and fails with `Bad path: … not a directory`. This was hit for
+  real on 2026-08-01 while trying to create a `social/` subdirectory under the
+  product webroot. A dedicated webroot removes the need entirely; if a
+  subdirectory is ever genuinely wanted, create it by hand in the one.com control
+  panel rather than fighting the client.
 - Accept JPEG/PNG, convert to **JPEG** on write (`sharp`, already a dependency).
 - Enforce Instagram's rules **now**, in v1, even though v1 is FB-only: ≤8MB,
   aspect ratio between 4:5 and 1.91:1. Discovering in v2 that every stored asset is
@@ -165,10 +231,10 @@ One file per endpoint, kebab verb-noun, HTTP 200 + `return_code` always, per
 
 | Route | Does |
 |---|---|
-| `POST /social-asset-upload` | Multipart. Validate, convert, write to disk, insert `social_asset`, return the public URL. |
+| `POST /social-asset-upload` | Multipart. Validate, convert, SFTP to one.com, insert `social_asset`, return the public URL. Model it on `routes/product-image.js`. |
 | `POST /social-post-create` | Insert post + one target row per selected platform. Validates `scheduled_at` is future. |
 | `POST /social-post-update` | Edit caption/link/time/asset. **Only while every target is `SCHEDULED`.** |
-| `POST /social-post-cancel` | Targets → `CANCELLED`. Never deletes a posted row. |
+| `POST /social-post-cancel` | Removes a queued post. **Never published → DELETED** (post + targets + orphaned asset + the one.com file). Published on any platform → post survives, pending targets → `CANCELLED`. Never touches a posted row. |
 | `GET /social-posts` | Queue list. Filter by status, newest first. Post + its targets in one query — no N+1. |
 | `GET /social-post` | Drill: full caption, asset, per-platform status, metrics, error. |
 | `POST /social-post-publish-now` | Manual fire for one target. The escape hatch when the sweep has failed and you want the post out today. |
@@ -177,10 +243,49 @@ Writes wrapped in `withTransaction`. The Meta call happens **outside** the
 transaction — same discipline as W1's Shopify push. A network call must never be
 holding a DB transaction open.
 
+### Activity goes to `bclog`, not a private table (owner, 2026-08-01)
+
+Queue / Delete / Posted / permanently-FAILED each write one `bclog` row via
+`utils/bclog.js`, section **`Social`** — the same shared log Inventory, Order Sync
+and the Amazon import already write to, and that the legacy PowerBuilder app
+reads. There is deliberately no `social_*` audit table: "who did what" is one
+question and it should have one answer.
+
+- **`bclog.workstation` holds the LOGIN NAME**, not a machine name — the legacy
+  column keeps its name, bcweb writes `req.user.display_name` into it, exactly as
+  `routes/inv-adjust.js` established.
+- **Cron writes `Scheduler`**, so an automated post is never attributed to
+  whoever happened to compose it.
+- **Only the final give-up failure is logged**, not each retry — the Queue already
+  shows retries loudly, and the shared log should not be buried in them.
+- The in-transaction helper (`writeBcLog`) is used where the log must land or roll
+  back *with* the thing it describes. `logActivity` is best-effort and is used
+  after a publish, which has already happened and cannot be undone by a logging
+  failure.
+
 ## The publish sweep
 
-`scripts/social-publish-sweep.js`, cron **every 5 minutes** (schedule lives in
-`crontab.txt`, which stays the definitive source — do not restate it elsewhere).
+`scripts/social-publish-sweep.js`, cron **hourly, on the hour** — `0 * * * *`
+(owner, 2026-08-01; a post a day does not need a sweep every few minutes). The
+crontab on the server is the definitive source for the schedule.
+
+Two consequences of that cadence, both deliberate:
+
+- **Compose snaps its time picker to `:00`**, rolling forward to the next hour if
+  snapping down would land in the past. Otherwise the screen would promise 09:20
+  and the post would actually appear at 10:00. If the cadence ever changes, that
+  snap is the other half of the decision.
+- **The cron entry needs no GMT/BST adjustment.** The server runs on GMT and the
+  fixed-time entries around it are hand-shifted by an hour; an hourly entry fires
+  every hour regardless of zone, and needs no re-editing when BST ends.
+
+**No output redirection**, matching every other entry on the box. That is a
+positive choice, not an omission: this sweep's durable record is in the database —
+`bclog` for every publish and every permanent failure, Meta's exact error text on
+the target row, red rows in the Queue. `docs/maintenance-notes.md` records that
+sweep failures have historically been invisible and that the fix is scripts
+self-logging rather than bolting a redirect onto the schedule file; this one is
+built that way.
 
 1. Select targets where `status='SCHEDULED'` and `scheduled_at <= now()`.
 2. Claim each with a conditional `UPDATE … SET status='PUBLISHING' WHERE
@@ -189,8 +294,23 @@ holding a DB transaction open.
    double-posting. Double-posting is the single worst failure this module has:
    public, visible, and not deletable from the customer's memory.
 3. Build the UTM'd link, append it to the caption, publish:
-   - **FB:** `POST /{page-id}/feed` — `message`, `link`, `published=true`. We are
-     firing at the due minute, so no `scheduled_publish_time`.
+   - **FB:** `POST /{page-id}/photos` — `url` (the one.com asset URL), `caption`,
+     `published=true`. We are firing at the due minute, so no
+     `scheduled_publish_time`. Derive the Page token first (see Phase 0).
+
+     **Use `/photos`, not `/feed`.** An earlier draft specified `/feed` with
+     `message` + `link`. That posts a *link* post: Facebook renders the link
+     target's own OG image and **the graphic you uploaded never appears** — which
+     defeats the entire point of a module built around "you bring the graphic".
+     `/photos` puts the graphic front and centre and carries the UTM'd link in the
+     caption text, where Facebook linkifies it. It also matches IG's
+     image + caption shape, so v2 is a closer parallel. Both edges were gate-
+     tested and both work; this is a product choice, not a capability limit.
+
+     **`remote_id` caveat:** an unpublished/scheduled `/photos` call returns only a
+     photo `id` (no `post_id`); a live `published=true` call returns both. Store
+     `post_id` when present and fall back to `id`, and do not assume the id shape
+     is stable between the two.
    - **IG (v2):** `POST /{ig-user-id}/media` with `image_url` + `caption` →
      `creation_id`, then `POST /{ig-user-id}/media_publish`. Container expires in
      24h; treat a failure between the two calls as `FAILED`, never retry blind.
@@ -243,6 +363,25 @@ Each phase is independently useful and independently abandonable.
 - **Phase 1** — schema + upload + Compose + Queue + FB publish sweep. Post daily
   by hand into the queue for two weeks. This is the real test: not whether it
   works, but whether *you actually use it*.
+
+  **Backend BUILT 2026-08-01** (uncommitted): `scripts/setup-social.js` (tables
+  **applied to prod**), `utils/socialMeta.js`, `utils/socialPublish.js`,
+  `scripts/social-publish-sweep.js`, and routes `social-asset-upload`,
+  `social-post-create`, `social-posts`, `social-post-cancel`,
+  `social-post-publish-now` — all mounted in `server.js`. Lint and syntax clean;
+  integration-tested against the real DB and the real image host (UTM builder,
+  Page-token derivation and caching, upload + public fetch, the conditional-claim
+  double-post guard, stale reclaim, the queue's single-query shape).
+
+  **Front end BUILT 2026-08-01** (uncommitted): `app/social/page.tsx` (Compose |
+  Queue tabs, one `useApiQuery` owning the data), `components/SocialCompose.tsx`,
+  `components/SocialQueue.tsx`, the Social client functions in `lib/api.ts`, and a
+  **Marketing** tile on the dashboard. `tsc --noEmit` and eslint both clean.
+
+  **Still to do:** the crontab entry for the sweep (see `docs/deploy.txt`), the two
+  new env vars on the VPS, click-testing, and a first live post. **The sweep has
+  never fired a live post** — the Graph calls are gate-proven, but nothing has gone
+  out end-to-end through the sweep. Results (Phase 2) is not built.
 - **Phase 2** — metrics sweep + Results.
 - **Phase 3** — Instagram. Publisher branch + two env vars, given the schema
   above.

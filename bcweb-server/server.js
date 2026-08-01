@@ -191,6 +191,15 @@ app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-d
 app.use('/order-sync', require('./routes/order-sync'));           // POST: run the pipeline now — WRITES
 app.use('/order-sync-last', require('./routes/order-sync-last')); // GET: when the button was last pressed — READ ONLY
 
+// --- Social (Marketing -> Social): compose, queue and publish to the Facebook Page ---
+// Publishing itself is NOT here: it lives in utils/socialPublish.js, called by BOTH the cron sweep
+// (scripts/social-publish-sweep.js) and /social-post-publish-now, so there is only ever one implementation of "post this".
+app.use('/social-asset-upload', require('./routes/social-asset-upload'));     // POST multipart: image -> one.com -> social_asset  WRITES
+app.use('/social-post-create', require('./routes/social-post-create'));       // POST: compose a post + its per-platform targets WRITES
+app.use('/social-posts', require('./routes/social-posts'));                   // GET: the Queue (posts + targets + counts) READ ONLY
+app.use('/social-post-cancel', require('./routes/social-post-cancel'));       // POST: SCHEDULED targets -> CANCELLED       WRITES
+app.use('/social-post-publish-now', require('./routes/social-post-publish-now')); // POST: fire one target now (Retry)      WRITES
+
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
   res.json({ return_code: 'NOT_FOUND', message: `No such endpoint: ${req.method} ${req.originalUrl}` });

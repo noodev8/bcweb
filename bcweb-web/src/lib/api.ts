@@ -1748,4 +1748,110 @@ export function getOrderSyncLast() {
   }));
 }
 
+// =============================================================================================================================
+// Social (Marketing module) — compose a post, queue it, let the sweep publish it to the Facebook Page.
+//
+// The flow is two steps on purpose: upload the image FIRST (it goes to one.com and gets a public URL), then create the post
+// referencing that asset. Meta fetches the image from that public URL at publish time — it is never uploaded through this API.
+// =============================================================================================================================
+
+export interface SocialAsset {
+  id: number;
+  filename: string;
+  public_url: string;
+  width: number;
+  height: number;
+  bytes: number;
+  uploaded_by?: string;
+  created_at?: string;
+}
+
+// One platform's copy of a post. A post can succeed on Facebook and fail on Instagram, which is why status lives here and not on
+// the post. `metrics` is Meta's raw insights blob (Phase 2) — read known keys defensively, it is not a fixed shape.
+export type SocialStatus = 'SCHEDULED' | 'PUBLISHING' | 'POSTED' | 'FAILED' | 'CANCELLED';
+export interface SocialTarget {
+  id: number;
+  platform: 'FB' | 'IG';
+  status: SocialStatus;
+  remote_id: string | null;
+  published_at: string | null;
+  error: string | null;
+  attempts: number;
+  metrics: Record<string, unknown> | null;
+  metrics_at: string | null;
+}
+
+export interface SocialPost {
+  id: number;
+  caption: string;
+  link_url: string | null;
+  campaign: string | null;
+  angle: string | null;
+  scheduled_at: string;
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+  asset: SocialAsset;
+  targets: SocialTarget[];
+}
+
+// Upload one finished graphic (multipart). Server converts to JPEG, enforces Instagram's size/aspect rules from day one (even though
+// v1 is FB-only), SFTPs it to social.brookfieldcomfort.com and returns the row including the public URL.
+// NOTE: Content-Type is set explicitly so axios keeps the FormData intact and adds the multipart boundary itself.
+export function uploadSocialAsset(file: File) {
+  const form = new FormData();
+  form.append('image', file);
+  return request<SocialAsset>(
+    { url: '/social-asset-upload', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 },
+    (b) => b.asset as SocialAsset
+  );
+}
+
+// Compose. `scheduled_at` must be a future ISO string WITH a zone — a bare local string would be read as UTC and silently shift the
+// post by an hour during BST. `link_url` is the BARE collection URL: the UTM is added per platform at publish time.
+export interface CreateSocialPostInput {
+  caption: string;
+  asset_id: number;
+  scheduled_at: string;
+  platforms: Array<'FB' | 'IG'>;
+  link_url?: string;
+  campaign?: string;
+  angle?: string;
+}
+export function createSocialPost(input: CreateSocialPostInput) {
+  return request<{ id: number; scheduled_at: string }>(
+    { url: '/social-post-create', method: 'POST', data: input },
+    (b) => ({ id: b.post.id as number, scheduled_at: b.post.scheduled_at as string })
+  );
+}
+
+// The Queue. `counts` covers the WHOLE table (not the returned page), so it can drive the tile badge and the group headings.
+export interface SocialPostsData { counts: Partial<Record<SocialStatus, number>>; posts: SocialPost[] }
+export function getSocialPosts(status?: SocialStatus) {
+  return request<SocialPostsData>(
+    { url: '/social-posts', method: 'GET', params: status ? { status } : {} },
+    (b) => ({ counts: (b.counts || {}) as SocialPostsData['counts'], posts: (b.posts || []) as SocialPost[] })
+  );
+}
+
+// Remove a queued post. If it NEVER published, the server deletes it outright (and drops the orphaned image from one.com) — the queue
+// is a worklist, not an archive, and who removed what is recorded in `bclog`. If it published on any platform the post survives and
+// only still-pending targets are cancelled, because a POSTED row records something publicly visible.
+// `deleted` tells you which happened.
+export function cancelSocialPost(postId: number, platform?: 'FB' | 'IG') {
+  return request<{ deleted: boolean; cancelled: number }>(
+    { url: '/social-post-cancel', method: 'POST', data: { post_id: postId, ...(platform ? { platform } : {}) } },
+    (b) => ({ deleted: !!b.deleted, cancelled: (b.cancelled as number) || 0 })
+  );
+}
+
+// Fire one target now, ignoring its schedule. This is the Queue's Retry button and the escape hatch when the sweep has died.
+// Calls the same publish path the cron sweep uses — there is only one implementation of "post this" server-side.
+export function publishSocialNow(targetId: number) {
+  return request<{ remote_id: string }>(
+    { url: '/social-post-publish-now', method: 'POST', data: { target_id: targetId }, timeout: 60000 },
+    (b) => ({ remote_id: (b.remote_id as string) || '' })
+  );
+}
+
 export default api;
