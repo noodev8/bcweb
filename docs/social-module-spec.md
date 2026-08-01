@@ -2,14 +2,15 @@
 
 **Status: PLAN. Nothing built.** Decisions below are made; the build is not started.
 
-Supersedes the "no Graph API" call in `C:\scripts\social\README.md`. That call was
-right when the goal was three manual posts a week. The goal has changed to
-**post every day without it costing thirty minutes**, and at daily cadence the
-manual route is the thing that fails, not the API.
+Supersedes the earlier "no Graph API, publish by hand" call in
+`docs/social/README.md`. That call was right when the goal was three manual posts
+a week. The goal has changed to **post every day without it costing thirty
+minutes**, and at daily cadence the manual route is the thing that fails, not the
+API.
 
-The strategy documents (`README.md`, `arizona-pilot.md`, `graphic-prompt.md`) move
-here as `docs/social/` when the build starts. They stay authoritative on **what to
-post and how it is judged** — this spec only covers **the machine that posts it**.
+The strategy documents in `docs/social/` (`README.md`, `arizona-pilot.md`,
+`graphic-prompt.md`, `CHANGELOG.md`) stay authoritative on **what to post and how
+it is judged** — this spec only covers **the machine that posts it**.
 The scoreboard does not change: **clicks to site, via UTM, in GA4.** Meta's numbers
 are diagnostic, and this module must not quietly become a place where reach starts
 looking like success.
