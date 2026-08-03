@@ -12,7 +12,12 @@ The lifecycle is Chosen -> Placed -> Arrived (utils/orderStatus.js), and this en
                                goods don't exist yet and nothing is coming until someone actually places the order.
   ON ORDER  (orderdate <> '') — genuinely with the supplier, now a waiting/chasing job.
 
-Both sides require arrived=0 (still open). Splitting them fixes a real inaccuracy: before this, un-placed rows were counted as "waiting",
+Both sides require arrived=0 (still open) OR arrived=1 within the last 30 days (createddate) — the same "still visible" rule
+order-status-list.js uses for its batch detail. Without the second half, a supplier whose entire on-order batch had just been marked
+arrived would drop out of this list the instant goods-in scanned the last unit, even though the batch is still sitting there and the
+detail page would still show it — the tile just went straight from "waiting" to "gone" with no way to click through and see it arrived.
+
+Splitting the two stages in the first place fixes a separate, real inaccuracy: before this, un-placed rows were counted as "waiting",
 so a style nobody had ordered yet showed up as an overdue delivery.
 
 `to_place_cost` is the money question — "what will this order cost me" — and comes from `skusummary.cost` via safeNumeric, NOT
@@ -73,7 +78,7 @@ router.get('/', async (req, res) => {
       FROM orderstatus o
       LEFT JOIN skumap sm     ON sm.code = o.shopifysku
       LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
-      WHERE o.ordertype IN (2,3) AND COALESCE(o.arrived,0) = 0
+      WHERE o.ordertype IN (2,3) AND (COALESCE(o.arrived,0) = 0 OR o.createddate >= CURRENT_DATE - 30)
       GROUP BY o.supplier
       HAVING COUNT(*) > 0
       ORDER BY o.supplier ASC
