@@ -48,7 +48,7 @@ Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -187,7 +187,28 @@ export default function SalesPage() {
   // The term the result box quotes back — the opening Contains, which is the one that chose the matched set.
   const leadTerm = hasSteps[0]?.term ?? '';
 
-  const rows: SalesReportRow[] = data?.rows ?? NO_ROWS;
+  const rawRows: SalesReportRow[] = data?.rows ?? NO_ROWS;
+
+  // Sort, client-side, over whatever page of lines is currently loaded — the same "loaded rows only" scope Export CSV already
+  // uses. Two sortable headers, When and Product, sharing one active field so only one applies at a time. 'when'+'desc' IS the
+  // untouched server order (newest-first) — clicking the When header, from anywhere, gets back to normal in one click, rather
+  // than cycling a lone Product toggle through a third "off" state to get there.
+  const [sort, setSort] = useState<{ field: 'when' | 'product'; dir: 'asc' | 'desc' }>({ field: 'when', dir: 'desc' });
+  const rows: SalesReportRow[] = useMemo(() => {
+    if (sort.field === 'when' && sort.dir === 'desc') return rawRows; // exact server order, no re-sort needed
+    if (sort.field === 'when') return [...rawRows].reverse();
+    const key = (r: SalesReportRow) => (r.groupid || r.code || '').toString();
+    const sorted = [...rawRows].sort((a, b) => key(a).localeCompare(key(b)));
+    return sort.dir === 'asc' ? sorted : sorted.reverse();
+  }, [rawRows, sort]);
+  // Clicking the header you're already sorted by flips direction; clicking the other one switches to it at its natural default
+  // (newest-first for When, A-Z for Product).
+  const onSortWhen = useCallback(() => {
+    setSort((s) => (s.field === 'when' ? { field: 'when', dir: s.dir === 'desc' ? 'asc' : 'desc' } : { field: 'when', dir: 'desc' }));
+  }, []);
+  const onSortProduct = useCallback(() => {
+    setSort((s) => (s.field === 'product' ? { field: 'product', dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field: 'product', dir: 'asc' }));
+  }, []);
   const summary: SalesReportSummary | null = data?.summary ?? null;
   // Memoised because a fresh object each render would re-run the CSV-export callback and the summary memo below.
   const range = useMemo(() => ({ from: data?.from ?? null, to: data?.to ?? null }), [data?.from, data?.to]);
@@ -525,10 +546,30 @@ export default function SalesPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_theme(colors.slate.200)]">
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-2.5 font-medium">When</th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <button
+                        type="button"
+                        onClick={onSortWhen}
+                        className="inline-flex items-center gap-0.5 font-medium uppercase tracking-wide hover:text-slate-700"
+                        title="Sort by date"
+                      >
+                        When
+                        {sort.field === 'when' && (sort.dir === 'asc' ? <ChevronUpIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />)}
+                      </button>
+                    </th>
                     <th className="px-4 py-2.5 font-medium">Channel</th>
                     <th className="px-4 py-2.5 font-medium">Brand</th>
-                    <th className="px-4 py-2.5 font-medium">Product</th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <button
+                        type="button"
+                        onClick={onSortProduct}
+                        className="inline-flex items-center gap-0.5 font-medium uppercase tracking-wide hover:text-slate-700"
+                        title="Sort by product"
+                      >
+                        Product
+                        {sort.field === 'product' && (sort.dir === 'asc' ? <ChevronUpIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />)}
+                      </button>
+                    </th>
                     <th className="px-3 py-2.5 text-right font-medium">Sold</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
                     <th className="px-3 py-2.5 text-right font-medium">Margin</th>
