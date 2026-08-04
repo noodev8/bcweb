@@ -1025,6 +1025,10 @@ export interface SalesFilterStep {
   op: 'has' | 'not';
   term: string;
 }
+// Which column the ledger is ordered by, and which way. Applied SERVER-side too, and for the same reason as the steps: the table is a
+// capped page, so an ascending sort done in the browser would return the oldest of the LATEST 200 rather than the oldest rows.
+export type SalesSort = 'date' | 'product';
+export type SalesSortDir = 'asc' | 'desc';
 export interface SalesReportData {
   channel: 'all' | 'shp' | 'amz';
   window: SalesWindow;
@@ -1033,6 +1037,8 @@ export interface SalesReportData {
   from: string | null;       // resolved bounds (echoed for display) — window bounds in pulse mode, item's first→last sale in product mode
   to: string | null;
   search: string | null;
+  sort: SalesSort;           // echoed back after the server's fallback — the truncation badge is worded off these two
+  dir: SalesSortDir;
   summary: SalesReportSummary;
   rows: SalesReportRow[];
   limit: number;
@@ -1047,6 +1053,8 @@ export function getSalesReport(params: {
   window?: SalesWindow;
   steps?: SalesFilterStep[];
   limit?: number;
+  sort?: SalesSort;
+  dir?: SalesSortDir;
 }) {
   // Steps go over as repeatable has=/not= params (axios sends `has[]=A&has[]=B`; the route accepts either spelling). Empty arrays are
   // dropped so a stepless request is byte-identical to the old one.
@@ -1062,6 +1070,9 @@ export function getSalesReport(params: {
         has: has.length > 0 ? has : undefined,
         not: not.length > 0 ? not : undefined,
         limit: params.limit,
+        // Omitted when they're the defaults, so a stepless newest-first request stays byte-identical to the pre-sort one.
+        sort: params.sort && params.sort !== 'date' ? params.sort : undefined,
+        dir: params.dir && params.dir !== 'desc' ? params.dir : undefined,
       },
     },
     (b) => ({
@@ -1072,6 +1083,8 @@ export function getSalesReport(params: {
       from: b.from ?? null,
       to: b.to ?? null,
       search: b.search ?? null,
+      sort: (b.sort as SalesSort) || 'date',
+      dir: (b.dir as SalesSortDir) || 'desc',
       summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, profit: 0, marginPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,

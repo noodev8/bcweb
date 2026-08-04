@@ -54,7 +54,7 @@ import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getSalesReport,
-  SalesFilterStep, SalesReportData, SalesReportRow, SalesReportSummary, SalesWindow,
+  SalesFilterStep, SalesReportData, SalesReportRow, SalesReportSummary, SalesSort, SalesSortDir, SalesWindow,
 } from '@/lib/api';
 
 // What the screen actually renders: the API payload, plus which steps produced it. The two can differ — see START FRESH below. Every part of
@@ -120,6 +120,22 @@ export default function SalesPage() {
   const [channel, setChannel] = useState<ChannelFilter>('all');
   const [win, setWin] = useState<SalesWindow>('today');
 
+  // Column sort (owner, 2026-08-03). Two columns only — When and Product — which is what was asked for, and they're the two you
+  // actually re-order a ledger by ("show me these grouped by style", "walk it forwards from the oldest"). Default is the ledger's
+  // long-standing newest-first.
+  //
+  // It goes to the SERVER, not Array.prototype.sort, because this page holds at most `limit` rows out of the matched set: sorting the
+  // loaded page ascending would show the oldest of the LATEST 200 while the header claimed "oldest first". See routes/analytics-sales.js.
+  // Being in the SWR key below is what makes a header click re-query — there is no separate "go fetch" call, same as the steps.
+  const [sort, setSort] = useState<SalesSort>('date');
+  const [dir, setDir] = useState<SalesSortDir>('desc');
+  // Click the sorted column to flip direction; click a different one to sort by it, starting descending (newest / Z-A) because that is
+  // where each column already sat and a click shouldn't jump the list to somewhere unrelated before you've asked it to.
+  const onSort = useCallback((col: SalesSort) => {
+    setDir((d) => (sort === col ? (d === 'desc' ? 'asc' : 'desc') : 'desc'));
+    setSort(col);
+  }, [sort]);
+
   // The two boxes, and the ordered steps committed so far (same model as Inventory). Steps are display-only here too: to drop one, Reset.
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
@@ -153,9 +169,9 @@ export default function SalesPage() {
   // and there is no setState-in-effect (docs/maintenance-notes.md — no data fetching in effects, anywhere). Inventory probes before it
   // applies so the dead intermediate state never paints; the same holds here, because both requests resolve before SWR publishes.
   const { data, error: loadError, busy: loading, refresh } = useApiQuery<SalesView>(
-    ['sales-report', channel, win, steps, lastFind],
+    ['sales-report', channel, win, steps, lastFind, sort, dir],
     async () => {
-      const res = await getSalesReport({ channel, window: win, steps });
+      const res = await getSalesReport({ channel, window: win, steps, sort, dir });
       if (!res.success || !res.data) return res as { success: false; error?: string; return_code?: string };
 
       // Viable on its own = either no Contains at all, or one the server won't reject for being too short.
@@ -169,7 +185,7 @@ export default function SalesPage() {
       // the merged result on an empty retry would leave the chips and the empty message quoting ARIZONA, a term the operator had
       // already moved on from. Only a failed REQUEST falls through to the original.
       if (startFresh) {
-        const fresh = await getSalesReport({ channel, window: win, steps: lastFind });
+        const fresh = await getSalesReport({ channel, window: win, steps: lastFind, sort, dir });
         if (fresh.success && fresh.data) {
           return { ...fresh, data: { ...fresh.data, usedSteps: lastFind } };
         }
@@ -187,34 +203,21 @@ export default function SalesPage() {
   // The term the result box quotes back — the opening Contains, which is the one that chose the matched set.
   const leadTerm = hasSteps[0]?.term ?? '';
 
-  const rawRows: SalesReportRow[] = data?.rows ?? NO_ROWS;
+  const rows: SalesReportRow[] = data?.rows ?? NO_ROWS;
 
-  // Sort, client-side, over whatever page of lines is currently loaded — the same "loaded rows only" scope Export CSV already
-  // uses. Two sortable headers, When and Product, sharing one active field so only one applies at a time. 'when'+'desc' IS the
-  // untouched server order (newest-first) — clicking the When header, from anywhere, gets back to normal in one click, rather
-  // than cycling a lone Product toggle through a third "off" state to get there.
-  const [sort, setSort] = useState<{ field: 'when' | 'product'; dir: 'asc' | 'desc' }>({ field: 'when', dir: 'desc' });
-  const rows: SalesReportRow[] = useMemo(() => {
-    if (sort.field === 'when' && sort.dir === 'desc') return rawRows; // exact server order, no re-sort needed
-    if (sort.field === 'when') return [...rawRows].reverse();
-    const key = (r: SalesReportRow) => (r.groupid || r.code || '').toString();
-    const sorted = [...rawRows].sort((a, b) => key(a).localeCompare(key(b)));
-    return sort.dir === 'asc' ? sorted : sorted.reverse();
-  }, [rawRows, sort]);
-  // Clicking the header you're already sorted by flips direction; clicking the other one switches to it at its natural default
-  // (newest-first for When, A-Z for Product).
-  const onSortWhen = useCallback(() => {
-    setSort((s) => (s.field === 'when' ? { field: 'when', dir: s.dir === 'desc' ? 'asc' : 'desc' } : { field: 'when', dir: 'desc' }));
-  }, []);
-  const onSortProduct = useCallback(() => {
-    setSort((s) => (s.field === 'product' ? { field: 'product', dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field: 'product', dir: 'asc' }));
-  }, []);
   const summary: SalesReportSummary | null = data?.summary ?? null;
   // Memoised because a fresh object each render would re-run the CSV-export callback and the summary memo below.
   const range = useMemo(() => ({ from: data?.from ?? null, to: data?.to ?? null }), [data?.from, data?.to]);
   const searchActive = data?.searchActive ?? false; // reflects the loaded result (product mode vs window pulse)
   const summaryOnly = data?.summaryOnly ?? false;   // long window: totals only, no line list
   const truncated = data?.truncated ?? false;       // more lines matched than the cap — the only thing the row above the table says now
+
+  // How the truncation badge names the rows it's describing — read from the LOADED result's sort (same rule as `usedSteps`: the screen
+  // describes what is on display, never what has merely been requested). Date gets the plain temporal words; a product sort has no
+  // natural "latest", so it says "First", which is literally true of any ordering.
+  const loadedSort = data?.sort ?? sort;
+  const loadedDir = data?.dir ?? dir;
+  const truncLead = loadedSort === 'date' ? (loadedDir === 'desc' ? 'Latest' : 'Earliest') : 'First';
 
   // --- Update orders ----------------------------------------------------------------------------------------------------------
   // The run itself, and everything about handling it, lives in UpdateOrdersButton — the same control is on Customer Orders, and the
@@ -518,9 +521,13 @@ export default function SalesPage() {
 
                     Both badges lose the leading "· " and the ml-2 they used to need — with the count gone the row is a flex with a gap,
                     and a dangling separator in front of the first thing on the line reads as a rendering fault. */}
+                {/* WORDED OFF THE SORT (2026-08-03). The cap is applied after the ORDER BY, so a truncated list isn't one fixed set of
+                    rows re-arranged — sort ascending by date and these are the OLDEST 200, not the latest. "Latest" was hard-coded
+                    when date-descending was the only order there was; left alone it would now be a false label on three of the four
+                    combinations. `truncLead` derives it from the order actually in force. */}
                 {truncated && summary && (
                   <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 ring-1 ring-amber-200">
-                    Latest {int(rows.length)} of {int(summary.lines)} — CSV exports these {int(rows.length)}
+                    {truncLead} {int(rows.length)} of {int(summary.lines)} — CSV exports these {int(rows.length)}
                   </span>
                 )}
                 {searchActive && summary && summary.products > 1 && (
@@ -546,30 +553,12 @@ export default function SalesPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_theme(colors.slate.200)]">
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-2.5 font-medium">
-                      <button
-                        type="button"
-                        onClick={onSortWhen}
-                        className="inline-flex items-center gap-0.5 font-medium uppercase tracking-wide hover:text-slate-700"
-                        title="Sort by date"
-                      >
-                        When
-                        {sort.field === 'when' && (sort.dir === 'asc' ? <ChevronUpIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />)}
-                      </button>
-                    </th>
+                    {/* Only these two sort (owner's ask). The rest stay plain headers rather than getting a disabled-looking
+                        affordance — a header that looks clickable and isn't is worse than one that never invited the click. */}
+                    <SortableTh label="When" col="date" sort={sort} dir={dir} onSort={onSort} />
                     <th className="px-4 py-2.5 font-medium">Channel</th>
                     <th className="px-4 py-2.5 font-medium">Brand</th>
-                    <th className="px-4 py-2.5 font-medium">
-                      <button
-                        type="button"
-                        onClick={onSortProduct}
-                        className="inline-flex items-center gap-0.5 font-medium uppercase tracking-wide hover:text-slate-700"
-                        title="Sort by product"
-                      >
-                        Product
-                        {sort.field === 'product' && (sort.dir === 'asc' ? <ChevronUpIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />)}
-                      </button>
-                    </th>
+                    <SortableTh label="Product" col="product" sort={sort} dir={dir} onSort={onSort} />
                     <th className="px-3 py-2.5 text-right font-medium">Sold</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
                     <th className="px-3 py-2.5 text-right font-medium">Margin</th>
@@ -620,6 +609,46 @@ function Segmented<T extends string>({ options, value, onChange, disabled = fals
         </button>
       ))}
     </div>
+  );
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------
+// A sortable column header. The arrow shows ONLY on the active column — an idle hint arrow on every sortable header turns the header
+// row into a field of chevrons and stops the active one reading as the answer to "what am I looking at?". Hovering still tints, so the
+// affordance is there when you go looking for it.
+// aria-sort is what a screen reader announces; `scope="col"` because these are real column headers with a button inside, not a bare
+// clickable div.
+// -------------------------------------------------------------------------------------------------------------------------------
+function SortableTh({ label, col, sort, dir, onSort, align = 'left' }: {
+  label: string;
+  col: SalesSort;
+  sort: SalesSort;
+  dir: SalesSortDir;
+  onSort: (c: SalesSort) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = sort === col;
+  const Arrow = dir === 'asc' ? ChevronUpIcon : ChevronDownIcon;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={'px-4 py-2.5 font-medium ' + (align === 'right' ? 'text-right' : '')}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        title={active ? `Sorted by ${label.toLowerCase()} — click to reverse` : `Sort by ${label.toLowerCase()}`}
+        className={
+          'group inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ' +
+          'focus:outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ' +
+          (active ? 'text-slate-700' : '')
+        }
+      >
+        {label}
+        {active && <Arrow className="h-3.5 w-3.5 text-slate-400" aria-hidden />}
+      </button>
+    </th>
   );
 }
 

@@ -38,8 +38,15 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the
          Two queries share one filter (window + channel + search):
            - SUMMARY aggregates over the WHOLE window (never bounded by the row cap) so the headline totals stay honest even when the
              table below is truncated.
-           - ROWS returns newest-first up to `limit` (fetch limit+1 to detect truncation, like pricing-sales), for the on-screen table
-             and the client-side CSV export.
+           - ROWS returns up to `limit` in the requested ORDER (fetch limit+1 to detect truncation, like pricing-sales), for the on-screen
+             table and the client-side CSV export.
+
+         SORTING IS DONE HERE, IN SQL (owner, 2026-08-03: "can we have a sort on the columns"), for the same reason the search steps are —
+         the browser only ever holds the capped page. A client-side sort would re-order that page, which is fine while the whole set fits
+         but silently wrong the moment it doesn't: ordering by date ASCENDING in the browser gives you the oldest of the LATEST 200, i.e.
+         the middle of the set wearing the label "oldest". Sorted in SQL, the cap and the order are applied together and ascending really
+         does return the oldest rows. Only the two columns the operator asked for are sortable (`date`, `product`); the money columns were
+         not requested and would each need a NULL policy, so they stay out until they're wanted.
 
 Schema notes (CLAUDE.md): `sales.solddate` is a bare DATE and `ordertime` a 'HH:MM' VARCHAR (blank on some legacy rows) — we order by
 solddate, then ordertime (NULLS LAST), then id. `soldprice` and `profit` are NUMERIC; `profit` is populated downstream (100% coverage) so
@@ -59,12 +66,14 @@ Request Query Params:
   search  (string, optional)  - legacy alias for a single `has` term (kept so older callers/links keep working).
   limit   (int, optional)     - pulse-mode row cap; default 500, clamped to [1, 5000]. Product mode is fixed at 200.
                                 Terms are capped at MAX_TERMS each; extras are ignored.
+  sort    (string, optional)  - 'date' (default) | 'product'. Which column the rows are ordered by. Ignored in summary-only mode (no rows).
+  dir     (string, optional)  - 'desc' (default) | 'asc'. Anything else falls back to 'desc', so the legacy newest-first call is unchanged.
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
-  "has": ["ARIZONA"], "not": ["EVA"],
+  "has": ["ARIZONA"], "not": ["EVA"], "sort": "date", "dir": "desc",
   "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640, "lines": 318,
                "revenue": 41234.55, "profit": 6120.11, "marginPct": 14.8, "products": 137 },
   "rows": [
@@ -114,6 +123,23 @@ const WINDOWS = new Set([...SHORT_WINDOWS, ...LONG_WINDOWS]);
 // productname/groupid/code are all nullable on legacy rows and a NULL would swallow the whole expression.
 const HAY = `(COALESCE(s.productname,'') || ' ' || COALESCE(s.groupid,'') || ' ' || COALESCE(s.code,''))`;
 
+// The sortable columns, as a WHITELIST of ORDER BY fragments keyed by the name the client sends. A whitelist rather than interpolation
+// because an ORDER BY can't be parameterised — `$1` there would sort by the constant, not the column — so the only safe way to accept a
+// column name from a client is to never use the client's string in the SQL at all.
+//
+// `%s` is where the direction lands. Both orderings end in `id %s`, which is what makes the list STABLE: without a unique tiebreak,
+// two rows sharing a date (or a product) can come back in either order between two identical requests, and paging past the cap would
+// then be able to show a row twice or not at all.
+//   date    — the natural ledger order: day, then time within the day. ordertime is blank on some legacy rows, so it's NULLS LAST in
+//             both directions (a missing time is the least useful row either way — it should never lead the list).
+//   product — the value the Product column actually DISPLAYS (`code`, falling back to groupid), so what you see is what it sorted on.
+//             Because code ends in the EU size, this also lands a style's sizes in size order underneath it. Ties fall back to newest
+//             first, which keeps each product's block reading like the date view.
+const SORTS = {
+  date:    'solddate %s, ordertime %s NULLS LAST, id %s',
+  product: "COALESCE(NULLIF(code,''), groupid) %s NULLS LAST, solddate DESC, id DESC",
+};
+
 // Belt-and-braces cap on how many terms one request may carry. The operator UI can't produce more than a handful, and each term is
 // another predicate on the scan — this just stops a hand-built URL turning into a silly query.
 const MAX_TERMS = 8;
@@ -148,6 +174,14 @@ router.get('/', async (req, res) => {
     // Window: one of the presets. Default 'today' (the freshest pulse; one click to yesterday / 3 days / the longer totals).
     let window = String(req.query.window || 'today').toLowerCase();
     if (!WINDOWS.has(window)) window = 'today';
+
+    // Sort. Both fall back to the legacy newest-first ordering on anything unrecognised, so an old caller (or a hand-typed URL) gets
+    // exactly the response it always got rather than an error.
+    const rawSort = String(req.query.sort || 'date').toLowerCase();
+    const sort = Object.prototype.hasOwnProperty.call(SORTS, rawSort) ? rawSort : 'date';
+    const dir = String(req.query.dir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    // The direction is substituted from OUR OWN two-value derivation above, never from the request string.
+    const orderBy = SORTS[sort].replace(/%s/g, dir.toUpperCase());
 
     // Search steps. `has` terms narrow by substring, `not` terms exclude by whole word; all of them AND together. The legacy single
     // `search` param folds in as a leading `has` so old callers keep working.
@@ -257,8 +291,10 @@ router.get('/', async (req, res) => {
       filterParams
     );
 
-    // ROWS — newest first, capped. Fetch limit+1 to detect truncation without a COUNT. SKIPPED entirely in summary-only mode (a long
-    // window wants totals, not thousands of lines) — we return an empty list and let the UI explain why.
+    // ROWS — in the requested order, capped. Fetch limit+1 to detect truncation without a COUNT. SKIPPED entirely in summary-only mode (a
+    // long window wants totals, not thousands of lines) — we return an empty list and let the UI explain why.
+    // NOTE the cap is applied AFTER the sort, so `truncated` means "these are the first `limit` rows IN THIS ORDER" — a different set of
+    // rows per sort, not the same set re-arranged. The UI's truncation badge is worded off `sort`/`dir` for that reason.
     const rowsResult = summaryOnly
       ? { rows: [] }
       : await query(
@@ -266,7 +302,7 @@ router.get('/', async (req, res) => {
            SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, brand, ordernum,
                   qty, soldprice, profit
            FROM f
-           ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC
+           ORDER BY ${orderBy}
            LIMIT $${filterParams.length + 1}::int`,
           [...filterParams, limit + 1]
         );
@@ -330,6 +366,8 @@ router.get('/', async (req, res) => {
       search: hasTerms[0] || null,   // legacy echo: the leading `has` term
       has: hasTerms,
       not: notTerms,
+      sort,             // echoed AFTER the fallback, so the UI can tell when its request was rejected and re-label the truncation badge
+      dir,
       summary,
       rows,
       limit,
