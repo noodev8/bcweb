@@ -21,7 +21,8 @@ most of the time. Reorder DETAIL_GROUPS to change the layout; nothing else needs
 =======================================================================================================================================
 */
 
-import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
+import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, MegaphoneIcon } from '@heroicons/react/24/outline';
 import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
 import InvSales from '@/components/InvSales';
 import CopyButton from '@/components/CopyButton';
@@ -94,8 +95,19 @@ function sizeLabel(s: { sizeDisplay: string | null; eu: string; uksize: string |
 }
 
 export default function InvBreakdown({ data }: { data: InvStockData }) {
+  const router = useRouter();
   const src = data.imagename ? IMAGE_BASE + data.imagename : null;
   const productUrl = data.handle ? STORE_PRODUCT_BASE + data.handle : null;
+
+  // Send to Social — hand this style's live link + photo to Marketing, no auto-post. Both are already on hand (this panel only
+  // opens once /inv-stock has loaded), so this is just a navigation, not a fetch: lands on /social?link=&image=, which prefills a
+  // fresh Compose draft and stops there — caption, collection, timing and "Add to queue" stay the operator's.
+  const sendToSocial = () => {
+    const params = new URLSearchParams();
+    if (productUrl) params.set('link', productUrl);
+    if (src) params.set('image', src);
+    router.push(`/social?${params.toString()}`);
+  };
 
   return (
     <div className="border-t border-slate-200 bg-slate-50/40">
@@ -148,6 +160,19 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
             >
               <ArrowDownTrayIcon className="h-3.5 w-3.5" /> Image
             </a>
+          </>
+        )}
+        {(productUrl || src) && (
+          <>
+            <span className="mx-1 text-slate-200">|</span>
+            <button
+              type="button"
+              onClick={sendToSocial}
+              title="Load this product's link and photo into a new Social post — nothing posts or queues until you do"
+              className="inline-flex items-center gap-1 rounded border border-brand-200 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
+            >
+              <MegaphoneIcon className="h-3.5 w-3.5" /> Send to Social
+            </button>
           </>
         )}
       </div>

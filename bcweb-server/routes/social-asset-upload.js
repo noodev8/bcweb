@@ -28,7 +28,17 @@ WHY ASSETS ARE IMMUTABLE
          Requires auth. `uploaded_by` is resolved server-side from the JWT, never trusted from the client.
 =======================================================================================================================================
 Request (multipart/form-data):
-  image  (file, required)  - the finished graphic (jpeg/png/webp)
+  image        (file, optional)    - the finished graphic (jpeg/png/webp)
+  source_url   (text, optional)    - ALTERNATIVE to `image`: point at a photo already public on images.brookfieldcomfort.com
+                                      (Inventory's "Send to Social" handoff) instead of a browser upload. MUST be on that host —
+                                      an arbitrary caller-supplied URL is not fetched (SSRF). Exactly one of `image`/`source_url`
+                                      is required.
+                                      Fetched here on the SERVER (that host sends no CORS headers, so the browser can't read it
+                                      itself), then only VALIDATED (aspect/size) — never re-encoded or re-hosted on one.com. The
+                                      photo is already sitting at a public URL Meta can fetch directly, the same way the
+                                      Inventory screen displays it, so this path needs none of the ONECOM_SOCIAL_REMOTE_DIR /
+                                      SOCIAL_ASSET_BASE_URL config the `image` path below does, and `public_url` on the stored
+                                      row is that original URL, unchanged.
 
 Success Response:
 {
@@ -44,7 +54,9 @@ Success Response:
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
-"MISSING_FIELDS"     // no file
+"MISSING_FIELDS"     // neither an image file nor source_url
+"INVALID_SOURCE"     // source_url isn't on the allowed image host
+"FETCH_FAILED"       // source_url didn't come back (network error / non-200)
 "INVALID_IMAGE"      // unsupported type, or sharp couldn't decode it
 "IMAGE_TOO_LARGE"    // over the 8MB Instagram ceiling
 "BAD_ASPECT"         // outside the 4:5 .. 1.91:1 window
@@ -76,6 +88,10 @@ const MAX_RATIO = 1.91;         //        widest allowed (landscape)
 // kind of rule that makes a tool feel broken. 0.02 admits 1200x628 and 1080x566 while still refusing anything genuinely panoramic.
 const RATIO_TOLERANCE = 0.02;
 
+// The only host `source_url` may point at — the inventory image CDN. Fixed and not derived from any request input, so a caller
+// cannot use this field to make the server fetch an arbitrary URL (SSRF).
+const ALLOWED_SOURCE_PREFIX = 'https://images.brookfieldcomfort.com/';
+
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -100,9 +116,69 @@ router.post('/', verifyToken, (req, res) => {
         }
         return res.json({ return_code: 'INVALID_IMAGE', message: uploadErr.message || 'Invalid image upload' });
       }
-      if (!req.file) {
+      const sourceUrl = typeof req.body.source_url === 'string' ? req.body.source_url.trim() : '';
+      if (!req.file && !sourceUrl) {
         return res.json({ return_code: 'MISSING_FIELDS', message: 'An image file is required' });
       }
+
+      // ---- source_url path: an inventory product photo, already public on images.brookfieldcomfort.com --------------------------
+      // No re-host here — that image is already sitting at a public URL Meta can fetch directly (the inventory screen reads it the
+      // same way), so this path never touches one.com/SFTP and doesn't need ONECOM_SOCIAL_REMOTE_DIR/SOCIAL_ASSET_BASE_URL
+      // configured at all. It only validates the photo and points the post straight at the existing URL.
+      if (!req.file) {
+        if (!sourceUrl.startsWith(ALLOWED_SOURCE_PREFIX)) {
+          return res.json({ return_code: 'INVALID_SOURCE', message: 'source_url must be on the inventory image host' });
+        }
+        let buffer;
+        try {
+          const fetched = await fetch(sourceUrl);
+          if (!fetched.ok) {
+            return res.json({ return_code: 'FETCH_FAILED', message: `Could not fetch that image (${fetched.status})` });
+          }
+          buffer = Buffer.from(await fetched.arrayBuffer());
+        } catch (fetchErr) {
+          logger.error('[social-asset-upload] source_url fetch failed:', fetchErr.message);
+          return res.json({ return_code: 'FETCH_FAILED', message: 'Could not fetch that image' });
+        }
+
+        let meta;
+        try {
+          // No .rotate()/re-encode — these are catalogue photos straight off the CDN, not phone camera EXIF, so the raw dimensions
+          // are trustworthy. This is only a read (never stored), so it costs nothing beyond the decode.
+          meta = await sharp(buffer, { failOn: 'none' }).metadata();
+        } catch (imgErr) {
+          logger.error('[social-asset-upload] sharp decode failed:', imgErr.message);
+          return res.json({ return_code: 'INVALID_IMAGE', message: 'Could not read that image file' });
+        }
+
+        const ratio = meta.width / meta.height;
+        if (ratio < MIN_RATIO - RATIO_TOLERANCE || ratio > MAX_RATIO + RATIO_TOLERANCE) {
+          return res.json({
+            return_code: 'BAD_ASPECT',
+            message: `Image is ${meta.width}x${meta.height} (ratio ${ratio.toFixed(2)}). Needs to be between 4:5 (0.80, portrait) and 1.91:1 (landscape).`
+          });
+        }
+        if (buffer.length > MAX_BYTES) {
+          return res.json({
+            return_code: 'IMAGE_TOO_LARGE',
+            message: `Image is ${(buffer.length / 1024 / 1024).toFixed(1)}MB — the limit is 8MB.`
+          });
+        }
+
+        // public_url IS the original CDN url — nothing was re-hosted, so there is nothing else it could point at.
+        const filename = sourceUrl.split('/').pop() || sourceUrl;
+        const ins = await query(
+          `INSERT INTO social_asset (filename, public_url, width, height, bytes, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           RETURNING id, filename, public_url, width, height, bytes, uploaded_by, created_at`,
+          [filename, sourceUrl, meta.width, meta.height, buffer.length, req.user.display_name]
+        );
+
+        logger.info(`[social-asset-upload] source_url ${sourceUrl} (${meta.width}x${meta.height}, ${buffer.length}B) by ${req.user.display_name}`);
+        return res.json({ return_code: 'SUCCESS', asset: ins.rows[0] });
+      }
+
+      // ---- multipart file path: a manually picked graphic, converted and re-hosted on one.com (unchanged) ----------------------
       if (!config.social.remoteDir || !config.social.assetBaseUrl) {
         return res.json({
           return_code: 'NOT_CONFIGURED',

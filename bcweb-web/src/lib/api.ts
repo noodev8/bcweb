@@ -1807,6 +1807,18 @@ export function uploadSocialAsset(file: File) {
   );
 }
 
+// Same endpoint, but the source is a URL on images.brookfieldcomfort.com (the inventory image CDN) rather than a browser File —
+// used by Inventory's "Send to Social" handoff. The server fetches it directly; the browser never does, because that host sends
+// no CORS headers and a client-side fetch() of it is silently blocked. See routes/social-asset-upload.js for the host allowlist.
+export function uploadSocialAssetFromUrl(sourceUrl: string) {
+  const form = new FormData();
+  form.append('source_url', sourceUrl);
+  return request<SocialAsset>(
+    { url: '/social-asset-upload', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 },
+    (b) => b.asset as SocialAsset
+  );
+}
+
 // Compose. `scheduled_at` must be a future ISO string WITH a zone — a bare local string would be read as UTC and silently shift the
 // post by an hour during BST. `link_url` is the BARE collection URL: the UTM is added per platform at publish time.
 export interface CreateSocialPostInput {

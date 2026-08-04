@@ -18,9 +18,9 @@ WHY THE TRACKED URL IS SHOWN READ-ONLY
 =======================================================================================================================================
 */
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { uploadSocialAsset, createSocialPost, SocialAsset } from '@/lib/api';
+import { uploadSocialAsset, uploadSocialAssetFromUrl, createSocialPost, SocialAsset, ApiResult } from '@/lib/api';
 import { buildTrackedLink } from '@/lib/socialLink';
 
 // Matches the server's multer source cap (routes/social-asset-upload.js). Checked here purely for UX, never as enforcement — a browser
@@ -111,13 +111,19 @@ function nextAvailable(): { date: string; hour: number } {
   return { date: toDateValue(tomorrow), hour: SLOT_HOURS[0] };
 }
 
-export default function SocialCompose({ onCreated }: { onCreated: () => void }) {
+export default function SocialCompose({ onCreated, initialLinkUrl, initialImageUrl }: {
+  onCreated: () => void;
+  // A handoff from Inventory's "Send to Social" button (?link=&image= on /social) — a product's live URL and photo, dropped
+  // straight into a fresh draft so the operator only has to write the hook and pick a time. Never auto-saves or auto-queues.
+  initialLinkUrl?: string;
+  initialImageUrl?: string;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [asset, setAsset] = useState<SocialAsset | null>(null);
   const [uploading, setUploading] = useState(false);
   const [caption, setCaption] = useState(CAPTION_TEMPLATE);
   const [campaign, setCampaign] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
+  const [linkUrl, setLinkUrl] = useState(initialLinkUrl || '');
   // Initialised from the clock once, on mount — nextAvailable() is impure, so calling it during render would make the form's opening
   // state depend on when React happens to re-render.
   const [when, setWhen] = useState(nextAvailable);
@@ -133,24 +139,9 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
   const slotStillValid = slotIsFuture(when.date, when.hour);
   const canSave = !!asset && caption.trim().length > 0 && slotStillValid && !saving;
 
-  async function handleFile(file: File | undefined) {
-    if (!file) return;
-    setError(null);
-    setOkMsg(null);
-
-    // Reject before the request is made — see MAX_UPLOAD_BYTES for why this is worth doing client-side.
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError(
-        `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024}MB. ` +
-        'Export it smaller and try again.'
-      );
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-
-    setUploading(true);
-    const res = await uploadSocialAsset(file);
-    setUploading(false);
+  // Shared by both upload paths (a manual file pick, and the URL-based one below) — same success/failure handling either way, so
+  // the operator sees one consistent story regardless of how the image got here.
+  const applyUploadResult = useCallback((res: ApiResult<SocialAsset>) => {
     if (res.success && res.data) {
       setAsset(res.data);
     } else if (res.return_code === 'NETWORK_ERROR') {
@@ -168,7 +159,70 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
       setError(res.error || 'Upload failed');
       setAsset(null);
     }
+  }, []);
+
+  const handleFile = useCallback(async (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    setOkMsg(null);
+
+    // Reject before the request is made — see MAX_UPLOAD_BYTES for why this is worth doing client-side.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024}MB. ` +
+        'Export it smaller and try again.'
+      );
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
+    setUploading(true);
+    const res = await uploadSocialAsset(file);
+    setUploading(false);
+    applyUploadResult(res);
+  }, [applyUploadResult]);
+
+  // ---- Prefill from Inventory's "Send to Social" -----------------------------------------------------------------------------
+  // Runs once per incoming product, not once per mount: `prefillKey` records the last link|image pair actually applied, so a
+  // SECOND Send-to-Social while this tab is already open (the page doesn't remount for a same-route navigation) still resets the
+  // draft onto the new product, rather than silently keeping the first one on screen.
+  //
+  // The reset itself happens DURING RENDER, not in an effect — the official "adjusting state when a prop changes" pattern
+  // (react.dev), which is also what react-hooks/set-state-in-effect (enforced project-wide) exists to steer you toward instead of
+  // an effect that turns incoming props straight into state on every change. `prefillKey` is the last link|image pair already
+  // applied; a mismatch means a fresh product just arrived and the draft is reset onto it, synchronously, before this render paints.
+  const [prefillKey, setPrefillKey] = useState('');
+  const [prefilling, setPrefilling] = useState(false);
+  const incomingKey = `${initialLinkUrl || ''}|${initialImageUrl || ''}`;
+  if ((initialLinkUrl || initialImageUrl) && incomingKey !== prefillKey) {
+    setPrefillKey(incomingKey);
+    setLinkUrl(initialLinkUrl || '');
+    setCaption(CAPTION_TEMPLATE);
+    setCampaign('');
+    setAsset(null);
+    setError(null);
+    setOkMsg(null);
+    // Flips the graphic box to "fetching" immediately, in this same render — the effect below does the actual fetch and is left
+    // with nothing to set synchronously itself (only the async callback after it, once the request has actually returned).
+    setPrefilling(!!initialImageUrl);
   }
+
+  // The actual side effect — asking the SERVER to fetch the photo — stays in an effect, keyed on the image URL alone so it fires
+  // exactly once per incoming photo. Goes through uploadSocialAssetFromUrl, not a browser fetch(): images.brookfieldcomfort.com
+  // sends no CORS headers, so the browser silently blocks reading that response itself, but the API server has no such
+  // restriction — see routes/social-asset-upload.js's `source_url` field (host-allowlisted against SSRF). Same
+  // validation/conversion pipeline as a manual upload either way, via applyUploadResult.
+  useEffect(() => {
+    if (!initialImageUrl) return;
+    let cancelled = false;
+    (async () => {
+      const res = await uploadSocialAssetFromUrl(initialImageUrl);
+      if (cancelled) return;
+      applyUploadResult(res);
+      setPrefilling(false);
+    })();
+    return () => { cancelled = true; };
+  }, [initialImageUrl, applyUploadResult]);
 
   async function handleSave() {
     if (!asset) return;
@@ -241,11 +295,13 @@ export default function SocialCompose({ onCreated }: { onCreated: () => void }) 
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || prefilling}
               className="flex h-56 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-400 hover:text-brand-600 disabled:opacity-60"
             >
               {uploading ? (
                 <><ArrowUpTrayIcon className="h-8 w-8 animate-pulse" /><span className="text-sm">Uploading…</span></>
+              ) : prefilling ? (
+                <><ArrowUpTrayIcon className="h-8 w-8 animate-pulse" /><span className="text-sm">Fetching product photo…</span></>
               ) : (
                 <><PhotoIcon className="h-8 w-8" /><span className="text-sm">Choose an image</span></>
               )}
