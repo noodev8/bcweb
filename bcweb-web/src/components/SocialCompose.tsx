@@ -20,7 +20,9 @@ WHY THE TRACKED URL IS SHOWN READ-ONLY
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { uploadSocialAsset, uploadSocialAssetFromUrl, createSocialPost, SocialAsset, ApiResult } from '@/lib/api';
+import {
+  uploadSocialAsset, uploadSocialAssetFromUrl, createSocialPost, cancelSocialPost, SocialAsset, SocialPost, ApiResult
+} from '@/lib/api';
 import { buildTrackedLink } from '@/lib/socialLink';
 
 // Matches the server's multer source cap (routes/social-asset-upload.js). Checked here purely for UX, never as enforcement — a browser
@@ -111,12 +113,45 @@ function nextAvailable(): { date: string; hour: number } {
   return { date: toDateValue(tomorrow), hour: SLOT_HOURS[0] };
 }
 
-export default function SocialCompose({ onCreated, initialLinkUrl, initialImageUrl }: {
-  onCreated: () => void;
+// The slot an existing post is scheduled into, for the Copy handoff. Keeps the ORIGINAL time when it is still in the future — when
+// you are copying a post to fix its graphic, the time was already a decision and re-making it is just another thing to get wrong.
+// Falls back to the next available slot if that moment has since passed (or the stored time isn't one of the four slots at all,
+// which can only happen if SLOT_HOURS changed after the post was queued).
+function slotFromIso(iso: string): { date: string; hour: number } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return nextAvailable();
+  const date = toDateValue(d);
+  const hour = SLOT_HOURS.find((h) => h === d.getHours());
+  if (hour === undefined || !slotIsFuture(date, hour)) return nextAvailable();
+  return { date, hour };
+}
+
+/*
+ * A post being copied in from the Queue. `nonce` is what makes a SECOND copy of the SAME post re-prefill the form — the page does
+ * not remount between Queue and Compose, so without it a repeat copy of the same row would look like nothing happened.
+ *
+ * WHY COPY-THEN-DELETE RATHER THAN AN EDIT ROUTE (owner's call, 2026-08-05)
+ *   There is no update endpoint for a queued post, and adding one is more dangerous than it looks: the publish sweep can claim a
+ *   target (PUBLISHING) between the form loading and the save landing, so an edit would have to re-check target status inside its
+ *   own transaction exactly as social-post-cancel.js already does. Replacing the graphic also means a NEW social_asset row either
+ *   way, so an update would additionally have to reimplement cancel's "delete the one.com file if no other post references it"
+ *   cleanup or leak orphaned files. Copy + delete reuses both of those behaviours from code that already works, and nothing has
+ *   published yet so the post id changing costs nothing.
+ */
+export interface SocialCopySource { post: SocialPost; nonce: number }
+
+export default function SocialCompose({ onCreated, initialLinkUrl, initialImageUrl, copyFrom, onCopyHandled }: {
+  // `stayOnCompose` asks the page NOT to jump to the Queue after a save, so a warning written here stays readable.
+  onCreated: (opts?: { stayOnCompose?: boolean }) => void;
   // A handoff from Inventory's "Send to Social" button (?link=&image= on /social) — a product's live URL and photo, dropped
   // straight into a fresh draft so the operator only has to write the hook and pick a time. Never auto-saves or auto-queues.
   initialLinkUrl?: string;
   initialImageUrl?: string;
+  // A handoff from the Queue's Copy button — see SocialCopySource. Loads the existing post into this form; queueing the result
+  // then removes the original.
+  copyFrom?: SocialCopySource | null;
+  // Lets the page drop its copy state once this form has taken ownership of it, so a later remount doesn't resurrect the handoff.
+  onCopyHandled?: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [asset, setAsset] = useState<SocialAsset | null>(null);
@@ -130,6 +165,12 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  // The post this draft is REPLACING, if it arrived via Copy. Set only by the copy prefill below; cleared once the replacement has
+  // been queued (or when the operator detaches it to keep both). `null` is the ordinary "this is a brand new post" case.
+  const [replacing, setReplacing] = useState<{ id: number; scheduledAt: string } | null>(null);
+  // A replacement that queued but whose original could NOT be removed. Kept separate from `error` because the new post DID save —
+  // this is a "you now have two, go and delete one" warning, not a failure, and flattening the two together would misreport it.
+  const [warnMsg, setWarnMsg] = useState<string | null>(null);
 
   const preview = useMemo(() => buildTrackedLink(linkUrl, campaign, 'FB'), [linkUrl, campaign]);
   // The chosen slot must still be in the future — picking today then a slot that has already passed is the one way to build an
@@ -207,6 +248,49 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
     setPrefilling(!!initialImageUrl);
   }
 
+  // ---- Prefill from the Queue's "Copy" ---------------------------------------------------------------------------------------
+  // Same during-render adjustment as above (and the same reason for it), keyed on the handoff's nonce so copying the same row twice
+  // still reloads the draft.
+  //
+  // THE IMAGE IS REUSED, NOT RE-UPLOADED: the original's social_asset row is already a valid public URL, so the copy simply points
+  // at it. That is what makes "replace the graphic" work as a normal edit — remove it with the × and upload the fixed file, exactly
+  // as for any other post. If it is left alone, both posts reference one asset, and cancel's orphan check (which counts referencing
+  // posts before deleting the file) keeps the shared image alive when the original is removed.
+  // Mirrored into a ref as well as state: the photo-fetch effect below needs to know, from inside an async callback, whether a copy
+  // has landed since it started. State would be stale in that closure; the ref is not.
+  const [copyKey, setCopyKey] = useState(0);
+  const copyKeyRef = useRef(0);
+  if (copyFrom && copyFrom.nonce !== copyKey) {
+    setCopyKey(copyFrom.nonce);
+    const src = copyFrom.post;
+    setCaption(src.caption);
+    setCampaign(src.campaign || '');
+    setLinkUrl(src.link_url || '');
+    setAsset(src.asset);
+    setWhen(slotFromIso(src.scheduled_at));
+    setReplacing({ id: src.id, scheduledAt: src.scheduled_at });
+    setError(null);
+    setOkMsg(null);
+    setWarnMsg(null);
+    setPrefilling(false);
+    // Stops the Send-to-Social prefill above from being applied over the top of this copy when ?link=&image= are still sitting in
+    // the URL from an earlier visit.
+    setPrefillKey(`${initialLinkUrl || ''}|${initialImageUrl || ''}`);
+  }
+
+  // Tell the page the handoff has been consumed, so it can drop its copy state.
+  //
+  // IN AN EFFECT, NOT IN THE BLOCK ABOVE: that block runs during render, and calling a parent's setState from there is the
+  // "cannot update a component while rendering a different component" warning. It also genuinely matters that the page clears it —
+  // Compose unmounts every time the tab changes, so a copy left sitting in page state would re-prefill this form on the way back
+  // and silently resurrect a draft that has already been queued (and whose original is by then deleted).
+  useEffect(() => {
+    // Ref kept in step with the state here rather than in the render block above — writing a ref during render is what
+    // react-hooks/refs forbids, and this runs on commit, long before any in-flight network response could return.
+    copyKeyRef.current = copyKey;
+    if (copyKey > 0) onCopyHandled?.();
+  }, [copyKey, onCopyHandled]);
+
   // The actual side effect — asking the SERVER to fetch the photo — stays in an effect, keyed on the image URL alone so it fires
   // exactly once per incoming photo. Goes through uploadSocialAssetFromUrl, not a browser fetch(): images.brookfieldcomfort.com
   // sends no CORS headers, so the browser silently blocks reading that response itself, but the API server has no such
@@ -215,9 +299,14 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
   useEffect(() => {
     if (!initialImageUrl) return;
     let cancelled = false;
+    // A copy that lands WHILE this fetch is in flight must win: the operator switched to the Queue and deliberately loaded a
+    // different post, so dropping the product photo on top of it when the request finally returns would silently undo that. The
+    // nonce (rather than a plain boolean) keeps a LATER Send-to-Social working — that arrives as a new initialImageUrl, re-runs
+    // this effect, and re-reads the nonce as it stands then.
+    const copyKeyAtStart = copyKeyRef.current;
     (async () => {
       const res = await uploadSocialAssetFromUrl(initialImageUrl);
-      if (cancelled) return;
+      if (cancelled || copyKeyRef.current !== copyKeyAtStart) return;
       applyUploadResult(res);
       setPrefilling(false);
     })();
@@ -229,6 +318,7 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
     setSaving(true);
     setError(null);
     setOkMsg(null);
+    setWarnMsg(null);
 
     // Build the instant from the chosen date + slot. `new Date('YYYY-MM-DDTHH:00:00')` (no zone suffix) is read in the BROWSER's zone
     // — Europe/London for this team — and toISOString() converts to UTC, which is what the server stores. Appending a 'Z' or passing
@@ -248,25 +338,81 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
       ...(linkUrl.trim() ? { link_url: linkUrl.trim() } : {}),
       ...(campaign ? { campaign } : {}),
     });
-    setSaving(false);
-
-    if (res.success) {
-      setOkMsg(`Queued for ${scheduledAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.`);
-      // Reset for the next post, but keep the campaign — posts tend to come in runs for the same collection. The caption goes back to
-      // the template rather than to empty, so the next post starts from the house format instead of a blank box.
-      setAsset(null);
-      setCaption(CAPTION_TEMPLATE);
-      setLinkUrl('');
-      setWhen(nextAvailable());
-      if (fileRef.current) fileRef.current.value = '';
-      onCreated();
-    } else {
+    if (!res.success) {
+      setSaving(false);
       setError(res.error || 'Could not queue that post');
+      return;
     }
+
+    const queuedFor = scheduledAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+
+    /*
+     * A REPLACEMENT: now remove the post this one was copied from.
+     *
+     * ORDER MATTERS — the new post is created FIRST and the original deleted only after that succeeded. The failure the operator
+     * can actually recover from is "two posts queued, delete one" (visible in the Queue, one click). The other order risks
+     * "original deleted, replacement never saved", which loses the caption with nothing on screen to recover it from.
+     *
+     * A failure here is therefore NOT an error — the replacement is safely queued. It is a warning, and it has to be loud, because
+     * the consequence of ignoring it is that BOTH posts go out to a live 3.3K-follower Page.
+     */
+    let warning: string | null = null;
+    if (replacing) {
+      const del = await cancelSocialPost(replacing.id);
+      if (!del.success) {
+        warning =
+          `Queued for ${queuedFor} — but the original post could not be removed (${del.error || 'unknown error'}). ` +
+          'It is still scheduled and WILL go out as well. Delete it in the Queue.';
+      } else if (!del.data?.deleted) {
+        // The server keeps any post that has published somewhere and only cancels what is still pending — so this means the sweep
+        // got to the original between Copy and Save. Nothing is broken, but the operator needs to know the old graphic is public.
+        warning =
+          `Queued for ${queuedFor} — but the original had already been published by then, so it was kept (only its pending ` +
+          'targets were cancelled). The old graphic is live on Facebook; remove it there if it should not be.';
+      }
+    }
+    setWarnMsg(warning);
+    if (!warning) setOkMsg(`Queued for ${queuedFor}.${replacing ? ' The post it replaced has been removed.' : ''}`);
+
+    setSaving(false);
+    // Reset for the next post, but keep the campaign — posts tend to come in runs for the same collection. The caption goes back to
+    // the template rather than to empty, so the next post starts from the house format instead of a blank box.
+    setAsset(null);
+    setCaption(CAPTION_TEMPLATE);
+    setLinkUrl('');
+    setWhen(nextAvailable());
+    setReplacing(null);
+    if (fileRef.current) fileRef.current.value = '';
+    // Stay on Compose when there is a warning to read — the page normally jumps to the Queue on save, which would unmount this form
+    // and take the warning with it. That is fine for the ordinary "queued" confirmation, but not for the one message whose whole
+    // point is that something still needs doing.
+    onCreated({ stayOnCompose: !!warning });
   }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* What this draft is going to do to the queue, said before it is saved rather than after. Without it, a copied post looks
+          exactly like a new one and the operator has no way to tell that queueing it will remove something. Detaching is offered
+          because "actually I want both" is a reasonable thing to decide halfway through — and it is one click either way. */}
+      {replacing && (
+        <div className="lg:col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          <span>
+            Replacing the post scheduled for{' '}
+            <span className="font-medium">
+              {new Date(replacing.scheduledAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+            </span>
+            . It will be removed when you queue this one.
+          </span>
+          <button
+            type="button"
+            onClick={() => setReplacing(null)}
+            className="font-medium underline underline-offset-2 hover:text-sky-950"
+          >
+            Keep both instead
+          </button>
+        </div>
+      )}
+
       {/* ---- The graphic ---- */}
       <div>
         <label className="block text-sm font-medium text-slate-700">Graphic</label>
@@ -428,6 +574,8 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
         </div>
 
         {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {/* Amber, not green and not red: the post saved, but something is left for the operator to do. */}
+        {warnMsg && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">{warnMsg}</p>}
         {okMsg && <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</p>}
 
         <div className="flex items-center gap-3">
@@ -437,7 +585,7 @@ export default function SocialCompose({ onCreated, initialLinkUrl, initialImageU
             disabled={!canSave}
             className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Queueing…' : 'Add to queue'}
+            {saving ? 'Queueing…' : replacing ? 'Replace post' : 'Add to queue'}
           </button>
           <span className="text-xs text-slate-400">Facebook · Instagram comes later</span>
         </div>

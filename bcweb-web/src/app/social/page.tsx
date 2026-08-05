@@ -20,11 +20,11 @@ Guarded by AppShell. Consumes GET /social-posts; writes via the Compose/Queue co
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PencilSquareIcon, QueueListIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import SocialCompose from '@/components/SocialCompose';
+import SocialCompose, { SocialCopySource } from '@/components/SocialCompose';
 import SocialQueue from '@/components/SocialQueue';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getSocialPosts, SocialPost } from '@/lib/api';
@@ -53,6 +53,15 @@ function SocialPageContent() {
   const incomingLink = searchParams.get('link') || '';
   const incomingImage = searchParams.get('image') || '';
   const [tab, setTab] = useState<Tab>('compose');
+
+  // The Queue → Compose handoff for "Copy & fix". The page only ferries it across and switches tab; SocialCompose owns what a copy
+  // means (prefilling the draft, and removing the original once the replacement is queued). The counter is what makes copying the
+  // SAME post twice work — Compose keys its prefill on it, and neither component remounts when the tab changes.
+  const [copyFrom, setCopyFrom] = useState<SocialCopySource | null>(null);
+  const [copyNonce, setCopyNonce] = useState(0);
+  // Stable identity: Compose acknowledges the handoff from an effect, and an inline arrow here would re-run that effect on every
+  // render of this page.
+  const handleCopyHandled = useCallback(() => setCopyFrom(null), []);
 
   const { data, error, isLoading, refresh } = useApiQuery(['social-posts'], () => getSocialPosts());
   const posts = data?.posts ?? NO_POSTS;
@@ -100,16 +109,29 @@ function SocialPageContent() {
 
       {tab === 'compose' ? (
         <SocialCompose
-          onCreated={() => { refresh(); setTab('queue'); }}
+          // Saving normally lands you on the Queue to see the result. `stayOnCompose` is Compose asking to keep you here instead,
+          // which it does only when it has a warning on screen that would otherwise vanish with the unmount.
+          onCreated={(opts) => { refresh(); if (!opts?.stayOnCompose) setTab('queue'); }}
           initialLinkUrl={incomingLink}
           initialImageUrl={incomingImage}
+          copyFrom={copyFrom}
+          onCopyHandled={handleCopyHandled}
         />
       ) : isLoading ? (
         <p className="py-12 text-center text-sm text-slate-400">Loading…</p>
       ) : error ? (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error.message}</p>
       ) : (
-        <SocialQueue posts={posts} onChanged={refresh} />
+        <SocialQueue
+          posts={posts}
+          onChanged={refresh}
+          onCopy={(post) => {
+            const nonce = copyNonce + 1;
+            setCopyNonce(nonce);
+            setCopyFrom({ post, nonce });
+            setTab('compose');
+          }}
+        />
       )}
 
       {/* The stop-condition, in words, where it cannot be forgotten. */}

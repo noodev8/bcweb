@@ -195,6 +195,7 @@ app.use('/order-sync-last', require('./routes/order-sync-last')); // GET: when t
 // Publishing itself is NOT here: it lives in utils/socialPublish.js, called by BOTH the cron sweep
 // (scripts/social-publish-sweep.js) and /social-post-publish-now, so there is only ever one implementation of "post this".
 app.use('/social-asset-upload', require('./routes/social-asset-upload'));     // POST multipart: image -> one.com -> social_asset  WRITES
+app.use('/social-asset-download', require('./routes/social-asset-download')); // GET: proxy an asset back with Content-Disposition READ ONLY
 app.use('/social-post-create', require('./routes/social-post-create'));       // POST: compose a post + its per-platform targets WRITES
 app.use('/social-posts', require('./routes/social-posts'));                   // GET: the Queue (posts + targets + counts) READ ONLY
 app.use('/social-post-cancel', require('./routes/social-post-cancel'));       // POST: SCHEDULED targets -> CANCELLED       WRITES

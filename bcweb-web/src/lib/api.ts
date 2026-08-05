@@ -1879,4 +1879,24 @@ export function publishSocialNow(targetId: number) {
   );
 }
 
+// Save an asset's image file. Goes through the server (routes/social-asset-download.js) rather than fetching public_url directly:
+// the image hosts (one.com, the inventory CDN) send neither CORS nor Content-Disposition: attachment, so a browser-side fetch of
+// the public URL is blocked by CORS and a plain <a download> just navigates instead of saving. The server fetches server-side
+// (no CORS involved) and re-serves the bytes with an attachment header; going through `api` here attaches the JWT the route needs.
+export async function downloadSocialAsset(publicUrl: string): Promise<ApiResult<Blob>> {
+  try {
+    const res = await api.get('/social-asset-download', { params: { url: publicUrl }, responseType: 'blob' });
+    // A failure comes back as the JSON envelope (return_code) but responseType 'blob' means axios hands it to us as a Blob anyway —
+    // sniff the type to tell an actual image apart from a JSON error body.
+    if (res.data.type === 'application/json') {
+      const text = await res.data.text();
+      const body = JSON.parse(text);
+      return { success: false, error: body.message || 'Could not download image', return_code: body.return_code };
+    }
+    return { success: true, data: res.data as Blob };
+  } catch {
+    return { success: false, error: 'Network error - please check your connection', return_code: 'NETWORK_ERROR' };
+  }
+}
+
 export default api;

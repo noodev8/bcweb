@@ -18,8 +18,10 @@ WHY POSTED ROWS HAVE NO DELETE
 */
 
 import { useState } from 'react';
-import { ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
-import { SocialPost, SocialStatus, cancelSocialPost, publishSocialNow } from '@/lib/api';
+import {
+  ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, DocumentDuplicateIcon
+} from '@heroicons/react/24/outline';
+import { SocialPost, SocialStatus, cancelSocialPost, publishSocialNow, downloadSocialAsset } from '@/lib/api';
 import { buildTrackedLink } from '@/lib/socialLink';
 
 // No CANCELLED group: a post that never went out is DELETED outright rather than parked as a dead row (owner, 2026-08-01) — the queue
@@ -51,7 +53,15 @@ function worstStatus(post: SocialPost): SocialStatus {
   return 'CANCELLED';
 }
 
-export default function SocialQueue({ posts, onChanged }: { posts: SocialPost[]; onChanged: () => void }) {
+export default function SocialQueue({ posts, onChanged, onCopy }: {
+  posts: SocialPost[];
+  onChanged: () => void;
+  // Hands a post back to Compose to be re-queued in a fixed form — the module's stand-in for editing (there is no update route;
+  // see SocialCompose's SocialCopySource for why copy-then-delete is the shape rather than an edit endpoint). Offered only on posts
+  // that have not published anywhere, because queueing the copy removes the original — which is only ever valid when nothing went
+  // out. Optional so the Queue still renders standalone without a Compose tab to hand off to.
+  onCopy?: (post: SocialPost) => void;
+}) {
   const [working, setWorking] = useState<number | null>(null);
   const [rowError, setRowError] = useState<{ id: number; msg: string } | null>(null);
 
@@ -64,6 +74,25 @@ export default function SocialQueue({ posts, onChanged }: { posts: SocialPost[];
     setWorking(null);
     if (!res.success) setRowError({ id: postId, msg: res.error || 'Could not delete' });
     onChanged();
+  }
+
+  // Routed through the server (see downloadSocialAsset) because the image hosts send neither CORS nor Content-Disposition —
+  // a direct browser fetch of public_url is blocked by CORS, and a plain <a download> just opens the image instead of saving it.
+  async function doDownload(postId: number, publicUrl: string) {
+    setRowError(null);
+    const res = await downloadSocialAsset(publicUrl);
+    if (!res.success || !res.data) {
+      setRowError({ id: postId, msg: res.error || 'Could not download image' });
+      return;
+    }
+    const objectUrl = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = publicUrl.split('/').pop() || 'image.jpg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
   }
 
   async function doRetry(postId: number, targetId: number) {
@@ -114,12 +143,14 @@ export default function SocialQueue({ posts, onChanged }: { posts: SocialPost[];
                       (key === 'FAILED' ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white')
                     }
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={post.asset.public_url}
-                      alt=""
-                      className="h-20 w-32 flex-none rounded border border-slate-200 object-cover"
-                    />
+                    <a href={post.asset.public_url} target="_blank" rel="noopener noreferrer" className="flex-none">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={post.asset.public_url}
+                        alt=""
+                        className="h-20 w-32 rounded border border-slate-200 object-cover"
+                      />
+                    </a>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -165,6 +196,26 @@ export default function SocialQueue({ posts, onChanged }: { posts: SocialPost[];
                             className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
                           >
                             <ArrowPathIcon className="h-3.5 w-3.5" /> {busy ? 'Publishing…' : 'Retry now'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => doDownload(post.id, post.asset.public_url)}
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100"
+                        >
+                          <ArrowDownTrayIcon className="h-3.5 w-3.5" /> Download
+                        </button>
+                        {/* Same gate as Delete: nothing published. Queueing the copy deletes this row, so offering it on a POSTED
+                            post would promise a removal the server will (rightly) refuse. */}
+                        {removable && onCopy && (
+                          <button
+                            type="button"
+                            onClick={() => onCopy(post)}
+                            disabled={busy}
+                            title="Load this post into Compose to fix and re-queue — the original is removed when you save"
+                            className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                          >
+                            <DocumentDuplicateIcon className="h-3.5 w-3.5" /> Copy &amp; fix
                           </button>
                         )}
                         {removable && (
