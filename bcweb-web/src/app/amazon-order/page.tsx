@@ -64,11 +64,11 @@ type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 
 // supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
   { key: 'code', label: 'SKU (size)', align: 'left' },
-  { key: 'local_stock', label: 'Local Stock', title: 'Sellable local stock (localstock, free & not deleted)', align: 'right' },
+  { key: 'local_stock', label: 'Local', title: 'Sellable local stock (localstock, free & not deleted)', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
   { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock (amzfeed.amztotal)', align: 'right' },
-  { key: 'units_30d', label: 'Sold (30d)', title: 'Units sold, last 30 days', align: 'right' },
-  { key: 'units_7d', label: 'Sold (7d)', title: 'Units sold, last 7 days', align: 'right' },
+  { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days', align: 'right' },
+  { key: 'units_7d', label: 'Sold (7)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
   { key: 'profit_30d', label: 'Profit (30d)', title: 'unit_profit x Sold (30d)', align: 'right' },
   { key: 'barcode', label: 'Barcode', title: 'skumap.ean, trailing B stripped', align: 'left' },
