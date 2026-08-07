@@ -37,7 +37,7 @@ MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor ab
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmazonOrderList, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -57,6 +57,9 @@ function escapeRegExp(s: string): string {
 function haystack(r: AmazonOrderRow): string {
   return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
 }
+
+// The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
+const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 
 type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
 // Reading order: identity (SKU, then the Order/Pick scratchpad rendered right after it — see below) -> what's in stock (local, then
@@ -143,22 +146,47 @@ export default function AmazonOrderHome() {
   }
   function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); }
   function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); }
-  // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, and drops the selection.
-  function onReset() { setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setCut(new Set()); setSelected(new Set()); }
+
+  // WINNERS / POTENTIAL WINNERS — quick presets, not stacked steps: numeric tests on profit_30d/unit_profit, not text search terms.
+  // Both are this screen's OWN thresholds (owner, 2026-08-07), deliberately NOT the shared Shopify/Amazon "≥2 units AND ≥£2/unit"
+  // WINNERS test the pricing modules use:
+  //   WINNERS            profit_30d > £30 — already making good money this month.
+  //   POTENTIAL WINNERS  profit_30d < £30 BUT unit_profit > £3 — the margin is there, it just hasn't sold enough yet this month to
+  //                      show up as a winner; a candidate to push (stock/visibility), not a pricing problem.
+  // Mutually exclusive (turning one on turns the other off): the two tests are opposite sides of the £30 line, so having both on at
+  // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
+  const [winnersOnly, setWinnersOnly] = useState(false);
+  const [potentialOnly, setPotentialOnly] = useState(false);
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
+
+  // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, drops the selection, and
+  // clears any coverage fill (see applyCoverage below) along with the Order column it wrote.
+  function onReset() {
+    setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
+    setWinnersOnly(false); setPotentialOnly(false);
+    setCut(new Set()); setSelected(new Set());
+    setCoverageMonths(null); setOrderQty({});
+  }
 
   const filtered = useMemo(() => {
-    if (includes.length === 0 && excludes.length === 0) return rows;
-    const incTerms = includes.map((t) => t.toLowerCase());
-    const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
-    return rows.filter((r) => {
-      const hay = haystack(r);
-      if (incTerms.some((t) => !hay.includes(t))) return false;
-      if (excRes.some((re) => re.test(hay))) return false;
-      return true;
-    });
-  }, [rows, includes, excludes]);
+    let out = rows;
+    if (includes.length > 0 || excludes.length > 0) {
+      const incTerms = includes.map((t) => t.toLowerCase());
+      const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
+      out = out.filter((r) => {
+        const hay = haystack(r);
+        if (incTerms.some((t) => !hay.includes(t))) return false;
+        if (excRes.some((re) => re.test(hay))) return false;
+        return true;
+      });
+    }
+    if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
+    if (potentialOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3);
+    return out;
+  }, [rows, includes, excludes, winnersOnly, potentialOnly]);
 
-  const filtering = includes.length > 0 || excludes.length > 0;
+  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly;
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -187,6 +215,27 @@ export default function AmazonOrderHome() {
   // half-typed value never gets silently clamped/rounded mid-entry.
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [pickQty, setPickQty] = useState<Record<string, string>>({});
+
+  // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
+  // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus what's already
+  // in hand (local_stock + fba_live — fba_total's inbound half isn't "in hand" yet, so it's deliberately excluded); never negative —
+  // a SKU already holding more than N months of stock needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after
+  // search + Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set.
+  // `coverageMonths` only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling
+  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it.
+  const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
+  function applyCoverage(months: number) {
+    setCoverageMonths(months);
+    setOrderQty((prev) => {
+      const next = { ...prev };
+      visible.forEach((r) => {
+        const demand = r.units_30d * months;
+        const onHand = r.local_stock + r.fba_live;
+        next[r.code] = String(Math.max(0, Math.ceil(demand - onHand)));
+      });
+      return next;
+    });
+  }
 
   // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
   // Reset brings it back. Applied last, after search + sort, so cutting never fights with either.
@@ -309,26 +358,81 @@ export default function AmazonOrderHome() {
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
+        </div>
+
+        {/* Action row — presets, bulk cut, coverage fill, reset. Its own row under the search boxes so it doesn't crowd them. */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={cutSelected}
-            disabled={selected.size === 0}
-            title="Cut every selected row (click a row, Shift-click to extend a range, Ctrl/Cmd-click to add one)"
-            className="flex items-center gap-1.5 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+            onClick={toggleWinners}
+            title="Show only SKUs with more than £30 profit in the last 30 days"
+            className={
+              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
+              (winnersOnly
+                ? 'border-amber-500 bg-amber-50 text-amber-700'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
           >
-            <XMarkIcon className="h-4 w-4" />
-            Cut{selected.size > 0 ? ` (${selected.size})` : ''}
+            <TrophyIcon className="h-4 w-4" />
+            Winners
           </button>
           <button
             type="button"
-            onClick={onReset}
-            disabled={!filtering && cut.size === 0}
-            title="Clear every filter, restore cut rows, and show the whole list"
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+            onClick={togglePotential}
+            title="Show only SKUs under £30 profit this month that still earn more than £3 per unit — the margin's there, it just hasn't sold enough yet"
+            className={
+              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
+              (potentialOnly
+                ? 'border-sky-500 bg-sky-50 text-sky-700'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
           >
-            <ArrowPathIcon className="h-4 w-4" />
-            Reset
+            <SparklesIcon className="h-4 w-4" />
+            Potential
           </button>
+          {/* Coverage fill — writes the Order box for every row ON SCREEN (filter down first, then click). See applyCoverage. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            {COVERAGE_OPTIONS.map((months) => (
+              <button
+                key={months}
+                type="button"
+                onClick={() => applyCoverage(months)}
+                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus Local + FBA Live stock)`}
+                className={
+                  'rounded px-2.5 py-1 text-sm font-medium ' +
+                  (coverageMonths === months
+                    ? 'bg-brand-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100')
+                }
+              >
+                {months === 0.5 ? '½' : months}
+              </button>
+            ))}
+          </div>
+
+          {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets/coverage on the left. */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={cutSelected}
+              disabled={selected.size === 0}
+              title="Cut every selected row (click a row, Shift-click to extend a range, Ctrl/Cmd-click to add one)"
+              className="flex items-center gap-1.5 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <XMarkIcon className="h-4 w-4" />
+              Cut{selected.size > 0 ? ` (${selected.size})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={!filtering && cut.size === 0 && coverageMonths === null}
+              title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+              Reset
+            </button>
+          </div>
         </div>
 
         {/* Chips for each committed step, plus the row count. */}
