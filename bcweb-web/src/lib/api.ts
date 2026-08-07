@@ -127,12 +127,15 @@ export interface AmzAllRow {
 // fba_total/fba_live = amzfeed.amztotal/amzlive (live+inbound vs sellable-now FBA stock). units_7d = amzfeed.amzsold7, the same
 // fixed-window idea as units_30d but 7 days — read together as a trend (accelerating vs gone quiet). barcode = skumap.ean (trailing
 // 'B' stripped), amz_sku = amzfeed.sku (Amazon Seller SKU), supplier = skumap.supplier. title stays (used for search) even though
-// the landing table itself no longer renders a Product column (owner request, 2026-08-07).
+// the landing table itself no longer renders a Product column (owner request, 2026-08-07). local_stock = current sellable localstock
+// (CLAUDE.md: ordernum='#FREE', not deleted, qty>0), NEVER skusummary.stockvariants. Order/Pick are NOT server fields — the web page
+// keeps them as a session-only scratchpad, not persisted (owner decision, 2026-08-07).
 export interface AmazonOrderRow {
   code: string; groupid: string; size: string; title: string | null;
   price: number | null; units_7d: number; units_30d: number; unit_profit: number | null; profit_30d: number | null;
   fba_total: number; fba_live: number;
   barcode: string | null; amz_sku: string | null; supplier: string | null;
+  local_stock: number;
 }
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {

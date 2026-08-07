@@ -40,17 +40,17 @@ function haystack(r: AmazonOrderRow): string {
   return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
 }
 
-type SortKey = 'code' | 'price' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
-// Reading order: identity -> price -> what's in stock -> how it's selling -> what it's made -> the identifiers you'd look up but
-// don't need to read every time (barcode/SKU/supplier), pushed to the end so they scroll off rather than crowd the working columns
-// (owner request, 2026-08-07 — no Product column here anymore either; see AmazonOrderRow's title comment in api.ts).
+type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
+// Reading order: identity (SKU, then the Order/Pick scratchpad rendered right after it — see below) -> what's in stock (local, then
+// FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
+// supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
   { key: 'code', label: 'SKU (size)', align: 'left' },
-  { key: 'price', label: 'Price', align: 'right' },
+  { key: 'local_stock', label: 'Local Stock', title: 'Sellable local stock (localstock, free & not deleted)', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
   { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock (amzfeed.amztotal)', align: 'right' },
-  { key: 'units_7d', label: 'Sold (7d)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'units_30d', label: 'Sold (30d)', title: 'Units sold, last 30 days', align: 'right' },
+  { key: 'units_7d', label: 'Sold (7d)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
   { key: 'profit_30d', label: 'Profit (30d)', title: 'unit_profit x Sold (30d)', align: 'right' },
   { key: 'barcode', label: 'Barcode', title: 'skumap.ean, trailing B stripped', align: 'left' },
@@ -59,7 +59,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
 ];
 // Text columns default A-Z; every numeric column defaults high-to-low (the biggest number is usually the interesting end).
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
-  code: 'asc', price: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
+  code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
   unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', supplier: 'asc',
 };
 
@@ -67,6 +67,33 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
 function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
   if (key === 'barcode' || key === 'amz_sku' || key === 'supplier') return r[key] ? r[key]!.toLowerCase() : null;
   return r[key];
+}
+
+// Shared <th> renderer — pulled out so the SKU column can be rendered on its own (Order/Pick slot in right after it) while every
+// other column still comes from one shared COLUMNS.map.
+function renderColumnHeader(
+  c: { key: SortKey; label: string; title?: string; align: 'left' | 'right' },
+  sortKey: SortKey, sortDir: 'asc' | 'desc', onSort: (key: SortKey) => void,
+) {
+  const active = sortKey === c.key;
+  return (
+    <th
+      key={c.key}
+      title={c.title}
+      onClick={() => onSort(c.key)}
+      className={
+        'cursor-pointer select-none whitespace-nowrap px-4 py-2 font-medium hover:text-slate-700 ' +
+        (c.align === 'right' ? 'text-right' : 'text-left')
+      }
+    >
+      <span className={'inline-flex items-center gap-0.5 ' + (c.align === 'right' ? 'flex-row-reverse' : '')}>
+        {c.label}
+        {active && (sortDir === 'asc'
+          ? <ChevronUpIcon className="h-3 w-3 text-slate-400" />
+          : <ChevronDownIcon className="h-3 w-3 text-slate-400" />)}
+      </span>
+    </th>
+  );
 }
 
 export default function AmazonOrderHome() {
@@ -133,6 +160,12 @@ export default function AmazonOrderHome() {
       return d * dir;
     });
   }, [filtered, sortKey, sortDir]);
+
+  // Order / Pick — a session-only planning scratchpad, keyed by code. NOT sent anywhere or persisted (owner decision, 2026-08-07):
+  // reloading the page clears them, same as any other unsaved browser state. Kept as free text rather than <input type="number"> so a
+  // half-typed value never gets silently clamped/rounded mid-entry.
+  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+  const [pickQty, setPickQty] = useState<Record<string, string>>({});
 
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
@@ -211,38 +244,41 @@ export default function AmazonOrderHome() {
           <table className="w-max min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                {COLUMNS.map((c) => {
-                  const active = sortKey === c.key;
-                  return (
-                    <th
-                      key={c.key}
-                      title={c.title}
-                      onClick={() => onSort(c.key)}
-                      className={
-                        'cursor-pointer select-none whitespace-nowrap px-4 py-2 font-medium hover:text-slate-700 ' +
-                        (c.align === 'right' ? 'text-right' : 'text-left')
-                      }
-                    >
-                      <span className={'inline-flex items-center gap-0.5 ' + (c.align === 'right' ? 'flex-row-reverse' : '')}>
-                        {c.label}
-                        {active && (sortDir === 'asc'
-                          ? <ChevronUpIcon className="h-3 w-3 text-slate-400" />
-                          : <ChevronDownIcon className="h-3 w-3 text-slate-400" />)}
-                      </span>
-                    </th>
-                  );
-                })}
+                {/* Order/Pick sit right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
+                    (6 columns), then the scratchpad, then everything from unit_profit onward. */}
+                {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
+                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Order</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Pick</th>
+                {COLUMNS.slice(6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sorted.map((r) => (
                 <tr key={r.code}>
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.code}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
+                  <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
                   <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.fba_total}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    <input
+                      value={orderQty[r.code] || ''}
+                      onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
+                      inputMode="numeric"
+                      placeholder="—"
+                      className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    <input
+                      value={pickQty[r.code] || ''}
+                      onChange={(e) => setPickQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
+                      inputMode="numeric"
+                      placeholder="—"
+                      className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    />
+                  </td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{money(r.unit_profit)}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.barcode || <span className="text-slate-300">—</span>}</td>

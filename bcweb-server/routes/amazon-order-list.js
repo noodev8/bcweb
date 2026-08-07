@@ -24,6 +24,11 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          amzfeed.sku (the Amazon Seller SKU — same field amz-drill.js reads, kept consistent with it rather than skumap.sku),
          supplier = skumap.supplier.
 
+         local_stock = current sellable localstock (CLAUDE.md: WHERE ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0), summed
+         per code — NEVER skusummary.stockvariants/variants (stale, per the same landmine).
+
+         Order / Pick have NO server field — they are a session-only scratchpad the web page keeps in browser state, not persisted.
+
          NO server-side search/limit (unlike amz-all's listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
          no round-trip. A safety cap would only get in the way of "search everything".
@@ -40,7 +45,7 @@ Success Response:
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10,
-      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "..." },
+      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3 },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
 }
@@ -67,8 +72,15 @@ router.get('/', async (req, res) => {
   try {
     // skumap (amzprofit) and amzfeed (amzsold, amzprice) are both code-grain, so a straight JOIN pairs them one-to-one; skusummary
     // scopes the list to managed products only. profit_30d is computed here, not in SQL, so its "null when unit_profit is unknown"
-    // rule sits next to the comment that explains it.
+    // rule sits next to the comment that explains it. Local stock is pre-aggregated to code-grain in its own CTE (so it can't fan out
+    // the row set) and LEFT JOINed — a SKU with no free local stock simply reads 0.
     const result = await query(`
+      WITH loc AS (
+        SELECT code, SUM(qty) AS units
+        FROM localstock
+        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0
+        GROUP BY code
+      )
       SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
@@ -79,11 +91,13 @@ router.get('/', async (req, res) => {
              COALESCE(a.amzlive,0) AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
-             m.supplier AS supplier
+             m.supplier AS supplier,
+             COALESCE(loc.units,0) AS local_stock
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
+      LEFT JOIN loc ON loc.code = a.code
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
@@ -105,6 +119,7 @@ router.get('/', async (req, res) => {
         barcode: r.barcode || null,
         amz_sku: r.amz_sku || null,
         supplier: r.supplier || null,
+        local_stock: Number(r.local_stock) || 0,
       };
     });
 
