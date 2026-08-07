@@ -16,14 +16,32 @@ SEARCH: two boxes, Include / Does not contain. Enter (or the Add button) commits
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
       the filter — the whole list is already in memory.
+
+CURSOR + CUT: clicking a row (or arrowing with Up/Down) sets the shared useListCursor highlight — the same "where was I" gesture
+      /inventory uses. Enter, or the row's own X, CUTS it — a view-only hide (not a delete), same idea as Inventory's Cut. Cut rows
+      drop out of the keyboard list too, so arrowing never lands on one. Reset restores every cut row, same as it clears the search.
+
+      useListCursor deliberately leaves a focused INPUT alone (arrows move its caret, not the list — the hook's normal, correct
+      behaviour everywhere else). The Order/Pick boxes are the one place that's wrong: they're a column of numbers down the row axis,
+      so Up/Down should walk rows exactly like it does on the row itself. Each box gets its own onKeyDown that intercepts ONLY
+      ArrowUp/ArrowDown, moves the shared cursor, and refocuses the same box (Order stays Order, Pick stays Pick) on the new row —
+      typing, Tab, and every other key still belong to the input untouched.
+
+MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor above — the cursor is "where the keyboard is", the
+      selection is "what a bulk action would hit", and they can disagree (arrowing around doesn't touch the selection). Plain click
+      selects just that row and drops an anchor; Shift-click extends the CONTIGUOUS range from that anchor to the clicked row (in
+      current view order); Ctrl/Cmd-click toggles one row in or out without disturbing the rest. The "Cut (n)" button in the filter
+      bar cuts everything selected in one go. A row's own X and Enter (via useListCursor's onEnter) are unchanged — a quick single
+      cut that ignores the selection entirely, so a stray click elsewhere never turns into an accidental bulk cut.
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmazonOrderList, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useListCursor } from '@/lib/useListCursor';
 
 const NO_ROWS: AmazonOrderRow[] = [];
 
@@ -76,13 +94,16 @@ function renderColumnHeader(
   sortKey: SortKey, sortDir: 'asc' | 'desc', onSort: (key: SortKey) => void,
 ) {
   const active = sortKey === c.key;
+  // The SKU column gets a tighter right pad (pr-2 instead of px-4's pr-4) — it's a fixed-width code, not prose, so the usual
+  // breathing room just wastes width that the data columns further right can use instead (owner request, 2026-08-07).
+  const pad = c.key === 'code' ? 'pl-4 pr-2' : 'px-4';
   return (
     <th
       key={c.key}
       title={c.title}
       onClick={() => onSort(c.key)}
       className={
-        'cursor-pointer select-none whitespace-nowrap px-4 py-2 font-medium hover:text-slate-700 ' +
+        `cursor-pointer select-none whitespace-nowrap ${pad} py-2 font-medium hover:text-slate-700 ` +
         (c.align === 'right' ? 'text-right' : 'text-left')
       }
     >
@@ -122,8 +143,8 @@ export default function AmazonOrderHome() {
   }
   function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); }
   function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); }
-  // Reset — clears every applied filter (and whatever's mid-typed in the boxes), back to the whole list.
-  function onReset() { setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); }
+  // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, and drops the selection.
+  function onReset() { setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setCut(new Set()); setSelected(new Set()); }
 
   const filtered = useMemo(() => {
     if (includes.length === 0 && excludes.length === 0) return rows;
@@ -167,6 +188,98 @@ export default function AmazonOrderHome() {
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [pickQty, setPickQty] = useState<Record<string, string>>({});
 
+  // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
+  // Reset brings it back. Applied last, after search + sort, so cutting never fights with either.
+  const [cut, setCut] = useState<Set<string>>(new Set());
+  const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
+  function onCut(code: string) {
+    setCut((prev) => {
+      const next = new Set(prev);
+      next.add(code);
+      return next;
+    });
+  }
+
+  // Keyboard cursor over the visible rows — click a row (or arrow Up/Down) to move the highlight, Enter cuts the current row. Keys
+  // are the VISIBLE rows only, so a cut row can never be the cursor's target and arrowing always lands on something on screen.
+  const cursorKeys = useMemo(() => visible.map((r) => r.code), [visible]);
+  const cursor = useListCursor({
+    keys: cursorKeys,
+    enabled: !loading && !error,
+    onEnter: onCut,
+  });
+
+  // MULTI-SELECT for bulk cut — separate from the cursor above (see header comment). `anchorRef` is the last PLAIN click, which
+  // Shift-click extends a range from; it deliberately does NOT move on a Shift or Ctrl/Cmd click, so several Shift-clicks in a row
+  // keep adjusting the same range rather than re-anchoring each time.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const anchorRef = useRef<string | null>(null);
+  function onRowClick(e: React.MouseEvent, code: string) {
+    cursor.setCursor(code);
+    if (e.shiftKey && anchorRef.current) {
+      const a = cursorKeys.indexOf(anchorRef.current);
+      const b = cursorKeys.indexOf(code);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected(new Set(cursorKeys.slice(lo, hi + 1)));
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(code)) next.delete(code); else next.add(code);
+        return next;
+      });
+      anchorRef.current = code;
+    } else {
+      setSelected(new Set([code]));
+      anchorRef.current = code;
+    }
+  }
+  // A cut row can't stay selected — without this, a single X-cut on a selected row leaves it in `selected` (invisible but still
+  // counted), so the "Cut (n)" button would silently claim more rows than are actually left to cut.
+  useEffect(() => {
+    if (cut.size === 0) return;
+    setSelected((prev) => {
+      if (![...prev].some((c) => cut.has(c))) return prev;
+      const next = new Set(prev);
+      cut.forEach((c) => next.delete(c));
+      return next;
+    });
+  }, [cut]);
+  function cutSelected() {
+    if (selected.size === 0) return;
+    setCut((prev) => {
+      const next = new Set(prev);
+      selected.forEach((c) => next.add(c));
+      return next;
+    });
+    setSelected(new Set());
+  }
+
+  // Order/Pick boxes: Up/Down walks rows and keeps focus in the SAME column (see the header comment for why this needs its own
+  // handler rather than relying on useListCursor, which leaves focused inputs alone everywhere else). Keyed 'order-<code>' /
+  // 'pick-<code>' so the two columns never collide.
+  const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  function setInputRef(column: 'order' | 'pick', code: string) {
+    return (el: HTMLInputElement | null) => {
+      const key = `${column}-${code}`;
+      if (el) inputRefs.current.set(key, el); else inputRefs.current.delete(key);
+    };
+  }
+  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, code: string, column: 'order' | 'pick') {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const i = cursorKeys.indexOf(code);
+    if (i < 0) return;
+    const nextI = e.key === 'ArrowUp' ? Math.max(i - 1, 0) : Math.min(i + 1, cursorKeys.length - 1);
+    const nextCode = cursorKeys[nextI];
+    if (nextCode === code) return; // already at an end — leave the caret alone rather than eat the keystroke for nothing
+    e.preventDefault();
+    cursor.setCursor(nextCode);
+    const nextInput = inputRefs.current.get(`${column}-${nextCode}`);
+    nextInput?.focus();
+    nextInput?.select();
+  }
+
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
       {/* Search bar — Enter commits the box as a step; steps stack and AND together. */}
@@ -198,9 +311,19 @@ export default function AmazonOrderHome() {
           </div>
           <button
             type="button"
+            onClick={cutSelected}
+            disabled={selected.size === 0}
+            title="Cut every selected row (click a row, Shift-click to extend a range, Ctrl/Cmd-click to add one)"
+            className="flex items-center gap-1.5 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <XMarkIcon className="h-4 w-4" />
+            Cut{selected.size > 0 ? ` (${selected.size})` : ''}
+          </button>
+          <button
+            type="button"
             onClick={onReset}
-            disabled={!filtering}
-            title="Clear every filter and show the whole list"
+            disabled={!filtering && cut.size === 0}
+            title="Clear every filter, restore cut rows, and show the whole list"
             className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
           >
             <ArrowPathIcon className="h-4 w-4" />
@@ -217,6 +340,17 @@ export default function AmazonOrderHome() {
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
             )}
           </span>
+          {cut.size > 0 && (
+            <>
+              <span className="text-slate-300">|</span>
+              <span className="whitespace-nowrap text-slate-400">
+                {cut.size} cut
+                <button type="button" onClick={() => setCut(new Set())} className="ml-1.5 font-medium text-brand-600 hover:underline">
+                  restore
+                </button>
+              </span>
+            </>
+          )}
           {includes.map((t) => (
             <span key={`inc-${t}`} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
               {t}
@@ -250,30 +384,51 @@ export default function AmazonOrderHome() {
                 <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Order</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Pick</th>
                 {COLUMNS.slice(6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
+                {/* Cut — no sort, just a header label for the X button column. */}
+                <th className="whitespace-nowrap px-2 py-2 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sorted.map((r) => (
-                <tr key={r.code}>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.code}</td>
+              {visible.map((r) => (
+                <tr
+                  key={r.code}
+                  ref={cursor.itemRef(r.code)}
+                  onClick={(e) => onRowClick(e, r.code)}
+                  className={
+                    'cursor-pointer select-none ' +
+                    (selected.has(r.code) ? 'bg-brand-50' : 'hover:bg-slate-50')
+                  }
+                >
+                  {/* Cursor (keyboard position) gets its own left accent, independent of the selection fill above — the two can
+                      disagree (arrowing around doesn't touch what a bulk Cut would hit), so they need visually distinct signals. */}
+                  <td className={
+                    'whitespace-nowrap py-2 pl-4 pr-2 font-mono text-xs text-slate-600 border-l-2 ' +
+                    (cursor.isCursor(r.code) ? 'border-brand-500' : 'border-transparent')
+                  }>{r.code}</td>
                   <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
                   <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.fba_total}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5">
+                  <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
+                      ref={setInputRef('order', r.code)}
                       value={orderQty[r.code] || ''}
                       onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
+                      onKeyDown={(e) => onEditKeyDown(e, r.code, 'order')}
+                      onFocus={() => cursor.setCursor(r.code)}
                       inputMode="numeric"
                       placeholder="—"
                       className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5">
+                  <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
+                      ref={setInputRef('pick', r.code)}
                       value={pickQty[r.code] || ''}
                       onChange={(e) => setPickQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
+                      onKeyDown={(e) => onEditKeyDown(e, r.code, 'pick')}
+                      onFocus={() => cursor.setCursor(r.code)}
                       inputMode="numeric"
                       placeholder="—"
                       className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -284,12 +439,27 @@ export default function AmazonOrderHome() {
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.barcode || <span className="text-slate-300">—</span>}</td>
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.amz_sku || <span className="text-slate-300">—</span>}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-slate-700">{r.supplier || <span className="text-slate-400">—</span>}</td>
+                  <td className="whitespace-nowrap px-2 py-2">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onCut(r.code); }}
+                      title="Cut from list (Reset or the restore link brings it back)"
+                      className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {sorted.length === 0 && (
-            <div className="px-4 py-6 text-center text-sm text-slate-400">No SKUs match.</div>
+          {visible.length === 0 && rows.length > 0 && (
+            <div className="px-4 py-6 text-center text-sm text-slate-400">
+              {filtered.length === 0 ? 'No SKUs match.' : 'Every matching SKU is cut.'}
+              {cut.size > 0 && (
+                <> <button type="button" onClick={() => setCut(new Set())} className="text-brand-600 underline">Restore</button> to bring {cut.size === 1 ? 'it' : 'them'} back.</>
+              )}
+            </div>
           )}
         </div>
       )}
