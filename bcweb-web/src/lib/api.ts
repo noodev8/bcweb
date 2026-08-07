@@ -121,6 +121,19 @@ export interface AmzAllRow {
   code: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; last_change: string | null; last_sold: string | null;
 }
+// --- Amazon Order module (landing list only, so far) — flat "every product" view of Amazon profit, read from columns already
+// maintained by the Update Amazon import rather than recomputed: unit_profit = skumap.amzprofit (per-unit profit of the SKU's LAST
+// sale, sticky), units_30d = amzfeed.amzsold (fixed 30-day window). profit_30d = unit_profit * units_30d, null if unit_profit unknown.
+// fba_total/fba_live = amzfeed.amztotal/amzlive (live+inbound vs sellable-now FBA stock). units_7d = amzfeed.amzsold7, the same
+// fixed-window idea as units_30d but 7 days — read together as a trend (accelerating vs gone quiet). barcode = skumap.ean (trailing
+// 'B' stripped), amz_sku = amzfeed.sku (Amazon Seller SKU), supplier = skumap.supplier. title stays (used for search) even though
+// the landing table itself no longer renders a Product column (owner request, 2026-08-07).
+export interface AmazonOrderRow {
+  code: string; groupid: string; size: string; title: string | null;
+  price: number | null; units_7d: number; units_30d: number; unit_profit: number | null; profit_30d: number | null;
+  fba_total: number; fba_live: number;
+  barcode: string | null; amz_sku: string | null; supplier: string | null;
+}
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
@@ -288,6 +301,15 @@ export function getAmzAll(segment: string) {
   return request<{ segment: string; rows: AmzAllRow[] }>(
     { url: '/amz-all', method: 'GET', params: { segment } },
     (b) => ({ segment: b.segment, rows: b.rows || [] })
+  );
+}
+
+// Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
+// the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
+export function getAmazonOrderList() {
+  return request<{ count: number; rows: AmazonOrderRow[] }>(
+    { url: '/amazon-order-list', method: 'GET' },
+    (b) => ({ count: b.count ?? (b.rows || []).length, rows: b.rows || [] })
   );
 }
 

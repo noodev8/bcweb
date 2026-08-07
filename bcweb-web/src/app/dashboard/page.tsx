@@ -13,7 +13,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
-  ArrowUpTrayIcon, UserGroupIcon, MegaphoneIcon,
+  ArrowUpTrayIcon, UserGroupIcon, MegaphoneIcon, ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -61,6 +61,17 @@ export default function DashboardPage() {
           href="/products"
           icon={TagIcon}
           live
+        />
+
+        {/* Amazon Order — flat "every product" report of REALISED Amazon profit (sales.profit, 30d) and profit per unit sold. Its own
+            tile rather than a corner of Amazon Pricing: it's a profit report, not a pricing-decision screen. */}
+        <ModuleTile
+          title="Amazon Order"
+          description="Every product's realised Amazon profit and profit per unit, last 30 days."
+          href="/amazon-order"
+          icon={ClipboardDocumentListIcon}
+          live
+          badgeLabel="In progress"
         />
 
         {/* Placeholders — modular growth path, not built in v1. */}

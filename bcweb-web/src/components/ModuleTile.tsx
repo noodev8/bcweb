@@ -18,9 +18,10 @@ interface ModuleTileProps {
   href?: string;                                    // present => live tile
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   live?: boolean;
+  badgeLabel?: string;                               // override the "Live" badge text (e.g. "In progress") without affecting clickability
 }
 
-export default function ModuleTile({ title, description, href, icon: Icon, live }: ModuleTileProps) {
+export default function ModuleTile({ title, description, href, icon: Icon, live, badgeLabel }: ModuleTileProps) {
   const body = (
     <div
       className={
@@ -35,7 +36,14 @@ export default function ModuleTile({ title, description, href, icon: Icon, live 
           <Icon className="h-6 w-6" />
         </span>
         {live ? (
-          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Live</span>
+          // A custom badgeLabel (e.g. "In progress") gets amber, not green — green reads as "done and stable", which an
+          // in-progress module isn't; amber makes the distinction visible at a glance from the tile grid.
+          <span className={
+            'rounded-full px-2 py-0.5 text-xs font-medium ' +
+            (badgeLabel ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700')
+          }>
+            {badgeLabel || 'Live'}
+          </span>
         ) : (
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500">Coming soon</span>
         )}

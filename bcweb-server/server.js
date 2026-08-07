@@ -118,6 +118,11 @@ app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
 app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm a Seller Central upload -> stamp those rows uploaded_at (clears them from the basket, team-wide)
 
+// --- Amazon Order module (landing list only, so far) — flat "every product" view of REALISED Amazon profit (sales.profit, 30d), NOT
+// the live price-cost-fbafee margin Amazon Pricing shows. Its own module/tile rather than a corner of Amazon Pricing since it's a
+// profit report, not a pricing-decision screen.
+app.use('/amazon-order-list', require('./routes/amazon-order-list')); // every managed SKU + 30d realised profit / unit profit
+
 // --- Update Amazon module (data ingest; replaces the PowerBuilder UPDATE AMAZON button — see _amz-port/design/update-amazon-port.md) ---
 // Two stages over the same uploaded files: preview reads and writes nothing, commit does the lot in one transaction. Files are
 // identified by HEADER, never filename (Seller Central names them 118981020662.txt). Any subset of the four reports may be uploaded.
