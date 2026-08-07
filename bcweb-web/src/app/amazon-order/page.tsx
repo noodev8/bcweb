@@ -33,11 +33,18 @@ MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor ab
       current view order); Ctrl/Cmd-click toggles one row in or out without disturbing the rest. The "Cut (n)" button in the filter
       bar cuts everything selected in one go. A row's own X and Enter (via useListCursor's onEnter) are unchanged — a quick single
       cut that ignores the selection entirely, so a stray click elsewhere never turns into an accidental bulk cut.
+
+COVERAGE FILL + PICKS: two one-click auto-fills, see applyCoverage/applyPicks for the exact numbers. Both target every row CURRENTLY
+      ON SCREEN (`visible`), both rank what they just filled and sort the table to it (via the shared `manualOrder`), and both are
+      cleared by Reset. Coverage fills Order (what to buy from the supplier); Picks fills Pick (what to send to Amazon from local
+      stock) and NEVER takes the last unit off the shelf — local_stock - 1 is a hard ceiling regardless of demand.
 =======================================================================================================================================
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import {
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ArchiveBoxArrowDownIcon,
+} from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmazonOrderList, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -67,9 +74,9 @@ type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 
 // supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
   { key: 'code', label: 'SKU (size)', align: 'left' },
-  { key: 'local_stock', label: 'Local', title: 'Sellable local stock (localstock, free & not deleted)', align: 'right' },
+  { key: 'local_stock', label: 'Local', title: 'Sellable local stock, excluding anything staged at C3-Amazon (that\'s counted under FBA Total instead)', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
-  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock (amzfeed.amztotal)', align: 'right' },
+  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection', align: 'right' },
   { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days', align: 'right' },
   { key: 'units_7d', label: 'Sold (7)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
@@ -161,12 +168,15 @@ export default function AmazonOrderHome() {
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
   // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, drops the selection, and
-  // clears any coverage fill (see applyCoverage below) along with the Order column it wrote and the sort it applied.
+  // clears any coverage/picks fill (see applyCoverage/applyPicks below) along with the Order/Pick columns they wrote and the sort
+  // they applied.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false);
     setCut(new Set()); setSelected(new Set());
-    setCoverageMonths(null); setOrderQty({}); setManualOrder(null);
+    setCoverageMonths(null); setOrderQty({});
+    setPicksApplied(false); setPickQty({});
+    setManualOrder(null);
   }
 
   const filtered = useMemo(() => {
@@ -246,6 +256,7 @@ export default function AmazonOrderHome() {
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
+    setPicksApplied(false); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
     const filled = visible.map((r) => {
       const demand = r.units_30d * months;
       const onHand = r.local_stock + r.fba_live;
@@ -258,6 +269,33 @@ export default function AmazonOrderHome() {
     });
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
+    );
+  }
+
+  // PICKS — the "send local stock to Amazon" button (owner, 2026-08-07). Two conditions, both required:
+  //   1. PROFITABLE ENOUGH TO BOTHER: unit_profit > £1 (unknown/null unit_profit doesn't qualify) — below that the pick/pack/DPD
+  //      cost isn't worth it, so the row gets 0 regardless of stock.
+  //   2. QTY = top FBA up to one month of its OWN Amazon demand: max(0, units_30d - fba_live) — the same "cover the gap" idea
+  //      applyCoverage uses for ordering from the supplier, just aimed at FBA instead. Capped by local_stock - 1.
+  // THE FLOOR IS ALWAYS 1 UNIT LEFT LOCALLY regardless of either test — a SKU with 0 or 1 in local stock is never picked at all.
+  // Same one-off ranking-and-sort as coverage fill (biggest pick first), via the shared manualOrder.
+  const [picksApplied, setPicksApplied] = useState(false);
+  function applyPicks() {
+    setPicksApplied(true);
+    setCoverageMonths(null); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
+    const picked = visible.map((r) => {
+      const profitable = r.unit_profit !== null && r.unit_profit > 1;
+      const room = Math.max(0, r.local_stock - 1); // never pick the last unit off the shelf
+      const gap = Math.max(0, r.units_30d - r.fba_live); // what FBA needs to cover a month of its own sales
+      return { code: r.code, qty: profitable ? Math.min(room, gap) : 0 };
+    });
+    setPickQty((prev) => {
+      const next = { ...prev };
+      picked.forEach(({ code, qty }) => { next[code] = String(qty); });
+      return next;
+    });
+    setManualOrder(
+      [...picked].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
   }
 
@@ -434,6 +472,21 @@ export default function AmazonOrderHome() {
             ))}
           </div>
 
+          <button
+            type="button"
+            onClick={applyPicks}
+            title="Fill Pick for every SKU on screen with unit profit over £1: enough to cover a month of FBA's own sales (Sold 30d − FBA Live), always leaving at least 1 unit in local stock"
+            className={
+              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
+              (picksApplied
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
+          >
+            <ArchiveBoxArrowDownIcon className="h-4 w-4" />
+            Picks
+          </button>
+
           {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets/coverage on the left. */}
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -449,7 +502,7 @@ export default function AmazonOrderHome() {
             <button
               type="button"
               onClick={onReset}
-              disabled={!filtering && cut.size === 0 && coverageMonths === null}
+              disabled={!filtering && cut.size === 0 && coverageMonths === null && !picksApplied}
               title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
               className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >

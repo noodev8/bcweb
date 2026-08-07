@@ -16,8 +16,8 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          There is deliberately no re-aggregation of the `sales` table here — those two source columns are already the platform's
          numbers for "how much" and "per unit", kept in step by the Update Amazon import job.
 
-         Also carries FBA stock straight off amzfeed: fba_total = amztotal (live + inbound), fba_live = amzlive (sellable now).
-         Real integers, no safeNumeric needed.
+         Also carries FBA stock: fba_total = amzfeed.amztotal (live + inbound) PLUS the C3-Amazon staged units (see local_stock
+         below), fba_live = amzfeed.amzlive (sellable now, unaffected by staging). Real integers, no safeNumeric needed.
 
          Also carries three identifiers: barcode = skumap.ean with the legacy trailing 'B' stripped (CLAUDE.md — that suffix is an
          Excel guard for internal spreadsheets, not part of the barcode; same regexp_replace as order-status-find.js), amz_sku =
@@ -25,7 +25,10 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          supplier = skumap.supplier.
 
          local_stock = current sellable localstock (CLAUDE.md: WHERE ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0), summed
-         per code — NEVER skusummary.stockvariants/variants (stale, per the same landmine).
+         per code — NEVER skusummary.stockvariants/variants (stale, per the same landmine). EXCLUDES location='C3-Amazon': that is
+         stock already picked and staged for Amazon (allocated='amz', verified 100% on live rows) sitting in localstock only until
+         DPD collects it — the same landmine routes/inv-styles.js documents for its own Total. It is folded into fba_total instead
+         (owner, 2026-08-07): it is no longer "on the local shelf", it is Amazon-bound stock in transit.
 
          Order / Pick have NO server field — they are a session-only scratchpad the web page keeps in browser state, not persisted.
 
@@ -72,13 +75,20 @@ router.get('/', async (req, res) => {
   try {
     // skumap (amzprofit) and amzfeed (amzsold, amzprice) are both code-grain, so a straight JOIN pairs them one-to-one; skusummary
     // scopes the list to managed products only. profit_30d is computed here, not in SQL, so its "null when unit_profit is unknown"
-    // rule sits next to the comment that explains it. Local stock is pre-aggregated to code-grain in its own CTE (so it can't fan out
-    // the row set) and LEFT JOINed — a SKU with no free local stock simply reads 0.
+    // rule sits next to the comment that explains it. Local stock and the C3-Amazon staged stock are both pre-aggregated to
+    // code-grain in their own CTEs (so neither can fan out the row set) and LEFT JOINed — a SKU with none of either simply reads 0.
     const result = await query(`
       WITH loc AS (
         SELECT code, SUM(qty) AS units
         FROM localstock
-        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0
+        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location <> 'C3-Amazon'
+        GROUP BY code
+      ),
+      staged AS (
+        -- Picked and sitting at C3-Amazon, waiting for DPD to collect — Amazon-bound, not local. Folded into fba_total below.
+        SELECT code, SUM(qty) AS units
+        FROM localstock
+        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location = 'C3-Amazon'
         GROUP BY code
       )
       SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
@@ -87,7 +97,7 @@ router.get('/', async (req, res) => {
              COALESCE(a.amzsold,0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
              ${safeNumeric('m.amzprofit')} AS unit_profit,
-             COALESCE(a.amztotal,0) AS fba_total,
+             COALESCE(a.amztotal,0) + COALESCE(staged.units,0) AS fba_total,
              COALESCE(a.amzlive,0) AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
@@ -98,6 +108,7 @@ router.get('/', async (req, res) => {
       JOIN skumap m ON m.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
       LEFT JOIN loc ON loc.code = a.code
+      LEFT JOIN staged ON staged.code = a.code
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
