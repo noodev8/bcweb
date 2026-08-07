@@ -161,12 +161,12 @@ export default function AmazonOrderHome() {
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
   // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, drops the selection, and
-  // clears any coverage fill (see applyCoverage below) along with the Order column it wrote.
+  // clears any coverage fill (see applyCoverage below) along with the Order column it wrote and the sort it applied.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false);
     setCut(new Set()); setSelected(new Set());
-    setCoverageMonths(null); setOrderQty({});
+    setCoverageMonths(null); setOrderQty({}); setManualOrder(null);
   }
 
   const filtered = useMemo(() => {
@@ -190,14 +190,20 @@ export default function AmazonOrderHome() {
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // MANUAL ORDER — an explicit row order set by a coverage-fill click (see applyCoverage below), so the just-filled Order values
+  // sort to the top without having to live-resort on every keystroke as the operator edits them afterward (that would make the
+  // table jump around mid-edit, which a coverage click should NEVER do again after the one-off sort it asks for). Clicking any
+  // column header clears it — picking an explicit sort is the operator overriding the fill's ordering on purpose.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
   const onSort = (key: SortKey) => {
+    setManualOrder(null);
     if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
   };
 
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
-    return [...filtered].sort((a, b) => {
+    const byNormalSort = (a: AmazonOrderRow, b: AmazonOrderRow) => {
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
       // Nulls always sort last, independent of direction.
@@ -207,8 +213,20 @@ export default function AmazonOrderHome() {
       const d = typeof av === 'string' ? av.localeCompare(bv as string) : av - (bv as number);
       if (d === 0) return a.code.localeCompare(b.code);
       return d * dir;
+    };
+    if (manualOrder === null) return [...filtered].sort(byNormalSort);
+    // Manual order wins for any row it names (coverage-fill's just-computed rank); anything filtered in AFTER the fill (e.g. a
+    // search term typed since) wasn't ranked, so it falls back to the normal sort and is appended after the ranked rows.
+    const rank = new Map(manualOrder.map((code, i) => [code, i]));
+    return [...filtered].sort((a, b) => {
+      const ra = rank.get(a.code);
+      const rb = rank.get(b.code);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return -1;
+      if (rb !== undefined) return 1;
+      return byNormalSort(a, b);
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, manualOrder]);
 
   // Order / Pick — a session-only planning scratchpad, keyed by code. NOT sent anywhere or persisted (owner decision, 2026-08-07):
   // reloading the page clears them, same as any other unsaved browser state. Kept as free text rather than <input type="number"> so a
@@ -222,19 +240,25 @@ export default function AmazonOrderHome() {
   // a SKU already holding more than N months of stock needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after
   // search + Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set.
   // `coverageMonths` only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling
-  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it.
+  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets
+  // `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the
+  // operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
+    const filled = visible.map((r) => {
+      const demand = r.units_30d * months;
+      const onHand = r.local_stock + r.fba_live;
+      return { code: r.code, qty: Math.max(0, Math.ceil(demand - onHand)) };
+    });
     setOrderQty((prev) => {
       const next = { ...prev };
-      visible.forEach((r) => {
-        const demand = r.units_30d * months;
-        const onHand = r.local_stock + r.fba_live;
-        next[r.code] = String(Math.max(0, Math.ceil(demand - onHand)));
-      });
+      filled.forEach(({ code, qty }) => { next[code] = String(qty); });
       return next;
     });
+    setManualOrder(
+      [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
+    );
   }
 
   // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
