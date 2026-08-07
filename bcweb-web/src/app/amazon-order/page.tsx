@@ -77,7 +77,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
   { key: 'local_stock', label: 'Local', title: 'Sellable local stock, excluding anything staged at C3-Amazon (that\'s counted under FBA Total instead)', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
   { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection', align: 'right' },
-  { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days', align: 'right' },
+  { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days, net of returns', align: 'right' },
   { key: 'units_7d', label: 'Sold (7)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
   { key: 'profit_30d', label: 'Profit (30d)', title: 'unit_profit x Sold (30d)', align: 'right' },
@@ -245,22 +245,27 @@ export default function AmazonOrderHome() {
   const [pickQty, setPickQty] = useState<Record<string, string>>({});
 
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
-  // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus what's already
-  // in hand (local_stock + fba_live — fba_total's inbound half isn't "in hand" yet, so it's deliberately excluded); never negative —
-  // a SKU already holding more than N months of stock needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after
-  // search + Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set.
-  // `coverageMonths` only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling
-  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets
-  // `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the
-  // operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
+  // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
+  // + inbound — stock already at or on its way to Amazon) minus whatever is CURRENTLY TYPED IN THE PICK BOX for that row: a unit
+  // being picked and sent to Amazon already covers part of the gap, so it must come off the supplier order too or the two actions
+  // double-cover the same shortfall and over-order (owner, 2026-08-07 — "don't wanna overorder"). Read once at click-time from the
+  // live `pickQty` state, not kept in sync afterward — editing Pick later does NOT retroactively adjust an Order already filled;
+  // re-click Order to refresh it against the new Pick numbers. local_stock itself is still deliberately EXCLUDED from "on hand" —
+  // it doesn't satisfy Amazon demand until picked (that's the Pick figure just subtracted), so it must never be netted off twice.
+  // Never negative — a SKU already covered needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
+  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. `coverageMonths`
+  // only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling whatever is
+  // already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets `manualOrder` to
+  // the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
+  // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
     setPicksApplied(false); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
     const filled = visible.map((r) => {
       const demand = r.units_30d * months;
-      const onHand = r.local_stock + r.fba_live;
-      return { code: r.code, qty: Math.max(0, Math.ceil(demand - onHand)) };
+      const picked = Number(pickQty[r.code]) || 0;
+      return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total - picked)) };
     });
     setOrderQty((prev) => {
       const next = { ...prev };
@@ -277,7 +282,12 @@ export default function AmazonOrderHome() {
   //      cost isn't worth it, so the row gets 0 regardless of stock.
   //   2. QTY = top FBA up to one month of its OWN Amazon demand: max(0, units_30d - fba_live) — the same "cover the gap" idea
   //      applyCoverage uses for ordering from the supplier, just aimed at FBA instead. Capped by local_stock - 1.
-  // THE FLOOR IS ALWAYS 1 UNIT LEFT LOCALLY regardless of either test — a SKU with 0 or 1 in local stock is never picked at all.
+  // DELIBERATELY NOT netted against whatever's in Order (tried, reverted — owner, 2026-08-07): Order's coverage window is whichever
+  // rate button was clicked (0.5-3 months), but Pick's own target here is fixed at 1 month, so subtracting a 2- or 3-month Order
+  // figure from a 1-month gap zeroed Pick out almost every time ("pressing order rate 2 and then pick doesn't work"). Order DOES
+  // still net off Pick (see applyCoverage) — that direction is safe because Order's demand window is always >= Pick's 1-month one,
+  // so it can never go needlessly negative the way the reverse did.
+  // THE FLOOR IS ALWAYS 1 UNIT LEFT LOCALLY regardless of the above — a SKU with 0 or 1 in local stock is never picked at all.
   // Same one-off ranking-and-sort as coverage fill (biggest pick first), via the shared manualOrder.
   const [picksApplied, setPicksApplied] = useState(false);
   function applyPicks() {
@@ -459,7 +469,7 @@ export default function AmazonOrderHome() {
                 key={months}
                 type="button"
                 onClick={() => applyCoverage(months)}
-                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus Local + FBA Live stock)`}
+                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total and whatever's already in Pick)`}
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
                   (coverageMonths === months

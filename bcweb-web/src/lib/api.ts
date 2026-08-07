@@ -123,9 +123,10 @@ export interface AmzAllRow {
 }
 // --- Amazon Order module (landing list only, so far) — flat "every product" view of Amazon profit, read from columns already
 // maintained by the Update Amazon import rather than recomputed: unit_profit = skumap.amzprofit (per-unit profit of the SKU's LAST
-// sale, sticky), units_30d = amzfeed.amzsold (fixed 30-day window). profit_30d = unit_profit * units_30d, null if unit_profit unknown.
-// fba_total/fba_live = amzfeed.amztotal/amzlive (live+inbound vs sellable-now FBA stock). units_7d = amzfeed.amzsold7, the same
-// fixed-window idea as units_30d but 7 days — read together as a trend (accelerating vs gone quiet). barcode = skumap.ean (trailing
+// sale, sticky), units_30d = amzfeed.amzsold - amzreturn, floored at 0 — NET of returns (both are the same fixed 30-day window).
+// profit_30d = unit_profit * units_30d, null if unit_profit unknown. fba_total/fba_live = amzfeed.amztotal/amzlive (live+inbound vs
+// sellable-now FBA stock). units_7d = amzfeed.amzsold7, the same fixed-window idea as units_30d but 7 days — GROSS (amzfeed has no
+// matching 7-day returns figure to net it against); read together as a trend (accelerating vs gone quiet). barcode = skumap.ean (trailing
 // 'B' stripped), amz_sku = amzfeed.sku (Amazon Seller SKU), supplier = skumap.supplier. title stays (used for search) even though
 // the landing table itself no longer renders a Product column (owner request, 2026-08-07). local_stock = current sellable localstock
 // (CLAUDE.md: ordernum='#FREE', not deleted, qty>0), NEVER skusummary.stockvariants. Order/Pick are NOT server fields — the web page

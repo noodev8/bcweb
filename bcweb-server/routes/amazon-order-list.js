@@ -7,12 +7,14 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          profit, read from columns already maintained elsewhere rather than recomputed here:
            - unit_profit = skumap.amzprofit — the per-unit profit of the SKU's LAST Amazon sale (utils/amzImportApply.js ->
              projectDerivedToSkumap). STICKY: a SKU with no recent sale keeps its last-seen figure rather than going blank/zero.
-           - units_30d   = amzfeed.amzsold  — units sold in a FIXED 30-day window (decision O2, utils/amzImportApply.js), kept
-             comparable across SKUs by never varying with the uploaded report's date range.
-           - units_7d    = amzfeed.amzsold7 — the same fixed-window idea, 7 days: the trend read against units_30d (a SKU selling
-             half its 30d total in the last 7 is accelerating; one selling none of it has gone quiet).
+           - units_30d   = amzfeed.amzsold - amzfeed.amzreturn, floored at 0 — NET of returns. Both are the same FIXED 30-day
+             window (decision O2 / utils/amzImportApply.js projectDerivedToAmzfeed, one windowed CTE), so subtracting them is a
+             like-for-like net-sold figure, kept comparable across SKUs by never varying with the uploaded report's date range.
+           - units_7d    = amzfeed.amzsold7 — the same fixed-window idea, 7 days, but GROSS: amzfeed carries no matching 7-day
+             returns figure (amzreturn is 30-day only), so there is nothing to net it against. Still useful as the trend read
+             against units_30d (a SKU selling half its 30d total in the last 7 is accelerating; one selling none has gone quiet).
            - profit_30d  = unit_profit * units_30d — the two multiplied together, i.e. "what this SKU actually made in 30 days" at
-             its last-seen per-unit rate. Null when unit_profit is unknown (never fabricated as 0).
+             its last-seen per-unit rate, on the NET-of-returns unit count. Null when unit_profit is unknown (never fabricated as 0).
          There is deliberately no re-aggregation of the `sales` table here — those two source columns are already the platform's
          numbers for "how much" and "per unit", kept in step by the Update Amazon import job.
 
@@ -94,7 +96,7 @@ router.get('/', async (req, res) => {
       SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
-             COALESCE(a.amzsold,0) AS units_30d,
+             GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
              ${safeNumeric('m.amzprofit')} AS unit_profit,
              COALESCE(a.amztotal,0) + COALESCE(staged.units,0) AS fba_total,
