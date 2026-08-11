@@ -38,17 +38,29 @@ COVERAGE FILL + PICKS: two one-click auto-fills, see applyCoverage/applyPicks fo
       ON SCREEN (`visible`), both rank what they just filled and sort the table to it (via the shared `manualOrder`), and both are
       cleared by Reset. Coverage fills Order (what to buy from the supplier); Picks fills Pick (what to send to Amazon from local
       stock) and NEVER takes the last unit off the shelf — local_stock - 1 is a hard ceiling regardless of demand.
+
+SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into real rows — loops POST /order-status-add per SKU (the
+      same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
+      row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
+      Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — its Order
+      box is disabled rather than silently zeroed, so it's clear why nothing happens. Inline confirm states the total before writing
+      anything (this is a real DB write, not more scratchpad editing); a succeeding row clears its own box and bumps a session-only
+      `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
+      an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad. Pick has no equivalent yet
+      (moving local stock to Amazon is a different mechanism with no existing precedent in bcweb — left for its own pass).
 =======================================================================================================================================
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ArchiveBoxArrowDownIcon,
+  ShoppingCartIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { getAmazonOrderList, AmazonOrderRow } from '@/lib/api';
+import { getAmazonOrderList, addOrderLine, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
+import { useAuth } from '@/contexts/AuthContext';
 
 const NO_ROWS: AmazonOrderRow[] = [];
 
@@ -63,6 +75,11 @@ function escapeRegExp(s: string): string {
 
 function haystack(r: AmazonOrderRow): string {
   return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
+}
+
+// Birkenstock is ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — never orderable from this per-SKU screen.
+function isBirkenstock(r: AmazonOrderRow): boolean {
+  return (r.supplier || '').toUpperCase() === 'BIRKENSTOCK';
 }
 
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
@@ -128,6 +145,7 @@ function renderColumnHeader(
 }
 
 export default function AmazonOrderHome() {
+  const { logout } = useAuth();
   const { data, error: loadError, isLoading: loading } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
@@ -177,6 +195,7 @@ export default function AmazonOrderHome() {
     setCoverageMonths(null); setOrderQty({});
     setPicksApplied(false); setPickQty({});
     setManualOrder(null);
+    setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
   }
 
   const filtered = useMemo(() => {
@@ -244,6 +263,63 @@ export default function AmazonOrderHome() {
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [pickQty, setPickQty] = useState<Record<string, string>>({});
 
+  // SEND TO ORDER STATUS — turns the Order scratchpad into real orderstatus rows via the same /order-status-add the Order Status
+  // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
+  // not just what's currently visible — a value typed before a filter/cut shouldn't silently vanish from the submission just because
+  // it scrolled out of view. Birkenstock is excluded by construction (isBirkenstock) even if a value somehow ended up in its box.
+  const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
+  const orderTargets = useMemo(() => {
+    const out: { code: string; qty: number; supplier: string }[] = [];
+    for (const [code, raw] of Object.entries(orderQty)) {
+      const qty = Math.floor(Number(raw));
+      const row = rowByCode.get(code);
+      if (!row || !row.supplier || isBirkenstock(row) || !Number.isFinite(qty) || qty <= 0) continue;
+      out.push({ code, qty, supplier: row.supplier });
+    }
+    return out;
+  }, [orderQty, rowByCode]);
+  const orderTotalUnits = useMemo(() => orderTargets.reduce((sum, t) => sum + t.qty, 0), [orderTargets]);
+
+  const [confirmingOrder, setConfirmingOrder] = useState(false);
+  const [ordering, setOrdering] = useState(false);
+  const [orderProgress, setOrderProgress] = useState<{ done: number; total: number } | null>(null);
+  const [orderResult, setOrderResult] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  // Session-only running total of what's just been queued per SKU, added on top of fba_total for display — mirrors legacy bumping
+  // amztotal/totalstock on screen after an order, so re-checking the same row later in the same sitting doesn't still look like it
+  // needs ordering (the underlying stock figures themselves don't change; only the supplier queue does — a page reload drops this).
+  const [orderedBump, setOrderedBump] = useState<Record<string, number>>({});
+
+  async function submitOrder() {
+    setConfirmingOrder(false);
+    if (orderTargets.length === 0) return;
+    setOrdering(true); setOrderError(null); setOrderResult(null);
+    setOrderProgress({ done: 0, total: orderTargets.length });
+    let queued = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < orderTargets.length; i++) {
+      const { code, qty, supplier } = orderTargets[i];
+      const res = await addOrderLine(supplier, code, qty, 3);
+      if (res.success) {
+        queued++;
+        setOrderQty((prev) => {
+          const next = { ...prev };
+          delete next[code];
+          return next;
+        });
+        setOrderedBump((prev) => ({ ...prev, [code]: (prev[code] || 0) + qty }));
+      } else if (res.return_code === 'UNAUTHORIZED') {
+        setOrdering(false); setOrderProgress(null); logout(); return;
+      } else {
+        failed.push(code);
+      }
+      setOrderProgress({ done: i + 1, total: orderTargets.length });
+    }
+    setOrderProgress(null); setOrdering(false);
+    setOrderResult(`Queued ${queued} SKU${queued === 1 ? '' : 's'} to Order Status`);
+    if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
+  }
+
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
   // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
   // + inbound — stock already at or on its way to Amazon) minus whatever is CURRENTLY TYPED IN THE PICK BOX for that row: a unit
@@ -262,7 +338,9 @@ export default function AmazonOrderHome() {
   function applyCoverage(months: number) {
     setCoverageMonths(months);
     setPicksApplied(false); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
-    const filled = visible.map((r) => {
+    // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
+    // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is.
+    const filled = visible.filter((r) => !isBirkenstock(r)).map((r) => {
       const demand = r.units_30d * months;
       const picked = Number(pickQty[r.code]) || 0;
       return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total - picked)) };
@@ -499,6 +577,29 @@ export default function AmazonOrderHome() {
 
           {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets/coverage on the left. */}
           <div className="ml-auto flex items-center gap-2">
+            {/* SEND TO ORDER STATUS — turns every positive Order box into real orderstatus TO PLACE rows via /order-status-add, one
+                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
+                before it writes anything, since this is a real DB write rather than more scratchpad editing. */}
+            {!confirmingOrder ? (
+              <button
+                type="button"
+                onClick={() => setConfirmingOrder(true)}
+                disabled={ordering || orderTargets.length === 0}
+                title="Send every SKU with a number in Order to the Order Status TO PLACE queue"
+                className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
+              >
+                <ShoppingCartIcon className="h-4 w-4" />
+                {ordering && orderProgress ? `Queuing ${orderProgress.done}/${orderProgress.total}…` : `Order (${orderTargets.length})`}
+              </button>
+            ) : (
+              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                <span className="text-slate-700">
+                  Queue {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'}?
+                </span>
+                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Yes</button>
+                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
+              </span>
+            )}
             <button
               type="button"
               onClick={cutSelected}
@@ -559,6 +660,13 @@ export default function AmazonOrderHome() {
             </span>
           ))}
         </div>
+
+        {(orderResult || orderError) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
+            {orderResult && <span className="font-medium text-emerald-700">{orderResult}</span>}
+            {orderError && <span className="text-red-600">{orderError}</span>}
+          </div>
+        )}
       </div>
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -598,7 +706,11 @@ export default function AmazonOrderHome() {
                   }>{r.code}</td>
                   <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
                   <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.fba_total}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">
+                    {r.fba_total}
+                    {/* Session-only "just queued" bump — see orderedBump above. Not a DB figure, so kept visually distinct. */}
+                    {orderedBump[r.code] > 0 && <span className="ml-1 text-xs text-emerald-600">+{orderedBump[r.code]}</span>}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -609,8 +721,15 @@ export default function AmazonOrderHome() {
                       onKeyDown={(e) => onEditKeyDown(e, r.code, 'order')}
                       onFocus={() => cursor.setCursor(r.code)}
                       inputMode="numeric"
+                      disabled={isBirkenstock(r)}
                       placeholder="—"
-                      className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                      title={isBirkenstock(r) ? 'Birkenstock is ordered separately, in bulk — not from this screen' : undefined}
+                      className={
+                        'w-16 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 ' +
+                        (isBirkenstock(r)
+                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300'
+                          : 'border-slate-200 focus:border-brand-500 focus:ring-brand-500')
+                      }
                     />
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
