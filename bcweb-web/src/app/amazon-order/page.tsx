@@ -216,14 +216,24 @@ export default function AmazonOrderHome() {
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
-  // clears the coverage fill (see applyCoverage below) along with the Order column it wrote and the sort it applied.
+  // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
+  // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
+  // reset, not a "start the order over" action. Clear Order (below) is the dedicated action for that.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false);
     setCut(new Set()); setSelected(new Set());
-    setCoverageMonths(null); setOrderQty({});
+    setCoverageMonths(null);
     setManualOrder(null);
     setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
+  }
+
+  // CLEAR ORDER — the dedicated action for wiping the Order scratchpad and its saved draft (see onReset above for why Reset itself
+  // leaves this alone). Also drops the coverage-fill highlight/sort, since both are meaningless once the values they ranked are gone.
+  function clearOrder() {
+    setOrderQty({});
+    setCoverageMonths(null); setManualOrder(null);
+    setConfirmingOrder(false);
     localStorage.removeItem(DRAFT_KEY); setDraftSavedAt(null);
   }
 
@@ -725,6 +735,9 @@ export default function AmazonOrderHome() {
             {draftSavedAt && (
               <span className="text-slate-400" title="Order is saved to this browser, not the server — won't follow you to another device">
                 Draft saved {relativeSaved(draftSavedAt)} (this browser only)
+                <button type="button" onClick={clearOrder} className="ml-1.5 font-medium text-brand-600 hover:underline">
+                  clear order
+                </button>
               </span>
             )}
           </div>
