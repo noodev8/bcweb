@@ -22,10 +22,10 @@ CURSOR + CUT: clicking a row (or arrowing with Up/Down) sets the shared useListC
       drop out of the keyboard list too, so arrowing never lands on one. Reset restores every cut row, same as it clears the search.
 
       useListCursor deliberately leaves a focused INPUT alone (arrows move its caret, not the list — the hook's normal, correct
-      behaviour everywhere else). The Order/Pick boxes are the one place that's wrong: they're a column of numbers down the row axis,
-      so Up/Down should walk rows exactly like it does on the row itself. Each box gets its own onKeyDown that intercepts ONLY
-      ArrowUp/ArrowDown, moves the shared cursor, and refocuses the same box (Order stays Order, Pick stays Pick) on the new row —
-      typing, Tab, and every other key still belong to the input untouched.
+      behaviour everywhere else). The Order box is the one place that's wrong: it's a column of numbers down the row axis, so
+      Up/Down should walk rows exactly like it does on the row itself. It gets its own onKeyDown that intercepts ONLY
+      ArrowUp/ArrowDown, moves the shared cursor, and refocuses the box on the new row — typing, Tab, and every other key still
+      belong to the input untouched.
 
 MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor above — the cursor is "where the keyboard is", the
       selection is "what a bulk action would hit", and they can disagree (arrowing around doesn't touch the selection). Plain click
@@ -34,10 +34,9 @@ MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor ab
       bar cuts everything selected in one go. A row's own X and Enter (via useListCursor's onEnter) are unchanged — a quick single
       cut that ignores the selection entirely, so a stray click elsewhere never turns into an accidental bulk cut.
 
-COVERAGE FILL + PICKS: two one-click auto-fills, see applyCoverage/applyPicks for the exact numbers. Both target every row CURRENTLY
-      ON SCREEN (`visible`), both rank what they just filled and sort the table to it (via the shared `manualOrder`), and both are
-      cleared by Reset. Coverage fills Order (what to buy from the supplier); Picks fills Pick (what to send to Amazon from local
-      stock) and NEVER takes the last unit off the shelf — local_stock - 1 is a hard ceiling regardless of demand.
+COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Targets every row CURRENTLY ON SCREEN (`visible`),
+      ranks what it just filled and sorts the table to it (via the shared `manualOrder`), and is cleared by Reset. Fills Order
+      (what to buy from the supplier).
 
 SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into real rows — loops POST /order-status-add per SKU (the
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
@@ -46,15 +45,15 @@ SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into rea
       box is disabled rather than silently zeroed, so it's clear why nothing happens. Inline confirm states the total before writing
       anything (this is a real DB write, not more scratchpad editing); a succeeding row clears its own box and bumps a session-only
       `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
-      an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad. Pick has no equivalent yet
-      (moving local stock to Amazon is a different mechanism with no existing precedent in bcweb — left for its own pass).
+      an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
+
+      Pick (send local stock to Amazon) has been pulled from this screen for now — revisit later (owner, 2026-08-11).
 =======================================================================================================================================
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ArchiveBoxArrowDownIcon,
-  ShoppingCartIcon,
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmazonOrderList, addOrderLine, AmazonOrderRow } from '@/lib/api';
@@ -85,17 +84,17 @@ function isBirkenstock(r: AmazonOrderRow): boolean {
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
 const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 
-// LOCAL DRAFT SAVE — Order/Pick are still not sent anywhere (owner decision), but they're now saved to THIS BROWSER via localStorage
-// (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon of typing. Deliberately NOT
-// server-side: per-browser only, doesn't follow an operator to a different machine, and two tabs open at once will clobber each
-// other's save (last write wins) — acceptable for a solo scratchpad, revisit if that turns out to matter (owner, 2026-08-11).
+// LOCAL DRAFT SAVE — Order is still not sent anywhere until the button is pressed (owner decision), but it's now saved to THIS
+// BROWSER via localStorage (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon
+// of typing. Deliberately NOT server-side: per-browser only, doesn't follow an operator to a different machine, and two tabs open
+// at once will clobber each other's save (last write wins) — acceptable for a solo scratchpad, revisit if that turns out to matter
+// (owner, 2026-08-11).
 const DRAFT_KEY = 'bcweb:amazon-order-draft';
 // A draft older than this is more likely to be stale (stock/sales have moved on) than useful — dropped silently on load rather than
 // resurrected, same as any other browser-only state that's outlived its relevance.
 const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 interface AmazonOrderDraft {
   orderQty?: Record<string, string>;
-  pickQty?: Record<string, string>;
   savedAt?: number;
 }
 function relativeSaved(ts: number): string {
@@ -109,7 +108,7 @@ function relativeSaved(ts: number): string {
 }
 
 type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
-// Reading order: identity (SKU, then the Order/Pick scratchpad rendered right after it — see below) -> what's in stock (local, then
+// Reading order: identity (SKU, then the Order scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
 // supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
@@ -137,7 +136,7 @@ function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
   return r[key];
 }
 
-// Shared <th> renderer — pulled out so the SKU column can be rendered on its own (Order/Pick slot in right after it) while every
+// Shared <th> renderer — pulled out so the SKU column can be rendered on its own (Order slot in right after it) while every
 // other column still comes from one shared COLUMNS.map.
 function renderColumnHeader(
   c: { key: SortKey; label: string; title?: string; align: 'left' | 'right' },
@@ -208,15 +207,13 @@ export default function AmazonOrderHome() {
   function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
-  // Reset — clears every applied filter (and whatever's mid-typed in the boxes), restores every cut row, drops the selection, and
-  // clears any coverage/picks fill (see applyCoverage/applyPicks below) along with the Order/Pick columns they wrote and the sort
-  // they applied.
+  // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
+  // clears the coverage fill (see applyCoverage below) along with the Order column it wrote and the sort it applied.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageMonths(null); setOrderQty({});
-    setPicksApplied(false); setPickQty({});
     setManualOrder(null);
     setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
     localStorage.removeItem(DRAFT_KEY); setDraftSavedAt(null);
@@ -281,11 +278,10 @@ export default function AmazonOrderHome() {
     });
   }, [filtered, sortKey, sortDir, manualOrder]);
 
-  // Order / Pick — a planning scratchpad, keyed by code. Still NOT sent anywhere until the Order button is pressed (owner decision,
+  // Order — a planning scratchpad, keyed by code. Still NOT sent anywhere until the Order button is pressed (owner decision,
   // 2026-08-07) — but now saved to THIS BROWSER (see DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as
   // free text rather than <input type="number"> so a half-typed value never gets silently clamped/rounded mid-entry.
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
-  const [pickQty, setPickQty] = useState<Record<string, string>>({});
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   // LOAD the saved draft once on mount, before the autosave effect below is allowed to write anything (loadedDraftRef gates it) — see
@@ -299,7 +295,6 @@ export default function AmazonOrderHome() {
         const draft = JSON.parse(raw) as AmazonOrderDraft;
         if (draft.savedAt && Date.now() - draft.savedAt <= DRAFT_MAX_AGE_MS) {
           if (draft.orderQty) setOrderQty(draft.orderQty);
-          if (draft.pickQty) setPickQty(draft.pickQty);
           setDraftSavedAt(draft.savedAt);
         } else {
           localStorage.removeItem(DRAFT_KEY);
@@ -311,24 +306,24 @@ export default function AmazonOrderHome() {
     loadedDraftRef.current = true;
   }, []);
 
-  // AUTOSAVE — debounced 500ms after the last edit to either column. Writing nothing (both empty) clears any existing saved draft
-  // instead of persisting an empty one, so Reset (which empties both) and simply deleting every typed number both tidy up storage.
+  // AUTOSAVE — debounced 500ms after the last edit. Writing nothing (empty) clears any existing saved draft instead of persisting
+  // an empty one, so Reset (which empties it) and simply deleting every typed number both tidy up storage.
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!loadedDraftRef.current) return; // don't run before the load effect above has had its state update applied
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
     draftSaveTimer.current = setTimeout(() => {
-      if (Object.keys(orderQty).length === 0 && Object.keys(pickQty).length === 0) {
+      if (Object.keys(orderQty).length === 0) {
         localStorage.removeItem(DRAFT_KEY);
         setDraftSavedAt(null);
         return;
       }
       const savedAt = Date.now();
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ orderQty, pickQty, savedAt } satisfies AmazonOrderDraft));
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ orderQty, savedAt } satisfies AmazonOrderDraft));
       setDraftSavedAt(savedAt);
     }, 500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
-  }, [orderQty, pickQty]);
+  }, [orderQty]);
 
   // SEND TO ORDER STATUS — turns the Order scratchpad into real orderstatus rows via the same /order-status-add the Order Status
   // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
@@ -389,28 +384,22 @@ export default function AmazonOrderHome() {
 
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
   // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
-  // + inbound — stock already at or on its way to Amazon) minus whatever is CURRENTLY TYPED IN THE PICK BOX for that row: a unit
-  // being picked and sent to Amazon already covers part of the gap, so it must come off the supplier order too or the two actions
-  // double-cover the same shortfall and over-order (owner, 2026-08-07 — "don't wanna overorder"). Read once at click-time from the
-  // live `pickQty` state, not kept in sync afterward — editing Pick later does NOT retroactively adjust an Order already filled;
-  // re-click Order to refresh it against the new Pick numbers. local_stock itself is still deliberately EXCLUDED from "on hand" —
-  // it doesn't satisfy Amazon demand until picked (that's the Pick figure just subtracted), so it must never be netted off twice.
-  // Never negative — a SKU already covered needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
-  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. `coverageMonths`
-  // only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling whatever is
-  // already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets `manualOrder` to
-  // the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
-  // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
+  // + inbound — stock already at or on its way to Amazon). local_stock itself is still deliberately EXCLUDED from "on hand" — it
+  // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
+  // later). Never negative — a SKU already covered needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after
+  // search + Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set.
+  // `coverageMonths` only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling
+  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets
+  // `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the
+  // operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
-    setPicksApplied(false); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
     // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
     // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is.
     const filled = visible.filter((r) => !isBirkenstock(r)).map((r) => {
       const demand = r.units_30d * months;
-      const picked = Number(pickQty[r.code]) || 0;
-      return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total - picked)) };
+      return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
     });
     setOrderQty((prev) => {
       const next = { ...prev };
@@ -419,38 +408,6 @@ export default function AmazonOrderHome() {
     });
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
-    );
-  }
-
-  // PICKS — the "send local stock to Amazon" button (owner, 2026-08-07). Two conditions, both required:
-  //   1. PROFITABLE ENOUGH TO BOTHER: unit_profit > £1 (unknown/null unit_profit doesn't qualify) — below that the pick/pack/DPD
-  //      cost isn't worth it, so the row gets 0 regardless of stock.
-  //   2. QTY = top FBA up to one month of its OWN Amazon demand: max(0, units_30d - fba_live) — the same "cover the gap" idea
-  //      applyCoverage uses for ordering from the supplier, just aimed at FBA instead. Capped by local_stock - 1.
-  // DELIBERATELY NOT netted against whatever's in Order (tried, reverted — owner, 2026-08-07): Order's coverage window is whichever
-  // rate button was clicked (0.5-3 months), but Pick's own target here is fixed at 1 month, so subtracting a 2- or 3-month Order
-  // figure from a 1-month gap zeroed Pick out almost every time ("pressing order rate 2 and then pick doesn't work"). Order DOES
-  // still net off Pick (see applyCoverage) — that direction is safe because Order's demand window is always >= Pick's 1-month one,
-  // so it can never go needlessly negative the way the reverse did.
-  // THE FLOOR IS ALWAYS 1 UNIT LEFT LOCALLY regardless of the above — a SKU with 0 or 1 in local stock is never picked at all.
-  // Same one-off ranking-and-sort as coverage fill (biggest pick first), via the shared manualOrder.
-  const [picksApplied, setPicksApplied] = useState(false);
-  function applyPicks() {
-    setPicksApplied(true);
-    setCoverageMonths(null); // the two fills write different columns but share one manualOrder ranking — only one "just did this" state at a time
-    const picked = visible.map((r) => {
-      const profitable = r.unit_profit !== null && r.unit_profit > 1;
-      const room = Math.max(0, r.local_stock - 1); // never pick the last unit off the shelf
-      const gap = Math.max(0, r.units_30d - r.fba_live); // what FBA needs to cover a month of its own sales
-      return { code: r.code, qty: profitable ? Math.min(room, gap) : 0 };
-    });
-    setPickQty((prev) => {
-      const next = { ...prev };
-      picked.forEach(({ code, qty }) => { next[code] = String(qty); });
-      return next;
-    });
-    setManualOrder(
-      [...picked].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
   }
 
@@ -465,6 +422,23 @@ export default function AmazonOrderHome() {
       return next;
     });
   }
+
+  // ON-SCREEN ORDER COST — total spend of the proposed Order, restricted to rows CURRENTLY VISIBLE (unlike orderTargets above,
+  // which deliberately reaches off-screen so nothing typed before a filter/cut is silently dropped from the real submission). This
+  // is a display-only running total, scoped to what the operator is looking at right now. cost = skusummary.cost (CLAUDE.md: never
+  // skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently treated as free.
+  const visibleOrderCost = useMemo(() => {
+    let total = 0;
+    let unpriced = 0;
+    for (const r of visible) {
+      if (isBirkenstock(r)) continue;
+      const qty = Math.floor(Number(orderQty[r.code]));
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      if (r.cost === null) { unpriced += qty; continue; }
+      total += qty * r.cost;
+    }
+    return { total, unpriced };
+  }, [visible, orderQty]);
 
   // Keyboard cursor over the visible rows — click a row (or arrow Up/Down) to move the highlight, Enter cuts the current row. Keys
   // are the VISIBLE rows only, so a cut row can never be the cursor's target and arrowing always lands on something on screen.
@@ -522,17 +496,15 @@ export default function AmazonOrderHome() {
     setSelected(new Set());
   }
 
-  // Order/Pick boxes: Up/Down walks rows and keeps focus in the SAME column (see the header comment for why this needs its own
-  // handler rather than relying on useListCursor, which leaves focused inputs alone everywhere else). Keyed 'order-<code>' /
-  // 'pick-<code>' so the two columns never collide.
+  // Order box: Up/Down walks rows and keeps focus in the box (see the header comment for why this needs its own handler rather
+  // than relying on useListCursor, which leaves focused inputs alone everywhere else).
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
-  function setInputRef(column: 'order' | 'pick', code: string) {
+  function setInputRef(code: string) {
     return (el: HTMLInputElement | null) => {
-      const key = `${column}-${code}`;
-      if (el) inputRefs.current.set(key, el); else inputRefs.current.delete(key);
+      if (el) inputRefs.current.set(code, el); else inputRefs.current.delete(code);
     };
   }
-  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, code: string, column: 'order' | 'pick') {
+  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, code: string) {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     const i = cursorKeys.indexOf(code);
     if (i < 0) return;
@@ -541,7 +513,7 @@ export default function AmazonOrderHome() {
     if (nextCode === code) return; // already at an end — leave the caret alone rather than eat the keystroke for nothing
     e.preventDefault();
     cursor.setCursor(nextCode);
-    const nextInput = inputRefs.current.get(`${column}-${nextCode}`);
+    const nextInput = inputRefs.current.get(nextCode);
     nextInput?.focus();
     nextInput?.select();
   }
@@ -614,7 +586,7 @@ export default function AmazonOrderHome() {
                 key={months}
                 type="button"
                 onClick={() => applyCoverage(months)}
-                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total and whatever's already in Pick)`}
+                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`}
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
                   (coverageMonths === months
@@ -626,21 +598,6 @@ export default function AmazonOrderHome() {
               </button>
             ))}
           </div>
-
-          <button
-            type="button"
-            onClick={applyPicks}
-            title="Fill Pick for every SKU on screen with unit profit over £1: enough to cover a month of FBA's own sales (Sold 30d − FBA Live), always leaving at least 1 unit in local stock"
-            className={
-              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
-              (picksApplied
-                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
-            }
-          >
-            <ArchiveBoxArrowDownIcon className="h-4 w-4" />
-            Picks
-          </button>
 
           {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets/coverage on the left. */}
           <div className="ml-auto flex items-center gap-2">
@@ -680,7 +637,7 @@ export default function AmazonOrderHome() {
             <button
               type="button"
               onClick={onReset}
-              disabled={!filtering && cut.size === 0 && coverageMonths === null && !picksApplied}
+              disabled={!filtering && cut.size === 0 && coverageMonths === null}
               title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
               className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >
@@ -699,6 +656,23 @@ export default function AmazonOrderHome() {
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
             )}
           </span>
+          {/* ON-SCREEN ORDER COST — see visibleOrderCost above: total cost of the proposed Order, rows currently visible only. */}
+          {(visibleOrderCost.total > 0 || visibleOrderCost.unpriced > 0) && (
+            <>
+              <span className="text-slate-300">|</span>
+              <span
+                className="whitespace-nowrap text-slate-500"
+                title="Total skusummary.cost x Order qty, for rows currently on screen only (filters/cuts change this)"
+              >
+                Order cost: <span className="font-semibold text-slate-800">{money(visibleOrderCost.total)}</span>
+                {visibleOrderCost.unpriced > 0 && (
+                  <span className="ml-1 text-amber-600" title={`${visibleOrderCost.unpriced} unit${visibleOrderCost.unpriced === 1 ? '' : 's'} with no known cost — not included in the total`}>
+                    (+{visibleOrderCost.unpriced} unpriced)
+                  </span>
+                )}
+              </span>
+            </>
+          )}
           {cut.size > 0 && (
             <>
               <span className="text-slate-300">|</span>
@@ -733,7 +707,7 @@ export default function AmazonOrderHome() {
             {orderResult && <span className="font-medium text-emerald-700">{orderResult}</span>}
             {orderError && <span className="text-red-600">{orderError}</span>}
             {draftSavedAt && (
-              <span className="text-slate-400" title="Order/Pick are saved to this browser, not the server — won't follow you to another device">
+              <span className="text-slate-400" title="Order is saved to this browser, not the server — won't follow you to another device">
                 Draft saved {relativeSaved(draftSavedAt)} (this browser only)
               </span>
             )}
@@ -749,11 +723,10 @@ export default function AmazonOrderHome() {
           <table className="w-max min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                {/* Order/Pick sit right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
+                {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
                     (6 columns), then the scratchpad, then everything from unit_profit onward. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
-                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Order</th>
-                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved, cleared on reload">Pick</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved server-side, this browser only">Order</th>
                 {COLUMNS.slice(6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {/* Cut — no sort, just a header label for the X button column. */}
                 <th className="whitespace-nowrap px-2 py-2 font-medium" />
@@ -787,10 +760,10 @@ export default function AmazonOrderHome() {
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
-                      ref={setInputRef('order', r.code)}
+                      ref={setInputRef(r.code)}
                       value={orderQty[r.code] || ''}
                       onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
-                      onKeyDown={(e) => onEditKeyDown(e, r.code, 'order')}
+                      onKeyDown={(e) => onEditKeyDown(e, r.code)}
                       onFocus={() => cursor.setCursor(r.code)}
                       inputMode="numeric"
                       disabled={isBirkenstock(r)}
@@ -802,18 +775,6 @@ export default function AmazonOrderHome() {
                           ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300'
                           : 'border-slate-200 focus:border-brand-500 focus:ring-brand-500')
                       }
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      ref={setInputRef('pick', r.code)}
-                      value={pickQty[r.code] || ''}
-                      onChange={(e) => setPickQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
-                      onKeyDown={(e) => onEditKeyDown(e, r.code, 'pick')}
-                      onFocus={() => cursor.setCursor(r.code)}
-                      inputMode="numeric"
-                      placeholder="—"
-                      className="w-16 rounded-md border border-slate-200 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{money(r.unit_profit)}</td>

@@ -32,6 +32,9 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          DPD collects it — the same landmine routes/inv-styles.js documents for its own Total. It is folded into fba_total instead
          (owner, 2026-08-07): it is no longer "on the local shelf", it is Amazon-bound stock in transit.
 
+         cost = skusummary.cost (CLAUDE.md: order cost is ALWAYS skusummary.cost via safeNumeric, never skumap.cost — blank/
+         placeholder on many rows). Used by the web page to total up what the on-screen proposed Order would cost to buy in.
+
          Order / Pick have NO server field — they are a session-only scratchpad the web page keeps in browser state, not persisted.
 
          NO server-side search/limit (unlike amz-all's listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
@@ -50,7 +53,7 @@ Success Response:
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10,
-      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3 },
+      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3, "cost": 18.50 },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
 }
@@ -104,7 +107,8 @@ router.get('/', async (req, res) => {
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
              m.supplier AS supplier,
-             COALESCE(loc.units,0) AS local_stock
+             COALESCE(loc.units,0) AS local_stock,
+             ${safeNumeric('sk.cost')} AS cost
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code
@@ -133,6 +137,7 @@ router.get('/', async (req, res) => {
         amz_sku: r.amz_sku || null,
         supplier: r.supplier || null,
         local_stock: Number(r.local_stock) || 0,
+        cost: num(r.cost),
       };
     });
 
