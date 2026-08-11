@@ -38,6 +38,9 @@ const logger = require('./logger');
 // Public image host that backs images.brookfieldcomfort.com (the same URL the site + Google feed use). imagename is a bare filename.
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com';
 
+// Storefront collection we cross-link from every NEW Birkenstock product's seeded description (see buildSeedDescription).
+const BIRKENSTOCK_COLLECTION_URL = 'https://brookfieldcomfort.com/collections/birkenstock';
+
 // A coded error we can throw and let the route map to a return_code (mirrors the { e.code } pattern used across the routes).
 function coded(code, message) {
   const e = new Error(message || code);
@@ -119,13 +122,33 @@ async function shopifyGraphQL(queryStr, variables = {}) {
  *   - product-level image attached from imagename (if any).
  *
  * NEW vs EDIT — the ONE real difference (owner's legacy "Full" vs "Standard" CSV):
- *   - NEW (isNew): include descriptionHtml = "Stock Code: <groupid>" — the placeholder the owner replaces with a real description in
- *     the Shopify UI. This mirrors the Full CSV's Body (HTML) column.
+ *   - NEW (isNew): include descriptionHtml — see buildSeedDescription (delivery promise, Birkenstock collection link, then the legacy
+ *     "Stock Code: <groupid>" line). This is the placeholder the owner fleshes out in the Shopify UI; mirrors the Full CSV's Body (HTML).
  *   - EDIT (!isNew): OMIT descriptionHtml entirely so the owner's hand-written Shopify description is preserved (the Standard CSV had
  *     no Body (HTML) column). Also pass productId as `id` so productSet UPDATES that product rather than trying to create a duplicate.
  * Everything else (title, image, sizes, price, barcode, vendor, type) is sent in both, exactly like the two CSVs.
  * Caller is responsible for the price>0 guard; this function assumes a valid price string is passed.
  */
+/*
+ * buildSeedDescription(product)
+ * The descriptionHtml we seed on a NEW product only (see the NEW vs EDIT note below). Three blocks, in this order:
+ *   1. the next-day delivery promise (every product — it's a store-wide service, not a brand thing);
+ *   2. for Birkenstock only, a link to the Birkenstock collection (cross-sell; the owner asked for it as standard on the brand);
+ *   3. the legacy "Stock Code: <groupid>" line, kept last exactly as before so the owner still finds it where they expect it.
+ * The owner rewrites the middle of this in the Shopify UI; we never resend it on an edit, so nothing here can clobber their copy.
+ */
+function buildSeedDescription(product) {
+  const parts = [
+    '<p>Order by 2pm Mon - Fri for NEXT DAY delivery on this item.</p>'
+  ];
+  // Brand is free text on skusummary, so match loosely rather than on an exact value.
+  if (String(product.brand || '').toLowerCase().includes('birkenstock')) {
+    parts.push(`<p><a href="${BIRKENSTOCK_COLLECTION_URL}">Shop all Birkenstock</a></p>`);
+  }
+  parts.push(`<p>Stock Code: ${product.groupid}</p>`);
+  return parts.join('\n');
+}
+
 function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null } = {}) {
   const priceStr = Number(product.price).toFixed(2);
   const hasRrp = product.rrp !== null && product.rrp !== undefined && Number(product.rrp) > Number(product.price);
@@ -167,7 +190,7 @@ function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true,
   if (productId) input.id = productId;
 
   // NEW only: seed the placeholder description. On EDIT we deliberately send nothing here so the owner's real Shopify description stays.
-  if (isNew) input.descriptionHtml = `Stock Code: ${product.groupid}`;
+  if (isNew) input.descriptionHtml = buildSeedDescription(product);
 
   // Attach the main product image (bare filename -> public URL). productSet replaces media, so this is idempotent on re-push.
   if (product.imagename) {

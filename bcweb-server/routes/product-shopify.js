@@ -15,7 +15,8 @@ Purpose: Turn a product's Shopify listing ON or OFF (`skusummary.shopify` 1/0) �
                 - NO_SIZES        — a product with no sizes has nothing to list.
                 - NOT_FOUND       — no such product / missing handle or title.
            3. NEW vs EDIT is decided inside upsertProduct by looking the handle up on Shopify: a brand-new handle gets the
-              "Stock Code: <groupid>" placeholder description; an existing one is updated WITHOUT touching the owner's real description.
+              seeded placeholder description (delivery line + Birkenstock collection link + "Stock Code: <groupid>"); an existing one is
+              updated WITHOUT touching the owner's real description.
            4. `status` (optional, ACTIVE|DRAFT, default ACTIVE) lets us create as a DRAFT for a safe first live test before going public.
 
          DISABLE (shopify=false): set shopify=0 only. We deliberately do NOT delete/unpublish the Shopify product here (non-destructive;
