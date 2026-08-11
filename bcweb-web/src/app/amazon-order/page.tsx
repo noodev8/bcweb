@@ -115,7 +115,9 @@ function relativeSaved(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
+// 'order_qty' is NOT a row field (it's the client-only Order scratchpad, keyed separately by code) — sortValue can't resolve it,
+// so `sorted` below special-cases it by reading the live orderQty state directly.
+type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier' | 'order_qty';
 // Reading order: identity (SKU, then the Order scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
 // supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
@@ -135,7 +137,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
 // Text columns default A-Z; every numeric column defaults high-to-low (the biggest number is usually the interesting end).
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
-  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', supplier: 'asc',
+  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', supplier: 'asc', order_qty: 'desc',
 };
 
 // The value a row sorts on for a given key. Nulls sort last regardless of direction (an unknown price/profit is not "small").
@@ -256,6 +258,10 @@ export default function AmazonOrderHome() {
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly;
 
+  // Order scratchpad values, keyed by code — declared here (ahead of `sorted` below) so the Order column can sort by it. See the
+  // fuller comment near the draft-save effects further down for the localStorage side of this.
+  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   // MANUAL ORDER — an explicit row order set by a coverage-fill click (see applyCoverage below), so the just-filled Order values
@@ -269,11 +275,20 @@ export default function AmazonOrderHome() {
     else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
   };
 
+  // Order box value for a row, as a sortable number — empty/non-numeric reads as null (sorts last), same "unknown isn't small"
+  // rule as sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad.
+  const orderQtyValue = (code: string): number | null => {
+    const raw = orderQty[code];
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const byNormalSort = (a: AmazonOrderRow, b: AmazonOrderRow) => {
-      const av = sortValue(a, sortKey);
-      const bv = sortValue(b, sortKey);
+      const av = sortKey === 'order_qty' ? orderQtyValue(a.code) : sortValue(a, sortKey);
+      const bv = sortKey === 'order_qty' ? orderQtyValue(b.code) : sortValue(b, sortKey);
       // Nulls always sort last, independent of direction.
       if (av === null && bv === null) return 0;
       if (av === null) return 1;
@@ -294,12 +309,11 @@ export default function AmazonOrderHome() {
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
     });
-  }, [filtered, sortKey, sortDir, manualOrder]);
+  }, [filtered, sortKey, sortDir, manualOrder, orderQty]);
 
-  // Order — a planning scratchpad, keyed by code. Still NOT sent anywhere until the Order button is pressed (owner decision,
-  // 2026-08-07) — but now saved to THIS BROWSER (see DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as
-  // free text rather than <input type="number"> so a half-typed value never gets silently clamped/rounded mid-entry.
-  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+  // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
+  // DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as free text rather than <input type="number">
+  // so a half-typed value never gets silently clamped/rounded mid-entry.
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   // LOAD the saved draft once on mount, before the autosave effect below is allowed to write anything (loadedDraftRef gates it) — see
@@ -755,7 +769,10 @@ export default function AmazonOrderHome() {
                 {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
                     (6 columns), then the scratchpad, then everything from unit_profit onward. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
-                <th className="whitespace-nowrap px-4 py-2 text-right font-medium" title="Planning scratchpad — not saved server-side, this browser only">Order</th>
+                {renderColumnHeader(
+                  { key: 'order_qty', label: 'Order', title: 'Planning scratchpad — not saved server-side, this browser only', align: 'right' },
+                  sortKey, sortDir, onSort,
+                )}
                 {COLUMNS.slice(6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {/* Cut — no sort, just a header label for the X button column. */}
                 <th className="whitespace-nowrap px-2 py-2 font-medium" />
