@@ -42,7 +42,9 @@ SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into rea
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
       row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
       Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — its Order
-      box is disabled rather than silently zeroed, so it's clear why nothing happens. Inline confirm states the total before writing
+      box is disabled rather than silently zeroed, so it's clear why nothing happens. A loss-making SKU (isLoss — last Amazon sale
+      made £0 or less) is NOT blocked from a manual Order entry, only from the Rate Order auto-fill (applyCoverage, owner 2026-08-11).
+      Inline confirm states the total before writing
       anything (this is a real DB write, not more scratchpad editing); a succeeding row clears its own box and bumps a session-only
       `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
@@ -79,6 +81,12 @@ function haystack(r: AmazonOrderRow): string {
 // Birkenstock is ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — never orderable from this per-SKU screen.
 function isBirkenstock(r: AmazonOrderRow): boolean {
   return (r.supplier || '').toUpperCase() === 'BIRKENSTOCK';
+}
+
+// A SKU whose last Amazon sale made £0 or less shouldn't get MORE bought in for it (owner, 2026-08-11) — unknown profit
+// (unit_profit === null) is not treated as a loss, since there's nothing to judge it on.
+function isLoss(r: AmazonOrderRow): boolean {
+  return r.unit_profit !== null && r.unit_profit <= 0;
 }
 
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
@@ -329,6 +337,8 @@ export default function AmazonOrderHome() {
   // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
   // not just what's currently visible — a value typed before a filter/cut shouldn't silently vanish from the submission just because
   // it scrolled out of view. Birkenstock is excluded by construction (isBirkenstock) even if a value somehow ended up in its box.
+  // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
+  // auto-fill (applyCoverage, below) skips loss-makers on its own (owner, 2026-08-11).
   const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
   const orderTargets = useMemo(() => {
     const out: { code: string; qty: number; supplier: string }[] = [];
@@ -386,21 +396,27 @@ export default function AmazonOrderHome() {
   // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
   // + inbound — stock already at or on its way to Amazon). local_stock itself is still deliberately EXCLUDED from "on hand" — it
   // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
-  // later). Never negative — a SKU already covered needs 0, not a minus. Fills every row CURRENTLY ON SCREEN (`visible`: after
-  // search + Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set.
-  // `coverageMonths` only tracks which button is lit; re-filling always recomputes from the row's live numbers rather than scaling
-  // whatever is already typed, so clicking a different button cleanly replaces the fill rather than compounding it. Also sets
-  // `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the
-  // operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
+  // later). A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
+  // than written as 0 — its box keeps whatever was already in it instead of being overwritten for no reason. Fills every row
+  // CURRENTLY ON SCREEN (`visible`: after search + Winners/Potential + cut), so filtering down first and then clicking a button
+  // targets exactly that working set. `coverageMonths` only tracks which button is lit; re-filling always recomputes from the
+  // row's live numbers rather than scaling whatever is already typed, so clicking a different button cleanly replaces the fill
+  // rather than compounding it. Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to
+  // show what was just added without the operator having to click the Order column (which isn't even a sortable header) — see the
+  // `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
     // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
-    // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is.
-    const filled = visible.filter((r) => !isBirkenstock(r)).map((r) => {
-      const demand = r.units_30d * months;
-      return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
-    });
+    // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is. A loss-making
+    // SKU (isLoss) is skipped the same way — no point buying in more of something that lost money last time it sold.
+    const filled = visible
+      .filter((r) => !isBirkenstock(r) && !isLoss(r))
+      .map((r) => {
+        const demand = r.units_30d * months;
+        return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
+      })
+      .filter((f) => f.qty > 0); // nothing to order — leave the box as it was rather than write a 0 over it
     setOrderQty((prev) => {
       const next = { ...prev };
       filled.forEach(({ code, qty }) => { next[code] = String(qty); });
