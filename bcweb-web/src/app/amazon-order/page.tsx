@@ -50,12 +50,20 @@ SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into rea
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
 
       Pick (send local stock to Amazon) has been pulled from this screen for now — revisit later (owner, 2026-08-11).
+
+LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of them (combinable with either) — show only rows
+      with a positive number currently in Order, for reviewing what's been built up across the ~520-row set (owner, 2026-08-11). A
+      LIVE filter, not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in
+      without a re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads (focusedOrderCode)
+      — otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the input being typed into,
+      out of the list mid-edit.
 =======================================================================================================================================
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmazonOrderList, addOrderLine, AmazonOrderRow } from '@/lib/api';
@@ -141,7 +149,10 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
 };
 
 // The value a row sorts on for a given key. Nulls sort last regardless of direction (an unknown price/profit is not "small").
+// 'order_qty' isn't a row field — the `sorted` memo special-cases it before ever calling this — but is still a valid SortKey, so
+// it's guarded here too rather than left to fall through to an `r[key]` index TypeScript can't type against AmazonOrderRow.
 function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
+  if (key === 'order_qty') return null;
   if (key === 'barcode' || key === 'amz_sku' || key === 'supplier') return r[key] ? r[key]!.toLowerCase() : null;
   return r[key];
 }
@@ -217,13 +228,25 @@ export default function AmazonOrderHome() {
   function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
+  // ORDERS ONLY — a third quick preset, independent of Winners/Potential (can be combined with either): show only rows with a
+  // positive number currently sitting in the Order box. A live filter, not a snapshot — re-evaluates as orderQty changes, so typing
+  // a value while it's on doesn't require re-toggling to bring the row in. Order scratchpad values, keyed by code — declared here
+  // (ahead of `filtered`/`sorted` below, which both need it) rather than down with the rest of the Order UI state further down.
+  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+  const [ordersOnly, setOrdersOnly] = useState(false);
+  function toggleOrdersOnly() { setOrdersOnly((v) => !v); }
+  // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
+  // otherwise backspacing a value down through 0 on the way to clearing it yanks the row (and the input you're typing into) out of
+  // the list mid-edit, since the filter re-evaluates on every keystroke (owner, 2026-08-11 — "won't let me backspace to clear").
+  const [focusedOrderCode, setFocusedOrderCode] = useState<string | null>(null);
+
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
   // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
   // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
   // reset, not a "start the order over" action. Clear Order (below) is the dedicated action for that.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
-    setWinnersOnly(false); setPotentialOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageMonths(null);
     setManualOrder(null);
@@ -253,14 +276,11 @@ export default function AmazonOrderHome() {
     }
     if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
     if (potentialOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3);
+    if (ordersOnly) out = out.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, ordersOnly, orderQty, focusedOrderCode]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly;
-
-  // Order scratchpad values, keyed by code — declared here (ahead of `sorted` below) so the Order column can sort by it. See the
-  // fuller comment near the draft-save effects further down for the localStorage side of this.
-  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || ordersOnly;
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -619,6 +639,20 @@ export default function AmazonOrderHome() {
             <SparklesIcon className="h-4 w-4" />
             Potential
           </button>
+          <button
+            type="button"
+            onClick={toggleOrdersOnly}
+            title="Load only SKUs with a number currently in Order — combines with Winners/Potential"
+            className={
+              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
+              (ordersOnly
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
+          >
+            <FunnelIcon className="h-4 w-4" />
+            Load order
+          </button>
           {/* Coverage fill — writes the Order box for every row ON SCREEN (filter down first, then click). See applyCoverage. */}
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             {COVERAGE_OPTIONS.map((months) => (
@@ -810,7 +844,8 @@ export default function AmazonOrderHome() {
                       value={orderQty[r.code] || ''}
                       onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
                       onKeyDown={(e) => onEditKeyDown(e, r.code)}
-                      onFocus={() => cursor.setCursor(r.code)}
+                      onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
+                      onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
                       inputMode="numeric"
                       disabled={isBirkenstock(r)}
                       placeholder="—"
