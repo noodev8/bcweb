@@ -85,6 +85,29 @@ function isBirkenstock(r: AmazonOrderRow): boolean {
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
 const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 
+// LOCAL DRAFT SAVE — Order/Pick are still not sent anywhere (owner decision), but they're now saved to THIS BROWSER via localStorage
+// (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon of typing. Deliberately NOT
+// server-side: per-browser only, doesn't follow an operator to a different machine, and two tabs open at once will clobber each
+// other's save (last write wins) — acceptable for a solo scratchpad, revisit if that turns out to matter (owner, 2026-08-11).
+const DRAFT_KEY = 'bcweb:amazon-order-draft';
+// A draft older than this is more likely to be stale (stock/sales have moved on) than useful — dropped silently on load rather than
+// resurrected, same as any other browser-only state that's outlived its relevance.
+const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+interface AmazonOrderDraft {
+  orderQty?: Record<string, string>;
+  pickQty?: Record<string, string>;
+  savedAt?: number;
+}
+function relativeSaved(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier';
 // Reading order: identity (SKU, then the Order/Pick scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
@@ -196,6 +219,7 @@ export default function AmazonOrderHome() {
     setPicksApplied(false); setPickQty({});
     setManualOrder(null);
     setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
+    localStorage.removeItem(DRAFT_KEY); setDraftSavedAt(null);
   }
 
   const filtered = useMemo(() => {
@@ -257,11 +281,54 @@ export default function AmazonOrderHome() {
     });
   }, [filtered, sortKey, sortDir, manualOrder]);
 
-  // Order / Pick — a session-only planning scratchpad, keyed by code. NOT sent anywhere or persisted (owner decision, 2026-08-07):
-  // reloading the page clears them, same as any other unsaved browser state. Kept as free text rather than <input type="number"> so a
-  // half-typed value never gets silently clamped/rounded mid-entry.
+  // Order / Pick — a planning scratchpad, keyed by code. Still NOT sent anywhere until the Order button is pressed (owner decision,
+  // 2026-08-07) — but now saved to THIS BROWSER (see DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as
+  // free text rather than <input type="number"> so a half-typed value never gets silently clamped/rounded mid-entry.
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [pickQty, setPickQty] = useState<Record<string, string>>({});
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+
+  // LOAD the saved draft once on mount, before the autosave effect below is allowed to write anything (loadedDraftRef gates it) — see
+  // the header comment for why: without the gate, autosave's own first run (still seeing the empty initial state) could schedule a
+  // write that clobbers a just-loaded draft before this effect's setState has flushed.
+  const loadedDraftRef = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as AmazonOrderDraft;
+        if (draft.savedAt && Date.now() - draft.savedAt <= DRAFT_MAX_AGE_MS) {
+          if (draft.orderQty) setOrderQty(draft.orderQty);
+          if (draft.pickQty) setPickQty(draft.pickQty);
+          setDraftSavedAt(draft.savedAt);
+        } else {
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      }
+    } catch {
+      localStorage.removeItem(DRAFT_KEY);
+    }
+    loadedDraftRef.current = true;
+  }, []);
+
+  // AUTOSAVE — debounced 500ms after the last edit to either column. Writing nothing (both empty) clears any existing saved draft
+  // instead of persisting an empty one, so Reset (which empties both) and simply deleting every typed number both tidy up storage.
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!loadedDraftRef.current) return; // don't run before the load effect above has had its state update applied
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => {
+      if (Object.keys(orderQty).length === 0 && Object.keys(pickQty).length === 0) {
+        localStorage.removeItem(DRAFT_KEY);
+        setDraftSavedAt(null);
+        return;
+      }
+      const savedAt = Date.now();
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ orderQty, pickQty, savedAt } satisfies AmazonOrderDraft));
+      setDraftSavedAt(savedAt);
+    }, 500);
+    return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
+  }, [orderQty, pickQty]);
 
   // SEND TO ORDER STATUS — turns the Order scratchpad into real orderstatus rows via the same /order-status-add the Order Status
   // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
@@ -661,10 +728,15 @@ export default function AmazonOrderHome() {
           ))}
         </div>
 
-        {(orderResult || orderError) && (
+        {(orderResult || orderError || draftSavedAt) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
             {orderResult && <span className="font-medium text-emerald-700">{orderResult}</span>}
             {orderError && <span className="text-red-600">{orderError}</span>}
+            {draftSavedAt && (
+              <span className="text-slate-400" title="Order/Pick are saved to this browser, not the server — won't follow you to another device">
+                Draft saved {relativeSaved(draftSavedAt)} (this browser only)
+              </span>
+            )}
           </div>
         )}
       </div>
