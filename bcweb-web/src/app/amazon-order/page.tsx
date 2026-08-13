@@ -769,8 +769,10 @@ export default function AmazonOrderHome() {
         {/* Chips for each committed step, plus the row count. */}
         <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
           <span className="mr-1 whitespace-nowrap text-slate-500">
-            {filtering ? (
-              <>Rows: <span className="font-semibold text-slate-800">{filtered.length}</span><span className="text-slate-400"> of {rows.length}</span></>
+            {/* Cut rows drop out of visible too, so the count includes them alongside search/preset filtering — a cut shouldn't
+                leave the "Rows: X of Y" figure reading as if nothing happened (owner, 2026-08-13). */}
+            {filtering || cut.size > 0 ? (
+              <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
             ) : (
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
             )}
