@@ -60,7 +60,7 @@ LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of
 =======================================================================================================================================
 */
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
   FunnelIcon,
@@ -296,12 +296,14 @@ export default function AmazonOrderHome() {
 
   // Order box value for a row, as a sortable number — empty/non-numeric reads as null (sorts last), same "unknown isn't small"
   // rule as sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad.
-  const orderQtyValue = (code: string): number | null => {
+  // useCallback (not a bare function) so the memos below can name it as a dependency — an unmemoized closure here makes the
+  // React Compiler give up on `sorted`, and the bail-out then cascades into every memo derived from it (`visible`, `cursorKeys`).
+  const orderQtyValue = useCallback((code: string): number | null => {
     const raw = orderQty[code];
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
-  };
+  }, [orderQty]);
 
   // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
   // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
@@ -365,7 +367,7 @@ export default function AmazonOrderHome() {
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
     });
-  }, [filtered, sortKey, sortDir, manualOrder, orderQty]);
+  }, [filtered, sortKey, sortDir, manualOrder, orderQtyValue]);
 
   // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
   // DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as free text rather than <input type="number">
@@ -375,8 +377,15 @@ export default function AmazonOrderHome() {
   // LOAD the saved draft once on mount, before the autosave effect below is allowed to write anything (loadedDraftRef gates it) — see
   // the header comment for why: without the gate, autosave's own first run (still seeing the empty initial state) could schedule a
   // write that clobbers a just-loaded draft before this effect's setState has flushed.
+  //
+  // The two rule disables below are deliberate, not oversights. This is the one case both rules carve out in practice: a
+  // mount-only read of an external store (localStorage) that can't move into a lazy useState initializer, because this page is
+  // server-rendered and localStorage doesn't exist on the server — a lazy initializer would either throw during SSR or hydrate
+  // with different values than the server produced. Date.now() is the draft's age check and setOrderQty applies what was read;
+  // both run once, with [] deps, so there's no re-render cascade for the rules to protect against.
   const loadedDraftRef = useRef(false);
   useEffect(() => {
+    /* eslint-disable react-hooks/purity, react-hooks/set-state-in-effect */
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (raw) {
@@ -392,6 +401,7 @@ export default function AmazonOrderHome() {
       localStorage.removeItem(DRAFT_KEY);
     }
     loadedDraftRef.current = true;
+    /* eslint-enable react-hooks/purity, react-hooks/set-state-in-effect */
   }, []);
 
   // AUTOSAVE — debounced 500ms after the last edit. Writing nothing (empty) clears any existing saved draft instead of persisting
@@ -479,6 +489,13 @@ export default function AmazonOrderHome() {
     }
   }
 
+  // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
+  // Reset brings it back. Applied last, after search + sort, so cutting never fights with either. Declared HERE, ahead of
+  // applyCoverage below, because that reads `visible` — the React Compiler can't preserve a memo that's consumed above its own
+  // declaration (it assumes the value may still be mutated), and the bail-out cascades into visibleOrderCost and cursorKeys.
+  const [cut, setCut] = useState<Set<string>>(new Set());
+  const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
+
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
   // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
   // + inbound — stock already at or on its way to Amazon). local_stock itself is still deliberately EXCLUDED from "on hand" — it
@@ -512,10 +529,6 @@ export default function AmazonOrderHome() {
     );
   }
 
-  // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
-  // Reset brings it back. Applied last, after search + sort, so cutting never fights with either.
-  const [cut, setCut] = useState<Set<string>>(new Set());
-  const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
   // Cutting a row also wipes anything typed in its Order box (owner, 2026-08-13) — a cut SKU shouldn't silently keep contributing
   // to orderTargets/orderTotalUnits (both reach off-screen, so a cut row's leftover value would still be queued on Order/submit).
   function clearOrderQtyFor(codes: Iterable<string>) {
