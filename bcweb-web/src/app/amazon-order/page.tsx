@@ -60,12 +60,13 @@ LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import CopyButton from '@/components/CopyButton';
 import { getAmazonOrderList, addOrderLine, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
@@ -166,14 +167,18 @@ function renderColumnHeader(
   const active = sortKey === c.key;
   // The SKU column gets a tighter right pad (pr-2 instead of px-4's pr-4) — it's a fixed-width code, not prose, so the usual
   // breathing room just wastes width that the data columns further right can use instead (owner request, 2026-08-07).
-  const pad = c.key === 'code' ? 'pl-4 pr-2' : 'px-4';
+  const pad = c.key === 'code' ? 'pl-3 pr-2' : 'px-3';
+  // The SKU column is also pinned LEFT (in addition to the whole thead being pinned TOP — see the table container below), so it
+  // stays on screen through both scroll axes at once. It needs its own opaque background (sticky cells sit outside the thead's
+  // normal paint order once scrolled) and a higher z-index than every other header cell so it wins the corner where both stick.
+  const stickyCode = c.key === 'code' ? 'sticky left-0 z-20 bg-slate-50' : '';
   return (
     <th
       key={c.key}
       title={c.title}
       onClick={() => onSort(c.key)}
       className={
-        `cursor-pointer select-none whitespace-nowrap ${pad} py-2 font-medium hover:text-slate-700 ` +
+        `cursor-pointer select-none whitespace-nowrap ${pad} py-1.5 font-medium hover:text-slate-700 ${stickyCode} ` +
         (c.align === 'right' ? 'text-right' : 'text-left')
       }
     >
@@ -558,6 +563,18 @@ export default function AmazonOrderHome() {
     onEnter: onCut,
   });
 
+  // DETAIL EXPAND — barcode/Amazon SKU/supplier are looked up rarely, so they're not columns anymore (they were most of why the
+  // table needed side-scrolling); double-clicking a row reveals them inline instead (owner request, 2026-08-13). Keyed by code,
+  // same as cut/selected — a plain Set, since more than one row can be open at once and there's no ordering to track.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggleExpanded(code: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  }
+
   // MULTI-SELECT for bulk cut — separate from the cursor above (see header comment). `anchorRef` is the last PLAIN click, which
   // Shift-click extends a range from; it deliberately does NOT move on a Shift or Ctrl/Cmd click, so several Shift-clicks in a row
   // keep adjusting the same range rather than re-anchoring each time.
@@ -630,8 +647,11 @@ export default function AmazonOrderHome() {
 
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
-      {/* Search bar — Enter commits the box as a step; steps stack and AND together. */}
-      <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      {/* Search bar — Enter commits the box as a step; steps stack and AND together. Sticky (not just the table header below) so
+          the filters, presets, and the Order/Cut buttons never scroll out of reach while working down a long list — the table
+          itself now scrolls in its OWN bounded region (see the container below), so this only matters on short viewports where
+          the page still scrolls, but it's a cheap safety net either way (owner request, 2026-08-13 — "too much scrolling"). */}
+      <div className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[200px] flex-1">
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Include</label>
@@ -848,48 +868,74 @@ export default function AmazonOrderHome() {
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       {!loading && !error && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        // Bounded height + its own scrollbar (both axes) — with ~520 rows the table used to make the WHOLE PAGE scroll, so
+        // getting from a row back to the toolbar/header meant a long scroll up. Scoping the scroll to this box instead keeps the
+        // toolbar and (via the sticky thead below) the column headers permanently in view; only the rows themselves scroll
+        // (owner request, 2026-08-13 — "too much scrolling up and down"). The offset accounts for AppShell's header+nav+title
+        // plus the toolbar above.
+        <div className="max-h-[calc(100vh-21rem)] min-h-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-max min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
-                    (6 columns), then the scratchpad, then everything from unit_profit onward. */}
+                    (6 columns), then the scratchpad, then unit_profit/profit_30d. Barcode/Amazon SKU/Supplier (COLUMNS[8..10])
+                    are looked up rarely enough that they're no longer columns at all — click the caret next to a SKU to reveal
+                    them inline instead (see the `expanded` detail row in the body below) — so only COLUMNS.slice(6, 8) renders
+                    here now. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {renderColumnHeader(
                   { key: 'order_qty', label: 'Order', title: 'Planning scratchpad — not saved server-side, this browser only', align: 'right' },
                   sortKey, sortDir, onSort,
                 )}
-                {COLUMNS.slice(6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
+                {COLUMNS.slice(6, 8).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {/* Cut — no sort, just a header label for the X button column. */}
-                <th className="whitespace-nowrap px-2 py-2 font-medium" />
+                <th className="whitespace-nowrap px-2 py-1.5 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {visible.map((r) => (
+                <Fragment key={r.code}>
                 <tr
-                  key={r.code}
                   ref={cursor.itemRef(r.code)}
                   onClick={(e) => onRowClick(e, r.code)}
                   className={
-                    'cursor-pointer select-none ' +
+                    'group cursor-pointer select-none ' +
                     (selected.has(r.code) ? 'bg-brand-50' : 'hover:bg-slate-50')
                   }
                 >
                   {/* Cursor (keyboard position) gets its own left accent, independent of the selection fill above — the two can
-                      disagree (arrowing around doesn't touch what a bulk Cut would hit), so they need visually distinct signals. */}
+                      disagree (arrowing around doesn't touch what a bulk Cut would hit), so they need visually distinct signals.
+                      Also pinned LEFT to match the header (see renderColumnHeader) — its background can't just inherit the row's
+                      (a sticky cell paints over whatever scrolls under it, so the row's hover/select fill wouldn't show through),
+                      so it's re-applied here explicitly via group-hover off the <tr>'s `group` above. The caret button opens the
+                      detail row (see below) on its own click — stopPropagation so it doesn't also fire the row's select/cursor
+                      click underneath it. */}
                   <td className={
-                    'whitespace-nowrap py-2 pl-4 pr-2 font-mono text-xs text-slate-600 border-l-2 ' +
-                    (cursor.isCursor(r.code) ? 'border-brand-500' : 'border-transparent')
-                  }>{r.code}</td>
-                  <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
-                  <td className={'whitespace-nowrap px-4 py-2 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">
+                    'sticky left-0 z-[1] whitespace-nowrap py-1.5 pl-3 pr-2 font-mono text-xs text-slate-600 border-l-2 ' +
+                    (cursor.isCursor(r.code) ? 'border-brand-500 ' : 'border-transparent ') +
+                    (selected.has(r.code) ? 'bg-brand-50' : 'bg-white group-hover:bg-slate-50')
+                  }>
+                    <span className="inline-flex items-center gap-1">
+                      {r.code}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
+                        title="Barcode / Amazon SKU / supplier"
+                        className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-500"
+                      >
+                        <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expanded.has(r.code) ? 'rotate-180' : '')} />
+                      </button>
+                    </span>
+                  </td>
+                  <td className={'whitespace-nowrap px-3 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
+                  <td className={'whitespace-nowrap px-3 py-1.5 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">
                     {r.fba_total}
                     {/* Session-only "just queued" bump — see orderedBump above. Not a DB figure, so kept visually distinct. */}
                     {orderedBump[r.code] > 0 && <span className="ml-1 text-xs text-emerald-600">+{orderedBump[r.code]}</span>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       ref={setInputRef(r.code)}
@@ -910,12 +956,9 @@ export default function AmazonOrderHome() {
                       }
                     />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">{money(r.unit_profit)}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.barcode || <span className="text-slate-300">—</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.amz_sku || <span className="text-slate-300">—</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">{r.supplier || <span className="text-slate-400">—</span>}</td>
-                  <td className="whitespace-nowrap px-2 py-2">
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{money(r.unit_profit)}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onCut(r.code); }}
@@ -926,6 +969,32 @@ export default function AmazonOrderHome() {
                     </button>
                   </td>
                 </tr>
+                {/* Detail row — barcode/Amazon SKU/supplier, toggled by the caret next to the SKU above (see toggleExpanded). Not a
+                    real column anymore (rarely needed, and was most of why the table needed side-scrolling); colSpan covers every
+                    column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
+                    CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
+                    clickable — a bare click target you can't see the boundary of invites mis-clicks on a line with three values. */}
+                {expanded.has(r.code) && (
+                  <tr className="bg-slate-50/70">
+                    <td colSpan={10} className="px-3 py-2">
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 pl-3 text-xs text-slate-600">
+                        <span className="inline-flex items-center gap-0.5">
+                          Barcode: <span className="font-mono text-slate-800">{r.barcode || '—'}</span>
+                          {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5">
+                          Amazon SKU: <span className="font-mono text-slate-800">{r.amz_sku || '—'}</span>
+                          {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5">
+                          Supplier: <span className="text-slate-800">{r.supplier || '—'}</span>
+                          {r.supplier && <CopyButton value={r.supplier} label="supplier" />}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
