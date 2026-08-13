@@ -472,13 +472,13 @@ export default function AmazonOrderHome() {
   // + inbound — stock already at or on its way to Amazon). local_stock itself is still deliberately EXCLUDED from "on hand" — it
   // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
   // later). A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
-  // than written as 0 — its box keeps whatever was already in it instead of being overwritten for no reason. Fills every row
-  // CURRENTLY ON SCREEN (`visible`: after search + Winners/Potential + cut), so filtering down first and then clicking a button
-  // targets exactly that working set. `coverageMonths` only tracks which button is lit; re-filling always recomputes from the
-  // row's live numbers rather than scaling whatever is already typed, so clicking a different button cleanly replaces the fill
-  // rather than compounding it. Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to
-  // show what was just added without the operator having to click the Order column (which isn't even a sortable header) — see the
-  // `sorted` memo above.
+  // than written as 0 — its box is simply left out of the fill. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
+  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. `coverageMonths`
+  // only tracks which button is lit; clicking ANY rate button (including the one already active) wipes the ENTIRE Order scratchpad
+  // first — including the saved browser draft, via the same autosave effect that persists it — and refills from scratch, so a rate
+  // click always reflects one clean calculation rather than layering onto whatever was typed or filled before (owner, 2026-08-13).
+  // Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added
+  // without the operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     setCoverageMonths(months);
@@ -491,12 +491,10 @@ export default function AmazonOrderHome() {
         const demand = r.units_30d * months;
         return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
       })
-      .filter((f) => f.qty > 0); // nothing to order — leave the box as it was rather than write a 0 over it
-    setOrderQty((prev) => {
-      const next = { ...prev };
-      filled.forEach(({ code, qty }) => { next[code] = String(qty); });
-      return next;
-    });
+      .filter((f) => f.qty > 0); // nothing to order — leave it out of the fill rather than write a 0
+    const next: Record<string, string> = {};
+    filled.forEach(({ code, qty }) => { next[code] = String(qty); });
+    setOrderQty(next);
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
