@@ -212,6 +212,10 @@ export default function AmazonOrderHome() {
     if (t && !excludes.includes(t)) setExcludes((prev) => [...prev, t]);
     setExcludeInput('');
   }
+  // Filter boxes are forced upper-case as typed (owner request, 2026-08-13) — purely cosmetic, since haystack()/escapeRegExp()
+  // already lowercase both sides before matching.
+  function onIncludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setIncludeInput(e.target.value.toUpperCase()); }
+  function onExcludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setExcludeInput(e.target.value.toUpperCase()); }
   function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); }
   function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); }
 
@@ -475,12 +479,25 @@ export default function AmazonOrderHome() {
   // Reset brings it back. Applied last, after search + sort, so cutting never fights with either.
   const [cut, setCut] = useState<Set<string>>(new Set());
   const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
+  // Cutting a row also wipes anything typed in its Order box (owner, 2026-08-13) — a cut SKU shouldn't silently keep contributing
+  // to orderTargets/orderTotalUnits (both reach off-screen, so a cut row's leftover value would still be queued on Order/submit).
+  function clearOrderQtyFor(codes: Iterable<string>) {
+    setOrderQty((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const code of codes) {
+        if (code in next) { delete next[code]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }
   function onCut(code: string) {
     setCut((prev) => {
       const next = new Set(prev);
       next.add(code);
       return next;
     });
+    clearOrderQtyFor([code]);
   }
 
   // ON-SCREEN ORDER COST — total spend of the proposed Order, restricted to rows CURRENTLY VISIBLE (unlike orderTargets above,
@@ -553,6 +570,7 @@ export default function AmazonOrderHome() {
       selected.forEach((c) => next.add(c));
       return next;
     });
+    clearOrderQtyFor(selected);
     setSelected(new Set());
   }
 
@@ -589,7 +607,7 @@ export default function AmazonOrderHome() {
               <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
               <input
                 value={includeInput}
-                onChange={(e) => setIncludeInput(e.target.value)}
+                onChange={onIncludeInputChange}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
                 autoFocus
                 placeholder="e.g. ives, then Enter"
@@ -601,7 +619,7 @@ export default function AmazonOrderHome() {
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Does not contain</label>
             <input
               value={excludeInput}
-              onChange={(e) => setExcludeInput(e.target.value)}
+              onChange={onExcludeInputChange}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExclude(); } }}
               placeholder="e.g. black, then Enter"
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
