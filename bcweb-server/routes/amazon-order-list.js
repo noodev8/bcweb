@@ -19,7 +19,11 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          numbers for "how much" and "per unit", kept in step by the Update Amazon import job.
 
          Also carries FBA stock: fba_total = amzfeed.amztotal (live + inbound) PLUS the C3-Amazon staged units (see local_stock
-         below), fba_live = amzfeed.amzlive (sellable now, unaffected by staging). Real integers, no safeNumeric needed.
+         below) PLUS not-yet-arrived Amazon orderstatus lines (ordertype=3, arrived=0 — TO PLACE and ON ORDER both count; same
+         predicate routes/inv-styles.js uses for its own "onOrder", CTE `ord` here). Without this, Rate Order (applyCoverage,
+         bcweb-web/src/app/amazon-order/page.tsx) reads a queued-but-not-yet-received line as still-needed and can suggest
+         ordering it again (owner, 2026-08-13 — "otherwise we may double order"). fba_live = amzfeed.amzlive (sellable now,
+         unaffected by staging or on-order). Real integers, no safeNumeric needed.
 
          Also carries three identifiers: barcode = skumap.ean with the legacy trailing 'B' stripped (CLAUDE.md — that suffix is an
          Excel guard for internal spreadsheets, not part of the barcode; same regexp_replace as order-status-find.js), amz_sku =
@@ -80,8 +84,9 @@ router.get('/', async (req, res) => {
   try {
     // skumap (amzprofit) and amzfeed (amzsold, amzprice) are both code-grain, so a straight JOIN pairs them one-to-one; skusummary
     // scopes the list to managed products only. profit_30d is computed here, not in SQL, so its "null when unit_profit is unknown"
-    // rule sits next to the comment that explains it. Local stock and the C3-Amazon staged stock are both pre-aggregated to
-    // code-grain in their own CTEs (so neither can fan out the row set) and LEFT JOINed — a SKU with none of either simply reads 0.
+    // rule sits next to the comment that explains it. Local stock, the C3-Amazon staged stock, and not-yet-arrived Amazon orders
+    // are all pre-aggregated to code-grain in their own CTEs (so none of them can fan out the row set) and LEFT JOINed — a SKU
+    // with none of any simply reads 0.
     const result = await query(`
       WITH loc AS (
         SELECT code, SUM(qty) AS units
@@ -95,6 +100,15 @@ router.get('/', async (req, res) => {
         FROM localstock
         WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location = 'C3-Amazon'
         GROUP BY code
+      ),
+      ord AS (
+        -- Not-yet-arrived Amazon order lines (TO PLACE and ON ORDER both count — orderdate doesn't distinguish "arrived", only
+        -- "placed with the supplier"). One row per unit, so COUNT(*) is the unit count. Same predicate as routes/inv-styles.js's
+        -- own ord CTE, narrowed to Amazon only (ordertype=3) since this screen never orders local stock.
+        SELECT o.shopifysku AS code, COUNT(*) AS units
+        FROM orderstatus o
+        WHERE o.arrived = 0 AND o.ordertype = 3
+        GROUP BY o.shopifysku
       )
       SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
              t.shopifytitle AS title,
@@ -102,7 +116,7 @@ router.get('/', async (req, res) => {
              GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
              ${safeNumeric('m.amzprofit')} AS unit_profit,
-             COALESCE(a.amztotal,0) + COALESCE(staged.units,0) AS fba_total,
+             COALESCE(a.amztotal,0) + COALESCE(staged.units,0) + COALESCE(ord.units,0) AS fba_total,
              COALESCE(a.amzlive,0) AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
@@ -115,6 +129,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid = a.groupid
       LEFT JOIN loc ON loc.code = a.code
       LEFT JOIN staged ON staged.code = a.code
+      LEFT JOIN ord ON ord.code = a.code
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 

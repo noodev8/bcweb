@@ -133,7 +133,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
   { key: 'code', label: 'SKU (size)', align: 'left' },
   { key: 'local_stock', label: 'Local', title: 'Sellable local stock, excluding anything staged at C3-Amazon (that\'s counted under FBA Total instead)', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
-  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection', align: 'right' },
+  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection, plus not-yet-arrived Amazon order lines (TO PLACE + ON ORDER)', align: 'right' },
   { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days, net of returns', align: 'right' },
   { key: 'units_7d', label: 'Sold (7)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
@@ -189,7 +189,7 @@ function renderColumnHeader(
 
 export default function AmazonOrderHome() {
   const { logout } = useAuth();
-  const { data, error: loadError, isLoading: loading } = useApiQuery(
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
   );
@@ -432,9 +432,10 @@ export default function AmazonOrderHome() {
   const [orderProgress, setOrderProgress] = useState<{ done: number; total: number } | null>(null);
   const [orderResult, setOrderResult] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
-  // Session-only running total of what's just been queued per SKU, added on top of fba_total for display — mirrors legacy bumping
-  // amztotal/totalstock on screen after an order, so re-checking the same row later in the same sitting doesn't still look like it
-  // needs ordering (the underlying stock figures themselves don't change; only the supplier queue does — a page reload drops this).
+  // Session-only running total of what's just been queued per SKU, added on top of fba_total for display — an immediate "yes it
+  // went in" signal while submitOrder's refresh() (below) is still in flight. fba_total itself now counts not-yet-arrived Amazon
+  // orderstatus lines server-side (owner, 2026-08-13 — "otherwise we may double order"), so once that refresh lands the real
+  // number already includes what was just queued and the bump is cleared to avoid double-counting on screen.
   const [orderedBump, setOrderedBump] = useState<Record<string, number>>({});
 
   async function submitOrder() {
@@ -465,6 +466,12 @@ export default function AmazonOrderHome() {
     setOrderProgress(null); setOrdering(false);
     setOrderResult(`Queued ${queued} SKU${queued === 1 ? '' : 's'} to Order Status`);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
+    // Re-fetch so fba_total picks up the lines just queued (it now counts not-yet-arrived orderstatus rows server-side) — the
+    // client-only orderedBump was only ever a stand-in for this round trip, so it's dropped once the real number is in.
+    if (queued > 0) {
+      await refresh();
+      setOrderedBump({});
+    }
   }
 
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
