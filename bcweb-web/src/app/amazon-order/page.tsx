@@ -308,12 +308,11 @@ export default function AmazonOrderHome() {
     if (key === 'order_qty') {
       const newDir: 'asc' | 'desc' = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : DEFAULT_DIR[key];
       const dirMul = newDir === 'asc' ? 1 : -1;
+      // Empty/unset boxes count as 0 here (not "sorts last" — see sortValue's rule for every other column), so ascending genuinely
+      // starts with the untouched rows rather than burying them after every non-empty box (owner, 2026-08-13).
       const snapshot = [...filtered].sort((a, b) => {
-        const av = orderQtyValue(a.code);
-        const bv = orderQtyValue(b.code);
-        if (av === null && bv === null) return a.code.localeCompare(b.code);
-        if (av === null) return 1;
-        if (bv === null) return -1;
+        const av = orderQtyValue(a.code) ?? 0;
+        const bv = orderQtyValue(b.code) ?? 0;
         const d = av - bv;
         if (d === 0) return a.code.localeCompare(b.code);
         return d * dirMul;
@@ -331,8 +330,16 @@ export default function AmazonOrderHome() {
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const byNormalSort = (a: AmazonOrderRow, b: AmazonOrderRow) => {
-      const av = sortKey === 'order_qty' ? orderQtyValue(a.code) : sortValue(a, sortKey);
-      const bv = sortKey === 'order_qty' ? orderQtyValue(b.code) : sortValue(b, sortKey);
+      // order_qty treats an empty box as 0, not "sorts last" (see onSort's snapshot above for why) — everything else keeps the
+      // usual "an unknown value isn't small" rule.
+      if (sortKey === 'order_qty') {
+        const av = orderQtyValue(a.code) ?? 0;
+        const bv = orderQtyValue(b.code) ?? 0;
+        const d = av - bv;
+        return d === 0 ? a.code.localeCompare(b.code) : d * dir;
+      }
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
       // Nulls always sort last, independent of direction.
       if (av === null && bv === null) return 0;
       if (av === null) return 1;
