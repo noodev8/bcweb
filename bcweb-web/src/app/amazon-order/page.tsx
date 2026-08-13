@@ -288,16 +288,6 @@ export default function AmazonOrderHome() {
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  // MANUAL ORDER — an explicit row order set by a coverage-fill click (see applyCoverage below), so the just-filled Order values
-  // sort to the top without having to live-resort on every keystroke as the operator edits them afterward (that would make the
-  // table jump around mid-edit, which a coverage click should NEVER do again after the one-off sort it asks for). Clicking any
-  // column header clears it — picking an explicit sort is the operator overriding the fill's ordering on purpose.
-  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
-  const onSort = (key: SortKey) => {
-    setManualOrder(null);
-    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
-  };
 
   // Order box value for a row, as a sortable number — empty/non-numeric reads as null (sorts last), same "unknown isn't small"
   // rule as sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad.
@@ -306,6 +296,36 @@ export default function AmazonOrderHome() {
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
+  };
+
+  // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
+  // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
+  // afterward would otherwise reorder the table out from under the operator's cursor mid-edit (owner, 2026-08-13: "confusing what
+  // I'm working on"). Clicking any OTHER column header clears it — picking a different explicit sort overrides the snapshot on
+  // purpose. Clicking the Order header again (to flip direction) retakes the snapshot from the current values.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
+  const onSort = (key: SortKey) => {
+    if (key === 'order_qty') {
+      const newDir: 'asc' | 'desc' = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : DEFAULT_DIR[key];
+      const dirMul = newDir === 'asc' ? 1 : -1;
+      const snapshot = [...filtered].sort((a, b) => {
+        const av = orderQtyValue(a.code);
+        const bv = orderQtyValue(b.code);
+        if (av === null && bv === null) return a.code.localeCompare(b.code);
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const d = av - bv;
+        if (d === 0) return a.code.localeCompare(b.code);
+        return d * dirMul;
+      }).map((r) => r.code);
+      setManualOrder(snapshot);
+      setSortKey(key);
+      setSortDir(newDir);
+      return;
+    }
+    setManualOrder(null);
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
   };
 
   const sorted = useMemo(() => {
