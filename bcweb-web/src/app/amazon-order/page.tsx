@@ -205,6 +205,7 @@ export default function AmazonOrderHome() {
   const [includes, setIncludes] = useState<string[]>([]);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [includeInput, setIncludeInput] = useState('');
+  const includeInputRef = useRef<HTMLInputElement>(null);
   const [excludeInput, setExcludeInput] = useState('');
 
   function addInclude() {
@@ -260,6 +261,7 @@ export default function AmazonOrderHome() {
     setCoverageMonths(null);
     setManualOrder(null);
     setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
+    includeInputRef.current?.focus();
   }
 
   // CLEAR ORDER — the dedicated action for wiping the Order scratchpad and its saved draft (see onReset above for why Reset itself
@@ -671,6 +673,7 @@ export default function AmazonOrderHome() {
             <div className="relative">
               <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
               <input
+                ref={includeInputRef}
                 value={includeInput}
                 onChange={onIncludeInputChange}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
