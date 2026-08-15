@@ -8,6 +8,11 @@ Purpose: Analytics module — Stock Position "Update now" button. Recomputes the
          day wins), then prunes any rows older than 2 years. Manual-trigger only (no cron) — the owner clicks Update to record a trend
          point, so merely viewing the page (GET /analytics-stock-position, read-only) never appends a snapshot.
 
+         Also returns `stock_value` — the CURRENT value of the stock we physically own, at cost, split local vs Amazon-held. Same
+         definition as the month-end accounting script C:\scripts\month-end\stock_position.py (see computeStockValue), so the figure
+         on screen is the one that goes into the accounts. It is computed live on the click and NOT persisted — the snapshot table
+         holds the per-channel catalogue counts only, so no migration is involved.
+
          Growth safeguard (why this is bounded):
            - (snapshot_date, channel) is the PK and we UPSERT it, so multiple clicks in one day overwrite the two rows — never append.
            - After the write we DELETE rows older than 2 years. So the table can hold at most ~1460 rows (2 channels x ~730 days).
@@ -27,7 +32,11 @@ Success Response:
              "alive": 231, "total": 265 },
     "amz": { ... same shape ... }
   },
-  "pruned": 0   // rows removed for being older than 2 years
+  "pruned": 0,   // rows removed for being older than 2 years
+  "stock_value": {
+    "local_units": 12345, "amz_units": 678, "units": 13023,       // units owned: #FREE local stock / Amazon-held / total
+    "local_value": 411234.56, "amz_value": 22345.00, "value": 433579.56   // the same split, valued at cost (GBP)
+  }
 }
 =======================================================================================================================================
 Return Codes:
@@ -41,7 +50,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { computeStockPosition } = require('../utils/stockPosition');
+const { computeStockPosition, computeStockValue } = require('../utils/stockPosition');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -72,8 +81,9 @@ function shape(r, date) {
 
 router.post('/', async (req, res) => {
   try {
-    // 1) Compute the current reading for both channels (read-only; shared util).
-    const { shp, amz } = await computeStockPosition();
+    // 1) Compute the current reading for both channels, plus the stock VALUE (money on the shelves at cost) — both read-only,
+    //    both from the shared util, run in parallel.
+    const [{ shp, amz }, stock_value] = await Promise.all([computeStockPosition(), computeStockValue()]);
 
     // 2) Upsert today's two rows + prune past the 2-year retention, atomically. Latest run of the day wins.
     const pruned = await withTransaction(async (client) => {
@@ -104,7 +114,9 @@ router.post('/', async (req, res) => {
     const date = todayIso();
     const today = { shp: shape(shp, date), amz: shape(amz, date) };
 
-    return res.json({ return_code: 'SUCCESS', today, pruned });
+    // stock_value is NOT stored — it's a live reading taken at the moment of the click (the snapshot table is the per-channel
+    // living-catalogue counts only). Returned for display on the screen.
+    return res.json({ return_code: 'SUCCESS', today, pruned, stock_value });
   } catch (err) {
     logger.error('[analytics-stock-position-update] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to update Stock Position snapshot' });

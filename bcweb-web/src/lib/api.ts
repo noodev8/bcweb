@@ -794,12 +794,24 @@ export function getStockPosition(days?: number) {
   );
 }
 
+// The value of the stock we physically own, at cost, taken live at the moment "Update now" is pressed. Local = sellable #FREE
+// localstock; Amazon = Amazon-held (FBA) units. Same definition as the month-end accounting script, so it matches the accounts.
+export interface StockValue {
+  local_units: number;
+  amz_units: number;
+  units: number;
+  local_value: number;
+  amz_value: number;
+  value: number;
+}
+
 // "Update now" button — recompute both channels and upsert today's two rows (latest run of the day wins), prune rows older than 2
-// years. Returns the freshly-computed `today`; the page reloads via GET afterwards to pick up the new history point.
+// years. Returns the freshly-computed `today` plus the live `stock_value`; the page reloads via GET afterwards to pick up the new
+// history point. `stock_value` is only available here (the GET doesn't compute it), so the page holds onto it after the call.
 export function updateStockPosition() {
-  return request<{ today: { shp: StockPositionRow; amz: StockPositionRow }; pruned: number }>(
+  return request<{ today: { shp: StockPositionRow; amz: StockPositionRow }; pruned: number; stock_value: StockValue | null }>(
     { url: '/analytics-stock-position-update', method: 'POST' },
-    (b) => ({ today: b.today, pruned: b.pruned ?? 0 })
+    (b) => ({ today: b.today, pruned: b.pruned ?? 0, stock_value: b.stock_value ?? null })
   );
 }
 

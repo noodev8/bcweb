@@ -15,10 +15,12 @@ Purpose: A "active catalogue" gauge — how many products are commercially ALIVE
            - Sold, now empty      (out of stock but sold in last 12 months)  )
            - Dormant              (no stock AND no sale in 12 months)        -> NOT alive; the "gone quiet" pile to triage later.
 
-         Snapshot-on-view: just loading this page takes today's reading and stores it (GET /analytics-stock-position upserts today's
-         rows), so visiting "now and again" quietly builds the trend — no cron, no Update button.
+         Viewing is read-only (the GET computes today's live figures but stores nothing). "Update now" is the deliberate act that
+         records a trend point — and it ALSO returns the current STOCK VALUE (money on the shelves at cost, split our-warehouse vs
+         Amazon-held, matching the month-end accounts figure), which is shown in its own card below the button. That value isn't
+         stored or computed on view, so it only appears once you press Update.
 
-Guarded by AppShell. Consumes GET /analytics-stock-position.
+Guarded by AppShell. Consumes GET /analytics-stock-position and POST /analytics-stock-position-update.
 =======================================================================================================================================
 */
 
@@ -29,7 +31,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getStockPosition, updateStockPosition, getStockPositionList,
-  StockPositionRow, StockListItem, StockBucket,
+  StockPositionRow, StockListItem, StockBucket, StockValue,
 } from '@/lib/api';
 
 // Stable identity for "no history yet" — a fresh [] each render would change the identity of everything derived from it.
@@ -59,6 +61,9 @@ export default function StockPositionPage() {
   const { logout } = useAuth();
   const [updating, setUpdating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Stock value (money on the shelves at cost) — only the "Update now" POST computes it, so it appears after the first press and
+  // then stays on screen, stamped with the time it was taken.
+  const [stockValue, setStockValue] = useState<{ v: StockValue; at: string } | null>(null);
   // Errors from the actions on this page (drill-open, "Update now") — kept apart from the query's own error so a failed drill
   // doesn't tear down the headline that loaded fine.
   const [actionError, setActionError] = useState<string | null>(null);
@@ -103,6 +108,9 @@ export default function StockPositionPage() {
     const res = await updateStockPosition();
     if (res.success && res.data) {
       const { shp: s, amz: a } = res.data.today;
+      if (res.data.stock_value) {
+        setStockValue({ v: res.data.stock_value, at: new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) });
+      }
       setNotice(`Snapshot recorded — Shopify ${s.in_stock_selling} in stock + selling (of ${s.alive} active), Amazon ${a.in_stock_selling} (of ${a.alive} active).`);
       await refresh();
     } else {
@@ -157,6 +165,8 @@ export default function StockPositionPage() {
             {asOf && <span className="text-xs text-slate-400">Live as of {asOf}</span>}
           </div>
 
+          {stockValue && <StockValueCard v={stockValue.v} at={stockValue.at} />}
+
           {(histShp.length > 1 || histAmz.length > 1) ? (
             <div className="mt-6">
               <h2 className="mb-2 text-sm font-medium text-slate-600">In stock + selling over time</h2>
@@ -170,6 +180,47 @@ export default function StockPositionPage() {
         </>
       )}
     </AppShell>
+  );
+}
+
+// STOCK VALUE — the money sitting on the shelves, at cost. A separate question from the catalogue counts above (that's "how many
+// products are alive"), so it gets its own card rather than being folded into a channel panel: the split here is by WHERE the stock
+// physically is (our warehouse vs Amazon's), not by sales channel. Total value is the hero; units and the local/Amazon split are
+// supporting detail. Only appears after "Update now" — that click is what computes it.
+function StockValueCard({ v, at }: { v: StockValue; at: string }) {
+  const money = (n: number) => n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 });
+  const num = (n: number) => n.toLocaleString('en-GB');
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Stock value (at cost)</div>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-5xl font-bold leading-none tabular-nums text-brand-600">{money(v.value)}</span>
+        <span className="text-sm text-slate-500">{num(v.units)} units owned</span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 text-[13px] sm:grid-cols-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-slate-500">Here <span className="text-xs text-slate-400">— sellable, in our warehouse</span></span>
+          <span className="tabular-nums text-slate-700">
+            <span className="font-medium">{money(v.local_value)}</span>
+            <span className="ml-2 text-xs text-slate-400">{num(v.local_units)} units</span>
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-slate-500">At Amazon <span className="text-xs text-slate-400">— FBA-held</span></span>
+          <span className="tabular-nums text-slate-700">
+            <span className="font-medium">{money(v.amz_value)}</span>
+            <span className="ml-2 text-xs text-slate-400">{num(v.amz_units)} units</span>
+          </span>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-slate-400">
+        Same definition as the month-end accounts figure — sellable free stock plus Amazon-held units, valued at cost. Stock already
+        allocated to open orders is excluded. Taken {at}.
+      </p>
+    </div>
   );
 }
 
