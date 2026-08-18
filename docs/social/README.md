@@ -109,18 +109,15 @@ the pilot is reach and recognition, not traffic.
 
 ### Post template
 
-Four fixed parts, in this order:
+The caption wording lives in the code, not here — `CAPTION_TEMPLATE` in
+`bcweb-web/src/components/SocialCompose.tsx`. That is the single source of
+truth; this doc deliberately does not restate it, because a copy here would
+drift out of date the first time the wording changed. Only the opening hook is
+written per post.
 
-1. **Hook** — the style name and one concrete thing about it.
-2. **Range/stock line** — breadth, not specific SKUs. "Most colours, sizes 35–46."
-3. **Delivery badge** — *ordered by 2pm Mon–Fri, with you next working day.*
-   Every post, as a footer. **Not the headline every time** or it becomes
-   wallpaper.
-4. **Link line** — tagged URL (FB) / "link in bio" (IG).
-
-**Before the first post: check the site states the delivery promise in the same
-words.** A promise on social the site does not back is a customer-service
-problem, not a marketing win.
+**Check the site states the delivery promise in the same words.** A promise on
+social the site does not back is a customer-service problem, not a marketing
+win.
 
 ### Rotation
 

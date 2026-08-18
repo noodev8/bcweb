@@ -60,9 +60,14 @@ const SITE = 'https://brookfieldcomfort.com/collections/';
 
 /*
  * The caption every post starts from. Only the opening hook changes — it is the one line that depends on which product this is, and it
- * gets written by hand once you know. Everything below it is fixed by docs/social/README.md: the range line states depth without any
- * perishable fact (no counts, no prices, no colours, nothing that expires), and the delivery footer is word-for-word the same every
- * time, because consistency is what makes it stick.
+ * gets written by hand once you know. Everything below it is fixed by docs/social/README.md: no perishable fact anywhere in the fixed
+ * body (no counts, no prices, no colours, nothing that expires), word-for-word the same every time, because consistency is what makes
+ * it stick.
+ *
+ * THE DELIVERY PROMISE LEADS. README.md originally made it a footer, on the theory that a repeated headline turns into wallpaper. The
+ * owner overruled that (2026-08-18): next-day delivery is the reason someone buys from us rather than from the cheapest listing, so it
+ * is the first thing they read after the hook. The stock line then backs it up — next-day only means anything if the stock is really
+ * on the shelf — and the discount line stays deliberately vague ("often"), because a specific offer would expire and this text does not.
  *
  * It OPENS WITH TWO BLANK LINES on purpose — that is where the hook goes, and it leaves the blank line between hook and body already
  * in place. Deliberately no placeholder text in that gap: prefilled prompt text is the kind of thing that gets published by accident,
@@ -71,9 +76,11 @@ const SITE = 'https://brookfieldcomfort.com/collections/';
  */
 const CAPTION_TEMPLATE = `
 
-We stock them in depth. Actual stock on the shelf.
-
 Order by 2pm Mon–Fri and it's with you the next working day.
+
+Actual stock on the shelf, ready to go.
+
+Discounts often available.
 
 Have a look →`;
 
