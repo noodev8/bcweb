@@ -55,7 +55,7 @@ import {
 } from '@/lib/api';
 import {
   COURIERS, CUSTOMER_ORDERS_KEY, CUSTOMER_STATES,
-  courierShort, isOutstanding, orderedAt, worstCustomerState,
+  courierShort, isFba, isOutstanding, orderedAt, worstCustomerState,
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 
@@ -81,8 +81,9 @@ export default function CustomerOrderList() {
   const truncated = data?.truncated ?? false;
 
   const [selected, setSelected] = useState<string | null>(null);
-  // Two positions, not eight. See isOutstanding() — the screen asks one question and this is it.
-  const [filter, setFilter] = useState<'all' | 'pending'>('all');
+  // Two positions, not eight. See isOutstanding() — the screen asks one question and this is it. (Three now, but 'fba' is a
+  // different question — "what has Amazon got to ship" — not a third slice of the packing job.)
+  const [filter, setFilter] = useState<'all' | 'pending' | 'fba'>('all');
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -130,8 +131,10 @@ export default function CustomerOrderList() {
     return map;
   }, [lines]);
 
-  // The only tally the screen shows: how much is left to pack. The per-state breakdown it used to keep went with the chips.
+  // Two tallies, and they do NOT add up to lines.length — that is the point. `outstanding` is our packing job; `fba` is Amazon's,
+  // counted apart so it can't make a finished day look unfinished (see isOutstanding). Only `All` counts every line.
   const outstanding = useMemo(() => lines.reduce((n, l) => n + (isOutstanding(l.state) ? 1 : 0), 0), [lines]);
+  const fbaCount = useMemo(() => lines.reduce((n, l) => n + (isFba(l.state) ? 1 : 0), 0), [lines]);
 
   // Search spans everything you'd have in your hand when looking an order up: the order number off a picking note, the customer's
   // name off an email, a postcode off a label, or the SKU. Case-insensitive substring, no term parsing — this is a find box, not a
@@ -139,8 +142,9 @@ export default function CustomerOrderList() {
   const shown = useMemo(() => {
     const q = term.trim().toLowerCase();
     return lines.filter((l) => {
-      // The same isOutstanding() the chip counted with, so what the chip says and what it shows can never disagree.
+      // The same isOutstanding()/isFba() the chips counted with, so what a chip says and what it shows can never disagree.
       if (filter === 'pending' && !isOutstanding(l.state)) return false;
+      if (filter === 'fba' && !isFba(l.state)) return false;
       if (!q) return true;
       return (
         l.ordernum.toLowerCase().includes(q) ||
@@ -197,7 +201,22 @@ export default function CustomerOrderList() {
           onClick={() => setFilter(filter === 'pending' ? 'all' : 'pending')}
         />
 
-        <PackProgress packed={lines.length - outstanding} total={lines.length} />
+        {/* FBA, and ONLY when there are some. The opposite call to Pending's above, for the opposite reason: an FBA line is an
+            exception that needs an MCF order placing, so the chip appearing IS the reminder — where "FBA 0" every day would be
+            noise you'd stop seeing, which is exactly how the thing gets forgotten. Sky, to match the row stripe. */}
+        {fbaCount > 0 && (
+          <Chip
+            label="FBA"
+            count={fbaCount}
+            active={filter === 'fba'}
+            onClick={() => setFilter(filter === 'fba' ? 'all' : 'fba')}
+            tone="sky"
+          />
+        )}
+
+        {/* Progress is over OUR work only — FBA lines are out of both halves, so the bar can reach "All packed" on a day that has
+            an MCF order still to place. That is deliberate: the chip beside it is what says otherwise. */}
+        <PackProgress packed={lines.length - outstanding - fbaCount} total={lines.length - fbaCount} />
 
         {/* --- refresh ---------------------------------------------------------------------------------------------------------
             NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
@@ -420,22 +439,32 @@ function PackProgress({ packed, total }: { packed: number; total: number }) {
   );
 }
 
-// The `stripe` dot this used to take went with the per-state chips — with only All and Pending left there is no state to colour.
-function Chip({ label, count, active, onClick }: {
-  label: string; count: number; active: boolean; onClick: () => void;
+/*
+ * Chip — All / Pending / FBA.
+ *
+ * `tone` is the one bit of styling it takes: default slate for the two chips that slice our own work, 'sky' for FBA so it reads as a
+ * different KIND of thing at a glance and matches that row's stripe. Not a general colour prop — two tones, both spelled out, because
+ * the next state that wants a colour should have to justify it here rather than pass a class in.
+ */
+function Chip({ label, count, active, onClick, tone = 'slate' }: {
+  label: string; count: number; active: boolean; onClick: () => void; tone?: 'slate' | 'sky';
 }) {
+  const idle = tone === 'sky'
+    ? 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300'
+    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300';
+  const on = tone === 'sky' ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-800 bg-slate-800 text-white';
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
       className={
-        'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ' +
-        (active ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+        'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ' + (active ? on : idle)
       }
     >
       {label}
-      <span className={active ? 'text-white/70' : 'text-slate-400'}>{count}</span>
+      <span className={active ? 'text-white/70' : (tone === 'sky' ? 'text-sky-400' : 'text-slate-400')}>{count}</span>
     </button>
   );
 }

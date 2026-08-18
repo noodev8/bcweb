@@ -121,9 +121,30 @@ export const CUSTOMER_STATE_ORDER: CustomerOrderState[] =
  * `parked` ('Do not order') counts as outstanding, which is arguable — it's deliberately out of play, so it will never be packed and
  * will sit in the Pending count forever. It is left in because the alternative is a line that has silently vanished from both chips,
  * and there are zero such rows today. Revisit if that changes.
+ *
+ * FBA IS THE EXCEPTION THAT PROVED IT NEEDED ONE (owner, 2026-08-18). An `fba` line is fulfilled by Amazon Multi-Channel Fulfilment,
+ * not off our shelf: somebody places the MCF order and Amazon ships it direct. It NEVER gets boxed here, so it can never become
+ * `packed` — it just sits in Pending forever, and the screen reads "not finished" on a day that is finished. The evidence is
+ * one-sided: of the archived customer lines with amz > 0, 5 of 5 ended at batch '0' (unpacked), against 442 of 455 packed for
+ * everything else.
+ *
+ * So FBA lines are counted SEPARATELY rather than as outstanding work — see isFba() and the FBA chip in CustomerOrderList. They are
+ * NOT hidden: the whole risk of this change is forgetting to place the MCF order, so the chip exists to keep them in sight, and the
+ * `All` chip still counts every line. This is the one state that leaves the pack progress denominator; nothing else may follow it
+ * without the same kind of evidence.
  */
 export function isOutstanding(state: CustomerOrderState): boolean {
-  return state !== 'packed';
+  return state !== 'packed' && !isFba(state);
+}
+
+/*
+ * isFba(state) -> is this line Amazon's job rather than ours?
+ *
+ * Set automatically: orderSync phase E writes `amz` when a line has no shelf stock but amzfeed has some (utils/orderSync.js ~line
+ * 484), so a line lands here without anyone pressing anything. The manual "Order FBA" action sets the same column.
+ */
+export function isFba(state: CustomerOrderState): boolean {
+  return state === 'fba';
 }
 
 // The states that mean "someone needs to do something" — everything else is already handled and only needs to be findable.
