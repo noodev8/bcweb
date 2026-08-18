@@ -209,7 +209,10 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
               <tr className="border-b border-slate-200">
                 <th className="py-1.5 pr-6 font-medium">Size</th>
                 {/* Local first, then Total, with a real rule after Total to mark where "the answer" ends and "the evidence" begins. */}
-                <th className="w-16 py-1.5 px-3 text-right font-semibold text-slate-700">Local</th>
+                {/* Wider than Total because it is the only column that can carry a tag (the "Pick n" chip). Sized so the number and
+                    the chip sit on ONE line — at w-16 the chip wrapped and made that size's row double-height, which read as an
+                    error in the grid rather than a note on the number (owner, 2026-08-18). */}
+                <th className="w-28 py-1.5 px-3 text-right font-semibold text-slate-700">Local</th>
                 <th className="w-16 border-r-2 border-slate-200 py-1.5 pl-3 pr-4 text-right font-semibold text-slate-700">Total</th>
                 {DETAIL_GROUPS.map((g) =>
                   g.cols.map((c, i) => (
@@ -233,13 +236,20 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
                   <td className="whitespace-nowrap py-1.5 pr-6 text-slate-700">{sizeLabel(s)}</td>
                   {/* Zeros greyed rather than blank. Local carries a "Pick n" tag when some of it is committed to an order — the units
                       are still on the shelf, but an operator about to promise the last pair needs to see it is spoken for. */}
-                  <td className={`py-1.5 px-3 text-right font-semibold tabular-nums ${s.local ? 'text-slate-900' : 'text-slate-300'}`}>
-                    {s.local}
+                  <td className={`whitespace-nowrap py-1.5 px-3 text-right font-semibold tabular-nums ${s.local ? 'text-slate-900' : 'text-slate-300'}`}>
+                    {/* Chip BEFORE the number, not after: this is a right-aligned numeric column, so a tag on the right pushes the
+                        digit out of the column of digits and the eye loses the vertical line it was scanning. On the left the tag
+                        hangs off into the column's slack and every Local figure still shares one right edge. leading-none keeps it
+                        from growing the row. */}
                     {s.buckets.picked > 0 && (
-                      <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 align-middle text-[10px] font-medium text-amber-700">
+                      <span
+                        title={`${s.buckets.picked} of these ${s.buckets.picked === 1 ? 'is' : 'are'} picked for a customer order — still on the shelf, but spoken for`}
+                        className="mr-1.5 rounded bg-amber-50 px-1 py-0.5 align-middle text-[10px] font-medium leading-none text-amber-700"
+                      >
                         Pick {s.buckets.picked}
                       </span>
                     )}
+                    {s.local}
                   </td>
                   <td className={`border-r-2 border-slate-200 py-1.5 pl-3 pr-4 text-right font-semibold tabular-nums ${s.total ? 'text-slate-900' : 'text-slate-300'}`}>{s.total}</td>
                   {DETAIL_GROUPS.map((g) =>
