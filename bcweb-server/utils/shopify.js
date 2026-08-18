@@ -233,6 +233,75 @@ const PRODUCT_SET_MUTATION = `
 `;
 
 /*
+ * PUBLISHING (sales channels) — the step productSet cannot do.
+ *
+ * `status: ACTIVE` only means "not draft, not archived". It says NOTHING about which sales channels the product is published to, and
+ * ProductSetInput has no field for publications. So every product this module CREATED between 2026-07-08 and 2026-08-18 landed ACTIVE
+ * but published to nothing: invisible on the Online Store and absent from the Google & YouTube channel, so Merchant Center had nothing
+ * to advertise. The owner was fixing each one by hand in the Shopify UI (Publishing -> All channels).
+ *
+ * We deliberately do NOT hardcode the channel list. `publications(first: 50)` asks Shopify what the store has RIGHT NOW, and we publish
+ * to all of it — so adding a channel in Shopify needs no code change here and nobody has to remember this file exists. As of 2026-08-18
+ * that resolves to the six the owner ticks by hand: Online Store, Facebook & Instagram, Google & YouTube, Shop, TikTok, Inbox. (The
+ * "Regions"/market catalog and "Agentic" entries visible in the UI are not product publications — a hand-published product's
+ * resourcePublicationsV2 lists only those six — so there is nothing missing here.)
+ *
+ * Needs read_publications + write_publications on SHOPIFY_ACCESS_TOKEN (added to the custom app 2026-08-18).
+ */
+const PUBLICATIONS_QUERY = `
+  query publications {
+    publications(first: 50) { nodes { id name } }
+  }
+`;
+
+const PUBLISHABLE_PUBLISH_MUTATION = `
+  mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
+    publishablePublish(id: $id, input: $input) {
+      userErrors { field message }
+    }
+  }
+`;
+
+/*
+ * publishToAllChannels(productId)
+ * Publish one product to every publication the store currently has. NEVER THROWS — the product already exists and our DB is already
+ * correct by the time this runs, so a publishing failure must not turn a successful create into a failure. It reports instead, and the
+ * operator can fall back to the manual toggle for that one product.
+ * Returns { published: <count>, channels: [names] } or { published: 0, error, message }.
+ */
+async function publishToAllChannels(productId) {
+  try {
+    const pubData = await shopifyGraphQL(PUBLICATIONS_QUERY);
+    const pubs = (pubData.publications && pubData.publications.nodes) || [];
+    if (!pubs.length) {
+      // No publications at all is not an error we can act on, but it IS worth seeing in the log — it usually means a missing scope.
+      logger.error('[shopify] publishToAllChannels: store returned no publications (read_publications scope missing?)');
+      return { published: 0, error: 'NO_PUBLICATIONS', message: 'Shopify returned no publications' };
+    }
+
+    // publishablePublish is idempotent: re-publishing to a channel the product is already on is a no-op, not an error.
+    const data = await shopifyGraphQL(PUBLISHABLE_PUBLISH_MUTATION, {
+      id: productId,
+      input: pubs.map((p) => ({ publicationId: p.id }))
+    });
+
+    const errs = (data.publishablePublish && data.publishablePublish.userErrors) || [];
+    if (errs.length) {
+      const msg = errs.map((e) => `${(e.field || []).join('.')}: ${e.message}`).join('; ');
+      logger.error(`[shopify] publish failed for ${productId}: ${msg}`);
+      return { published: 0, error: 'SHOPIFY_USER_ERRORS', message: msg };
+    }
+
+    const names = pubs.map((p) => p.name);
+    logger.info(`[shopify] published ${productId} to ${names.length} channels: ${names.join(', ')}`);
+    return { published: names.length, channels: names };
+  } catch (err) {
+    logger.error(`[shopify] publish failed for ${productId}: ${err.code || ''} ${err.message}`);
+    return { published: 0, error: err.code || 'SHOPIFY_PUSH_FAILED', message: err.message };
+  }
+}
+
+/*
  * upsertProduct(groupid, { status })
  * The main entry point. Reads the product from OUR DB, builds the input, calls productSet, then caches variant ids back into
  * skumap.variantlink. Throws a coded error on any problem so the route can map it to a return_code:
@@ -332,8 +401,25 @@ async function upsertProduct(groupid, { status = 'ACTIVE' } = {}) {
     }
   }
 
+  /*
+   * Publish to the sales channels — ON CREATE ONLY (see publishToAllChannels above for why productSet can't do it).
+   *
+   * Why not on an edit too: pushIfLive re-pushes on every price change, so publishing here would silently RE-PUBLISH any product the
+   * owner had deliberately unpublished (a discontinued line, something held back) the next time its price moved. Publishing is an
+   * intent that belongs to "this product is new", not to "this product was saved". A create is also the only case that is broken today.
+   * Best-effort: never let a publish failure fail a create that already succeeded.
+   */
+  let publishResult = null;
+  if (isNew) publishResult = await publishToAllChannels(shopProduct.id);
+
   logger.info(`[shopify] upsert ${groupid}: ${isNew ? 'CREATED' : 'updated'} product ${shopProduct.id}, ${returnedVariants.length} variants, ${linked} links cached`);
-  return { productId: shopProduct.id, handle: shopProduct.handle, variantCount: returnedVariants.length, isNew };
+  return {
+    productId: shopProduct.id,
+    handle: shopProduct.handle,
+    variantCount: returnedVariants.length,
+    isNew,
+    published: publishResult
+  };
 }
 
 const PRODUCT_DELETE_MUTATION = `
@@ -371,7 +457,7 @@ async function deleteByHandle(handle) {
  * price, sizes, barcodes, image; never the description on an edit). Best-effort by design: it NEVER throws, so a Shopify hiccup can't
  * fail or roll back a DB save that already succeeded. Returns:
  *    null                                           -> not live, or Shopify not configured (nothing to do; caller shows nothing)
- *    { pushed: true, isNew, variantCount }          -> pushed OK
+ *    { pushed: true, isNew, variantCount, published } -> pushed OK (published = the sales-channel result, null unless it was a create)
  *    { pushed: false, error, message }              -> live but the push failed (caller surfaces it; the DB save still stands)
  * Call it AFTER the DB write has committed.
  */
@@ -381,11 +467,11 @@ async function pushIfLive(groupid, { status = 'ACTIVE' } = {}) {
   if (!r.rows.length || r.rows[0].shopify !== 1) return null;
   try {
     const res = await upsertProduct(groupid, { status });
-    return { pushed: true, isNew: res.isNew, variantCount: res.variantCount };
+    return { pushed: true, isNew: res.isNew, variantCount: res.variantCount, published: res.published };
   } catch (err) {
     logger.error(`[shopify] pushIfLive failed for ${groupid}: ${err.code || ''} ${err.message}`);
     return { pushed: false, error: err.code || 'SHOPIFY_PUSH_FAILED', message: err.message };
   }
 }
 
-module.exports = { isConfigured, buildProductSetInput, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, pushIfLive };
+module.exports = { isConfigured, buildProductSetInput, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive };
