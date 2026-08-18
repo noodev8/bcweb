@@ -130,11 +130,26 @@ export const CUSTOMER_STATE_ORDER: CustomerOrderState[] =
  *
  * So FBA lines are counted SEPARATELY rather than as outstanding work — see isFba() and the FBA chip in CustomerOrderList. They are
  * NOT hidden: the whole risk of this change is forgetting to place the MCF order, so the chip exists to keep them in sight, and the
- * `All` chip still counts every line. This is the one state that leaves the pack progress denominator; nothing else may follow it
- * without the same kind of evidence.
+ * `All` chip still counts every line.
+ *
+ * WAITING FOLLOWS IT, for the same reason (owner, BC18932). `customerwaiting = 1` means we KNOW the line can't be fulfilled now and
+ * the customer has been told — it is parked on the customer's say-so, not queued for the bench. It can't be packed today however
+ * well the day goes, so leaving it in the denominator means the bar never reaches "All packed" while one sits there. Same treatment
+ * as FBA: out of both halves of the packing job, kept visible by its own chip.
  */
 export function isOutstanding(state: CustomerOrderState): boolean {
-  return state !== 'packed' && !isFba(state);
+  return state !== 'packed' && !isFba(state) && !isWaiting(state);
+}
+
+/*
+ * isWaiting(state) -> has this line been told to the customer and set aside?
+ *
+ * Set by hand, from the action bar (routes/order-status-customer-waiting.js writes `customerwaiting`). Note that `no_stock` outranks
+ * `waiting` in rowState(), so a line the sweep found nothing for still reads as no_stock and stays in the packing job — only a line
+ * that is BOTH flagged and has stock somewhere lands here.
+ */
+export function isWaiting(state: CustomerOrderState): boolean {
+  return state === 'waiting';
 }
 
 /*
