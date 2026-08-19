@@ -63,7 +63,7 @@ LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
-  FunnelIcon,
+  FunnelIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
@@ -96,6 +96,15 @@ function isBirkenstock(r: AmazonOrderRow): boolean {
 // (unit_profit === null) is not treated as a loss, since there's nothing to judge it on.
 function isLoss(r: AmazonOrderRow): boolean {
   return r.unit_profit !== null && r.unit_profit <= 0;
+}
+
+// SOLD IN 6MO — unit_profit (skumap.amzprofit) is STICKY (route header, amazon-order-list.js): a SKU that sold once over a year
+// ago and never since still carries that figure, so it can pass Potential's >£3 test on a stale number. This reads last_sold
+// (MAX(sales.solddate), also computed fresh at request time — see below) instead. A never-sold SKU (last_sold === null) fails.
+const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30.44 * 6;
+function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
+  if (!r.last_sold) return false;
+  return new Date(r.last_sold + 'T00:00:00Z').getTime() >= cutoffMs;
 }
 
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
@@ -238,6 +247,12 @@ export default function AmazonOrderHome() {
   function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
 
+  // SOLD IN 6MO — independent of Winners/Potential (not baked into either test, owner 2026-08-19: "leave it as an optional"),
+  // combinable with both or used alone. Strips out rows whose unit_profit is only passing a margin test on a stale last sale —
+  // see isRecentlySold above.
+  const [soldRecentlyOnly, setSoldRecentlyOnly] = useState(false);
+  function toggleSoldRecently() { setSoldRecentlyOnly((v) => !v); }
+
   // ORDERS ONLY — a third quick preset, independent of Winners/Potential (can be combined with either): show only rows with a
   // positive number currently sitting in the Order box. A live filter, not a snapshot — re-evaluates as orderQty changes, so typing
   // a value while it's on doesn't require re-toggling to bring the row in. Order scratchpad values, keyed by code — declared here
@@ -256,7 +271,7 @@ export default function AmazonOrderHome() {
   // reset, not a "start the order over" action. Clear Order (below) is the dedicated action for that.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
-    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); setSoldRecentlyOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageMonths(null);
     setManualOrder(null);
@@ -287,11 +302,15 @@ export default function AmazonOrderHome() {
     }
     if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
     if (potentialOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3);
+    if (soldRecentlyOnly) {
+      const cutoffMs = Date.now() - SIX_MONTHS_MS;
+      out = out.filter((r) => isRecentlySold(r, cutoffMs));
+    }
     if (ordersOnly) out = out.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, ordersOnly, orderQty, focusedOrderCode]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, soldRecentlyOnly, ordersOnly, orderQty, focusedOrderCode]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || ordersOnly;
+  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || soldRecentlyOnly || ordersOnly;
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -727,6 +746,20 @@ export default function AmazonOrderHome() {
           </button>
           <button
             type="button"
+            onClick={toggleSoldRecently}
+            title="Show only SKUs that have actually sold on Amazon in the last 6 months — unit profit is sticky and can be a year+ stale"
+            className={
+              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
+              (soldRecentlyOnly
+                ? 'border-violet-500 bg-violet-50 text-violet-700'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
+          >
+            <ClockIcon className="h-4 w-4" />
+            Sold in 6mo
+          </button>
+          <button
+            type="button"
             onClick={toggleOrdersOnly}
             title="Load only SKUs with a number currently in Order — combines with Winners/Potential"
             className={
@@ -739,27 +772,8 @@ export default function AmazonOrderHome() {
             <FunnelIcon className="h-4 w-4" />
             Load order
           </button>
-          {/* Coverage fill — writes the Order box for every row ON SCREEN (filter down first, then click). See applyCoverage. */}
-          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
-            {COVERAGE_OPTIONS.map((months) => (
-              <button
-                key={months}
-                type="button"
-                onClick={() => applyCoverage(months)}
-                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`}
-                className={
-                  'rounded px-2.5 py-1 text-sm font-medium ' +
-                  (coverageMonths === months
-                    ? 'bg-brand-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100')
-                }
-              >
-                {months === 0.5 ? '½' : months}
-              </button>
-            ))}
-          </div>
 
-          {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets/coverage on the left. */}
+          {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets on the left. */}
           <div className="ml-auto flex items-center gap-2">
             {/* SEND TO ORDER STATUS — turns every positive Order box into real orderstatus TO PLACE rows via /order-status-add, one
                 unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
@@ -804,6 +818,30 @@ export default function AmazonOrderHome() {
               <ArrowPathIcon className="h-4 w-4" />
               Reset
             </button>
+          </div>
+        </div>
+
+        {/* Coverage fill — its own row, separate from the presets above (owner, 2026-08-19: "the row feels cluttered" once Sold in
+            6mo joined Winners/Potential/Load order). Writes the Order box for every row ON SCREEN (filter down first, then click
+            a rate) — see applyCoverage. */}
+        <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            {COVERAGE_OPTIONS.map((months) => (
+              <button
+                key={months}
+                type="button"
+                onClick={() => applyCoverage(months)}
+                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`}
+                className={
+                  'rounded px-2.5 py-1 text-sm font-medium ' +
+                  (coverageMonths === months
+                    ? 'bg-brand-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100')
+                }
+              >
+                {months === 0.5 ? '½' : months}
+              </button>
+            ))}
           </div>
         </div>
 

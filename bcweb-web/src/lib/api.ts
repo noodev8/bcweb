@@ -138,6 +138,7 @@ export interface AmazonOrderRow {
   fba_total: number; fba_live: number;
   barcode: string | null; amz_sku: string | null; supplier: string | null;
   local_stock: number; cost: number | null;
+  last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
 }
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {

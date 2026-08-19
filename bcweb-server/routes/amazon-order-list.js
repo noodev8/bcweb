@@ -39,6 +39,11 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          cost = skusummary.cost (CLAUDE.md: order cost is ALWAYS skusummary.cost via safeNumeric, never skumap.cost — blank/
          placeholder on many rows). Used by the web page to total up what the on-screen proposed Order would cost to buy in.
 
+         last_sold = MAX(sales.solddate) WHERE channel='AMZ' AND qty>0, same shape as routes/amz-all.js's own `ls` CTE. Exists
+         because unit_profit (skumap.amzprofit) is STICKY — it can be a year+ old and still pass the Potential Winners £3 test — so
+         the web page's optional "Sold in 6mo" toggle uses this to tell a genuinely recent sale apart from a stale one. Null when
+         the SKU has never sold on Amazon.
+
          Order / Pick have NO server field — they are a session-only scratchpad the web page keeps in browser state, not persisted.
 
          NO server-side search/limit (unlike amz-all's listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
@@ -57,7 +62,8 @@ Success Response:
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10,
-      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3, "cost": 18.50 },
+      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3, "cost": 18.50,
+      "last_sold": "2026-06-02" },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
 }
@@ -109,6 +115,11 @@ router.get('/', async (req, res) => {
         FROM orderstatus o
         WHERE o.arrived = 0 AND o.ordertype = 3
         GROUP BY o.shopifysku
+      ),
+      lastsold AS (
+        -- Most recent Amazon sale date per code, same shape as routes/amz-all.js's own 'ls' CTE — lets the web page tell a genuinely
+        -- recent sale apart from unit_profit's STICKY last-seen figure (which can be a year+ stale and still pass a >£3 test).
+        SELECT code, MAX(solddate) AS last_sold FROM sales WHERE channel='AMZ' AND qty>0 GROUP BY code
       )
       SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
              t.shopifytitle AS title,
@@ -122,7 +133,8 @@ router.get('/', async (req, res) => {
              a.sku AS amz_sku,
              m.supplier AS supplier,
              COALESCE(loc.units,0) AS local_stock,
-             ${safeNumeric('sk.cost')} AS cost
+             ${safeNumeric('sk.cost')} AS cost,
+             to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code
@@ -130,6 +142,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN loc ON loc.code = a.code
       LEFT JOIN staged ON staged.code = a.code
       LEFT JOIN ord ON ord.code = a.code
+      LEFT JOIN lastsold ON lastsold.code = a.code
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
@@ -153,6 +166,7 @@ router.get('/', async (req, res) => {
         supplier: r.supplier || null,
         local_stock: Number(r.local_stock) || 0,
         cost: num(r.cost),
+        last_sold: r.last_sold || null,
       };
     });
 
