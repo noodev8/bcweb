@@ -504,7 +504,7 @@ export default function AmazonOrderHome() {
   // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
   // Reset brings it back. Applied last, after search + sort, so cutting never fights with either. Declared HERE, ahead of
   // applyCoverage below, because that reads `visible` — the React Compiler can't preserve a memo that's consumed above its own
-  // declaration (it assumes the value may still be mutated), and the bail-out cascades into visibleOrderCost and cursorKeys.
+  // declaration (it assumes the value may still be mutated), and the bail-out cascades into basketOnScreenCount and cursorKeys.
   const [cut, setCut] = useState<Set<string>>(new Set());
   const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
 
@@ -579,22 +579,29 @@ export default function AmazonOrderHome() {
     clearOrderQtyFor([code]);
   }
 
-  // ON-SCREEN ORDER COST — total spend of the proposed Order, restricted to rows CURRENTLY VISIBLE (unlike orderTargets above,
-  // which deliberately reaches off-screen so nothing typed before a filter/cut is silently dropped from the real submission). This
-  // is a display-only running total, scoped to what the operator is looking at right now. cost = skusummary.cost (CLAUDE.md: never
-  // skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently treated as free.
-  const visibleOrderCost = useMemo(() => {
+  // ON SCREEN / TOTAL — how much of the whole basket is visible right now, e.g. "10/41" when only 10 of the basket's 41 SKUs are
+  // on screen (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all here or mostly filtered/cut away
+  // elsewhere). orderTargets itself deliberately reaches off-screen (a value typed before a filter/cut shouldn't silently drop
+  // out of the real submission) — this is the on-screen SUBSET of it, display-only.
+  const basketOnScreen = useMemo(() => {
+    const visibleCodes = new Set(visible.map((r) => r.code));
+    return orderTargets.filter((t) => visibleCodes.has(t.code));
+  }, [orderTargets, visible]);
+  const basketOnScreenCount = basketOnScreen.length;
+
+  // BASKET COST — total spend of the ON-SCREEN portion of the basket only (owner, 2026-08-20 — "the cost should only be for
+  // what's on the screen"), matching basketOnScreenCount above rather than the whole basket. cost = skusummary.cost (CLAUDE.md:
+  // never skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently free.
+  const basketCost = useMemo(() => {
     let total = 0;
     let unpriced = 0;
-    for (const r of visible) {
-      if (isBirkenstock(r)) continue;
-      const qty = Math.floor(Number(orderQty[r.code]));
-      if (!Number.isFinite(qty) || qty <= 0) continue;
-      if (r.cost === null) { unpriced += qty; continue; }
-      total += qty * r.cost;
+    for (const t of basketOnScreen) {
+      const row = rowByCode.get(t.code);
+      if (row?.cost === null || row?.cost === undefined) { unpriced += t.qty; continue; }
+      total += t.qty * row.cost;
     }
     return { total, unpriced };
-  }, [visible, orderQty]);
+  }, [basketOnScreen, rowByCode]);
 
   // Keyboard cursor over the visible rows — click a row (or arrow Up/Down) to move the highlight, Enter cuts the current row. Keys
   // are the VISIBLE rows only, so a cut row can never be the cursor's target and arrowing always lands on something on screen.
@@ -767,31 +774,10 @@ export default function AmazonOrderHome() {
             Load basket
           </button>
 
-          {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets on the left. */}
+          {/* Cut + Reset + Basket — pushed to the right (ml-auto), apart from the presets on the left. Basket sits LAST, at the
+              very right edge of the toolbar (owner, 2026-08-20) — it's the "final" action of the row, after the view actions
+              (Cut/Reset) that come before it. */}
           <div className="ml-auto flex items-center gap-2">
-            {/* SEND TO ORDER STATUS — turns every positive Order box into real orderstatus TO PLACE rows via /order-status-add, one
-                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
-                before it writes anything, since this is a real DB write rather than more scratchpad editing. */}
-            {!confirmingOrder ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingOrder(true)}
-                disabled={ordering || orderTargets.length === 0}
-                title="Send every SKU with a number in Basket to the Order Status TO PLACE queue"
-                className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
-              >
-                <ShoppingCartIcon className="h-4 w-4" />
-                {ordering && orderProgress ? `Queuing ${orderProgress.done}/${orderProgress.total}…` : `Basket (${orderTargets.length})`}
-              </button>
-            ) : (
-              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-                <span className="text-slate-700">
-                  Queue {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'}?
-                </span>
-                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Yes</button>
-                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
-              </span>
-            )}
             <button
               type="button"
               onClick={cutSelected}
@@ -812,6 +798,46 @@ export default function AmazonOrderHome() {
               <ArrowPathIcon className="h-4 w-4" />
               Reset
             </button>
+            {/* SEND TO ORDER STATUS — turns every positive Order box into real orderstatus TO PLACE rows via /order-status-add, one
+                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
+                before it writes anything, since this is a real DB write rather than more scratchpad editing. Taller than the other
+                buttons (py-1.5 vs py-2, plus a second line) so the on-screen Basket cost can sit under the count instead of
+                needing its own status-row line (owner, 2026-08-20). */}
+            {!confirmingOrder ? (
+              <button
+                type="button"
+                onClick={() => setConfirmingOrder(true)}
+                disabled={ordering || orderTargets.length === 0}
+                title={
+                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue. Cost shown is for on-screen rows only.` +
+                  (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
+                }
+                className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
+              >
+                <ShoppingCartIcon className="h-5 w-5" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-sm font-medium">
+                    {ordering && orderProgress
+                      ? `Queuing ${orderProgress.done}/${orderProgress.total}…`
+                      : `Basket (${basketOnScreenCount}/${orderTargets.length})`}
+                  </span>
+                  {!ordering && (basketCost.total > 0 || basketCost.unpriced > 0) && (
+                    <span className="text-xs font-normal text-emerald-600">
+                      {money(basketCost.total)}
+                      {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                <span className="text-slate-700">
+                  Queue {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'}?
+                </span>
+                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Yes</button>
+                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
+              </span>
+            )}
           </div>
         </div>
 
@@ -854,23 +880,8 @@ export default function AmazonOrderHome() {
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
             )}
           </span>
-          {/* ON-SCREEN ORDER COST — see visibleOrderCost above: total cost of the proposed Order, rows currently visible only. */}
-          {(visibleOrderCost.total > 0 || visibleOrderCost.unpriced > 0) && (
-            <>
-              <span className="text-slate-300">|</span>
-              <span
-                className="whitespace-nowrap text-slate-500"
-                title="Total skusummary.cost x Basket qty, for rows currently on screen only (filters/cuts change this)"
-              >
-                Basket cost: <span className="font-semibold text-slate-800">{money(visibleOrderCost.total)}</span>
-                {visibleOrderCost.unpriced > 0 && (
-                  <span className="ml-1 text-amber-600" title={`${visibleOrderCost.unpriced} unit${visibleOrderCost.unpriced === 1 ? '' : 's'} with no known cost — not included in the total`}>
-                    (+{visibleOrderCost.unpriced} unpriced)
-                  </span>
-                )}
-              </span>
-            </>
-          )}
+          {/* Basket cost now lives on the Basket button itself (basketCost above) rather than its own status-row line
+              (owner, 2026-08-20). */}
           {cut.size > 0 && (
             <>
               <span className="text-slate-300">|</span>
