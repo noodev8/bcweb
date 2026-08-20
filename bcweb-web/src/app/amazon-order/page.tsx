@@ -123,16 +123,6 @@ interface AmazonOrderDraft {
   orderQty?: Record<string, string>;
   savedAt?: number;
 }
-function relativeSaved(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
 // 'order_qty' is NOT a row field (it's the client-only Order scratchpad, keyed separately by code) — sortValue can't resolve it,
 // so `sorted` below special-cases it by reading the live orderQty state directly.
 type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier' | 'order_qty';
@@ -264,7 +254,8 @@ export default function AmazonOrderHome() {
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
   // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
   // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
-  // reset, not a "start the order over" action. Clear Order (below) is the dedicated action for that.
+  // reset, not a "start the order over" action. To clear the scratchpad, re-tap the active rate button (applyCoverage below
+  // already wipes and refills it from scratch on every click, owner 2026-08-20 — no separate "clear order" action needed).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
@@ -273,15 +264,6 @@ export default function AmazonOrderHome() {
     setManualOrder(null);
     setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
-  }
-
-  // CLEAR ORDER — the dedicated action for wiping the Order scratchpad and its saved draft (see onReset above for why Reset itself
-  // leaves this alone). Also drops the coverage-fill highlight/sort, since both are meaningless once the values they ranked are gone.
-  function clearOrder() {
-    setOrderQty({});
-    setCoverageMonths(null); setManualOrder(null);
-    setConfirmingOrder(false);
-    localStorage.removeItem(DRAFT_KEY); setDraftSavedAt(null);
   }
 
   const filtered = useMemo(() => {
@@ -391,7 +373,6 @@ export default function AmazonOrderHome() {
   // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
   // DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as free text rather than <input type="number">
   // so a half-typed value never gets silently clamped/rounded mid-entry.
-  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   // LOAD the saved draft once on mount, before the autosave effect below is allowed to write anything (loadedDraftRef gates it) — see
   // the header comment for why: without the gate, autosave's own first run (still seeing the empty initial state) could schedule a
@@ -411,7 +392,6 @@ export default function AmazonOrderHome() {
         const draft = JSON.parse(raw) as AmazonOrderDraft;
         if (draft.savedAt && Date.now() - draft.savedAt <= DRAFT_MAX_AGE_MS) {
           if (draft.orderQty) setOrderQty(draft.orderQty);
-          setDraftSavedAt(draft.savedAt);
         } else {
           localStorage.removeItem(DRAFT_KEY);
         }
@@ -432,12 +412,10 @@ export default function AmazonOrderHome() {
     draftSaveTimer.current = setTimeout(() => {
       if (Object.keys(orderQty).length === 0) {
         localStorage.removeItem(DRAFT_KEY);
-        setDraftSavedAt(null);
         return;
       }
       const savedAt = Date.now();
       localStorage.setItem(DRAFT_KEY, JSON.stringify({ orderQty, savedAt } satisfies AmazonOrderDraft));
-      setDraftSavedAt(savedAt);
     }, 500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
   }, [orderQty]);
@@ -521,14 +499,21 @@ export default function AmazonOrderHome() {
   // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
   // later). A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
   // than written as 0 — its box is simply left out of the fill. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
-  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. `coverageMonths`
-  // only tracks which button is lit; clicking ANY rate button (including the one already active) wipes the ENTIRE Order scratchpad
-  // first — including the saved browser draft, via the same autosave effect that persists it — and refills from scratch, so a rate
-  // click always reflects one clean calculation rather than layering onto whatever was typed or filled before (owner, 2026-08-13).
-  // Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show what was just added
-  // without the operator having to click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
+  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. Clicking the
+  // ALREADY-ACTIVE rate button is the clear gesture (owner, 2026-08-20) — it toggles off, wiping the Order scratchpad (and its
+  // saved browser draft) back to empty instead of recomputing the same fill. Clicking a DIFFERENT rate wipes and refills from
+  // scratch, so a rate click always reflects one clean calculation rather than layering onto whatever was typed or filled before
+  // (owner, 2026-08-13). Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show
+  // what was just added without the operator having to click the Order column (which isn't even a sortable header) — see the
+  // `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
+    if (coverageMonths === months) {
+      setCoverageMonths(null);
+      setOrderQty({});
+      setManualOrder(null);
+      return;
+    }
     setCoverageMonths(months);
     // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
     // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is. A loss-making
@@ -815,7 +800,11 @@ export default function AmazonOrderHome() {
                 key={months}
                 type="button"
                 onClick={() => applyCoverage(months)}
-                title={`Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`}
+                title={
+                  coverageMonths === months
+                    ? 'Click again to clear the Order scratchpad'
+                    : `Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`
+                }
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
                   (coverageMonths === months
@@ -886,18 +875,10 @@ export default function AmazonOrderHome() {
           ))}
         </div>
 
-        {(orderResult || orderError || draftSavedAt) && (
+        {(orderResult || orderError) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
             {orderResult && <span className="font-medium text-emerald-700">{orderResult}</span>}
             {orderError && <span className="text-red-600">{orderError}</span>}
-            {draftSavedAt && (
-              <span className="text-slate-400" title="Order is saved to this browser, not the server — won't follow you to another device">
-                Draft saved {relativeSaved(draftSavedAt)} (this browser only)
-                <button type="button" onClick={clearOrder} className="ml-1.5 font-medium text-brand-600 hover:underline">
-                  clear order
-                </button>
-              </span>
-            )}
           </div>
         )}
       </div>
