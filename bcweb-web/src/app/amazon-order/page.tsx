@@ -64,7 +64,7 @@ LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential (own
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
-  FunnelIcon,
+  FunnelIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
@@ -277,15 +277,16 @@ export default function AmazonOrderHome() {
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
   // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
   // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
-  // reset, not a "start the order over" action. To clear a rate fill, re-tap its active rate button (applyCoverage below toggles
-  // off just the boxes it filled for the CURRENT view — owner, 2026-08-20 — no separate "clear order" action needed).
+  // reset, not a "start the order over" action. Re-tapping an active rate button clears just the boxes it filled for the CURRENT
+  // view (applyCoverage below); emptying the basket outright is Clear basket (clearBasket below), which is its own deliberate,
+  // confirmed action for exactly that reason.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageMonths(null);
     setManualOrder(null);
-    setConfirmingOrder(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
+    setConfirmingOrder(false); setConfirmingClear(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
   }
 
@@ -589,6 +590,24 @@ export default function AmazonOrderHome() {
     clearOrderQtyFor([code]);
   }
 
+  // CLEAR BASKET — empties the whole scratchpad in one go, off-screen rows included, and (via the autosave effect above, which
+  // removes the key rather than persisting an empty draft) the saved draft with it. Deliberately its OWN action rather than part
+  // of Reset: Reset is a view reset and leaves the basket alone on purpose (owner, 2026-08-11 — the basket is a draft built up
+  // over several sittings), and re-tapping an active rate only wipes the rows currently on screen. Neither could empty a basket
+  // assembled across several different filter views, which is exactly what this is for. Wipes the record outright, so any stray
+  // zeroes or half-typed values left lying around go too.
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  function clearBasket() {
+    setConfirmingClear(false);
+    setOrderQty({});
+    // The rate highlight and the fill-ranked sort both describe a basket that no longer exists.
+    setCoverageMonths(null);
+    setManualOrder(null);
+    // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
+    // back to the unfiltered view rather than an empty one that reads like a bug.
+    setOrdersOnly(false);
+  }
+
   // ON SCREEN / TOTAL — how much of the whole basket is visible right now, e.g. "10/41" when only 10 of the basket's 41 SKUs are
   // on screen (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all here or mostly filtered/cut away
   // elsewhere). orderTargets itself deliberately reaches off-screen (a value typed before a filter/cut shouldn't silently drop
@@ -890,55 +909,82 @@ export default function AmazonOrderHome() {
             ))}
           </div>
 
-          {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
-              unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
-              before it writes anything, since this is a real DB write rather than more scratchpad editing.
-
-              The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
-              one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
-              budget in the one place it's earned. The LABEL is the action, not the noun: "Basket" already names the column you
-              type into and the "Load basket" preset, so using it a third time here gave the write the same word as two harmless
-              things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
-              ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
-          {!confirmingOrder ? (
-            <button
-              type="button"
-              onClick={() => setConfirmingOrder(true)}
-              disabled={ordering || orderTargets.length === 0}
-              title={
-                `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
-                (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
-              }
-              className="ml-auto flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
-            >
-              <ShoppingCartIcon className="h-5 w-5" />
-              <span className="flex flex-col items-start leading-tight">
-                <span className="text-sm font-medium">
-                  {ordering && orderProgress
-                    ? `Sending ${orderProgress.done}/${orderProgress.total}…`
-                    : 'Send to Order Status'}
+          {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: throw it away, or send
+              it. Clear sits LEFT of Send so the destructive one is never the button under the cursor when you reach for the one
+              you actually want, and it's quiet (bordered, not filled) against Send's fill — same red as row 1's Cut, which is the
+              other "removes things" control, but a band away from it so the two never compete. */}
+          <div className="ml-auto flex items-center gap-2">
+            {!confirmingClear ? (
+              <button
+                type="button"
+                onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
+                disabled={ordering || orderTargets.length === 0}
+                title="Empty the whole basket — every row with a value, not just the ones on screen — and discard the saved draft"
+                className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+              >
+                <TrashIcon className="h-4 w-4" />
+                Clear basket
+              </button>
+            ) : (
+              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                <span className="text-slate-700">
+                  Clear all {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} from the basket?
                 </span>
-                {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
-                    decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
-                    the progress count above is the only number that matters. */}
-                {!ordering && orderTargets.length > 0 && (
-                  <span className="text-xs font-normal text-emerald-100">
-                    {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
-                    {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
-                    {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
+                <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
+              </span>
+            )}
+
+            {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
+                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
+                before it writes anything, since this is a real DB write rather than more scratchpad editing.
+
+                The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
+                one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
+                budget in the one place it's earned. The LABEL is the action, not the noun: "Basket" already names the column you
+                type into and the "Load basket" preset, so using it a third time here gave the write the same word as two harmless
+                things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
+                ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
+            {!confirmingOrder ? (
+              <button
+                type="button"
+                onClick={() => { setConfirmingClear(false); setConfirmingOrder(true); }}
+                disabled={ordering || orderTargets.length === 0}
+                title={
+                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
+                  (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
+                }
+                className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+              >
+                <ShoppingCartIcon className="h-5 w-5" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-sm font-medium">
+                    {ordering && orderProgress
+                      ? `Sending ${orderProgress.done}/${orderProgress.total}…`
+                      : 'Send to Order Status'}
                   </span>
-                )}
+                  {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
+                      decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
+                      the progress count above is the only number that matters. */}
+                  {!ordering && orderTargets.length > 0 && (
+                    <span className="text-xs font-normal text-emerald-100">
+                      {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
+                      {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
+                      {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                <span className="text-slate-700">
+                  Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
+                </span>
+                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
+                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
-            </button>
-          ) : (
-            <span className="ml-auto flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-              <span className="text-slate-700">
-                Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
-              </span>
-              <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
-              <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
-            </span>
-          )}
+            )}
+          </div>
         </div>
 
         {(orderResult || orderError) && (
