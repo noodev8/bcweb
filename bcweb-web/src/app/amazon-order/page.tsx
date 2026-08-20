@@ -267,8 +267,8 @@ export default function AmazonOrderHome() {
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
   // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
   // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
-  // reset, not a "start the order over" action. To clear the scratchpad, re-tap the active rate button (applyCoverage below
-  // already wipes and refills it from scratch on every click, owner 2026-08-20 — no separate "clear order" action needed).
+  // reset, not a "start the order over" action. To clear a rate fill, re-tap its active rate button (applyCoverage below toggles
+  // off just the boxes it filled for the CURRENT view — owner, 2026-08-20 — no separate "clear order" action needed).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
@@ -514,18 +514,25 @@ export default function AmazonOrderHome() {
   // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
   // later). A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
   // than written as 0 — its box is simply left out of the fill. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
-  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set. Clicking the
-  // ALREADY-ACTIVE rate button is the clear gesture (owner, 2026-08-20) — it toggles off, wiping the Order scratchpad (and its
-  // saved browser draft) back to empty instead of recomputing the same fill. Clicking a DIFFERENT rate wipes and refills from
-  // scratch, so a rate click always reflects one clean calculation rather than layering onto whatever was typed or filled before
-  // (owner, 2026-08-13). Also sets `manualOrder` to the just-filled rows ranked biggest-need-first, so the table sorts to show
-  // what was just added without the operator having to click the Order column (which isn't even a sortable header) — see the
-  // `sorted` memo above.
+  // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set — but ONLY those
+  // rows: everything else already in the scratchpad (built up under a DIFFERENT filter view — e.g. a Potential fill, then flipping
+  // to Winners and filling again) is left alone (owner, 2026-08-20 — "they should both exist"), so two different filter passes at
+  // two different rates can build one combined order. Clicking the ALREADY-ACTIVE rate button is the clear gesture — it toggles
+  // off, wiping just the currently-visible rows' boxes (not the whole scratchpad) back to empty. Clicking a DIFFERENT rate
+  // recomputes only the visible rows, so a rate click always reflects one clean calculation for THIS view rather than layering
+  // onto whatever was already typed or filled for these same rows before (owner, 2026-08-13). Also sets `manualOrder` to the
+  // just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
+  // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
+    const visibleCodes = new Set(visible.map((r) => r.code));
     if (coverageMonths === months) {
       setCoverageMonths(null);
-      setOrderQty({});
+      setOrderQty((prev) => {
+        const next = { ...prev };
+        for (const code of visibleCodes) delete next[code];
+        return next;
+      });
       setManualOrder(null);
       return;
     }
@@ -540,9 +547,12 @@ export default function AmazonOrderHome() {
         return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
       })
       .filter((f) => f.qty > 0); // nothing to order — leave it out of the fill rather than write a 0
-    const next: Record<string, string> = {};
-    filled.forEach(({ code, qty }) => { next[code] = String(qty); });
-    setOrderQty(next);
+    setOrderQty((prev) => {
+      const next = { ...prev };
+      for (const code of visibleCodes) delete next[code]; // drop this view's old values before refilling
+      filled.forEach(({ code, qty }) => { next[code] = String(qty); });
+      return next;
+    });
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
@@ -745,7 +755,7 @@ export default function AmazonOrderHome() {
           <button
             type="button"
             onClick={toggleOrdersOnly}
-            title="Load every SKU with a number currently in Order, across the whole list — replaces Winners/Potential rather than combining"
+            title="Load every SKU with a number currently in Basket, across the whole list — replaces Winners/Potential rather than combining"
             className={
               'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
               (ordersOnly
@@ -754,7 +764,7 @@ export default function AmazonOrderHome() {
             }
           >
             <FunnelIcon className="h-4 w-4" />
-            Load order
+            Load basket
           </button>
 
           {/* Cut + Reset — pushed to the right (ml-auto), apart from the presets on the left. */}
@@ -767,11 +777,11 @@ export default function AmazonOrderHome() {
                 type="button"
                 onClick={() => setConfirmingOrder(true)}
                 disabled={ordering || orderTargets.length === 0}
-                title="Send every SKU with a number in Order to the Order Status TO PLACE queue"
+                title="Send every SKU with a number in Basket to the Order Status TO PLACE queue"
                 className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
               >
                 <ShoppingCartIcon className="h-4 w-4" />
-                {ordering && orderProgress ? `Queuing ${orderProgress.done}/${orderProgress.total}…` : `Order (${orderTargets.length})`}
+                {ordering && orderProgress ? `Queuing ${orderProgress.done}/${orderProgress.total}…` : `Basket (${orderTargets.length})`}
               </button>
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
@@ -817,8 +827,8 @@ export default function AmazonOrderHome() {
                 onClick={() => applyCoverage(months)}
                 title={
                   coverageMonths === months
-                    ? 'Click again to clear the Order scratchpad'
-                    : `Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`
+                    ? 'Click again to clear the Basket'
+                    : `Fill Basket with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`
                 }
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
@@ -850,9 +860,9 @@ export default function AmazonOrderHome() {
               <span className="text-slate-300">|</span>
               <span
                 className="whitespace-nowrap text-slate-500"
-                title="Total skusummary.cost x Order qty, for rows currently on screen only (filters/cuts change this)"
+                title="Total skusummary.cost x Basket qty, for rows currently on screen only (filters/cuts change this)"
               >
-                Order cost: <span className="font-semibold text-slate-800">{money(visibleOrderCost.total)}</span>
+                Basket cost: <span className="font-semibold text-slate-800">{money(visibleOrderCost.total)}</span>
                 {visibleOrderCost.unpriced > 0 && (
                   <span className="ml-1 text-amber-600" title={`${visibleOrderCost.unpriced} unit${visibleOrderCost.unpriced === 1 ? '' : 's'} with no known cost — not included in the total`}>
                     (+{visibleOrderCost.unpriced} unpriced)
@@ -918,7 +928,7 @@ export default function AmazonOrderHome() {
                     here now. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {renderColumnHeader(
-                  { key: 'order_qty', label: 'Order', title: 'Planning scratchpad — not saved server-side, this browser only', align: 'right' },
+                  { key: 'order_qty', label: 'Basket', title: 'Planning scratchpad — not saved server-side, this browser only', align: 'right' },
                   sortKey, sortDir, onSort,
                 )}
                 {COLUMNS.slice(6, 8).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
