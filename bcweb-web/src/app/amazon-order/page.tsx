@@ -531,7 +531,6 @@ export default function AmazonOrderHome() {
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [ordering, setOrdering] = useState(false);
   const [orderProgress, setOrderProgress] = useState<{ done: number; total: number } | null>(null);
-  const [orderResult, setOrderResult] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   // Session-only running total of what's just been queued per SKU, added on top of fba_total for display — an immediate "yes it
   // went in" signal while submitOrder's refresh() (below) is still in flight. fba_total itself now counts not-yet-arrived Amazon
@@ -542,7 +541,7 @@ export default function AmazonOrderHome() {
   async function submitOrder() {
     setConfirmingOrder(false);
     if (orderTargets.length === 0) return;
-    setOrdering(true); setOrderError(null); setOrderResult(null);
+    setOrdering(true); setOrderError(null);
     setOrderProgress({ done: 0, total: orderTargets.length });
     let queued = 0;
     const failed: string[] = [];
@@ -565,7 +564,6 @@ export default function AmazonOrderHome() {
       setOrderProgress({ done: i + 1, total: orderTargets.length });
     }
     setOrderProgress(null); setOrdering(false);
-    setOrderResult(`Sent ${queued} SKU${queued === 1 ? '' : 's'} to Order Status`);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     // Re-fetch so fba_total picks up the lines just queued (it now counts not-yet-arrived orderstatus rows server-side) — the
     // client-only orderedBump was only ever a stand-in for this round trip, so it's dropped once the real number is in.
@@ -1127,10 +1125,9 @@ export default function AmazonOrderHome() {
           </div>
         </div>
 
-        {(orderResult || orderError) && (
+        {orderError && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
-            {orderResult && <span className="font-medium text-emerald-700">{orderResult}</span>}
-            {orderError && <span className="text-red-600">{orderError}</span>}
+            <span className="text-red-600">{orderError}</span>
           </div>
         )}
       </div>
