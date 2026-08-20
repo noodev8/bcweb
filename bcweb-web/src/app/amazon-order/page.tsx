@@ -51,11 +51,12 @@ SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into rea
 
       Pick (send local stock to Amazon) has been pulled from this screen for now — revisit later (owner, 2026-08-11).
 
-LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of them (combinable with either) — show only rows
-      with a positive number currently in Order, for reviewing what's been built up across the ~520-row set (owner, 2026-08-11). A
-      LIVE filter, not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in
-      without a re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads (focusedOrderCode)
-      — otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the input being typed into,
+LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential (owner, 2026-08-20) — show every row with a positive
+      number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone rather than
+      stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A LIVE filter,
+      not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in without a
+      re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads (focusedOrderCode) —
+      otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the input being typed into,
       out of the list mid-edit.
 =======================================================================================================================================
 */
@@ -240,16 +241,24 @@ export default function AmazonOrderHome() {
   // ON SCREEN at fill time (applyCoverage below), so it stops meaning anything the moment the visible set changes underneath it;
   // left lit, it read as "still applied" when it wasn't (owner, 2026-08-20). Deliberately leaves orderQty itself alone — a
   // filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setCoverageMonths(null); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setCoverageMonths(null); }
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); setCoverageMonths(null); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); setCoverageMonths(null); }
 
-  // ORDERS ONLY — a third quick preset, independent of Winners/Potential (can be combined with either): show only rows with a
-  // positive number currently sitting in the Order box. A live filter, not a snapshot — re-evaluates as orderQty changes, so typing
-  // a value while it's on doesn't require re-toggling to bring the row in. Order scratchpad values, keyed by code — declared here
-  // (ahead of `filtered`/`sorted` below, which both need it) rather than down with the rest of the Order UI state further down.
+  // ORDERS ONLY — a third quick preset: show every row with a positive number currently sitting in the Order box, ACROSS THE WHOLE
+  // ~520-row set — not just whatever search/Winners/Potential happened to be narrowing the screen down to at the time (owner,
+  // 2026-08-20: a row filled while Potential was on shouldn't vanish from Load Order just because the screen's since flipped to
+  // Winners). So it overrides those filters rather than stacking on top of them — see `filtered` below, which short-circuits to
+  // this rule alone when ordersOnly is on. Mutually exclusive with Winners/Potential for the same reason Winners/Potential are
+  // mutually exclusive with each other: combining would silently confuse which rule is actually governing the screen. A live
+  // filter, not a snapshot — re-evaluates as orderQty changes, so typing a value while it's on doesn't require re-toggling to bring
+  // the row in. Order scratchpad values, keyed by code — declared here (ahead of `filtered`/`sorted` below, which both need it)
+  // rather than down with the rest of the Order UI state further down.
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [ordersOnly, setOrdersOnly] = useState(false);
-  function toggleOrdersOnly() { setOrdersOnly((v) => !v); }
+  function toggleOrdersOnly() {
+    setOrdersOnly((v) => !v);
+    setWinnersOnly(false); setPotentialOnly(false); setCoverageMonths(null);
+  }
   // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
   // otherwise backspacing a value down through 0 on the way to clearing it yanks the row (and the input you're typing into) out of
   // the list mid-edit, since the filter re-evaluates on every keystroke (owner, 2026-08-11 — "won't let me backspace to clear").
@@ -271,6 +280,9 @@ export default function AmazonOrderHome() {
   }
 
   const filtered = useMemo(() => {
+    // Orders Only stands alone against the FULL row set — see its declaration above for why: it must not miss a row that has an
+    // order just because search/Winners/Potential would otherwise have excluded it.
+    if (ordersOnly) return rows.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
     let out = rows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
@@ -290,7 +302,6 @@ export default function AmazonOrderHome() {
       const cutoffMs = Date.now() - SIX_MONTHS_MS;
       out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3 && isRecentlySold(r, cutoffMs));
     }
-    if (ordersOnly) out = out.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
     return out;
   }, [rows, includes, excludes, winnersOnly, potentialOnly, ordersOnly, orderQty, focusedOrderCode]);
 
@@ -734,7 +745,7 @@ export default function AmazonOrderHome() {
           <button
             type="button"
             onClick={toggleOrdersOnly}
-            title="Load only SKUs with a number currently in Order — combines with Winners/Potential"
+            title="Load every SKU with a number currently in Order, across the whole list — replaces Winners/Potential rather than combining"
             className={
               'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
               (ordersOnly
