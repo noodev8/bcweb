@@ -236,8 +236,12 @@ export default function AmazonOrderHome() {
   // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
+  // Switching Winners/Potential also clears the rate-fill highlight (coverageMonths) — it was computed against whatever rows were
+  // ON SCREEN at fill time (applyCoverage below), so it stops meaning anything the moment the visible set changes underneath it;
+  // left lit, it read as "still applied" when it wasn't (owner, 2026-08-20). Deliberately leaves orderQty itself alone — a
+  // filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setCoverageMonths(null); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setCoverageMonths(null); }
 
   // ORDERS ONLY — a third quick preset, independent of Winners/Potential (can be combined with either): show only rows with a
   // positive number currently sitting in the Order box. A live filter, not a snapshot — re-evaluates as orderQty changes, so typing
