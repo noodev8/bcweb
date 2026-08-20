@@ -109,6 +109,20 @@ function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
   return new Date(r.last_sold + 'T00:00:00Z').getTime() >= cutoffMs;
 }
 
+// A ref callback that keeps `set` fed with the element's live height, and zeroed when it unmounts. Used for the two pieces of
+// sticky chrome (the control panel and the column-header row) — see stickyOffset in the component for what the numbers are for.
+// ResizeObserver fires once on observe, so the first measurement arrives without having to take it by hand.
+function measureHeight(set: (h: number) => void) {
+  let ro: ResizeObserver | null = null;
+  return (el: HTMLElement | null) => {
+    ro?.disconnect();
+    ro = null;
+    if (!el) { set(0); return; }
+    ro = new ResizeObserver(() => set(el.getBoundingClientRect().height));
+    ro.observe(el);
+  };
+}
+
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
 const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 
@@ -745,6 +759,28 @@ export default function AmazonOrderHome() {
     nextInput?.select();
   }
 
+  // ONE SCROLLBAR, NOT TWO — the table used to sit in its own bounded, scrollable box (max-h + overflow-auto) so the panel and
+  // column headers stayed put while the rows moved. That worked, but it left two scroll contexts on one screen and the wheel did
+  // different things depending on where the pointer happened to be sitting (owner, 2026-08-20 — "I keep scrolling in the wrong
+  // place"). The page now has a single scrollbar, and the same two things stay put by sticking to the VIEWPORT instead: the panel
+  // at the top, the column headers immediately under it.
+  //
+  // That second offset has to be the panel's LIVE height, not a constant: the panel grows and shrinks in normal use as search
+  // chips wrap onto another line and as the send button gains its second line. A ResizeObserver keeps the number honest — hard
+  // coding it would leave the headers either floating below the panel or tucked behind it, depending on the moment.
+  const [panelHeight, setPanelHeight] = useState(0);
+  const [headHeight, setHeadHeight] = useState(0);
+  const panelRef = useMemo(() => measureHeight(setPanelHeight), []);
+  const headRef = useMemo(() => measureHeight(setHeadHeight), []);
+
+  // STICKY OFFSET — what a row has to clear to be fully visible: the panel plus the column-header row pinned under it. Every row
+  // carries it as scroll-margin-top, because a browser scrolling a row into view knows nothing about position:sticky and will
+  // happily park it underneath both. That's what made arrowing down lose the highlight behind the bar (owner, 2026-08-20).
+  // useListCursor's header calls this out as the caller's job for exactly this reason: the hook can't know the height, the screen
+  // can. The Basket input carries it too — Up/Down in a box moves focus to the next row's box (onEditKeyDown), and the browser
+  // scrolls the newly focused INPUT into view, not the row around it.
+  const stickyOffset = panelHeight + headHeight;
+
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
       {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
@@ -752,10 +788,10 @@ export default function AmazonOrderHome() {
           behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
           more rows on screen permanently, which on a ~520-row list is the difference that matters.
 
-          Sticky, so the controls never scroll out of reach while working down the list — the table scrolls in its OWN bounded
-          region below, so this mostly matters on short viewports, but it's a cheap safety net either way (owner request,
-          2026-08-13 — "too much scrolling"). */}
-      <div className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          Sticky to the viewport top, so the controls never scroll out of reach while working down the list — with the table's own
+          scrollbox gone (see panelHeight above) this is what keeps them there, not a nicety (owner request, 2026-08-13 — "too
+          much scrolling"). */}
+      <div ref={panelRef} className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         {/* ROW 1 — NARROW. Everything that decides WHICH rows are on screen, in one band: the two search boxes, the three
             mutually-exclusive presets, then the view actions. The old layout gave search its own full-width row and then put
             Cut/Reset on the right of the preset row, opposite the presets — a left/right split that said nothing true, since both
@@ -1025,14 +1061,18 @@ export default function AmazonOrderHome() {
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       {!loading && !error && (
-        // Bounded height + its own scrollbar (both axes) — with ~520 rows the table used to make the WHOLE PAGE scroll, so
-        // getting from a row back to the toolbar/header meant a long scroll up. Scoping the scroll to this box instead keeps the
-        // toolbar and (via the sticky thead below) the column headers permanently in view; only the rows themselves scroll
-        // (owner request, 2026-08-13 — "too much scrolling up and down"). The offset accounts for AppShell's header+nav+title
-        // plus the panel above — 14rem now the panel is two bands rather than five (it was 21rem).
-        <div className="max-h-[calc(100vh-14rem)] min-h-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        // No overflow of its own — see panelHeight above. Anything with overflow:auto here would become the sticky positioning
+        // context again and put the second scrollbar back; the rows scroll with the page, and the header row below pins itself
+        // under the panel instead.
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-max min-w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            {/* Pinned under the live bottom edge of the panel rather than at top:0, which would tuck it behind. The panel is
+                z-30 and this is z-10, so the two overlap in the right order during the moment a scroll is settling. */}
+            <thead
+              ref={headRef}
+              style={{ top: panelHeight }}
+              className="sticky z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"
+            >
               <tr>
                 {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
                     (6 columns), then the scratchpad, then unit_profit/profit_30d. Barcode/Amazon SKU/Supplier (COLUMNS[8..10])
@@ -1054,6 +1094,7 @@ export default function AmazonOrderHome() {
                 <Fragment key={r.code}>
                 <tr
                   ref={cursor.itemRef(r.code)}
+                  style={{ scrollMarginTop: stickyOffset }}
                   onClick={(e) => onRowClick(e, r.code)}
                   className={
                     'group cursor-pointer select-none ' +
@@ -1102,6 +1143,7 @@ export default function AmazonOrderHome() {
                       onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
                       onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
                       inputMode="numeric"
+                      style={{ scrollMarginTop: stickyOffset }}
                       disabled={isBirkenstock(r)}
                       placeholder="—"
                       title={isBirkenstock(r) ? 'Birkenstock is ordered separately, in bulk — not from this screen' : undefined}
