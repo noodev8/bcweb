@@ -17,22 +17,24 @@ SORT: every column header is clickable. Same click-to-reverse gesture as /invent
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
       the filter — the whole list is already in memory.
 
-CURSOR + CUT: clicking a row (or arrowing with Up/Down) sets the shared useListCursor highlight — the same "where was I" gesture
-      /inventory uses. Enter, or the row's own X, CUTS it — a view-only hide (not a delete), same idea as Inventory's Cut. Cut rows
-      drop out of the keyboard list too, so arrowing never lands on one. Reset restores every cut row, same as it clears the search.
+SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
+      clicking sets it, Enter and the "Cut (n)" button both act on it. This screen used to run a keyboard cursor (a hairline on the
+      SKU cell) alongside a separate multi-select (a full row fill), which is what useListCursor is built for and what /inventory
+      does. Here it made the screen hard to hold on to: the singular "where was I" marker was the faintest thing on screen, the
+      louder fill meant something else, and the two could point at different rows (owner, 2026-08-20 — "only one type of select so
+      it's clear what I'm on and cutting"). The cursor still exists underneath as the keyboard's position, it just has no separate
+      look — every move writes the selection, so they can never disagree.
+
+      Shift-click still extends a contiguous range from the anchor and Ctrl/Cmd-click still toggles a single row in or out, so bulk
+      cutting a block is unchanged. Cut is a view-only hide (not a delete), same idea as Inventory's Cut; the row's own X cuts just
+      that row regardless of what's selected. Cut rows drop out of the keyboard list too, so arrowing never lands on one. Reset
+      restores every cut row, same as it clears the search.
 
       useListCursor deliberately leaves a focused INPUT alone (arrows move its caret, not the list — the hook's normal, correct
       behaviour everywhere else). The Order box is the one place that's wrong: it's a column of numbers down the row axis, so
       Up/Down should walk rows exactly like it does on the row itself. It gets its own onKeyDown that intercepts ONLY
       ArrowUp/ArrowDown, moves the shared cursor, and refocuses the box on the new row — typing, Tab, and every other key still
       belong to the input untouched.
-
-MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor above — the cursor is "where the keyboard is", the
-      selection is "what a bulk action would hit", and they can disagree (arrowing around doesn't touch the selection). Plain click
-      selects just that row and drops an anchor; Shift-click extends the CONTIGUOUS range from that anchor to the clicked row (in
-      current view order); Ctrl/Cmd-click toggles one row in or out without disturbing the rest. The "Cut (n)" button in the filter
-      bar cuts everything selected in one go. A row's own X and Enter (via useListCursor's onEnter) are unchanged — a quick single
-      cut that ignores the selection entirely, so a stray click elsewhere never turns into an accidental bulk cut.
 
 COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Targets every row CURRENTLY ON SCREEN (`visible`),
       ranks what it just filled and sorts the table to it (via the shared `manualOrder`), and is cleared by Reset. Fills Order
@@ -668,13 +670,24 @@ export default function AmazonOrderHome() {
     return { total, unpriced };
   }, [basketOnScreen, rowByCode]);
 
-  // Keyboard cursor over the visible rows — click a row (or arrow Up/Down) to move the highlight, Enter cuts the current row. Keys
-  // are the VISIBLE rows only, so a cut row can never be the cursor's target and arrowing always lands on something on screen.
+  // Keyboard movement over the visible rows. Keys are the VISIBLE rows only, so a cut row can never be arrowed onto and every move
+  // lands on something on screen.
+  //
+  // The hook's cursor no longer has a look of its own: every keyboard move WRITES THE SELECTION (onMove below), so the blue row is
+  // both "where I am" and "what Cut/Enter will take". That's a deliberate departure from /inventory, which keeps the two apart —
+  // there the cursor is a reading position and the selection is a batch, and they usefully disagree. Here the operator is walking
+  // a list deciding what to drop, so a position that isn't the thing being acted on was just a second highlight to keep track of.
+  //
+  // A keyboard move REPLACES the selection with the single row moved to, which also re-anchors: arrowing to a row and then
+  // Shift-clicking another extends from where the keyboard left off, the same way it would after a plain click.
   const cursorKeys = useMemo(() => visible.map((r) => r.code), [visible]);
   const cursor = useListCursor({
     keys: cursorKeys,
     enabled: !loading && !error,
-    onEnter: onCut,
+    onMove: (code) => selectOnly(code),
+    // Enter cuts what's blue — the whole selection, not one row. With a single highlight there's no longer a "current row" that
+    // could differ from it, so the old single-row Enter would have been cutting an invisible subset of what the screen shows.
+    onEnter: () => cutSelected(),
   });
 
   // DETAIL EXPAND — barcode/Amazon SKU/supplier are looked up rarely, so they're not columns anymore (they were most of why the
@@ -694,6 +707,11 @@ export default function AmazonOrderHome() {
   // keep adjusting the same range rather than re-anchoring each time.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const anchorRef = useRef<string | null>(null);
+  // Select exactly this row and anchor on it — what a plain click does, and now what every keyboard move does too.
+  function selectOnly(code: string) {
+    setSelected(new Set([code]));
+    anchorRef.current = code;
+  }
   function onRowClick(e: React.MouseEvent, code: string) {
     cursor.setCursor(code);
     if (e.shiftKey && anchorRef.current) {
@@ -726,15 +744,37 @@ export default function AmazonOrderHome() {
       return next;
     });
   }, [cut]);
+  // Escape clears the cursor inside useListCursor. With one highlight that has to clear the selection too, or Escape would look
+  // like it did nothing at all — the cursor has no separate mark left to remove. Watches the transition rather than the value, so
+  // an empty selection at rest isn't constantly being re-set.
+  const hadCursorRef = useRef(false);
+  useEffect(() => {
+    const has = cursor.cursorKey !== null;
+    if (hadCursorRef.current && !has) setSelected(new Set());
+    hadCursorRef.current = has;
+  }, [cursor.cursorKey]);
   function cutSelected() {
     if (selected.size === 0) return;
+    // Where the highlight lands afterwards: the first row below the block just cut that's still on screen, or the last survivor if
+    // the block ran to the bottom. With a single highlight, finishing a cut with nothing blue means the operator has no idea where
+    // they were — so the list closes up under the cut and the highlight stays put in the gap, ready for the next Enter.
+    const survivors = cursorKeys.filter((c) => !selected.has(c));
+    const firstCutIndex = cursorKeys.findIndex((c) => selected.has(c));
+    const landing = survivors.length === 0
+      ? null
+      : survivors[Math.min(Math.max(firstCutIndex, 0), survivors.length - 1)];
     setCut((prev) => {
       const next = new Set(prev);
       selected.forEach((c) => next.add(c));
       return next;
     });
     clearOrderQtyFor(selected);
-    setSelected(new Set());
+    if (landing === null) {
+      setSelected(new Set());
+    } else {
+      cursor.setCursor(landing);
+      selectOnly(landing);
+    }
   }
 
   // Order box: Up/Down walks rows and keeps focus in the box (see the header comment for why this needs its own handler rather
@@ -754,6 +794,7 @@ export default function AmazonOrderHome() {
     if (nextCode === code) return; // already at an end — leave the caret alone rather than eat the keystroke for nothing
     e.preventDefault();
     cursor.setCursor(nextCode);
+    selectOnly(nextCode); // the box's own Up/Down is still a keyboard move, so it moves the one highlight like any other
     const nextInput = inputRefs.current.get(nextCode);
     nextInput?.focus();
     nextInput?.select();
@@ -879,7 +920,7 @@ export default function AmazonOrderHome() {
               type="button"
               onClick={cutSelected}
               disabled={selected.size === 0}
-              title="Cut every selected row (click a row, Shift-click to extend a range, Ctrl/Cmd-click to add one)"
+              title="Cut every selected row — arrow to one, or click it; Shift-click to extend a range, Ctrl/Cmd-click to add one. Enter does the same."
               className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
             >
               <XMarkIcon className="h-4 w-4" />
@@ -1098,20 +1139,22 @@ export default function AmazonOrderHome() {
                   onClick={(e) => onRowClick(e, r.code)}
                   className={
                     'group cursor-pointer select-none ' +
-                    (selected.has(r.code) ? 'bg-brand-50' : 'hover:bg-slate-50')
+                    // The one highlight on the screen. A step up from the old brand-50 because it's now carrying the job the
+                    // hairline cursor used to share — you have to be able to find it after looking away, not just notice it.
+                    (selected.has(r.code) ? 'bg-brand-100' : 'hover:bg-slate-50')
                   }
                 >
-                  {/* Cursor (keyboard position) gets its own left accent, independent of the selection fill above — the two can
-                      disagree (arrowing around doesn't touch what a bulk Cut would hit), so they need visually distinct signals.
-                      Also pinned LEFT to match the header (see renderColumnHeader) — its background can't just inherit the row's
-                      (a sticky cell paints over whatever scrolls under it, so the row's hover/select fill wouldn't show through),
-                      so it's re-applied here explicitly via group-hover off the <tr>'s `group` above. The caret button opens the
-                      detail row (see below) on its own click — stopPropagation so it doesn't also fire the row's select/cursor
-                      click underneath it. */}
+                  {/* Pinned LEFT to match the header (see renderColumnHeader). Its background can't just inherit the row's — a
+                      sticky cell paints over whatever scrolls under it, so the row's hover/select fill wouldn't show through — so
+                      the same two states are re-applied here explicitly, via group-hover off the <tr>'s `group` above. The left
+                      rail is part of the selected look rather than a second signal of its own: it gives the blue row a hard edge
+                      to find at the point the eye starts reading from. The caret button opens the detail row (see below) on its
+                      own click — stopPropagation so it doesn't also fire the row's select click underneath it. */}
                   <td className={
-                    'sticky left-0 z-[1] whitespace-nowrap py-1.5 pl-3 pr-2 font-mono text-xs text-slate-600 border-l-2 ' +
-                    (cursor.isCursor(r.code) ? 'border-brand-500 ' : 'border-transparent ') +
-                    (selected.has(r.code) ? 'bg-brand-50' : 'bg-white group-hover:bg-slate-50')
+                    'sticky left-0 z-[1] whitespace-nowrap border-l-2 py-1.5 pl-3 pr-2 font-mono text-xs text-slate-600 ' +
+                    (selected.has(r.code)
+                      ? 'border-brand-500 bg-brand-100'
+                      : 'border-transparent bg-white group-hover:bg-slate-50')
                   }>
                     <span className="inline-flex items-center gap-1">
                       {r.code}
@@ -1140,7 +1183,7 @@ export default function AmazonOrderHome() {
                       value={orderQty[r.code] || ''}
                       onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
                       onKeyDown={(e) => onEditKeyDown(e, r.code)}
-                      onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
+                      onFocus={() => { cursor.setCursor(r.code); selectOnly(r.code); setFocusedOrderCode(r.code); }}
                       onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
                       inputMode="numeric"
                       style={{ scrollMarginTop: stickyOffset }}
