@@ -242,20 +242,20 @@ export default function AmazonOrderHome() {
 
   function addInclude() {
     const t = includeInput.trim();
-    if (t && !includes.includes(t)) setIncludes((prev) => [...prev, t]);
+    if (t && !includes.includes(t)) { setIncludes((prev) => [...prev, t]); deselectAll(); }
     setIncludeInput('');
   }
   function addExclude() {
     const t = excludeInput.trim();
-    if (t && !excludes.includes(t)) setExcludes((prev) => [...prev, t]);
+    if (t && !excludes.includes(t)) { setExcludes((prev) => [...prev, t]); deselectAll(); }
     setExcludeInput('');
   }
   // Filter boxes are forced upper-case as typed (owner request, 2026-08-13) — purely cosmetic, since haystack()/escapeRegExp()
   // already lowercase both sides before matching.
   function onIncludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setIncludeInput(e.target.value.toUpperCase()); }
   function onExcludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setExcludeInput(e.target.value.toUpperCase()); }
-  function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); }
-  function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); }
+  function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); deselectAll(); }
+  function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); deselectAll(); }
 
   // WINNERS / POTENTIAL WINNERS — quick presets, not stacked steps: numeric tests on profit_30d/unit_profit, not text search terms.
   // Both are this screen's OWN thresholds (owner, 2026-08-07), deliberately NOT the shared Shopify/Amazon "≥2 units AND ≥£2/unit"
@@ -271,8 +271,8 @@ export default function AmazonOrderHome() {
   const [potentialOnly, setPotentialOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
   // orderQty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); }
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); deselectAll(); }
 
   // ORDERS ONLY — a third quick preset: show every row with a positive number currently sitting in the Order box, ACROSS THE WHOLE
   // ~520-row set — not just whatever search/Winners/Potential happened to be narrowing the screen down to at the time (owner,
@@ -288,6 +288,7 @@ export default function AmazonOrderHome() {
   function toggleOrdersOnly() {
     setOrdersOnly((v) => !v);
     setWinnersOnly(false); setPotentialOnly(false);
+    deselectAll();
   }
 
   // RATE MEMORY, PER VIEW — the rate strip's lit button is remembered against the view it was applied to, so filling Winners at 2
@@ -644,6 +645,7 @@ export default function AmazonOrderHome() {
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
     setOrdersOnly(false);
+    deselectAll();
   }
 
   // ON SCREEN / TOTAL — how much of the whole basket is visible right now, e.g. "10/41" when only 10 of the basket's 41 SKUs are
@@ -711,6 +713,13 @@ export default function AmazonOrderHome() {
   function selectOnly(code: string) {
     setSelected(new Set([code]));
     anchorRef.current = code;
+  }
+  // Switching to a different filter (Winners/Potential/Load Order, or a search step added/removed) changes what's on screen out
+  // from under the selection — the blue row could vanish from view, or land on a row the operator never chose. Rather than leave a
+  // stale/invisible selection that Cut or Enter would still act on, moving filters clears it outright (owner, 2026-08-20).
+  function deselectAll() {
+    setSelected(new Set());
+    anchorRef.current = null;
   }
   function onRowClick(e: React.MouseEvent, code: string) {
     cursor.setCursor(code);
