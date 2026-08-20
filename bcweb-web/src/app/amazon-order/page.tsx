@@ -54,20 +54,25 @@ SEND TO ORDER STATUS: the "Send to Order Status" button turns the Basket scratch
 
       Pick (send local stock to Amazon) has been pulled from this screen for now — revisit later (owner, 2026-08-11).
 
-LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential (owner, 2026-08-20) — show every row with a positive
-      number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone rather than
-      stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A LIVE filter,
-      not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in without a
-      re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads (focusedOrderCode) —
-      otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the input being typed into,
-      out of the list mid-edit.
+LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
+      positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone
+      rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
+      LIVE filter, not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in
+      without a re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads
+      (focusedOrderCode) — otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the
+      input being typed into, out of the list mid-edit.
+
+RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE sold at some point, just not within the last 6
+      months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
+      null, excluded): this is stock with a track record that's gone quiet, worth a fresh look (reprice, re-list, bundle) rather
+      than the dead-stock problem a never-sold row represents.
 =======================================================================================================================================
 */
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
-  FunnelIcon, TrashIcon,
+  FunnelIcon, TrashIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
@@ -130,8 +135,8 @@ const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 
 // The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
 // rate PER VIEW (see coverageByView) so flicking between Winners and Potential shows each one's own rate still lit.
-type ViewKey = 'all' | 'winners' | 'potential' | 'basket';
-const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, basket: null };
+type ViewKey = 'all' | 'winners' | 'potential' | 'recycle' | 'basket';
+const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, recycle: null, basket: null };
 
 // LOCAL DRAFT SAVE — Order is still not sent anywhere until the button is pressed (owner decision), but it's now saved to THIS
 // BROWSER via localStorage (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon
@@ -269,10 +274,18 @@ export default function AmazonOrderHome() {
   // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
+  // RECYCLE — the mirror of Potential's 6mo check: SKUs that HAVE sold at some point, but not within the last 6 months, and don't
+  // already qualify for Winners or Potential (owner, 2026-08-20). Not "never sold" (last_sold === null) — that's dead stock with
+  // no track record at all, a different problem — this is stock that USED to move and might again, worth a fresh look (reprice,
+  // re-list, bundle) rather than sitting untouched. The Winners/Potential exclusion is belt-and-braces: a genuinely stale last_sold
+  // already fails Potential's own isRecentlySold test and Winners' profit_30d>30 (which implies a sale inside 30d), so the two
+  // can't overlap in practice, but the explicit check keeps Recycle honest if either test's window ever changes independently.
+  const [recycleOnly, setRecycleOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
   // orderQty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleRecycle() { setRecycleOnly((v) => !v); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
 
   // ORDERS ONLY — a third quick preset: show every row with a positive number currently sitting in the Order box, ACROSS THE WHOLE
   // ~520-row set — not just whatever search/Winners/Potential happened to be narrowing the screen down to at the time (owner,
@@ -287,7 +300,7 @@ export default function AmazonOrderHome() {
   const [ordersOnly, setOrdersOnly] = useState(false);
   function toggleOrdersOnly() {
     setOrdersOnly((v) => !v);
-    setWinnersOnly(false); setPotentialOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false);
     deselectAll();
   }
 
@@ -302,7 +315,7 @@ export default function AmazonOrderHome() {
   // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
   // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
   const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
-  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : ordersOnly ? 'basket' : 'all';
+  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : recycleOnly ? 'recycle' : ordersOnly ? 'basket' : 'all';
   const coverageMonths = coverageByView[viewKey];
   const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
   function setCoverageForView(months: number | null) {
@@ -321,7 +334,7 @@ export default function AmazonOrderHome() {
   // confirmed action for exactly that reason.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
-    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
@@ -352,10 +365,22 @@ export default function AmazonOrderHome() {
       const cutoffMs = Date.now() - SIX_MONTHS_MS;
       out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3 && isRecentlySold(r, cutoffMs));
     }
+    if (recycleOnly) {
+      // RECYCLE — see its declaration above: HAS sold before, just not within the last 6 months, and isn't already claimed by
+      // Winners or Potential. last_sold === null (never sold at all) is excluded — that's dead stock with no track record, not
+      // something that "used to move".
+      const cutoffMs = Date.now() - SIX_MONTHS_MS;
+      out = out.filter((r) => {
+        if (!r.last_sold || isRecentlySold(r, cutoffMs)) return false;
+        if (r.profit_30d !== null && r.profit_30d > 30) return false; // would be Winners
+        if (r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3) return false; // would be Potential
+        return true;
+      });
+    }
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, ordersOnly, orderQty, focusedOrderCode]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, orderQty, focusedOrderCode]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || ordersOnly;
+  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -898,7 +923,7 @@ export default function AmazonOrderHome() {
             <button
               type="button"
               onClick={togglePotential}
-              title="Show only SKUs under £30 profit this month that still earn more than £3 per unit — the margin's there, it just hasn't sold enough yet"
+              title="Show only SKUs under £30 profit this month that still earn more than £3 per unit"
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (potentialOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
@@ -909,15 +934,15 @@ export default function AmazonOrderHome() {
             </button>
             <button
               type="button"
-              onClick={toggleOrdersOnly}
-              title="Load every SKU with a number currently in Basket, across the whole list — replaces Winners/Potential rather than combining"
+              onClick={toggleRecycle}
+              title="Show only SKUs that sold before, but not in the last 6 months"
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
-                (ordersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+                (recycleOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
               }
             >
-              <FunnelIcon className="h-4 w-4" />
-              Load basket
+              <ClockIcon className="h-4 w-4" />
+              Recycle
             </button>
           </div>
 
@@ -1046,6 +1071,25 @@ export default function AmazonOrderHome() {
                 <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}
+
+            {/* LOAD BASKET — moved here between Clear and Send (owner, 2026-08-20): it's a basket action like its two neighbours,
+                not a narrowing filter like Winners/Potential/Recycle, so it reads more clearly sitting with the other two things
+                that act on the basket rather than in row 1's segmented preset control. Still the same toggle underneath
+                (toggleOrdersOnly/ordersOnly), still mutually exclusive with Winners/Potential/Recycle. */}
+            <button
+              type="button"
+              onClick={toggleOrdersOnly}
+              title="Load every SKU with a number currently in Basket"
+              className={
+                'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ' +
+                (ordersOnly
+                  ? 'border-brand-600 bg-brand-600 text-white'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+              }
+            >
+              <FunnelIcon className="h-4 w-4" />
+              Load basket
+            </button>
 
             {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
                 unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
