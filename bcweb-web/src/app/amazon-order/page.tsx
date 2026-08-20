@@ -912,8 +912,12 @@ export default function AmazonOrderHome() {
           {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: throw it away, or send
               it. Clear sits LEFT of Send so the destructive one is never the button under the cursor when you reach for the one
               you actually want, and it's quiet (bordered, not filled) against Send's fill — same red as row 1's Cut, which is the
-              other "removes things" control, but a band away from it so the two never compete. */}
-          <div className="ml-auto flex items-center gap-2">
+              other "removes things" control, but a band away from it so the two never compete.
+
+              items-STRETCH, not items-center: Send grows a second line once the basket has something in it, and a short Clear
+              floating centred beside a tall Send read as two unrelated controls rather than the pair they are. Stretching ties
+              their heights together whichever state Send is in — each child centres its own contents, so nothing else moves. */}
+          <div className="ml-auto flex items-stretch gap-2">
             {!confirmingClear ? (
               <button
                 type="button"
