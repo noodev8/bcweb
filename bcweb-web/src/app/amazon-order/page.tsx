@@ -38,7 +38,7 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
       ranks what it just filled and sorts the table to it (via the shared `manualOrder`), and is cleared by Reset. Fills Order
       (what to buy from the supplier).
 
-SEND TO ORDER STATUS: the "Order (n)" button turns the Order scratchpad into real rows — loops POST /order-status-add per SKU (the
+SEND TO ORDER STATUS: the "Send to Order Status" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
       row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
       Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — its Order
@@ -149,6 +149,13 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', supplier: 'asc', order_qty: 'desc',
 };
 
+// COLUMN GROUPS — the table is really four blocks wearing ten columns: identity (SKU), stock on hand (Local / FBA Live / FBA
+// Total), demand (Sold 30 / Sold 7), the operator's own input (Basket), then money (Unit profit / Profit 30d). A hairline on the
+// FIRST column of each block gives the eye something to anchor on when reading across a ten-wide row, and it encodes the real
+// shape of the data rather than decorating it. Deliberately not zebra striping: the rows already carry three background states
+// (hover, selected, expanded) and alternating fills would fight all of them.
+const GROUP_START: ReadonlySet<SortKey> = new Set<SortKey>(['local_stock', 'units_30d', 'order_qty', 'unit_profit']);
+
 // The value a row sorts on for a given key. Nulls sort last regardless of direction (an unknown price/profit is not "small").
 // 'order_qty' isn't a row field — the `sorted` memo special-cases it before ever calling this — but is still a valid SortKey, so
 // it's guarded here too rather than left to fall through to an `r[key]` index TypeScript can't type against AmazonOrderRow.
@@ -172,13 +179,16 @@ function renderColumnHeader(
   // stays on screen through both scroll axes at once. It needs its own opaque background (sticky cells sit outside the thead's
   // normal paint order once scrolled) and a higher z-index than every other header cell so it wins the corner where both stick.
   const stickyCode = c.key === 'code' ? 'sticky left-0 z-20 bg-slate-50' : '';
+  // Group hairline — see GROUP_START. A touch darker in the header than in the body, so the divider reads as part of the header
+  // rule rather than as a stray cell border.
+  const group = GROUP_START.has(c.key) ? 'border-l border-slate-200' : '';
   return (
     <th
       key={c.key}
       title={c.title}
       onClick={() => onSort(c.key)}
       className={
-        `cursor-pointer select-none whitespace-nowrap ${pad} py-1.5 font-medium hover:text-slate-700 ${stickyCode} ` +
+        `cursor-pointer select-none whitespace-nowrap ${pad} py-1.5 font-medium hover:text-slate-700 ${stickyCode} ${group} ` +
         (c.align === 'right' ? 'text-right' : 'text-left')
       }
     >
@@ -491,7 +501,7 @@ export default function AmazonOrderHome() {
       setOrderProgress({ done: i + 1, total: orderTargets.length });
     }
     setOrderProgress(null); setOrdering(false);
-    setOrderResult(`Queued ${queued} SKU${queued === 1 ? '' : 's'} to Order Status`);
+    setOrderResult(`Sent ${queued} SKU${queued === 1 ? '' : 's'} to Order Status`);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     // Re-fetch so fba_total picks up the lines just queued (it now counts not-yet-arrived orderstatus rows server-side) — the
     // client-only orderedBump was only ever a stand-in for this round trip, so it's dropped once the real number is in.
@@ -798,18 +808,23 @@ export default function AmazonOrderHome() {
               <ArrowPathIcon className="h-4 w-4" />
               Reset
             </button>
-            {/* SEND TO ORDER STATUS — turns every positive Order box into real orderstatus TO PLACE rows via /order-status-add, one
+            {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
                 unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
                 before it writes anything, since this is a real DB write rather than more scratchpad editing. Taller than the other
-                buttons (py-1.5 vs py-2, plus a second line) so the on-screen Basket cost can sit under the count instead of
-                needing its own status-row line (owner, 2026-08-20). */}
+                buttons (py-1.5 vs py-2, plus a second line) so the on-screen count and cost can sit under the label instead of
+                needing its own status-row line (owner, 2026-08-20).
+
+                The LABEL is the action, not the noun: "Basket" already names the column you type into and the "Load basket" filter,
+                so using it a third time for the one control that writes to the database left the only irreversible thing on the
+                screen sharing a word with two harmless ones. It now says what it does, and the same verb carries through the
+                confirm ("Send … to Order Status?" / "Send"), the progress ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
             {!confirmingOrder ? (
               <button
                 type="button"
                 onClick={() => setConfirmingOrder(true)}
                 disabled={ordering || orderTargets.length === 0}
                 title={
-                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue. Cost shown is for on-screen rows only.` +
+                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
                   (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
                 }
                 className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
@@ -818,12 +833,16 @@ export default function AmazonOrderHome() {
                 <span className="flex flex-col items-start leading-tight">
                   <span className="text-sm font-medium">
                     {ordering && orderProgress
-                      ? `Queuing ${orderProgress.done}/${orderProgress.total}…`
-                      : `Basket (${basketOnScreenCount}/${orderTargets.length})`}
+                      ? `Sending ${orderProgress.done}/${orderProgress.total}…`
+                      : 'Send to Order Status'}
                   </span>
-                  {!ordering && (basketCost.total > 0 || basketCost.unpriced > 0) && (
+                  {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
+                      decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
+                      the progress count above is the only number that matters. */}
+                  {!ordering && orderTargets.length > 0 && (
                     <span className="text-xs font-normal text-emerald-600">
-                      {money(basketCost.total)}
+                      {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
+                      {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
                       {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
                     </span>
                   )}
@@ -832,10 +851,10 @@ export default function AmazonOrderHome() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Queue {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'}?
+                  Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
                 </span>
-                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Yes</button>
-                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
+                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
+                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}
           </div>
@@ -982,16 +1001,16 @@ export default function AmazonOrderHome() {
                       </button>
                     </span>
                   </td>
-                  <td className={'whitespace-nowrap px-3 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
+                  <td className={'whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
                   <td className={'whitespace-nowrap px-3 py-1.5 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">
                     {r.fba_total}
                     {/* Session-only "just queued" bump — see orderedBump above. Not a DB figure, so kept visually distinct. */}
                     {orderedBump[r.code] > 0 && <span className="ml-1 text-xs text-emerald-600">+{orderedBump[r.code]}</span>}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                  <td className="whitespace-nowrap border-l border-slate-100 px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       ref={setInputRef(r.code)}
                       value={orderQty[r.code] || ''}
@@ -1011,7 +1030,7 @@ export default function AmazonOrderHome() {
                       }
                     />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{money(r.unit_profit)}</td>
+                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{money(r.unit_profit)}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     <button
