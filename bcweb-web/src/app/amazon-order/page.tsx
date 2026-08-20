@@ -706,94 +706,104 @@ export default function AmazonOrderHome() {
 
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
-      {/* Search bar — Enter commits the box as a step; steps stack and AND together. Sticky (not just the table header below) so
-          the filters, presets, and the Order/Cut buttons never scroll out of reach while working down a long list — the table
-          itself now scrolls in its OWN bounded region (see the container below), so this only matters on short viewports where
-          the page still scrolls, but it's a cheap safety net either way (owner request, 2026-08-13 — "too much scrolling"). */}
+      {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
+          row 2 FILLS what's left and SENDS it. It used to be five: search, presets+actions, rate strip, counts, chips — each
+          behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
+          more rows on screen permanently, which on a ~520-row list is the difference that matters.
+
+          Sticky, so the controls never scroll out of reach while working down the list — the table scrolls in its OWN bounded
+          region below, so this mostly matters on short viewports, but it's a cheap safety net either way (owner request,
+          2026-08-13 — "too much scrolling"). */}
       <div className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[200px] flex-1">
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Include</label>
-            <div className="relative">
-              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-              <input
-                ref={includeInputRef}
-                value={includeInput}
-                onChange={onIncludeInputChange}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
-                autoFocus
-                placeholder="e.g. ives, then Enter"
-                className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
+        {/* ROW 1 — NARROW. Everything that decides WHICH rows are on screen, in one band: the two search boxes, the three
+            mutually-exclusive presets, then the view actions. The old layout gave search its own full-width row and then put
+            Cut/Reset on the right of the preset row, opposite the presets — a left/right split that said nothing true, since both
+            halves were doing the same job. The one genuinely different control (the one that writes to the database) now sits in
+            row 2 instead of being grouped with them. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The search boxes are the least-touched control in a sitting — typed once, then worked against for twenty minutes —
+              so they no longer stretch (flex-1) across half the panel, and the stacked labels are gone: the placeholder already
+              says what each box is, and the ¬ glyph on the second is the same negation mark its committed chips carry below. */}
+          <div className="relative">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={includeInputRef}
+              value={includeInput}
+              onChange={onIncludeInputChange}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
+              autoFocus
+              placeholder="Include, then Enter"
+              title="Narrow to rows containing this text — Enter commits it as a step, and steps stack (all must match)"
+              className="w-48 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
           </div>
-          <div className="min-w-[200px] flex-1">
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Does not contain</label>
+          <div className="relative">
+            <span aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400">¬</span>
             <input
               value={excludeInput}
               onChange={onExcludeInputChange}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExclude(); } }}
-              placeholder="e.g. black, then Enter"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="Exclude, then Enter"
+              title="Drop rows containing this word — whole words only, so excluding SAND doesn't also drop SANDALS"
+              className="w-48 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
-        </div>
 
-        {/* Action row — presets, bulk cut, coverage fill, reset. Its own row under the search boxes so it doesn't crowd them. */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleWinners}
-            title="Show only SKUs with more than £30 profit in the last 30 days"
-            className={
-              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
-              (winnersOnly
-                ? 'border-amber-500 bg-amber-50 text-amber-700'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
-            }
-          >
-            <TrophyIcon className="h-4 w-4" />
-            Winners
-          </button>
-          <button
-            type="button"
-            onClick={togglePotential}
-            title="Show only SKUs under £30 profit this month that still earn more than £3 per unit — the margin's there, it just hasn't sold enough yet"
-            className={
-              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
-              (potentialOnly
-                ? 'border-sky-500 bg-sky-50 text-sky-700'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
-            }
-          >
-            <SparklesIcon className="h-4 w-4" />
-            Potential
-          </button>
-          <button
-            type="button"
-            onClick={toggleOrdersOnly}
-            title="Load every SKU with a number currently in Basket, across the whole list — replaces Winners/Potential rather than combining"
-            className={
-              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
-              (ordersOnly
-                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
-            }
-          >
-            <FunnelIcon className="h-4 w-4" />
-            Load basket
-          </button>
+          {/* PRESETS — a segmented control, not three free-standing buttons. They are already mutually exclusive in the handlers
+              (picking one clears the others); grouping them in one container makes that visible instead of leaving the operator to
+              discover it. Styled identically to the rate strip in row 2 — both are "pick one", so they read as siblings — and the
+              single brand fill replaces the old amber / sky / emerald trio. That mattered beyond tidiness: emerald was
+              simultaneously "a filter view" here and "this writes to the database" on the send button, so one colour carried two
+              very different meanings. Emerald is now reserved for the write, and nothing else on the screen wears it. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            <button
+              type="button"
+              onClick={toggleWinners}
+              title="Show only SKUs with more than £30 profit in the last 30 days"
+              className={
+                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
+                (winnersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <TrophyIcon className="h-4 w-4" />
+              Winners
+            </button>
+            <button
+              type="button"
+              onClick={togglePotential}
+              title="Show only SKUs under £30 profit this month that still earn more than £3 per unit — the margin's there, it just hasn't sold enough yet"
+              className={
+                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
+                (potentialOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <SparklesIcon className="h-4 w-4" />
+              Potential
+            </button>
+            <button
+              type="button"
+              onClick={toggleOrdersOnly}
+              title="Load every SKU with a number currently in Basket, across the whole list — replaces Winners/Potential rather than combining"
+              className={
+                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
+                (ordersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <FunnelIcon className="h-4 w-4" />
+              Load basket
+            </button>
+          </div>
 
-          {/* Cut + Reset + Basket — pushed to the right (ml-auto), apart from the presets on the left. Basket sits LAST, at the
-              very right edge of the toolbar (owner, 2026-08-20) — it's the "final" action of the row, after the view actions
-              (Cut/Reset) that come before it. */}
+          {/* Cut + Reset — view operations on the list the controls to their left just produced, so they close this row rather than
+              sitting next to the send button. Reset goes last: it's the escape hatch, and the escape hatch belongs at the end of
+              the row you might need escaping from. */}
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={cutSelected}
               disabled={selected.size === 0}
               title="Cut every selected row (click a row, Shift-click to extend a range, Ctrl/Cmd-click to add one)"
-              className="flex items-center gap-1.5 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+              className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
             >
               <XMarkIcon className="h-4 w-4" />
               Cut{selected.size > 0 ? ` (${selected.size})` : ''}
@@ -803,67 +813,20 @@ export default function AmazonOrderHome() {
               onClick={onReset}
               disabled={!filtering && cut.size === 0 && coverageMonths === null}
               title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
-              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >
               <ArrowPathIcon className="h-4 w-4" />
               Reset
             </button>
-            {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
-                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
-                before it writes anything, since this is a real DB write rather than more scratchpad editing. Taller than the other
-                buttons (py-1.5 vs py-2, plus a second line) so the on-screen count and cost can sit under the label instead of
-                needing its own status-row line (owner, 2026-08-20).
-
-                The LABEL is the action, not the noun: "Basket" already names the column you type into and the "Load basket" filter,
-                so using it a third time for the one control that writes to the database left the only irreversible thing on the
-                screen sharing a word with two harmless ones. It now says what it does, and the same verb carries through the
-                confirm ("Send … to Order Status?" / "Send"), the progress ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
-            {!confirmingOrder ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingOrder(true)}
-                disabled={ordering || orderTargets.length === 0}
-                title={
-                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
-                  (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
-                }
-                className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400"
-              >
-                <ShoppingCartIcon className="h-5 w-5" />
-                <span className="flex flex-col items-start leading-tight">
-                  <span className="text-sm font-medium">
-                    {ordering && orderProgress
-                      ? `Sending ${orderProgress.done}/${orderProgress.total}…`
-                      : 'Send to Order Status'}
-                  </span>
-                  {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
-                      decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
-                      the progress count above is the only number that matters. */}
-                  {!ordering && orderTargets.length > 0 && (
-                    <span className="text-xs font-normal text-emerald-600">
-                      {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
-                      {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
-                      {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
-                    </span>
-                  )}
-                </span>
-              </button>
-            ) : (
-              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-                <span className="text-slate-700">
-                  Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
-                </span>
-                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
-                <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
-              </span>
-            )}
           </div>
         </div>
 
-        {/* Coverage fill — its own row, separate from the presets above (owner, 2026-08-19: "the row feels cluttered" once Sold in
-            6mo joined Winners/Potential/Load order). Writes the Order box for every row ON SCREEN (filter down first, then click
-            a rate) — see applyCoverage. */}
-        <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+        {/* ROW 2 — FILL, then the state of what you've built, then SEND: the rest of the loop, reading left to right. The rate
+            strip used to sit alone on its own divided row as if it were unrelated furniture, when it's really the second half of
+            the core gesture (narrow the list in row 1, then fill what's left). The counts and chips sit in the middle on a
+            reserved height, so committing or dropping a search step no longer changes the panel's height — this panel is sticky,
+            so any resize shoves the whole table up or down under it. */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             {COVERAGE_OPTIONS.map((months) => (
               <button
@@ -886,48 +849,96 @@ export default function AmazonOrderHome() {
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Chips for each committed step, plus the row count. */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
-          <span className="mr-1 whitespace-nowrap text-slate-500">
-            {/* Cut rows drop out of visible too, so the count includes them alongside search/preset filtering — a cut shouldn't
-                leave the "Rows: X of Y" figure reading as if nothing happened (owner, 2026-08-13). */}
-            {filtering || cut.size > 0 ? (
-              <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
-            ) : (
-              <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
+          {/* Row count, cut count, and a chip per committed search step. */}
+          <div className="flex min-h-[2.25rem] min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+            <span className="mr-1 whitespace-nowrap text-slate-500">
+              {/* Cut rows drop out of visible too, so the count includes them alongside search/preset filtering — a cut shouldn't
+                  leave the "Rows: X of Y" figure reading as if nothing happened (owner, 2026-08-13). */}
+              {filtering || cut.size > 0 ? (
+                <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
+              ) : (
+                <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
+              )}
+            </span>
+            {cut.size > 0 && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span className="whitespace-nowrap text-slate-400">
+                  {cut.size} cut
+                  <button type="button" onClick={() => setCut(new Set())} className="ml-1.5 font-medium text-brand-600 hover:underline">
+                    restore
+                  </button>
+                </span>
+              </>
             )}
-          </span>
-          {/* Basket cost now lives on the Basket button itself (basketCost above) rather than its own status-row line
-              (owner, 2026-08-20). */}
-          {cut.size > 0 && (
-            <>
-              <span className="text-slate-300">|</span>
-              <span className="whitespace-nowrap text-slate-400">
-                {cut.size} cut
-                <button type="button" onClick={() => setCut(new Set())} className="ml-1.5 font-medium text-brand-600 hover:underline">
-                  restore
+            {includes.map((t) => (
+              <span key={`inc-${t}`} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+                {t}
+                <button type="button" onClick={() => removeInclude(t)} className="ml-0.5 rounded text-brand-400 hover:text-brand-700">
+                  <XMarkIcon className="h-3.5 w-3.5" />
                 </button>
               </span>
-            </>
+            ))}
+            {excludes.map((t) => (
+              <span key={`exc-${t}`} className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500">
+                <span className="no-underline">¬</span>{t}
+                <button type="button" onClick={() => removeExclude(t)} className="ml-0.5 rounded text-slate-400 hover:text-slate-700">
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+
+          {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
+              unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
+              before it writes anything, since this is a real DB write rather than more scratchpad editing.
+
+              The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
+              one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
+              budget in the one place it's earned. The LABEL is the action, not the noun: "Basket" already names the column you
+              type into and the "Load basket" preset, so using it a third time here gave the write the same word as two harmless
+              things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
+              ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
+          {!confirmingOrder ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingOrder(true)}
+              disabled={ordering || orderTargets.length === 0}
+              title={
+                `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
+                (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
+              }
+              className="ml-auto flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+            >
+              <ShoppingCartIcon className="h-5 w-5" />
+              <span className="flex flex-col items-start leading-tight">
+                <span className="text-sm font-medium">
+                  {ordering && orderProgress
+                    ? `Sending ${orderProgress.done}/${orderProgress.total}…`
+                    : 'Send to Order Status'}
+                </span>
+                {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
+                    decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
+                    the progress count above is the only number that matters. */}
+                {!ordering && orderTargets.length > 0 && (
+                  <span className="text-xs font-normal text-emerald-100">
+                    {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
+                    {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
+                    {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                  </span>
+                )}
+              </span>
+            </button>
+          ) : (
+            <span className="ml-auto flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+              <span className="text-slate-700">
+                Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
+              </span>
+              <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
+              <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
+            </span>
           )}
-          {includes.map((t) => (
-            <span key={`inc-${t}`} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-              {t}
-              <button type="button" onClick={() => removeInclude(t)} className="ml-0.5 rounded text-brand-400 hover:text-brand-700">
-                <XMarkIcon className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          ))}
-          {excludes.map((t) => (
-            <span key={`exc-${t}`} className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500">
-              <span className="no-underline">¬</span>{t}
-              <button type="button" onClick={() => removeExclude(t)} className="ml-0.5 rounded text-slate-400 hover:text-slate-700">
-                <XMarkIcon className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          ))}
         </div>
 
         {(orderResult || orderError) && (
@@ -946,8 +957,8 @@ export default function AmazonOrderHome() {
         // getting from a row back to the toolbar/header meant a long scroll up. Scoping the scroll to this box instead keeps the
         // toolbar and (via the sticky thead below) the column headers permanently in view; only the rows themselves scroll
         // (owner request, 2026-08-13 — "too much scrolling up and down"). The offset accounts for AppShell's header+nav+title
-        // plus the toolbar above.
-        <div className="max-h-[calc(100vh-21rem)] min-h-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        // plus the panel above — 14rem now the panel is two bands rather than five (it was 21rem).
+        <div className="max-h-[calc(100vh-14rem)] min-h-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-max min-w-full text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
