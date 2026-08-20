@@ -36,7 +36,8 @@ MULTI-SELECT + BULK CUT: a SEPARATE `selected` Set from the single-row cursor ab
 
 COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Targets every row CURRENTLY ON SCREEN (`visible`),
       ranks what it just filled and sorts the table to it (via the shared `manualOrder`), and is cleared by Reset. Fills Order
-      (what to buy from the supplier).
+      (what to buy from the supplier). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
+      Potential at 1/2 and each list shows its own rate still lit when you flick back to it.
 
 SEND TO ORDER STATUS: the "Send to Order Status" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
@@ -110,6 +111,11 @@ function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
 
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
 const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
+
+// The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
+// rate PER VIEW (see coverageByView) so flicking between Winners and Potential shows each one's own rate still lit.
+type ViewKey = 'all' | 'winners' | 'potential' | 'basket';
+const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, basket: null };
 
 // LOCAL DRAFT SAVE — Order is still not sent anywhere until the button is pressed (owner decision), but it's now saved to THIS
 // BROWSER via localStorage (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon
@@ -247,12 +253,10 @@ export default function AmazonOrderHome() {
   // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
-  // Switching Winners/Potential also clears the rate-fill highlight (coverageMonths) — it was computed against whatever rows were
-  // ON SCREEN at fill time (applyCoverage below), so it stops meaning anything the moment the visible set changes underneath it;
-  // left lit, it read as "still applied" when it wasn't (owner, 2026-08-20). Deliberately leaves orderQty itself alone — a
-  // filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); setCoverageMonths(null); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); setCoverageMonths(null); }
+  // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
+  // orderQty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
+  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setOrdersOnly(false); }
+  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setOrdersOnly(false); }
 
   // ORDERS ONLY — a third quick preset: show every row with a positive number currently sitting in the Order box, ACROSS THE WHOLE
   // ~520-row set — not just whatever search/Winners/Potential happened to be narrowing the screen down to at the time (owner,
@@ -267,7 +271,25 @@ export default function AmazonOrderHome() {
   const [ordersOnly, setOrdersOnly] = useState(false);
   function toggleOrdersOnly() {
     setOrdersOnly((v) => !v);
-    setWinnersOnly(false); setPotentialOnly(false); setCoverageMonths(null);
+    setWinnersOnly(false); setPotentialOnly(false);
+  }
+
+  // RATE MEMORY, PER VIEW — the rate strip's lit button is remembered against the view it was applied to, so filling Winners at 2
+  // months and Potential at 1/2 and then flicking between the two shows each list's own rate still lit (owner, 2026-08-20).
+  //
+  // It used to be a single value wiped on every preset switch, for a good reason: a fill is computed against whatever rows were ON
+  // SCREEN when it ran (applyCoverage below), so a rate left lit after the visible set changed underneath it read as "still
+  // applied" when it wasn't. Keying it by view solves that same problem more precisely — the highlight now only shows on the list
+  // it was actually applied to — while keeping the answer to "what did I fill this one at?" instead of throwing it away.
+  //
+  // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
+  // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
+  const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
+  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : ordersOnly ? 'basket' : 'all';
+  const coverageMonths = coverageByView[viewKey];
+  const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
+  function setCoverageForView(months: number | null) {
+    setCoverageByView((prev) => ({ ...prev, [viewKey]: months }));
   }
   // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
   // otherwise backspacing a value down through 0 on the way to clearing it yanks the row (and the input you're typing into) out of
@@ -284,7 +306,7 @@ export default function AmazonOrderHome() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
     setCut(new Set()); setSelected(new Set());
-    setCoverageMonths(null);
+    setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
     setConfirmingOrder(false); setConfirmingClear(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
@@ -534,11 +556,10 @@ export default function AmazonOrderHome() {
   // onto whatever was already typed or filled for these same rows before (owner, 2026-08-13). Also sets `manualOrder` to the
   // just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
   // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
-  const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
   function applyCoverage(months: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
     if (coverageMonths === months) {
-      setCoverageMonths(null);
+      setCoverageForView(null);
       setOrderQty((prev) => {
         const next = { ...prev };
         for (const code of visibleCodes) delete next[code];
@@ -547,7 +568,7 @@ export default function AmazonOrderHome() {
       setManualOrder(null);
       return;
     }
-    setCoverageMonths(months);
+    setCoverageForView(months);
     // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
     // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is. A loss-making
     // SKU (isLoss) is skipped the same way — no point buying in more of something that lost money last time it sold.
@@ -600,8 +621,9 @@ export default function AmazonOrderHome() {
   function clearBasket() {
     setConfirmingClear(false);
     setOrderQty({});
-    // The rate highlight and the fill-ranked sort both describe a basket that no longer exists.
-    setCoverageMonths(null);
+    // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's, not just this
+    // one's, since the basket they were filling was shared across all of them.
+    setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
@@ -830,7 +852,7 @@ export default function AmazonOrderHome() {
             <button
               type="button"
               onClick={onReset}
-              disabled={!filtering && cut.size === 0 && coverageMonths === null}
+              disabled={!filtering && cut.size === 0 && !anyCoverage}
               title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
               className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >
