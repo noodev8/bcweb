@@ -7,9 +7,10 @@ Purpose: Landing screen — every managed Amazon SKU with its Amazon profit (sku
          days (unit_profit x amzfeed.amzsold), best performers first. Single GET on mount via useApiQuery; the whole ~520-row set is
          fetched once and searched CLIENT-SIDE with no round-trip, same idea as /inventory.
 
-SEARCH: two boxes, Include / Does not contain. Enter (or the Add button) commits whatever is typed as a STEP — a removable chip —
-        rather than filtering live on every keystroke, so multiple narrowings stack ("ives" then "black" = ives styles, excluding
-        black). All Include steps must match (ANDed substrings); no Exclude step may match. Exclude matches WHOLE WORDS ONLY via a
+SEARCH: two boxes, Include / Does not contain. Enter (or the Add button) commits whatever is typed as a STEP rather than filtering
+        live on every keystroke, so multiple narrowings stack ("ives" then "black" = ives styles, excluding black). Committed steps
+        show no chips of their own (owner, 2026-08-20 — "they get messy") — Reset clears them, same as every other filter on the
+        screen. All Include steps must match (ANDed substrings); no Exclude step may match. Exclude matches WHOLE WORDS ONLY via a
         \b...\b boundary — a plain substring would let excluding a colour like "SAND" also drop anything containing "SANDALS" (the
         exact footgun /inventory's filter hit and fixed, 2026-07-23; same fix reused here).
 
@@ -259,8 +260,6 @@ export default function AmazonOrderHome() {
   // already lowercase both sides before matching.
   function onIncludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setIncludeInput(e.target.value.toUpperCase()); }
   function onExcludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setExcludeInput(e.target.value.toUpperCase()); }
-  function removeInclude(t: string) { setIncludes((prev) => prev.filter((x) => x !== t)); deselectAll(); }
-  function removeExclude(t: string) { setExcludes((prev) => prev.filter((x) => x !== t)); deselectAll(); }
 
   // WINNERS / POTENTIAL WINNERS — quick presets, not stacked steps: numeric tests on profit_30d/unit_profit, not text search terms.
   // Both are this screen's OWN thresholds (owner, 2026-08-07), deliberately NOT the shared Shopify/Amazon "≥2 units AND ≥£2/unit"
@@ -1002,7 +1001,8 @@ export default function AmazonOrderHome() {
             ))}
           </div>
 
-          {/* Row count, cut count, and a chip per committed search step. */}
+          {/* Row count and cut count. Committed search steps (includes/excludes) deliberately show no chips of their own (owner,
+              2026-08-20 — "they get messy") — Reset is the one way back to an unfiltered list. */}
           <div className="flex min-h-[2.25rem] min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
             <span className="mr-1 whitespace-nowrap text-slate-500">
               {/* Cut rows drop out of visible too, so the count includes them alongside search/preset filtering — a cut shouldn't
@@ -1024,22 +1024,6 @@ export default function AmazonOrderHome() {
                 </span>
               </>
             )}
-            {includes.map((t) => (
-              <span key={`inc-${t}`} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                {t}
-                <button type="button" onClick={() => removeInclude(t)} className="ml-0.5 rounded text-brand-400 hover:text-brand-700">
-                  <XMarkIcon className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ))}
-            {excludes.map((t) => (
-              <span key={`exc-${t}`} className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500">
-                <span className="no-underline">¬</span>{t}
-                <button type="button" onClick={() => removeExclude(t)} className="ml-0.5 rounded text-slate-400 hover:text-slate-700">
-                  <XMarkIcon className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ))}
           </div>
 
           {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: throw it away, or send
