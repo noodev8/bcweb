@@ -63,7 +63,7 @@ LOAD ORDER: a third quick preset, alongside Winners/Potential but independent of
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
-  FunnelIcon, ClockIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
@@ -238,20 +238,16 @@ export default function AmazonOrderHome() {
   // Both are this screen's OWN thresholds (owner, 2026-08-07), deliberately NOT the shared Shopify/Amazon "≥2 units AND ≥£2/unit"
   // WINNERS test the pricing modules use:
   //   WINNERS            profit_30d > £30 — already making good money this month.
-  //   POTENTIAL WINNERS  profit_30d < £30 BUT unit_profit > £3 — the margin is there, it just hasn't sold enough yet this month to
-  //                      show up as a winner; a candidate to push (stock/visibility), not a pricing problem.
+  //   POTENTIAL WINNERS  profit_30d < £30 BUT unit_profit > £3 AND sold within the last 6mo — the margin is there, it just hasn't
+  //                      sold enough yet this month to show up as a winner; a candidate to push (stock/visibility), not a pricing
+  //                      problem. The 6mo check guards against unit_profit's STICKY figure (see isRecentlySold) passing the margin
+  //                      test on a sale from a year+ ago that's never repeated (owner, 2026-08-20).
   // Mutually exclusive (turning one on turns the other off): the two tests are opposite sides of the £30 line, so having both on at
   // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
   function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); }
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); }
-
-  // SOLD IN 6MO — independent of Winners/Potential (not baked into either test, owner 2026-08-19: "leave it as an optional"),
-  // combinable with both or used alone. Strips out rows whose unit_profit is only passing a margin test on a stale last sale —
-  // see isRecentlySold above.
-  const [soldRecentlyOnly, setSoldRecentlyOnly] = useState(false);
-  function toggleSoldRecently() { setSoldRecentlyOnly((v) => !v); }
 
   // ORDERS ONLY — a third quick preset, independent of Winners/Potential (can be combined with either): show only rows with a
   // positive number currently sitting in the Order box. A live filter, not a snapshot — re-evaluates as orderQty changes, so typing
@@ -271,7 +267,7 @@ export default function AmazonOrderHome() {
   // reset, not a "start the order over" action. Clear Order (below) is the dedicated action for that.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
-    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); setSoldRecentlyOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false);
     setCut(new Set()); setSelected(new Set());
     setCoverageMonths(null);
     setManualOrder(null);
@@ -301,16 +297,18 @@ export default function AmazonOrderHome() {
       });
     }
     if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
-    if (potentialOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3);
-    if (soldRecentlyOnly) {
+    if (potentialOnly) {
+      // Potential Winners also requires a genuinely recent sale (owner, 2026-08-20) — unit_profit is STICKY (see isRecentlySold
+      // above), so without this a SKU that sold once over a year ago and never since could still pass the >£3 margin test on a
+      // stale figure.
       const cutoffMs = Date.now() - SIX_MONTHS_MS;
-      out = out.filter((r) => isRecentlySold(r, cutoffMs));
+      out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3 && isRecentlySold(r, cutoffMs));
     }
     if (ordersOnly) out = out.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, soldRecentlyOnly, ordersOnly, orderQty, focusedOrderCode]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, ordersOnly, orderQty, focusedOrderCode]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || soldRecentlyOnly || ordersOnly;
+  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || ordersOnly;
 
   const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -743,20 +741,6 @@ export default function AmazonOrderHome() {
           >
             <SparklesIcon className="h-4 w-4" />
             Potential
-          </button>
-          <button
-            type="button"
-            onClick={toggleSoldRecently}
-            title="Show only SKUs that have actually sold on Amazon in the last 6 months — unit profit is sticky and can be a year+ stale"
-            className={
-              'flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium ' +
-              (soldRecentlyOnly
-                ? 'border-violet-500 bg-violet-50 text-violet-700'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50')
-            }
-          >
-            <ClockIcon className="h-4 w-4" />
-            Sold in 6mo
           </button>
           <button
             type="button"
