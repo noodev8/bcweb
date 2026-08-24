@@ -952,7 +952,7 @@ export default function AmazonOrderHome() {
               onClick={cutSelected}
               disabled={selected.size === 0}
               title="Cut every selected row — arrow to one, or click it; Shift-click to extend a range, Ctrl/Cmd-click to add one. Enter does the same."
-              className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
             >
               <XMarkIcon className="h-4 w-4" />
               Cut{selected.size > 0 ? ` (${selected.size})` : ''}
@@ -1026,8 +1026,9 @@ export default function AmazonOrderHome() {
 
           {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: throw it away, or send
               it. Clear sits LEFT of Send so the destructive one is never the button under the cursor when you reach for the one
-              you actually want, and it's quiet (bordered, not filled) against Send's fill — same red as row 1's Cut, which is the
-              other "removes things" control, but a band away from it so the two never compete.
+              you actually want, and it's quiet (bordered, not filled) against Send's fill. Red here because Clear is destructive
+              (empties the whole basket + discards the draft); row 1's Cut is neutral slate — cutting a row is just a view hide,
+              not a delete, so it doesn't earn the same alarm colour (owner, 2026-08-24 — "too much in your face").
 
               items-STRETCH, not items-center: Send grows a second line once the basket has something in it, and a short Clear
               floating centred beside a tall Send read as two unrelated controls rather than the pair they are. Stretching ties
