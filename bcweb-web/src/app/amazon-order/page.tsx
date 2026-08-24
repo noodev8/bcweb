@@ -97,6 +97,19 @@ function haystack(r: AmazonOrderRow): string {
   return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
 }
 
+// Shared by `filtered` below and by addInclude's auto-reset check — same include/exclude test against a haystack, since
+// addInclude needs to try a prospective term set BEFORE committing it to state (state updates aren't visible synchronously).
+function matchesSearch(hay: string, incTerms: string[], excRes: RegExp[]): boolean {
+  if (incTerms.some((t) => !hay.includes(t))) return false;
+  if (excRes.some((re) => re.test(hay))) return false;
+  return true;
+}
+function hasSearchMatch(rows: AmazonOrderRow[], includes: string[], excludes: string[]): boolean {
+  const incTerms = includes.map((t) => t.toLowerCase());
+  const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
+  return rows.some((r) => matchesSearch(haystack(r), incTerms, excRes));
+}
+
 // Birkenstock is ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — never orderable from this per-SKU screen.
 function isBirkenstock(r: AmazonOrderRow): boolean {
   return (r.supplier || '').toUpperCase() === 'BIRKENSTOCK';
@@ -246,10 +259,24 @@ export default function AmazonOrderHome() {
   const includeInputRef = useRef<HTMLInputElement>(null);
   const [excludeInput, setExcludeInput] = useState('');
 
+  // Stacking a new Include term on top of steps already narrowing the list can land on zero rows even though the term itself
+  // exists elsewhere in the full ~520 — the earlier steps just ruled it out. Rather than silently show an empty table (the
+  // operator typed a real term and has no way to tell "not found" apart from "found, but combined with what's already stacked"),
+  // check the stacked result BEFORE committing: if it's empty, drop every prior Include/Exclude step and search fresh with just
+  // this term (owner, 2026-08-24). If even that standalone search is empty, the empty state below says so plainly ("Nothing
+  // found") rather than the misleading "No SKUs match" a stray irrelevant filter would otherwise imply.
   function addInclude() {
     const t = includeInput.trim();
-    if (t && !includes.includes(t)) { setIncludes((prev) => [...prev, t]); deselectAll(); }
     setIncludeInput('');
+    if (!t || includes.includes(t)) return;
+    const stacked = [...includes, t];
+    if (hasSearchMatch(rows, stacked, excludes)) {
+      setIncludes(stacked);
+    } else {
+      setIncludes([t]);
+      setExcludes([]);
+    }
+    deselectAll();
   }
   function addExclude() {
     const t = excludeInput.trim();
@@ -349,12 +376,7 @@ export default function AmazonOrderHome() {
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
       const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
-      out = out.filter((r) => {
-        const hay = haystack(r);
-        if (incTerms.some((t) => !hay.includes(t))) return false;
-        if (excRes.some((re) => re.test(hay))) return false;
-        return true;
-      });
+      out = out.filter((r) => matchesSearch(haystack(r), incTerms, excRes));
     }
     if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
     if (potentialOnly) {
@@ -1277,7 +1299,7 @@ export default function AmazonOrderHome() {
           </table>
           {visible.length === 0 && rows.length > 0 && (
             <div className="px-4 py-6 text-center text-sm text-slate-400">
-              {filtered.length === 0 ? 'No SKUs match.' : 'Every matching SKU is cut.'}
+              {filtered.length === 0 ? 'Nothing found.' : 'Every matching SKU is cut.'}
               {cut.size > 0 && (
                 <> <button type="button" onClick={() => setCut(new Set())} className="text-brand-600 underline">Restore</button> to bring {cut.size === 1 ? 'it' : 'them'} back.</>
               )}
