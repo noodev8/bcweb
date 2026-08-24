@@ -337,7 +337,7 @@ export default function AmazonOrderHome() {
     setCut(new Set()); setSelected(new Set());
     setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
-    setConfirmingOrder(false); setConfirmingClear(false); setOrderResult(null); setOrderError(null); setOrderedBump({});
+    setConfirmingOrder(false); setConfirmingClear(false); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
   }
 
