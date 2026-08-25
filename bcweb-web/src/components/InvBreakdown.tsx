@@ -22,7 +22,7 @@ most of the time. Reorder DETAIL_GROUPS to change the layout; nothing else needs
 */
 
 import { useRouter } from 'next/navigation';
-import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, MegaphoneIcon } from '@heroicons/react/24/outline';
+import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, MegaphoneIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
 import InvSales from '@/components/InvSales';
 import CopyButton from '@/components/CopyButton';
@@ -131,6 +131,18 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
           className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-100"
         >
           Amazon ↗
+        </a>
+        {/* Edit the product itself — title, attributes, sizes, images — one hop from the shelf, same new-tab rule as the reprice
+            jumps. groupid-grain, so /products opens straight on this style's edit panel (it searches and selects on arrival). */}
+        <span className="mx-1 text-slate-200">|</span>
+        <a
+          href={`/products?groupid=${encodeURIComponent(data.groupid)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open this product in Add / Modify"
+          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+        >
+          <PencilSquareIcon className="h-3.5 w-3.5" /> Add / Modify ↗
         </a>
         {productUrl && (
           <>

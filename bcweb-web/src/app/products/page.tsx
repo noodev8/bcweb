@@ -17,7 +17,8 @@ Purpose: Entry screen for the Add / Modify Product module. Master-detail:
 =======================================================================================================================================
 */
 
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, useRef, Suspense, ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useDebounced } from '@/lib/useDebounced';
@@ -290,8 +291,22 @@ function NewProductForm({
   );
 }
 
+// useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that — same pattern as
+// /amz/find and /social.
 export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <ProductsContent />
+    </Suspense>
+  );
+}
+
+function ProductsContent() {
   const { logout } = useAuth();
+  const searchParams = useSearchParams();
+  // Deep link in from elsewhere (Inventory's Detail panel jumps here by groupid). `?groupid=` searches and loads that product on
+  // arrival, so the operator lands on the edit panel rather than an empty search box they'd have to retype the code into.
+  const initialGroupid = searchParams.get('groupid') || '';
 
   // ---- Search state (left) -------------------------------------------------------------------------------------------------------
   const [term, setTerm] = useState('');
@@ -402,7 +417,12 @@ export default function ProductsPage() {
 
   async function onSearch(e: React.FormEvent) {
     e.preventDefault();
-    const q = term.trim();
+    await runSearch(term.trim());
+  }
+
+  // The search itself, split out of the form handler so a deep link (?groupid=) can run exactly the same path on arrival.
+  // `autoSelect` is that deep link's groupid: if it comes back in the results we load it outright, whatever else matched.
+  async function runSearch(q: string, autoSelect?: string) {
     if (!q) return;
     setLoading(true);
     setError(null);
@@ -429,11 +449,26 @@ export default function ProductsPage() {
     setSearched(true);
     setLoading(false);
 
-    // Convenience: if the search pinned down exactly one product, load it straight away (skip the extra click).
-    if (res.success && res.data && res.data.results.length === 1) {
-      onSelect(res.data.results[0].groupid);
-    }
+    // Convenience: if the search pinned down exactly one product, load it straight away (skip the extra click). A deep link names
+    // the product it wants, so that one wins even when the search brought back siblings alongside it.
+    const rows = res.success && res.data ? res.data.results : [];
+    const wanted = autoSelect && rows.some((r) => r.groupid === autoSelect) ? autoSelect
+      : rows.length === 1 ? rows[0].groupid
+      : null;
+    if (wanted) onSelect(wanted);
   }
+
+  // Deep link on arrival: fill the search box with the handed-in groupid, run the search and open that product. Once only — after
+  // this the screen is the operator's, so a later edit of the box (or a Back into this page) must not re-run it.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || !initialGroupid) return;
+    deepLinkDone.current = true;
+    const gid = initialGroupid.toUpperCase();
+    setTerm(gid);
+    runSearch(gid, gid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialGroupid]);
 
   // A new product was just created: drop it into the (now single-row) results list and load it into the detail panel so the user
   // carries straight on with the normal edit flow (sizes, price, …). The product now exists, so getProduct in onSelect will find it.
