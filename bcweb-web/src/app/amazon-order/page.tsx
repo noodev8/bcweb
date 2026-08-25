@@ -88,26 +88,27 @@ function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
 
-// Escape a typed term so it can sit inside a RegExp literally (a stray "." or "(" would otherwise be a metacharacter).
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function haystack(r: AmazonOrderRow): string {
   return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
 }
 
 // Shared by `filtered` below and by addInclude's auto-reset check — same include/exclude test against a haystack, since
 // addInclude needs to try a prospective term set BEFORE committing it to state (state updates aren't visible synchronously).
-function matchesSearch(hay: string, incTerms: string[], excRes: RegExp[]): boolean {
+//
+// BOTH sides are a plain substring test over the whole haystack — the legacy PowerBuilder rule (`Pos(...) > 0`) the operator works
+// to: match anywhere in the string, and if anything takes a row out, it is out. The exclusion used to be a \b…\b whole-word regex;
+// that could not drop "Womens …" when you excluded WOMEN (the trailing \b falls between "n" and "s"), which made a MEN + ¬WOMEN
+// stack return womens stock. Substring costs us the over-match (¬SAND also bins SANDALS) — knowingly accepted, owner 2026-08-25.
+// Same rule as the Inventory screen; keep the four sites in step.
+function matchesSearch(hay: string, incTerms: string[], excTerms: string[]): boolean {
   if (incTerms.some((t) => !hay.includes(t))) return false;
-  if (excRes.some((re) => re.test(hay))) return false;
+  if (excTerms.some((t) => hay.includes(t))) return false;
   return true;
 }
 function hasSearchMatch(rows: AmazonOrderRow[], includes: string[], excludes: string[]): boolean {
   const incTerms = includes.map((t) => t.toLowerCase());
-  const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
-  return rows.some((r) => matchesSearch(haystack(r), incTerms, excRes));
+  const excTerms = excludes.map((t) => t.toLowerCase());
+  return rows.some((r) => matchesSearch(haystack(r), incTerms, excTerms));
 }
 
 // Birkenstock is ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — never orderable from this per-SKU screen.
@@ -283,7 +284,7 @@ export default function AmazonOrderHome() {
     if (t && !excludes.includes(t)) { setExcludes((prev) => [...prev, t]); deselectAll(); }
     setExcludeInput('');
   }
-  // Filter boxes are forced upper-case as typed (owner request, 2026-08-13) — purely cosmetic, since haystack()/escapeRegExp()
+  // Filter boxes are forced upper-case as typed (owner request, 2026-08-13) — purely cosmetic, since haystack()/matchesSearch()
   // already lowercase both sides before matching.
   function onIncludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setIncludeInput(e.target.value.toUpperCase()); }
   function onExcludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setExcludeInput(e.target.value.toUpperCase()); }
@@ -375,8 +376,8 @@ export default function AmazonOrderHome() {
     let out = rows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
-      const excRes = excludes.map((t) => new RegExp(`\\b${escapeRegExp(t.toLowerCase())}\\b`));
-      out = out.filter((r) => matchesSearch(haystack(r), incTerms, excRes));
+      const excTerms = excludes.map((t) => t.toLowerCase());
+      out = out.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
     }
     if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
     if (potentialOnly) {

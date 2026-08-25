@@ -125,11 +125,6 @@ function haystack(r: InvStyleRow): string {
   return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.amazonSkus || ''}`.toLowerCase();
 }
 
-// Escape a user term so it can go inside a RegExp literally (a stray "." or "(" would otherwise be a metachar).
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 // Normalise a size token for matching, so a typed "5" finds a stored "05" and "41" finds "41".
 function normSize(s: string): string {
   const n = Number.parseFloat(s);
@@ -173,11 +168,16 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria): IndexedRow[] {
       // CONTAINS stays a plain substring — the operator types partials ("ARIZ" must find "Arizona"), so narrowing has to be loose.
       out = out.filter((x) => x.hay.includes(t));
     } else {
-      // DOES NOT CONTAIN matches WHOLE WORDS. A plain substring here is a footgun: excluding the colour "SAND" also matched the SAND
-      // inside "SANDALS" and wiped every result (owner, 2026-07-23). \b…\b so an exclusion only drops the word you named, not a longer
-      // word that happens to start with it. Built once per step, not per row.
-      const re = new RegExp(`\\b${escapeRegExp(t)}\\b`);
-      out = out.filter((x) => !re.test(x.hay));
+      // DOES NOT CONTAIN is the exact mirror of CONTAINS — a plain substring over the whole haystack. This is the legacy PowerBuilder
+      // rule the operator has worked to for years (`Pos(ls_title, ls_findtext) > 0` → drop the row): match anywhere in the string, and
+      // if anything takes it out, it is out.
+      //
+      // This deliberately REPLACES a \b…\b whole-word test that stood from 2026-07-23 to 2026-08-25. That test was added because
+      // excluding the colour "SAND" also binned every "SANDALS" — but it broke the far more common gesture: ¬WOMEN could not drop
+      // "Womens …", because the trailing \b falls between "n" and "s" and never matches. Since CONTAINS "MEN" matches "Womens" as a
+      // substring too, a RIEKER > MEN > ¬WOMEN stack returned womens stock — the filter looked simply broken (owner, 2026-08-25).
+      // The ¬SAND / SANDALS over-match is the knowingly accepted cost: the operator narrows with a longer term instead.
+      out = out.filter((x) => !x.hay.includes(t));
     }
   }
   if (c.sizeTarget !== null && c.sizeStrict) out = out.filter((x) => sizeQtyIn(x.row, c.sizeTarget) > 0);

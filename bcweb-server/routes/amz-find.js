@@ -13,11 +13,13 @@ Purpose: Direct SKU search for the Amazon Pricing module (the mirror of Shopify'
          it, and there was no way to say "the mens ones". That matters because SEGMENTS ARE A PARTITION — a style sits in exactly one, so
          the segment scheme can express ONE cut of the catalogue at a time (currently seasonal: RIEKER-WIN / RIEKER-SUM). A cross-cutting
          question like "mens Rieker" is structurally unanswerable through segments — mens Rieker is 5 styles spread across both — and gender
-         exists ONLY in shopifytitle ("Mens Rieker Wide Fit Shoes Brown"); no code or groupid carries it. So a whole-word `not` on the title
-         is the only thing that can split the set. This route is the deliberate cross-segment escape hatch, which makes it the right home
+         exists ONLY in shopifytitle ("Mens Rieker Wide Fit Shoes Brown"); no code or groupid carries it. So a `not` on the title is the
+         only thing that can split the set. This route is the deliberate cross-segment escape hatch, which makes it the right home
          for that: `has=RIEKER` + `not=WOMENS` -> exactly the 27 mens SKUs.
            * `has` is a loose SUBSTRING (operators paste partials — "1765" must find 17659-23).
-           * `not` matches WHOLE WORDS (`\y…\y`), so excluding a term drops only the word named, not a longer word starting with it.
+           * `not` is the exact MIRROR — also a plain substring, so anything containing the term is dropped. Was `\y…\y` whole-word
+             until 2026-08-25; that could not drop "Womens …" for `not=WOMEN`, so it only worked if you typed the plural. See the
+             loop below for the trade-off the owner accepted.
          Unlike analytics-sales there is NO minimum term length: that table is 17.7k rows where a 1-char term matches nearly everything,
          whereas amzfeed is 522 rows and operators routinely paste short groupid fragments like "17659". Mirroring the floor would block a
          normal search, so the two screens differ on purpose.
@@ -32,13 +34,14 @@ Purpose: Direct SKU search for the Amazon Pricing module (the mirror of Shopify'
          row is searchable — un-segmented styles included (their `segment` comes back null); this is a deliberate "jump to any SKU" escape
          hatch, NOT limited to styles in a managed segment. Requires auth.
 
-NOTE ON DUPLICATION: the term-parsing/escaping helpers below are a deliberate copy of the ones in analytics-sales.js, kept separate at the
+NOTE ON DUPLICATION: the term-parsing helpers below are a deliberate copy of the ones in analytics-sales.js, kept separate at the
 owner's call (2026-07-25) so the two screens can diverge without one breaking the other — they already differ on the minimum term length.
-If you fix a bug in the regex escaping or term normalising HERE, apply it THERE too.
+If you fix a bug in the term normalising HERE, apply it THERE too. The has/not MATCHING RULE is shared by all four search screens
+(these two routes plus Inventory and Amazon Order client-side) and must stay identical across them.
 =======================================================================================================================================
 Request Query Params:
   has   (string[], optional) - repeatable. Each term ANDs a substring match over code / Amazon SKU / groupid / title (case-insensitive).
-  not   (string[], optional) - repeatable. Each term ANDs a WHOLE-WORD exclusion over the same four fields.
+  not   (string[], optional) - repeatable. Each term ANDs a SUBSTRING exclusion over the same four fields.
   term  (string, optional)   - legacy alias for a single `has` term. Kept because cross-module jumps deep-link here as /amz/find?q=<groupid>
                                (Analytics "reprice this", the Sales row-click), and those links must keep working.
   limit (int, optional)      - row cap; default 200, clamped to [1, 500]. The COUNT is never capped.
@@ -103,11 +106,6 @@ function toTerms(raw, rawBracket) {
   return out;
 }
 
-// Escape a term so it sits inside a POSIX regex literally (a pasted SKU's '.' or '(' would otherwise be a metacharacter).
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 router.get('/', async (req, res) => {
   try {
     const hasTerms = toTerms(req.query.has, req.query['has[]']);
@@ -126,7 +124,7 @@ router.get('/', async (req, res) => {
     if (!(limit > 0)) limit = DEFAULT_LIMIT;
     if (limit > MAX_LIMIT) limit = MAX_LIMIT;
 
-    // Each term becomes one parameterised predicate (the %..% and the \y..\y are built here and BOUND, never interpolated into SQL, so
+    // Each term becomes one parameterised predicate (the %..% wrappers are built here and BOUND, never interpolated into SQL, so
     // this stays injection-safe per CLAUDE.md). Built before the SQL strings so placeholder numbers stay in step with the params array.
     const params = [];
     const termClauses = [];
@@ -135,9 +133,13 @@ router.get('/', async (req, res) => {
       termClauses.push(`AND ${HAY} ILIKE $${params.length}`);
     }
     for (const t of notTerms) {
-      // \y is the Postgres POSIX word boundary — so excluding WOMENS drops the womens lines and nothing else.
-      params.push(`\\y${escapeRegExp(t)}\\y`);
-      termClauses.push(`AND ${HAY} !~* $${params.length}`);
+      // NOT is the exact mirror of the ILIKE above — a plain substring over the whole haystack, the legacy PowerBuilder rule
+      // (`Pos(...) > 0` -> drop the row) the operator works to. This replaced a `!~* '\y…\y'` POSIX word-boundary test on
+      // 2026-08-25: \y could not drop "Womens …" when you excluded WOMEN (the boundary falls between "n" and "s"), so it only
+      // worked if you typed the plural. Substring accepts both WOMEN and WOMENS. Cost: a short term over-matches (excluding SAND
+      // also drops SANDALS) — knowingly accepted by the owner; narrow with a longer term instead.
+      params.push(`%${t}%`);
+      termClauses.push(`AND ${HAY} NOT ILIKE $${params.length}`);
     }
 
     // NOTE: find is a "jump to ANY SKU" escape hatch — it deliberately does NOT require the style to belong to a managed segment (that

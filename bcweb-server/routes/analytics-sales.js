@@ -22,8 +22,9 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the
              no usable index): ~28ms on a 17.7k-row / 9MB table that lives in shared buffers — so there is nothing to optimise here and
              deliberately no trigram index (revisit past ~500k rows).
                * `has` is a loose SUBSTRING (operators type partials — "ARIZ" must find "Arizona").
-               * `not` matches WHOLE WORDS (`\y…\y`), mirroring the Inventory rule learned the hard way: a substring exclusion of the
-                 colour "SAND" also killed "SANDALS" and wiped the results.
+               * `not` is the exact MIRROR — also a plain substring, so anything containing the term is dropped. Mirrors Inventory.
+                 Was `\y…\y` whole-word until 2026-08-25; that could not drop "Womens …" for `not=WOMEN`, because the boundary falls
+                 between "n" and "s". Cost of the change: excluding "SAND" also drops "SANDALS" — accepted, see the loop below.
              A `has` step (>= 3 chars on the FIRST one) flips the screen into PRODUCT MODE: the preset window is replaced by a rolling
              LAST 12 MONTHS, newest-first, capped at 200 lines — because a search means "how is this product doing lately?", and a
              recent-year lens gauges current performance without blending in last season (the table only reaches back to Aug 2024 anyway,
@@ -158,11 +159,6 @@ function toTerms(raw, rawBracket) {
   return out;
 }
 
-// Escape a term so it sits inside a POSIX regex literally (a stray '.' or '(' from a pasted SKU would otherwise be a metacharacter).
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 router.get('/', async (req, res) => {
   try {
     // Channel: 'all' (no filter, so CM3 is included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ'. Anything else falls back to 'all'.
@@ -228,10 +224,12 @@ router.get('/', async (req, res) => {
       termClauses.push(`AND ${HAY} ILIKE $${filterParams.length}`);
     }
     for (const t of notTerms) {
-      // \y is the Postgres POSIX word boundary — the SQL twin of the \b…\b the Inventory screen uses, so excluding "SAND" drops the
-      // colour without also dropping "SANDALS".
-      filterParams.push(`\\y${escapeRegExp(t)}\\y`);
-      termClauses.push(`AND ${HAY} !~* $${filterParams.length}`);
+      // NOT is the exact mirror of the ILIKE above — a plain substring over the whole haystack, the legacy PowerBuilder rule
+      // (`Pos(...) > 0` -> drop the row) the operator works to, and the same rule the Inventory screen uses. This replaced a
+      // `!~* '\y…\y'` POSIX word-boundary test on 2026-08-25: \y could not drop "Womens …" when you excluded WOMEN (the boundary
+      // falls between "n" and "s"). Cost: excluding "SAND" now also drops "SANDALS" — knowingly accepted by the owner.
+      filterParams.push(`%${t}%`);
+      termClauses.push(`AND ${HAY} NOT ILIKE $${filterParams.length}`);
     }
     const termSql = termClauses.length > 0 ? `\n          ${termClauses.join('\n          ')}` : '';
 
