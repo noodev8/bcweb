@@ -652,25 +652,12 @@ export default function AmazonOrderHome() {
     );
   }
 
-  // Cutting a row also wipes anything typed in its Order box (owner, 2026-08-13) — a cut SKU shouldn't silently keep contributing
-  // to orderTargets/orderTotalUnits (both reach off-screen, so a cut row's leftover value would still be queued on Order/submit).
-  function clearOrderQtyFor(codes: Iterable<string>) {
-    setOrderQty((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const code of codes) {
-        if (code in next) { delete next[code]; changed = true; }
-      }
-      return changed ? next : prev;
-    });
-  }
   function onCut(code: string) {
     setCut((prev) => {
       const next = new Set(prev);
       next.add(code);
       return next;
     });
-    clearOrderQtyFor([code]);
   }
 
   // CLEAR BASKET — empties the whole scratchpad in one go, off-screen rows included, and (via the autosave effect above, which
@@ -822,7 +809,6 @@ export default function AmazonOrderHome() {
       selected.forEach((c) => next.add(c));
       return next;
     });
-    clearOrderQtyFor(selected);
     if (landing === null) {
       setSelected(new Set());
     } else {
