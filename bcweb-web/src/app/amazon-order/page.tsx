@@ -42,7 +42,7 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
       (what to buy from the supplier). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
       Potential at 1/2 and each list shows its own rate still lit when you flick back to it.
 
-SEND TO ORDER STATUS: the "Send to Order Status" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
+SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
       row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
       Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — its Order
@@ -1109,7 +1109,7 @@ export default function AmazonOrderHome() {
                   <span className="text-sm font-medium">
                     {ordering && orderProgress
                       ? `Sending ${orderProgress.done}/${orderProgress.total}…`
-                      : 'Send to Order Status'}
+                      : 'Confirm Basket'}
                   </span>
                   {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
                       decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
@@ -1126,7 +1126,7 @@ export default function AmazonOrderHome() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Send {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
+                  Confirm {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
                 </span>
                 <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
                 <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
