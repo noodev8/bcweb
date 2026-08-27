@@ -58,10 +58,10 @@ SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad in
 LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
       positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone
       rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
-      LIVE filter, not a snapshot: re-evaluates as orderQty changes, so typing a value while it's on brings the row straight in
-      without a re-toggle. The row currently FOCUSED is always exempt from this filter regardless of what it reads
-      (focusedOrderCode) — otherwise backspacing a value down through 0 on the way to clearing it would yank the row, and the
-      input being typed into, out of the list mid-edit.
+      SNAPSHOT, not a live filter (owner, 2026-08-27): membership is fixed when the preset is switched on and only a bulk basket
+      action (rate fill/clear, Clear basket, Reset, re-toggle) moves it — editing quantities never reshuffles the list under the
+      hands doing the editing. The row currently FOCUSED is exempt from the filter as well, regardless of what it reads
+      (focusedOrderCode).
 
 RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE sold at some point, just not within the last 6
       months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
@@ -319,14 +319,25 @@ export default function AmazonOrderHome() {
   // 2026-08-20: a row filled while Potential was on shouldn't vanish from Load Order just because the screen's since flipped to
   // Winners). So it overrides those filters rather than stacking on top of them — see `filtered` below, which short-circuits to
   // this rule alone when ordersOnly is on. Mutually exclusive with Winners/Potential for the same reason Winners/Potential are
-  // mutually exclusive with each other: combining would silently confuse which rule is actually governing the screen. A live
-  // filter, not a snapshot — re-evaluates as orderQty changes, so typing a value while it's on doesn't require re-toggling to bring
-  // the row in. Order scratchpad values, keyed by code — declared here (ahead of `filtered`/`sorted` below, which both need it)
+  // mutually exclusive with each other: combining would silently confuse which rule is actually governing the screen. Membership
+  // is a SNAPSHOT taken when the preset goes on — see basketSnapshot just below. Order scratchpad values, keyed by code — declared here (ahead of `filtered`/`sorted` below, which both need it)
   // rather than down with the rest of the Order UI state further down.
   const [orderQty, setOrderQty] = useState<Record<string, string>>({});
   const [ordersOnly, setOrdersOnly] = useState(false);
+  // MEMBERSHIP IS A SNAPSHOT, NOT LIVE (owner, 2026-08-27 — "don't auto filter with edits"). Load basket used to re-test every
+  // row against the live orderQty on every keystroke, so editing quantities while it was on rearranged the list underneath the
+  // hands doing the editing: zeroing a row made it vanish the moment focus left, and a row typed up elsewhere appeared mid-list.
+  // The set of rows is now fixed when the filter is switched on, and only a BULK basket action changes it (a rate fill/re-tap
+  // clear, Clear basket, Reset, or toggling the filter off and on again) — typing never does. null = filter off.
+  const [basketSnapshot, setBasketSnapshot] = useState<Set<string> | null>(null);
+  // The codes the basket holds a positive quantity for right now — what a fresh snapshot is taken from.
+  function basketCodes() {
+    return new Set(Object.entries(orderQty).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code));
+  }
   function toggleOrdersOnly() {
-    setOrdersOnly((v) => !v);
+    const next = !ordersOnly;
+    setOrdersOnly(next);
+    setBasketSnapshot(next ? basketCodes() : null);
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false);
     deselectAll();
   }
@@ -362,6 +373,7 @@ export default function AmazonOrderHome() {
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
+    setBasketSnapshot(null);
     setCut(new Set()); setSelected(new Set());
     setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
@@ -372,7 +384,13 @@ export default function AmazonOrderHome() {
   const filtered = useMemo(() => {
     // Orders Only stands alone against the FULL row set — see its declaration above for why: it must not miss a row that has an
     // order just because search/Winners/Potential would otherwise have excluded it.
-    if (ordersOnly) return rows.filter((r) => r.code === focusedOrderCode || (Number(orderQty[r.code]) || 0) > 0);
+    // basketSnapshot is the membership list (see toggleOrdersOnly) — a fixed set, so typing in an Order box never adds or removes
+    // a row. The focused row stays exempt as a belt-and-braces guard, and the live test is the fallback if the filter is somehow
+    // on with no snapshot taken.
+    if (ordersOnly) {
+      return rows.filter((r) => r.code === focusedOrderCode
+        || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(orderQty[r.code]) || 0) > 0));
+    }
     let out = rows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
@@ -400,7 +418,7 @@ export default function AmazonOrderHome() {
       });
     }
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, orderQty, focusedOrderCode]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, orderQty, basketSnapshot, focusedOrderCode]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
@@ -627,6 +645,9 @@ export default function AmazonOrderHome() {
         for (const code of visibleCodes) delete next[code];
         return next;
       });
+      // A rate re-tap is a bulk basket edit, so Load basket's snapshot moves with it — the rows just emptied drop out rather than
+      // sitting there with blank boxes.
+      if (ordersOnly) setBasketSnapshot((prev) => new Set([...(prev ?? [])].filter((c) => !visibleCodes.has(c))));
       setManualOrder(null);
       return;
     }
@@ -647,6 +668,15 @@ export default function AmazonOrderHome() {
       filled.forEach(({ code, qty }) => { next[code] = String(qty); });
       return next;
     });
+    // Same for a fill: the visible rows this rate skipped (Birkenstock, loss-makers, nothing to order) leave the snapshot, the
+    // rows it filled join it.
+    if (ordersOnly) {
+      setBasketSnapshot((prev) => {
+        const nextSet = new Set([...(prev ?? [])].filter((c) => !visibleCodes.has(c)));
+        filled.forEach(({ code }) => nextSet.add(code));
+        return nextSet;
+      });
+    }
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
@@ -681,6 +711,7 @@ export default function AmazonOrderHome() {
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
     setOrdersOnly(false);
+    setBasketSnapshot(null);
     deselectAll();
   }
 
