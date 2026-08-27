@@ -177,6 +177,10 @@ app.use('/analytics-stock-position', require('./routes/analytics-stock-position'
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
+
+// Brands module — revenue/profit per brand over a long window (12 or 6 months) against the window before it. Skechers is excluded
+// outright and the sub-1%-of-revenue tail folds into one "Others" row; both rules live in the route.
+app.use('/brand-overview', require('./routes/brand-overview'));   // GET: per-brand revenue, profit, margin, units + prior-period deltas
 // Price Changes: recent price moves across BOTH channels (before->after, who/when) + units sold since each change. Filterable by
 // channel (all/shp/amz) and user; per-channel limit. Read-only.
 app.use('/analytics-change-impact', require('./routes/analytics-change-impact'));

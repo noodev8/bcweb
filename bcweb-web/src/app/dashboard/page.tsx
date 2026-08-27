@@ -13,7 +13,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ArchiveBoxIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon,
-  ArrowUpTrayIcon, UserGroupIcon, MegaphoneIcon, ClipboardDocumentListIcon,
+  ArrowUpTrayIcon, UserGroupIcon, MegaphoneIcon, ClipboardDocumentListIcon, PresentationChartLineIcon,
 } from '@heroicons/react/24/outline';
 
 export default function DashboardPage() {
@@ -119,6 +119,17 @@ export default function DashboardPage() {
           description="Load the Seller Central reports — sales, returns, FBA stock and fees."
           href="/update-amazon"
           icon={ArrowUpTrayIcon}
+          live
+        />
+
+        {/* Brands — revenue/profit per brand over 12 or 6 months, against the window before it. Its own tile rather than a page
+            inside Analytics: Analytics is a set of operational gauges read daily, this is the once-a-season "what is the shape of
+            the business?" read, and it's the screen a buying decision starts from. */}
+        <ModuleTile
+          title="Brands"
+          description="What each brand earned — revenue, profit and margin over the last year or six months."
+          href="/brands"
+          icon={PresentationChartLineIcon}
           live
         />
 

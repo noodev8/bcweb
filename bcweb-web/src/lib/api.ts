@@ -718,6 +718,68 @@ export function renameSegment(oldName: string, newName: string) {
 }
 
 // =============================================================================================================================
+// Brands module — brand overview (revenue/profit per brand over a long window, against the window before it).
+// =============================================================================================================================
+// One row per brand, biggest revenue first, with a single "Others" row (isOthers) always last that folds every brand below the
+// server's share threshold — `brands` lists what's inside it. Skechers never appears at all (see `excluded`). Percentages are
+// null, not 0, where there's no divisor: marginPct on zero revenue, share on a zero total, and change% where the prior window had
+// no trade (a brand's first season is "new", not "+100%").
+export interface BrandOverviewRow {
+  brand: string;
+  isOthers: boolean;
+  brands: string[] | null;   // the folded brand names — only on the Others row
+  revenue: number;
+  profit: number;
+  marginPct: number | null;
+  profitPerUnit: number | null;  // per NET unit (returns netted out)
+  unitsSold: number;
+  unitsReturned: number;
+  unitsNet: number;
+  lines: number;
+  revenueSharePct: number | null;
+  profitSharePct: number | null;
+  priorRevenue: number;
+  priorProfit: number;
+  revenueChangePct: number | null;
+  profitChangePct: number | null;
+}
+
+export interface BrandOverviewTotals {
+  revenue: number; profit: number; marginPct: number | null;
+  unitsSold: number; unitsReturned: number; unitsNet: number;
+  priorRevenue: number; priorProfit: number;
+  brands: number;            // how many brands actually traded in the window (Skechers excluded, Others counted individually)
+}
+
+export interface BrandOverviewData {
+  months: number;
+  channel: string;                      // 'all' (incl. the minor CM3 channel) | 'shp' | 'amz'
+  from: string; to: string;             // current window, 'YYYY-MM-DD'
+  priorFrom: string; priorTo: string;   // the same length immediately before it
+  excluded: string[];                   // brands deliberately left out of every number on the screen
+  othersSharePct: number;               // the fold threshold, so the UI can say what Others means
+  totals: BrandOverviewTotals;
+  rows: BrandOverviewRow[];
+}
+
+// Load the brand overview. `months` is 12 (default) or 6 and `channel` is 'all' | 'shp' | 'amz' — the server falls back to the
+// defaults (12 / all) for anything else.
+export function getBrandOverview(months?: number, channel?: string) {
+  return request<BrandOverviewData>(
+    { url: '/brand-overview', method: 'GET', params: { months, channel } },
+    (b) => ({
+      months: b.months,
+      channel: b.channel,
+      from: b.from, to: b.to, priorFrom: b.priorFrom, priorTo: b.priorTo,
+      excluded: b.excluded || [],
+      othersSharePct: b.othersSharePct,
+      totals: b.totals,
+      rows: b.rows || [],
+    })
+  );
+}
+
+// =============================================================================================================================
 // Analytics module — Birk Tracker (daily snapshot of Birkenstock core-size availability; the Google-Ads push/scale-back gauge).
 // =============================================================================================================================
 // One daily snapshot row. full = Birk styles with all 3 core sizes (38/39/40) in FREE stock (the decision number);
