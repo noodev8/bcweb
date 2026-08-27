@@ -16,8 +16,8 @@ every existing report and script:
     so the ON ORDER screen can group the delivery and the operator has a reference to quote when chasing the supplier. The 'BC-' prefix
     keeps ours disjoint from the legacy 6-digit supplier-allocated numbers, and is also what makes the undo below safe.
 
-We do NOT touch `arrived`/`arriveddate` — goods-in stays with the legacy app (docs/orders/orders-spec.md §7b), and we insert no rows and
-move no stock. Placing an order is purely this stamp.
+We do NOT touch `arrived`/`arriveddate` — goods-in stays with the legacy app (build spec §7b, retired in 62f9d3b; recover with
+`git show 62f9d3b^:docs/orders/orders-spec.md`), and we insert no rows and move no stock. Placing an order is purely this stamp.
 
 IDEMPOTENCE / RACE SAFETY: the UPDATE carries `AND COALESCE(orderdate,'') = ''` in its WHERE, so a double-click, a retry, or a second
 operator working the same supplier can only ever stamp rows that are still un-placed. Already-placed rows are skipped rather than

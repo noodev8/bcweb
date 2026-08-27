@@ -6,8 +6,9 @@ Purpose: Shared SQL fragments for the Order Status module's two stages, so every
 
 The lifecycle is Chosen -> Placed -> Arrived, and `orderstatus.orderdate` is the marker between the first two:
 
-  - The legacy PowerBuilder request screen (docs/orders/legacy/order-request.txt) INSERTS the orderstatus rows and deliberately never
-    touches `orderdate` — the goods have been CHOSEN but not yet bought from the supplier.
+  - The legacy PowerBuilder request screen INSERTS the orderstatus rows and deliberately never touches `orderdate` — the goods
+    have been CHOSEN but not yet bought from the supplier. (That screen's extract was retired in 4851442; recover it with
+    `git show 4851442^:docs/orders/legacy/order-request.txt`.)
   - A later action stamps `orderdate` in bulk once the order is genuinely placed (42 live rows share the stamp '20260714 11:16:50').
     That stamp is what this module now owns (POST /order-status-place).
 

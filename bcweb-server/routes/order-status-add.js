@@ -16,7 +16,8 @@ not blocked by a check here — it simply isn't expressible: every row this rout
 WHY THIS ROUTE EXISTS SEPARATELY FROM /order-status-adjust-qty: `+` there is safe precisely because it CLONES an existing row, so all
 ~40 legacy columns (supplier, ordertype, ponumber, the 'x' placeholders, ukd/othersupplier, batch, channel) come along for free. A
 brand-new code has no template to clone, so every one of those fields has to be set correctly from scratch. The values below mirror
-`docs/orders/legacy/order-request.txt` (the PowerBuilder Request write) field for field, verified against live MANUAL rows:
+the PowerBuilder Request write field for field, verified against live MANUAL rows (that extract was retired in 4851442; recover
+with `git show 4851442^:docs/orders/legacy/order-request.txt`):
 
   qty=1, batch='0', channel='MANUAL', arrived=0, orderdate='' (blank — stamped later at Place), createddate=today, amz=0,
   pickedqty/courierfixed/customerwaiting/notorderamz/alloworder/picknotfound/shopcustomer/localstock = 0,

@@ -9,9 +9,10 @@ Purpose: Re-flag a set of orderstatus rows from one supplier-order type to the o
 
 Only flips `ordertype` (2 <-> 3). `ukd` / `othersupplier` / `amz` are supplier-identity flags (which supplier placed it), not
 order-type flags — live data confirms they track `supplier`, not `ordertype` (see CLAUDE.md-adjacent research), and a type switch
-never changes the supplier, so they are left untouched. `ordernum` (e.g. "LOCAL-..." / "AMZ-O-...") is also left as-is: per
-docs/orders/orders-spec.md the prefix is legacy cosmetic convention only, superseded by the `ordertype` column — nothing branches on
-it, so a "LOCAL-" row that is now ordertype=3 is not a functional problem, just a slightly stale label.
+never changes the supplier, so they are left untouched. `ordernum` (e.g. "LOCAL-..." / "AMZ-O-...") is also left as-is: per the
+build spec (retired in 62f9d3b; recover with `git show 62f9d3b^:docs/orders/orders-spec.md`) the prefix is legacy cosmetic
+convention only, superseded by the `ordertype` column — nothing branches on it, so a "LOCAL-" row that is now ordertype=3 is not
+a functional problem, just a slightly stale label.
 =======================================================================================================================================
 Request Payload:
 {
