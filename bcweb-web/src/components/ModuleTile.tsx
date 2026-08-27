@@ -4,6 +4,9 @@
 Component: ModuleTile
 =======================================================================================================================================
 Purpose: A single tile on the platform dashboard. Live modules link somewhere; "coming soon" modules render disabled with a badge.
+         A live tile carries NO badge of its own (owner, 2026-08-27 — the old green "Live" / amber "In progress" pills went): every
+         tile on the grid that isn't greyed out is live, so the pill repeated what the tile's own styling already said and put a
+         row of colour above titles that then had to compete with it. "Coming soon" stays — that one carries real information.
          This is what makes the dashboard a modular shell (CLAUDE.md): v1 ships one live tile (Shopify Pricing) and greyed
          placeholders (Amazon Pricing, Inventory, Orders, Analytics) so the growth path is visible without building them.
 =======================================================================================================================================
@@ -18,10 +21,9 @@ interface ModuleTileProps {
   href?: string;                                    // present => live tile
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   live?: boolean;
-  badgeLabel?: string;                               // override the "Live" badge text (e.g. "In progress") without affecting clickability
 }
 
-export default function ModuleTile({ title, description, href, icon: Icon, live, badgeLabel }: ModuleTileProps) {
+export default function ModuleTile({ title, description, href, icon: Icon, live }: ModuleTileProps) {
   const body = (
     <div
       className={
@@ -35,16 +37,7 @@ export default function ModuleTile({ title, description, href, icon: Icon, live,
         <span className={'inline-flex h-10 w-10 items-center justify-center rounded-lg ' + (live ? 'bg-brand-50 text-brand-600' : 'bg-slate-200 text-slate-400')}>
           <Icon className="h-6 w-6" />
         </span>
-        {live ? (
-          // A custom badgeLabel (e.g. "In progress") gets amber, not green — green reads as "done and stable", which an
-          // in-progress module isn't; amber makes the distinction visible at a glance from the tile grid.
-          <span className={
-            'rounded-full px-2 py-0.5 text-xs font-medium ' +
-            (badgeLabel ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700')
-          }>
-            {badgeLabel || 'Live'}
-          </span>
-        ) : (
+        {!live && (
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500">Coming soon</span>
         )}
       </div>

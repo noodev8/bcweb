@@ -71,7 +71,6 @@ export default function DashboardPage() {
           href="/amazon-order"
           icon={ClipboardDocumentListIcon}
           live
-          badgeLabel="In progress"
         />
 
         {/* Placeholders — modular growth path, not built in v1. */}
