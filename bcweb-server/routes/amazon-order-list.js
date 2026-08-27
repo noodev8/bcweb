@@ -28,7 +28,9 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          Also carries three identifiers: barcode = skumap.ean with the legacy trailing 'B' stripped (CLAUDE.md — that suffix is an
          Excel guard for internal spreadsheets, not part of the barcode; same regexp_replace as order-status-find.js), amz_sku =
          amzfeed.sku (the Amazon Seller SKU — same field amz-drill.js reads, kept consistent with it rather than skumap.sku),
-         supplier = skumap.supplier.
+         supplier = skumap.supplier, brand = skusummary.brand. Both travel: supplier is what the order line is actually placed
+         against (addOrderLine on the web side sends it), brand is what the operator reads on screen — the detail row shows brand
+         because "who we buy it from" is rarely the question at the point of ordering, "what make is it" is (owner, 2026-08-27).
 
          local_stock = current sellable localstock (CLAUDE.md: WHERE ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0), summed
          per code — NEVER skusummary.stockvariants/variants (stale, per the same landmine). EXCLUDES location='C3-Amazon': that is
@@ -62,7 +64,7 @@ Success Response:
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10,
-      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "local_stock": 3, "cost": 18.50,
+      "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
       "last_sold": "2026-06-02" },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
@@ -132,6 +134,7 @@ router.get('/', async (req, res) => {
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
              m.supplier AS supplier,
+             sk.brand AS brand,
              COALESCE(loc.units,0) AS local_stock,
              ${safeNumeric('sk.cost')} AS cost,
              to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold
@@ -164,6 +167,7 @@ router.get('/', async (req, res) => {
         barcode: r.barcode || null,
         amz_sku: r.amz_sku || null,
         supplier: r.supplier || null,
+        brand: r.brand || null,
         local_stock: Number(r.local_stock) || 0,
         cost: num(r.cost),
         last_sold: r.last_sold || null,

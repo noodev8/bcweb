@@ -168,10 +168,10 @@ interface AmazonOrderDraft {
 }
 // 'order_qty' is NOT a row field (it's the client-only Order scratchpad, keyed separately by code) — sortValue can't resolve it,
 // so `sorted` below special-cases it by reading the live orderQty state directly.
-type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'supplier' | 'order_qty';
+type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty';
 // Reading order: identity (SKU, then the Order scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
-// supplier), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
+// brand), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
   { key: 'code', label: 'SKU (size)', align: 'left' },
   { key: 'local_stock', label: 'Local', title: 'Sellable local stock, excluding anything staged at C3-Amazon (that\'s counted under FBA Total instead)', align: 'right' },
@@ -183,12 +183,12 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
   { key: 'profit_30d', label: 'Profit (30d)', title: 'unit_profit x Sold (30d)', align: 'right' },
   { key: 'barcode', label: 'Barcode', title: 'skumap.ean, trailing B stripped', align: 'left' },
   { key: 'amz_sku', label: 'Amazon SKU', title: 'Amazon Seller SKU (amzfeed.sku)', align: 'left' },
-  { key: 'supplier', label: 'Supplier', align: 'left' },
+  { key: 'brand', label: 'Brand', title: 'skusummary.brand', align: 'left' },
 ];
 // Text columns default A-Z; every numeric column defaults high-to-low (the biggest number is usually the interesting end).
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
-  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', supplier: 'asc', order_qty: 'desc',
+  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', brand: 'asc', order_qty: 'desc',
 };
 
 // COLUMN GROUPS — the table is really four blocks wearing ten columns: identity (SKU), stock on hand (Local / FBA Live / FBA
@@ -203,7 +203,7 @@ const GROUP_START: ReadonlySet<SortKey> = new Set<SortKey>(['local_stock', 'unit
 // it's guarded here too rather than left to fall through to an `r[key]` index TypeScript can't type against AmazonOrderRow.
 function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
   if (key === 'order_qty') return null;
-  if (key === 'barcode' || key === 'amz_sku' || key === 'supplier') return r[key] ? r[key]!.toLowerCase() : null;
+  if (key === 'barcode' || key === 'amz_sku' || key === 'brand') return r[key] ? r[key]!.toLowerCase() : null;
   return r[key];
 }
 
@@ -728,7 +728,7 @@ export default function AmazonOrderHome() {
     onEnter: () => cutSelected(),
   });
 
-  // DETAIL EXPAND — barcode/Amazon SKU/supplier are looked up rarely, so they're not columns anymore (they were most of why the
+  // DETAIL EXPAND — barcode/Amazon SKU/brand are looked up rarely, so they're not columns anymore (they were most of why the
   // table needed side-scrolling); double-clicking a row reveals them inline instead (owner request, 2026-08-13). Keyed by code,
   // same as cut/selected — a plain Set, since more than one row can be open at once and there's no ordering to track.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1170,7 +1170,7 @@ export default function AmazonOrderHome() {
             >
               <tr>
                 {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
-                    (6 columns), then the scratchpad, then unit_profit/profit_30d. Barcode/Amazon SKU/Supplier (COLUMNS[8..10])
+                    (6 columns), then the scratchpad, then unit_profit/profit_30d. Barcode/Amazon SKU/Brand (COLUMNS[8..10])
                     are looked up rarely enough that they're no longer columns at all — click the caret next to a SKU to reveal
                     them inline instead (see the `expanded` detail row in the body below) — so only COLUMNS.slice(6, 8) renders
                     here now. */}
@@ -1215,7 +1215,7 @@ export default function AmazonOrderHome() {
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
-                        title="Barcode / Amazon SKU / supplier"
+                        title="Barcode / Amazon SKU / brand"
                         className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-500"
                       >
                         <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expanded.has(r.code) ? 'rotate-180' : '')} />
@@ -1265,7 +1265,7 @@ export default function AmazonOrderHome() {
                     </button>
                   </td>
                 </tr>
-                {/* Detail row — barcode/Amazon SKU/supplier, toggled by the caret next to the SKU above (see toggleExpanded). Not a
+                {/* Detail row — barcode/Amazon SKU/brand, toggled by the caret next to the SKU above (see toggleExpanded). Not a
                     real column anymore (rarely needed, and was most of why the table needed side-scrolling); colSpan covers every
                     column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
                     CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
@@ -1283,8 +1283,8 @@ export default function AmazonOrderHome() {
                           {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
                         </span>
                         <span className="inline-flex items-center gap-0.5">
-                          Supplier: <span className="text-slate-800">{r.supplier || '—'}</span>
-                          {r.supplier && <CopyButton value={r.supplier} label="supplier" />}
+                          Brand: <span className="text-slate-800">{r.brand || '—'}</span>
+                          {r.brand && <CopyButton value={r.brand} label="brand" />}
                         </span>
                       </div>
                     </td>

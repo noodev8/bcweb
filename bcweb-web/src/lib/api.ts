@@ -127,7 +127,8 @@ export interface AmzAllRow {
 // profit_30d = unit_profit * units_30d, null if unit_profit unknown. fba_total/fba_live = amzfeed.amztotal/amzlive (live+inbound vs
 // sellable-now FBA stock). units_7d = amzfeed.amzsold7, the same fixed-window idea as units_30d but 7 days — GROSS (amzfeed has no
 // matching 7-day returns figure to net it against); read together as a trend (accelerating vs gone quiet). barcode = skumap.ean (trailing
-// 'B' stripped), amz_sku = amzfeed.sku (Amazon Seller SKU), supplier = skumap.supplier. title stays (used for search) even though
+// 'B' stripped), amz_sku = amzfeed.sku (Amazon Seller SKU), supplier = skumap.supplier (kept because an order line is placed
+// against it), brand = skusummary.brand (what the detail row actually shows). title stays (used for search) even though
 // the landing table itself no longer renders a Product column (owner request, 2026-08-07). local_stock = current sellable localstock
 // (CLAUDE.md: ordernum='#FREE', not deleted, qty>0), NEVER skusummary.stockvariants. cost = skusummary.cost (CLAUDE.md: order cost
 // is ALWAYS skusummary.cost, never skumap.cost) — used to total the on-screen proposed Order. Order is NOT a server field — the web
@@ -136,7 +137,7 @@ export interface AmazonOrderRow {
   code: string; groupid: string; size: string; title: string | null;
   price: number | null; units_7d: number; units_30d: number; unit_profit: number | null; profit_30d: number | null;
   fba_total: number; fba_live: number;
-  barcode: string | null; amz_sku: string | null; supplier: string | null;
+  barcode: string | null; amz_sku: string | null; supplier: string | null; brand: string | null;
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
 }
