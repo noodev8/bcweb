@@ -1043,38 +1043,19 @@ export default function AmazonOrderHome() {
             )}
           </div>
 
-          {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: throw it away, or send
-              it. Clear sits LEFT of Send so the destructive one is never the button under the cursor when you reach for the one
-              you actually want, and it's quiet (bordered, not filled) against Send's fill. Red here because Clear is destructive
-              (empties the whole basket + discards the draft); row 1's Cut is neutral slate — cutting a row is just a view hide,
-              not a delete, so it doesn't earn the same alarm colour (owner, 2026-08-24 — "too much in your face").
+          {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: send it, or throw it
+              away. Clear now sits at the far RIGHT end of the row, past Send, and is the bin ICON ALONE (owner, 2026-08-27): it's
+              the least-used control of the three, so spending two words of the panel's widest row on it made the rarely-pressed
+              button as loud as the one that does the work. Losing the label is safe because the confirm step still spells the
+              action out in full before anything is emptied. Red because Clear is destructive (empties the whole basket +
+              discards the draft); row 1's Cut is neutral slate — cutting a row is just a view hide, not a delete, so it doesn't
+              earn the same alarm colour (owner, 2026-08-24 — "too much in your face").
 
               items-STRETCH, not items-center: Send grows a second line once the basket has something in it, and a short Clear
               floating centred beside a tall Send read as two unrelated controls rather than the pair they are. Stretching ties
               their heights together whichever state Send is in — each child centres its own contents, so nothing else moves. */}
           <div className="ml-auto flex items-stretch gap-2">
-            {!confirmingClear ? (
-              <button
-                type="button"
-                onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
-                disabled={ordering || orderTargets.length === 0}
-                title="Empty the whole basket — every row with a value, not just the ones on screen — and discard the saved draft"
-                className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
-              >
-                <TrashIcon className="h-4 w-4" />
-                Clear basket
-              </button>
-            ) : (
-              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-                <span className="text-slate-700">
-                  Clear all {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} from the basket?
-                </span>
-                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
-                <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
-              </span>
-            )}
-
-            {/* LOAD BASKET — moved here between Clear and Send (owner, 2026-08-20): it's a basket action like its two neighbours,
+            {/* LOAD BASKET — moved here beside Send (owner, 2026-08-20): it's a basket action like its two neighbours,
                 not a narrowing filter like Winners/Potential/Recycle, so it reads more clearly sitting with the other two things
                 that act on the basket rather than in row 1's segmented preset control. Still the same toggle underneath
                 (toggleOrdersOnly/ordersOnly), still mutually exclusive with Winners/Potential/Recycle. */}
@@ -1140,6 +1121,29 @@ export default function AmazonOrderHome() {
                 </span>
                 <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
                 <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
+              </span>
+            )}
+
+            {/* CLEAR BASKET — last in the row, icon only. aria-label carries the name the label used to, so the button is still
+                announced (and the title still explains the full reach of it) with nothing on screen but the bin. */}
+            {!confirmingClear ? (
+              <button
+                type="button"
+                onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
+                disabled={ordering || orderTargets.length === 0}
+                aria-label="Clear basket"
+                title="Empty the whole basket — every row with a value, not just the ones on screen — and discard the saved draft"
+                className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+              >
+                <TrashIcon className="h-5 w-5" />
+              </button>
+            ) : (
+              <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                <span className="text-slate-700">
+                  Clear all {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} from the basket?
+                </span>
+                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
+                <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}
           </div>
