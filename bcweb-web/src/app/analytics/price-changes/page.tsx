@@ -140,7 +140,7 @@ export default function PriceChangesPage() {
     <AppShell
       title="Price Changes"
       backHref="/analytics"
-      backLabel="Analytics"
+      backLabel="Reports"
       /* The blurb is orientation — read once, then it is just text in the way. Behind this header-row toggle it costs no vertical
          space at all (same pattern as New Additions). */
       headerRight={

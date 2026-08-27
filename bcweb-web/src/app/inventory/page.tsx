@@ -52,7 +52,8 @@ InvStyleCard now takes it as a prop.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
@@ -191,28 +192,76 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria): IndexedRow[] {
   return out;
 }
 
+// PARSING ONE CONTAINS TERM. Pulled out of onFind so the ?q= seed (below) and the box itself run the SAME rules — a term arriving
+// from the dashboard search box must behave exactly as if it had been typed here, or the two searches drift apart.
+// Returns what the term MEANS: a text term to match, a size split off a pasted SKU, or a worded quantity command.
+function parseContains(raw: string): { term: string; size: string; qty: QtyFilter | null } {
+  let term = raw.trim();
+  let size = '';
+  let qty: QtyFilter | null = null;
+  // FIRST CHECK (owner): a worded "STOCK/SOLD LESS <n>" / "…MORE <n>" is a quantity filter, not a text find, so it is matched BEFORE
+  // the text/SKU logic — otherwise "STOCK" would leak through as a title substring and match nothing. The keyword is caps because the
+  // box force-uppercases input. Any integer or one decimal place is accepted.
+  const qtyMatch = term.match(/^(STOCK|SOLD)\s+(LESS|MORE)\s+(\d+(?:\.\d+)?)$/);
+  if (qtyMatch) {
+    qty = { metric: qtyMatch[1] === 'STOCK' ? 'stock' : 'sold', op: qtyMatch[2] === 'LESS' ? 'less' : 'more', n: Number(qtyMatch[3]) };
+    return { term: '', size: '', qty };
+  }
+  // A trailing "-38" / "-42.5" on a groupid-shaped term is a SIZE, not part of the code (operators paste a full SKU like
+  // 0151183-ARIZONA-38 when they mean "that style, in 38"). The groupid never carries the size, so the raw term matches nothing.
+  // Only fires when the term STARTS with a code (a digit then a dash, i.e. a real groupid), so a hyphen in ordinary title text isn't
+  // mistaken for a size.
+  const sizeMatch = term.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
+  if (sizeMatch) { term = sizeMatch[1]; size = sizeMatch[2]; }
+  return { term, size, qty };
+}
+
+// useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function InventoryPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <InventoryPageContent />
+    </Suspense>
+  );
+}
+
+function InventoryPageContent() {
 
 
+
+  // THE ?q= SEED (owner, 2026-08-27). The dashboard opens on a product search box, which hands its term here as ?q= rather than
+  // running a search of its own (see ProductSearchBox) — so the operator types once, on the screen they start the day on, and lands
+  // here already narrowed. Read ONCE, into the initial state, not in an effect: the page must never paint the whole catalogue and
+  // then visibly snap to the match.
+  // Uppercased to match what the Contains box does to typed input, so a seeded step and a typed one read identically in the breadcrumb.
+  const searchParams = useSearchParams();
+  const [seed] = useState(() => {
+    const q = (searchParams.get('q') || '').trim().toUpperCase();
+    return q ? parseContains(q) : null;
+  });
 
   // The two input boxes, and the ordered list of steps applied so far.
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
-  const [steps, setSteps] = useState<FilterStep[]>([]);
+  const [steps, setSteps] = useState<FilterStep[]>(seed?.term ? [{ op: 'has', term: seed.term }] : []);
 
   // SIZE filter — a SINGLE value kept apart from the text steps so it can be swapped or cleared on its own (41 -> 40 as the customer
   // asks) without re-typing the text hunt. Filters to styles holding that size locally; each card then leads with that size's count.
   const [sizeInput, setSizeInput] = useState('');
-  const [sizeFilter, setSizeFilter] = useState<string | null>(null);
+  const [sizeFilter, setSizeFilter] = useState<string | null>(seed?.size || null);
   const sizeTarget = useMemo(() => (sizeFilter ? normSize(sizeFilter) : null), [sizeFilter]);
   // Does the size filter EXCLUDE styles that are sold out in that size? True for the standalone Size box (a "who's got a 41?" browse —
   // a style with none is noise). FALSE when the size was inferred from a pasted SKU like 0151183-ARIZONA-38: that is a targeted lookup
   // of ONE style, so we must still show its card (leading with 38, greyed at 0) rather than "No styles match" (owner, 2026-07-23).
-  const [sizeStrict, setSizeStrict] = useState(true);
+  // A SEEDED size can only have come off a pasted SKU (the dashboard search box has no size box of its own), i.e. a targeted lookup of
+  // ONE style — so it starts NON-strict, or the card would be hidden exactly when that size happens to be out.
+  const [sizeStrict, setSizeStrict] = useState(!seed?.size);
 
   // STOCK / SOLD worded filters — one active per metric, keyed by metric so a STOCK command and a SOLD command can both be on at once
   // (e.g. "loads of stock, barely selling" = STOCK MORE 20 + SOLD LESS 3). Each ✕ clears just its own.
-  const [qtyFilters, setQtyFilters] = useState<Partial<Record<QtyMetric, QtyFilter>>>({});
+  const [qtyFilters, setQtyFilters] = useState<Partial<Record<QtyMetric, QtyFilter>>>(
+    seed?.qty ? { [seed.qty.metric]: seed.qty } : {},
+  );
   const setQtyFilter = useCallback((f: QtyFilter) => setQtyFilters((prev) => ({ ...prev, [f.metric]: f })), []);
   const clearQtyFilter = useCallback((metric: QtyMetric) => setQtyFilters((prev) => {
     const next = { ...prev };
@@ -368,26 +417,14 @@ export default function InventoryPage() {
   function onFind(e: React.FormEvent) {
     e.preventDefault();
     const next: FilterStep[] = [];
-    // A trailing "-38" / "-42.5" on a groupid-shaped term is a SIZE, not part of the code (operators paste a full SKU like
-    // 0151183-ARIZONA-38 when they mean "that style, in 38"). The groupid never carries the size, so the raw term matches nothing.
-    // Split it off into the Size box: the search then narrows to the style AND each card leads with that size's count / rack (owner,
-    // 2026-07-23). Only fires when the term STARTS with a code (a digit then a dash, i.e. a real groupid), so a hyphen in ordinary
-    // title text isn't mistaken for a size. An explicitly typed Size box always wins over one inferred from the term.
-    let containsTerm = contains.trim();
-    let sizeFromTerm = '';
-    let nextQty: QtyFilter | null = null;
-    // FIRST CHECK (owner): a worded "STOCK/SOLD LESS <n>" / "…MORE <n>" in the Contains box is a quantity filter, not a text find, so it
-    // is matched BEFORE the text/SKU logic — otherwise "STOCK" would leak through as a title substring and match nothing. The keyword is
-    // caps because the box force-uppercases input. Matched, it branches here: set the filter and consume the term (no text step). Any
-    // integer or one decimal place is accepted; STOCK compares combined local+Amazon, SOLD the 30-day sold count.
-    const qtyMatch = containsTerm.match(/^(STOCK|SOLD)\s+(LESS|MORE)\s+(\d+(?:\.\d+)?)$/);
-    if (qtyMatch) {
-      nextQty = { metric: qtyMatch[1] === 'STOCK' ? 'stock' : 'sold', op: qtyMatch[2] === 'LESS' ? 'less' : 'more', n: Number(qtyMatch[3]) };
-      containsTerm = '';
-    } else {
-      const sizeMatch = containsTerm.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
-      if (sizeMatch) { containsTerm = sizeMatch[1]; sizeFromTerm = sizeMatch[2]; }
-    }
+    // What the term means (quantity command / SKU-with-size / plain text) is decided by the shared parser, so a term typed here and
+    // one arriving as ?q= from the dashboard search box behave identically. A matched quantity command consumes the term
+    // (no text step); STOCK compares combined local+Amazon, SOLD the 30-day sold count. A size split off a pasted SKU narrows to that
+    // style AND makes each card lead with that size's count / rack (owner, 2026-07-23) — but an explicitly typed Size box wins over it.
+    const parsed = parseContains(contains);
+    const containsTerm = parsed.term;
+    const sizeFromTerm = parsed.size;
+    const nextQty = parsed.qty;
     if (containsTerm) next.push({ op: 'has', term: containsTerm });
     if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
     const size = sizeInput.trim() || sizeFromTerm;

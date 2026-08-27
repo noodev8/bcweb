@@ -121,7 +121,7 @@ export default function StockPositionPage() {
   }
 
   return (
-    <AppShell title="Stock Position" backHref="/analytics" backLabel="Analytics">
+    <AppShell title="Stock Position" backHref="/analytics" backLabel="Reports">
       <p className="mb-5 max-w-3xl text-sm text-slate-500">
         The <strong>active catalogue</strong> — products in stock now or sold in the last 12 months. Everything else is dormant, and not
         counted.

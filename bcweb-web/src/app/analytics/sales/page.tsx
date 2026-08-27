@@ -341,7 +341,7 @@ export default function SalesPage() {
   }, [range, searchActive]);
 
   return (
-    <AppShell title="Sales" backHref="/analytics" backLabel="Analytics">
+    <AppShell title="Sales" backHref="/analytics" backLabel="Reports">
       {/* SEARCH SITS FIRST, directly under the title (owner, 2026-07-25: "I just want to search for sales"). It used to sit below the
           explainer paragraph AND the headline tiles, which pushed the boxes to the fold — on a screen whose primary action is "find this
           product". The paragraph went entirely: two labelled boxes and a Find need no instructions, and the one genuinely non-obvious

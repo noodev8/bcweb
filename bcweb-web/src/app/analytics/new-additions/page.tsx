@@ -153,7 +153,7 @@ export default function NewAdditionsPage() {
     <AppShell
       title="New Additions"
       backHref="/analytics"
-      backLabel="Analytics"
+      backLabel="Reports"
       /* The blurb explains the screen once; after that it is just text in the way (owner 2026-07-27). It lives behind this
          header-row toggle, which costs no vertical space at all. */
       headerRight={

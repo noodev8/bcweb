@@ -66,7 +66,7 @@ export default function BirkTrackerPage() {
   const tableRows = useMemo(() => [...rows].reverse(), [rows]);
 
   return (
-    <AppShell title="Birk Tracker" backHref="/analytics" backLabel="Analytics">
+    <AppShell title="Birk Tracker" backHref="/analytics" backLabel="Reports">
       <details className="group mb-5 max-w-2xl">
         <summary className="cursor-pointer list-none text-sm text-slate-400 transition hover:text-slate-600">
           <span className="inline-flex items-center gap-1">

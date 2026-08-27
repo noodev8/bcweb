@@ -15,28 +15,32 @@ import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeftIcon, ArrowRightOnRectangleIcon, CurrencyPoundIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ChartBarIcon,
-  ArchiveBoxIcon, UserGroupIcon,
+  ArrowLeftIcon, ArrowRightOnRectangleIcon, Squares2X2Icon, ArchiveBoxIcon, UserGroupIcon, ChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 
 // The persistent module switcher — a compact segmented control in the header on every screen, so the operator can hop straight between
-// the modules without going back to the dashboard first. Segments leads: it's the "where do I start / what needs attention next"
-// screen the operator constantly returns to mid-task (owner feedback), so it belongs in the header, not just as a dashboard tile —
-// followed by the three action modules, then Analytics (promoted into the header too, so its reporting is reachable from anywhere).
-// Icons match the dashboard tiles. Active state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its module.
-const MODULES: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { label: 'Segments', href: '/segments', icon: Squares2X2Icon },
-  { label: 'Shopify Pricing', href: '/pricing', icon: CurrencyPoundIcon },
-  { label: 'Amazon Pricing', href: '/amz', icon: BuildingStorefrontIcon },
-  { label: 'Add / Modify', href: '/products', icon: TagIcon },
+// the modules without going back to the dashboard first.
+//
+// CUT FROM SEVEN TO FOUR (owner, 2026-08-27). It had grown to seven and was starting to do the dashboard's job badly: a row you have
+// to READ is slower than the menu it was meant to save you a trip to. These four are the ones genuinely hopped between with a task
+// half-done. Everything else is reached from the dashboard, which is a deliberate trade — the owner goes back there to search anyway,
+// so the dashboard is on the path, not a detour.
+// Inventory leads: looking a product up is how most tasks start.
+// Reports is here on the owner's evidence, not on the theory — the theory said a read-a-number screen is somewhere you go
+// deliberately, with nothing else on the go, so it didn't belong. The owner goes there repeatedly through the day for various
+// reasons, which makes it exactly the mid-task hop this bar exists for. Kept last: it's the only one that isn't a working screen.
+// Icons match the dashboard tiles. Active state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its
+// module. `also` covers a module whose views don't all live under its own path — Reports absorbed Brands and Amazon Order but those
+// kept their original routes, and a tab that goes dark on a page you reached THROUGH it reads as having lost your place.
+const MODULES: { label: string; href: string; icon: React.ComponentType<{ className?: string }>; also?: string[] }[] = [
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
-  // Customer Orders earns a header slot on frequency alone: it's the one screen worked every day, and it's also the one you're most
-  // often pulled INTO from somewhere else ("has that order gone?"). Order Status deliberately isn't here — placing and chasing
-  // supplier orders is a sit-down job you start from the dashboard, not something you dip into mid-task.
+  { label: 'Segments', href: '/segments', icon: Squares2X2Icon },
+  // Customer Orders earns a slot on frequency alone: it's the one screen worked every day, and it's also the one you're most often
+  // pulled INTO from somewhere else ("has that order gone?").
   { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
-  { label: 'Analytics', href: '/analytics', icon: ChartBarIcon },
+  { label: 'Reports', href: '/analytics', icon: ChartBarIcon, also: ['/brands', '/amazon-order'] },
 ];
 
 interface AppShellProps {
@@ -72,15 +76,51 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, subt
 
   return (
     <div className="min-h-screen">
-      {/* Platform header — shared by every module. */}
+      {/* Platform header — shared by every module. ONE ROW (owner, 2026-08-27): the brand, the module switcher and the account
+          controls used to sit in two stacked bordered rows, which cost ~50px of chrome on every screen to say very little. Merged,
+          they read as a single toolbar and the page starts that much higher.
+          No search box here either (owner, 2026-08-27): the dashboard is where a hunt starts, and it's already on the way — a second
+          search box on every screen was one more thing to look past. The hero box on /dashboard is the only one.
+          The "Platform" pill next to the brand is gone with the same pass — it labelled the product to the only people who already
+          knew what it was. */}
       <header className="border-b border-slate-200 bg-white">
-        <div className={container + ' flex items-center justify-between py-3'}>
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <span className="text-lg font-semibold tracking-tight text-slate-900">Brookfield Comfort</span>
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Platform</span>
-          </Link>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-slate-500">Signed in as <span className="font-medium text-slate-800">{displayName}</span></span>
+        <div className={container + ' flex items-center justify-between gap-4 py-2.5'}>
+          {/* Brand + switcher. The switcher scrolls on its own (min-w-0 + overflow-x-auto) so a narrow window shortens the tabs
+              rather than pushing Logout off the edge. */}
+          <div className="flex min-w-0 items-center gap-4">
+            <Link href="/dashboard" className="shrink-0 text-lg font-semibold tracking-tight text-slate-900 hover:text-brand-700">
+              Brookfield Comfort
+            </Link>
+            {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour).
+                The active tab lifts to a white "raised" pill inside the recessed track. */}
+            <nav className="inline-flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+              {MODULES.map((m) => {
+                const paths = [m.href, ...(m.also || [])];
+              const active = paths.some((h) => pathname === h || pathname.startsWith(h + '/'));
+                const Icon = m.icon;
+                return (
+                  <Link
+                    key={m.href}
+                    href={m.href}
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      'inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition ' +
+                      (active
+                        ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-800')
+                    }
+                  >
+                    <Icon className={'h-4 w-4 ' + (active ? 'text-brand-600' : 'text-slate-400')} />
+                    {m.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3 text-sm">
+            {/* The signed-in line is the first thing to go when the row gets tight — it's ambient, not a control. */}
+            <span className="hidden text-slate-500 lg:inline">Signed in as <span className="font-medium text-slate-800">{displayName}</span></span>
             <button
               onClick={logout}
               className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50"
@@ -90,35 +130,6 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, subt
           </div>
         </div>
       </header>
-
-      {/* Module switcher — a segmented control to hop between modules from anywhere (kills the "back to the front page, then in again"
-          detour). The active tab lifts to a white "raised" pill inside the recessed track. */}
-      <nav className="border-b border-slate-200 bg-white">
-        <div className={container + ' overflow-x-auto py-2.5'}>
-          <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
-            {MODULES.map((m) => {
-              const active = pathname === m.href || pathname.startsWith(m.href + '/');
-              const Icon = m.icon;
-              return (
-                <Link
-                  key={m.href}
-                  href={m.href}
-                  aria-current={active ? 'page' : undefined}
-                  className={
-                    'inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition ' +
-                    (active
-                      ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
-                      : 'text-slate-500 hover:text-slate-800')
-                  }
-                >
-                  <Icon className={'h-4 w-4 ' + (active ? 'text-brand-600' : 'text-slate-400')} />
-                  {m.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </nav>
 
       {/* Optional page sub-header (back link + title). */}
       {(title || backHref) && (
