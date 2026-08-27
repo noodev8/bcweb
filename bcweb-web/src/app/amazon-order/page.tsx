@@ -652,12 +652,16 @@ export default function AmazonOrderHome() {
     );
   }
 
+  // Single-row X. Like the bulk Cut, it finishes with nothing selected (owner, 2026-08-27) — whether the X landed on the blue row
+  // or on a different one, leaving a highlight behind after a cut invites the next Enter to act on a row the operator has moved on
+  // from.
   function onCut(code: string) {
     setCut((prev) => {
       const next = new Set(prev);
       next.add(code);
       return next;
     });
+    deselectAll();
   }
 
   // CLEAR BASKET — empties the whole scratchpad in one go, off-screen rows included, and (via the autosave effect above, which
@@ -805,9 +809,10 @@ export default function AmazonOrderHome() {
   }, [cursor.cursorKey]);
   function cutSelected() {
     if (selected.size === 0) return;
-    // Where the highlight lands afterwards: the first row below the block just cut that's still on screen, or the last survivor if
-    // the block ran to the bottom. With a single highlight, finishing a cut with nothing blue means the operator has no idea where
-    // they were — so the list closes up under the cut and the highlight stays put in the gap, ready for the next Enter.
+    // A cut ends with NOTHING selected (owner, 2026-08-27) — the rows that were blue are gone, and re-selecting whatever closed up
+    // into the gap risks the next Enter cutting a row the operator never chose. The keyboard position is kept, though: the cursor
+    // moves to the first surviving row below the block just cut (or the last survivor if the block ran to the bottom), so the next
+    // arrow key carries on from where they were rather than jumping back to the top of the list.
     const survivors = cursorKeys.filter((c) => !selected.has(c));
     const firstCutIndex = cursorKeys.findIndex((c) => selected.has(c));
     const landing = survivors.length === 0
@@ -818,12 +823,8 @@ export default function AmazonOrderHome() {
       selected.forEach((c) => next.add(c));
       return next;
     });
-    if (landing === null) {
-      setSelected(new Set());
-    } else {
-      cursor.setCursor(landing);
-      selectOnly(landing);
-    }
+    cursor.setCursor(landing);
+    deselectAll();
   }
 
   // Order box: Up/Down walks rows and keeps focus in the box (see the header comment for why this needs its own handler rather
