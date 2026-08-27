@@ -11,7 +11,7 @@ Guard: if auth has hydrated (ready) and the user is NOT authenticated, redirect 
 =======================================================================================================================================
 */
 
-import { MouseEvent, ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -50,14 +50,9 @@ interface AppShellProps {
   backLabel?: string;
   headerRight?: ReactNode; // optional node rendered flush-right of the title (e.g. a product thumbnail) — uses the title row's
                            // otherwise-empty right side so it costs no vertical space in the page body
-  onBackgroundClick?: () => void; // fires on a click that lands on empty page background rather than on any real content — wired
-                                  // to both the outer shell div and <main> (see their onClick below) so it covers the side margins
-                                  // beyond the content measure, the gaps between a page's own sections/panels, and top/bottom
-                                  // padding. Lets a page offer "click empty space to deselect/close" without every page
-                                  // reimplementing the target===currentTarget check itself. No-op unless a page passes one.
 }
 
-export default function AppShell({ children, title, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, onBackgroundClick }: AppShellProps) {
+export default function AppShell({ children, title, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -76,10 +71,7 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, subt
   const container = 'mx-auto max-w-5xl px-4';
 
   return (
-    // onClick here too (not just on <main> below) — `main` itself is width-constrained to the `container` measure, so on a wide
-    // viewport the blank strips either side of that centered column, and any filler below a page shorter than the viewport, are
-    // this outer div's own background, not main's. Same target===currentTarget guard, so header/nav content is never affected.
-    <div className="min-h-screen" onClick={(e: MouseEvent<HTMLElement>) => { if (onBackgroundClick && e.target === e.currentTarget) onBackgroundClick(); }}>
+    <div className="min-h-screen">
       {/* Platform header — shared by every module. */}
       <header className="border-b border-slate-200 bg-white">
         <div className={container + ' flex items-center justify-between py-3'}>
@@ -153,12 +145,7 @@ export default function AppShell({ children, title, subtitle, subtitleCopy, subt
         </div>
       )}
 
-      <main
-        className={container + ' py-6'}
-        onClick={(e: MouseEvent<HTMLElement>) => { if (onBackgroundClick && e.target === e.currentTarget) onBackgroundClick(); }}
-      >
-        {children}
-      </main>
+      <main className={container + ' py-6'}>{children}</main>
     </div>
   );
 }

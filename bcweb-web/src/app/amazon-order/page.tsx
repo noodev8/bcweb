@@ -754,6 +754,15 @@ export default function AmazonOrderHome() {
     anchorRef.current = null;
   }
   function onRowClick(e: React.MouseEvent, code: string) {
+    // A plain click on the row that's ALREADY the sole selection turns it off again — clicking the blue row is how you take the
+    // highlight away, so a mis-click costs one click to undo rather than needing Escape (owner, 2026-08-27). The cursor goes with
+    // it: leaving it parked on a row with nothing blue would put the next arrow key somewhere invisible. Only the plain,
+    // single-row case — a click inside a multi-row selection still narrows to that row, which is what every list does.
+    if (!e.shiftKey && !e.ctrlKey && !e.metaKey && selected.size === 1 && selected.has(code)) {
+      cursor.setCursor(null);
+      deselectAll();
+      return;
+    }
     cursor.setCursor(code);
     if (e.shiftKey && anchorRef.current) {
       const a = cursorKeys.indexOf(anchorRef.current);
@@ -863,7 +872,7 @@ export default function AmazonOrderHome() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard" onBackgroundClick={deselectAll}>
+    <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
       {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
           row 2 FILLS what's left and SENDS it. It used to be five: search, presets+actions, rate strip, counts, chips — each
           behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
