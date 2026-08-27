@@ -56,9 +56,29 @@ import {
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
 // `half` is for a band sharing a row with another (see the paired row below): it stays two tiles across instead of opening out to
 // four, and gives up its own bottom margin because the pairing wrapper owns the spacing between the two.
+//
+// THE PANEL (owner, 2026-08-27). Update Amazon sits in the third track with nothing to its right, directly under Reports, and at a
+// glance read as part of REPORTS & MARKETING — the grey heading alone was too quiet to stop the eye running a column down through it.
+// A hairline rule above each band was tried first and was too faint against a slate-100 page to register at all. So each band now sits
+// in its own soft panel: a container that encloses its tiles leaves nothing to infer.
+// The page background is slate-100 and the tiles are white, so the panel goes DARKER (slate-200) rather than lighter — going lighter
+// would put the panel between the two and flatten both edges at once. It started at slate-200/60 and that was barely a step off the
+// page; solid slate-200 plus a slate-300 ring gives the panel an actual edge as well as a fill, so it reads as a container rather than
+// a smudge.
+// ALIGNMENT — EQUAL PADDING EVERYWHERE, and this was tried the other way (owner, 2026-08-27). A half-width band spends two lots of
+// horizontal padding across two tiles; a full-width band spends the same two lots across four, so the half band's tiles come out ~8px
+// narrower and the columns stagger a little further apart the further right you look.
+// Halving the padding on the half panels (px-2 against px-4) DOES make the tracks come out identical — (W - 68)/4 either way — and it
+// was rejected on sight: it buys pixel-equal tiles at the price of visibly unequal panel gutters, tiles nearly touching the edge on
+// the paired panels and comfortably inset on the wide ones. Nobody measures tile widths; everybody sees uneven padding.
+// There is no setting that gives both. Solving for a flush left edge AND equal widths needs a negative gap between the panels. If the
+// stagger ever does need to go, the fix is structural — put the two paired bands in ONE full-width panel with a divider between them,
+// so there is a single padding and a single set of four tracks.
+const BAND_PANEL = 'rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300';
+
 function Band({ title, children, half }: { title: string; children: React.ReactNode; half?: boolean }) {
   return (
-    <section className={half ? undefined : 'mb-6'}>
+    <section className={BAND_PANEL + (half ? ' h-full' : ' mb-6')}>
       <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</h2>
       <div className={'grid grid-cols-2 gap-3' + (half ? '' : ' lg:grid-cols-4')}>{children}</div>
     </section>
