@@ -126,6 +126,15 @@ function isLoss(r: AmazonOrderRow): boolean {
 // ago and never since still carries that figure, so it can pass Potential's >£3 test on a stale number. This reads last_sold
 // (MAX(sales.solddate), also computed fresh at request time — see below) instead. A never-sold SKU (last_sold === null) fails.
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30.44 * 6;
+
+// THE CUTOFF ITSELF is taken HERE, at module load, and never inside a render. It used to be `Date.now() - SIX_MONTHS_MS` computed
+// inline in the filter memo, which react-hooks/purity rightly rejects: a clock read during render is unstable, so the boundary
+// quietly moved on every re-render and the same row could pass Potential in one render and fail it in the next.
+// A fixed value is also the honest one. What it judges is `last_sold`, a DATE with no time of day, against a six-MONTH window — so
+// precision finer than "roughly now" is meaningless, and the only cost of not re-reading the clock is that a tab left open for
+// weeks judges against a boundary that many weeks stale. On a six-month window that changes nothing anyone would notice.
+const RECENT_SALE_CUTOFF_MS = Date.now() - SIX_MONTHS_MS;
+
 function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
   if (!r.last_sold) return false;
   return new Date(r.last_sold + 'T00:00:00Z').getTime() >= cutoffMs;
@@ -402,16 +411,15 @@ export default function AmazonOrderHome() {
       // Potential Winners also requires a genuinely recent sale (owner, 2026-08-20) — unit_profit is STICKY (see isRecentlySold
       // above), so without this a SKU that sold once over a year ago and never since could still pass the >£3 margin test on a
       // stale figure.
-      const cutoffMs = Date.now() - SIX_MONTHS_MS;
-      out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3 && isRecentlySold(r, cutoffMs));
+      out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3
+        && isRecentlySold(r, RECENT_SALE_CUTOFF_MS));
     }
     if (recycleOnly) {
       // RECYCLE — see its declaration above: HAS sold before, just not within the last 6 months, and isn't already claimed by
       // Winners or Potential. last_sold === null (never sold at all) is excluded — that's dead stock with no track record, not
       // something that "used to move".
-      const cutoffMs = Date.now() - SIX_MONTHS_MS;
       out = out.filter((r) => {
-        if (!r.last_sold || isRecentlySold(r, cutoffMs)) return false;
+        if (!r.last_sold || isRecentlySold(r, RECENT_SALE_CUTOFF_MS)) return false;
         if (r.profit_30d !== null && r.profit_30d > 30) return false; // would be Winners
         if (r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3) return false; // would be Potential
         return true;
@@ -508,14 +516,15 @@ export default function AmazonOrderHome() {
   // the header comment for why: without the gate, autosave's own first run (still seeing the empty initial state) could schedule a
   // write that clobbers a just-loaded draft before this effect's setState has flushed.
   //
-  // The two rule disables below are deliberate, not oversights. This is the one case both rules carve out in practice: a
+  // The rule disable below is deliberate, not an oversight. This is the one case set-state-in-effect carves out in practice: a
   // mount-only read of an external store (localStorage) that can't move into a lazy useState initializer, because this page is
   // server-rendered and localStorage doesn't exist on the server — a lazy initializer would either throw during SSR or hydrate
-  // with different values than the server produced. Date.now() is the draft's age check and setOrderQty applies what was read;
-  // both run once, with [] deps, so there's no re-render cascade for the rules to protect against.
+  // with different values than the server produced. setOrderQty applies what was read, once, with [] deps, so there's no
+  // re-render cascade for the rule to protect against. (The Date.now() age check needs no disable: purity only fires on a clock
+  // read during RENDER, and this one is inside an effect.)
   const loadedDraftRef = useRef(false);
   useEffect(() => {
-    /* eslint-disable react-hooks/purity, react-hooks/set-state-in-effect */
+    /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (raw) {
@@ -530,7 +539,7 @@ export default function AmazonOrderHome() {
       localStorage.removeItem(DRAFT_KEY);
     }
     loadedDraftRef.current = true;
-    /* eslint-enable react-hooks/purity, react-hooks/set-state-in-effect */
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   // AUTOSAVE — debounced 500ms after the last edit. Writing nothing (empty) clears any existing saved draft instead of persisting
@@ -904,7 +913,7 @@ export default function AmazonOrderHome() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell title="Amazon Order" backHref="/analytics" backLabel="Reports">
       {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
           row 2 FILLS what's left and SENDS it. It used to be five: search, presets+actions, rate strip, counts, chips — each
           behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
