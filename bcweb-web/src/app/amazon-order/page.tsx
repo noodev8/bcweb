@@ -23,9 +23,12 @@ ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen i
       Pick (units to send from the local shelf to Amazon). The two scratchpads are entirely separate and both saved to the browser
       draft, so flipping over to work the other side and flipping back finds the first exactly as it was (owner, 2026-08-28).
 
-      A rate fill splits the SAME shortfall between them (see fillCoverage): Pick takes as much of it as local stock above the
-      keep rate can cover, Order buys whatever is left after that. Fill both at the same rate and keep and they add up to the
-      shortfall exactly — pick 2 + order 3 for a shortfall of 5.
+      ONE RATE CLICK FILLS BOTH (owner, 2026-08-28 — "when doing an order it should auto run the pick for it as well"). The
+      shortfall is worked out once per row and split: Pick takes as much of it as local stock above the keep rate can cover, Order
+      buys whatever is left after that — pick 2 + order 3 for a shortfall of 5. The mode decides which half you're LOOKING at, not
+      which half is computed; flip over and the other one is already filled in, at the same rate, from the same numbers. Both
+      modes' rate highlights light up together for the same reason. A re-tap clears both, and so does Clear basket — half a plan
+      left behind in the mode you're not looking at is the one outcome worth designing against.
 
       Birkenstock is excluded in BOTH modes — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
       for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
@@ -432,8 +435,12 @@ export default function AmazonOrderHome() {
   const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : recycleOnly ? 'recycle' : ordersOnly ? 'basket' : 'all';
   const coverageMonths = coverageByView[mode][viewKey];
   const anyCoverage = useMemo(() => Object.values(coverageByView[mode]).some((m) => m !== null), [coverageByView, mode]);
-  function setCoverageForView(months: number | null) {
-    setCoverageByView((prev) => ({ ...prev, [mode]: { ...prev[mode], [viewKey]: months } }));
+  // `scope` says which mode's highlight to move. A rate fill writes BOTH baskets (fillCoverage), so it lights both; anything that
+  // only touches the basket on screen passes 'current'.
+  function setCoverageForView(months: number | null, scope: 'current' | 'both' = 'current') {
+    setCoverageByView((prev) => (scope === 'both'
+      ? { order: { ...prev.order, [viewKey]: months }, pick: { ...prev.pick, [viewKey]: months } }
+      : { ...prev, [mode]: { ...prev[mode], [viewKey]: months } }));
   }
   const NO_COVERAGE_BOTH: Record<BasketMode, Record<ViewKey, number | null>> = { order: NO_COVERAGE, pick: NO_COVERAGE };
   // PICK KEEP — how many units a rate fill leaves on the local shelf before counting the rest against the Amazon order (see
@@ -735,11 +742,16 @@ export default function AmazonOrderHome() {
   function applyCoverage(months: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
     if (coverageMonths === months) {
-      setCoverageForView(null);
-      setQty((prev) => {
-        const next = { ...prev };
-        for (const code of visibleCodes) delete next[code];
-        return next;
+      // A re-tap clears BOTH baskets for these rows, because a fill wrote both (see fillCoverage) — clearing only the one on
+      // screen would leave the other half of the same plan behind, un-lit and easy to miss.
+      setCoverageForView(null, 'both');
+      setQtyByMode((prev) => {
+        const strip = (basket: Record<string, string>) => {
+          const next = { ...basket };
+          for (const code of visibleCodes) delete next[code];
+          return next;
+        };
+        return { order: strip(prev.order), pick: strip(prev.pick) };
       });
       // A rate re-tap is a bulk basket edit, so Load basket's snapshot moves with it — the rows just emptied drop out rather than
       // sitting there with blank boxes.
@@ -747,55 +759,64 @@ export default function AmazonOrderHome() {
       setManualOrder(null);
       return;
     }
-    setCoverageForView(months);
     fillCoverage(months, pickKeep);
   }
 
   // The fill itself, split out of applyCoverage so a PICK KEEP change can re-run it against the lit rate without the operator
   // having to toggle the rate off and on again (owner, 2026-08-28). Takes both inputs as arguments rather than reading state,
   // because onPickKeep calls it in the same tick as its own setPickKeep — the state variable would still hold the OLD keep rate.
+  //
+  // ONE CLICK FILLS BOTH BASKETS (owner, 2026-08-28 — "when doing an order it should auto run the pick for it as well"). The two
+  // numbers are two halves of the same answer, not two separate jobs: the shortfall is computed once per row, Pick takes as much
+  // of it as the local shelf can cover, and Order buys what's left. Working them out separately would mean clicking the same rate
+  // twice and hoping the keep rate hadn't moved in between — and a pick that doesn't match the order it was derived from is worse
+  // than no pick at all, because the two would silently double-cover the same units. So the mode no longer decides WHAT is
+  // computed, only which half is on screen; flipping over shows the other half already filled in.
   function fillCoverage(months: number, keep: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
-    // Birkenstock is excluded in BOTH modes: it never goes to Amazon at all (owner, 2026-08-28), so there is nothing to buy for
-    // it here and nothing to send it either. A loss-making SKU (isLoss) is skipped in both too: no point buying more of something
-    // that lost money last time it sold, and no point shipping the shelf's copy to Amazon to lose money on it there.
-    const filled = visible
-      .filter((r) => !isLoss(r) && !isBirkenstock(r))
-      .map((r) => {
-        const demand = r.units_30d * months;
-        // What Amazon is short by, before any local stock is considered. Both modes work off this same number — they just take
-        // different halves of it.
-        const shortfall = Math.max(0, Math.ceil(demand - r.fba_total));
-        // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon (owner,
-        // 2026-08-28). A keep of 0 holds nothing back, so the whole local shelf counts.
-        const available = Math.max(0, r.local_stock - keep);
-        // The two modes split the shortfall between them. PICK takes as much of it as the shelf can cover; ORDER buys whatever is
-        // left after the shelf has done what it can. Fill both at the same rate and keep and the two add up to the shortfall
-        // exactly — pick 2 + order 3 for a shortfall of 5 — which is what makes them readable as one plan rather than two rival
-        // numbers for the same SKU.
-        const filledQty = mode === 'pick'
-          ? Math.min(shortfall, available)
-          : Math.max(0, shortfall - available);
-        return { code: r.code, qty: filledQty };
-      })
-      .filter((f) => f.qty > 0); // nothing to do for this row — leave it out of the fill rather than write a 0
-    setQty((prev) => {
-      const next = { ...prev };
-      for (const code of visibleCodes) delete next[code]; // drop this view's old values before refilling
-      filled.forEach(({ code, qty }) => { next[code] = String(qty); });
-      return next;
+    // Birkenstock is excluded from both halves: it never goes to Amazon at all (owner, 2026-08-28), so there is nothing to buy
+    // for it here and nothing to send it either. A loss-making SKU (isLoss) is skipped the same way — no point buying more of
+    // something that lost money last time it sold, and no point shipping the shelf's copy to Amazon to lose money on it there.
+    const filled: Record<BasketMode, { code: string; qty: number }[]> = { order: [], pick: [] };
+    for (const r of visible) {
+      if (isLoss(r) || isBirkenstock(r)) continue;
+      const demand = r.units_30d * months;
+      // What Amazon is short by, before any local stock is considered — the single number both halves come out of.
+      const shortfall = Math.max(0, Math.ceil(demand - r.fba_total));
+      // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon (owner,
+      // 2026-08-28). A keep of 0 holds nothing back, so the whole local shelf counts.
+      const available = Math.max(0, r.local_stock - keep);
+      const pick = Math.min(shortfall, available);
+      const order = shortfall - pick; // pick <= shortfall by construction, so this can't go negative
+      // A row with nothing to do on a given side is left OUT of that side rather than written as a 0.
+      if (pick > 0) filled.pick.push({ code: r.code, qty: pick });
+      if (order > 0) filled.order.push({ code: r.code, qty: order });
+    }
+    setQtyByMode((prev) => {
+      const refill = (basket: Record<string, string>, rows: { code: string; qty: number }[]) => {
+        const next = { ...basket };
+        for (const code of visibleCodes) delete next[code]; // drop this view's old values before refilling
+        rows.forEach(({ code, qty }) => { next[code] = String(qty); });
+        return next;
+      };
+      return { order: refill(prev.order, filled.order), pick: refill(prev.pick, filled.pick) };
     });
-    // Same for a fill: the visible rows this rate skipped (Birkenstock, loss-makers, nothing to order) leave the snapshot, the
-    // rows it filled join it.
+    // Both baskets were filled at this rate, so both light up — flipping to the other mode has to show the rate that produced the
+    // numbers sitting there, not an unlit strip over a full column.
+    setCoverageForView(months, 'both');
+    // Load basket follows the basket ON SCREEN: the visible rows this rate left empty on THIS side (Birkenstock, loss-makers,
+    // nothing to do) leave the snapshot, the rows it filled join it.
     if (ordersOnly) {
       setBasketSnapshot((prev) => {
         const nextSet = new Set([...(prev ?? [])].filter((c) => !visibleCodes.has(c)));
-        filled.forEach(({ code }) => nextSet.add(code));
+        filled[mode].forEach(({ code }) => nextSet.add(code));
         return nextSet;
       });
     }
+    // Ranked by the mode on screen — this sorts the table the operator is looking at, and the other half is ranked when they
+    // flip to it (a fill there re-ranks from its own numbers).
     setManualOrder(
-      [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
+      [...filled[mode]].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
   }
 
@@ -845,11 +866,14 @@ export default function AmazonOrderHome() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   function clearBasket() {
     setConfirmingClear(false);
-    setQty(() => ({}));
-    // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's, not just this
-    // one's, since the basket they were filling was shared across all of them. Only THIS MODE's, though: Clear basket empties the
-    // basket you're looking at, and the other mode's basket (and its rates) are untouched.
-    setCoverageByView((prev) => ({ ...prev, [mode]: NO_COVERAGE }));
+    // BOTH baskets, not just the one on screen. A rate fill writes the pair (fillCoverage), so emptying one alone would leave the
+    // other half of the same plan sitting in the mode you're not looking at — an operator who clears out to start over would flip
+    // over later and find a full column they thought they'd binned. This is the deliberate, confirmed "start again" action, so it
+    // starts the whole thing again.
+    setQtyByMode({ order: {}, pick: {} });
+    // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's and both modes',
+    // since a fill lit both.
+    setCoverageByView(NO_COVERAGE_BOTH);
     setManualOrder(null);
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
@@ -1369,7 +1393,7 @@ export default function AmazonOrderHome() {
                 onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
                 disabled={ordering || basketTargets.length === 0}
                 aria-label="Clear basket"
-                title="Empty the whole basket — every row with a value, not just the ones on screen — and discard the saved draft"
+                title="Empty BOTH baskets — Order and Pick, every row with a value, not just the ones on screen — and discard the saved draft"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
               >
                 <TrashIcon className="h-5 w-5" />
@@ -1377,7 +1401,7 @@ export default function AmazonOrderHome() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Clear all {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} from the basket?
+                  Clear both baskets — Order and Pick — for every SKU?
                 </span>
                 <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
                 <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
