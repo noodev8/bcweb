@@ -42,6 +42,11 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
       (what to buy from the supplier). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
       Potential at 1/2 and each list shows its own rate still lit when you flick back to it.
 
+      PICK KEEP (1/2/3, or off) sits alongside the rate and modifies it: local stock ABOVE the keep rate is treated as available
+      to cover the Amazon shortfall, so it comes off the supplier order one-for-one (2 local + keep 1 = order 1 fewer; owner,
+      2026-08-28). Off = the pre-2026-08-28 behaviour, local ignored. It's ONE setting for the whole screen, not per-view, and it
+      survives Reset — it's a standing stock policy, not a view filter.
+
 SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
       same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
       row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
@@ -156,6 +161,13 @@ function measureHeight(set: (h: number) => void) {
 
 // The four coverage-fill presets — see applyCoverage in the component for what clicking one does.
 const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
+
+// PICK KEEP — the local-stock safety margin a rate fill leaves behind. Local stock isn't Amazon stock (it only reaches FBA once
+// picked and shipped), but it IS stock already paid for and sitting on the shelf, so buying more from the supplier while it's
+// there is buying the same unit twice. Setting a keep rate says "hold back N locally for the Shopify side, and treat anything
+// ABOVE that as available to cover the Amazon order" — 2 in local with a keep of 1 means 1 unit comes off the supplier line
+// (owner, 2026-08-28). Unset means the old behaviour: local stock is ignored entirely and the whole shortfall is ordered in.
+const PICK_KEEP_OPTIONS = [1, 2, 3] as const;
 
 // The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
 // rate PER VIEW (see coverageByView) so flicking between Winners and Potential shows each one's own rate still lit.
@@ -368,6 +380,13 @@ export default function AmazonOrderHome() {
   function setCoverageForView(months: number | null) {
     setCoverageByView((prev) => ({ ...prev, [viewKey]: months }));
   }
+  // PICK KEEP — how many units a rate fill leaves on the local shelf before counting the rest against the Amazon order (see
+  // PICK_KEEP_OPTIONS above and applyCoverage below). ONE setting for the whole screen, not per-view like the rate: it's a
+  // standing stock policy ("always keep 1 back for Shopify"), not a property of the list you happen to be looking at. Null = off,
+  // the pre-2026-08-28 behaviour where local stock never offsets an order. Re-tapping the lit button turns it off again, the same
+  // toggle gesture the rate buttons use. Deliberately NOT cleared by Reset — Reset is a VIEW reset, and this isn't a view filter.
+  const [pickKeep, setPickKeep] = useState<number | null>(null);
+
   // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
   // otherwise backspacing a value down through 0 on the way to clearing it yanks the row (and the input you're typing into) out of
   // the list mid-edit, since the filter re-evaluates on every keystroke (owner, 2026-08-11 — "won't let me backspace to clear").
@@ -632,9 +651,10 @@ export default function AmazonOrderHome() {
 
   // COVERAGE FILL — the 0.5/1/2/3 month buttons. units_30d is already a fixed-window monthly rate (amzfeed.amzsold — see the route
   // header), so demand for N months is simply units_30d * N. What we'd actually need to ORDER is that demand minus fba_total (live
-  // + inbound — stock already at or on its way to Amazon). local_stock itself is still deliberately EXCLUDED from "on hand" — it
-  // doesn't satisfy Amazon demand until picked, and there's no pick mechanism on this screen right now (pulled 2026-08-11, revisit
-  // later). A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
+  // + inbound — stock already at or on its way to Amazon), and then minus whatever local stock the PICK KEEP rate frees up (see
+  // pickKeep above: local_stock above the keep rate is stock we already own, so it covers the shortfall instead of the supplier
+  // doing it). With no keep rate set, local_stock is ignored entirely, as it was before 2026-08-28 — it doesn't satisfy Amazon
+  // demand until picked. A SKU with nothing to order (already covered, or a loss-maker — isLoss, below) is left OUT of the fill entirely rather
   // than written as 0 — its box is simply left out of the fill. Fills every row CURRENTLY ON SCREEN (`visible`: after search +
   // Winners/Potential + cut), so filtering down first and then clicking a button targets exactly that working set — but ONLY those
   // rows: everything else already in the scratchpad (built up under a DIFFERENT filter view — e.g. a Potential fill, then flipping
@@ -668,7 +688,13 @@ export default function AmazonOrderHome() {
       .filter((r) => !isBirkenstock(r) && !isLoss(r))
       .map((r) => {
         const demand = r.units_30d * months;
-        return { code: r.code, qty: Math.max(0, Math.ceil(demand - r.fba_total)) };
+        // What Amazon is short by, before any local stock is considered.
+        const shortfall = Math.max(0, Math.ceil(demand - r.fba_total));
+        // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon instead of
+        // buying in, so it comes off the supplier line one-for-one (owner, 2026-08-28: 2 local, keep 1 -> order one fewer). With
+        // the keep rate off, local is ignored entirely and the whole shortfall is ordered, as it was before.
+        const fromLocal = pickKeep === null ? 0 : Math.max(0, r.local_stock - pickKeep);
+        return { code: r.code, qty: Math.max(0, shortfall - fromLocal) };
       })
       .filter((f) => f.qty > 0); // nothing to order — leave it out of the fill rather than write a 0
     setOrderQty((prev) => {
@@ -1054,6 +1080,34 @@ export default function AmazonOrderHome() {
                 }
               >
                 {months === 0.5 ? '½' : months}
+              </button>
+            ))}
+          </div>
+
+          {/* PICK KEEP — sits immediately after the rate strip because it's a modifier ON the fill, not a filter: the two are read
+              together as "cover N months, keeping M local". Changing it doesn't refill anything on its own (the numbers already in
+              the Basket were computed under whatever was set at the time) — it takes effect on the NEXT rate click, same as
+              narrowing the list does. Re-tapping the lit button turns it off. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            <span className="pl-1 pr-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">Keep</span>
+            {PICK_KEEP_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPickKeep((prev) => (prev === n ? null : n))}
+                title={
+                  pickKeep === n
+                    ? 'Click again to turn Pick keep off — rate fills will ignore local stock again'
+                    : `Keep ${n} in local stock: a rate fill covers the shortfall from any local stock above ${n} before ordering the rest from the supplier (e.g. ${n + 1} local means 1 fewer on the order)`
+                }
+                className={
+                  'rounded px-2.5 py-1 text-sm font-medium ' +
+                  (pickKeep === n
+                    ? 'bg-brand-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100')
+                }
+              >
+                {n}
               </button>
             ))}
           </div>
