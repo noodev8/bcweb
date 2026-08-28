@@ -42,10 +42,10 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
       (what to buy from the supplier). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
       Potential at 1/2 and each list shows its own rate still lit when you flick back to it.
 
-      PICK KEEP (a dropdown: Off, 1, 2 or 3) sits alongside the rate and modifies it: local stock ABOVE the keep rate is treated as available
+      PICK KEEP (a dropdown naming itself: "Pick keep" = off, or "Pick keep 1/2/3") sits alongside the rate and modifies it: local stock ABOVE the keep rate is treated as available
       to cover the Amazon shortfall, so it comes off the supplier order one-for-one (2 local + keep 1 = order 1 fewer; owner,
-      2026-08-28). It's a named dropdown, not a button strip: as bare 1/2/3 buttons beside the rate it read as a second rate
-      (owner, 2026-08-28). Off = the pre-2026-08-28 behaviour, local ignored. Changing it immediately re-runs
+      2026-08-28). It's a self-naming dropdown, not a button strip: as bare 1/2/3 buttons beside the rate it read as a second
+      rate (owner, 2026-08-28). Off = the pre-2026-08-28 behaviour, local ignored. Changing it immediately re-runs
       the lit rate over the rows on screen (onPickKeep) rather than waiting for the next rate click. It's ONE setting for the whole screen, not per-view, and it
       survives Reset — it's a standing stock policy, not a view filter.
 
@@ -168,8 +168,8 @@ const COVERAGE_OPTIONS = [0.5, 1, 2, 3] as const;
 // picked and shipped), but it IS stock already paid for and sitting on the shelf, so buying more from the supplier while it's
 // there is buying the same unit twice. Setting a keep rate says "hold back N locally for the Shopify side, and treat anything
 // ABOVE that as available to cover the Amazon order" — 2 in local with a keep of 1 means 1 unit comes off the supplier line
-// (owner, 2026-08-28). Unset — the dropdown's "Off" — means the old behaviour: local stock is ignored entirely and the whole
-// shortfall is ordered in. These are just the non-Off entries; "Off" is rendered as the empty-valued option, not listed here.
+// (owner, 2026-08-28). Unset — the dropdown showing a bare "Pick keep" — means the old behaviour: local stock is ignored entirely and the whole
+// shortfall is ordered in. These are just the numbered entries; off is the empty-valued option, not listed here.
 const PICK_KEEP_OPTIONS = [1, 2, 3] as const;
 
 // The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
@@ -386,7 +386,7 @@ export default function AmazonOrderHome() {
   // PICK KEEP — how many units a rate fill leaves on the local shelf before counting the rest against the Amazon order (see
   // PICK_KEEP_OPTIONS above and applyCoverage below). ONE setting for the whole screen, not per-view like the rate: it's a
   // standing stock policy ("always keep 1 back for Shopify"), not a property of the list you happen to be looking at. Null = off,
-  // the pre-2026-08-28 behaviour where local stock never offsets an order, and the "Off" entry in the dropdown. Any change
+  // the pre-2026-08-28 behaviour where local stock never offsets an order, shown as a bare "Pick keep" in the box. Any change
   // refills the lit rate on the spot (onPickKeep below). Deliberately NOT cleared by Reset — Reset is a VIEW reset, and this
   // isn't a view filter.
   const [pickKeep, setPickKeep] = useState<number | null>(null);
@@ -1105,27 +1105,27 @@ export default function AmazonOrderHome() {
             ))}
           </div>
 
-          {/* PICK KEEP — a labelled dropdown rather than a second row of number buttons. It sat next to the rate strip as an
-              identical-looking 1/2/3 group, which read as a second RATE (owner, 2026-08-28) — two strips of bare digits side by
-              side don't say which one is months and which one is units. A select carries its own name on the control, so there's
-              nothing to mistake it for, and it's the right shape anyway: one value out of a short fixed list, changed rarely.
+          {/* PICK KEEP — the control names ITSELF: the box carries "Pick keep" as the text of its own options rather than sitting
+              next to a separate label (owner, 2026-08-28). Closed and unset it reads "Pick keep", which is both the name and the
+              off state; set, it reads "Pick keep 1". That keeps the strip to one object instead of a label plus a box, and it
+              still can't be mistaken for a second RATE the way the old bare 1/2/3 button group could.
               Changing it re-runs the lit rate against the rows on screen straight away (onPickKeep), so the Basket always matches
-              what the box reads; "Off" recomputes too, back to ignoring local. With no rate lit there's nothing to recompute — it
-              just arms the setting for the next rate click. */}
-          <label className="flex items-center gap-1.5 whitespace-nowrap text-sm text-slate-500">
-            Pick keep
-            <select
-              value={pickKeep === null ? '' : String(pickKeep)}
-              onChange={(e) => onPickKeep(e.target.value === '' ? null : Number(e.target.value))}
-              title="How many units to hold back in local stock. A rate fill covers the shortfall from any local stock above this before ordering the rest from the supplier — e.g. 2 local with Pick keep 1 means 1 fewer on the order."
-              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-            >
-              <option value="">Off</option>
-              {PICK_KEEP_OPTIONS.map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </label>
+              what the box reads; going back to off recomputes too, back to ignoring local. With no rate lit there's nothing to
+              recompute — it just arms the setting for the next rate click. */}
+          <select
+            value={pickKeep === null ? '' : String(pickKeep)}
+            onChange={(e) => onPickKeep(e.target.value === '' ? null : Number(e.target.value))}
+            aria-label="Pick keep — units to hold back in local stock"
+            title="How many units to hold back in local stock. A rate fill covers the shortfall from any local stock above this before ordering the rest from the supplier — e.g. 2 local with Pick keep 1 means 1 fewer on the order."
+            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          >
+            {/* The empty value is the OFF state and doubles as the control's name — no separate "Off" entry, since "Pick keep"
+                with no number already says nothing is being held back. */}
+            <option value="">Pick keep</option>
+            {PICK_KEEP_OPTIONS.map((n) => (
+              <option key={n} value={n}>Pick keep {n}</option>
+            ))}
+          </select>
 
           {/* Row count and cut count. Committed search steps (includes/excludes) deliberately show no chips of their own (owner,
               2026-08-20 — "they get messy") — Reset is the one way back to an unfiltered list. */}
