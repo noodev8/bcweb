@@ -1117,17 +1117,24 @@ export default function AmazonOrderHome() {
               Changing it re-runs the lit rate against the rows on screen straight away (onPickKeep), so the Basket always matches
               what the box reads. With no rate lit there's nothing to recompute — it just arms the setting for the next rate
               click. */}
-          <select
-            value={String(pickKeep)}
-            onChange={(e) => onPickKeep(Number(e.target.value))}
-            aria-label="Pick keep — units to hold back in local stock"
-            title="How many units to hold back in local stock. A rate fill covers the shortfall from any local stock above this before ordering the rest from the supplier — e.g. 2 local with Pick keep 1 means 1 fewer on the order. Pick keep 0 holds nothing back."
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-          >
-            {PICK_KEEP_OPTIONS.map((n) => (
-              <option key={n} value={n}>Pick keep {n}</option>
-            ))}
-          </select>
+          {/* Wrapped in the SAME shell as the rate strip above — bordered white box, p-1 — with the select itself borderless and
+              on the same py-1/text-sm as a rate button. The two controls sit side by side, so matching their height is matching
+              their structure rather than pinning a pixel value on one of them: change the padding on one and the other has to
+              follow, which is exactly the coupling that should be visible in the markup. The focus ring moves to the wrapper
+              (focus-within) since that's now the thing with the border. */}
+          <div className="flex items-center rounded-md border border-slate-300 bg-white p-1 focus-within:border-brand-400 focus-within:ring-1 focus-within:ring-brand-400">
+            <select
+              value={String(pickKeep)}
+              onChange={(e) => onPickKeep(Number(e.target.value))}
+              aria-label="Pick keep — units to hold back in local stock"
+              title="How many units to hold back in local stock. A rate fill covers the shortfall from any local stock above this before ordering the rest from the supplier — e.g. 2 local with Pick keep 1 means 1 fewer on the order. Pick keep 0 holds nothing back."
+              className="rounded border-0 bg-transparent px-1.5 py-1 text-sm font-medium text-slate-600 focus:outline-none"
+            >
+              {PICK_KEEP_OPTIONS.map((n) => (
+                <option key={n} value={n}>Pick keep {n}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Row count and cut count. Committed search steps (includes/excludes) deliberately show no chips of their own (owner,
               2026-08-20 — "they get messy") — Reset is the one way back to an unfiltered list. */}
