@@ -44,7 +44,8 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
 
       PICK KEEP (1/2/3, or off) sits alongside the rate and modifies it: local stock ABOVE the keep rate is treated as available
       to cover the Amazon shortfall, so it comes off the supplier order one-for-one (2 local + keep 1 = order 1 fewer; owner,
-      2026-08-28). Off = the pre-2026-08-28 behaviour, local ignored. It's ONE setting for the whole screen, not per-view, and it
+      2026-08-28). Off = the pre-2026-08-28 behaviour, local ignored. Changing it immediately re-runs
+      the lit rate over the rows on screen (onPickKeep) rather than waiting for the next rate click. It's ONE setting for the whole screen, not per-view, and it
       survives Reset — it's a standing stock policy, not a view filter.
 
 SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
@@ -384,7 +385,8 @@ export default function AmazonOrderHome() {
   // PICK_KEEP_OPTIONS above and applyCoverage below). ONE setting for the whole screen, not per-view like the rate: it's a
   // standing stock policy ("always keep 1 back for Shopify"), not a property of the list you happen to be looking at. Null = off,
   // the pre-2026-08-28 behaviour where local stock never offsets an order. Re-tapping the lit button turns it off again, the same
-  // toggle gesture the rate buttons use. Deliberately NOT cleared by Reset — Reset is a VIEW reset, and this isn't a view filter.
+  // toggle gesture the rate buttons use, and either way the lit rate refills on the spot (onPickKeep below). Deliberately NOT cleared by
+  // Reset — Reset is a VIEW reset, and this isn't a view filter.
   const [pickKeep, setPickKeep] = useState<number | null>(null);
 
   // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
@@ -681,6 +683,14 @@ export default function AmazonOrderHome() {
       return;
     }
     setCoverageForView(months);
+    fillCoverage(months, pickKeep);
+  }
+
+  // The fill itself, split out of applyCoverage so a PICK KEEP change can re-run it against the lit rate without the operator
+  // having to toggle the rate off and on again (owner, 2026-08-28). Takes both inputs as arguments rather than reading state,
+  // because onPickKeep calls it in the same tick as its own setPickKeep — the state variable would still hold the OLD keep rate.
+  function fillCoverage(months: number, keep: number | null) {
+    const visibleCodes = new Set(visible.map((r) => r.code));
     // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
     // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is. A loss-making
     // SKU (isLoss) is skipped the same way — no point buying in more of something that lost money last time it sold.
@@ -693,7 +703,7 @@ export default function AmazonOrderHome() {
         // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon instead of
         // buying in, so it comes off the supplier line one-for-one (owner, 2026-08-28: 2 local, keep 1 -> order one fewer). With
         // the keep rate off, local is ignored entirely and the whole shortfall is ordered, as it was before.
-        const fromLocal = pickKeep === null ? 0 : Math.max(0, r.local_stock - pickKeep);
+        const fromLocal = keep === null ? 0 : Math.max(0, r.local_stock - keep);
         return { code: r.code, qty: Math.max(0, shortfall - fromLocal) };
       })
       .filter((f) => f.qty > 0); // nothing to order — leave it out of the fill rather than write a 0
@@ -715,6 +725,16 @@ export default function AmazonOrderHome() {
     setManualOrder(
       [...filled].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
+  }
+
+  // PICK KEEP click — re-tapping the lit keep button turns the keep rate off. Either way, if a rate is currently lit for THIS view the fill is
+  // recomputed on the spot, so the Basket always reflects the keep rate on screen (owner, 2026-08-28). Only the current view is
+  // refilled, exactly as a rate click is: a fill built under a different preset was computed against rows that aren't on screen
+  // now, and silently rewriting it from here would change numbers the operator can't see.
+  function onPickKeep(n: number) {
+    const next = pickKeep === n ? null : n;
+    setPickKeep(next);
+    if (coverageMonths !== null) fillCoverage(coverageMonths, next);
   }
 
   // Single-row X. Like the bulk Cut, it finishes with nothing selected (owner, 2026-08-27) — whether the X landed on the blue row
@@ -1086,15 +1106,17 @@ export default function AmazonOrderHome() {
 
           {/* PICK KEEP — sits immediately after the rate strip because it's a modifier ON the fill, not a filter: the two are read
               together as "cover N months, keeping M local". Changing it doesn't refill anything on its own (the numbers already in
-              the Basket were computed under whatever was set at the time) — it takes effect on the NEXT rate click, same as
-              narrowing the list does. Re-tapping the lit button turns it off. */}
+              the Basket were computed under whatever was set at the time) — it re-runs the lit rate against the rows on screen
+              straight away (onPickKeep), so the Basket always matches what the strip reads. Re-tapping the lit button turns it
+              off — and that recomputes too, back to ignoring local. With no rate lit there's nothing to recompute; it just arms
+              the setting for the next rate click. */}
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             <span className="pl-1 pr-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">Keep</span>
             {PICK_KEEP_OPTIONS.map((n) => (
               <button
                 key={n}
                 type="button"
-                onClick={() => setPickKeep((prev) => (prev === n ? null : n))}
+                onClick={() => onPickKeep(n)}
                 title={
                   pickKeep === n
                     ? 'Click again to turn Pick keep off — rate fills will ignore local stock again'
