@@ -18,6 +18,22 @@ SORT: every column header is clickable. Same click-to-reverse gesture as /invent
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
       the filter — the whole list is already in memory.
 
+ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen is identical in both — same rows, same search,
+      same presets, same rate buttons, same Pick keep — and ONE column changes: Order (units to buy in from the supplier) becomes
+      Pick (units to send from the local shelf to Amazon). The two scratchpads are entirely separate and both saved to the browser
+      draft, so flipping over to work the other side and flipping back finds the first exactly as it was (owner, 2026-08-28).
+
+      A rate fill splits the SAME shortfall between them (see fillCoverage): Pick takes as much of it as local stock above the
+      keep rate can cover, Order buys whatever is left after that. Fill both at the same rate and keep and they add up to the
+      shortfall exactly — pick 2 + order 3 for a shortfall of 5.
+
+      Birkenstock is excluded in BOTH modes — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
+      for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
+      supplier requirement: that's who an order line gets placed against, and a pick has nobody to place it with.
+
+      PICK HAS NO WRITE YET (owner, 2026-08-28 — "for now"): there's no server route that moves local stock to C3-Amazon, so the
+      send button is disabled in Pick mode and says so. Everything else — filling, typing, clearing, the draft — works.
+
 SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
       clicking sets it, Enter and the "Cut (n)" button both act on it. This screen used to run a keyboard cursor (a hairline on the
       SKU cell) alongside a separate multi-select (a full row fill), which is what useListCursor is built for and what /inventory
@@ -60,7 +76,8 @@ SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad in
       `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
 
-      Pick (send local stock to Amazon) has been pulled from this screen for now — revisit later (owner, 2026-08-11).
+      Pick (send local stock to Amazon) was pulled from this screen in 2026-08 and came back 2026-08-28 as a MODE rather than a
+      second column — see ORDER / PICK MODE above. Sending a pick still has no server route; the column plans it, nothing writes it.
 
 LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
       positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone
@@ -192,12 +209,24 @@ const DRAFT_KEY = 'bcweb:amazon-order-draft';
 // A draft older than this is more likely to be stale (stock/sales have moved on) than useful — dropped silently on load rather than
 // resurrected, same as any other browser-only state that's outlived its relevance.
 const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+// BASKET MODE — the screen runs one of two scratchpads in the same column: ORDER (buy these in from the supplier) or PICK (send
+// these from the local shelf to Amazon). Everything else about the screen is identical between the two — same rows, same search,
+// same presets, same rate buttons — only the column, and what a rate fill computes into it, differ (owner, 2026-08-28).
+type BasketMode = 'order' | 'pick';
+const BASKET_MODES: { key: BasketMode; label: string; title: string }[] = [
+  { key: 'order', label: 'Order', title: 'Plan what to BUY IN from the supplier — a rate fill works out the shortfall Amazon needs that local stock cannot cover' },
+  { key: 'pick', label: 'Pick', title: 'Plan what to SEND from the local shelf to Amazon — a rate fill takes as much of the shortfall as local stock can cover, above the Pick keep rate' },
+];
+
+// The two scratchpads are saved SEPARATELY in the one draft. `qty` keeps its original key so a draft written before Pick mode
+// existed still loads into the Order side rather than being silently dropped.
 interface AmazonOrderDraft {
   orderQty?: Record<string, string>;
+  pickQty?: Record<string, string>;
   savedAt?: number;
 }
 // 'order_qty' is NOT a row field (it's the client-only Order scratchpad, keyed separately by code) — sortValue can't resolve it,
-// so `sorted` below special-cases it by reading the live orderQty state directly.
+// so `sorted` below special-cases it by reading the live qty state directly.
 type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty';
 // Reading order: identity (SKU, then the Order scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
@@ -222,7 +251,7 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
 };
 
 // COLUMN GROUPS — the table is really four blocks wearing ten columns: identity (SKU), stock on hand (Local / FBA Live / FBA
-// Total), demand (Sold 30 / Sold 7), the operator's own input (Basket), then money (Unit profit / Profit 30d). A hairline on the
+// Total), demand (Sold 30 / Sold 7), the operator's own input (Order or Pick, depending on the mode), then money (Unit profit / Profit 30d). A hairline on the
 // FIRST column of each block gives the eye something to anchor on when reading across a ten-wide row, and it encodes the real
 // shape of the data rather than decorating it. Deliberately not zebra striping: the rows already carry three background states
 // (hover, selected, expanded) and alternating fills would fight all of them.
@@ -339,7 +368,7 @@ export default function AmazonOrderHome() {
   // can't overlap in practice, but the explicit check keeps Recycle honest if either test's window ever changes independently.
   const [recycleOnly, setRecycleOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
-  // orderQty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
+  // qty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
   function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
   function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
   function toggleRecycle() { setRecycleOnly((v) => !v); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
@@ -350,19 +379,33 @@ export default function AmazonOrderHome() {
   // Winners). So it overrides those filters rather than stacking on top of them — see `filtered` below, which short-circuits to
   // this rule alone when ordersOnly is on. Mutually exclusive with Winners/Potential for the same reason Winners/Potential are
   // mutually exclusive with each other: combining would silently confuse which rule is actually governing the screen. Membership
-  // is a SNAPSHOT taken when the preset goes on — see basketSnapshot just below. Order scratchpad values, keyed by code — declared here (ahead of `filtered`/`sorted` below, which both need it)
-  // rather than down with the rest of the Order UI state further down.
-  const [orderQty, setOrderQty] = useState<Record<string, string>>({});
+  // is a SNAPSHOT taken when the preset goes on — see basketSnapshot just below.
+
+  // THE SCRATCHPAD — quantities keyed by code, declared here (ahead of `filtered`/`sorted` below, which both need it) rather than
+  // down with the rest of the basket UI state. Held as one record PER MODE rather than as two independent states, so everything
+  // downstream reads `qty` and never has to know which mode is on; only this pair, the draft, and the rate maths do.
+  //
+  // The two baskets are fully independent: switching to Pick doesn't disturb what's been built up in Order, and back again. That's
+  // the point of a mode rather than a filter — an operator part-way through planning a buy can flip over to work out what can be
+  // covered from the shelf instead, and flip back to find the buy exactly as they left it.
+  const [mode, setMode] = useState<BasketMode>('order');
+  const [qtyByMode, setQtyByMode] = useState<Record<BasketMode, Record<string, string>>>({ order: {}, pick: {} });
+  const qty = qtyByMode[mode];
+  // Every write goes through here so no caller has to thread the mode through. Takes an updater (never a bare value) because the
+  // callers are event handlers that must not clobber a concurrent update — same reason the single-basket setter it replaced was always called that way.
+  const setQty = useCallback((update: (prev: Record<string, string>) => Record<string, string>) => {
+    setQtyByMode((prev) => ({ ...prev, [mode]: update(prev[mode]) }));
+  }, [mode]);
   const [ordersOnly, setOrdersOnly] = useState(false);
   // MEMBERSHIP IS A SNAPSHOT, NOT LIVE (owner, 2026-08-27 — "don't auto filter with edits"). Load basket used to re-test every
-  // row against the live orderQty on every keystroke, so editing quantities while it was on rearranged the list underneath the
+  // row against the live qty on every keystroke, so editing quantities while it was on rearranged the list underneath the
   // hands doing the editing: zeroing a row made it vanish the moment focus left, and a row typed up elsewhere appeared mid-list.
   // The set of rows is now fixed when the filter is switched on, and only a BULK basket action changes it (a rate fill/re-tap
   // clear, Clear basket, Reset, or toggling the filter off and on again) — typing never does. null = filter off.
   const [basketSnapshot, setBasketSnapshot] = useState<Set<string> | null>(null);
   // The codes the basket holds a positive quantity for right now — what a fresh snapshot is taken from.
   function basketCodes() {
-    return new Set(Object.entries(orderQty).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code));
+    return new Set(Object.entries(qty).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code));
   }
   function toggleOrdersOnly() {
     const next = !ordersOnly;
@@ -382,13 +425,17 @@ export default function AmazonOrderHome() {
   //
   // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
   // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
-  const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
+  // Keyed by MODE as well as by view, for the same reason it's keyed by view at all: a lit rate says "this list was filled at this
+  // rate", and an Order fill says nothing about the Pick basket. Flipping to Pick would otherwise show a rate still lit over an
+  // empty column.
+  const [coverageByView, setCoverageByView] = useState<Record<BasketMode, Record<ViewKey, number | null>>>({ order: NO_COVERAGE, pick: NO_COVERAGE });
   const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : recycleOnly ? 'recycle' : ordersOnly ? 'basket' : 'all';
-  const coverageMonths = coverageByView[viewKey];
-  const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
+  const coverageMonths = coverageByView[mode][viewKey];
+  const anyCoverage = useMemo(() => Object.values(coverageByView[mode]).some((m) => m !== null), [coverageByView, mode]);
   function setCoverageForView(months: number | null) {
-    setCoverageByView((prev) => ({ ...prev, [viewKey]: months }));
+    setCoverageByView((prev) => ({ ...prev, [mode]: { ...prev[mode], [viewKey]: months } }));
   }
+  const NO_COVERAGE_BOTH: Record<BasketMode, Record<ViewKey, number | null>> = { order: NO_COVERAGE, pick: NO_COVERAGE };
   // PICK KEEP — how many units a rate fill leaves on the local shelf before counting the rest against the Amazon order (see
   // PICK_KEEP_OPTIONS above and applyCoverage below). ONE setting for the whole screen, not per-view like the rate: it's a
   // standing stock policy ("always keep 1 back for Shopify"), not a property of the list you happen to be looking at. Always a
@@ -412,7 +459,7 @@ export default function AmazonOrderHome() {
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
     setBasketSnapshot(null);
     setCut(new Set()); setSelected(new Set());
-    setCoverageByView(NO_COVERAGE);
+    setCoverageByView(NO_COVERAGE_BOTH);
     setManualOrder(null);
     setConfirmingOrder(false); setConfirmingClear(false); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
@@ -426,7 +473,7 @@ export default function AmazonOrderHome() {
     // on with no snapshot taken.
     if (ordersOnly) {
       return rows.filter((r) => r.code === focusedOrderCode
-        || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(orderQty[r.code]) || 0) > 0));
+        || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(qty[r.code]) || 0) > 0));
     }
     let out = rows;
     if (includes.length > 0 || excludes.length > 0) {
@@ -454,7 +501,7 @@ export default function AmazonOrderHome() {
       });
     }
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, orderQty, basketSnapshot, focusedOrderCode]);
+  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
@@ -465,12 +512,12 @@ export default function AmazonOrderHome() {
   // rule as sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad.
   // useCallback (not a bare function) so the memos below can name it as a dependency — an unmemoized closure here makes the
   // React Compiler give up on `sorted`, and the bail-out then cascades into every memo derived from it (`visible`, `cursorKeys`).
-  const orderQtyValue = useCallback((code: string): number | null => {
-    const raw = orderQty[code];
+  const qtyValue = useCallback((code: string): number | null => {
+    const raw = qty[code];
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
-  }, [orderQty]);
+  }, [qty]);
 
   // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
   // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
@@ -485,8 +532,8 @@ export default function AmazonOrderHome() {
       // Empty/unset boxes count as 0 here (not "sorts last" — see sortValue's rule for every other column), so ascending genuinely
       // starts with the untouched rows rather than burying them after every non-empty box (owner, 2026-08-13).
       const snapshot = [...filtered].sort((a, b) => {
-        const av = orderQtyValue(a.code) ?? 0;
-        const bv = orderQtyValue(b.code) ?? 0;
+        const av = qtyValue(a.code) ?? 0;
+        const bv = qtyValue(b.code) ?? 0;
         const d = av - bv;
         if (d === 0) return a.code.localeCompare(b.code);
         return d * dirMul;
@@ -507,8 +554,8 @@ export default function AmazonOrderHome() {
       // order_qty treats an empty box as 0, not "sorts last" (see onSort's snapshot above for why) — everything else keeps the
       // usual "an unknown value isn't small" rule.
       if (sortKey === 'order_qty') {
-        const av = orderQtyValue(a.code) ?? 0;
-        const bv = orderQtyValue(b.code) ?? 0;
+        const av = qtyValue(a.code) ?? 0;
+        const bv = qtyValue(b.code) ?? 0;
         const d = av - bv;
         return d === 0 ? a.code.localeCompare(b.code) : d * dir;
       }
@@ -534,7 +581,7 @@ export default function AmazonOrderHome() {
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
     });
-  }, [filtered, sortKey, sortDir, manualOrder, orderQtyValue]);
+  }, [filtered, sortKey, sortDir, manualOrder, qtyValue]);
 
   // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
   // DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as free text rather than <input type="number">
@@ -547,7 +594,7 @@ export default function AmazonOrderHome() {
   // The rule disable below is deliberate, not an oversight. This is the one case set-state-in-effect carves out in practice: a
   // mount-only read of an external store (localStorage) that can't move into a lazy useState initializer, because this page is
   // server-rendered and localStorage doesn't exist on the server — a lazy initializer would either throw during SSR or hydrate
-  // with different values than the server produced. setOrderQty applies what was read, once, with [] deps, so there's no
+  // with different values than the server produced. setQtyByMode applies what was read, once, with [] deps, so there's no
   // re-render cascade for the rule to protect against. (The Date.now() age check needs no disable: purity only fires on a clock
   // read during RENDER, and this one is inside an effect.)
   const loadedDraftRef = useRef(false);
@@ -558,7 +605,7 @@ export default function AmazonOrderHome() {
       if (raw) {
         const draft = JSON.parse(raw) as AmazonOrderDraft;
         if (draft.savedAt && Date.now() - draft.savedAt <= DRAFT_MAX_AGE_MS) {
-          if (draft.orderQty) setOrderQty(draft.orderQty);
+          setQtyByMode({ order: draft.orderQty ?? {}, pick: draft.pickQty ?? {} });
         } else {
           localStorage.removeItem(DRAFT_KEY);
         }
@@ -577,15 +624,20 @@ export default function AmazonOrderHome() {
     if (!loadedDraftRef.current) return; // don't run before the load effect above has had its state update applied
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
     draftSaveTimer.current = setTimeout(() => {
-      if (Object.keys(orderQty).length === 0) {
+      // Both baskets are saved together, and it takes BOTH being empty to clear the draft — otherwise emptying Order would throw
+      // away a Pick basket that's still got numbers in it.
+      if (Object.keys(qtyByMode.order).length === 0 && Object.keys(qtyByMode.pick).length === 0) {
         localStorage.removeItem(DRAFT_KEY);
         return;
       }
       const savedAt = Date.now();
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ orderQty, savedAt } satisfies AmazonOrderDraft));
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ orderQty: qtyByMode.order, pickQty: qtyByMode.pick, savedAt } satisfies AmazonOrderDraft),
+      );
     }, 500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
-  }, [orderQty]);
+  }, [qtyByMode]);
 
   // SEND TO ORDER STATUS — turns the Order scratchpad into real orderstatus rows via the same /order-status-add the Order Status
   // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
@@ -594,17 +646,21 @@ export default function AmazonOrderHome() {
   // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
   // auto-fill (applyCoverage, below) skips loss-makers on its own (owner, 2026-08-11).
   const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
-  const orderTargets = useMemo(() => {
+  const basketTargets = useMemo(() => {
     const out: { code: string; qty: number; supplier: string }[] = [];
-    for (const [code, raw] of Object.entries(orderQty)) {
-      const qty = Math.floor(Number(raw));
+    for (const [code, raw] of Object.entries(qty)) {
+      const n = Math.floor(Number(raw));
       const row = rowByCode.get(code);
-      if (!row || !row.supplier || isBirkenstock(row) || !Number.isFinite(qty) || qty <= 0) continue;
-      out.push({ code, qty, supplier: row.supplier });
+      if (!row || !Number.isFinite(n) || n <= 0) continue;
+      // Birkenstock is out in both modes — it never goes to Amazon (owner, 2026-08-28). A supplier is an ORDER-only requirement:
+      // that's who the line gets placed against, and a pick has nobody to place it with.
+      if (isBirkenstock(row)) continue;
+      if (mode === 'order' && !row.supplier) continue;
+      out.push({ code, qty: n, supplier: row.supplier ?? '' });
     }
     return out;
-  }, [orderQty, rowByCode]);
-  const orderTotalUnits = useMemo(() => orderTargets.reduce((sum, t) => sum + t.qty, 0), [orderTargets]);
+  }, [qty, rowByCode, mode]);
+  const basketTotalUnits = useMemo(() => basketTargets.reduce((sum, t) => sum + t.qty, 0), [basketTargets]);
 
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [ordering, setOrdering] = useState(false);
@@ -618,17 +674,19 @@ export default function AmazonOrderHome() {
 
   async function submitOrder() {
     setConfirmingOrder(false);
-    if (orderTargets.length === 0) return;
+    // Belt and braces: the button is disabled in Pick mode, but this is the one function on the screen that writes to the DB, so
+    // it refuses outright rather than trusting the UI to have got the disabling right.
+    if (mode !== 'order' || basketTargets.length === 0) return;
     setOrdering(true); setOrderError(null);
-    setOrderProgress({ done: 0, total: orderTargets.length });
+    setOrderProgress({ done: 0, total: basketTargets.length });
     let queued = 0;
     const failed: string[] = [];
-    for (let i = 0; i < orderTargets.length; i++) {
-      const { code, qty, supplier } = orderTargets[i];
+    for (let i = 0; i < basketTargets.length; i++) {
+      const { code, qty, supplier } = basketTargets[i];
       const res = await addOrderLine(supplier, code, qty, 3);
       if (res.success) {
         queued++;
-        setOrderQty((prev) => {
+        setQty((prev) => {
           const next = { ...prev };
           delete next[code];
           return next;
@@ -639,7 +697,7 @@ export default function AmazonOrderHome() {
       } else {
         failed.push(code);
       }
-      setOrderProgress({ done: i + 1, total: orderTargets.length });
+      setOrderProgress({ done: i + 1, total: basketTargets.length });
     }
     setOrderProgress(null); setOrdering(false);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
@@ -678,7 +736,7 @@ export default function AmazonOrderHome() {
     const visibleCodes = new Set(visible.map((r) => r.code));
     if (coverageMonths === months) {
       setCoverageForView(null);
-      setOrderQty((prev) => {
+      setQty((prev) => {
         const next = { ...prev };
         for (const code of visibleCodes) delete next[code];
         return next;
@@ -698,23 +756,30 @@ export default function AmazonOrderHome() {
   // because onPickKeep calls it in the same tick as its own setPickKeep — the state variable would still hold the OLD keep rate.
   function fillCoverage(months: number, keep: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
-    // Birkenstock never gets an Order box (isBirkenstock, above) — filling it here would just write a number that's silently
-    // discarded when the Order button is pressed, which reads as a bug rather than the deliberate exclusion it is. A loss-making
-    // SKU (isLoss) is skipped the same way — no point buying in more of something that lost money last time it sold.
+    // Birkenstock is excluded in BOTH modes: it never goes to Amazon at all (owner, 2026-08-28), so there is nothing to buy for
+    // it here and nothing to send it either. A loss-making SKU (isLoss) is skipped in both too: no point buying more of something
+    // that lost money last time it sold, and no point shipping the shelf's copy to Amazon to lose money on it there.
     const filled = visible
-      .filter((r) => !isBirkenstock(r) && !isLoss(r))
+      .filter((r) => !isLoss(r) && !isBirkenstock(r))
       .map((r) => {
         const demand = r.units_30d * months;
-        // What Amazon is short by, before any local stock is considered.
+        // What Amazon is short by, before any local stock is considered. Both modes work off this same number — they just take
+        // different halves of it.
         const shortfall = Math.max(0, Math.ceil(demand - r.fba_total));
-        // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon instead of
-        // buying in, so it comes off the supplier line one-for-one (owner, 2026-08-28: 2 local, keep 1 -> order one fewer). A
-        // keep of 0 holds nothing back, so the whole local shelf counts.
-        const fromLocal = Math.max(0, r.local_stock - keep);
-        return { code: r.code, qty: Math.max(0, shortfall - fromLocal) };
+        // PICK KEEP — anything on the local shelf ABOVE the keep rate is stock we already own and can send to Amazon (owner,
+        // 2026-08-28). A keep of 0 holds nothing back, so the whole local shelf counts.
+        const available = Math.max(0, r.local_stock - keep);
+        // The two modes split the shortfall between them. PICK takes as much of it as the shelf can cover; ORDER buys whatever is
+        // left after the shelf has done what it can. Fill both at the same rate and keep and the two add up to the shortfall
+        // exactly — pick 2 + order 3 for a shortfall of 5 — which is what makes them readable as one plan rather than two rival
+        // numbers for the same SKU.
+        const filledQty = mode === 'pick'
+          ? Math.min(shortfall, available)
+          : Math.max(0, shortfall - available);
+        return { code: r.code, qty: filledQty };
       })
-      .filter((f) => f.qty > 0); // nothing to order — leave it out of the fill rather than write a 0
-    setOrderQty((prev) => {
+      .filter((f) => f.qty > 0); // nothing to do for this row — leave it out of the fill rather than write a 0
+    setQty((prev) => {
       const next = { ...prev };
       for (const code of visibleCodes) delete next[code]; // drop this view's old values before refilling
       filled.forEach(({ code, qty }) => { next[code] = String(qty); });
@@ -743,6 +808,22 @@ export default function AmazonOrderHome() {
     if (coverageMonths !== null) fillCoverage(coverageMonths, next);
   }
 
+  // MODE SWITCH — Order <-> Pick. The baskets themselves are untouched (that's the whole point of a mode: flip over, work the
+  // other side, flip back and find the first exactly as it was). What DOES get dropped is everything that describes the basket
+  // you're leaving rather than the rows: the fill-ranked sort ranks quantities the new column doesn't have, and Load basket is a
+  // snapshot of the other basket's membership, so it would open the new mode onto a list filtered by a set of codes that has
+  // nothing to do with it. Confirm states drop too — a half-opened confirm belongs to the mode that raised it.
+  function switchMode(next: BasketMode) {
+    if (next === mode) return;
+    setMode(next);
+    setManualOrder(null);
+    setOrdersOnly(false);
+    setBasketSnapshot(null);
+    setConfirmingOrder(false);
+    setConfirmingClear(false);
+    setOrderError(null);
+  }
+
   // Single-row X. Like the bulk Cut, it finishes with nothing selected (owner, 2026-08-27) — whether the X landed on the blue row
   // or on a different one, leaving a highlight behind after a cut invites the next Enter to act on a row the operator has moved on
   // from.
@@ -764,10 +845,11 @@ export default function AmazonOrderHome() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   function clearBasket() {
     setConfirmingClear(false);
-    setOrderQty({});
+    setQty(() => ({}));
     // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's, not just this
-    // one's, since the basket they were filling was shared across all of them.
-    setCoverageByView(NO_COVERAGE);
+    // one's, since the basket they were filling was shared across all of them. Only THIS MODE's, though: Clear basket empties the
+    // basket you're looking at, and the other mode's basket (and its rates) are untouched.
+    setCoverageByView((prev) => ({ ...prev, [mode]: NO_COVERAGE }));
     setManualOrder(null);
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
@@ -778,12 +860,12 @@ export default function AmazonOrderHome() {
 
   // ON SCREEN / TOTAL — how much of the whole basket is visible right now, e.g. "10/41" when only 10 of the basket's 41 SKUs are
   // on screen (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all here or mostly filtered/cut away
-  // elsewhere). orderTargets itself deliberately reaches off-screen (a value typed before a filter/cut shouldn't silently drop
+  // elsewhere). basketTargets itself deliberately reaches off-screen (a value typed before a filter/cut shouldn't silently drop
   // out of the real submission) — this is the on-screen SUBSET of it, display-only.
   const basketOnScreen = useMemo(() => {
     const visibleCodes = new Set(visible.map((r) => r.code));
-    return orderTargets.filter((t) => visibleCodes.has(t.code));
-  }, [orderTargets, visible]);
+    return basketTargets.filter((t) => visibleCodes.has(t.code));
+  }, [basketTargets, visible]);
   const basketOnScreenCount = basketOnScreen.length;
 
   // BASKET COST — total spend of the ON-SCREEN portion of the basket only (owner, 2026-08-20 — "the cost should only be for
@@ -1087,6 +1169,30 @@ export default function AmazonOrderHome() {
             reserved height, so committing or dropping a search step no longer changes the panel's height — this panel is sticky,
             so any resize shoves the whole table up or down under it. */}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+          {/* MODE — Order / Pick. First in the row because it governs everything to its right: the rate buttons, the keep rate and
+              the column they all write into mean something different depending on which of these is lit. Same segmented shell as
+              the presets and the rate strip (they're all "pick one"), but deliberately NOT the brand fill those use — a preset is
+              a filter over the same job, this changes what the job IS, and if it wore the same blue as Winners it would read as a
+              fourth preset. Slate-800 says "this is the mode you're in" without joining that family or borrowing emerald, which is
+              reserved for the write. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            {BASKET_MODES.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => switchMode(m.key)}
+                title={m.title}
+                aria-pressed={mode === m.key}
+                className={
+                  'rounded px-2.5 py-1 text-sm font-medium ' +
+                  (mode === m.key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')
+                }
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             {COVERAGE_OPTIONS.map((months) => (
               <button
@@ -1096,7 +1202,9 @@ export default function AmazonOrderHome() {
                 title={
                   coverageMonths === months
                     ? 'Click again to clear the Basket'
-                    : `Fill Basket with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total)`
+                    : mode === 'pick'
+                      ? `Fill Pick with as much of ${months} month${months === 1 ? '' : 's'} of cover as local stock can supply (Sold 30d x ${months}, minus FBA Total, capped at local stock above the Pick keep rate)`
+                      : `Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total, minus local stock above the Pick keep rate)`
                 }
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
@@ -1198,36 +1306,47 @@ export default function AmazonOrderHome() {
 
                 The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
                 one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
-                budget in the one place it's earned. The LABEL is the action, not the noun: "Basket" already names the column you
-                type into and the "Load basket" preset, so using it a third time here gave the write the same word as two harmless
-                things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
+                budget in the one place it's earned. The LABEL is the action, not the noun: "basket" is the generic name for what
+                you've built up (the "Load basket" preset, the Clear bin, this button's own count), while the COLUMN is named for
+                the mode — Order or Pick. Calling the write "Basket" too gave the one irreversible action the same word as two
+                harmless things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
                 ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
+            {/* PICK MODE HAS NO WRITE YET (owner, 2026-08-28 — "for now"). There is no server route that moves local stock to
+                C3-Amazon, so the button is disabled and says so rather than being hidden: the operator can see the plan is
+                complete and simply has nowhere to send it, which is the truth. Pick quantities still save to the browser draft
+                like Order's do, so the work isn't lost meanwhile. */}
             {!confirmingOrder ? (
               <button
                 type="button"
                 onClick={() => { setConfirmingClear(false); setConfirmingOrder(true); }}
-                disabled={ordering || orderTargets.length === 0}
+                disabled={mode === 'pick' || ordering || basketTargets.length === 0}
                 title={
-                  `Send every SKU with a number in Basket to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
-                  (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
+                  mode === 'pick'
+                    ? "Sending a pick to Amazon isn't wired up yet — Pick is a planning scratchpad for now. The numbers are saved in this browser."
+                    : `Send every SKU with a number in Order to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
+                      (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
                 }
                 className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
               >
                 <ShoppingCartIcon className="h-5 w-5" />
                 <span className="flex flex-col items-start leading-tight">
                   <span className="text-sm font-medium">
-                    {ordering && orderProgress
-                      ? `Sending ${orderProgress.done}/${orderProgress.total}…`
-                      : 'Confirm Basket'}
+                    {mode === 'pick'
+                      ? 'Pick not wired up yet'
+                      : ordering && orderProgress
+                        ? `Sending ${orderProgress.done}/${orderProgress.total}…`
+                        : 'Confirm Basket'}
                   </span>
                   {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
                       decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
                       the progress count above is the only number that matters. */}
-                  {!ordering && orderTargets.length > 0 && (
+                  {/* The cost line is ORDER only: it's what the basket will cost to BUY IN, and a pick spends nothing — that stock
+                      is already paid for and on the shelf. The SKU count still earns its place in both. */}
+                  {!ordering && basketTargets.length > 0 && (
                     <span className="text-xs font-normal text-emerald-100">
-                      {basketOnScreenCount} of {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} on screen
-                      {(basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
-                      {basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                      {basketOnScreenCount} of {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} on screen
+                      {mode === 'order' && (basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
+                      {mode === 'order' && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
                     </span>
                   )}
                 </span>
@@ -1235,7 +1354,7 @@ export default function AmazonOrderHome() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Confirm {orderTotalUnits} unit{orderTotalUnits === 1 ? '' : 's'} across {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} to Order Status?
+                  Confirm {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} across {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} to Order Status?
                 </span>
                 <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
                 <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
@@ -1248,7 +1367,7 @@ export default function AmazonOrderHome() {
               <button
                 type="button"
                 onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
-                disabled={ordering || orderTargets.length === 0}
+                disabled={ordering || basketTargets.length === 0}
                 aria-label="Clear basket"
                 title="Empty the whole basket — every row with a value, not just the ones on screen — and discard the saved draft"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
@@ -1258,7 +1377,7 @@ export default function AmazonOrderHome() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Clear all {orderTargets.length} SKU{orderTargets.length === 1 ? '' : 's'} from the basket?
+                  Clear all {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} from the basket?
                 </span>
                 <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
                 <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
@@ -1297,8 +1416,16 @@ export default function AmazonOrderHome() {
                     them inline instead (see the `expanded` detail row in the body below) — so only COLUMNS.slice(6, 8) renders
                     here now. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
+                {/* The one column that changes with the mode — see BasketMode. Everything else in the table is the same either way. */}
                 {renderColumnHeader(
-                  { key: 'order_qty', label: 'Basket', title: 'Planning scratchpad — not saved server-side, this browser only', align: 'right' },
+                  {
+                    key: 'order_qty',
+                    label: mode === 'pick' ? 'Pick' : 'Order',
+                    title: mode === 'pick'
+                      ? 'Units to send from the local shelf to Amazon — planning scratchpad, not saved server-side, this browser only'
+                      : 'Units to buy in from the supplier — planning scratchpad, not saved server-side, this browser only',
+                    align: 'right',
+                  },
                   sortKey, sortDir, onSort,
                 )}
                 {COLUMNS.slice(6, 8).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
@@ -1356,16 +1483,19 @@ export default function AmazonOrderHome() {
                   <td className="whitespace-nowrap border-l border-slate-100 px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       ref={setInputRef(r.code)}
-                      value={orderQty[r.code] || ''}
-                      onChange={(e) => setOrderQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
+                      value={qty[r.code] || ''}
+                      onChange={(e) => setQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
                       onKeyDown={(e) => onEditKeyDown(e, r.code)}
                       onFocus={() => { cursor.setCursor(r.code); selectOnly(r.code); setFocusedOrderCode(r.code); }}
                       onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
                       inputMode="numeric"
                       style={{ scrollMarginTop: stickyOffset }}
+                      /* Birkenstock's box is disabled in BOTH modes: it never goes to Amazon (owner, 2026-08-28) — it's bought
+                         separately, in bulk, six months ahead (CLAUDE.md) and sold elsewhere — so neither an order nor a pick for
+                         it means anything on this screen. */
                       disabled={isBirkenstock(r)}
                       placeholder="—"
-                      title={isBirkenstock(r) ? 'Birkenstock is ordered separately, in bulk — not from this screen' : undefined}
+                      title={isBirkenstock(r) ? 'Birkenstock never goes to Amazon — it’s bought separately, in bulk, and sold elsewhere' : undefined}
                       className={
                         'w-16 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 ' +
                         (isBirkenstock(r)
