@@ -34,6 +34,7 @@ import { useSWRConfig } from 'swr';
 import AppShell from '@/components/AppShell';
 import CustomerOrderList from '@/components/CustomerOrderList';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
+import PickLink from '@/components/PickLink';
 import { CUSTOMER_ORDERS_KEY } from '@/lib/orderStatusUi';
 
 export default function CustomerOrdersPage() {
@@ -50,7 +51,14 @@ export default function CustomerOrdersPage() {
       title="Customer Orders"
       backHref="/dashboard"
       backLabel="Dashboard"
-      headerRight={<UpdateOrdersButton onDone={onUpdated} onError={setUpdateError} />}
+      /* PickLink first, Update Orders second: the pick count is a READING you glance at on the way past, Update Orders is an ACTION
+         that reloads the grid under you — the quiet one shouldn't sit where the mouse is already heading. */
+      headerRight={(
+        <div className="flex items-center gap-2">
+          <PickLink />
+          <UpdateOrdersButton onDone={onUpdated} onError={setUpdateError} />
+        </div>
+      )}
     >
       {updateError && (
         <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{updateError}</div>

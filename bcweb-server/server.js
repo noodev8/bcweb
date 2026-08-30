@@ -167,6 +167,13 @@ app.use('/order-status-customer-courier', require('./routes/order-status-custome
 app.use('/order-status-customer-fba', require('./routes/order-status-customer-fba'));         // re-route to FBA (ONE-WAY: no Reset)
 app.use('/order-status-customer-delete', require('./routes/order-status-customer-delete'));   // plain delete; Shopify re-feeds it
 
+// --- Pick module (the physical shelf: localstock rows someone has to walk to and take) ---
+// Ported from the legacy PowerBuilder Pick screen, which is STILL LIVE, as is the mobile app that does the actual picking — so these
+// rows change under us and every write reports what it actually hit rather than assuming it got them all. utils/pick.js holds the two
+// list filters and the qty magic numbers (0 picked / 1 waiting / -1 not found / -2 re-stock) that are the whole data model.
+app.use('/pick-list', require('./routes/pick-list'));       // GET: one mode's shelf rows (shopify = customer picks, amazon = FBA gather)
+app.use('/pick-action', require('./routes/pick-action'));   // POST: action a selection — mode re-checked in the UPDATE's own WHERE
+
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
 app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)

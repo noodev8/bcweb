@@ -50,7 +50,7 @@ import ModuleTile from '@/components/ModuleTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
-  UserGroupIcon, MegaphoneIcon,
+  UserGroupIcon, MegaphoneIcon, HandRaisedIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -151,6 +151,22 @@ export default function DashboardPage() {
 
       {/* STOCK & PRODUCTS — the catalogue itself: what we hold, what it says, and what's coming in. */}
       <Band title="Stock & products">
+        {/* Pick — the physical shelf: what has to come off it, for a customer order or for the next FBA shipment. FIRST in the band
+            and NOT in DAILY (owner, 2026-08-30), which is a deliberate pair of calls. Not DAILY, because DAILY is only the two
+            screens a day is STARTED on and picking mostly happens on the mobile app — this is where you come when a pick needs a
+            second look. First here, because of the three screens in this band it's the only one about stock that is moving today;
+            Order Status and Add/Modify are sit-down jobs. Banded with stock rather than beside Customer Orders even though the
+            Shopify half IS customer order lines: the Amazon half is '#FREE' FBA stock with no order behind it, and this is the only
+            band both halves belong to. */}
+        <ModuleTile
+          title="Pick"
+          description="What has to come off a shelf — customer picks, and stock to gather for Amazon."
+          href="/pick"
+          icon={HandRaisedIcon}
+          live
+          compact
+        />
+
         {/* Order Status — PROCUREMENT: place what's been chosen, then chase what's on its way. Banded with stock rather than beside
             Customer Orders (owner, 2026-08-27): they read as a pair but they're opposite jobs — this is a sit-down session about
             replenishing stock, that is a daily fulfilment grid. */}

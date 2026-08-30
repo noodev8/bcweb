@@ -2002,4 +2002,75 @@ export async function downloadSocialAsset(publicUrl: string): Promise<ApiResult<
   }
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------
+// Pick — the physical shelf. `localstock` rows someone has to walk to and take, ported from the legacy PowerBuilder Pick screen.
+//
+// TWO MODES, TWO DIFFERENT KINDS OF ROW, and the server treats the distinction as a safety boundary rather than a view (it re-checks
+// the mode inside the UPDATE's own WHERE — see utils/pick.js). `shopify` is units reserved against a customer order; `amazon` is
+// '#FREE' units flagged for FBA that still need gathering onto the C3-Amazon shelf. They take different actions, hence two action
+// unions rather than one.
+//
+// The whole data model is one column, `localstock.qty`: 0 picked, 1 waiting, -1 not found, -2 re-stock. The server turns it into
+// `state` so nothing here has to know the numbers. Rows do NOT drop off the list when actioned — that's what makes Unpick reachable.
+// -------------------------------------------------------------------------------------------------------------------------------
+
+export type PickMode = 'shopify' | 'amazon';
+export type PickState = 'waiting' | 'picked' | 'not_found' | 'restock';
+export type PickShopifyAction = 'pick' | 'unpick' | 'not_found' | 'restock';
+export type PickAmazonAction = 'to_amazon' | 'unallocate';
+export type PickAction = PickShopifyAction | PickAmazonAction;
+
+export interface PickRow {
+  id: string;                 // localstock.id — the ONLY thing that separates two identical units on the same shelf
+  code: string;
+  groupid: string;
+  size: string;
+  qty: number;
+  state: PickState;
+  ordernum: string;           // the BC… on a Shopify pick; '#FREE' on an Amazon one
+  location: string;
+  brand: string | null;
+  colour: string | null;
+  title: string | null;
+  barcode: string | null;     // skumap.ean with the legacy trailing 'B' already stripped server-side
+  fnsku: string | null;
+  amzsku: string | null;
+  shippingname: string | null;
+  age_days: number | null;    // days since the CUSTOMER ordered; null on Amazon rows (no order behind them)
+  packed: boolean;            // orderstatus.batch = '2' — already boxed
+  allocated: string | null;
+}
+
+export interface PickList {
+  mode: PickMode;
+  counts: { shopify: number; amazon: number };  // OUTSTANDING (qty > 0) per mode — both badges from one call, so the tab you left
+                                                // never shows a stale number
+  total: number;
+  outstanding: number;
+  rows: PickRow[];
+}
+
+export function getPickList(mode: PickMode) {
+  return request<PickList>(
+    { url: '/pick-list', method: 'GET', params: { mode } },
+    (b) => ({
+      mode: (b.mode as PickMode) || mode,
+      counts: { shopify: Number(b.counts?.shopify) || 0, amazon: Number(b.counts?.amazon) || 0 },
+      total: Number(b.total) || 0,
+      outstanding: Number(b.outstanding) || 0,
+      rows: (b.rows as PickRow[]) || [],
+    })
+  );
+}
+
+// `updated` can legitimately be less than the number of ids sent: the mobile app picks the same rows and order-sync deletes them when
+// the order ships, so a row can vanish between the list loading and the button being pressed. The caller reports the shortfall and
+// refetches; it is not an error.
+export function pickAction(mode: PickMode, action: PickAction, ids: string[]) {
+  return request<{ requested: number; updated: number; ids: string[] }>(
+    { url: '/pick-action', method: 'POST', data: { mode, action, ids } },
+    (b) => ({ requested: Number(b.requested) || 0, updated: Number(b.updated) || 0, ids: (b.ids as string[]) || [] })
+  );
+}
+
 export default api;
