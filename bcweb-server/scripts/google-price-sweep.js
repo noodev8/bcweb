@@ -32,12 +32,21 @@ const googleMerchant = require('../utils/googleMerchant');
 
 async function main() {
   // The work queue: distinct Google-live styles with an un-sent SHP change. (Add/Modify doesn't log here, so it's out of scope by design.)
+  //
+  // NO-OP GUARD (2026-08-31): skip rows where the price didn't actually move. Two kinds land here — the HOLD rows the park routes
+  // now write (new_price = old_price, see docs/hold-logging-spec.md) and the occasional accidental apply of the price a style
+  // already had. Neither has anything to send; pushing them means a round trip to Google to set the price that is already live.
+  // Hold rows are additionally born with google_pushed_at pre-stamped, so this predicate is the safety net rather than the only
+  // defence — it is what catches the accidental applies, which have always reached Google as no-ops.
+  // IS DISTINCT FROM, not <>: a legacy row with a NULL price on either side is a real change we cannot characterise, so it stays
+  // in the queue rather than being silently dropped by NULL comparison.
   const pending = await query(`
     SELECT DISTINCT l.groupid
     FROM price_change_log l
     JOIN skusummary sm ON sm.groupid = l.groupid
     WHERE l.channel = 'SHP'
       AND l.google_pushed_at IS NULL
+      AND l.new_price IS DISTINCT FROM l.old_price
       AND sm.googlestatus = 1 AND sm.shopify = 1
   `);
   const groupids = pending.rows.map((r) => r.groupid);

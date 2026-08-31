@@ -96,6 +96,18 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t       ON t.groupid = a.groupid
       WHERE l.uploaded_at IS NULL
         AND l.changed_at >= now() - make_interval(hours => $1::int)
+        -- NO-OP GUARD (2026-08-31): drop rows whose queued price already IS the live Amazon price. Two kinds reach here — the HOLD
+        -- rows amz-review now writes (new_price = old_price, docs/hold-logging-spec.md) and genuinely redundant re-applies. Neither
+        -- changes anything on Amazon, and both cost a line in a hand-uploaded Seller Central file.
+        --
+        -- amzfeed.amzprice is a VARCHAR on a feed table (schema landmine) -> safeNumeric; a bare ::numeric throws on the first junk
+        -- row. ROUND to 2dp both sides so 37.9 and 37.90 are the same price. IS DISTINCT FROM, not <>: a SKU whose live price is
+        -- unreadable (or that has no amzfeed row at all) KEEPS its line rather than silently vanishing from the upload.
+        --
+        -- Safe in both directions despite amzfeed's refresh lag: if the feed is stale BEHIND the change the row looks like a real
+        -- move and is kept (at worst one redundant line); if the feed already shows the new price then the change is already live
+        -- on Amazon and dropping it is correct. No un-applied change can be lost.
+        AND ROUND(l.new_price, 2) IS DISTINCT FROM ROUND(${safeNumeric('a.amzprice')}, 2)
       ORDER BY l.code, l.id DESC
     `, [WINDOW_HOURS]);
 
