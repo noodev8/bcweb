@@ -58,12 +58,12 @@ Success Response:
   "excluded": ["Skechers"],                            // brands left out of every number on this screen
   "othersSharePct": 1,                                 // the fold threshold, so the UI can explain the Others row honestly
   "totals": { "revenue": 413000.12, "profit": 55120.44, "marginPct": 13.3,
-              "unitsSold": 8600, "unitsReturned": 190, "unitsNet": 8410,
+              "unitsSold": 8600, "unitsReturned": 190, "unitsNet": 8410, "returnRatePct": 2.2,
               "priorRevenue": 380100.00, "priorProfit": 49000.10, "brands": 19 },
   "rows": [
     { "brand": "Birkenstock", "isOthers": false, "brands": null,
       "revenue": 207659.02, "profit": 32645.28, "marginPct": 15.7, "profitPerUnit": 9.69,
-      "unitsSold": 3400, "unitsReturned": 31, "unitsNet": 3369, "lines": 4327,
+      "unitsSold": 3400, "unitsReturned": 31, "unitsNet": 3369, "returnRatePct": 0.9, "lines": 4327,
       "revenueSharePct": 50.3, "profitSharePct": 59.2,
       "priorRevenue": 190000.00, "priorProfit": 30100.00,
       "revenueChangePct": 9.3, "profitChangePct": 8.5 },
@@ -242,6 +242,9 @@ router.get('/', async (req, res) => {
         unitsSold: x.unitsSold,
         unitsReturned: x.unitsReturned,
         unitsNet: x.unitsNet,
+        // Return rate against units SOLD, not net — "of everything that went out, this share came back". Netting the denominator
+        // would flatter a bad brand (fewer net units => smaller-looking rate on the same returns). null when nothing sold.
+        returnRatePct: pctOf(x.unitsReturned, x.unitsSold),
         lines: x.lines,
         revenueSharePct: pctOf(x.revenue, totalRevenue),
         profitSharePct: pctOf(x.profit, totalProfit),
@@ -277,6 +280,7 @@ router.get('/', async (req, res) => {
       unitsSold: all.reduce((n, x) => n + x.unitsSold, 0),
       unitsReturned: all.reduce((n, x) => n + x.unitsReturned, 0),
       unitsNet: all.reduce((n, x) => n + x.unitsNet, 0),
+      returnRatePct: pctOf(all.reduce((n, x) => n + x.unitsReturned, 0), all.reduce((n, x) => n + x.unitsSold, 0)),
       priorRevenue: Math.round(all.reduce((n, x) => n + x.priorRevenue, 0) * 100) / 100,
       priorProfit: Math.round(all.reduce((n, x) => n + x.priorProfit, 0) * 100) / 100,
       brands: all.filter((x) => x.revenue !== 0 || x.unitsNet !== 0).length,

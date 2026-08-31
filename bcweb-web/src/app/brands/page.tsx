@@ -181,7 +181,7 @@ export default function BrandsPage() {
               <div className="text-xs uppercase tracking-wide text-slate-400">Units (net)</div>
               <div className="text-xl font-semibold text-slate-900">{totals.unitsNet.toLocaleString('en-GB')}</div>
               <div className="mt-0.5 text-xs text-slate-400">
-                {totals.unitsSold.toLocaleString('en-GB')} sold · {totals.unitsReturned.toLocaleString('en-GB')} returned
+                {totals.unitsSold.toLocaleString('en-GB')} sold · {totals.unitsReturned.toLocaleString('en-GB')} returned ({pct(totals.returnRatePct)})
               </div>
             </div>
           </div>
@@ -197,7 +197,7 @@ export default function BrandsPage() {
                   <th className="px-3 py-2 text-right font-medium" title="Against the same period last year">vs LY</th>
                   <th className="px-3 py-2 text-right font-medium" title="Profit / revenue">Margin</th>
                   <th className="px-3 py-2 text-right font-medium" title="Profit per net unit — returns already netted out">£/unit</th>
-                  <th className="px-3 py-2 text-right font-medium" title="Units sold less units returned">Units</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Units sold less units returned, with returns as a share of units sold">Units</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -252,7 +252,9 @@ export default function BrandsPage() {
                     <td className="px-3 py-2 text-right align-top">
                       <div className="text-slate-800">{r.unitsNet.toLocaleString('en-GB')}</div>
                       {r.unitsReturned > 0 && (
-                        <div className="text-xs text-slate-400">{r.unitsReturned} ret</div>
+                        // Rate against units sold, so brands of different sizes are comparable — 20 returns means something very
+                        // different on 100 sold than on 5,000.
+                        <div className="text-xs text-slate-400">{r.unitsReturned} ret · {pct(r.returnRatePct)}</div>
                       )}
                     </td>
                   </tr>

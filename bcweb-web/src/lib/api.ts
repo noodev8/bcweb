@@ -734,6 +734,7 @@ export interface BrandOverviewRow {
   profitPerUnit: number | null;  // per NET unit (returns netted out)
   unitsSold: number;
   unitsReturned: number;
+  returnRatePct: number | null;
   unitsNet: number;
   lines: number;
   revenueSharePct: number | null;
@@ -746,7 +747,7 @@ export interface BrandOverviewRow {
 
 export interface BrandOverviewTotals {
   revenue: number; profit: number; marginPct: number | null;
-  unitsSold: number; unitsReturned: number; unitsNet: number;
+  unitsSold: number; unitsReturned: number; unitsNet: number; returnRatePct: number | null;
   priorRevenue: number; priorProfit: number;
   brands: number;            // how many brands actually traded in the window (Skechers excluded, Others counted individually)
 }
