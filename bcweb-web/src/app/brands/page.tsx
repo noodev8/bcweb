@@ -20,8 +20,10 @@ Purpose: The shape of the business by BRAND. Revenue, net profit, margin and uni
          Long windows only, by design: brand mix moves at the pace of buying decisions, not daily trade, and Birkenstock is a
          summer sandal business — a 30-day brand table would mostly be season. The daily pulse lives on Analytics -> Sales.
 
-         Channel-filterable (All / Shopify / Amazon) — the same split as Analytics -> Sales. Amazon pays an FBA fee on every unit,
-         so a brand's margin is genuinely a different number per channel; the blended view alone would hide that.
+         Channel-filterable (All / Shopify / Amazon / Shop). Amazon pays an FBA fee on every unit, so a brand's margin is genuinely
+         a different number per channel; the blended view alone would hide that. Shop (CM3) earns a tab despite being ~1% of revenue
+         because it pays no fee, no ads and no postage and takes almost no returns — it reads as the clean margin the other two are
+         measured against, and it sells a different brand mix. See routes/brand-overview.js for the full reasoning.
 
 Guarded by AppShell. Consumes GET /brand-overview.
 =======================================================================================================================================
@@ -34,13 +36,14 @@ import { getBrandOverview, BrandOverviewRow } from '@/lib/api';
 
 const WINDOWS = [12, 6] as const;
 
-// The three channels, same codes and same three-way split as Analytics -> Sales (All folds in the minor CM3 channel, so the two
-// screens reconcile). Worth having here rather than only a blended view: Amazon takes an FBA fee out of every unit, so the same
-// brand carries a different margin per channel and "which brands earn" has a different answer on each.
+// The channels, sharing codes with Analytics -> Sales (All folds in every channel, so the two screens reconcile). Worth having
+// here rather than only a blended view: Amazon takes an FBA fee out of every unit, so the same brand carries a different margin per
+// channel and "which brands earn" has a different answer on each. 'Shop' is CM3, the physical shop — a tab on this screen only.
 const CHANNELS = [
   { key: 'all', label: 'All channels' },
   { key: 'shp', label: 'Shopify' },
   { key: 'amz', label: 'Amazon' },
+  { key: 'cm3', label: 'Shop' },
 ] as const;
 
 // £ with thousands separators. Whole pounds — every figure on this screen is a year's or half-year's trade, where pennies are
@@ -270,7 +273,14 @@ export default function BrandsPage() {
           <p className="mt-3 text-xs text-slate-400">
             {data.excluded.length > 0 && <>Excludes {data.excluded.join(', ')} entirely — no line, and not in the totals. </>}
             Brands under {data.othersSharePct}% of window revenue are folded into Others (recomputed per channel, so the row can
-            hold different brands on each). {data.channel === 'all' && 'All channels includes the minor CM3 channel. '} Returns are included and netted off both
+            hold different brands on each). {data.channel === 'all' && 'All channels includes the shop (CM3). '}
+            {data.channel === 'cm3' && data.excluded.length > 0 && (
+              /* Said out loud on this tab specifically: the exclusion is small online but takes a real bite out of the shop's own
+                 trade, so a reader comparing the Shop tab with the till would otherwise be quietly misled. */
+              <>The exclusion above bites harder here — it is one of the shop&apos;s better sellers, so these totals understate the
+              shop. </>
+            )}
+            Returns are included and netted off both
             revenue and profit. Revenue is VAT-inclusive; margin is profit over ex-VAT revenue, because profit already has the VAT
             taken out of it.
           </p>

@@ -44,18 +44,26 @@ Purpose: One screen answering "which brands actually make us money?" — revenue
          writing), so we fall back to the style's CURRENT brand via skusummary, and only then to '(unknown)'. The fallback is a
          LEFT JOIN — a sale whose style has since been deleted must still count toward the totals.
 
-         CHANNEL-FILTERED (All / Shopify / Amazon), the same three-way split and the same codes as Analytics -> Sales, so the two
-         screens can be read side by side: 'all' also folds in the minor CM3 channel so the totals reconcile with the ledger there.
-         It matters more here than it looks: the same brand carries a different margin per channel (Amazon takes an FBA fee out of
-         every unit), so "which brands earn" has a different answer per channel and a blended-only view would hide it.
+         CHANNEL-FILTERED (All / Shopify / Amazon / Shop), sharing the codes with Analytics -> Sales so the two screens can be read
+         side by side; 'all' folds in every channel so the totals reconcile with the ledger there. It matters more here than it
+         looks: the same brand carries a different margin per channel (Amazon takes an FBA fee out of every unit), so "which brands
+         earn" has a different answer per channel and a blended-only view would hide it.
+
+         SHOP (CM3) is the physical shop, and it is offered as its own tab despite being ~1% of revenue (2026-08-31). It is the only
+         channel that pays no marketplace fee, no ads and no postage, and it took ZERO returns in the last 12 months — so its margin
+         (~32% vs Shopify 18% / Amazon 12%) is close to what a shoe earns before a channel's toll. That makes it the control group
+         the other two are read against, and its brand mix is genuinely different (Skechers and Rieker sell there, and Rieker earns
+         ~35% through the door against ~8% blended online) — facts that are averaged into invisibility inside 'all'.
+         CAVEAT: EXCLUDED_BRANDS applies to this tab too, and Skechers is one of the shop's best sellers, so the Shop tab currently
+         under-reports its own trade by roughly a quarter of its units. Scoping the exclusion per channel is a separate decision.
 
          Read-only. Requires auth.
 =======================================================================================================================================
 Request Payload: none (GET)
 Query params:
   months  optional integer — 12 (default) or 6. Anything else falls back to 12; there is deliberately no custom range (see above).
-  channel optional string  — 'all' (default, incl. CM3) | 'shp' | 'amz'. Case-insensitive; anything else falls back to 'all'.
-                             Mirrors analytics-sales.js exactly.
+  channel optional string  — 'all' (default, every channel) | 'shp' | 'amz' | 'cm3' (the shop). Case-insensitive; anything else
+                             falls back to 'all'. 'cm3' is this screen only — analytics-sales.js offers the other three.
 
 Success Response:
 {
@@ -115,9 +123,10 @@ const OTHERS_SHARE_PCT = 1;
 // numerator did. See rule 3 in the header before changing this to sales.collectedvat.
 const VAT_MULTIPLIER = 1.2;
 
-// The three channels the screen offers. 'all' is every row INCLUDING the minor CM3 channel, so it reconciles with Analytics ->
-// Sales rather than quietly being "Shopify + Amazon only".
-const ALLOWED_CHANNELS = ['all', 'shp', 'amz'];
+// The channels the screen offers. 'all' is every row, so it reconciles with Analytics -> Sales rather than quietly being
+// "Shopify + Amazon only". 'cm3' (the shop) is a tab HERE but not on Analytics -> Sales — see the header for why it earns one
+// despite its size, and for the Skechers caveat that applies to it.
+const ALLOWED_CHANNELS = ['all', 'shp', 'amz', 'cm3'];
 
 // Only two windows, both long. See the header for why there is no custom range.
 const ALLOWED_MONTHS = [6, 12];
@@ -158,7 +167,7 @@ router.get('/', async (req, res) => {
     // Passed as a pair rather than interpolated: $3 short-circuits the test on 'all', $4 is the code to match otherwise. Same
     // shape analytics-sales.js uses, for the same reason — one parameterised query, no string-built SQL.
     const channelAll = channel === 'all';
-    const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : null;
+    const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : channel === 'cm3' ? 'CM3' : null;
 
     // ONE pass over both windows. The CTE pulls 2x the window (current + prior) and every aggregate below is a FILTER over it, so
     // the table is scanned once rather than twice — and, more importantly, both halves are computed off exactly the same brand
