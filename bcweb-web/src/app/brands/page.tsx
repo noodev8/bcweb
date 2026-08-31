@@ -163,7 +163,7 @@ export default function BrandsPage() {
           {/* HEADLINE — the four numbers the whole table sums to, so the reader has the scale in hand before reading any row. */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Revenue</div>
+              <div className="text-xs uppercase tracking-wide text-slate-400">Revenue (inc VAT)</div>
               <div className="text-xl font-semibold text-slate-900">{money(totals.revenue)}</div>
               <div className="mt-0.5"><Change value={changePct(totals.revenue, totals.priorRevenue)} /></div>
             </div>
@@ -175,7 +175,9 @@ export default function BrandsPage() {
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <div className="text-xs uppercase tracking-wide text-slate-400">Margin</div>
               <div className="text-xl font-semibold text-slate-900">{pct(totals.marginPct)}</div>
-              <div className="mt-0.5 text-xs text-slate-400">{totals.brands} brands</div>
+              {/* Say the denominator on the tile. Profit is ex-VAT and revenue is gross, so the margin is deliberately NOT
+                  profit/revenue as shown above it — without this line the two tiles look like they disagree. */}
+              <div className="mt-0.5 text-xs text-slate-400">of {money(totals.netRevenue)} ex-VAT · {totals.brands} brands</div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <div className="text-xs uppercase tracking-wide text-slate-400">Units (net)</div>
@@ -191,11 +193,11 @@ export default function BrandsPage() {
               <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2 font-medium">Brand</th>
-                  <th className="px-3 py-2 font-medium">Revenue</th>
+                  <th className="px-3 py-2 font-medium" title="VAT-inclusive, as the customer paid">Revenue</th>
                   <th className="px-3 py-2 text-right font-medium" title="Against the same period last year">vs LY</th>
                   <th className="px-3 py-2 text-right font-medium">Profit</th>
                   <th className="px-3 py-2 text-right font-medium" title="Against the same period last year">vs LY</th>
-                  <th className="px-3 py-2 text-right font-medium" title="Profit / revenue">Margin</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Profit / ex-VAT revenue — profit already has the VAT taken out, so the denominator does too">Margin</th>
                   <th className="px-3 py-2 text-right font-medium" title="Profit per net unit — returns already netted out">£/unit</th>
                   <th className="px-3 py-2 text-right font-medium" title="Units sold less units returned, with returns as a share of units sold">Units</th>
                 </tr>
@@ -269,7 +271,8 @@ export default function BrandsPage() {
             {data.excluded.length > 0 && <>Excludes {data.excluded.join(', ')} entirely — no line, and not in the totals. </>}
             Brands under {data.othersSharePct}% of window revenue are folded into Others (recomputed per channel, so the row can
             hold different brands on each). {data.channel === 'all' && 'All channels includes the minor CM3 channel. '} Returns are included and netted off both
-            revenue and profit.
+            revenue and profit. Revenue is VAT-inclusive; margin is profit over ex-VAT revenue, because profit already has the VAT
+            taken out of it.
           </p>
         </>
       )}

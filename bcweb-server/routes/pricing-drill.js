@@ -70,6 +70,10 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
+
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount, the same convention utils/shopifyProfit.js and
+// utils/amzProfit.js use. See the margin note in this file's header for why the DIAL carries it.
+const VAT_MULTIPLIER = 1.2;
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
@@ -132,9 +136,16 @@ router.get('/', async (req, res) => {
     const h = headerResult.rows[0];
     const now = num(h.now);
     const cost = num(h.cost);
-    // Margin = now - cost, and as a % of the selling price (CLAUDE.md). null when we can't compute either side.
-    const margin = now !== null && cost !== null ? Math.round((now - cost) * 100) / 100 : null;
-    const marginPct = margin !== null && now ? Math.round((margin / now) * 100) : null;
+    // Margin is EX-VAT (2026-08-31): shopifyprice is the VAT-inclusive price the customer pays, and the ~1/6 of it that goes to HMRC
+    // was never ours to count. This stays a HIGH-LEVEL DIAL — it deliberately does NOT carry postage, packing, the payment fee or the
+    // returns haircut (that is what sales.profit is for, on the Analytics and Brands screens); those are constants that do not move as
+    // the operator nudges, so they would shift the number without informing the decision. VAT is the exception because it moves where
+    // ZERO is: gross margin reads 0% at price = cost, but the real breakeven is price = cost x 1.2. On live data 8 priced styles sat in
+    // that band — e.g. 1029777-FLORIDA at 44.00 on 39.58 cost read +10.0% while actually being -7.9%. Below ~17% the old dial had the
+    // WRONG SIGN, which is exactly the end of the range a price cut walks into. Owner's call, deliberately scoped to VAT only.
+    const netNow = now === null ? null : now / VAT_MULTIPLIER;
+    const margin = netNow !== null && cost !== null ? Math.round((netNow - cost) * 100) / 100 : null;
+    const marginPct = margin !== null && netNow ? Math.round((margin / netNow) * 100) : null;
 
     const header = {
       groupid,

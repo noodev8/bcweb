@@ -728,9 +728,10 @@ export interface BrandOverviewRow {
   brand: string;
   isOthers: boolean;
   brands: string[] | null;   // the folded brand names — only on the Others row
-  revenue: number;
+  revenue: number;           // GROSS, VAT-inclusive — the figure that reconciles with Shopify/Seller Central and the bank
+  netRevenue: number;        // the same trade ex-VAT (revenue / 1.2) — the denominator of marginPct
   profit: number;
-  marginPct: number | null;
+  marginPct: number | null;  // profit / netRevenue: profit is already ex-VAT, so the denominator has to be too
   profitPerUnit: number | null;  // per NET unit (returns netted out)
   unitsSold: number;
   unitsReturned: number;
@@ -746,7 +747,7 @@ export interface BrandOverviewRow {
 }
 
 export interface BrandOverviewTotals {
-  revenue: number; profit: number; marginPct: number | null;
+  revenue: number; netRevenue: number; profit: number; marginPct: number | null;
   unitsSold: number; unitsReturned: number; unitsNet: number; returnRatePct: number | null;
   priorRevenue: number; priorProfit: number;
   brands: number;            // how many brands actually traded in the window (Skechers excluded, Others counted individually)
@@ -1092,7 +1093,8 @@ export function getPriceChanges(
 // --- Analytics -> Sales (windowed sales ledger + net-profit summary) -----------------------------------------------------------
 // (Named SalesReport* to avoid colliding with the drill's own SaleRow/SalesData/getSales for pricing-sales.)
 // One sale line. `channel` includes the minor 'CM3' alongside 'SHP'/'AMZ'. Returns are negative-`qty` (and negative-`profit`) lines.
-// `marginPct` is that line's profit over its revenue (soldprice*qty); null when revenue is 0.
+// `marginPct` is that line's profit over its EX-VAT revenue (soldprice*qty / 1.2) — `profit` already has the VAT taken out of it, so
+// the denominator does too; null when revenue is 0.
 export interface SalesReportRow {
   solddate: string | null;   // 'YYYY-MM-DD'
   ordertime: string | null;  // 'HH:MM' (may be null on legacy rows)
@@ -1104,7 +1106,7 @@ export interface SalesReportRow {
   brand: string | null;      // stamped on the sale line at booking; null on legacy rows
   ordernum: string | null;
   qty: number;               // negative on a return
-  soldprice: number | null;  // per unit
+  soldprice: number | null;  // per unit, GROSS (VAT-inclusive, as the customer paid)
   profit: number | null;     // net, downstream-computed; negative on a return
   marginPct: number | null;
 }
@@ -1115,9 +1117,10 @@ export interface SalesReportSummary {
   unitsNet: number;
   orders: number;
   lines: number;             // matched lines BEFORE the row cap ("latest 200 of 318")
-  revenue: number;
+  revenue: number;           // GROSS, VAT-inclusive — the figure that reconciles with Shopify/Seller Central and the bank
+  netRevenue: number;        // the same trade ex-VAT (revenue / 1.2) — the denominator of marginPct
   profit: number;            // the hero number
-  marginPct: number | null;
+  marginPct: number | null;  // profit / netRevenue: profit is already ex-VAT, so the denominator has to be too
   products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
 }
 // Short windows carry the line list; long windows (7/30/90d) are summary-only (totals, no rows).
@@ -1189,7 +1192,7 @@ export function getSalesReport(params: {
       search: b.search ?? null,
       sort: (b.sort as SalesSort) || 'date',
       dir: (b.dir as SalesSortDir) || 'desc',
-      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, profit: 0, marginPct: null, products: 0 },
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,
       count: b.count ?? 0,

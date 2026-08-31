@@ -17,7 +17,7 @@ Purpose: One screen answering "which brands actually make us money?" — revenue
          anyway — so 12 months is "a full season cycle" and 6 months is "the current half". Anything shorter belongs on Analytics ->
          Sales, which is the pulse screen; this one is the shape of the business.
 
-         THREE deliberate rules, all owner calls (2026-08-27):
+         FOUR deliberate rules, all owner calls (2026-08-27, rule 3 added 2026-08-31):
            1. SKECHERS IS EXCLUDED ENTIRELY — not folded into Others, not shown greyed: gone, as if it never sold. It is a brand we
               are not trading forward on, and over the last year it made a small LOSS on ~£9k of revenue; leaving it in the table
               invited the "what are we doing about Skechers?" conversation on every read. `excluded` in the response names it so the
@@ -26,7 +26,16 @@ Purpose: One screen answering "which brands actually make us money?" — revenue
               one-pair-a-month house brand), and a dozen of them turn the table into a scroll. They are summed into a single row
               that carries its own revenue/profit/units plus the LIST of brands inside it, so nothing is hidden — the detail is one
               disclosure away instead of always on screen. Others is never itself folded and always sorts last.
-           3. RETURNS ARE INCLUDED AND NETTED, exactly as Analytics -> Sales does it. A refund is a real negative-profit line; a
+           3. MARGIN IS NET-OVER-NET (2026-08-31). `sales.soldprice` is the VAT-INCLUSIVE price the customer paid, while
+              `sales.profit` has already had the VAT taken out of it (utils/shopifyProfit.js and utils/amzProfit.js both deduct
+              price/6). Dividing one by the other mixed a net numerator into a gross denominator and understated every margin on
+              this screen by ~2.7 points — the 12-month total read 13.4% when the real figure is 16.1%. Every marginPct here is now
+              profit / netRevenue, where netRevenue = revenue / 1.2. REVENUE ITSELF IS STILL REPORTED GROSS, because that is the
+              number that reconciles with Shopify, Seller Central and the bank; `netRevenue` sits alongside it so the margin can be
+              checked by hand. `sales.collectedvat` exists but is populated on CM3 rows only (and is exactly 1/6 there), so the /6
+              convention the two profit utils already use is the one source of truth — do not switch to the column until it is
+              backfilled on SHP and AMZ.
+           4. RETURNS ARE INCLUDED AND NETTED, exactly as Analytics -> Sales does it. A refund is a real negative-profit line; a
               brand overview that ignored them would flatter the brands that get sent back most, which is precisely the thing this
               screen exists to expose. Units break out into sold / returned / net for the same reason.
 
@@ -57,12 +66,12 @@ Success Response:
                                                        // immediately-preceding block of the same length
   "excluded": ["Skechers"],                            // brands left out of every number on this screen
   "othersSharePct": 1,                                 // the fold threshold, so the UI can explain the Others row honestly
-  "totals": { "revenue": 413000.12, "profit": 55120.44, "marginPct": 13.3,
+  "totals": { "revenue": 413000.12, "netRevenue": 344166.77, "profit": 55120.44, "marginPct": 16.0,
               "unitsSold": 8600, "unitsReturned": 190, "unitsNet": 8410, "returnRatePct": 2.2,
               "priorRevenue": 380100.00, "priorProfit": 49000.10, "brands": 19 },
   "rows": [
     { "brand": "Birkenstock", "isOthers": false, "brands": null,
-      "revenue": 207659.02, "profit": 32645.28, "marginPct": 15.7, "profitPerUnit": 9.69,
+      "revenue": 207659.02, "netRevenue": 173049.18, "profit": 32645.28, "marginPct": 18.9, "profitPerUnit": 9.69,
       "unitsSold": 3400, "unitsReturned": 31, "unitsNet": 3369, "returnRatePct": 0.9, "lines": 4327,
       "revenueSharePct": 50.3, "profitSharePct": 59.2,
       "priorRevenue": 190000.00, "priorProfit": 30100.00,
@@ -71,6 +80,8 @@ Success Response:
     { "brand": "Others", "isOthers": true, "brands": ["Goor", "Hotter", ...], ... }   // always last
   ]
 }
+  - revenue is GROSS (VAT-inclusive, as the customer paid); netRevenue is the same figure ex-VAT and is the denominator of
+    marginPct. Shares (revenueSharePct) are computed on gross, which is unaffected — a ratio of two gross figures.
   - marginPct / share / change are all rounded to 1dp app-side; null rather than 0 where the divisor is 0 or the prior window has
     no trade at all (a brand's FIRST season is not "+100%", it is "no comparison" — the UI shows "new").
   - profitPerUnit is per NET unit (returns already netted out), null when net units is 0 — a brand that sold 4 and had 4 come back
@@ -98,6 +109,11 @@ const EXCLUDED_BRANDS = ['Skechers'];
 // A brand holding less than this share of window revenue folds into Others (rule 2). 1% of a ~£400k year is ~£4k — roughly a pair
 // a week. Above it a brand is worth a line of its own; below it, it is noise that costs a row.
 const OTHERS_SHARE_PCT = 1;
+
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount. The same convention (as price/6 of VAT) that
+// utils/shopifyProfit.js and utils/amzProfit.js already use to build sales.profit — margin has to come out of the same model the
+// numerator did. See rule 3 in the header before changing this to sales.collectedvat.
+const VAT_MULTIPLIER = 1.2;
 
 // The three channels the screen offers. 'all' is every row INCLUDING the minor CM3 channel, so it reconciles with Analytics ->
 // Sales rather than quietly being "Shopify + Amazon only".
@@ -230,12 +246,16 @@ router.get('/', async (req, res) => {
     }
 
     function shape(x, isOthers, brands) {
-      const marginPct = x.revenue ? round1((x.profit / x.revenue) * 100) : null;
+      // Net-over-net (rule 3): profit is already ex-VAT, so the denominator has to be too. Guard on x.revenue rather than on
+      // netRevenue — they are zero together, and testing the raw figure keeps the null case obvious.
+      const netRevenue = x.revenue / VAT_MULTIPLIER;
+      const marginPct = x.revenue ? round1((x.profit / netRevenue) * 100) : null;
       return {
         brand: isOthers ? 'Others' : x.brand,
         isOthers,
         brands: brands || null,
         revenue: Math.round(x.revenue * 100) / 100,
+        netRevenue: Math.round(netRevenue * 100) / 100,
         profit: Math.round(x.profit * 100) / 100,
         marginPct,
         profitPerUnit: x.unitsNet ? Math.round((x.profit / x.unitsNet) * 100) / 100 : null,
@@ -275,8 +295,9 @@ router.get('/', async (req, res) => {
 
     const totals = {
       revenue: Math.round(totalRevenue * 100) / 100,
+      netRevenue: Math.round((totalRevenue / VAT_MULTIPLIER) * 100) / 100,
       profit: Math.round(totalProfit * 100) / 100,
-      marginPct: totalRevenue ? round1((totalProfit / totalRevenue) * 100) : null,
+      marginPct: totalRevenue ? round1((totalProfit / (totalRevenue / VAT_MULTIPLIER)) * 100) : null,
       unitsSold: all.reduce((n, x) => n + x.unitsSold, 0),
       unitsReturned: all.reduce((n, x) => n + x.unitsReturned, 0),
       unitsNet: all.reduce((n, x) => n + x.unitsNet, 0),

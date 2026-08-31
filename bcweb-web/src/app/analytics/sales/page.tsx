@@ -302,7 +302,7 @@ export default function SalesPage() {
   // --- CSV export (current filtered view) --------------------------------------------------------------------------------------
   const exportCsv = useCallback(() => {
     if (rows.length === 0) return;
-    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'Sold price', 'Profit', 'Margin %'];
+    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'Sold price (inc VAT)', 'Profit', 'Margin % (ex VAT)'];
     const esc = (v: string | number | null) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -440,12 +440,16 @@ export default function SalesPage() {
         // (5->4 on lg, 4->3 on sm) so Revenue keeps its double width and the row stays full rather than leaving a hole.
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:col-span-1 lg:col-span-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue <span className="font-normal normal-case text-slate-400">inc VAT</span>{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-slate-800">{money(summary.revenue)}</div>
+            {/* The ex-VAT figure sits under the gross one because it is the denominator of the margin on the tile beside this: without
+                it on screen the two tiles look like they disagree (profit is net of VAT, revenue is not). Demoted, not hidden — gross
+                is still the hero because it is what reconciles with Shopify, Seller Central and the bank. */}
+            <div className="mt-0.5 text-xs text-slate-400">{money(summary.netRevenue)} ex VAT</div>
           </div>
           <Stat label="Net profit" value={money(summary.profit)}
             valueClassName={summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}
-            sub={`${pct(summary.marginPct)} margin`} />
+            sub={`${pct(summary.marginPct)} margin`} subTitle="Profit over ex-VAT revenue — profit already has the VAT taken out, so the denominator does too" />
           {/* Units lead with NET (owner, 2026-07-30) — the gross figure was the headline until the returns badge went on, and with a
               45%-returned style the big number was then the one that hadn't happened. Net is what the money tiles beside it are already
               netted to, so the row now reads on one basis throughout. The gross is spelled out underneath as the equation it came from,
@@ -559,9 +563,9 @@ export default function SalesPage() {
                     <th className="px-4 py-2.5 font-medium">Channel</th>
                     <th className="px-4 py-2.5 font-medium">Brand</th>
                     <SortableTh label="Product" col="product" sort={sort} dir={dir} onSort={onSort} />
-                    <th className="px-3 py-2.5 text-right font-medium">Sold</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Sold price per unit, VAT-inclusive as the customer paid">Sold</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Margin</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Profit over the line's ex-VAT revenue — profit already has the VAT taken out, so the denominator does too">Margin</th>
                     <th className="px-4 py-2.5 font-medium">Order</th>
                   </tr>
                 </thead>
@@ -668,10 +672,12 @@ const TONE_CLASS: Record<StatTone, string> = {
 
 // A supporting stat tile in the headline strip. The optional badge sits on the LABEL row, not next to the value: it's a qualifier on
 // the number, and putting it beside the value would make two figures compete for the same glance.
-function Stat({ label, value, sub, valueClassName, badge }: {
+function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
   label: string;
   value: string;
   sub?: string;
+  // Hover text for the sub-line. Used by the margin tile to name its denominator without spending a line of the tile on it.
+  subTitle?: string;
   valueClassName?: string;
   badge?: { text: string; tone: StatTone };
 }) {
@@ -686,7 +692,7 @@ function Stat({ label, value, sub, valueClassName, badge }: {
         )}
       </div>
       <div className={'mt-1 text-xl font-semibold tabular-nums ' + (valueClassName ?? 'text-slate-800')}>{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-400">{sub}</div>}
+      {sub && <div className="mt-1 text-xs text-slate-400" title={subTitle}>{sub}</div>}
     </div>
   );
 }

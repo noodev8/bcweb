@@ -51,8 +51,16 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the
 
 Schema notes (CLAUDE.md): `sales.solddate` is a bare DATE and `ordertime` a 'HH:MM' VARCHAR (blank on some legacy rows) — we order by
 solddate, then ordertime (NULLS LAST), then id. `soldprice` and `profit` are NUMERIC; `profit` is populated downstream (100% coverage) so
-we surface it as-is rather than re-deriving. Returns are negative-`qty` lines. Revenue = SUM(soldprice*qty) (returns subtract). Margin% =
-profit / revenue. Size = RIGHT(code,2). Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
+we surface it as-is rather than re-deriving. Returns are negative-`qty` lines. Revenue = SUM(soldprice*qty) (returns subtract).
+
+MARGIN IS NET-OVER-NET (2026-08-31). `soldprice` is the VAT-INCLUSIVE price the customer paid; `profit` has already had the VAT taken out
+of it (utils/shopifyProfit.js and utils/amzProfit.js both deduct price/6). Dividing one by the other mixed a net numerator into a gross
+denominator and understated every margin on this screen by ~2.7 points. Margin% is now profit / netRevenue, where netRevenue =
+revenue / 1.2, at BOTH grains (summary and per line). REVENUE ITSELF IS STILL REPORTED GROSS — that is the number that reconciles with
+Shopify, Seller Central and the bank — with `netRevenue` alongside it so the margin can be checked by hand. Same rule, same constant and
+same reasoning as routes/brand-overview.js (rule 3 in its header); the two screens are read side by side and must not disagree.
+`sales.collectedvat` exists but is populated on CM3 rows only (and is exactly 1/6 there), so the /6 convention the two profit utils
+already use is the one source of truth — do not switch to the column until it is backfilled on SHP and AMZ. Size = RIGHT(code,2). Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
 Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -76,11 +84,12 @@ Success Response:
   "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
   "has": ["ARIZONA"], "not": ["EVA"], "sort": "date", "dir": "desc",
   "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640, "lines": 318,
-               "revenue": 41234.55, "profit": 6120.11, "marginPct": 14.8, "products": 137 },
+               // revenue is GROSS (inc VAT, as the customer paid); netRevenue is the same trade ex-VAT and is the denominator of marginPct
+               "revenue": 41234.55, "netRevenue": 34362.13, "profit": 6120.11, "marginPct": 17.8, "products": 137 },
   "rows": [
     { "solddate": "2026-07-11", "ordertime": "21:37", "channel": "SHP", "code": "0051753-ARIZONA-36", "size": "36",
       "groupid": "0051753-ARIZONA", "productname": "Birkenstock Arizona ...", "brand": "Birkenstock", "ordernum": "BC18292",
-      "qty": 1, "soldprice": 64.95, "profit": 10.07, "marginPct": 15.5 },
+      "qty": 1, "soldprice": 64.95, "profit": 10.07, "marginPct": 18.6 },   // margin vs the line's EX-VAT revenue
     ... // newest first
   ],
   "limit": 500, "count": 500, "truncated": true
@@ -95,6 +104,11 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
+
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount. The same convention (VAT = price/6) that
+// utils/shopifyProfit.js and utils/amzProfit.js already use to build sales.profit — margin has to come out of the same model its
+// numerator did. Mirrors VAT_MULTIPLIER in routes/brand-overview.js; see the header before changing this to sales.collectedvat.
+const VAT_MULTIPLIER = 1.2;
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
@@ -264,7 +278,7 @@ router.get('/', async (req, res) => {
     const summaryOnly = !searchActive && LONG_WINDOWS.has(window);
 
     // SUMMARY — the honest headline over the whole matched set (returns netted in). Units split sold / returned / net; revenue and profit
-    // net returns; margin = profit / revenue (NULL when revenue is 0). `orders` counts distinct order numbers that contain a SALE (qty>0)
+    // net returns; margin = profit / ex-VAT revenue (NULL when revenue is 0). `orders` counts distinct order numbers that contain a SALE (qty>0)
     // only — a refund whose original sale sat outside the window would otherwise land here as a return-only "order" and push Orders ABOVE
     // units sold, which reads as an error (owner confusion, 2026-07-13). Returns are already surfaced in the units sold/returned split, so
     // they don't also need to inflate the order count. We return BOTH the window bounds and the actual data span (min/max solddate) so the
@@ -310,9 +324,13 @@ router.get('/', async (req, res) => {
       const qty = Number(r.qty);
       const soldprice = num(r.soldprice);
       const profit = num(r.profit);
-      // Per-line margin against that line's revenue (soldprice*qty). Null when revenue is 0 (can't divide) — UI shows "—".
+      // Per-line margin against that line's EX-VAT revenue: profit is already net of VAT, so the denominator has to be too (see the
+      // header). Null when revenue is 0 (can't divide) — UI shows "—". Guarded on the gross figure, which is zero exactly when the
+      // net one is, so the null case stays obvious.
       const revenue = soldprice === null ? null : soldprice * qty;
-      const marginPct = revenue && revenue !== 0 && profit !== null ? Math.round((profit / revenue) * 1000) / 10 : null;
+      const marginPct = revenue && revenue !== 0 && profit !== null
+        ? Math.round((profit / (revenue / VAT_MULTIPLIER)) * 1000) / 10
+        : null;
       return {
         solddate: toIsoDate(r.solddate),
         ordertime: r.ordertime || null,
@@ -344,8 +362,11 @@ router.get('/', async (req, res) => {
       lines: Number(s.lines) || 0,   // matched lines BEFORE the row cap — lets the UI say "latest 200 of 318" honestly
 
       revenue: revenueTotal,
+      // The same trade ex-VAT. Exposed rather than left implicit so the UI can name the denominator on screen — a Margin tile sitting
+      // under a gross Revenue tile otherwise looks like it disagrees with it.
+      netRevenue: Math.round((revenueTotal / VAT_MULTIPLIER) * 100) / 100,
       profit: profitTotal,
-      marginPct: revenueTotal !== 0 ? Math.round((profitTotal / revenueTotal) * 1000) / 10 : null,
+      marginPct: revenueTotal !== 0 ? Math.round((profitTotal / (revenueTotal / VAT_MULTIPLIER)) * 1000) / 10 : null,
       products,                       // distinct styles matched (product mode: >1 = the total spans multiple products)
     };
 

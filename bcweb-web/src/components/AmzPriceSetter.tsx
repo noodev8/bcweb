@@ -8,7 +8,7 @@ Purpose: The SKU-grain price control on the Amazon drill. Leaner than the Shopif
          operator downloads + uploads the file. It DOES have a review/park: applying parks the SKU (skumap.next_amz_price_review) so it
          drops off the winners/losers queue, exactly like Shopify's W1 — so the operator picks the review period right here (like Shopify).
 
-   Current: 37.99   FBA: 96 (+0)   Net margin: 18.94 (50%)   floor 19.07   RRP 45.00
+   Current: 37.99   FBA: 96 (+0)   Net margin ex VAT: 12.59 (40%)   floor 19.07   RRP 45.00
    New price:  [−£1][−50p][−30p]  [ 38.29 ]  [+30p][+50p][+£1]      <- big editable field; margin recalculates live
    Note:       [ optional — why the price is changing (saved to the price log) ]
    Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days                <- single-select; None (default) = don't park (mirrors Shopify).
@@ -43,6 +43,10 @@ interface AmzPriceSetterProps {
   onCancel: () => void;
 }
 
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount. Mirrors VAT_MULTIPLIER in the drill route that feeds
+// this component, so the header figure and the live one can never disagree as the operator nudges.
+const VAT_MULTIPLIER = 1.2;
+
 export default function AmzPriceSetter({ header, applying, queuedPrice, onApply, onPark, onCancel }: AmzPriceSetterProps) {
   const now = header.price;
 
@@ -57,11 +61,14 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
     return Number.isFinite(p) ? p : NaN;
   }, [priceStr]);
 
-  // Live NET margin = price − cost − FBA fee (the real per-unit contribution on Amazon). null when any part is unknown.
-  const margin = Number.isFinite(price) && header.cost !== null && header.fbafee !== null
-    ? Math.round((price - header.cost - header.fbafee) * 100) / 100
+  // Live NET margin, EX-VAT (2026-08-31) = (price / 1.2) − cost − FBA fee. The price in the box is VAT-inclusive; the ~1/6 going to
+  // HMRC was never ours to count. Still a high-level dial — the 15% referral fee is knowingly not in here (see amz-drill.js). VAT is,
+  // because it moves where zero is: a cut that the old dial showed in single digits was already below breakeven.
+  const netPrice = Number.isFinite(price) ? price / VAT_MULTIPLIER : NaN;
+  const margin = Number.isFinite(netPrice) && header.cost !== null && header.fbafee !== null
+    ? Math.round((netPrice - header.cost - header.fbafee) * 100) / 100
     : null;
-  const marginPct = margin !== null && price ? Math.round((margin / price) * 100) : null;
+  const marginPct = margin !== null && netPrice ? Math.round((margin / netPrice) * 100) : null;
 
   const belowFloor = header.floor !== null && Number.isFinite(price) && price < header.floor;
   const aboveRrp = header.rrp !== null && Number.isFinite(price) && price > header.rrp;
@@ -92,8 +99,8 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
           FBA: <span className="font-semibold text-slate-800">{header.fba_live}</span>
           {header.fba_inbound > 0 && <span className="text-slate-400"> (+{header.fba_inbound})</span>}
         </span>
-        <span className="text-slate-500">
-          Net margin: <span className="font-semibold text-slate-800">{margin !== null ? `£${margin.toFixed(2)}` : '—'}</span>
+        <span className="text-slate-500" title="Ex-VAT: the VAT-inclusive price less the 1/6 that goes to HMRC, less cost and the FBA fee. A high-level dial — it does NOT carry Amazon's 15% referral fee, so the floor beside it is not where this reads zero.">
+          Net margin <span className="text-slate-400">ex VAT</span>: <span className="font-semibold text-slate-800">{margin !== null ? `£${margin.toFixed(2)}` : '—'}</span>
           {marginPct !== null && <span className="text-slate-400"> ({marginPct}%)</span>}
         </span>
         <span className="text-slate-400">floor {header.floor !== null ? header.floor.toFixed(2) : '—'}</span>

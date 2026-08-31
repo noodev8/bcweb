@@ -51,6 +51,10 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
+
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount, the same convention utils/shopifyProfit.js and
+// utils/amzProfit.js use. See the margin note in this file's header for why the DIAL carries it.
+const VAT_MULTIPLIER = 1.2;
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
@@ -94,10 +98,17 @@ router.get('/', async (req, res) => {
     const cost = num(h.cost);
     const fbafee = num(h.fbafee);
     const rrp = num(h.rrp);
-    // Floor = cost + FBA fee (breakeven). Net margin = price - cost - FBA fee (the real per-unit contribution on this channel).
+    // Floor = cost + FBA fee. UNCHANGED, deliberately: it mirrors the guard in /amz-apply, and moving one without the other would
+    // let the screen and the write disagree about what is blocked. NOTE the consequence — now that margin is ex-VAT, margin no longer
+    // reads 0 AT the floor (it reads negative there, because the floor is a gross price compared against a net keep). That gap is real
+    // and pre-existing; it is on the open list, not something to paper over here.
     const floor = cost !== null && fbafee !== null ? Math.round((cost + fbafee) * 100) / 100 : null;
-    const margin = price !== null && cost !== null && fbafee !== null ? Math.round((price - cost - fbafee) * 100) / 100 : null;
-    const marginPct = margin !== null && price ? Math.round((margin / price) * 100) : null;
+    // Net margin is EX-VAT (2026-08-31), same reasoning as pricing-drill.js: price is VAT-inclusive, the ~1/6 going to HMRC was never
+    // ours. Still a HIGH-LEVEL DIAL — the 15% referral fee is knowingly NOT in here (nor is it in the legacy figure this replaced);
+    // pulling it in is a bigger change than was asked for and stays on the open list. VAT is in because it moves where zero is.
+    const netPrice = price === null ? null : price / VAT_MULTIPLIER;
+    const margin = netPrice !== null && cost !== null && fbafee !== null ? Math.round((netPrice - cost - fbafee) * 100) / 100 : null;
+    const marginPct = margin !== null && netPrice ? Math.round((margin / netPrice) * 100) : null;
 
     const header = {
       code: h.code,

@@ -5,7 +5,7 @@ Component: PriceSetter  (the set-price control — CLAUDE.md)
 =======================================================================================================================================
 Purpose: The reduced-typing price control. Layout mirrors the owner's desktop app:
 
-   Current: 36.95   Stock: 8   Core 3/3 [38][39][40]   Margin: 16.12 (44%)   cost 20.83   RRP 50.00   <- Core = colour-graded gauge
+   Current: 36.95   Stock: 8   Core 3/3 [38][39][40]   Margin ex VAT: 9.96 (32%)   cost 20.83   RRP 50.00   <- Core = colour-graded gauge
    New price:  [-£1][-50p]  [ 37.95 ]  [+50p][+£1][+£2]        <- big editable field; margin recalculates live
    Note:       [ optional — why the price is changing (saved to the price log) ]
    Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days            <- single-select; None (default) = no review. No auto-suggested pick.
@@ -45,6 +45,10 @@ interface PriceSetterProps {
   onCancel: () => void;
 }
 
+// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount. Mirrors VAT_MULTIPLIER in the drill route that feeds
+// this component, so the header figure and the live one can never disagree as the operator nudges.
+const VAT_MULTIPLIER = 1.2;
+
 export default function PriceSetter({ header, sizes, applying, onApply, onPark, onCancel }: PriceSetterProps) {
   const now = header.now;
 
@@ -72,9 +76,13 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
     return Number.isFinite(p) ? p : NaN;
   }, [priceStr]);
 
-  // Live margin (CLAUDE.md). null when we can't compute either side.
-  const margin = Number.isFinite(price) && header.cost !== null ? Math.round((price - header.cost) * 100) / 100 : null;
-  const marginPct = margin !== null && price ? Math.round((margin / price) * 100) : null;
+  // Live margin, EX-VAT (2026-08-31) — see the drill route for the full reasoning. The price in the box is VAT-inclusive, so the ~1/6
+  // that goes to HMRC comes off before this reads as margin. Still a high-level dial: no postage, packing, payment fee or returns
+  // haircut. Two things this fixes as you nudge — zero on the dial is now actual breakeven (it used to sit ~17% too low, so a cut into
+  // single digits was already underwater), and a +£1 press now moves margin by the 83p you keep rather than a pound you don't.
+  const netPrice = Number.isFinite(price) ? price / VAT_MULTIPLIER : NaN;
+  const margin = Number.isFinite(netPrice) && header.cost !== null ? Math.round((netPrice - header.cost) * 100) / 100 : null;
+  const marginPct = margin !== null && netPrice ? Math.round((margin / netPrice) * 100) : null;
 
   // Bounds. (min/max removed per owner — unused; only the below-cost block and above-RRP warning remain.)
   const belowCost = header.cost !== null && Number.isFinite(price) && price < header.cost;
@@ -128,8 +136,8 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
             </span>
           </span>
         )}
-        <span className="text-slate-500">
-          Margin: <span className="font-semibold text-slate-800">{margin !== null ? `£${margin.toFixed(2)}` : '—'}</span>
+        <span className="text-slate-500" title="Ex-VAT: the VAT-inclusive price less the 1/6 that goes to HMRC, less cost. A high-level dial for how far to move — it does not carry postage, packing or the payment fee.">
+          Margin <span className="text-slate-400">ex VAT</span>: <span className="font-semibold text-slate-800">{margin !== null ? `£${margin.toFixed(2)}` : '—'}</span>
           {marginPct !== null && <span className="text-slate-400"> ({marginPct}%)</span>}
         </span>
         <span className="text-slate-400">cost {header.cost !== null ? header.cost.toFixed(2) : '—'}</span>
