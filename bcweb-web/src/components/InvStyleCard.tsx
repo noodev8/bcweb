@@ -9,7 +9,7 @@ Purpose: One result in the Inventory BROWSE. The redesign (2026-07-23) drops the
          how a human tells them apart. The image stops being something you summon and becomes the result itself.
 
 STAY LIGHT UNTIL CLICKED (owner, 2026-07-23). The whole face paints from the /inv-styles row already in memory — image, title, price,
-and the size chips with their LOCAL counts (row.localSizes). The heavy per-style detail (/inv-stock: every rack, the buckets) is fetched
+and the size chips with their TOTAL counts (row.totalSizes). The heavy per-style detail (/inv-stock: every rack, the buckets) is fetched
 ONLY once something is OPEN on this card — a size's racks or the Detail panel — and cached thereafter. The fetch is DERIVED from that
 open state (a null SWR key while nothing is open), not fired from the click handlers, so any new way of opening the card gets the data
 without remembering to ask for it. Nothing fires a request on render, so a screen full of cards costs zero extra round-trips until
@@ -17,14 +17,28 @@ someone actually asks a question of one.
 
 Detail's open/closed flag is the LIST's state, passed in — see the props and the keyboard cursor on /inventory.
 
-SIZE CHIP = the 2-digit code suffix (owner) — "38", "06" — which is the canonical EU size in this DB (RIGHT(code,2)). localSizes is
+EVERYTHING ON THE FACE COUNTS TOTAL (owner, 2026-09-02). The headline pill is row.total and each SIZE CHIP is row.totalSizes[size] —
+both local + Amazon-held + Birk pre-order, the same definition as the drill's TOTAL column, so the chips sum to the pill and the browse
+never disagrees with the opened card. This replaced localstock-only chips, which drew a size held solely at Amazon as a dead grey chip
+reading "we have none of these anywhere" — you had to open the drill to find the unit (14450-16 size 44).
+
+The consequence to keep in mind: A CHIP'S COUNT IS NOT NECESSARILY PICKABLE. row.localSizes is still sent and still the shelf figure —
+the chip hover splits total into shelf vs Amazon/on-order, the size-filter lead line leads with the shelf number, and the +/- adjust
+moves LOCAL only (see handleAdjust, which re-totals rather than overwriting the chip). Tapping a size that is 0 local but 1 at Amazon
+opens an empty racks panel with the "add to a location" control, which is the correct answer to "where is it" — it isn't here.
+
+SIZE CHIP = the 2-digit code suffix (owner) — "38", "06" — which is the canonical EU size in this DB (RIGHT(code,2)). Both size maps are
 keyed by that suffix, so the chip prints the key verbatim. EVERY size shows a chip — sold-out ones (qty 0) greyed IN PLACE, so a
 missing middle size can't slide a bigger size into the gap and read as a different size (owner, 2026-07-23). localSizes now carries the
 full range (0 for sold-out), so the face still needs no fetch. The count rides on a chip only when qty > 1 — a lone "1" is just noise.
 A sold-out chip is still tappable (phase 2): opening it shows the racks panel's "add to a location" control, so stock can be put on it.
+"Sold out" now means zero EVERYWHERE, not merely zero on the shelf — a size we hold only at Amazon draws as a live chip carrying its
+count. The count is normally hidden at 1 (a lone "1" is noise), but it is always shown when any of it sits elsewhere, since that is
+precisely the case the number exists to disclose.
 
 SIZE-FILTER LEAD. When the operator has a size filter on ("the customer's a 41"), the whole result set is already narrowed to styles
-that HOLD a 41, so each card LEADS with that size's count — pulled free from localSizes, no fetch — and the matching chip is ringed.
+that HOLD a 41 (total, matching the chips), so each card LEADS with that size's SHELF count, plus the Amazon/on-order remainder when
+there is one — pulled free from the two size maps, no fetch — and the matching chip is ringed.
 That answers "who has my size, and how many" for every candidate at a glance while you scroll and confirm by picture. The racks are
 still one tap away; we do not auto-fetch 40 styles' worth of detail just because a size filter is on (owner's over-fetch concern).
 =======================================================================================================================================
@@ -174,15 +188,17 @@ export default function InvStyleCard({
   const detail: InvStockData | null = detailData ?? null;
   const detailError = detailLoadError?.message ?? null;
 
-  const sizes = useMemo(() => sortedSizes(row.localSizes), [row.localSizes]);
+  // Chips are drawn from totalSizes (local + Amazon + Birk) — the count on the face matches the pill and the drill's TOTAL column, so a
+  // size we hold only at Amazon is no longer a dead grey chip reading "none anywhere" (owner, 2026-09-02, from 14450-16 size 44).
+  const sizes = useMemo(() => sortedSizes(row.totalSizes), [row.totalSizes]);
 
   // The size-filter lead: the chip key that matches the active filter, and its local count — both free from memory. `matchedKey` also
   // rings the chip so the eye lands on it as you scroll.
   const matchedKey = useMemo(() => {
     if (!sizeFilter) return null;
     const t = normSize(sizeFilter);
-    return Object.keys(row.localSizes).find((k) => normSize(k) === t) || null;
-  }, [sizeFilter, row.localSizes]);
+    return Object.keys(row.totalSizes).find((k) => normSize(k) === t) || null;
+  }, [sizeFilter, row.totalSizes]);
 
   // Tap a size chip: toggle its racks open/closed. The fetch follows from `openSize` (see above) — nothing to trigger by hand.
   const onTapSize = useCallback((key: string) => {
@@ -194,6 +210,13 @@ export default function InvStyleCard({
   // base counts come from the /inv-styles snapshot, which doesn't know about this edit). Keyed by the chip/size key.
   const [sizeOverride, setSizeOverride] = useState<Record<string, number>>({});
   const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  // The matched size split into shelf / elsewhere for the lead line above — same arithmetic the chip does, and it honours a just-made
+  // +/- through sizeOverride so the lead and the chip can never disagree after an edit.
+  const leadLocal = matchedKey ? (sizeOverride[matchedKey] ?? row.localSizes[matchedKey] ?? 0) : 0;
+  const leadElsewhere = matchedKey
+    ? Math.max((row.totalSizes[matchedKey] ?? 0) - (row.localSizes[matchedKey] ?? 0), 0)
+    : 0;
 
   // Handle a +/- from the locations panel: call the write endpoint, then update the edited size's chip count from the server's fresh
   // total and re-pull the racks. On failure, still re-pull, so the screen shows the true state rather than an optimistic guess.
@@ -321,13 +344,20 @@ export default function InvStyleCard({
                 </div>
               )}
               {/* Stock + sales indicators — the two numbers a drop call weighs against each other, tucked under the price so they cost no
-                  vertical row of their own. Stock = local + Amazon (hover splits it); Sales = units sold in the last 30 days, all channels. */}
+                  vertical row of their own. Sales = units sold in the last 30 days, all channels.
+
+                  STOCK IS row.total — local + Amazon-held + the Birkenstock pre-order book — so the card face agrees with the Total
+                  column in the drill (owner, 2026-09-02: the browse figure and the opened figure reading differently was the confusion).
+                  Note this is NOT what the Local sort and the STOCK LESS/MORE filter compare (page.tsx: row.local only — "what is on
+                  our shelf", the pickable figure). Deliberate: the face answers "how much of this exists anywhere", the filter answers
+                  "how much is HERE", and they are different questions. So a STOCK LESS 5 list can show a card reading 12; the hover
+                  splits the pill into local / Amazon / Birk so that gap is legible rather than mysterious. */}
               <div className="mt-1 flex flex-wrap justify-end gap-1">
                 <span
-                  title={`${row.local} local + ${row.amazon} at Amazon`}
+                  title={`${row.local} local + ${row.amazon} at Amazon${row.total - row.local - row.amazon > 0 ? ` + ${row.total - row.local - row.amazon} on Birk order` : ''}`}
                   className="inline-flex items-baseline gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
                 >
-                  <span className="font-semibold tabular-nums text-slate-800">{row.local + row.amazon}</span> in stock
+                  <span className="font-semibold tabular-nums text-slate-800">{row.total}</span> in stock
                 </span>
                 <span
                   title="Units sold in the last 30 days (all channels)"
@@ -343,12 +373,18 @@ export default function InvStyleCard({
           {sizeFilter && (
             <div className="mt-2 text-sm">
               {matchedKey ? (
+                // The lead answers "have you got my size" for THIS card. It leads with what is ON THE SHELF, because that is the size
+                // that can go in a box today — but it must also account for a size we only hold at Amazon, or the lead would read
+                // "0 on the shelf" under a chip plainly showing 1 (owner, 2026-09-02).
                 <span className="text-slate-600">
                   Size <span className="font-semibold text-slate-900">{sizeFilter}</span> —{' '}
-                  <span className="font-semibold text-slate-900">{sizeOverride[matchedKey] ?? row.localSizes[matchedKey]}</span> on the shelf
+                  <span className="font-semibold text-slate-900">{leadLocal}</span> on the shelf
+                  {leadElsewhere > 0 && (
+                    <span className="text-slate-400">, {leadElsewhere} at Amazon / on order</span>
+                  )}
                 </span>
               ) : (
-                <span className="text-slate-400">No size {sizeFilter} on the shelf</span>
+                <span className="text-slate-400">No size {sizeFilter} at all</span>
               )}
             </div>
           )}
@@ -358,12 +394,29 @@ export default function InvStyleCard({
               sold-out size is a plain muted chip — nothing to locate, so it is not a button. */}
           <div className="mt-2 flex flex-wrap gap-1.5">
             {sizes.length === 0 && <span className="text-xs text-slate-400">No sizes set up</span>}
-            {sizes.map(([key, baseQty]) => {
-              // Prefer a just-edited count over the list snapshot, so a +/- shows on the chip without a page reload.
-              const qty = sizeOverride[key] ?? baseQty;
+            {sizes.map(([key, baseTotal]) => {
+              // The chip prints the TOTAL for this size. Split it back out so the hover can name the parts and the +/- can stay honest:
+              // `local` is what is on our shelf (and the only thing +/- moves), `elsewhere` is the Amazon + Birk remainder, which the
+              // list snapshot holds fixed. A just-edited size overrides LOCAL only, so the chip re-totals rather than dropping the
+              // Amazon part the moment someone adjusts a rack.
+              const baseLocal = row.localSizes[key] ?? 0;
+              const local = sizeOverride[key] ?? baseLocal;
+              const elsewhere = Math.max(baseTotal - baseLocal, 0);
+              const qty = local + elsewhere;
               const isOpen = openSize === key;
               const isMatch = matchedKey === key;
+              // Grey ONLY when there is nothing anywhere. A size with 0 local but stock at Amazon is emphatically not "sold out" —
+              // greying it was the bug (owner, 2026-09-02).
               const soldOut = qty <= 0;
+              // Normally a lone "1" is noise and is hidden. But when any of the count is elsewhere, the number is the whole point of
+              // the chip — without it, a size holding 1 at Amazon draws identically to one holding 1 on the shelf.
+              const showCount = qty >= 2 || elsewhere > 0;
+              // Hover always names the split, because the chip's number alone can't say whether it is pickable today.
+              const hover = soldOut
+                ? `Size ${key} — none on the shelf (tap to add)`
+                : elsewhere > 0
+                  ? `Size ${key} — ${qty} total: ${local} on the shelf, ${elsewhere} at Amazon / on order`
+                  : `Where is size ${key}?`;
               return (
                 <button
                   key={key}
@@ -371,7 +424,7 @@ export default function InvStyleCard({
                   onClick={() => onTapSize(key)}
                   // Sold-out sizes stay greyed IN PLACE (so a gap can't read as a different size) but are now TAPPABLE too — opening one
                   // shows an empty racks panel with the "add to a location" control, so stock can be put on a size that has none.
-                  title={soldOut ? `Size ${key} — none on the shelf (tap to add)` : `Where is size ${key}?`}
+                  title={hover}
                   className={
                     'inline-flex items-baseline gap-1 rounded-md border px-2 py-1 text-sm transition ' +
                     (isOpen
@@ -384,7 +437,7 @@ export default function InvStyleCard({
                   }
                 >
                   <span className={soldOut ? 'tabular-nums' : 'font-semibold tabular-nums'}>{key}</span>
-                  {qty >= 2 && <span className="text-xs text-slate-400">{qty}</span>}
+                  {showCount && <span className="text-xs text-slate-400">{qty}</span>}
                 </button>
               );
             })}

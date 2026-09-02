@@ -38,12 +38,14 @@ Success Response:
       "groupid": "1005292-ARIZONA",
       "title": "Birkenstock Arizona Two-Strap Patent Sandals Black Narrow Fit",  // title.shopifytitle; null if none
       "segment": "ARIZONA-GENERAL",
+      "season": "Summer",                   // skusummary.season — 'Summer' | 'Winter' | 'Any' (100% populated on live data); '' if ever blank
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
       "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
       "rrp": 80.00,                         // safeNumeric(rrp); null likewise. Shown struck-through only when above price.
       "local": 38,                          // SUM(localstock.qty), all states
       "amazon": 11,                         // held AT Amazon (live + inbound + transit). Its own field so the client can show/filter "local + Amazon"
-      "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); drives the size chips + "Size XX" filter
+      "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); the pickable figure
+      "totalSizes": { "35": 0, "36": 12, "37": 4 },  // {size: local + Amazon-held + Birk PO} over the same keys; drives the size chips
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "sold30": 7,                          // units sold in the last 30 days, all channels (positive sales only); for the SALES filter
       "total": 38,                          // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
@@ -110,6 +112,40 @@ router.get('/', async (req, res) => {
         ) ls ON ls.groupid = m.groupid AND ls.sz = m.sz
         GROUP BY m.groupid
       ),
+      elsewhere_by_size AS (
+        -- PER-SIZE stock we hold but CANNOT PICK: at Amazon (amzfeed.amztotal = live + inbound), in transit to Amazon, and on the
+        -- Birkenstock pre-order book. Added 2026-09-02 because the browse chips were localstock-only: a size sitting 0 here but 1 at
+        -- FBA drew as a dead greyed chip, reading "we have none of this anywhere" when we had one — you had to open the drill to find
+        -- out (owner, from 14450-16 size 44). The chip now prints the TOTAL, so the card face and the drill's TOTAL column agree.
+        --
+        -- MUST STAY IN STEP WITH routes/inv-stock.js's per-size total (local + atAmazon + birkOnOrder). Same three sources, same
+        -- rules: amztotal already includes amzlive so it is the single Amazon figure; transit is the 2-day DPD window; birk is
+        -- requested - arrived, floored at 0, INNER JOINed through skumap. If you change one file's definition, change both, or the
+        -- browse chip and the drill row for the same size will print different numbers on the same screen.
+        --
+        -- Size key is substring(code from '[^-]+$') — IDENTICAL to loc_by_size above, so the two maps share keys and the client can
+        -- add them size-for-size. (RIGHT(code,2) would read '.5' on a half size; see loc_by_size.)
+        SELECT groupid, jsonb_object_agg(sz, units) AS sizes
+        FROM (
+          SELECT groupid, sz, SUM(units) AS units
+          FROM (
+            SELECT f.groupid, substring(f.code from '[^-]+$') AS sz, COALESCE(f.amztotal, 0) AS units
+            FROM amzfeed f
+            UNION ALL
+            SELECT m.groupid, substring(a.code from '[^-]+$') AS sz, a.qty AS units
+            FROM amzshipment_archive a
+            JOIN skumap m ON m.code = a.code
+            WHERE a.created_at >= now() - interval '2 days'
+            UNION ALL
+            SELECT m.groupid, substring(b.code from '[^-]+$') AS sz,
+                   GREATEST(COALESCE(b.requested, 0) - COALESCE(b.arrived, 0), 0) AS units
+            FROM birktracker b
+            JOIN skumap m ON m.code = b.code
+          ) src
+          GROUP BY groupid, sz
+        ) agg
+        GROUP BY groupid
+      ),
       ord AS (
         -- On order: COUNT of not-yet-arrived local (2) / Amazon (3) order lines. orderstatus.shopifysku = skumap.code (verified 100%).
         SELECT m.groupid, COUNT(*) AS units
@@ -170,6 +206,12 @@ router.get('/', async (req, res) => {
         s.groupid,
         t.shopifytitle                                        AS title,
         s.segment,
+        -- SEASON, for the browse's WINTER / SUMMER commands (owner, 2026-09-02). A plain column on skusummary — no join, no aggregation.
+        -- Shipped rather than inferred from the segment name: only three segments encode season (RIEKER-WIN/-SUM, REMONTE-WIN, 32 styles
+        -- between them), so segment-name matching silently missed the other 263 and made the operator trust a naming convention instead
+        -- of the data. Values on live data are exactly 'Summer' (204), 'Any' (62), 'Winter' (29) — no blanks, and Add/Modify
+        -- (routes/product-create.js) keeps new styles tagged. COALESCE anyway: a blank must fall out of both seasons, not crash a match.
+        COALESCE(s.season, '')                                AS season,
         s.imagename,
         -- Price + RRP for the card face (owner: "£57" on the card). Legacy character-varying columns that can hold junk, so read via
         -- safeNumeric (NULL on non-numeric), NEVER a bare ::numeric — same rule as inv-stock.js. rrp only earns its place struck-through
@@ -178,6 +220,7 @@ router.get('/', async (req, res) => {
         ${safeNumeric('s.rrp')}                               AS rrp,
         COALESCE(loc.units, 0)                                AS local_units,
         COALESCE(loc_by_size.sizes, '{}'::jsonb)              AS local_sizes,
+        COALESCE(elsewhere_by_size.sizes, '{}'::jsonb)        AS elsewhere_sizes,
         COALESCE(ord.units, 0)                                AS order_units,
         COALESCE(feed.units, 0)
           + COALESCE(transit.units, 0)                        AS amazon_units,
@@ -198,6 +241,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title   t       ON t.groupid       = s.groupid
       LEFT JOIN loc             ON loc.groupid     = s.groupid
       LEFT JOIN loc_by_size     ON loc_by_size.groupid = s.groupid
+      LEFT JOIN elsewhere_by_size ON elsewhere_by_size.groupid = s.groupid
       LEFT JOIN ord             ON ord.groupid     = s.groupid
       LEFT JOIN feed            ON feed.groupid    = s.groupid
       LEFT JOIN transit         ON transit.groupid = s.groupid
@@ -217,6 +261,9 @@ router.get('/', async (req, res) => {
         groupid: r.groupid,
         title: r.title || null,
         segment: r.segment || null,
+        // 'Summer' | 'Winter' | 'Any' | '' — the client folds 'Any' into BOTH seasons (a year-round style is sellable in either), so
+        // this is shipped raw and the meaning is applied there, next to the filter that depends on it.
+        season: r.season || null,
         imagename: r.imagename || null,
         // safeNumeric already rejected junk to NULL, so ship numbers the client formats without parsing.
         price: r.price === null ? null : Number(r.price),
@@ -230,6 +277,23 @@ router.get('/', async (req, res) => {
         // client-side "Size XX" filter. jsonb already parses to an object with numeric values; default to {} so the client never
         // guards for null.
         localSizes: r.local_sizes || {},
+        // PER-SIZE TOTAL = local + Amazon-held + Birk pre-order, the same three parts as `total` above and the same definition as the
+        // drill's TOTAL column (routes/inv-stock.js). This is what the browse chips print, so a size we hold ONLY at Amazon shows its
+        // count instead of greying out as if we had none anywhere (owner, 2026-09-02). localSizes is still sent alongside — the client
+        // needs the split for the chip's hover and for the +/- adjust, which only ever moves LOCAL.
+        //
+        // Keys are the UNION of the two maps. loc_by_size covers every size in skumap and is normally a superset, but an amzfeed or
+        // birktracker row whose size isn't set up in skumap would otherwise have nowhere to land and vanish silently — the exact class
+        // of bug this change exists to kill. A size present in only one map reads 0 from the other.
+        totalSizes: (() => {
+          const loc = r.local_sizes || {};
+          const els = r.elsewhere_sizes || {};
+          const out = {};
+          for (const k of new Set([...Object.keys(loc), ...Object.keys(els)])) {
+            out[k] = (Number(loc[k]) || 0) + (Number(els[k]) || 0);
+          }
+          return out;
+        })(),
         onOrder: Number(r.order_units) || 0,
         // Space-joined full Amazon Seller SKUs held under this style (e.g. "JLH455-CHARL-BLACK-04-2606 …"), so the Contains box can
         // find a style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon presence.

@@ -14,8 +14,13 @@ THE FILTER IS UNCHANGED — it is the proven part of this screen and the redesig
     narrows what is ALREADY on screen ("Arizona" -> not "EVA" -> "black"). Steps are display-only; to undo, Reset.
     EXCEPT when the narrowing would empty the list: then the Find is treated as a brand-new search instead (see onFind) — the
     operator was starting a new hunt, not narrowing ("ARIZONA" then "IVES" = just IVES).
-  - Size box: narrow to styles holding that size in LOCAL stock, and each card then LEADS with that size's count (InvStyleCard). A
+  - Size box: narrow to styles holding that size ON THE SHELF (local only — the shop question: what can be handed to the customer in
+    front of you), and each card then LEADS with that size's shelf count plus any Amazon/on-order remainder (InvStyleCard). A
     single value kept apart from the text steps, since it is the criterion swapped mid-call.
+  - Typed COMMANDS in the Contains box, consumed instead of being searched for as text: STOCK/SOLD LESS|MORE <n> (see metricValue),
+    and WINTER / SUMMER (see the Season type). Season is typed rather than read off the segment NAME because only RIEKER-WIN /
+    RIEKER-SUM / REMONTE-WIN encode it — 32 of 295 styles — so the old habit of hunting "-WIN" in Contains silently missed the rest.
+    skusummary.season is the real tag and is fully populated. Year-round ('Any') styles answer to BOTH seasons (owner).
   - Cut: a per-row manual hide for stragglers a text step can't drop without over-matching. View-only; Restore or Reset brings them back.
   - Reset clears everything AND re-reads from the DB (the refresh), mirroring PowerBuilder.
 
@@ -79,11 +84,14 @@ interface QtyFilter {
 }
 
 // The per-row number each metric compares against:
-//  - stock = local + Amazon-held: the "what have we got in hand right now" figure. Deliberately NOT row.total (that folds in the Birk
-//    pre-order book — future stock, which shouldn't sway a drop decision).
+//  - stock = row.local ONLY — units physically in the building (owner, 2026-09-02). The question this filter answers is "what is on
+//    OUR shelf", so neither Amazon-held nor the Birk pre-order book counts: both are stock we cannot pick today. It used to compare
+//    local + Amazon; that made "STOCK LESS 5" return styles with nothing here but plenty at FBA, which is the opposite of the hunt.
+//    NB the card FACE prints row.total (local + Amazon + Birk) so the browse agrees with the drill's Total column — so a card in a
+//    STOCK LESS 5 list can legitimately read 12. That is not a bug: the gap between the two IS the Amazon + Birk holding.
 //  - sold = sold30: units sold in the last 30 days (all channels), the "is it moving" figure weighed against stock to decide a drop.
 function metricValue(r: InvStyleRow, metric: QtyMetric): number {
-  return metric === 'stock' ? r.local + r.amazon : r.sold30;
+  return metric === 'stock' ? r.local : r.sold30;
 }
 
 // SORTING (owner). A visible, click-to-reverse control rather than a worded command: sorting is a MODE you sit in and flip, not a
@@ -94,7 +102,7 @@ type SortKey = 'created' | 'title' | 'stock' | 'sold';
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'created', label: 'Added' },
   { key: 'title', label: 'Title' },
-  { key: 'stock', label: 'Stock' },
+  { key: 'stock', label: 'Local' },
   { key: 'sold', label: 'Sold' },
 ];
 // The direction a key adopts when first picked: Title A→Z, but Added/Stock/Sold high→low (newest first; and the drop review wants the
@@ -108,7 +116,9 @@ function sortValue(r: InvStyleRow, key: SortKey): number | string {
   // is where an unknown date belongs.
   if (key === 'created') return r.created || '';
   if (key === 'title') return (r.title || r.groupid).toLowerCase();
-  if (key === 'stock') return r.local + r.amazon;
+  // Same rule as metricValue: the Stock sort ranks by what is HERE (row.local), not the card's Total. Sorting and filtering must
+  // agree, or 'STOCK LESS 5, most stock first' would order the list by a number it did not filter on.
+  if (key === 'stock') return r.local;
   return r.sold30;
 }
 
@@ -147,9 +157,32 @@ interface Criteria {
   sizeTarget: string | null;
   sizeStrict: boolean;
   qty: QtyFilter[];
+  season: Season | null;
 }
 
-// Local stock a style holds in the filtered size (0 if none / no size filter).
+// SEASON (owner, 2026-09-02). Typed as a word — WINTER / SUMMER — because the alternative was trusting the segment NAME: only
+// RIEKER-WIN / RIEKER-SUM / REMONTE-WIN encode it (32 styles), so a Contains hunt for "-WIN" quietly missed the other 263 and made a
+// naming convention the source of truth. This reads skusummary.season instead, which is 100% populated and written by Add/Modify.
+type Season = 'Winter' | 'Summer';
+
+// Does this style belong to the named season? 'Any' is YEAR-ROUND and answers YES to BOTH (owner) — in December you want the 29 Winter
+// styles AND the 62 Any, because those are the shoes you can actually sell that day. So this is "could I sell it this season", not a
+// literal tag equality. An untagged style (never seen on live data, but possible) falls out of both rather than defaulting into one.
+function inSeason(r: InvStyleRow, season: Season | null): boolean {
+  if (season === null) return true;
+  const tag = (r.season || '').trim().toLowerCase();
+  return tag === season.toLowerCase() || tag === 'any';
+}
+
+// Stock a style holds in the filtered size — LOCAL ONLY, i.e. what is on the shelf in the shop.
+//
+// THIS IS THE SHOP QUESTION and it is why the size filter does not follow the chips onto total (owner, 2026-09-02): a customer is
+// standing there in a 44, and the list has to be what can be put on their foot in the next minute. A style whose only 44 is at an FBA
+// warehouse is not an offer you can make — including it wastes the one thing the operator hasn't got, which is the customer's patience.
+//
+// So this deliberately DISAGREES with the size chips, which count total: a style can show "44 1" on its face and still be filtered out
+// of a Size 44 hunt, because that 1 is at Amazon. The chip hover and the card's lead line ("0 on the shelf, 1 at Amazon / on order")
+// are what explain the gap, and the active-filter chip says "on the shelf" so the basis is never guessed at.
 function sizeQtyIn(r: InvStyleRow, sizeTarget: string | null): number {
   if (sizeTarget === null) return 0;
   let q = 0;
@@ -182,6 +215,9 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria): IndexedRow[] {
     }
   }
   if (c.sizeTarget !== null && c.sizeStrict) out = out.filter((x) => sizeQtyIn(x.row, c.sizeTarget) > 0);
+  // SEASON, alongside the size narrowing: it is a standing mode like the size box, not one of the ordered text steps, so it can be
+  // cleared on its own without unpicking the hunt that got you here.
+  if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   // STOCK / SOLD commands, last: numeric compares (ANDed). Strict (< / >), so "STOCK LESS 10" excludes exactly-10.
   for (const f of c.qty) {
     out = out.filter((x) => {
@@ -195,17 +231,23 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria): IndexedRow[] {
 // PARSING ONE CONTAINS TERM. Pulled out of onFind so the ?q= seed (below) and the box itself run the SAME rules — a term arriving
 // from the dashboard search box must behave exactly as if it had been typed here, or the two searches drift apart.
 // Returns what the term MEANS: a text term to match, a size split off a pasted SKU, or a worded quantity command.
-function parseContains(raw: string): { term: string; size: string; qty: QtyFilter | null } {
+function parseContains(raw: string): { term: string; size: string; qty: QtyFilter | null; season: Season | null } {
   let term = raw.trim();
   let size = '';
   let qty: QtyFilter | null = null;
+  // WINTER / SUMMER is a season command, matched before the text logic for the same reason STOCK is: as a title substring it would
+  // find nothing and read as a broken search. Consumes the term, like the quantity commands.
+  const seasonMatch = term.match(/^(WINTER|SUMMER)$/);
+  if (seasonMatch) {
+    return { term: '', size: '', qty: null, season: seasonMatch[1] === 'WINTER' ? 'Winter' : 'Summer' };
+  }
   // FIRST CHECK (owner): a worded "STOCK/SOLD LESS <n>" / "…MORE <n>" is a quantity filter, not a text find, so it is matched BEFORE
   // the text/SKU logic — otherwise "STOCK" would leak through as a title substring and match nothing. The keyword is caps because the
   // box force-uppercases input. Any integer or one decimal place is accepted.
   const qtyMatch = term.match(/^(STOCK|SOLD)\s+(LESS|MORE)\s+(\d+(?:\.\d+)?)$/);
   if (qtyMatch) {
     qty = { metric: qtyMatch[1] === 'STOCK' ? 'stock' : 'sold', op: qtyMatch[2] === 'LESS' ? 'less' : 'more', n: Number(qtyMatch[3]) };
-    return { term: '', size: '', qty };
+    return { term: '', size: '', qty, season: null };
   }
   // A trailing "-38" / "-42.5" on a groupid-shaped term is a SIZE, not part of the code (operators paste a full SKU like
   // 0151183-ARIZONA-38 when they mean "that style, in 38"). The groupid never carries the size, so the raw term matches nothing.
@@ -213,7 +255,7 @@ function parseContains(raw: string): { term: string; size: string; qty: QtyFilte
   // mistaken for a size.
   const sizeMatch = term.match(/^(\d[\dA-Z]*-.+?)-(\d{1,2}(?:\.\d)?)$/);
   if (sizeMatch) { term = sizeMatch[1]; size = sizeMatch[2]; }
-  return { term, size, qty };
+  return { term, size, qty, season: null };
 }
 
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
@@ -256,6 +298,10 @@ function InventoryPageContent() {
   // A SEEDED size can only have come off a pasted SKU (the dashboard search box has no size box of its own), i.e. a targeted lookup of
   // ONE style — so it starts NON-strict, or the card would be hidden exactly when that size happens to be out.
   const [sizeStrict, setSizeStrict] = useState(!seed?.size);
+
+  // SEASON filter (WINTER / SUMMER), a standing mode like the size box rather than one of the ordered text steps — so it survives a
+  // fresh Contains hunt and is cleared by its own ✕. Seeded from ?q= so the dashboard box can hand one straight over.
+  const [seasonFilter, setSeasonFilter] = useState<Season | null>(seed?.season || null);
 
   // STOCK / SOLD worded filters — one active per metric, keyed by metric so a STOCK command and a SOLD command can both be on at once
   // (e.g. "loads of stock, barely selling" = STOCK MORE 20 + SOLD LESS 3). Each ✕ clears just its own.
@@ -312,11 +358,11 @@ function InventoryPageContent() {
   // rather than to nothing. (Which is affordable because of the rendered window below — only a chunk is ever painted.)
   const activeQty = useMemo(() => Object.values(qtyFilters).filter(Boolean) as QtyFilter[], [qtyFilters]);
   // Is anything narrowing the list? No longer gates the display — it only decides whether to show the "of N" total and the ✕ chips.
-  const filtering = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
+  const filtering = steps.length > 0 || sizeFilter !== null || activeQty.length > 0 || seasonFilter !== null;
 
   const filtered = useMemo(
-    () => applyCriteria(indexed, { steps, sizeTarget, sizeStrict, qty: activeQty }).map((x) => x.row),
-    [indexed, steps, sizeTarget, sizeStrict, activeQty],
+    () => applyCriteria(indexed, { steps, sizeTarget, sizeStrict, qty: activeQty, season: seasonFilter }).map((x) => x.row),
+    [indexed, steps, sizeTarget, sizeStrict, activeQty, seasonFilter],
   );
 
   // What actually shows = the text-filtered rows minus the hand-cut ones.
@@ -346,8 +392,8 @@ function InventoryPageContent() {
   // `visible`/`sortedVisible`: cutting one straggler must not throw away everything already scrolled, which is the opposite of what a
   // cut is for.
   const criteriaKey = useMemo(
-    () => JSON.stringify([steps, sizeFilter, sizeStrict, activeQty, sortKey, sortDir]),
-    [steps, sizeFilter, sizeStrict, activeQty, sortKey, sortDir],
+    () => JSON.stringify([steps, sizeFilter, sizeStrict, activeQty, seasonFilter, sortKey, sortDir]),
+    [steps, sizeFilter, sizeStrict, activeQty, seasonFilter, sortKey, sortDir],
   );
   const [win, setWin] = useState<{ key: string; n: number }>({ key: '', n: CARD_CHUNK });
   const shown = win.key === criteriaKey ? win.n : CARD_CHUNK;
@@ -419,16 +465,17 @@ function InventoryPageContent() {
     const next: FilterStep[] = [];
     // What the term means (quantity command / SKU-with-size / plain text) is decided by the shared parser, so a term typed here and
     // one arriving as ?q= from the dashboard search box behave identically. A matched quantity command consumes the term
-    // (no text step); STOCK compares combined local+Amazon, SOLD the 30-day sold count. A size split off a pasted SKU narrows to that
+    // (no text step); STOCK compares LOCAL stock only, SOLD the 30-day sold count. A size split off a pasted SKU narrows to that
     // style AND makes each card lead with that size's count / rack (owner, 2026-07-23) — but an explicitly typed Size box wins over it.
     const parsed = parseContains(contains);
     const containsTerm = parsed.term;
     const sizeFromTerm = parsed.size;
     const nextQty = parsed.qty;
+    const nextSeason = parsed.season;
     if (containsTerm) next.push({ op: 'has', term: containsTerm });
     if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
     const size = sizeInput.trim() || sizeFromTerm;
-    if (next.length === 0 && !size && !nextQty) return;
+    if (next.length === 0 && !size && !nextQty && !nextSeason) return;
 
     // Strict (exclude sold-out) only when the size was typed in its own box; a size split off a pasted SKU is a targeted lookup, so
     // it must not hide the one style it points at just because that size is out.
@@ -439,13 +486,16 @@ function InventoryPageContent() {
     // ever find nothing. So: probe the merged criteria first; if they match no styles AND something was already applied, treat this
     // Find as a brand-new entry — drop every existing step/size/qty/cut and run the new terms alone. Only if THAT is also empty does
     // "No styles match" appear. Probing (rather than reacting to an empty render) means the dead intermediate state never paints.
-    const hadFilters = steps.length > 0 || sizeFilter !== null || activeQty.length > 0;
+    const hadFilters = steps.length > 0 || sizeFilter !== null || activeQty.length > 0 || seasonFilter !== null;
     const mergedQty = nextQty ? { ...qtyFilters, [nextQty.metric]: nextQty } : qtyFilters;
     const merged: Criteria = {
       steps: [...steps, ...next],
       sizeTarget: size ? normSize(size) : sizeTarget,
       sizeStrict: size ? nextStrict : sizeStrict,
       qty: Object.values(mergedQty).filter(Boolean) as QtyFilter[],
+      // A newly typed season REPLACES the standing one — there is only ever one season in force, so "WINTER" after "SUMMER" is a
+      // change of mind, not an impossible both-at-once (which would match only the year-round 'Any' styles and look broken).
+      season: nextSeason ?? seasonFilter,
     };
     const startFresh = hadFilters && applyCriteria(indexed, merged).length === 0;
 
@@ -454,11 +504,13 @@ function InventoryPageContent() {
       setQtyFilters(nextQty ? { [nextQty.metric]: nextQty } : {});
       setSizeFilter(size || null);
       setSizeStrict(size ? nextStrict : true);
+      setSeasonFilter(nextSeason);
       setCut(new Set());
       // No announcement (owner, 2026-07-27): the breadcrumb already shows exactly the one step now in force, and the operator has the
       // rows they wanted — a banner explaining what didn't happen is just something to read.
     } else {
       if (nextQty) setQtyFilter(nextQty);
+      if (nextSeason) setSeasonFilter(nextSeason);
       if (next.length > 0) setSteps((prev) => [...prev, ...next]);
       if (size) {
         setSizeFilter(size);
@@ -495,6 +547,7 @@ function InventoryPageContent() {
     setSizeFilter(null);
     setSizeStrict(true);
     setQtyFilters({});
+    setSeasonFilter(null);
     setSortKey('created');
     setSortDir('desc');
     setCut(new Set());
@@ -543,7 +596,9 @@ function InventoryPageContent() {
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
             </div>
-            {/* Size — its own box. Filters to styles with that size in LOCAL stock; each card then leads with that size's count. */}
+            {/* Size — its own box. Filters on LOCAL stock in that size: this is the counter-service hunt, so the answer must be what is
+                in the building. The chips beside it count total, so a filtered-out style can still be seen holding that size at Amazon
+                when you scroll past it — the chip hover and lead line spell the split out. */}
             <div className="w-24">
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Size</label>
               <input
@@ -551,7 +606,7 @@ function InventoryPageContent() {
                 onChange={(e) => setSizeInput(e.target.value)}
                 inputMode="decimal"
                 placeholder="e.g. 41"
-                title="Show only styles with this size in local stock"
+                title="Show only styles with this size on the shelf (excludes stock at Amazon)"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
             </div>
@@ -587,11 +642,15 @@ function InventoryPageContent() {
               <ul className="space-y-1">
                 <li>
                   <span className="font-mono text-slate-700">STOCK LESS 10</span> · <span className="font-mono text-slate-700">STOCK MORE 5</span>
-                  <span className="text-slate-400"> — filter by total stock (local + Amazon)</span>
+                  <span className="text-slate-400"> — filter by local stock only (what is on our shelf)</span>
                 </li>
                 <li>
                   <span className="font-mono text-slate-700">SOLD LESS 3</span> · <span className="font-mono text-slate-700">SOLD MORE 10</span>
                   <span className="text-slate-400"> — filter by units sold in the last 30 days</span>
+                </li>
+                <li>
+                  <span className="font-mono text-slate-700">WINTER</span> · <span className="font-mono text-slate-700">SUMMER</span>
+                  <span className="text-slate-400"> — filter by season (year-round styles show in both)</span>
                 </li>
               </ul>
             </div>
@@ -633,7 +692,7 @@ function InventoryPageContent() {
               <>
                 <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">
-                  Size {sizeFilter} · local
+                  Size {sizeFilter} · on the shelf
                   <button
                     type="button"
                     // Clearing hands focus straight back to Contains, so the next hunt starts by typing — same as the stock chip (owner).
@@ -646,13 +705,31 @@ function InventoryPageContent() {
                 </span>
               </>
             )}
+            {/* SEASON chip — same removable treatment as the others. Labelled "+ year-round" so it is visible on screen that the 'Any'
+                styles are folded in, rather than being a rule you have to remember or go and read. */}
+            {seasonFilter && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                  {seasonFilter} + year-round
+                  <button
+                    type="button"
+                    onClick={() => { setSeasonFilter(null); containsRef.current?.focus(); }}
+                    title="Clear season filter"
+                    className="ml-0.5 rounded text-amber-400 hover:text-amber-700"
+                  >
+                    <XMarkIcon className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </>
+            )}
             {/* STOCK / SOLD chips — real narrowing filters, so each earns a removable ✕ like the size chip: clearing changes the result.
                 One chip per active metric; the ✕ clears just that metric and hands focus back to Contains for the next command (owner). */}
             {activeQty.map((f) => (
               <span key={f.metric} className="flex items-center gap-1.5">
                 <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
-                  {f.metric === 'stock' ? 'Stock' : 'Sold 30d'} {f.op === 'less' ? '<' : '>'} {f.n}
+                  {f.metric === 'stock' ? 'Local' : 'Sold 30d'} {f.op === 'less' ? '<' : '>'} {f.n}
                   <button
                     type="button"
                     onClick={() => { clearQtyFilter(f.metric); containsRef.current?.focus(); }}

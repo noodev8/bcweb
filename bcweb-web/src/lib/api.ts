@@ -1231,19 +1231,26 @@ export interface InvStyleRow {
   groupid: string;
   title: string | null;
   segment: string | null;
+  // skusummary.season — 'Summer' | 'Winter' | 'Any', or null if untagged. Drives the browse's typed WINTER / SUMMER commands. 'Any'
+  // means year-round and counts as BOTH seasons there; the folding happens on the client, so this stays the raw tag.
+  season: string | null;
   imagename: string | null;
   // Live Shopify price + RRP for the card face. Either can be null (junk in the legacy varchar columns → safeNumeric returned NULL);
   // RRP is only worth showing struck-through when it is above price.
   price: number | null;
   rrp: number | null;
   local: number;
-  // Stock held AT Amazon (live + inbound + in-transit). Combined with `local` gives "what we've actually got right now" — the number the
-  // card's stock indicator shows and STOCK LESS / STOCK MORE filters on. Distinct from `total`, which also includes the Birk pre-order book.
+  // Stock held AT Amazon (live + inbound + in-transit). Part of `total`, which is what the browse card's stock pill shows. NOT part of
+  // the STOCK LESS / STOCK MORE filter or the Local sort — those compare `local` alone, since their question is what we can pick today.
   amazon: number;
   // {size: localQty} for EVERY size in skumap (0 = sold out) — so the browse card can show a chip for each size and grey the empty
   // ones, and the "Size XX" filter (membership = qty > 0) works off the same map. Keys are the code's size suffix as stored, so they
   // can carry a leading zero ("05") — the client normalises numerically when matching, so a typed "5" still finds "05".
   localSizes: Record<string, number>;
+  // {size: local + Amazon-held + Birk pre-order} over the same keys — the per-size mirror of `total`, and the same definition as the
+  // drill's TOTAL column. This is what the size CHIPS print, so a size held only at Amazon shows a count instead of greying out as if
+  // we had none anywhere. localSizes is still the pickable figure: the chip hover splits the two, and +/- only ever moves local.
+  totalSizes: Record<string, number>;
   onOrder: number;
   // Units sold in the last 30 days, all channels (positive sales only). Shown on the card and filtered by SALES LESS / SALES MORE —
   // weighed against stock to decide what to drop. A plain 30-day gross count; velocity/per-channel nuance lives on the pricing screens.
@@ -1266,7 +1273,13 @@ export function getInvStyles() {
     (b) => ({
       count: b.count ?? 0,
       // Default localSizes to {} per row so the client never has to guard for a missing map on an older payload.
-      rows: ((b.rows as InvStyleRow[]) || []).map((r) => ({ ...r, localSizes: r.localSizes || {} })),
+      // Default both size maps per row so the client never guards for a missing map on an older payload. totalSizes falls back to
+      // localSizes rather than {}: a server that predates it still draws correct chips, just without the Amazon/Birk part.
+      rows: ((b.rows as InvStyleRow[]) || []).map((r) => ({
+        ...r,
+        localSizes: r.localSizes || {},
+        totalSizes: r.totalSizes || r.localSizes || {},
+      })),
     })
   );
 }
