@@ -34,8 +34,12 @@ ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen i
       for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
       supplier requirement: that's who an order line gets placed against, and a pick has nobody to place it with.
 
-      PICK HAS NO WRITE YET (owner, 2026-08-28 — "for now"): there's no server route that moves local stock to C3-Amazon, so the
-      send button is disabled in Pick mode and says so. Everything else — filling, typing, clearing, the draft — works.
+      PICK WRITES AS OF 2026-09-02 (owner). Confirm Basket in Pick mode loops POST /amz-pick-allocate per SKU — the same
+      one-call-per-SKU shape the Order side uses — and it flags that many free shelf rows allocated='amz'. That flag IS the pick:
+      /pick's Amazon tab lists exactly `allocated='amz' AND location <> 'C3-Amazon'`, so the units appear there to be gathered onto
+      the C3-Amazon shelf, and pressing To Amazon there is what drops them off it. Nothing physically moves from this screen.
+      A pick is a real commitment: orderSync phase E only allocates 'unallocated' rows, so a unit sent to Amazon here can no longer
+      be picked for a Shopify customer order — which is the thing Pick keep exists to protect. Undo is /pick's own Unallocate.
 
 SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
       clicking sets it, Enter and the "Cut (n)" button both act on it. This screen used to run a keyboard cursor (a hairline on the
@@ -80,7 +84,11 @@ SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad in
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
 
       Pick (send local stock to Amazon) was pulled from this screen in 2026-08 and came back 2026-08-28 as a MODE rather than a
-      second column — see ORDER / PICK MODE above. Sending a pick still has no server route; the column plans it, nothing writes it.
+      second column — see ORDER / PICK MODE above. Since 2026-09-02 it has its own write, /amz-pick-allocate, on the same button:
+      the confirm names the destination ("to Amazon, off the local shelf?" vs "to Order Status?") and the loop is per-SKU either
+      way. A pick that the shelf can't fully supply comes back SHORT rather than failing — the mobile app and orderSync phase E are
+      taking the same free rows, so the stock figure on screen is always a little old — and the shortfall is reported per SKU in
+      amber under the panel. There is no cost line in Pick mode: that stock is already paid for and on the shelf.
 
 LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
       positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone
@@ -104,7 +112,7 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
-import { getAmazonOrderList, addOrderLine, AmazonOrderRow } from '@/lib/api';
+import { getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
@@ -236,9 +244,9 @@ type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 
 // brand), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
 const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'right' }[] = [
   { key: 'code', label: 'SKU (size)', align: 'left' },
-  { key: 'local_stock', label: 'Local', title: 'Sellable local stock, excluding anything staged at C3-Amazon (that\'s counted under FBA Total instead)', align: 'right' },
+  { key: 'local_stock', label: 'Local', title: 'Sellable local stock. Excludes anything staged at C3-Amazon AND anything already committed to a pick — both are counted under FBA Total instead, so a rate fill can\'t spend the same shelf stock twice', align: 'right' },
   { key: 'fba_live', label: 'FBA Live', title: 'Sellable-now FBA stock (amzfeed.amzlive)', align: 'right' },
-  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection, plus not-yet-arrived Amazon order lines (TO PLACE + ON ORDER)', align: 'right' },
+  { key: 'fba_total', label: 'FBA Total', title: 'Live + inbound FBA stock, plus anything picked and staged at C3-Amazon awaiting DPD collection, plus not-yet-arrived Amazon order lines (TO PLACE + ON ORDER), plus units already committed to a pick and waiting to be gathered', align: 'right' },
   { key: 'units_30d', label: 'Sold (30)', title: 'Units sold, last 30 days, net of returns', align: 'right' },
   { key: 'units_7d', label: 'Sold (7)', title: 'Units sold, last 7 days', align: 'right' },
   { key: 'unit_profit', label: 'Unit profit', title: "Per-unit profit of the SKU's last Amazon sale (skumap.amzprofit)", align: 'right' },
@@ -646,8 +654,13 @@ export default function AmazonOrderHome() {
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
   }, [qtyByMode]);
 
-  // SEND TO ORDER STATUS — turns the Order scratchpad into real orderstatus rows via the same /order-status-add the Order Status
-  // screen's own "add a line" uses (one un-placed row per unit, ordertype 3/Amazon). Targets EVERY row with a positive Order value,
+  // SEND — turns the scratchpad into real rows. Which rows depends on the mode, and they are the only two DB writes on this screen:
+  //   order   /order-status-add    one un-placed orderstatus row per unit, ordertype 3 (Amazon) — the same route Order Status's own
+  //                                "add a line" uses.
+  //   pick    /amz-pick-allocate   flags that many free shelf rows allocated='amz', which is what puts them on /pick's Amazon tab to
+  //                                be gathered onto the C3-Amazon shelf.
+  // Both loop one SKU per call (owner, 2026-09-02 — "do it the same as the order ... just so we know what works and not"), so a SKU
+  // that fails leaves its own box filled while the rest go through. Targets EVERY row with a positive value,
   // not just what's currently visible — a value typed before a filter/cut shouldn't silently vanish from the submission just because
   // it scrolled out of view. Birkenstock is excluded by construction (isBirkenstock) even if a value somehow ended up in its box.
   // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
@@ -673,34 +686,59 @@ export default function AmazonOrderHome() {
   const [ordering, setOrdering] = useState(false);
   const [orderProgress, setOrderProgress] = useState<{ done: number; total: number } | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+  // A non-error outcome worth saying out loud — currently only Pick's "the shelf couldn't supply all of it" (see submitBasket).
+  // Kept apart from orderError so a partial pick doesn't read as a failure.
+  const [sendNote, setSendNote] = useState<string | null>(null);
   // Session-only running total of what's just been queued per SKU, added on top of fba_total for display — an immediate "yes it
-  // went in" signal while submitOrder's refresh() (below) is still in flight. fba_total itself now counts not-yet-arrived Amazon
+  // went in" signal while submitBasket's refresh() (below) is still in flight. fba_total itself now counts not-yet-arrived Amazon
   // orderstatus lines server-side (owner, 2026-08-13 — "otherwise we may double order"), so once that refresh lands the real
   // number already includes what was just queued and the bump is cleared to avoid double-counting on screen.
   const [orderedBump, setOrderedBump] = useState<Record<string, number>>({});
 
-  async function submitOrder() {
+  async function submitBasket() {
     setConfirmingOrder(false);
-    // Belt and braces: the button is disabled in Pick mode, but this is the one function on the screen that writes to the DB, so
-    // it refuses outright rather than trusting the UI to have got the disabling right.
-    if (mode !== 'order' || basketTargets.length === 0) return;
-    setOrdering(true); setOrderError(null);
+    if (basketTargets.length === 0) return;
+    setOrdering(true); setOrderError(null); setSendNote(null);
     setOrderProgress({ done: 0, total: basketTargets.length });
     let queued = 0;
     const failed: string[] = [];
+    // PICK ONLY: SKUs the shelf couldn't fully supply. NOT a failure — the mobile app and orderSync phase E take the same free rows,
+    // so the stock figure this screen filled from is always a little old. Reported as a note so the operator can see which SKUs went
+    // out light rather than assuming the whole basket landed.
+    const shortfalls: string[] = [];
     for (let i = 0; i < basketTargets.length; i++) {
       const { code, qty, supplier } = basketTargets[i];
-      const res = await addOrderLine(supplier, code, qty, 3);
-      if (res.success) {
+
+      // The two writes return different shapes, so each branch reduces to the same three answers: did it land, how many units to
+      // show as just-committed, and (pick only) how many the shelf couldn't supply.
+      let landed = false;
+      let committed = qty;
+      let unauthorized = false;
+      if (mode === 'pick') {
+        const res = await allocateAmazonPick(code, qty);
+        if (res.success && res.data) {
+          landed = true;
+          // `allocated` is what THIS call flagged — a repeat send of a SKU already pending allocates 0, and the bump should say 0
+          // rather than re-claiming units that were already committed.
+          committed = res.data.allocated;
+          if (res.data.short > 0) shortfalls.push(`${code} (${res.data.short} short)`);
+        } else unauthorized = res.return_code === 'UNAUTHORIZED';
+      } else {
+        const res = await addOrderLine(supplier, code, qty, 3);
+        if (res.success) landed = true;
+        else unauthorized = res.return_code === 'UNAUTHORIZED';
+      }
+
+      if (unauthorized) { setOrdering(false); setOrderProgress(null); logout(); return; }
+
+      if (landed) {
         queued++;
         setQty((prev) => {
           const next = { ...prev };
           delete next[code];
           return next;
         });
-        setOrderedBump((prev) => ({ ...prev, [code]: (prev[code] || 0) + qty }));
-      } else if (res.return_code === 'UNAUTHORIZED') {
-        setOrdering(false); setOrderProgress(null); logout(); return;
+        if (committed > 0) setOrderedBump((prev) => ({ ...prev, [code]: (prev[code] || 0) + committed }));
       } else {
         failed.push(code);
       }
@@ -708,8 +746,12 @@ export default function AmazonOrderHome() {
     }
     setOrderProgress(null); setOrdering(false);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
-    // Re-fetch so fba_total picks up the lines just queued (it now counts not-yet-arrived orderstatus rows server-side) — the
-    // client-only orderedBump was only ever a stand-in for this round trip, so it's dropped once the real number is in.
+    if (shortfalls.length > 0) {
+      setSendNote(`Shelf came up short on ${shortfalls.length} SKU${shortfalls.length === 1 ? '' : 's'}: ${shortfalls.slice(0, 5).join(', ')}${shortfalls.length > 5 ? '…' : ''}`);
+    }
+    // Re-fetch so fba_total picks up what was just committed — it counts not-yet-arrived orderstatus rows AND pending picks
+    // (pick_pending) server-side, so once the refresh lands the real number already includes it and the client-only orderedBump,
+    // which was only ever a stand-in for this round trip, is dropped to avoid double-counting on screen.
     if (queued > 0) {
       await refresh();
       setOrderedBump({});
@@ -1335,18 +1377,20 @@ export default function AmazonOrderHome() {
                 the mode — Order or Pick. Calling the write "Basket" too gave the one irreversible action the same word as two
                 harmless things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
                 ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
-            {/* PICK MODE HAS NO WRITE YET (owner, 2026-08-28 — "for now"). There is no server route that moves local stock to
-                C3-Amazon, so the button is disabled and says so rather than being hidden: the operator can see the plan is
-                complete and simply has nowhere to send it, which is the truth. Pick quantities still save to the browser draft
-                like Order's do, so the work isn't lost meanwhile. */}
+            {/* PICK NOW WRITES TOO (owner, 2026-09-02), via /amz-pick-allocate — it flags that many free shelf rows allocated='amz',
+                which is precisely what puts them on /pick's Amazon tab to be gathered onto the C3-Amazon shelf. Same button, same
+                confirm, same per-SKU loop; only the destination and the wording change. Worth knowing at the point of pressing it:
+                a pick is a REAL COMMITMENT OF PHYSICAL STOCK, not more scratchpad — orderSync phase E only allocates 'unallocated'
+                rows, so a unit flagged for Amazon is a unit a Shopify customer order can no longer be picked from. That is what the
+                Pick keep rate is protecting, and why the confirm states units rather than just SKUs. */}
             {!confirmingOrder ? (
               <button
                 type="button"
                 onClick={() => { setConfirmingClear(false); setConfirmingOrder(true); }}
-                disabled={mode === 'pick' || ordering || basketTargets.length === 0}
+                disabled={ordering || basketTargets.length === 0}
                 title={
                   mode === 'pick'
-                    ? "Sending a pick to Amazon isn't wired up yet — Pick is a planning scratchpad for now. The numbers are saved in this browser."
+                    ? `Commit every SKU with a number in Pick to Amazon — every row with a value, not just the ones on screen. The units are flagged on the shelf and appear on the Pick screen's Amazon tab to be gathered; nothing physically moves until someone does. Stock committed here can no longer be picked for a Shopify customer order.`
                     : `Send every SKU with a number in Order to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
                       (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
                 }
@@ -1355,11 +1399,9 @@ export default function AmazonOrderHome() {
                 <ShoppingCartIcon className="h-5 w-5" />
                 <span className="flex flex-col items-start leading-tight">
                   <span className="text-sm font-medium">
-                    {mode === 'pick'
-                      ? 'Pick not wired up yet'
-                      : ordering && orderProgress
-                        ? `Sending ${orderProgress.done}/${orderProgress.total}…`
-                        : 'Confirm Basket'}
+                    {ordering && orderProgress
+                      ? `Sending ${orderProgress.done}/${orderProgress.total}…`
+                      : 'Confirm Basket'}
                   </span>
                   {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
                       decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
@@ -1377,10 +1419,13 @@ export default function AmazonOrderHome() {
               </button>
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                {/* The destination is named, because it's the one thing that differs between the two writes and it's what makes the
+                    sentence checkable: Order Status is a queue you can still edit, a pick commits stock off the Shopify shelf. */}
                 <span className="text-slate-700">
-                  Confirm {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} across {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} to Order Status?
+                  Confirm {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} across {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'}
+                  {mode === 'pick' ? ' to Amazon, off the local shelf?' : ' to Order Status?'}
                 </span>
-                <button type="button" onClick={submitOrder} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
+                <button type="button" onClick={submitBasket} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
                 <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}
@@ -1410,9 +1455,11 @@ export default function AmazonOrderHome() {
           </div>
         </div>
 
-        {orderError && (
+        {(orderError || sendNote) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
-            <span className="text-red-600">{orderError}</span>
+            {orderError && <span className="text-red-600">{orderError}</span>}
+            {/* A shortfall is amber, not red: the send worked, the shelf just had less on it than the screen thought. */}
+            {sendNote && <span className="text-amber-600">{sendNote}</span>}
           </div>
         )}
       </div>
@@ -1446,7 +1493,7 @@ export default function AmazonOrderHome() {
                     key: 'order_qty',
                     label: mode === 'pick' ? 'Pick' : 'Order',
                     title: mode === 'pick'
-                      ? 'Units to send from the local shelf to Amazon — planning scratchpad, not saved server-side, this browser only'
+                      ? 'Units to send from the local shelf to Amazon — a scratchpad until Confirm Basket, which flags them on the shelf and puts them on the Pick screen to be gathered'
                       : 'Units to buy in from the supplier — planning scratchpad, not saved server-side, this browser only',
                     align: 'right',
                   },

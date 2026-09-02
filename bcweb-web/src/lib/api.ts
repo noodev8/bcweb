@@ -131,12 +131,14 @@ export interface AmzAllRow {
 // against it), brand = skusummary.brand (what the detail row actually shows). title stays (used for search) even though
 // the landing table itself no longer renders a Product column (owner request, 2026-08-07). local_stock = current sellable localstock
 // (CLAUDE.md: ordernum='#FREE', not deleted, qty>0), NEVER skusummary.stockvariants. cost = skusummary.cost (CLAUDE.md: order cost
-// is ALWAYS skusummary.cost, never skumap.cost) — used to total the on-screen proposed Order. Order is NOT a server field — the web
-// page keeps it as a session-only scratchpad, not persisted (owner decision, 2026-08-07).
+// is ALWAYS skusummary.cost, never skumap.cost) — used to total the on-screen proposed Order. Order/Pick QUANTITIES are NOT server
+// fields — the web page keeps them as a session-only scratchpad, not persisted (owner decision, 2026-08-07). pick_pending IS a server
+// field and is the CONFIRMED half: units already flagged allocated='amz' and awaiting gathering on /pick. They're counted inside
+// fba_total and excluded from local_stock, so a rate fill can't plan a pick that's already been committed.
 export interface AmazonOrderRow {
   code: string; groupid: string; size: string; title: string | null;
   price: number | null; units_7d: number; units_30d: number; unit_profit: number | null; profit_30d: number | null;
-  fba_total: number; fba_live: number;
+  fba_total: number; fba_live: number; pick_pending: number;
   barcode: string | null; amz_sku: string | null; supplier: string | null; brand: string | null;
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
@@ -1502,6 +1504,25 @@ export function addOrderLine(supplier: string, code: string, qty: number, ordert
   return request<{ added: number; code: string; qty: number }>(
     { url: '/order-status-add', method: 'POST', data: { supplier, code, qty, ordertype } },
     (b) => ({ added: Number(b.added) || 0, code: String(b.code || ''), qty: Number(b.qty) || 0 })
+  );
+}
+
+// Amazon Order, PICK half — commit units of one SKU to Amazon: flags that many free shelf rows allocated='amz', which is what puts
+// them on /pick's Amazon tab to be gathered onto the C3-Amazon shelf. One SKU per call, looped by Confirm Basket exactly like
+// addOrderLine (owner, 2026-09-02). `short` (asked for 3, shelf could only supply 2) is a NORMAL outcome reported back, not an error
+// — the mobile app and orderSync phase E are taking the same rows. A repeat call is safe: the route counts what's already pending for
+// the SKU and only tops up the difference. Undo is /pick's own Unallocate.
+export function allocateAmazonPick(code: string, qty: number) {
+  return request<{ code: string; requested: number; already_pending: number; allocated: number; pending_total: number; short: number }>(
+    { url: '/amz-pick-allocate', method: 'POST', data: { code, qty } },
+    (b) => ({
+      code: String(b.code || ''),
+      requested: Number(b.requested) || 0,
+      already_pending: Number(b.already_pending) || 0,
+      allocated: Number(b.allocated) || 0,
+      pending_total: Number(b.pending_total) || 0,
+      short: Number(b.short) || 0,
+    })
   );
 }
 

@@ -20,10 +20,17 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
 
          Also carries FBA stock: fba_total = amzfeed.amztotal (live + inbound) PLUS the C3-Amazon staged units (see local_stock
          below) PLUS not-yet-arrived Amazon orderstatus lines (ordertype=3, arrived=0 — TO PLACE and ON ORDER both count; same
-         predicate routes/inv-styles.js uses for its own "onOrder", CTE `ord` here). Without this, Rate Order (applyCoverage,
-         bcweb-web/src/app/amazon-order/page.tsx) reads a queued-but-not-yet-received line as still-needed and can suggest
-         ordering it again (owner, 2026-08-13 — "otherwise we may double order"). fba_live = amzfeed.amzlive (sellable now,
-         unaffected by staging or on-order). Real integers, no safeNumeric needed.
+         predicate routes/inv-styles.js uses for its own "onOrder", CTE `ord` here) PLUS pending picks (pick_pending, below).
+         Without this, Rate Order (applyCoverage, bcweb-web/src/app/amazon-order/page.tsx) reads a queued-but-not-yet-received line
+         as still-needed and can suggest ordering it again (owner, 2026-08-13 — "otherwise we may double order"). fba_live =
+         amzfeed.amzlive (sellable now, unaffected by staging or on-order). Real integers, no safeNumeric needed.
+
+         pick_pending = units flagged allocated='amz' but still on a normal shelf — what the /pick Amazon tab is showing for this
+         SKU right now (utils/pick.js -> modeFilter('amazon'), the same predicate, so the two can never drift). These are units
+         POST /amz-pick-allocate committed to FBA on this screen and nobody has gathered yet. They are counted in fba_total and
+         taken OUT of local_stock for the one reason the on-order units were: without it the next rate fill sees the same shelf
+         stock it already spent and plans the identical pick a second time. The field itself exists so a row can SAY why its local
+         stock dropped rather than the number just quietly going down.
 
          Also carries three identifiers: barcode = skumap.ean with the legacy trailing 'B' stripped (CLAUDE.md — that suffix is an
          Excel guard for internal spreadsheets, not part of the barcode; same regexp_replace as order-status-find.js), amz_sku =
@@ -36,7 +43,8 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          per code — NEVER skusummary.stockvariants/variants (stale, per the same landmine). EXCLUDES location='C3-Amazon': that is
          stock already picked and staged for Amazon (allocated='amz', verified 100% on live rows) sitting in localstock only until
          DPD collects it — the same landmine routes/inv-styles.js documents for its own Total. It is folded into fba_total instead
-         (owner, 2026-08-07): it is no longer "on the local shelf", it is Amazon-bound stock in transit.
+         (owner, 2026-08-07): it is no longer "on the local shelf", it is Amazon-bound stock in transit. EXCLUDES allocated='amz'
+         anywhere else too, for the same reason one step earlier in the journey — see pick_pending above.
 
          cost = skusummary.cost (CLAUDE.md: order cost is ALWAYS skusummary.cost via safeNumeric, never skumap.cost — blank/
          placeholder on many rows). Used by the web page to total up what the on-screen proposed Order would cost to buy in.
@@ -46,7 +54,9 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          the web page's optional "Sold in 6mo" toggle uses this to tell a genuinely recent sale apart from a stale one. Null when
          the SKU has never sold on Amazon.
 
-         Order / Pick have NO server field — they are a session-only scratchpad the web page keeps in browser state, not persisted.
+         Order and Pick QUANTITIES have no server field — they are a session-only scratchpad the web page keeps in browser state,
+         not persisted. What IS persisted is what the operator CONFIRMS: an Order becomes orderstatus rows (visible here through
+         `ord`), a Pick becomes flagged shelf rows (visible here through pick_pending).
 
          NO server-side search/limit (unlike amz-all's listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
@@ -63,7 +73,7 @@ Success Response:
   "count": 522,
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
-      "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10,
+      "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
       "last_sold": "2026-06-02" },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
@@ -92,14 +102,27 @@ router.get('/', async (req, res) => {
   try {
     // skumap (amzprofit) and amzfeed (amzsold, amzprice) are both code-grain, so a straight JOIN pairs them one-to-one; skusummary
     // scopes the list to managed products only. profit_30d is computed here, not in SQL, so its "null when unit_profit is unknown"
-    // rule sits next to the comment that explains it. Local stock, the C3-Amazon staged stock, and not-yet-arrived Amazon orders
-    // are all pre-aggregated to code-grain in their own CTEs (so none of them can fan out the row set) and LEFT JOINed — a SKU
-    // with none of any simply reads 0.
+    // rule sits next to the comment that explains it. Local stock, pending picks, the C3-Amazon staged stock, and not-yet-arrived
+    // Amazon orders are all pre-aggregated to code-grain in their own CTEs (so none of them can fan out the row set) and LEFT
+    // JOINed — a SKU with none of any simply reads 0.
     const result = await query(`
       WITH loc AS (
+        -- Sellable local shelf stock. EXCLUDES allocated='amz' as well as the C3-Amazon shelf: a unit flagged for Amazon by
+        -- /amz-pick-allocate is committed to FBA even while it still sits on a Back shelf, so it must stop reading as stock
+        -- available to cover the next shortfall. It moves into fba_total below, exactly like the staged and on-order units.
         SELECT code, SUM(qty) AS units
         FROM localstock
         WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location <> 'C3-Amazon'
+          AND COALESCE(allocated,'') <> 'amz'
+        GROUP BY code
+      ),
+      pending AS (
+        -- Flagged for Amazon, not yet gathered onto the C3-Amazon shelf — i.e. exactly what the /pick Amazon tab is showing right
+        -- now (utils/pick.js -> modeFilter('amazon')). Surfaced as pick_pending so a row can SAY why its local stock dropped, and
+        -- folded into fba_total so a rate fill can't plan the same pick twice (the same double-count fix on-order lines got).
+        SELECT code, SUM(qty) AS units
+        FROM localstock
+        WHERE COALESCE(deleted,0) = 0 AND qty > 0 AND allocated = 'amz' AND location <> 'C3-Amazon'
         GROUP BY code
       ),
       staged AS (
@@ -129,7 +152,8 @@ router.get('/', async (req, res) => {
              GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
              ${safeNumeric('m.amzprofit')} AS unit_profit,
-             COALESCE(a.amztotal,0) + COALESCE(staged.units,0) + COALESCE(ord.units,0) AS fba_total,
+             COALESCE(a.amztotal,0) + COALESCE(staged.units,0) + COALESCE(ord.units,0) + COALESCE(pending.units,0) AS fba_total,
+             COALESCE(pending.units,0) AS pick_pending,
              COALESCE(a.amzlive,0) AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
@@ -143,6 +167,7 @@ router.get('/', async (req, res) => {
       JOIN skumap m ON m.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
       LEFT JOIN loc ON loc.code = a.code
+      LEFT JOIN pending ON pending.code = a.code
       LEFT JOIN staged ON staged.code = a.code
       LEFT JOIN ord ON ord.code = a.code
       LEFT JOIN lastsold ON lastsold.code = a.code
@@ -164,6 +189,7 @@ router.get('/', async (req, res) => {
         profit_30d: unitProfit === null ? null : Math.round(unitProfit * units * 100) / 100,
         fba_total: Number(r.fba_total) || 0,
         fba_live: Number(r.fba_live) || 0,
+        pick_pending: Number(r.pick_pending) || 0,
         barcode: r.barcode || null,
         amz_sku: r.amz_sku || null,
         supplier: r.supplier || null,
