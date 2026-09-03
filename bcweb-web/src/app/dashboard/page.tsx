@@ -19,8 +19,8 @@ Three things were wrong with that grid and each is fixed here:
      the line. The card's one unique job was the browse with no term typed, and the header tab does that in one click from anywhere.
 
   2. TILES ARE BANDED, NOT RANKED. Twelve peers in one grid make the operator re-read the whole thing to find one screen. Four small
-     labelled bands are scannable by heading alone. DAILY is deliberately only the two screens a day is STARTED on — the moment it
-     grew to include everything touched daily it stopped meaning anything. A short band is a part-row of the same four tracks
+     labelled bands are scannable by heading alone. DAILY is only the screens a day is STARTED on — the moment it grew to include
+     everything touched daily it stopped meaning anything. A short band is a part-row of the same four tracks
      everything else uses, not a resized one — see the `Band` note on why the two short bands no longer share a row.
 
   3. PRICING SITS LAST. Shopify/Amazon Pricing are normally entered FROM Segments, not from here (owner) — they led the old grid on
@@ -29,7 +29,10 @@ Three things were wrong with that grid and each is fixed here:
 
   BAND ORDER and the order WITHIN each band are the owner's, set against how the day runs, not against any tidier scheme — so don't
   "fix" them into alphabetical or build order. Daily -> Stock & products -> Reports & marketing -> Pricing; and within Stock &
-  products, Pick -> Order Status -> Amazon Order -> Add / Modify (Update Amazon left that band on 2026-09-03).
+  products, Order Status -> Amazon Order -> Goods In -> Add / Modify (Update Amazon left that band on 2026-09-03, and Pick left it
+  for DAILY).
+
+  Pick joined DAILY and Goods In joined STOCK & PRODUCTS on 2026-09-03 (owner); the reasons are on the two tiles.
 
   Also: Analytics/Brands/Amazon Order were three separate doors onto "read a number". Analytics and Brands are now one Reports tile
   (owner) — see /analytics, which absorbed Brands as a view. Amazon Order came back out to STOCK & PRODUCTS on 2026-09-03 once it
@@ -47,7 +50,7 @@ flat twelve-tile grid it replaced, and a band of two tiles in a three-wide grid 
 Together the whole menu lands in about the height DAILY and STOCK & PRODUCTS used to take on their own.
 
 KEEP EVERY BAND ONE ROW OF TILES. That is the rule the 2026-09-03 tidy-up came down to (owner: the page was "looking a bit odd with
-all the different heights"), and with a four-wide grid it means a band of at most four. All four are currently 2 / 3 / 4 / 2. A fifth
+all the different heights"), and with a four-wide grid it means a band of at most four. All four are currently 3 / 3 / 4 / 2. A fifth
 tile in any band wraps it, and a wrapped band is the thing that looked wrong — so a fifth tile is a prompt to move something out or
 split the band, not something to absorb.
 =======================================================================================================================================
@@ -58,7 +61,7 @@ import ModuleTile from '@/components/ModuleTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
-  UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon,
+  UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -106,7 +109,8 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      {/* DAILY — where a day is STARTED. Two tiles on purpose; see the header note. */}
+      {/* DAILY — where a day is STARTED. Three tiles, and three is the cap this band can take without a fourth pushing it to a
+          second row; see the header note on keeping every band to one row. */}
       <Band title="Daily">
         {/* Segments is the "what needs attention next" heatmap, and the way into both pricing screens. */}
         <ModuleTile
@@ -124,6 +128,20 @@ export default function DashboardPage() {
           description="Fulfil what customers have bought — what's picked, what's short, what's waiting."
           href="/customer-orders"
           icon={UserGroupIcon}
+          live
+          compact
+        />
+
+        {/* Pick — the physical shelf: what has to come off it, for a customer order or for the next FBA shipment. MOVED HERE from
+            STOCK & PRODUCTS (owner, 2026-09-03). The 2026-08-30 call kept it out of DAILY because picking mostly happens on the
+            mobile app and this screen was where you came when a pick needed a second look; in practice it is opened at the start of
+            the day like the other two, alongside the customer orders it picks against, so it now sits with them. Third, after
+            Customer Orders: the pick is what those orders turn into. */}
+        <ModuleTile
+          title="Pick"
+          description="What has to come off a shelf — customer picks, and stock to gather for Amazon."
+          href="/pick"
+          icon={HandRaisedIcon}
           live
           compact
         />
@@ -173,22 +191,6 @@ export default function DashboardPage() {
 
       {/* STOCK & PRODUCTS — the catalogue itself: what we hold, what it says, and what's coming in. */}
       <Band title="Stock & products">
-        {/* Pick — the physical shelf: what has to come off it, for a customer order or for the next FBA shipment. FIRST in the band
-            and NOT in DAILY (owner, 2026-08-30), which is a deliberate pair of calls. Not DAILY, because DAILY is only the two
-            screens a day is STARTED on and picking mostly happens on the mobile app — this is where you come when a pick needs a
-            second look. First here, because of the three screens in this band it's the only one about stock that is moving today;
-            Order Status and Add/Modify are sit-down jobs. Banded with stock rather than beside Customer Orders even though the
-            Shopify half IS customer order lines: the Amazon half is '#FREE' FBA stock with no order behind it, and this is the only
-            band both halves belong to. */}
-        <ModuleTile
-          title="Pick"
-          description="What has to come off a shelf — customer picks, and stock to gather for Amazon."
-          href="/pick"
-          icon={HandRaisedIcon}
-          live
-          compact
-        />
-
         {/* Order Status — PROCUREMENT: place what's been chosen, then chase what's on its way. Banded with stock rather than beside
             Customer Orders (owner, 2026-08-27): they read as a pair but they're opposite jobs — this is a sit-down session about
             replenishing stock, that is a daily fulfilment grid. */}
@@ -212,6 +214,16 @@ export default function DashboardPage() {
           href="/amazon-order"
           icon={ClipboardDocumentListIcon}
           live
+          compact
+        />
+
+        {/* Goods In — booking a supplier delivery onto the shelf: the far end of the Order Status errand, and the only step in the
+            band that ADDS stock. Placed straight after Amazon Order so the band reads as one chain — decide, place, receive — with
+            Add / Modify, the catalogue job, left at the end. Not built yet; the tile is here so the growth path is visible. */}
+        <ModuleTile
+          title="Goods In"
+          description="Book in what's arrived from a supplier and put it on the shelf."
+          icon={InboxArrowDownIcon}
           compact
         />
 
