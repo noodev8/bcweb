@@ -763,7 +763,7 @@ export default function AmazonOrderHome() {
   // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
   // Reset brings it back. Applied last, after search + sort, so cutting never fights with either. Declared HERE, ahead of
   // applyCoverage below, because that reads `visible` — the React Compiler can't preserve a memo that's consumed above its own
-  // declaration (it assumes the value may still be mutated), and the bail-out cascades into basketOnScreenCount and cursorKeys.
+  // declaration (it assumes the value may still be mutated), and the bail-out cascades into basketOnScreenUnits and cursorKeys.
   const [cut, setCut] = useState<Set<string>>(new Set());
   const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
 
@@ -941,10 +941,14 @@ export default function AmazonOrderHome() {
     const visibleCodes = new Set(visible.map((r) => r.code));
     return basketTargets.filter((t) => visibleCodes.has(t.code));
   }, [basketTargets, visible]);
-  const basketOnScreenCount = basketOnScreen.length;
+  // UNITS, not SKUs, is what the button reports (owner, 2026-09-03). A SKU count answers "how many lines am I about to write",
+  // which nobody is asking at the point of pressing the button — the number that matters is how much stock is being bought in or
+  // sent, and two SKUs of 6 each is a very different commitment from two SKUs of 1. The on-screen/total split stays exactly as it
+  // was, just counted in units: it's still there to say whether the basket is all in front of you or mostly filtered away.
+  const basketOnScreenUnits = useMemo(() => basketOnScreen.reduce((sum, t) => sum + t.qty, 0), [basketOnScreen]);
 
   // BASKET COST — total spend of the ON-SCREEN portion of the basket only (owner, 2026-08-20 — "the cost should only be for
-  // what's on the screen"), matching basketOnScreenCount above rather than the whole basket. cost = skusummary.cost (CLAUDE.md:
+  // what's on the screen"), over the same basketOnScreen subset the unit count above uses rather than the whole basket. cost = skusummary.cost (CLAUDE.md:
   // never skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently free.
   const basketCost = useMemo(() => {
     let total = 0;
@@ -1416,10 +1420,10 @@ export default function AmazonOrderHome() {
                       decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
                       the progress count above is the only number that matters. */}
                   {/* The cost line is ORDER only: it's what the basket will cost to BUY IN, and a pick spends nothing — that stock
-                      is already paid for and on the shelf. The SKU count still earns its place in both. */}
+                      is already paid for and on the shelf. The unit count still earns its place in both. */}
                   {!ordering && basketTargets.length > 0 && (
                     <span className="text-xs font-normal text-emerald-100">
-                      {basketOnScreenCount} of {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'} on screen
+                      {basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} on screen
                       {mode === 'order' && (basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
                       {mode === 'order' && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
                     </span>
