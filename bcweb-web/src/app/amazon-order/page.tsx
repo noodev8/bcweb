@@ -30,6 +30,8 @@ ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen i
       modes' rate highlights light up together for the same reason. A re-tap clears both, and so does Clear basket — half a plan
       left behind in the mode you're not looking at is the one outcome worth designing against.
 
+      THE ROW ORDER SURVIVES THE FLIP (owner, 2026-09-03) — same rows, same places, only the column changes. See switchMode.
+
       Birkenstock is excluded in BOTH modes — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
       for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
       supplier requirement: that's who an order line gets placed against, and a pick has nobody to place it with.
@@ -873,13 +875,20 @@ export default function AmazonOrderHome() {
 
   // MODE SWITCH — Order <-> Pick. The baskets themselves are untouched (that's the whole point of a mode: flip over, work the
   // other side, flip back and find the first exactly as it was). What DOES get dropped is everything that describes the basket
-  // you're leaving rather than the rows: the fill-ranked sort ranks quantities the new column doesn't have, and Load basket is a
-  // snapshot of the other basket's membership, so it would open the new mode onto a list filtered by a set of codes that has
-  // nothing to do with it. Confirm states drop too — a half-opened confirm belongs to the mode that raised it.
+  // you're leaving rather than the rows: Load basket is a snapshot of the other basket's membership, so it would open the new mode
+  // onto a list filtered by a set of codes that has nothing to do with it. Confirm states drop too — a half-opened confirm belongs
+  // to the mode that raised it.
+  //
+  // THE ROWS THEMSELVES DO NOT MOVE (owner, 2026-09-03). A flip is a change of column, not of list — an operator working down the
+  // table has to find the same row in the same place on the other side. The only two things that would otherwise shuffle it are
+  // the quantity-driven sorts: a fill-ranked `manualOrder` ranks quantities the new column doesn't have, and sorting BY the Order
+  // column reads the live basket, which is the half we're leaving. Both are frozen by snapshotting the order on screen into
+  // `manualOrder` — the same snapshot gesture the Order header and a coverage fill already use, so editing after the flip doesn't
+  // reorder either. Any other sort is a row-field sort and lands identically in both modes, so it's left alone.
   function switchMode(next: BasketMode) {
     if (next === mode) return;
     setMode(next);
-    setManualOrder(null);
+    if (manualOrder !== null || sortKey === 'order_qty') setManualOrder(sorted.map((r) => r.code));
     setOrdersOnly(false);
     setBasketSnapshot(null);
     setConfirmingOrder(false);
