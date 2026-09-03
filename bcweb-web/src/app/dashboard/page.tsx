@@ -219,11 +219,13 @@ export default function DashboardPage() {
 
         {/* Goods In — booking a supplier delivery onto the shelf: the far end of the Order Status errand, and the only step in the
             band that ADDS stock. Placed straight after Amazon Order so the band reads as one chain — decide, place, receive — with
-            Add / Modify, the catalogue job, left at the end. Not built yet; the tile is here so the growth path is visible. */}
+            Add / Modify, the catalogue job, left at the end. */}
         <ModuleTile
           title="Goods In"
           description="Book in what's arrived from a supplier and put it on the shelf."
+          href="/goods-in"
           icon={InboxArrowDownIcon}
+          live
           compact
         />
 

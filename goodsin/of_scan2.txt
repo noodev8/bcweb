@@ -1,0 +1,119 @@
+String		ls_value, ls_find, ls_ordernum, ls_code, ls_currentorder, ls_batch
+String		ls_groupfind, ls_filename, ls_date, ls_updated, ls_displaydate, ls_workstation, ls_ordernotes, ls_groupid
+String		ls_supplier, ls_courier, ls_sku, ls_fnsku, ls_amzfind, ls_target
+Long		ll_found, ll_pos, ll_detailrow, ll_startscan, ll_scancheckfound, ll_currentorderline, ll_count, ll_groupfound
+Long		ll_row, ll_findstart, ll_pickfound, ll_summaryfound, ll_amzfound, ll_labelrow
+Integer	li_somethingfound, li_round, li_required, li_pickedqty, li_days, li_localpicked, li_done, li_messageshown
+Integer	li_shopcustomer, li_ordertype, li_scanfnsku, li_currentqty, li_qty, li_currentarrived, li_itemallocated
+
+
+st_pick.visible = False
+st_amz.visible = False
+st_local.visible = False
+
+
+ls_value = UPPER(sle_input.text)
+IF ls_value = "" THEN
+	Return 0
+END IF
+sle_input.text = ""
+
+// Check if error
+ls_find = "error = 1"
+ll_found = dw_goodsinscan.find(ls_find,1,dw_goodsinscan.rowcount())
+IF ll_found > 0 THEN
+	Messagebox("Error","Reset error before proceeding")
+	Return 0
+END IF
+
+
+// Determine if FNSKU
+IF Mid(ls_value,1,1) = "X" AND Len(ls_value) = 10 THEN
+	li_scanfnsku = 1
+END IF
+
+/********************
+* CHECK SCAN
+********************/
+ll_found = w_main.wf_scan(ls_value)
+IF ll_found = 0 THEN
+	// Not Found
+	dw_goodsinscan.setredraw(True)
+	dw_goodsinscan.selectrow(0,False)
+	ll_row = dw_goodsinscan.insertrow(0)
+	dw_goodsinscan.setitem(ll_row,"code","Not Found")
+	dw_goodsinscan.setitem(ll_row,"error",1)
+	dw_goodsinscan.scrolltorow(ll_row)	
+	dw_goodsinscan.setredraw(True)
+	st_error.visible = True
+	Return 0
+END IF
+
+ls_code = Upper(gdb_skumap.getitemstring(ll_found,"code"))
+ls_target = ddlb_location.text
+
+// Load to list
+dw_goodsinscan.setredraw(True)
+ll_row = dw_goodsinscan.insertrow(0)
+dw_goodsinscan.setitem(ll_row,"code",ls_code)
+dw_goodsinscan.setitem(ll_row,"dbsaved",0)
+dw_goodsinscan.setitem(ll_row,"target",ls_target)
+dw_goodsinscan.scrolltorow(ll_row)
+dw_goodsinscan.setredraw(True)
+
+//// Check Customer Order Pick
+//IF li_itemallocated = 0 THEN
+//	ls_find = "shopifysku = '"+ls_code+"' AND arrived = 0 AND ordertype =1"
+//	ll_found = gdb_orderstatus.find(ls_find,1,gdb_orderstatus.rowcount())
+//	IF ll_found > 0 THEN
+//		gdb_orderstatus.setitem(ll_found,"arrived",1)
+//		gdb_orderstatus.setitem(ll_found,"arriveddate",today())		
+//		dw_goodsinscan.setitem(ll_row,"ordertype",1)
+//		st_pick.visible = True
+//		li_itemallocated = 1
+//	END IF
+//END IF
+
+// Check Amazon
+IF li_itemallocated = 0 THEN
+	ls_find = "shopifysku = '"+ls_code+"' AND arrived = 0 AND ordertype = 3 AND orderdate <> ''"	
+	ll_found = gdb_orderstatus.find(ls_find,1,gdb_orderstatus.rowcount())
+	IF ll_found > 0 THEN
+		gdb_orderstatus.setitem(ll_found,"arrived",1)
+		gdb_orderstatus.setitem(ll_found,"arriveddate",today())			
+		dw_goodsinscan.setitem(ll_row,"ordertype",3)
+		st_amz.visible = True
+		li_itemallocated = 1
+		
+		// Send to Amazon Label
+		IF ii_amazondirect = 1 THEN
+			w_main.uo_checkin.sle_input.text = ls_code
+			w_main.uo_checkin.of_scan()
+		END IF
+		sle_input.setfocus()		
+		
+	END IF
+END IF
+
+// Check Local
+IF li_itemallocated = 0 THEN
+	ls_find = "shopifysku = '"+ls_code+"' AND arrived = 0 AND ordertype = 2 AND orderdate <> ''"
+	ll_found = gdb_orderstatus.find(ls_find,1,gdb_orderstatus.rowcount())
+	IF ll_found > 0 THEN
+		li_currentarrived = gdb_orderstatus.getitemnumber(ll_found,"arrived")	
+		gdb_orderstatus.setitem(ll_found,"arrived",1)		
+		gdb_orderstatus.setitem(ll_found,"arriveddate",today())
+		dw_goodsinscan.setitem(ll_row,"ordertype",2)
+		st_local.visible = True		
+		li_itemallocated = 1
+	END IF
+END IF
+
+IF li_itemallocated = 0 THEN
+	st_local.visible = True		
+	dw_goodsinscan.setitem(ll_row,"ordertype",0)
+	li_itemallocated = 1
+END IF
+
+Return 0
+

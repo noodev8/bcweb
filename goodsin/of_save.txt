@@ -1,0 +1,125 @@
+String	ls_find, ls_code, ls_groupid, ls_newid
+String	ls_localstockdate, ls_location, ls_brand, ls_supplier, ls_locationfind
+String	ls_allocated, ls_date, ls_target
+String	ls_log, ls_from, ls_to, ls_logtime
+Long	ll_found, ll_locationfound, ll_row, ll_id
+Integer	li_dbsaved, li_error, li_pickorder, li_ordertype, li_scandone
+Integer	li_saverow
+Datastore	lds_incoming_stock
+Date		ldt_logdate
+
+ls_date = String(Today(),"YYYY-MM-DD")
+ls_localstockdate = String(Today(),"YYYYMMDD HH:MM:SS")
+ls_target = ""
+ldt_logdate = Today()
+ls_logtime = String(Today(),"HH:MM")
+ls_newid = "none"
+
+ls_find = "dbsaved = 0"
+ll_found = dw_goodsinscan.find(ls_find,1,dw_goodsinscan.rowcount())
+IF ll_found = 0 THEN
+	Return 0
+ELSE
+	li_saverow = ll_found
+END IF
+
+li_scandone = 0
+ls_code = dw_goodsinscan.getitemstring(li_saverow,"code")
+li_dbsaved = dw_goodsinscan.getitemnumber(li_saverow,"dbsaved")
+li_error = dw_goodsinscan.getitemnumber(li_saverow,"error")
+li_ordertype = dw_goodsinscan.getitemnumber(li_saverow,"ordertype")
+
+IF isNULL(li_dbsaved) THEN li_dbsaved = 0
+IF isNULL(li_error) THEN li_error = 0
+
+IF li_dbsaved = 1 OR li_error = 1 THEN
+	Return 0
+	//Continue
+END IF
+
+// get Details
+ls_find = "code = '"+ls_code+"'"
+ll_found = gdb_skumap.find(ls_find,1,gdb_skumap.rowcount())
+ls_groupid = gdb_skumap.getitemstring(ll_found,"groupid")
+
+ls_find = "groupid = '"+ls_groupid+"'"
+ll_found = gdb_skusummary.find(ls_find,1,gdb_skusummary.rowcount())
+ls_brand = gdb_skusummary.getitemstring(ll_found,"brand")
+ls_supplier = gdb_skusummary.getitemstring(ll_found,"supplier")
+	
+	
+
+
+IF li_ordertype = 1 AND li_scandone = 0 THEN
+	// Customer Order
+	// Don't want to add to local stock. Customer Order. Pick is allocated to the sale and stock count is aligned.
+	// It was shownn as PICK when scanned and will be removed after the order is complete
+	ls_target = "Pick"
+	li_scandone = 1
+END IF
+
+IF li_ordertype = 3 AND li_scandone = 0 THEN
+	// Amazon Order
+	ls_location = "C3-Amazon"
+	ls_allocated = "amz"
+		
+	ll_row = gdb_localstock.insertrow(0)
+	ls_newid = w_main.wf_nextlocalstockid()
+	gdb_localstock.setitem(ll_row,"ordernum","#FREE")								
+	gdb_localstock.setitem(ll_row,"code",ls_code)
+	gdb_localstock.setitem(ll_row,"groupid",ls_groupid)
+	gdb_localstock.setitem(ll_row,"qty",1)
+	gdb_localstock.setitem(ll_row,"supplier",ls_supplier)
+	gdb_localstock.setitem(ll_row,"brand",ls_brand)
+	gdb_localstock.setitem(ll_row,"location",ls_location)
+	gdb_localstock.setitem(ll_row,"updated",ls_localstockdate)
+	gdb_localstock.setitem(ll_row,"deleted",0)
+	gdb_localstock.setitem(ll_row,"id",ls_newid)
+	gdb_localstock.setitem(ll_row,"pickorder",100)
+	gdb_localstock.setitem(ll_row,"allocated",ls_allocated)	
+	ls_target = "C3-Amazon"
+	li_scandone = 1
+END IF
+
+// Put into local stock
+IF li_scandone = 0 THEN
+	//ls_location = "C3-Back-Stage"
+	ls_location = ddlb_location.text
+	ls_allocated = "unallocated"
+		
+	ll_row = gdb_localstock.insertrow(0)
+	ls_newid = w_main.wf_nextlocalstockid()
+	gdb_localstock.setitem(ll_row,"ordernum","#FREE")								
+	gdb_localstock.setitem(ll_row,"code",ls_code)
+	gdb_localstock.setitem(ll_row,"groupid",ls_groupid)
+	gdb_localstock.setitem(ll_row,"qty",1)
+	gdb_localstock.setitem(ll_row,"supplier",ls_supplier)
+	gdb_localstock.setitem(ll_row,"brand",ls_brand)
+	gdb_localstock.setitem(ll_row,"location",ls_location)
+	gdb_localstock.setitem(ll_row,"updated",ls_localstockdate)
+	gdb_localstock.setitem(ll_row,"deleted",0)
+	gdb_localstock.setitem(ll_row,"id",ls_newid)
+	gdb_localstock.setitem(ll_row,"pickorder",100)
+	gdb_localstock.setitem(ll_row,"allocated",ls_allocated)	
+	ls_target = ls_location
+	li_scandone = 1
+END IF
+
+// Save to Database
+dw_goodsinscan.setitem(li_saverow,"dbsaved",1)
+INSERT INTO incoming_stock (code, groupid, arrival_date, quantity_added,created_at,target,workstation)
+	VALUES (:ls_code, :ls_groupid, :ls_date, 1,CURRENT_TIMESTAMP,:ls_target,:gs_workstation)
+	USING SQLCA;
+
+// Set ID
+SELECT currval('incoming_stock_id_seq') INTO :ll_id FROM incoming_stock LIMIT 1 USING SQLCA;
+dw_goodsinscan.setitem(li_saverow, "dbid",ll_id)
+dw_goodsinscan.setitem(li_saverow, "localstockid",ls_newid)
+
+
+// Log
+ls_log = "Goods In " + ls_code + " to " + ls_target
+INSERT INTO bclog (workstation,log,date,time,section,created_at) VALUES (:gs_workstation,:ls_log,:ldt_logdate,:ls_logtime,'Goods In',now()) USING SQLCA;
+
+
+Return 0

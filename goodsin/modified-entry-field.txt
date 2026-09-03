@@ -1,0 +1,62 @@
+String		ls_value, ls_find
+Integer	li_amzpick, li_scanned
+Long		ll_found
+
+Setpointer(Hourglass!)
+
+
+IF UPPER(sle_input.text) = "RESETERROR" THEN
+	// Check navigation
+	st_pick.visible = False
+	st_amz.visible = False
+	st_local.visible = False
+	sle_input.text = ""
+		
+	ls_find = "error = 1"
+	ll_found = dw_goodsinscan.find(ls_find,1,dw_goodsinscan.rowcount())
+	IF ll_found > 0 THEN
+		dw_goodsinscan.deleterow(ll_found)
+	END IF
+	
+	sle_input.text = ""
+	sle_input.setfocus()		
+	st_error.visible = False		
+	li_scanned = 1
+END IF
+
+
+IF li_scanned = 0 THEN
+	IF UPPER(sle_input.text) = "AMAZON" THEN
+		// Check navigation
+		st_pick.visible = False
+		st_amz.visible = False
+		st_local.visible = False
+		sle_input.text = ""
+		
+		setfocus(w_main.uo_checkin.sle_input)
+		w_main.uo_checkin.ii_amzlabel = 0
+		w_main.uo_checkin.of_setmode()
+		gi_go_to_goodsin = 1
+		w_main.uo_checkin.visible = True
+		w_main.uo_goodsin2.visible = False
+	ELSE
+		CONNECT USING SQLCA;
+		gdb_orderstatus.settransobject(SQLCA)
+		gdb_localstock.settransobject(SQLCA)
+		// Retrieve latest
+		gdb_localstock.retrieve()
+		gdb_orderstatus.retrieve()
+		
+		
+		of_scan2()
+		of_save()
+		
+		// Update
+		gdb_localstock.update()
+		gdb_orderstatus.update()
+		
+		DISCONNECT USING SQLCA;
+	END IF
+END IF
+
+Setpointer(Arrow!)

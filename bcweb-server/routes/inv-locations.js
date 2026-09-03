@@ -7,10 +7,16 @@ Purpose: The list of real shelf locations, for the phase-2 "add to a location" p
          a size on a shelf it isn't on yet, they pick from the racks that actually exist rather than typing a free-form string — a typo
          would create a phantom location nothing else references. ~50 distinct values, so we ship the lot once and the client filters.
 
-         Derived from live localstock (the racks currently holding stock), not a fixed config table — there is none. Grouped by AREA
-         (C1 / C3-Front / C3-Back / C3-Shop / …) so the picker can offer them by zone, mirroring how the legacy screen's C1/C3 buttons
-         carve the warehouse up. The area is just the location string's prefix; 'OTHER' catches anything that doesn't match (e.g. the
-         stray 'Ordered' row) so nothing is silently dropped.
+         Derived from live localstock — the racks currently HOLDING stock. Grouped by AREA (C1 / C3-Front / C3-Back / C3-Shop / …) so
+         the picker can offer them by zone, mirroring how the legacy screen's C1/C3 buttons carve the warehouse up. The area is just
+         the location string's prefix; 'OTHER' catches anything that doesn't match (e.g. the stray 'Ordered' row, which is a marker
+         meaning "on order", not a place) so nothing is silently dropped.
+
+         KNOWN GAP, and this header used to state the opposite: there IS a config table, `location` — ~71 racks with their own
+         barcodes and pickorder. Deriving from localstock instead means an EMPTY rack cannot be offered, because nothing is on it to
+         reveal it: C1 has 22 racks and on the day this note was written 5 held stock. For "add to a location" that is a real if quiet
+         limitation. GET /goods-in-shelves reads the authoritative table and is the shape to copy when this one is fixed; the grouping
+         helpers both use now live in utils/locations.js, so the fix is a change of source, not a rewrite.
 
          Excludes soft-deleted rows and blank/NULL locations. Read-only; requires auth.
 =======================================================================================================================================
@@ -38,24 +44,10 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { areaOf, AREA_ORDER } = require('../utils/locations');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
-
-// Bucket a location string into a warehouse zone by its prefix. Kept in one place so the picker's grouping can't drift from the areas
-// the operator knows. Case-insensitive because nothing constrains the column (a stray 'C3-SHOP' exists alongside 'C3-Shop').
-function areaOf(location) {
-  const l = location.toLowerCase();
-  if (l.startsWith('c1-')) return 'C1';
-  if (l.startsWith('c3-front-')) return 'C3-Front';
-  if (l.startsWith('c3-back-')) return 'C3-Back';
-  if (l.startsWith('c3-amazon')) return 'C3-Amazon';
-  if (l.startsWith('c3-shop')) return 'C3-Shop';
-  return 'OTHER';
-}
-
-// The order areas appear in the picker — the busy shelving first, the Amazon bay and stray bucket last.
-const AREA_ORDER = ['C3-Front', 'C3-Back', 'C1', 'C3-Shop', 'C3-Amazon', 'OTHER'];
 
 router.get('/', async (req, res) => {
   try {

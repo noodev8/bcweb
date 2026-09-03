@@ -1,0 +1,48 @@
+Long	ll_row, ll_id
+String	ls_code, ls_date, ls_target, ls_log, ls_logtime, ls_localstockid
+Date	ldt_logdate
+
+//ls_date = String(Today(),"YYYY-MM-DD")
+ldt_logdate = Today()
+ls_logtime = String(Today(),"HH:MM")
+
+
+sle_input.setfocus()
+ll_row = dw_goodsinscan.getselectedrow(0)
+IF ll_row = 0 THEN
+	Messagebox("Cancel","Select row")
+	Return
+END IF
+
+dw_goodsinscan.setredraw(False)
+setpointer(Hourglass!)
+
+ls_code = dw_goodsinscan.getitemstring(ll_row,"code")
+ll_id = dw_goodsinscan.getitemnumber(ll_row,"dbid")
+ls_target = dw_goodsinscan.getitemstring(ll_row,"target")
+ls_localstockid = dw_goodsinscan.getitemstring(ll_row,"localstockid")
+
+CONNECT USING SQLCA;
+
+DELETE FROM incoming_stock
+WHERE 
+    code = :ls_code
+	AND id = :ll_id
+	USING SQLCA;
+
+DELETE FROM localstock
+WHERE id = :ls_localstockid
+	USING SQLCA;
+
+// Log
+ls_log = "Goods In Cancel " + ls_code + " to " + ls_target
+INSERT INTO bclog (workstation,log,date,time,section,created_at) VALUES (:gs_workstation,:ls_log,:ldt_logdate,:ls_logtime,'Goods In',now()) USING SQLCA;
+
+
+DISCONNECT USING SQLCA;
+
+dw_goodsinscan.deleterow(ll_row)
+dw_goodsinscan.setredraw(True)
+setpointer(Arrow!)
+
+

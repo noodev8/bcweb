@@ -2111,4 +2111,57 @@ export function pickAction(mode: PickMode, action: PickAction, ids: string[]) {
   );
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------
+// GOODS IN — the receiving end of the ON ORDER stage. Both calls are READ ONLY; the write that books a unit in does not exist yet
+// (see src/lib/goodsInWrite.ts for the contract and what the screen does in the meantime).
+// -------------------------------------------------------------------------------------------------------------------------------
+
+// Every rack a delivery can be put on, from the authoritative `location` table — EMPTY racks included, which is the whole reason this
+// is not getInvLocations(). That one derives from localstock and so can only ever offer a rack something is already sitting on.
+// Ordered by the racks' own pickorder (the walking sequence), zones in the same order. `barcode` is the rack's own scannable label.
+export interface GoodsInShelf { location: string; barcode: string | null; pickorder: number | null }
+export interface GoodsInShelvesData { areas: { area: string; locations: GoodsInShelf[] }[]; all: string[] }
+
+export function getGoodsInShelves() {
+  return request<GoodsInShelvesData>(
+    { url: '/goods-in-shelves', method: 'GET' },
+    (b) => ({ areas: (b.areas as GoodsInShelvesData['areas']) || [], all: (b.all as string[]) || [] })
+  );
+}
+
+// One line of the delivery note: a SKU that is on order and not yet booked in. `units` is how many are still expected, `ordertype`
+// decides where they go — 3 (Amazon) stages on C3-Amazon, 2 (local) goes to the shelf the operator picked.
+export interface GoodsInExpectedRow {
+  code: string;
+  groupid: string | null;
+  title: string | null;
+  size: string;
+  barcode: string;          // skumap.ean with the trailing 'B' stripped; '' when the SKU has no barcode on file
+  supplier: string | null;
+  ordertype: 2 | 3;
+  units: number;
+  days: number | null;      // days since the order was placed with the supplier
+}
+export interface GoodsInExpectedData { total_units: number; rows: GoodsInExpectedRow[] }
+
+export function getGoodsInExpected() {
+  return request<GoodsInExpectedData>(
+    { url: '/goods-in-expected', method: 'GET' },
+    (b) => ({ total_units: Number(b.total_units) || 0, rows: (b.rows as GoodsInExpectedRow[]) || [] })
+  );
+}
+
+// One scan resolved against the catalogue. NOT_FOUND is a normal outcome, not a failure — it means the label is unreadable or the
+// SKU was never set up, and the screen stops the line on it. `deleted` is a SKU out of the catalogue that has physically turned up.
+export interface GoodsInSku {
+  code: string; groupid: string | null; title: string | null; size: string;
+  barcode: string; supplier: string | null; deleted: boolean;
+}
+export function goodsInLookup(scan: string) {
+  return request<GoodsInSku>(
+    { url: '/goods-in-lookup', method: 'GET', params: { scan } },
+    (b) => b.sku as GoodsInSku
+  );
+}
+
 export default api;
