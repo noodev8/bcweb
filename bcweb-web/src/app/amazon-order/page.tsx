@@ -985,23 +985,21 @@ export default function AmazonOrderHome() {
     deselectAll();
   }
 
-  // ON SCREEN / TOTAL — how much of the whole basket is visible right now, e.g. "10/41" when only 10 of the basket's 41 SKUs are
-  // on screen (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all here or mostly filtered/cut away
-  // elsewhere). basketTargets itself deliberately reaches off-screen (a value typed before a filter/cut shouldn't silently drop
-  // out of the real submission) — this is the on-screen SUBSET of it, display-only.
+  // ON SCREEN / TOTAL — the visible subset of the basket half being looked at, so the send button can show "18 of 24" when 6 of
+  // the basket's 24 units are filtered or cut away (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all
+  // here or mostly hidden elsewhere). basketTargets itself deliberately reaches off-screen — a value typed before a filter/cut
+  // shouldn't silently drop out of the real submission — so this is display-only and must never gate what gets sent.
   const basketOnScreen = useMemo(() => {
     const visibleCodes = new Set(visible.map((r) => r.code));
     return basketTargets.filter((t) => visibleCodes.has(t.code));
   }, [basketTargets, visible]);
-  // UNITS, not SKUs, is what the button reports (owner, 2026-09-03). A SKU count answers "how many lines am I about to write",
-  // which nobody is asking at the point of pressing the button — the number that matters is how much stock is being bought in or
-  // sent, and two SKUs of 6 each is a very different commitment from two SKUs of 1. The on-screen/total split stays exactly as it
-  // was, just counted in units: it's still there to say whether the basket is all in front of you or mostly filtered away.
+  // UNITS, not SKUs (owner, 2026-09-03). A SKU count answers "how many lines am I about to write", which nobody is asking at the
+  // point of pressing the button — two SKUs of 6 each is a very different commitment from two SKUs of 1.
   const basketOnScreenUnits = useMemo(() => basketOnScreen.reduce((sum, t) => sum + t.qty, 0), [basketOnScreen]);
 
   // BASKET COST — total spend of the ON-SCREEN portion of the basket only (owner, 2026-08-20 — "the cost should only be for
-  // what's on the screen"), over the same basketOnScreen subset the unit count above uses rather than the whole basket. cost = skusummary.cost (CLAUDE.md:
-  // never skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently free.
+  // what's on the screen") rather than the whole basket — so it is deliberately NOT the cost of everything the button will send.
+  // cost = skusummary.cost (CLAUDE.md: never skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently free.
   const basketCost = useMemo(() => {
     let total = 0;
     let unpriced = 0;
@@ -1477,21 +1475,24 @@ export default function AmazonOrderHome() {
                       ? `Sending ${orderProgress.done}/${orderProgress.total}…`
                       : 'Confirm Basket'}
                   </span>
-                  {/* Second line — what's in the basket, spelled out rather than left as a bare "10/41" fraction the reader has to
-                      decode. Suppressed while the button is disabled (nothing in the basket) and while a send is in flight, where
-                      the progress count above is the only number that matters. */}
-                  {/* The cost line is ORDER only: it's what the basket will cost to BUY IN, and a pick spends nothing — that stock
-                      is already paid for and on the shelf. The unit count still earns its place in both. */}
-                  {/* THE OTHER HALF IS NAMED HERE (owner, 2026-09-03), because the button now sends it too. The on-screen fraction
-                      still describes the half you're LOOKING at — that's what it's for, saying whether this list is all of it — and
-                      the other basket is appended as a flat unit count, since "on screen" means nothing for rows in a column that
-                      isn't rendered. Without it the button would quietly write a basket the label never mentioned. */}
+                  {/* Second line: "18 of 24 units · £412.50 · +9 to pick". Suppressed while the button is disabled (nothing in
+                      either basket) and while a send is in flight, where the progress count above is the only number that matters.
+
+                      THE FRACTION STAYS, THE WORDS "ON SCREEN" DON'T (owner, 2026-09-03 — "still do 18 out of 20"). The gap between
+                      the two numbers is the whole point of it: it says whether the basket is all here in front of you or mostly
+                      filtered/cut away elsewhere, which matters precisely because the send ignores the filter and writes all 24. The
+                      two words were spelling out what the shape "18 of 24" already says, on the widest control in the row.
+                      The cost is ORDER-only — it's what the basket will cost to BUY IN, and a pick spends nothing, that stock is
+                      already paid for and on the shelf — and it covers on-screen rows only, which the tooltip spells out.
+                      The other basket is a flat unit count with no fraction of its own: "on screen" means nothing for rows in a
+                      column that isn't currently rendered. It's here because the button sends that half too, and a button that
+                      writes a basket its label never mentioned is the one thing this control must not be. */}
                   {!ordering && sendTargets.length > 0 && (
                     <span className="text-xs font-normal text-emerald-100">
                       {basketTotalUnits > 0
-                        ? <>{basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} on screen</>
+                        ? <>{basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'}</>
                         : <>nothing in {mode === 'pick' ? 'Pick' : 'Order'}</>}
-                      {mode === 'order' && (basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
+                      {mode === 'order' && basketCost.total > 0 && ` · ${money(basketCost.total)}`}
                       {mode === 'order' && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
                       {(mode === 'pick' ? orderUnits : pickUnits) > 0
                         && ` · +${mode === 'pick' ? orderUnits : pickUnits} to ${mode === 'pick' ? 'order' : 'pick'}`}
