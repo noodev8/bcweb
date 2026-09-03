@@ -93,7 +93,8 @@ SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad in
       amber under the panel. There is no cost line in Pick mode: that stock is already paid for and on the shelf.
 
 LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
-      positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential: it stands alone
+      positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential AND restoring every
+      cut row as it goes (owner, 2026-09-03: "just show what's in my basket") — it stands alone
       rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
       SNAPSHOT, not a live filter (owner, 2026-08-27): membership is fixed when the preset is switched on and only a bulk basket
       action (rate fill/clear, Clear basket, Reset, re-toggle) moves it — editing quantities never reshuffles the list under the
@@ -420,11 +421,20 @@ export default function AmazonOrderHome() {
   function basketCodes() {
     return new Set(Object.entries(qty).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code));
   }
+  // TURNING IT ON RESTORES EVERY CUT ROW (owner, 2026-09-03 — "just show what's in my basket"). Load basket already overrides the
+  // search steps and the other presets (see `filtered`), which left cuts as the one thing that could still hide a row the basket
+  // holds a quantity for — and a cut is exactly what an operator racks up while working a long list DOWN to the rows they then
+  // filled. Coming back to check the basket and finding part of it missing, with no hint that a cut made half an hour ago is the
+  // reason, is the one way this preset can lie about what's about to be sent. Cuts are a view state and Reset already throws them
+  // away wholesale, so there is nothing here worth preserving over an honest list.
+  // Only ON does this: turning the preset back OFF has nothing to restore, and re-cutting rows while the basket view is up is a
+  // normal thing to do (it's how you work down what you've filled), so those cuts survive until the next Load basket or Reset.
   function toggleOrdersOnly() {
     const next = !ordersOnly;
     setOrdersOnly(next);
     setBasketSnapshot(next ? basketCodes() : null);
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false);
+    if (next) setCut(new Set());
     deselectAll();
   }
 
@@ -1367,7 +1377,7 @@ export default function AmazonOrderHome() {
             <button
               type="button"
               onClick={toggleOrdersOnly}
-              title="Load every SKU with a number currently in Basket"
+              title="Show every SKU with a number currently in Basket — ignores the search steps and the other presets, and brings back any cut rows"
               className={
                 'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ' +
                 (ordersOnly
