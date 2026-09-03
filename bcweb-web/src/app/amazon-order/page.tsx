@@ -30,13 +30,17 @@ ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen i
       modes' rate highlights light up together for the same reason. A re-tap clears both, and so does Clear basket — half a plan
       left behind in the mode you're not looking at is the one outcome worth designing against.
 
+      AND NOT WHICH HALF IS SENT, since 2026-09-03 (owner: "confirm the picks at the same time"). Confirm Basket writes BOTH
+      baskets in one press — see SEND, below. The mode is now purely what you look at and edit; it decides nothing about the write.
+
       THE ROW ORDER SURVIVES THE FLIP (owner, 2026-09-03) — same rows, same places, only the column changes. See switchMode.
 
       Birkenstock is excluded in BOTH modes — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
       for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
       supplier requirement: that's who an order line gets placed against, and a pick has nobody to place it with.
 
-      PICK WRITES AS OF 2026-09-02 (owner). Confirm Basket in Pick mode loops POST /amz-pick-allocate per SKU — the same
+      PICK WRITES AS OF 2026-09-02 (owner), and rides along with the Order half on one press as of 2026-09-03. Confirm Basket
+      loops POST /amz-pick-allocate per SKU for everything in Pick — the same
       one-call-per-SKU shape the Order side uses — and it flags that many free shelf rows allocated='amz'. That flag IS the pick:
       /pick's Amazon tab lists exactly `allocated='amz' AND location <> 'C3-Amazon'`, so the units appear there to be gathered onto
       the C3-Amazon shelf, and pressing To Amazon there is what drops them off it. Nothing physically moves from this screen.
@@ -74,21 +78,28 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
       the lit rate over the rows on screen (onPickKeep) rather than waiting for the next rate click. It's ONE setting for the whole screen, not per-view, and it
       survives Reset — it's a standing stock policy, not a view filter.
 
-SEND TO ORDER STATUS: the "Confirm Basket" button turns the Basket scratchpad into real rows — loops POST /order-status-add per SKU (the
-      same endpoint Order Status's own "add a line" uses), one un-placed orderstatus row per unit, ordertype 3/Amazon. Targets EVERY
-      row with a positive Order value, not just what's currently visible, so a value typed before a filter/cut isn't silently dropped.
-      Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — its Order
-      box is disabled rather than silently zeroed, so it's clear why nothing happens. A loss-making SKU (isLoss — last Amazon sale
-      made £0 or less) is NOT blocked from a manual Order entry, only from the Rate Order auto-fill (applyCoverage, owner 2026-08-11).
-      Inline confirm states the total before writing
+SEND: the "Confirm Basket" button turns BOTH scratchpads into real rows in one press (owner, 2026-09-03) — the Order half loops
+      POST /order-status-add and the Pick half loops POST /amz-pick-allocate, order first, in a single run with one progress count.
+      One rate click has filled both baskets since 2026-08-28, so the two halves are one plan; confirming, flipping mode and
+      confirming again split one decision into two presses with the screen's own worst case sitting between them — the half left
+      behind in the mode you're not looking at. Failures are labelled with their half ("AB123 (pick)") when both are in flight,
+      since the same SKU can legitimately sit in both baskets. Each SKU is still its own call, so one failure takes down neither the
+      rest of its half nor the other half's line for the same SKU.
+
+      The Order half hits the same endpoint Order Status's own "add a line" uses, one un-placed orderstatus row per unit, ordertype
+      3/Amazon. Both halves target EVERY row with a positive value, not just what's currently visible, so a value typed before a
+      filter/cut isn't silently dropped. Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk,
+      ~6 months ahead (CLAUDE.md) — its Order box is disabled rather than silently zeroed, so it's clear why nothing happens. A
+      loss-making SKU (isLoss — last Amazon sale made £0 or less) is NOT blocked from a manual Order entry, only from the Rate Order
+      auto-fill (applyCoverage, owner 2026-08-11). Inline confirm names every destination and its unit count before writing
       anything (this is a real DB write, not more scratchpad editing); a succeeding row clears its own box and bumps a session-only
       `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
 
       Pick (send local stock to Amazon) was pulled from this screen in 2026-08 and came back 2026-08-28 as a MODE rather than a
       second column — see ORDER / PICK MODE above. Since 2026-09-02 it has its own write, /amz-pick-allocate, on the same button:
-      the confirm names the destination ("to Amazon, off the local shelf?" vs "to Order Status?") and the loop is per-SKU either
-      way. A pick that the shelf can't fully supply comes back SHORT rather than failing — the mobile app and orderSync phase E are
+      the confirm names every destination it's about to write ("… to Order Status and … to Amazon, off the local shelf?") and the
+      loop is per-SKU either way. A pick that the shelf can't fully supply comes back SHORT rather than failing — the mobile app and orderSync phase E are
       taking the same free rows, so the stock figure on screen is always a little old — and the shortfall is reported per SKU in
       amber under the panel. There is no cost line in Pick mode: that stock is already paid for and on the shelf.
 
@@ -231,6 +242,10 @@ const BASKET_MODES: { key: BasketMode; label: string; title: string }[] = [
   { key: 'order', label: 'Order', title: 'Plan what to BUY IN from the supplier — a rate fill works out the shortfall Amazon needs that local stock cannot cover' },
   { key: 'pick', label: 'Pick', title: 'Plan what to SEND from the local shelf to Amazon — a rate fill takes as much of the shortfall as local stock can cover, above the Pick keep rate' },
 ];
+
+// One sendable line: a quantity against a SKU, tagged with the basket it came from so a single send loop can carry both halves and
+// still know which write each row belongs to (see submitBasket).
+interface BasketTarget { mode: BasketMode; code: string; qty: number; supplier: string }
 
 // The two scratchpads are saved SEPARATELY in the one draft. `qty` keeps its original key so a draft written before Pick mode
 // existed still loads into the Order side rather than being silently dropped.
@@ -666,33 +681,52 @@ export default function AmazonOrderHome() {
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
   }, [qtyByMode]);
 
-  // SEND — turns the scratchpad into real rows. Which rows depends on the mode, and they are the only two DB writes on this screen:
+  // SEND — turns the scratchpad into real rows. BOTH SCRATCHPADS, in one press (owner, 2026-09-03: "confirm the picks at the same
+  // time"). One rate click has filled both baskets since 2026-08-28 — the shortfall is worked out once and split, pick 2 + order 3
+  // for a shortfall of 5 — so the two halves are one plan, and making the operator confirm, flip mode, and confirm again split a
+  // single decision into two presses with a real failure mode between them: the half left behind in the mode you're not looking at
+  // is exactly what this screen's design notes already called the outcome worth designing against. The MODE still decides what you
+  // LOOK at and edit; it no longer decides what gets sent.
+  // These are the only two DB writes on this screen:
   //   order   /order-status-add    one un-placed orderstatus row per unit, ordertype 3 (Amazon) — the same route Order Status's own
   //                                "add a line" uses.
   //   pick    /amz-pick-allocate   flags that many free shelf rows allocated='amz', which is what puts them on /pick's Amazon tab to
   //                                be gathered onto the C3-Amazon shelf.
   // Both loop one SKU per call (owner, 2026-09-02 — "do it the same as the order ... just so we know what works and not"), so a SKU
-  // that fails leaves its own box filled while the rest go through. Targets EVERY row with a positive value,
+  // that fails leaves its own box filled while the rest go through — and with both halves in one run that stays true per half, so a
+  // failed order line never takes its own row's pick down with it. Targets EVERY row with a positive value,
   // not just what's currently visible — a value typed before a filter/cut shouldn't silently vanish from the submission just because
   // it scrolled out of view. Birkenstock is excluded by construction (isBirkenstock) even if a value somehow ended up in its box.
   // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
   // auto-fill (applyCoverage, below) skips loss-makers on its own (owner, 2026-08-11).
   const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
-  const basketTargets = useMemo(() => {
-    const out: { code: string; qty: number; supplier: string }[] = [];
-    for (const [code, raw] of Object.entries(qty)) {
+  // One basket's worth of sendable rows. Kept as a function of the mode so the same rules produce both halves — the only rule that
+  // differs between them is the supplier requirement, which is order-only.
+  const targetsFor = useCallback((m: BasketMode) => {
+    const out: BasketTarget[] = [];
+    for (const [code, raw] of Object.entries(qtyByMode[m])) {
       const n = Math.floor(Number(raw));
       const row = rowByCode.get(code);
       if (!row || !Number.isFinite(n) || n <= 0) continue;
       // Birkenstock is out in both modes — it never goes to Amazon (owner, 2026-08-28). A supplier is an ORDER-only requirement:
       // that's who the line gets placed against, and a pick has nobody to place it with.
       if (isBirkenstock(row)) continue;
-      if (mode === 'order' && !row.supplier) continue;
-      out.push({ code, qty: n, supplier: row.supplier ?? '' });
+      if (m === 'order' && !row.supplier) continue;
+      out.push({ mode: m, code, qty: n, supplier: row.supplier ?? '' });
     }
     return out;
-  }, [qty, rowByCode, mode]);
+  }, [qtyByMode, rowByCode]);
+  // The half on screen — what the cost line and the on-screen count are about, since those describe the list you're looking at.
+  const basketTargets = useMemo(() => targetsFor(mode), [targetsFor, mode]);
   const basketTotalUnits = useMemo(() => basketTargets.reduce((sum, t) => sum + t.qty, 0), [basketTargets]);
+  // BOTH halves, in send order: everything to buy in, then everything to pick. This is what the button actually writes — see
+  // submitBasket. Order first so the slower, purely-additive write goes before the one that commits physical stock; if a run is
+  // interrupted, un-placed order lines are editable in Order Status while an allocation has to be undone on /pick.
+  const orderTargets = useMemo(() => targetsFor('order'), [targetsFor]);
+  const pickTargets = useMemo(() => targetsFor('pick'), [targetsFor]);
+  const sendTargets = useMemo(() => [...orderTargets, ...pickTargets], [orderTargets, pickTargets]);
+  const orderUnits = useMemo(() => orderTargets.reduce((sum, t) => sum + t.qty, 0), [orderTargets]);
+  const pickUnits = useMemo(() => pickTargets.reduce((sum, t) => sum + t.qty, 0), [pickTargets]);
 
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [ordering, setOrdering] = useState(false);
@@ -709,24 +743,30 @@ export default function AmazonOrderHome() {
 
   async function submitBasket() {
     setConfirmingOrder(false);
-    if (basketTargets.length === 0) return;
+    if (sendTargets.length === 0) return;
     setOrdering(true); setOrderError(null); setSendNote(null);
-    setOrderProgress({ done: 0, total: basketTargets.length });
+    setOrderProgress({ done: 0, total: sendTargets.length });
     let queued = 0;
+    // Failures are labelled by half when both are in flight — "AB123 (pick)" — since the same SKU can legitimately sit in both
+    // baskets and a bare code wouldn't say which of the two writes went wrong.
+    const bothHalves = orderTargets.length > 0 && pickTargets.length > 0;
     const failed: string[] = [];
     // PICK ONLY: SKUs the shelf couldn't fully supply. NOT a failure — the mobile app and orderSync phase E take the same free rows,
     // so the stock figure this screen filled from is always a little old. Reported as a note so the operator can see which SKUs went
     // out light rather than assuming the whole basket landed.
     const shortfalls: string[] = [];
-    for (let i = 0; i < basketTargets.length; i++) {
-      const { code, qty, supplier } = basketTargets[i];
+    for (let i = 0; i < sendTargets.length; i++) {
+      // `half` is the TARGET's own basket. The screen's `mode` state is not consulted anywhere in this loop any more, which is the
+      // whole point of the change: what you're looking at no longer decides what gets written.
+      const { mode: half, code, qty, supplier } = sendTargets[i];
+      const label = bothHalves ? `${code} (${half})` : code;
 
       // The two writes return different shapes, so each branch reduces to the same three answers: did it land, how many units to
       // show as just-committed, and (pick only) how many the shelf couldn't supply.
       let landed = false;
       let committed = qty;
       let unauthorized = false;
-      if (mode === 'pick') {
+      if (half === 'pick') {
         const res = await allocateAmazonPick(code, qty);
         if (res.success && res.data) {
           landed = true;
@@ -745,16 +785,18 @@ export default function AmazonOrderHome() {
 
       if (landed) {
         queued++;
-        setQty((prev) => {
-          const next = { ...prev };
+        // Clears the box in the half it was SENT from, not the half on screen — setQty is bound to the current mode and would
+        // empty the wrong basket for one half of this loop.
+        setQtyByMode((prev) => {
+          const next = { ...prev[half] };
           delete next[code];
-          return next;
+          return { ...prev, [half]: next };
         });
         if (committed > 0) setOrderedBump((prev) => ({ ...prev, [code]: (prev[code] || 0) + committed }));
       } else {
-        failed.push(code);
+        failed.push(label);
       }
-      setOrderProgress({ done: i + 1, total: basketTargets.length });
+      setOrderProgress({ done: i + 1, total: sendTargets.length });
     }
     setOrderProgress(null); setOrdering(false);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
@@ -1389,9 +1431,10 @@ export default function AmazonOrderHome() {
               Load basket
             </button>
 
-            {/* SEND TO ORDER STATUS — turns every positive Basket box into real orderstatus TO PLACE rows via /order-status-add, one
-                unit per row, ordertype 3 (Amazon). Inline confirm (not window.confirm — see CustomerOrderList.tsx) states the total
-                before it writes anything, since this is a real DB write rather than more scratchpad editing.
+            {/* SEND — turns every positive box in BOTH baskets into real rows: Order via /order-status-add (one un-placed
+                orderstatus row per unit, ordertype 3/Amazon), then Pick via /amz-pick-allocate. Inline confirm (not window.confirm
+                — see CustomerOrderList.tsx) names every destination and its unit count before it writes anything, since this is a
+                real DB write rather than more scratchpad editing.
 
                 The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
                 one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
@@ -1405,17 +1448,25 @@ export default function AmazonOrderHome() {
                 confirm, same per-SKU loop; only the destination and the wording change. Worth knowing at the point of pressing it:
                 a pick is a REAL COMMITMENT OF PHYSICAL STOCK, not more scratchpad — orderSync phase E only allocates 'unallocated'
                 rows, so a unit flagged for Amazon is a unit a Shopify customer order can no longer be picked from. That is what the
-                Pick keep rate is protecting, and why the confirm states units rather than just SKUs. */}
+                Pick keep rate is protecting, and why the confirm states units rather than just SKUs — and why, now that one press
+                sends both halves (owner, 2026-09-03), the confirm and the button's own second line both name the half you can't
+                currently see. A button that writes a basket its label never mentioned is the one thing this control must not do. */}
             {!confirmingOrder ? (
               <button
                 type="button"
                 onClick={() => { setConfirmingClear(false); setConfirmingOrder(true); }}
-                disabled={ordering || basketTargets.length === 0}
+                disabled={ordering || sendTargets.length === 0}
                 title={
-                  mode === 'pick'
-                    ? `Commit every SKU with a number in Pick to Amazon — every row with a value, not just the ones on screen. The units are flagged on the shelf and appear on the Pick screen's Amazon tab to be gathered; nothing physically moves until someone does. Stock committed here can no longer be picked for a Shopify customer order.`
-                    : `Send every SKU with a number in Order to the Order Status TO PLACE queue — every row with a value, not just the ones on screen. The cost shown is for on-screen rows only.` +
-                      (basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} on screen with no known cost, not in the total)` : '')
+                  // Names BOTH halves, always — the button sends both regardless of the mode on screen, and the one thing the
+                  // operator must not be able to press this without knowing is that the Pick half commits physical stock.
+                  [
+                    orderUnits > 0 ? `${orderUnits} unit${orderUnits === 1 ? '' : 's'} from Order go to the Order Status TO PLACE queue (still editable there).` : '',
+                    pickUnits > 0 ? `${pickUnits} unit${pickUnits === 1 ? '' : 's'} from Pick are flagged on the local shelf and appear on the Pick screen's Amazon tab to be gathered — nothing physically moves until someone does, but that stock can no longer be picked for a Shopify customer order.` : '',
+                    `Every row with a value, not just the ones on screen.`,
+                    basketCost.total > 0 || basketCost.unpriced > 0
+                      ? `Cost shown is the on-screen Order rows only${basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} with no known cost, not in the total)` : ''}.`
+                      : '',
+                  ].filter(Boolean).join(' ')
                 }
                 className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
               >
@@ -1431,22 +1482,36 @@ export default function AmazonOrderHome() {
                       the progress count above is the only number that matters. */}
                   {/* The cost line is ORDER only: it's what the basket will cost to BUY IN, and a pick spends nothing — that stock
                       is already paid for and on the shelf. The unit count still earns its place in both. */}
-                  {!ordering && basketTargets.length > 0 && (
+                  {/* THE OTHER HALF IS NAMED HERE (owner, 2026-09-03), because the button now sends it too. The on-screen fraction
+                      still describes the half you're LOOKING at — that's what it's for, saying whether this list is all of it — and
+                      the other basket is appended as a flat unit count, since "on screen" means nothing for rows in a column that
+                      isn't rendered. Without it the button would quietly write a basket the label never mentioned. */}
+                  {!ordering && sendTargets.length > 0 && (
                     <span className="text-xs font-normal text-emerald-100">
-                      {basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} on screen
+                      {basketTotalUnits > 0
+                        ? <>{basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} on screen</>
+                        : <>nothing in {mode === 'pick' ? 'Pick' : 'Order'}</>}
                       {mode === 'order' && (basketCost.total > 0 || basketCost.unpriced > 0) && ` · ${money(basketCost.total)}`}
                       {mode === 'order' && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                      {(mode === 'pick' ? orderUnits : pickUnits) > 0
+                        && ` · +${mode === 'pick' ? orderUnits : pickUnits} to ${mode === 'pick' ? 'order' : 'pick'}`}
                     </span>
                   )}
                 </span>
               </button>
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-                {/* The destination is named, because it's the one thing that differs between the two writes and it's what makes the
-                    sentence checkable: Order Status is a queue you can still edit, a pick commits stock off the Shopify shelf. */}
+                {/* Every destination that's actually going to be written is named, because that's the one thing that differs
+                    between the two writes and it's what makes the sentence checkable: Order Status is a queue you can still edit,
+                    a pick commits stock off the Shopify shelf. Since the send covers BOTH baskets (owner, 2026-09-03), a plan with
+                    both halves filled reads as one sentence with two clauses rather than the mode's half alone — the whole reason
+                    to name a destination is lost if the sentence omits the half you can't currently see. */}
                 <span className="text-slate-700">
-                  Confirm {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'} across {basketTargets.length} SKU{basketTargets.length === 1 ? '' : 's'}
-                  {mode === 'pick' ? ' to Amazon, off the local shelf?' : ' to Order Status?'}
+                  Confirm
+                  {orderUnits > 0 && ` ${orderUnits} unit${orderUnits === 1 ? '' : 's'} to Order Status`}
+                  {orderUnits > 0 && pickUnits > 0 && ' and'}
+                  {pickUnits > 0 && ` ${pickUnits} unit${pickUnits === 1 ? '' : 's'} to Amazon, off the local shelf`}
+                  ?
                 </span>
                 <button type="button" onClick={submitBasket} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">Send</button>
                 <button type="button" onClick={() => setConfirmingOrder(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
@@ -1459,7 +1524,7 @@ export default function AmazonOrderHome() {
               <button
                 type="button"
                 onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
-                disabled={ordering || basketTargets.length === 0}
+                disabled={ordering || sendTargets.length === 0}
                 aria-label="Clear basket"
                 title="Empty BOTH baskets — Order and Pick, every row with a value, not just the ones on screen — and discard the saved draft"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
