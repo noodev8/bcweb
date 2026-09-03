@@ -31,26 +31,25 @@ shelf, scan it, and fill it — where reaching back to a dropdown means putting 
 needed a row selected with a mouse, and the per-row control stays for fixing something further back. The input autofocuses and
 re-focuses after every action, so none of this costs a click.
 
-WHERE THE DATA COMES FROM. The delivery note is the live ON ORDER stage of `orderstatus` (/goods-in-expected) and every scan is
-resolved against the live catalogue (/goods-in-lookup). What does NOT exist yet is the write that books a unit in, so the run is held
-in this component and the screen says so permanently rather than letting an operator believe stock has moved. src/lib/goodsInWrite.ts
-carries the contract for that route; when it lands, `claimed` below stops being local truth and the delivery note refetches instead.
+EVERY SCAN IS A REAL WRITE. One POST /goods-in-book marks the order line arrived, puts the unit on a shelf, records the arrival and
+logs it, in one transaction. The SERVER decides which line was claimed and therefore where the shoe goes — this component does not
+guess and then hope the write agrees, it renders what came back. That is why the delivery note is refetched after every scan rather
+than decremented locally: the server is the only thing that knows, and two operators working the same delivery see each other's units
+disappear.
 
-CLAIMING IS DONE HERE, NOT ON THE SERVER, for exactly as long as that is true. A scanned unit is matched to a delivery-note line the
-way the server will match it — Amazon (ordertype 3) before local (2), matching of_scan2 — and the line's remaining count is decremented
-locally. Two consequences worth knowing: a refresh loses the run, and two people scanning the same delivery on two screens will not see
-each other. Both go away with the write.
+THE RUN LIST IS THIS SESSION'S, THOUGH, and deliberately not persisted. It is the box in front of you, not an audit trail — bclog and
+incoming_stock are the audit trail. Undo works off the handles the book call returned, so it survives as long as the list does.
 =======================================================================================================================================
 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getGoodsInShelves, getGoodsInExpected, goodsInLookup,
+  getGoodsInShelves, getGoodsInExpected, goodsInBook, goodsInCancel,
   type GoodsInShelvesData, type GoodsInExpectedData,
 } from '@/lib/api';
-import { AMAZON_SHELF, WRITE_AVAILABLE, bookIn, cancelBooking, normaliseScan, type Booking } from '@/lib/goodsInWrite';
+import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 
 // The shelf the run puts local stock on. Legacy default, and the bay a delivery nearly always lands on.
 const DEFAULT_SHELF = 'C3-Back-Stage';
@@ -92,38 +91,38 @@ interface Row {
   code: string | null;
   title: string | null;
   destination: string | null;
-  expected: boolean;                   // claimed a delivery-note line; false = the supplier sent something we did not order
-  claimedKey: string | null;
+  expected: boolean;                   // claimed an order line; false = the supplier sent something we did not order
   supplier: string | null;
-  deleted: boolean;                    // resolved to a SKU that is out of the catalogue but has physically turned up
-  booking: Booking | null;
+  ordernum: string | null;             // the claimed line, so an undo can reopen exactly that row
+  incomingId: number | null;           // handles from the book call, for the undo
+  localstockId: string | null;
   cancelled: boolean;
 }
 
+// Remembered preferences. Read in a lazy initialiser rather than a mount effect, which is safe HERE specifically: AppShell renders a
+// splash instead of its children until auth has hydrated, so this component never renders on the server and there is no first paint
+// for a localStorage value to disagree with. (The `typeof window` guard is belt and braces for that assumption changing.)
+function remembered(key: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
 export default function GoodsInStation() {
-  const [shelf, setShelf] = useState(DEFAULT_SHELF);
-  const [sound, setSound] = useState(true);
+  const [shelf, setShelf] = useState(() => remembered(SHELF_KEY, DEFAULT_SHELF));
+  const [sound, setSound] = useState(() => remembered(SOUND_KEY, 'on') !== 'off');
   const [value, setValue] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [verdict, setVerdict] = useState<Row | null>(null);
-  const [claimed, setClaimed] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);   // a gun can fire faster than a round-trip; one scan at a time
-
-  // Preferences are read after mount rather than during render: this component is prerendered, and reading localStorage in a lazy
-  // useState initialiser gives the server and the client different HTML.
-  useEffect(() => {
-    const s = window.localStorage.getItem(SHELF_KEY);
-    if (s) setShelf(s);
-    setSound(window.localStorage.getItem(SOUND_KEY) !== 'off');
-  }, []);
 
   // EVERY rack that exists, empty ones included — /goods-in-shelves reads the `location` table rather than deriving the list from
   // what happens to be holding stock, which is the difference between offering C1's 22 racks and offering the 5 with shoes on them.
   // The route has already dropped the Amazon staging bay and ordered everything by the warehouse's own walking sequence.
   const { data: shelfData } = useApiQuery<GoodsInShelvesData>(['goods-in-shelves'], getGoodsInShelves);
-  const { data: expected, isLoading, error } = useApiQuery<GoodsInExpectedData>(['goods-in-expected'], getGoodsInExpected);
+  const { data: expected, isLoading, error, refresh: refreshNote } =
+    useApiQuery<GoodsInExpectedData>(['goods-in-expected'], getGoodsInExpected);
 
   const shelfAreas = useMemo(() => {
     const areas = shelfData?.areas?.length ? shelfData.areas : FALLBACK_SHELVES;
@@ -151,15 +150,10 @@ export default function GoodsInStation() {
     window.localStorage.setItem(SHELF_KEY, location);
   }, []);
 
-  // The delivery note, less what this run has already taken off it.
-  const note = useMemo(() => {
-    const src = expected?.rows || [];
-    return src
-      .map((r) => ({ ...r, remaining: r.units - (claimed[lineKey(r.code, r.ordertype)] || 0) }))
-      .filter((r) => r.remaining > 0);
-  }, [expected, claimed]);
-
-  const stillExpected = note.reduce((n, r) => n + r.remaining, 0);
+  // The delivery note, straight from the server — a booked unit leaves it because the server marked the line arrived, not because
+  // this component subtracted one. Refetched after every scan, which is also how two operators on one delivery stay in step.
+  const note = expected?.rows || [];
+  const stillExpected = note.reduce((n, r) => n + r.units, 0);
 
   // A not-found verdict blocks the line until it is cleared. See the header.
   const blocked = verdict?.kind === 'not-found';
@@ -187,16 +181,27 @@ export default function GoodsInStation() {
   const reset = useCallback(() => { setVerdict(null); focusInput(); }, []);
 
   const undo = useCallback(async (row: Row) => {
-    if (row.cancelled) return;
+    if (row.cancelled || row.incomingId === null || row.localstockId === null) return;
+    // Struck through immediately: the operator has the shoe back in their hand and needs the screen to agree at once. A failed cancel
+    // puts it back and says so, which is rarer than the round-trip being slow.
     setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, cancelled: true } : r)));
     if (verdict?.key === row.key) setVerdict({ ...row, cancelled: true });
-    // Put the unit back on the delivery note before the round-trip: the count is local truth, and a lagging one reads as a bug.
-    if (row.claimedKey) {
-      setClaimed((prev) => ({ ...prev, [row.claimedKey!]: Math.max(0, (prev[row.claimedKey!] || 0) - 1) }));
+
+    const res = await goodsInCancel({
+      incomingId: row.incomingId, localstockId: row.localstockId, ordernum: row.ordernum, code: row.code || '',
+    });
+    // NOT_FOUND means it was already undone — the row is correctly struck through either way, so only a real failure is rolled back.
+    if (!res.success && res.return_code !== 'NOT_FOUND') {
+      setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, cancelled: false } : r)));
+      setVerdict({
+        key: `${Date.now()}-${Math.random()}`, input: row.code || '', kind: 'error',
+        message: res.error || 'Could not undo that unit', code: row.code, title: row.title, destination: null,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
+      });
     }
-    if (row.booking) await cancelBooking(row.booking);
+    await refreshNote();
     focusInput();
-  }, [verdict]);
+  }, [verdict, refreshNote]);
 
   const submit = useCallback(async (raw: string) => {
     const typed = raw.trim();
@@ -206,6 +211,8 @@ export default function GoodsInStation() {
     // Typed commands come first — they have to work while the line is blocked, which is the only time you need one.
     if (command === 'RESETERROR') { reset(); return; }
     if (command === 'UNDO') {
+      // Same target as the "Undo last" button: the newest row still standing. Reads `rows` rather than the derived `lastBooked` so
+      // the callback does not need to be rebuilt on every render of the counts line.
       const last = rows.find((r) => !r.cancelled);
       if (last) await undo(last);
       return;
@@ -224,68 +231,65 @@ export default function GoodsInStation() {
       setVerdict({
         key: `${Date.now()}-${Math.random()}`, input: typed, kind: 'shelf-set', message: null,
         code: null, title: null, destination: rack,
-        expected: false, claimedKey: null, supplier: null, deleted: false, booking: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
       });
       focusInput();
       return;
     }
 
+    // THE WRITE. One call books the unit in — arrived flag, shelf row, arrival record, log — and tells us what it decided. Nothing is
+    // guessed client-side: which order line got claimed is the server's call, and it is what determines the destination.
     inFlight.current = true;
     setBusy(true);
-    const res = await goodsInLookup(scan);
+    const res = await goodsInBook({ scan, shelf });
+    setBusy(false);
+    inFlight.current = false;
+
     // A fresh key per scan remounts the verdict panel, which is what replays the flash — two identical scans still register as two.
     const key = `${Date.now()}-${Math.random()}`;
 
-    // NOT_FOUND is the real stop — the label is unreadable or the SKU was never set up, and the shoe has to go to one side. Anything
-    // else (server down, query failed) is the API having a moment: the same scan will work when it comes back, so it shows the same
-    // red panel but does NOT block the line. Blocking on a network blip would make the operator clear a stop that was never theirs.
+    // NOT_FOUND is the real stop — the label is unreadable or the SKU was never set up, and the shoe has to go to one side. Everything
+    // else (a bad shelf, the server down, the transaction rolled back) is shown in the same red but does NOT block the line: nothing
+    // was written, the same scan will work once the cause is fixed, and making the operator clear a stop that was never theirs is how
+    // a screen trains people to clear stops without reading them.
     if (!res.success || !res.data) {
-      setBusy(false);
-      inFlight.current = false;
       const stop = res.return_code === 'NOT_FOUND';
       setVerdict({
-        key, input: typed, kind: stop ? 'not-found' : 'error', message: stop ? null : (res.error || 'Could not look that up'),
+        key, input: typed, kind: stop ? 'not-found' : 'error', message: stop ? null : (res.error || 'Could not book that in'),
         code: null, title: null, destination: null,
-        expected: false, claimedKey: null, supplier: null, deleted: false, booking: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
       });
       beep();
       focusInput();
       return;
     }
 
-    // Match the scan to a delivery-note line the way the server will: Amazon before local (of_scan2 tests ordertype 3 first).
-    const sku = res.data;
-    const open = note.filter((r) => r.code === sku.code);
-    const claim = open.find((r) => r.ordertype === 3) || open.find((r) => r.ordertype === 2) || null;
-    const amazon = claim?.ordertype === 3;
-    const destination = amazon ? AMAZON_SHELF : shelf;
-
-    const booking = await bookIn({ code: sku.code, shelf: destination });
-    setBusy(false);
-    inFlight.current = false;
-
+    const b = res.data;
     const row: Row = {
       key,
       input: typed,
-      kind: amazon ? 'amazon' : 'shelf',
+      kind: b.amazon ? 'amazon' : 'shelf',
       message: null,
-      code: sku.code,
-      title: sku.title,
-      destination,
-      expected: Boolean(claim),
-      claimedKey: claim ? lineKey(claim.code, claim.ordertype) : null,
-      supplier: claim?.supplier ?? sku.supplier,
-      deleted: sku.deleted,
-      booking,
+      code: b.code,
+      title: b.title,
+      destination: b.destination,
+      expected: b.expected,
+      supplier: b.supplier,
+      ordernum: b.ordernum,
+      incomingId: b.incomingId,
+      localstockId: b.localstockId,
       cancelled: false,
     };
-    if (row.claimedKey) setClaimed((prev) => ({ ...prev, [row.claimedKey!]: (prev[row.claimedKey!] || 0) + 1 }));
     setVerdict(row);
     setRows((prev) => [row, ...prev]);
     focusInput();
-  }, [blocked, rows, note, shelf, racks, chooseShelf, beep, reset, undo]);
+    // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
+    void refreshNote();
+  }, [blocked, rows, shelf, racks, chooseShelf, beep, reset, undo, refreshNote]);
 
   const booked = rows.filter((r) => !r.cancelled);
+  // `rows` is newest-first, so the first un-cancelled row IS the last scan — what both "Undo last" and the typed UNDO act on.
+  const lastBooked = booked[0] || null;
   const toAmazon = booked.filter((r) => r.kind === 'amazon').length;
   const unexpected = booked.filter((r) => !r.expected).length;
 
@@ -388,7 +392,6 @@ export default function GoodsInStation() {
                   {verdict.expected
                     ? <> · on order from {verdict.supplier}</>
                     : <> · <span className="font-semibold">nothing on order</span> — putting it away as free stock</>}
-                  {verdict.deleted && <> · <span className="font-semibold">not in the catalogue</span></>}
                 </p>
               </div>
               <p className={'shrink-0 font-mono text-sm tabular-nums tracking-tight ' + VERDICT[verdict.kind].sub}>{verdict.code}</p>
@@ -418,14 +421,6 @@ export default function GoodsInStation() {
           />
         </form>
 
-        {/* Permanent, and it stays until the write route lands. An operator who believes stock has been booked in and walks away is
-            worse off than one who never opened the screen. */}
-        {!WRITE_AVAILABLE && (
-          <p className="mt-1.5 text-xs text-slate-500">
-            Scans are identified and routed, but not yet written to stock — put the shoes away and book the delivery in on the legacy
-            screen. This run is lost on a refresh.
-          </p>
-        )}
       </div>
 
       {/* --- THE RUN. What this session has scanned, newest first — the order you would count the box back in. --- */}
@@ -436,6 +431,21 @@ export default function GoodsInStation() {
         {booked.length > 0 && <span>{toAmazon} to Amazon · {booked.length - toAmazon} to a shelf</span>}
         {unexpected > 0 && <span className="text-amber-700">{unexpected} not on order</span>}
         {busy && <span className="text-slate-400">Working…</span>}
+
+        {/* UNDO THE LAST SCAN — the cancel you actually reach for, since a mis-scan is noticed with the shoe still in your hand. The
+            per-row control below covers going further back. Offered only when there is something to undo: a permanently greyed-out
+            button is a worse answer to "can I take that back" than no button at all. */}
+        {lastBooked && (
+          <button
+            type="button"
+            onClick={() => void undo(lastBooked)}
+            title={`Puts ${lastBooked.code} back on order and takes it off ${lastBooked.destination} — or just type UNDO`}
+            className="ml-auto text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+          >
+            Undo last
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
@@ -444,7 +454,7 @@ export default function GoodsInStation() {
             window.localStorage.setItem(SOUND_KEY, next ? 'on' : 'off');
             focusInput();
           }}
-          className="ml-auto text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+          className={(lastBooked ? '' : 'ml-auto ') + 'text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline'}
         >
           {sound ? 'Sound on' : 'Sound off'}
         </button>
@@ -499,7 +509,7 @@ export default function GoodsInStation() {
         {error ? (
           <p className="mt-3 text-sm text-red-700">{error.message}</p>
         ) : isLoading ? (
-          <p className="mt-3 text-sm text-slate-500">Loading what's on order…</p>
+          <p className="mt-3 text-sm text-slate-500">Loading the delivery note…</p>
         ) : note.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">
             {(expected?.rows.length ?? 0) === 0
@@ -520,7 +530,7 @@ export default function GoodsInStation() {
             <tbody>
               {note.map((r) => (
                 <tr key={lineKey(r.code, r.ordertype)} className="border-b border-slate-100 text-slate-600">
-                  <td className="py-1.5 pr-3 text-right font-semibold tabular-nums text-slate-800">{r.remaining}</td>
+                  <td className="py-1.5 pr-3 text-right font-semibold tabular-nums text-slate-800">{r.units}</td>
                   <td className="py-1.5 pr-3 font-mono tabular-nums">
                     {r.code}
                     {/* The only place a delivery-note line needs a mark: an Amazon line will not go on the chosen shelf. */}

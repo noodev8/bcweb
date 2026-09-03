@@ -2112,8 +2112,7 @@ export function pickAction(mode: PickMode, action: PickAction, ids: string[]) {
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------
-// GOODS IN — the receiving end of the ON ORDER stage. Both calls are READ ONLY; the write that books a unit in does not exist yet
-// (see src/lib/goodsInWrite.ts for the contract and what the screen does in the meantime).
+// GOODS IN — the receiving end of the ON ORDER stage: a delivery is scanned unit by unit onto a shelf.
 // -------------------------------------------------------------------------------------------------------------------------------
 
 // Every rack a delivery can be put on, from the authoritative `location` table — EMPTY racks included, which is the whole reason this
@@ -2151,16 +2150,42 @@ export function getGoodsInExpected() {
   );
 }
 
-// One scan resolved against the catalogue. NOT_FOUND is a normal outcome, not a failure — it means the label is unreadable or the
-// SKU was never set up, and the screen stops the line on it. `deleted` is a SKU out of the catalogue that has physically turned up.
-export interface GoodsInSku {
-  code: string; groupid: string | null; title: string | null; size: string;
-  barcode: string; supplier: string | null; deleted: boolean;
+// THE WRITE. One scan books one physical unit in: the order line it arrived against is marked arrived, the unit is placed on a shelf,
+// the arrival is recorded and the whole thing is logged — one transaction server-side (routes/goods-in-book.js).
+//
+// It takes the RAW SCAN rather than a resolved code, so a scan costs ONE round-trip on a screen whose entire job is scanning. Two
+// non-SUCCESS codes are normal outcomes rather than faults, and the screen treats them differently:
+//   NOT_FOUND  nothing in the catalogue matches — the label is unreadable or the SKU was never set up. This STOPS the line.
+//   BAD_SHELF  the shelf isn't a rack in `location` (or is the Amazon bay, which is never a manual choice).
+export interface GoodsInBooking {
+  code: string;
+  title: string | null;
+  destination: string;        // where the operator must physically put it
+  amazon: boolean;            // claimed an Amazon line, so it is staged for FBA rather than shelved locally
+  expected: boolean;          // false = nothing was on order; booked in as free stock
+  supplier: string | null;
+  ordernum: string | null;    // the claimed order line, null when nothing was on order
+  incomingId: number;         // handles for goodsInCancel
+  localstockId: string;
 }
-export function goodsInLookup(scan: string) {
-  return request<GoodsInSku>(
-    { url: '/goods-in-lookup', method: 'GET', params: { scan } },
-    (b) => b.sku as GoodsInSku
+export function goodsInBook(args: { scan: string; shelf: string }) {
+  return request<GoodsInBooking>(
+    { url: '/goods-in-book', method: 'POST', data: args },
+    (b) => ({
+      code: b.code, title: b.title ?? null, destination: b.destination,
+      amazon: Boolean(b.amazon), expected: Boolean(b.expected),
+      supplier: b.supplier ?? null, ordernum: b.ordernum ?? null,
+      incomingId: Number(b.incomingId), localstockId: String(b.localstockId),
+    })
+  );
+}
+
+// Undo one booked-in unit — deletes the shelf row and the arrival record, and puts the claimed order line back to not-arrived.
+// NOT_FOUND means it was already undone, which is what a double-tapped undo looks like.
+export function goodsInCancel(args: { incomingId: number; localstockId: string; ordernum: string | null; code: string }) {
+  return request<{ code: string; target: string; reopened: boolean }>(
+    { url: '/goods-in-cancel', method: 'POST', data: args },
+    (b) => ({ code: b.code, target: b.target, reopened: Boolean(b.reopened) })
   );
 }
 

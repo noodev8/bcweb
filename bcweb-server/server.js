@@ -157,12 +157,13 @@ app.use('/order-status-adjust-qty', require('./routes/order-status-adjust-qty'))
 app.use('/order-status-restore', require('./routes/order-status-restore'));       // undo: pull archived units back (the "+" on a 0 line)
 
 // --- Goods In (the receiving end of the ON ORDER stage above) ---
-// A delivery lands and each unit is scanned onto a shelf. Both routes here are READ ONLY: the screen can identify a scan and show
-// where the shoe belongs, but the write that books the unit in (localstock + incoming_stock + bclog, one transaction) is not built
-// yet — see the header of bcweb-web/src/lib/goodsInWrite.ts for the contract it has to implement.
+// A delivery lands and each unit is scanned onto a shelf. The write is the port of the legacy of_save (docs/goodsin/): one scan marks
+// the order line arrived, places the unit on a shelf, records the arrival and logs it — all in one transaction, because half of it
+// landing is worse than none.
 app.use('/goods-in-expected', require('./routes/goods-in-expected')); // the delivery note: placed + un-arrived, every supplier
-app.use('/goods-in-lookup', require('./routes/goods-in-lookup'));     // one scan -> one real SKU (or NOT_FOUND)
 app.use('/goods-in-shelves', require('./routes/goods-in-shelves'));   // every rack that EXISTS, from `location` — empty ones included
+app.use('/goods-in-book', require('./routes/goods-in-book'));         // WRITES: arrived + localstock + incoming_stock + bclog
+app.use('/goods-in-cancel', require('./routes/goods-in-cancel'));     // WRITES: undo one booking, and reopen the order line
 
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the
