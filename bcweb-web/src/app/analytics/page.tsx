@@ -6,16 +6,21 @@ Page: /analytics  (Reports module — index)
 Purpose: The reporting front door — a tile grid matching the dashboard pattern. Presented as REPORTS (owner, 2026-08-27); the route
          stays /analytics so every existing link, bookmark and deep link keeps working.
 
-         ABSORBED BRANDS AND AMAZON ORDER (owner, 2026-08-27). Both were top-level dashboard tiles, which made three separate doors
-         onto the same act — going somewhere to read a number — and put them on the dashboard as peers of screens worked every day.
-         They keep their own routes (/brands, /amazon-order) and are unchanged; only the way in moved. Guarded by AppShell.
+         ABSORBED BRANDS (owner, 2026-08-27). It was a top-level dashboard tile, which made two separate doors onto the same act —
+         going somewhere to read a number — and put it on the dashboard as a peer of screens worked every day. It keeps its own
+         route (/brands) and is unchanged; only the way in moved. Guarded by AppShell.
+
+         AMAZON ORDER CAME BACK OUT (owner, 2026-09-03). It was absorbed here in 2026-08 as the profit report it was then, and it
+         has since grown into a working screen: a rate fill, an Order and a Pick basket, and two DB writes on the button. That is
+         no longer "go and read a number", so it is a dashboard tile again under STOCK & PRODUCTS, beside the other procurement
+         screens. Route unchanged — only the way in moved back.
 =======================================================================================================================================
 */
 
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
-  PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon, ClipboardDocumentListIcon,
+  PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -82,16 +87,6 @@ export default function AnalyticsPage() {
           live
         />
 
-        {/* Amazon Order — moved in from the dashboard (owner, 2026-08-27). A flat every-product report of REALISED Amazon profit
-            (sales.profit, 30d) and profit per unit. It was always a profit report rather than a pricing screen, which is why it never
-            belonged inside Amazon Pricing — but that made it a top-level tile by default, and it belongs here. */}
-        <ModuleTile
-          title="Amazon Order"
-          description="Every product's realised Amazon profit and profit per unit, last 30 days."
-          href="/amazon-order"
-          icon={ClipboardDocumentListIcon}
-          live
-        />
       </div>
     </AppShell>
   );

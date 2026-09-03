@@ -32,15 +32,15 @@ import CopyButton from '@/components/CopyButton';
 // deliberately, with nothing else on the go, so it didn't belong. The owner goes there repeatedly through the day for various
 // reasons, which makes it exactly the mid-task hop this bar exists for. Kept last: it's the only one that isn't a working screen.
 // Icons match the dashboard tiles. Active state is by path-prefix, so a drill page (/pricing/style/…, /amz/sku/…) still highlights its
-// module. `also` covers a module whose views don't all live under its own path — Reports absorbed Brands and Amazon Order but those
-// kept their original routes, and a tab that goes dark on a page you reached THROUGH it reads as having lost your place.
+// module. `also` covers a module whose views don't all live under its own path — Reports absorbed Brands but it kept its original
+// route, and a tab that goes dark on a page you reached THROUGH it reads as having lost your place.
 const MODULES: { label: string; href: string; icon: React.ComponentType<{ className?: string }>; also?: string[] }[] = [
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
   { label: 'Segments', href: '/segments', icon: Squares2X2Icon },
   // Customer Orders earns a slot on frequency alone: it's the one screen worked every day, and it's also the one you're most often
   // pulled INTO from somewhere else ("has that order gone?").
   { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
-  { label: 'Reports', href: '/analytics', icon: ChartBarIcon, also: ['/brands', '/amazon-order'] },
+  { label: 'Reports', href: '/analytics', icon: ChartBarIcon, also: ['/brands'] },
 ];
 
 interface AppShellProps {

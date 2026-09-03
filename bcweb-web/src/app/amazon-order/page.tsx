@@ -1122,7 +1122,7 @@ export default function AmazonOrderHome() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell title="Amazon Order" backHref="/analytics" backLabel="Reports">
+    <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
       {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
           row 2 FILLS what's left and SENDS it. It used to be five: search, presets+actions, rate strip, counts, chips — each
           behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
