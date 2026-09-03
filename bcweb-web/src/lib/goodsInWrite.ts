@@ -10,7 +10,7 @@ Until then a run is client-side: the screen identifies each scan and says where 
 delivery note, but nothing reaches the database and a refresh loses the run. THE SCREEN SAYS SO, plainly and permanently — an operator
 who thinks stock has been booked in and walks away is worse off than one who never opened the screen.
 
-WHAT THE WRITE HAS TO DO, from the legacy PowerBuilder source in goodsin/ (of_save, of_cancel-item). All of it inside ONE
+WHAT THE WRITE HAS TO DO, from the legacy PowerBuilder source in docs/goodsin/ (of_save, of_cancel-item). All of it inside ONE
 withTransaction, per CLAUDE.md:
 
   POST /goods-in-book   { code, shelf }   ->  { incomingId, localstockId }
