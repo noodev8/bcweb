@@ -141,6 +141,13 @@ app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent s
 app.use('/inv-adjust', require('./routes/inv-adjust'));  // phase 2: +/- local stock at one location, audited to bclog (WRITES)
 app.use('/inv-locations', require('./routes/inv-locations')); // phase 2: the real shelf locations, for the "add to a location" picker
 
+// Birkenstock module — the seasonal re-order screen (port of the legacy PowerBuilder Birkenstock grid). Sold 365 held against stock,
+// size by size, with a LIVE / FULL switch: LIVE = on the shelf now, FULL = shelf + what is still to come on the birktracker order
+// book (so an already-placed order can't be ordered twice). One call ships all ~176 styles; filtering/sorting is client-side.
+app.use('/birk-stock', require('./routes/birk-stock'));
+app.use('/birk-planner', require('./routes/birk-planner')); // one style's still-to-come units by delivery month + size (the drill)
+app.use('/birk-review', require('./routes/birk-review')); // park a style out of the sheet for 1/2/3 months (the legacy 1 2 3 buttons)
+
 // --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
 // Two stages of one lifecycle, split on the `orderdate` stamp (utils/orderStatus.js): TO PLACE = chosen but not yet bought from the
 // supplier; ON ORDER = placed and now being chased. The picker carries both; the rest of the routes belong to one stage or the other.

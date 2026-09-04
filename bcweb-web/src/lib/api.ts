@@ -1284,6 +1284,78 @@ export function getInvStyles() {
   );
 }
 
+// ---- Birkenstock module (the seasonal re-order screen) --------------------------------------------------------------------------
+// One Birkenstock style, with the two quantities that make the screen work kept SEPARATE per size: what is on the shelf, and what is
+// still to arrive on the pre-order book. The LIVE / FULL switch is a pure display choice over this one payload (live vs live+incoming),
+// which is why the server does not pre-sum them.
+export interface BirkStockRow {
+  groupid: string;
+  title: string | null;          // title.shopifytitle
+  segment: string | null;
+  // skusummary.check_stock as 'YYYY-MM-DD' — the "ask me again on" date the 1/2/3 buttons stamp; null if the style has never been
+  // parked. A plain string on purpose: compared against today as a string (exact for ISO dates, and it cannot pick up a timezone the
+  // way `new Date(dateOnly)` does, which reads as local midnight and slides back a day under BST).
+  review: string | null;
+  // Units sold in the last 365 days = skumap.shp365 + cmb365 (Shopify + the CM3 shop), summed over the style's variants. These are
+  // the maintained counters the legacy screen read, NOT a live count off `sales`.
+  sold365: number;
+  // 365-day GROSS PROFIT in whole pounds: (qty-weighted avg sold price EX VAT - cost) x units, SHP + CM3. Shown as "Profit". VAT is out
+  // (our cost is net of it); selling expenses are NOT — so it still reads above the net figure on the Pricing screens, by design. An
+  // indication for ranking and for the "at least £1000" bands. null = no sales in the window or an unusable cost; never render as 0.
+  // Can legitimately be NEGATIVE where a style has sold below cost.
+  gross: number | null;
+  live: number;                  // FREE local units, all sizes — on the shelf, sellable now
+  incoming: number;              // still to arrive on the Birkenstock order book (requested - arrived)
+  liveSizes: Record<string, number>;      // {size: units} for EVERY size the style carries (0 = none)
+  incomingSizes: Record<string, number>;  // same key set as liveSizes, so one map's keys index the other
+}
+
+// The whole Birkenstock catalogue in one call (~176 styles) — no term/mode/sort params by design: the screen fetches once and does its
+// Contains / Does-not-contain narrowing, sorting and LIVE/FULL switching in the browser.
+export function getBirkStock() {
+  return request<{ count: number; rows: BirkStockRow[] }>(
+    { url: '/birk-stock', method: 'GET' },
+    (b) => ({
+      count: b.count ?? 0,
+      // Default both maps per row so the grid never guards for a missing map.
+      rows: ((b.rows as BirkStockRow[]) || []).map((r) => ({
+        ...r,
+        liveSizes: r.liveSizes || {},
+        incomingSizes: r.incomingSizes || {},
+      })),
+    })
+  );
+}
+
+// One delivery month on the Birkenstock Planner: how many units of a style are STILL TO COME that month, and in which sizes.
+export interface BirkPlannerMonth {
+  // Birkenstock's own 3-letter due code ('MAY'), with no year on it — the order book runs a season at a time. '' = no code recorded.
+  due: string;
+  units: number;                    // still-to-come units that month, all sizes
+  sizes: Record<string, number>;    // {size: units} — ONLY the sizes with units due; a size with none is absent, not 0
+}
+
+// One style's still-to-come units broken down by delivery month (the Planner panel under a /birkenstock row). Every figure is
+// requested − arrived, so `total` is exactly what the grid's FULL switch adds to that style's Stock; a delivery that has fully landed
+// shows nothing, because those units are on the shelf and already counted in the grid.
+export function getBirkPlanner(groupid: string) {
+  return request<{ groupid: string; total: number; months: BirkPlannerMonth[] }>(
+    { url: '/birk-planner', method: 'GET', params: { groupid } },
+    (b) => ({ groupid: b.groupid, total: b.total ?? 0, months: b.months || [] })
+  );
+}
+
+// Park styles out of the Birkenstock re-order sheet until the 1st of the month N months ahead — the legacy screen's "1 2 3" buttons.
+// WRITES: stamps skusummary.check_stock on every id in one transaction. `months` is 1, 2 or 3 and nothing else (the server rejects the
+// rest). `updated` can be lower than the ids sent if one matched no style. There is no unpark: park again over the top, or let it
+// expire. See routes/birk-review.js for why the date is the 1st of a month rather than today + 30N days.
+export function setBirkReview(groupids: string[], months: 1 | 2 | 3) {
+  return request<{ months: number; review: string | null; updated: number }>(
+    { url: '/birk-review', method: 'POST', data: { groupids, months } },
+    (b) => ({ months: b.months, review: b.review ?? null, updated: b.updated ?? 0 })
+  );
+}
+
 // The twelve places a unit can be (docs/inventory-spec.md §3b, from order-status-lifecycle.docx p6/p7).
 // The compact local/onOrder/total figures are DERIVED from these server-side, so the two views always reconcile.
 export interface InvBuckets {

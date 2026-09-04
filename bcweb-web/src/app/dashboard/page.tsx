@@ -61,7 +61,7 @@ import ModuleTile from '@/components/ModuleTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
-  UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon,
+  UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -225,6 +225,23 @@ export default function DashboardPage() {
           description="Book in what's arrived from a supplier and put it on the shelf."
           href="/goods-in"
           icon={InboxArrowDownIcon}
+          live
+          compact
+        />
+
+        {/* Birkenstock — the seasonal re-order sheet (365-day sales against stock, size by size, Live vs Full). In STOCK & PRODUCTS
+            rather than DAILY or REPORTS: it is a sit-down buying session, held a few times a year, and it is a decision screen, not a
+            number you go and read. Last in the replenishment chain the band already tells — decide, place, receive — because it is
+            the one brand where that chain runs on a season instead of a shelf: the order goes in ~6 months ahead and cannot be topped
+            up, so it is a different KIND of buying decision and sits apart from the three that share a rhythm.
+            A calendar rather than the clipboard this tile first carried: Amazon Order has since taken the clipboard, and two tiles in
+            one band wearing the same icon is worse than either choice of icon. The calendar is the truer one anyway — what makes this
+            screen hard is that it is months ahead of itself. */}
+        <ModuleTile
+          title="Birkenstock"
+          description="Sold in 365 days against what we hold, size by size — what to put on the next order."
+          href="/birkenstock"
+          icon={CalendarDaysIcon}
           live
           compact
         />
