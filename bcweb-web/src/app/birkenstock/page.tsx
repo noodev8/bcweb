@@ -22,10 +22,11 @@ picks which is drawn, so the flip is instant and never re-reads the DB. Nothing 
 176 styles are on screen either way. Same reason the whole catalogue ships at once: every narrowing and sort below is client-side.
 
 THE FILTER IS THE INVENTORY FILTER, deliberately identical (owner): two boxes, Contains / Does not contain, both plain substring over
-title + groupid + segment, each Find stacking another step onto what is already on screen, Reset returning the whole list and
+title + groupid + segment, each term stacking another step onto what is already on screen, Reset returning the whole list and
 re-reading from the DB. It is the gesture the operator has worked to for years, and a second dialect of it on a second screen would be
-worse than no filter at all. The one thing NOT carried over is Inventory's worded STOCK/SOLD commands — this grid is read by eye down
-a short list, and a "STOCK LESS 10" here would just be the red colouring said twice.
+worse than no filter at all. The ONE divergence is that this screen has no Find button (owner, 2026-09-05): a term commits on Enter
+and on leaving its box, so the button had nothing left to do. See commitSteps. The other thing NOT carried over is Inventory's worded
+STOCK/SOLD commands — this grid is read by eye down a short list, and a "STOCK LESS 10" here would just be the red colouring twice.
 
 THE PLANNER (owner, 2026-09-04 — the legacy screen's Planner button). Clicking any line opens its delivery months underneath it: one
 row per month still to come, sizes under their own columns. It answers the question FULL raises but cannot settle — three units in May
@@ -33,12 +34,14 @@ and thirty-two in August is a different season from thirty-five in May. The mont
 figure sits directly beneath the size it belongs to and beneath the stock we already hold in that size. See SEASON for why they run
 September -> August, and routes/birk-planner.js for why a delivery that has fully landed shows nothing at all.
 
-PROFIT, AND THE BANDS. A gross-profit figure per style over the same 365 days — sold price ex VAT minus cost, times units — with four
-fixed thresholds (£1000/750/500/250) above the grid. It is an INDICATION, not accounting: selling expenses are not deducted, at the
-owner's call, so it reads above the net figure on the Pricing screens. Its job is to order the sheet, because the buy is made top down
-against a budget: work the styles over 1000, then drop a band and work the next tier. Pressing a band sorts by profit descending, so
-the list only ever grows downwards and the tier already dealt with stays above the new arrivals. See routes/birk-stock.js for the
-arithmetic and for the four gates of the owner's original query that are deliberately NOT here.
+PROFIT, AND THE PERFORMANCE LEVELS. A gross-profit figure per style over the same 365 days — sold price ex VAT minus cost, times units — with four
+fixed steps above the grid: Top / High / Mid / Low (£1000/750/500/250, cumulative) and All. It is an INDICATION, not accounting:
+selling expenses are not deducted, at the owner's call, so it reads above the net figure on the Pricing screens. Its job is to order
+the sheet, because the buy is made top down against a budget: work the top earners, then drop a level and work the next tier. Pressing
+a level sorts by profit descending, so the list only ever grows downwards and the tier already dealt with stays above the new arrivals.
+The steps wear NAMES rather than the pound figures they stand for (owner, 2026-09-05 — see GROSS_LEVELS); the figure is on the hover
+and on the chip in the strip. See routes/birk-stock.js for the arithmetic and for the four gates of the owner's original query that
+are deliberately NOT here.
 
 CUT (owner, 2026-09-04). Mark rows — click, ctrl-click to add one, shift-click for a range, Windows rules — and Cut pushes them out of
 the view. A PURE DISPLAY FILTER: nothing is written, nothing outlives the visit, and there is deliberately NO restore, because Reset is
@@ -88,7 +91,25 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { groupid: 'asc', sold365: 
 // steps below it, because the way the screen is used is ONE BAND AT A TIME — order the styles over 1000 against the budget, then drop
 // to 750 and work the next tier. They are steps down, not a scale. On the current book they cut the catalogue 16 / 28 / 46 / 85 of
 // 176, which is why these four and not a finer ladder: each press is a session's worth of work, not a nudge.
-const GROSS_PRESETS = [1000, 750, 500, 250];
+// THE BANDS WEAR NAMES, NOT FIGURES (owner, 2026-09-05). The buttons used to read 1,000 / 750 / 500 / 250, which put four exact
+// pounds-and-pence numbers in the loudest position on the screen and invited them to be read as a line the money actually falls on.
+// They are not that: the column under them is an INDICATION (VAT out, selling expenses in), and its job is to rank. What the operator
+// is doing when he presses one is choosing HOW FAR DOWN THE EARNERS to work today, so the buttons now say that and the threshold that
+// implements it moves to the tooltip and to the chip in the strip below, where it is information rather than a claim to precision.
+//
+// They are cumulative, and the "at least" in the label is what says so: Mid is everything from £500 up, Top included. Named steps down
+// a single ladder read that way naturally; four bare numbers side by side read as four separate buckets.
+const GROSS_LEVELS: { label: string; min: number }[] = [
+  { label: 'Top', min: 1000 },
+  { label: 'High', min: 750 },
+  { label: 'Mid', min: 500 },
+  { label: 'Low', min: 250 },
+];
+// The name for a threshold, for the chip in the count strip — which shows both, because once a level is ON, the number behind it is
+// the useful half ("what am I working to?") and no longer a button label competing for the eye.
+function grossLabel(min: number): string {
+  return GROSS_LEVELS.find((l) => l.min === min)?.label ?? `£${min}+`;
+}
 
 // ---- Review / park --------------------------------------------------------------------------------------------------------------
 // The legacy screen's "1 2 3" (review-date.txt). Once a style has been ORDERED there is nothing left to decide about it this season,
@@ -162,7 +183,14 @@ function sizeBand(i: number): string {
 // Horizontal padding for a size cell. The LAST column gets extra on its right so 48 is not jammed against the table's edge (owner,
 // 2026-09-04) — a column touching the border reads as though it has been cut off mid-grid.
 function cellPad(i: number, count: number): string {
-  return i === count - 1 ? 'pl-1 pr-3' : 'px-1';
+  return i === count - 1 ? 'pl-1 pr-2' : 'px-1';
+}
+
+// THE SEAM between the four columns that identify and total a style and the fourteen that hold its size curve. They are two different
+// kinds of reading — one figure you look up, fourteen you scan across — and with nothing between them the eye ran off Stock straight
+// into the 35s. One hairline on the first size column says where one ends and the other begins; the banding beside it does the rest.
+function sizeEdge(i: number): string {
+  return i === 0 ? 'border-l border-slate-200' : '';
 }
 
 // EVERY TITLE STARTS "Birkenstock " — on a screen that is entirely Birkenstock, that prefix is 12 characters of nothing, repeated 176
@@ -207,6 +235,11 @@ function applySteps(indexed: IndexedRow[], steps: FilterStep[]): IndexedRow[] {
   return out;
 }
 
+// The heading row's bottom rule, drawn as an inset shadow rather than a border. The table is `border-separate` (see the table tag for
+// why), and under border-separate a border declared on a <tr> is not painted at all — so the heading rule has to live on the cells.
+// A shadow does that without adding a pixel to the cell's box, which would push the size columns out of alignment.
+const HEAD_RULE = 'shadow-[inset_0_-1px_0_0_theme(colors.slate.300)]';
+
 // A sortable column heading. The arrow only appears on the active key — an indicator on every column is three arrows pointing at
 // nothing. Declared at MODULE level, not inside the page: a component created during render is a new component type every render, so
 // React throws its state away each time (and the lint rule that says so is right — it was written inside the page at first).
@@ -225,7 +258,7 @@ function SortTh({ label, colKey, align = 'left', sortKey, sortDir, onSort }: {
   const active = sortKey === colKey;
   const arrow = active ? 'text-slate-500' : 'text-transparent';
   return (
-    <th className="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-xs font-semibold uppercase tracking-wide">
+    <th className={`sticky top-0 z-10 whitespace-nowrap bg-slate-100 px-2 py-2 text-xs font-semibold uppercase tracking-wide ${HEAD_RULE}`}>
       <button
         type="button"
         onClick={() => onSort(colKey)}
@@ -460,12 +493,15 @@ export default function BirkenstockPage() {
     reload();
   }, [selected, parking, reload]);
 
-  // FIND: turn whatever is in the boxes into steps, then clear the boxes. Blank boxes are ignored.
-  function onFind(e: React.FormEvent) {
-    e.preventDefault();
-    const next: FilterStep[] = [];
-    if (contains.trim()) next.push({ op: 'has', term: contains.trim() });
-    if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
+  // NO FIND BUTTON (owner, 2026-09-05). A box you type a search into and then press Enter on does not need a button beside it saying
+  // so, and this one was taking a slot in the busiest row of the card to be pressed once per hunt. What replaces it is not "press
+  // Enter and hope": the terms commit on ENTER **and on leaving the box**, so tabbing from Contains to Does not contain applies the
+  // first one on the way past, and clicking straight into the grid applies what you just typed rather than quietly dropping it. That
+  // is the behaviour the button was standing in for, and it is the one gesture that cannot leave a term stranded in a box.
+  //
+  // A blur-commit does mean tabbing between the two boxes lands them as TWO steps where the button made one. The list is identical —
+  // steps are ANDed — and two chips saying `contains ARIZONA` `not EVA` is if anything the truer account of what was asked for.
+  function commitSteps(next: FilterStep[]) {
     if (next.length === 0) return;
 
     // START FRESH WHEN THE NARROWING WOULD EMPTY THE LIST — Inventory's rule, and it belongs here for the same reason: the operator
@@ -474,9 +510,26 @@ export default function BirkenstockPage() {
     // Probing rather than reacting to an empty render means the dead intermediate state never paints.
     const startFresh = steps.length > 0 && applySteps(indexed, [...steps, ...next]).length === 0;
     setSteps(startFresh ? next : [...steps, ...next]);
-    setContains('');
-    setNotContains('');
-    containsRef.current?.focus();
+    // Clear ONLY the boxes this commit actually took a term from, and DO NOT move the focus. Both matter now that a blur can commit:
+    // pulling the caret back to Contains as you tab away from it would fight the very keystroke that fired the commit, and clearing
+    // the other box would swallow a term the operator had already typed into it.
+    if (next.some((s) => s.op === 'has')) setContains('');
+    if (next.some((s) => s.op === 'not')) setNotContains('');
+  }
+
+  // ENTER commits whatever is in both boxes at once.
+  function onFind(e: React.FormEvent) {
+    e.preventDefault();
+    const next: FilterStep[] = [];
+    if (contains.trim()) next.push({ op: 'has', term: contains.trim() });
+    if (notContains.trim()) next.push({ op: 'not', term: notContains.trim() });
+    commitSteps(next);
+  }
+
+  // Leaving a box commits that box alone — tab, click into the grid, click Reset, alt-tab away. A term typed and left behind is a
+  // filter the operator believes is on, so there is no state in which one sits in a box doing nothing.
+  function commitBox(op: 'has' | 'not', value: string) {
+    if (value.trim()) commitSteps([{ op, term: value.trim() }]);
   }
 
   // Reset = the whole catalogue again, sorted as it opens, AND a fresh read from the DB (as in PowerBuilder). The mode is view state
@@ -500,11 +553,22 @@ export default function BirkenstockPage() {
   return (
     <AppShell title="Birkenstock">
       {/* ---- Command bar ------------------------------------------------------------------------------------------------------
-          The two filter boxes and the LIVE/FULL switch share one bar, because they are the two halves of one gesture: narrow to the
-          model you are thinking about, then flip the switch to see whether it is already ordered. */}
+          Everything the screen can do sits in one card, in TWO ROWS THAT MEAN DIFFERENT THINGS (2026-09-05):
+
+            ROW 1 — WHAT IS ON THE SHEET. Contains / Does not contain / Profit at least, and Reset; the LIVE/FULL switch closes the
+                    row on the right. Every control here changes which styles you are looking at, or which stock the figures are, and
+                    they get combined constantly (a model, then a level), so they stay on one line.
+            ROW 2 — WHAT IS IN FRONT OF YOU, AND WHAT YOU DO WITH IT. The counts and the applied steps read from the left; Cut and the
+                    park buttons sit on the right. Both act on marked rows, and neither changes the membership of the list.
+
+          Row 2 is the OLD COUNT STRIP with the mark-actions moved onto its right-hand end, which is what closed the hole in the middle
+          of the card (owner, 2026-09-05). Cut and park had a line of their own, and a line holding two small controls and a switch
+          pinned to the far right is mostly empty space — the eye reads the gap as a missing control. Sharing a line with the counts
+          gives them a right-hand end to sit against, and takes a row off the card's height into the bargain. */}
       <div className="mb-4">
         <form onSubmit={onFind} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-end gap-2">
+          {/* ---- Row 1: what is on the sheet ------------------------------------------------------------------------------- */}
+          <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Contains</label>
               <div className="relative">
@@ -513,6 +577,7 @@ export default function BirkenstockPage() {
                   ref={containsRef}
                   value={contains}
                   onChange={(e) => setContains(e.target.value.toUpperCase())}
+                  onBlur={(e) => commitBox('has', e.target.value)}
                   autoFocus
                   placeholder="e.g. ARIZONA"
                   className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm uppercase placeholder:normal-case focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
@@ -524,40 +589,53 @@ export default function BirkenstockPage() {
               <input
                 value={notContains}
                 onChange={(e) => setNotContains(e.target.value.toUpperCase())}
+                onBlur={(e) => commitBox('not', e.target.value)}
                 placeholder="e.g. EVA"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase placeholder:normal-case focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
               />
             </div>
-            {/* ---- The gross threshold ------------------------------------------------------------------------------------------
-                THE BEST SELLERS FIRST, THEN DOWNWARDS (owner, 2026-09-04). Four fixed bands and no free entry — the number is a
-                BUDGET TIER, not a search term: press 1000 and the sheet becomes the styles worth ordering first, spend against it,
-                press 750 and the tier just done stays above the new arrivals (the sort is gross-descending, so the list only ever
-                grows downwards). The free-entry box that was here first came out at the owner's call (2026-09-04): an exact figure
-                implies this number is precise enough to cut on, and it is not — it is an indication, and stepping down in bands is
-                the whole of how it is used. Sitting in the same bar as the text boxes, because narrowing to a model and narrowing to
-                a tier are the same gesture and get combined constantly. */}
+            {/* ---- The profit level ---------------------------------------------------------------------------------------------
+                THE BEST SELLERS FIRST, THEN DOWNWARDS (owner, 2026-09-04). Four fixed steps and no free entry — what is being chosen
+                is a BUDGET TIER, not a search term: press Top and the sheet becomes the styles worth ordering first, spend against it,
+                press High and the tier just done stays above the new arrivals (the sort is gross-descending, so the list only ever
+                grows downwards). The free-entry box that was here first came out at the owner's call (2026-09-04), and the pound
+                figures on the buttons followed it out a day later for the same reason — see GROSS_LEVELS.
+                It sits in the same row as the text boxes because narrowing to a model and narrowing to a level are the same gesture
+                and get combined constantly.
+                A QUIET SEGMENTED CONTROL — a raised white segment on a recessed track, not a black fill (2026-09-05). The black
+                belongs to LIVE/FULL and to nothing else: this control opens on ALL, so a filled dark chip made the screen's DEFAULT,
+                do-nothing state the heaviest mark on the page, and two black blocks in one bar left neither of them meaning anything. */}
             <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Profit at least</label>
-              <div className="inline-flex rounded-md border border-slate-300 p-0.5">
-                {GROSS_PRESETS.map((v) => (
+              {/* PERFORMANCE, not "Profit at least" (owner, 2026-09-05). The label was the last place the control still argued it was
+                  a numeric threshold — four named steps under a heading that says "at least" reads as a sum you are about to filter
+                  on. What the operator is choosing is how well a style has to have DONE to be worth his time today, and Performance is
+                  that in one word. The cumulative sense the old label carried moves into the tooltips, which now say each level
+                  includes the ones above it. */}
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Performance</label>
+              <div className="inline-flex rounded-md bg-slate-100 p-1">
+                {GROSS_LEVELS.map((l) => (
                   <button
-                    key={v}
+                    key={l.min}
                     type="button"
-                    onClick={() => applyGross(v)}
-                    title={`Only the styles that have made at least £${money(v)} gross profit in the last 365 days`}
-                    className={`rounded px-3 py-1.5 text-sm font-medium tabular-nums ${
-                      minGross === v ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    onClick={() => applyGross(l.min)}
+                    title={
+                      l.min === GROSS_LEVELS[0].min
+                        ? `${l.label}: styles that have made at least £${money(l.min)} gross profit in the last 365 days`
+                        : `${l.label} and above: styles that have made at least £${money(l.min)} gross profit in the last 365 days`
+                    }
+                    className={`rounded px-3 py-1.5 text-sm font-medium ${
+                      minGross === l.min ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {money(v)}
+                    {l.label}
                   </button>
                 ))}
                 <button
                   type="button"
                   onClick={() => applyGross(null)}
-                  title="Drop the threshold — every style again"
+                  title="Every style, whatever it has made — and parked styles come back into the list"
                   className={`rounded px-3 py-1.5 text-sm font-medium ${
-                    minGross === null ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    minGross === null ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   All
@@ -565,15 +643,8 @@ export default function BirkenstockPage() {
               </div>
             </div>
 
-            {/* Find is a plain white button, matching Reset (owner, 2026-09-04). The filled brand-blue submit that every other screen
-                uses was the loudest thing on a page whose whole job is a grid of small numbers, and it pulled the eye to a button that
-                is pressed once. The pair reads as what it is: two neutral controls sitting beside the boxes they act on. */}
-            <button
-              type="submit"
-              className="rounded-md border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Find
-            </button>
+            {/* NO FIND BUTTON — the boxes commit on Enter and on the way out of them (see commitSteps). Reset stays: it is the undo
+                for everything on this screen, it re-reads the database, and there is no keystroke that says it. */}
             <button
               type="button"
               onClick={onReset}
@@ -583,82 +654,36 @@ export default function BirkenstockPage() {
               <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Reset
             </button>
-            {/* CUT sits next to Reset because Reset is its undo — the two belong to the same idea and there is no third button
-                between them. It is disabled with nothing marked rather than hidden: a control that appears only once you have
-                already done the thing that enables it teaches nobody it is there. The count is on the face so a mis-shift-click
-                (a range of 40 when you meant 4) is caught BEFORE it is pressed, which is the only place it can be caught — there
-                is no restore. */}
-            <button
-              type="button"
-              onClick={onCut}
-              disabled={selected.size === 0}
-              title={
-                selected.size === 0
-                  ? 'Mark rows first — click, ctrl-click to add, shift-click for a range'
-                  : `Hide ${selected.size} marked ${selected.size === 1 ? 'row' : 'rows'} from the view (Reset brings everything back)`
-              }
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-white"
-            >
-              Cut{selected.size > 0 ? ` ${selected.size}` : ''}
-            </button>
 
-            {/* ---- PARK: the legacy "1 2 3" -------------------------------------------------------------------------------------
-                Pressed after an order has actually been placed with Birkenstock: those styles are settled for the season and should
-                stop reading as re-order candidates. Three buttons and no free entry for the same reason the profit bands have none —
-                it is a coarse "ask me again next season-ish", and the legacy screen has run on exactly these three for years.
-                They sit beside Cut because the two are the same motion (mark rows, then do something to them), and apart from it
-                because only ONE of them writes to the database. Hence the label above them, which Cut does not have. */}
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Ordered — park (months)</label>
-              <div className="inline-flex rounded-md border border-slate-300 p-0.5">
-                {PARK_MONTHS.map((m) => (
+            {/* The switch. A two-segment control rather than two buttons: it is one setting with two states, and it has to be obvious
+                at a glance WHICH numbers are on screen — every figure in the grid changes meaning with it. It is THE ONE BOLD THING
+                in this card, and it is bold on purpose: it is the only control here that changes what a number means rather than
+                which numbers are shown, so it is the only one worth a filled chip. Everything else went quiet around it. */}
+            <div className="ml-auto">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Showing</label>
+              <div className="inline-flex rounded-md bg-slate-100 p-1">
+                {(['live', 'full'] as Mode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
-                    onClick={() => onPark(m)}
-                    disabled={selected.size === 0 || parking !== null}
-                    title={
-                      selected.size === 0
-                        ? 'Mark the styles you have ordered first'
-                        : `Stamp ${selected.size} style${selected.size === 1 ? '' : 's'} as reviewed — back on the working list on the 1st, ${m} month${m === 1 ? '' : 's'} from now`
-                    }
-                    className="rounded px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    onClick={() => setMode(m)}
+                    title={m === 'live' ? 'On the shelf now, ready to sell' : 'On the shelf plus everything still to come from Birkenstock'}
+                    className={`rounded px-4 py-1.5 text-sm font-medium ${
+                      mode === m ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                    }`}
                   >
-                    {parking === m ? '…' : m}
+                    {m === 'live' ? 'Live' : 'Full'}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* The switch. A two-segment control rather than two buttons: it is one setting with two states, and it has to be obvious
-                at a glance WHICH numbers are on screen — every figure in the grid changes meaning with it. */}
-            <div className="ml-auto flex items-end gap-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Showing</label>
-                <div className="inline-flex rounded-md border border-slate-300 p-0.5">
-                  {(['live', 'full'] as Mode[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMode(m)}
-                      title={m === 'live' ? 'On the shelf now, ready to sell' : 'On the shelf plus everything still to come from Birkenstock'}
-                      className={`rounded px-4 py-1.5 text-sm font-medium ${
-                        mode === m ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {m === 'live' ? 'Live' : 'Full'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Applied steps + how many styles are in front of you. NO COLUMN TOTALS (owner, 2026-09-04 — they were here and came out):
-              summed Sold 365 / Live / On order across a filtered list is a number nobody acts on, and this strip is the space the
-              screen's real controls will want. Keep it to what the filter itself has to report.
+          {/* ---- Row 2: what is in front of you, and what you do with it -------------------------------------------------------
+              NO COLUMN TOTALS (owner, 2026-09-04 — they were here and came out): summed Sold 365 / Live / On order across a filtered
+              list is a number nobody acts on. Keep it to what the filter itself has to report.
               The step chips are display-only (as in the legacy screen and in Inventory): to undo one, Reset and search again. */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-3 text-sm">
             <span className="whitespace-nowrap text-slate-500">
               <span className="font-semibold text-slate-800">{sorted.length}</span>
               <span className="text-slate-400">{steps.length > 0 ? ` of ${rows.length} styles` : ' styles'}</span>
@@ -678,9 +703,11 @@ export default function BirkenstockPage() {
                 {cutInView} cut <span className="text-slate-300">· Reset restores</span>
               </span>
             )}
+            {/* The level's chip carries the POUNDS the buttons no longer say. Once a level is on, the threshold behind it stops being
+                a label competing for the eye and becomes the thing you are working to, which is worth stating exactly. */}
             {minGross !== null && (
               <span className="whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-                profit <span className="font-medium text-slate-800">£{money(minGross)}+</span>
+                {grossLabel(minGross)} <span className="font-medium text-slate-800">£{money(minGross)}+</span>
               </span>
             )}
             {steps.map((s, i) => (
@@ -688,6 +715,61 @@ export default function BirkenstockPage() {
                 {s.op === 'has' ? 'contains' : 'not'} <span className="font-medium text-slate-800">{s.term}</span>
               </span>
             ))}
+            {/* THE GESTURES, SAID ONCE, HERE (2026-09-05). They used to be a `title` on every row, which meant the browser's own
+                tooltip surfaced over the grid a second after the mouse stopped anywhere on it — a black box across the size curve the
+                operator had stopped to read. A grid is the one place a hover hint costs more than it gives. */}
+            <span className="hidden whitespace-nowrap text-xs text-slate-400 xl:inline">
+              Click to mark · shift-click for a range · double-click for deliveries
+            </span>
+
+            {/* The two things you do to marked rows, at the right-hand end of the strip that says how many are marked. */}
+            <div className="ml-auto flex items-center gap-2">
+              {/* CUT is disabled with nothing marked rather than hidden: a control that appears only once you have already done the
+                  thing that enables it teaches nobody it is there. NO COUNT ON THE FACE (owner, 2026-09-05) — the strip it now sits
+                  in already says "N marked" a few inches to its left, and a number on the button was the same fact twice, changing
+                  the button's width every time a row was clicked. */}
+              <button
+                type="button"
+                onClick={onCut}
+                disabled={selected.size === 0}
+                title={
+                  selected.size === 0
+                    ? 'Mark rows first — click, ctrl-click to add, shift-click for a range'
+                    : `Hide ${selected.size} marked ${selected.size === 1 ? 'row' : 'rows'} from the view (Reset brings everything back)`
+                }
+                className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-white"
+              >
+                Cut
+              </button>
+
+              {/* ---- PARK: the legacy "1 2 3" -----------------------------------------------------------------------------------
+                  Pressed after an order has actually been placed with Birkenstock: those styles are settled for the season and should
+                  stop reading as re-order candidates. Three buttons and no free entry for the same reason the profit levels have none
+                  — it is a coarse "ask me again next season-ish", and the legacy screen has run on exactly these three for years.
+                  They sit beside Cut because the two are the same motion (mark rows, then do something to them), and keep their own
+                  label because only ONE of them writes to the database and a bare 1 2 3 says nothing about what it will do.
+                  The group's border greys out with the buttons, so with nothing marked the whole control is plainly asleep instead of
+                  looking like an empty box someone forgot to fill in. */}
+              <span className="whitespace-nowrap text-xs font-medium uppercase tracking-wide text-slate-500">Ordered — park</span>
+              <div className={`inline-flex rounded-md border p-0.5 ${selected.size === 0 ? 'border-slate-200' : 'border-slate-300'}`}>
+                {PARK_MONTHS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => onPark(m)}
+                    disabled={selected.size === 0 || parking !== null}
+                    title={
+                      selected.size === 0
+                        ? 'Mark the styles you have ordered first'
+                        : `Stamp ${selected.size} style${selected.size === 1 ? '' : 's'} as reviewed — back on the working list on the 1st, ${m} month${m === 1 ? '' : 's'} from now`
+                    }
+                    className="rounded px-2.5 py-0.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                  >
+                    {parking === m ? '…' : m}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </form>
       </div>
@@ -703,11 +785,26 @@ export default function BirkenstockPage() {
       )}
 
       {loading && rows.length === 0 ? (
-        <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
+        <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-sm text-slate-400 shadow-sm">Loading the sheet…</div>
       ) : sorted.length === 0 ? (
-        <div className="py-16 text-center text-sm text-slate-400">No styles match.</div>
+        /* An empty screen is a place to say what to do next, not just that there is nothing here — and what to do next depends on
+           what emptied it. A hand-cut list is emptied by the operator and Reset is the way back; an over-narrow search is emptied by
+           the terms, and the next Find starts fresh anyway. */
+        <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-sm text-slate-400 shadow-sm">
+          No styles match{cut.size > 0 || steps.length > 0 || minGross !== null ? ' — press Reset for the whole list again' : ''}.
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        // UNDERSCORES IN THE calc(), and they are not optional: Tailwind turns `_` into a space, and `calc(100vh-23rem)` without them
+        // is invalid CSS that the browser drops on the floor. The first cut of this had no underscores, so the box had no height, so
+        // it never scrolled, so the sticky headings still did not stick — the fix looked applied and did nothing.
+        //
+        // THE GRID SCROLLS INSIDE ITS OWN BOX, so the heading row can actually stick (2026-09-05). The `sticky top-0` on every th was
+        // inert before: a box with `overflow-x-auto` is a scroll container in BOTH axes, and one with no height never scrolls
+        // vertically, so the headings sat still while the PAGE scrolled and slid off the top with the first thirty rows. On a sheet of
+        // 176 rows and fourteen size columns that is the difference between reading a size curve and counting columns to work out
+        // which size a 3 is. Bounding the box height moves the vertical scroll inside it and the sticky headings start working.
+        // Ctrl+F still finds rows below the fold — the browser scrolls this box to reach them, exactly as it scrolls the page.
+        <div className="max-h-[calc(100vh_-_21rem)] min-h-[20rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           {/* FIXED LAYOUT, EXPLICIT WIDTHS (owner, 2026-09-04 — the first cut got both of these wrong). Auto layout sized every column
               to its own widest cell, so a column holding a "10" came out wider than one holding a "1" and the size figures stopped
               lining up down the grid — which is fatal here, because the whole point of the row is reading the size curve ACROSS it.
@@ -716,25 +813,46 @@ export default function BirkenstockPage() {
               The min-width is a floor for narrow screens: below it the grid scrolls sideways as a unit rather than squeezing the last
               sizes off the right-hand edge.
 
-              WHOLE PIXELS, NOT REMS (owner, 2026-09-04 — a permanent hairline scrollbar under the grid). Rem widths landed on
-              fractions (2.1rem = 33.6px), and eighteen of those rounded up to a table a pixel or two wider than the box holding it,
-              which is enough for a scrollbar to appear on a grid that visibly fits. Integer px across every fixed column removes the
-              rounding entirely; the Style column is the one left auto, so it absorbs whatever is left over. */}
-          <table className="w-full min-w-[984px] table-fixed border-collapse text-sm">
+              THE WIDTH BUDGET, AND IT IS TIGHT — this is what a horizontal scrollbar under the grid always turns out to be
+              (2026-09-04, and again 2026-09-05). AppShell's container is `max-w-5xl px-4`, so the widest this table can EVER be is
+              1024 − 32 = 992px, whatever the monitor: past that the shell centres and stops. Take off the vertical scrollbar the box
+              now carries (~15px, Windows Chrome) and the real ceiling is about 977. So every fixed width below has to sum, plus a
+              usable Style column, to less than that — and `min-w` has to sit under it too, or the table is wider than its own box on
+              EVERY screen and the scrollbar is permanent. That is exactly what a min-w of 1000px did.
+                140 groupid + 88 sold + 84 profit + 72 stock + 14x30 sizes = 804, leaving Style ~173. min-w 900.
+              Anything added to this grid comes out of Style, and when Style is gone it comes out of the shell.
+
+              WHOLE PIXELS, NOT REMS (owner, 2026-09-04 — the first permanent hairline scrollbar). Rem widths landed on fractions
+              (2.1rem = 33.6px), and eighteen of those rounded up to a table a pixel or two wider than the box holding it, which is
+              enough on its own. Integer px across every fixed column removes the rounding; Style is the one left auto, so it absorbs
+              whatever is left over. */}
+          {/* BORDER-SEPARATE, NOT BORDER-COLLAPSE (2026-09-05). `position: sticky` on a table cell has a long history of being
+              ignored under `border-collapse: collapse` — the collapsed border model paints borders for the table as a whole rather
+              than per cell, and browsers have been inconsistent about whether a cell inside it can be stuck at all. With the heading
+              row's whole job being to stay put over 176 rows, that is not a bet worth taking. `border-spacing-0` keeps the grid
+              looking exactly as collapsed one did, and the row rules move onto the cells (`[&>td]:border-b`), because a border set on
+              a <tr> is not painted in the separate model. */}
+          <table className="w-full min-w-[900px] table-fixed border-separate border-spacing-0 text-sm">
             <colgroup>
               <col className="w-[140px]" />
               <col />
-              <col className="w-[72px]" />
+              {/* 88px, not 72: "Sold 365" was wrapping onto two lines and standing the whole heading row a line taller than it needs
+                  to be, on the one row of the grid that is repeated at the top of every screenful. */}
+              <col className="w-[88px]" />
               <col className="w-[84px]" />
               <col className="w-[72px]" />
+              {/* 30px, not 32: two digits at text-sm are ~17px, so 30 holds any quantity this grid can show with room either side,
+                  and the 28px it gives back across fourteen columns goes to Style, which is the column that was truncating. */}
               {sizeCols.map((sz) => (
-                <col key={sz} className="w-[32px]" />
+                <col key={sz} className="w-[30px]" />
               ))}
             </colgroup>
             <thead>
-              <tr className="border-b border-slate-200 text-left">
+              {/* No border-b here — HEAD_RULE on the cells draws it. A border on the row scrolls away with the table under a sticky
+                  head and leaves a stray line across the middle of the grid. */}
+              <tr className="text-left">
                 <SortTh label="Groupid" colKey="groupid" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                <th className="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className={`sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 ${HEAD_RULE}`}>
                   Style
                 </th>
                 <SortTh label="Sold 365" colKey="sold365" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
@@ -743,7 +861,7 @@ export default function BirkenstockPage() {
                 {sizeCols.map((sz, i) => (
                   <th
                     key={sz}
-                    className={`sticky top-0 z-10 bg-slate-100 py-2 text-center text-xs font-semibold text-slate-500 ${cellPad(i, sizeCols.length)} ${sizeBand(i)}`}
+                    className={`sticky top-0 z-10 bg-slate-100 py-2 text-center text-xs font-semibold text-slate-500 ${HEAD_RULE} ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                   >
                     {sz}
                   </th>
@@ -765,10 +883,10 @@ export default function BirkenstockPage() {
                   <tr
                     onClick={(e) => onRowClick(e, r.groupid)}
                     onDoubleClick={() => setPlanned(open ? null : r.groupid)}
-                    title="Click to mark · ctrl-click to add · shift-click for a range · double-click for when its ordered stock is due"
+                    // No `title` on the row: see the hint at the end of the count strip for where the gestures are said instead.
                     // select-none matters more than it looks: without it a shift-click drags a text selection across the grid and the
                     // sheet ends up half-highlighted blue underneath the marks it is supposed to be showing.
-                    className={`cursor-pointer select-none border-b border-slate-100 last:border-0 ${
+                    className={`cursor-pointer select-none [&>td]:border-b [&>td]:border-slate-100 ${
                       open || selected.has(r.groupid) ? 'bg-slate-200/70' : 'hover:bg-slate-50'
                     }`}
                   >
@@ -830,7 +948,7 @@ export default function BirkenstockPage() {
                       return (
                         <td
                           key={sz}
-                          className={`py-1.5 text-center tabular-nums text-slate-700 ${cellPad(i, sizeCols.length)} ${sizeBand(i)}`}
+                          className={`py-1.5 text-center tabular-nums text-slate-700 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                         >
                           {q ? q : ''}
                         </td>
@@ -848,19 +966,19 @@ export default function BirkenstockPage() {
                       adds to the Stock cell above. A delivery that has fully landed is therefore absent: those units are on the shelf,
                       and the grid row above is already counting them. */}
                   {open && plannerBusy && plannerMonths.length === 0 && (
-                    <tr className="border-b border-slate-100 bg-slate-50">
+                    <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50">
                       <td colSpan={5 + sizeCols.length} className="px-8 py-2 text-xs text-slate-400">Loading…</td>
                     </tr>
                   )}
                   {open && !plannerBusy && plannerMonths.length === 0 && (
-                    <tr className="border-b border-slate-100 bg-slate-50">
+                    <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50">
                       <td colSpan={5 + sizeCols.length} className="px-8 py-2 text-xs text-slate-500">
                         Nothing still to come — no outstanding Birkenstock order for this style.
                       </td>
                     </tr>
                   )}
                   {open && plannerMonths.map((m) => (
-                    <tr key={m.due} className="border-b border-slate-100 bg-slate-50 text-slate-600">
+                    <tr key={m.due} className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50 text-slate-600">
                       <td className="px-2 py-1 text-right text-[11px] uppercase tracking-wide text-slate-400">Due</td>
                       <td className="truncate px-2 py-1 text-xs font-medium text-slate-700">{monthLabel(m.due)}</td>
                       <td className="px-2 py-1" />
@@ -876,7 +994,7 @@ export default function BirkenstockPage() {
                       {sizeCols.map((sz, i) => (
                         <td
                           key={sz}
-                          className={`py-1 text-center text-xs tabular-nums text-slate-600 ${cellPad(i, sizeCols.length)} ${sizeBand(i)}`}
+                          className={`py-1 text-center text-xs tabular-nums text-slate-600 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                         >
                           {m.sizes[sz] ? m.sizes[sz] : ''}
                         </td>
