@@ -2413,7 +2413,9 @@ export interface GoogleAdsDay {
   units: number; revenue: number; profit: number;
 }
 export interface GoogleAdsDrillHeader {
-  title: string | null; segment: string; season: string; brand: string;
+  title: string | null;
+  imagename: string | null;   // bare filename; the client builds https://images.brookfieldcomfort.com/<imagename>
+  segment: string; season: string; brand: string;
   campaign: string; googleLabel: string | null; googleLive: boolean;
   stock: number; price: number | null; rrp: number | null; cost: number | null;
 }

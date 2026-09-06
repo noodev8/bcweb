@@ -52,7 +52,7 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "groupid": "1005299-GIZEH",
-  "header": { "title": "...", "segment": "GIZEH-SEG", "brand": "Birkenstock", "season": "Summer",
+  "header": { "title": "...", "imagename": "birkenstock-gizeh.jpg", "segment": "GIZEH-SEG", "brand": "Birkenstock", "season": "Summer",
               "campaign": "standard", "googleLabel": "STANDARD", "googleLive": true,
               "stock": 23, "price": 57.00, "rrp": 80.00, "cost": 28.50 },
   "sizes": [ { "size": "38", "qty": 0 }, { "size": "39", "qty": 2 } ],   // EVERY size in skumap, 0 included, numeric order
@@ -110,6 +110,7 @@ router.get('/', async (req, res) => {
              COALESCE(ss.segment, '') AS segment,
              COALESCE(ss.season, '')  AS season,
              COALESCE(ss.brand, '')   AS brand,
+             NULLIF(ss.imagename, '') AS imagename,
              COALESCE(ss.googlecampaign, '') AS campaign,
              (ss.googlestatus = 1 AND ss.shopify = 1) AS google_live,
              COALESCE((SELECT SUM(qty) FROM localstock ls
@@ -243,6 +244,8 @@ router.get('/', async (req, res) => {
       groupid: h.groupid,
       header: {
         title: h.title,
+        // Bare filename; the client builds https://images.brookfieldcomfort.com/<imagename>, same as the Inventory browse.
+        imagename: h.imagename,
         segment: h.segment,
         season: h.season,
         brand: h.brand,

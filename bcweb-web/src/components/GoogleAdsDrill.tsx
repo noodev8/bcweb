@@ -27,6 +27,9 @@ styles and that is expected rather than broken.
 =======================================================================================================================================
 */
 
+import Image from 'next/image';
+import Link from 'next/link';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { getGoogleAdsDrill, GoogleAdsLabelRun } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -36,9 +39,29 @@ function shortDate(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 }
+const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
+
 function money(v: number): string {
   const r = Math.round(v);
   return `${r < 0 ? '-' : ''}£${Math.abs(r).toLocaleString('en-GB')}`;
+}
+
+/**
+ * A link out to another module for this same style. Opens in a NEW TAB on purpose: the operator is part-way through working a
+ * filtered list here, and navigating away would lose the narrowing, the cuts and the selection they had built up.
+ */
+function NavPill({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener"
+      className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+    >
+      {label}
+      <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-slate-400" />
+    </Link>
+  );
 }
 
 /** A run with no activity at all — drawn quietly. Usually one or two days at a changeover. */
@@ -74,8 +97,24 @@ export default function GoogleAdsDrill({ groupid, onClose }: { groupid: string; 
 
         {d && (
           <div className="space-y-6 px-5 py-4">
-            {/* ---- header facts ---------------------------------------------------------------------------------------- */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+            {/* ---- picture + header facts -------------------------------------------------------------------------------
+                THE PICTURE IS THE FASTEST FACT ON THE PANEL (owner, 2026-09-06). A groupid and a stripped title identify a style to
+                the database; the photograph identifies it to a person, and the judgement being made here — is this a summer sandal
+                I should stop paying for right now? — is answered by looking at it long before any column is read.
+                Intrinsic size is unknown (legacy image library), so next/image gets a fixed box and object-contain letterboxes it. */}
+            <div className="flex gap-4">
+              {d.header.imagename && (
+                <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+                  <Image
+                    src={`${IMAGE_BASE}${d.header.imagename}`}
+                    alt={d.header.title || groupid}
+                    fill
+                    sizes="112px"
+                    className="object-contain"
+                  />
+                </div>
+              )}
+              <dl className="grid flex-1 grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Campaign</dt><dd className="font-medium text-slate-800">{d.header.campaign || '—'}</dd></div>
               <div>
                 <dt className="text-xs uppercase tracking-wide text-slate-400">Google says</dt>
@@ -89,7 +128,20 @@ export default function GoogleAdsDrill({ groupid, onClose }: { groupid: string; 
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Brand</dt><dd className="text-slate-700">{d.header.brand || '—'}</dd></div>
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Season</dt><dd className="text-slate-700">{d.header.season || '—'}</dd></div>
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">In feed</dt><dd className="text-slate-700">{d.header.googleLive ? 'Yes' : 'No'}</dd></div>
-            </dl>
+              </dl>
+            </div>
+
+            {/* ---- jump to the other modules ------------------------------------------------------------------------------
+                This panel diagnoses; it does not fix. Every conclusion it supports hands off somewhere else — a thin margin is a
+                Shopify Pricing job, an empty size run is an Add/Modify or ordering job — and without these the operator reads the
+                answer here, then goes and retypes the groupid into another screen's search box.
+                Each uses the deep-link convention that module already has: /pricing/style/<groupid> lands directly, Amazon is SKU
+                grain so it goes through its find with ?q=, and Add/Modify takes ?groupid= and opens on the edit panel. */}
+            <div className="flex flex-wrap gap-2">
+              <NavPill href={`/pricing/style/${encodeURIComponent(groupid)}`} label="Shopify price" />
+              <NavPill href={`/amz/find?q=${encodeURIComponent(groupid)}`} label="Amazon price" />
+              <NavPill href={`/products?groupid=${encodeURIComponent(groupid)}`} label="Add / Modify" />
+            </div>
 
             {/* ---- size curve ------------------------------------------------------------------------------------------
                 WHERE the holes are, not just how many. The grid's "4/11" says the shelf is thin; this says whether it is thin in a
@@ -189,41 +241,6 @@ export default function GoogleAdsDrill({ groupid, onClose }: { groupid: string; 
               )}
             </section>
 
-            {/* ---- the daily series ------------------------------------------------------------------------------------ */}
-            <section>
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Day by day</h3>
-              {d.daily.length === 0 ? (
-                <p className="text-sm text-slate-400">Nothing in the last 180 days.</p>
-              ) : (
-                <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                        <th className="py-1.5 pr-2 text-left font-semibold">Date</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Clicks</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Spend</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Units</th>
-                        <th className="py-1.5 pl-2 text-right font-semibold">Profit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...d.daily].reverse().map((day) => (
-                        <tr key={day.date} className="border-b border-slate-100 last:border-0">
-                          <td className="py-1 pr-2 whitespace-nowrap text-slate-500">{shortDate(day.date)}</td>
-                          <td className="px-2 py-1 text-right tabular-nums text-slate-600">{day.clicks || ''}</td>
-                          <td className="px-2 py-1 text-right tabular-nums text-slate-600">{day.spend ? money(day.spend) : ''}</td>
-                          <td className="px-2 py-1 text-right tabular-nums text-slate-600">{day.units || ''}</td>
-                          <td className="py-1 pl-2 text-right tabular-nums text-slate-700">{day.profit ? money(day.profit) : ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="mt-2 text-xs text-slate-400">
-                A day appears only if something happened — Google reports nothing for a day a style got no impressions.
-              </p>
-            </section>
           </div>
         )}
       </div>

@@ -137,16 +137,20 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
   switch (key) {
     case 'groupid': return r.groupid.toLowerCase();
     case 'campaign': return r.campaign.toLowerCase();
-    // Sorted on the SHARE of the run in stock, not the count: 4 of 11 is a worse shelf than 4 of 5, and the count alone hides that.
-    case 'sizes': return r.sizesListed > 0 ? r.sizesInStock / r.sizesListed : 1;
+    // Sorted on the COUNT of sizes in stock, not the share (owner, 2026-09-06 — "sorting on size e.g. 4/7 goes weird").
+    // The share is the better measure — 4 of 11 is a thinner shelf than 4 of 5 — but sorting on it scatters the column the eye is
+    // actually reading, so 4/7 and 4/11 land pages apart and the list looks unsorted. The first number is what a reader ranks on,
+    // so that is what the sort ranks on. The share still does its job as the amber threshold on the cell.
+    // Tie-broken by the share, so equal counts put the thinner run first.
+    case 'sizes': return r.sizesInStock + (r.sizesListed > 0 ? r.sizesInStock / r.sizesListed / 1000 : 0);
     case 'sold': return win.units;
-    case 'conv': { const c = convPct(r, w); return c === null ? Number.POSITIVE_INFINITY : c; }
+    case 'conv': return convPct(r, w);
     case 'spend': return win.spend;
     // KEPT is profit after ad spend — the grid shows no other kind of profit (owner, 2026-09-06: the column was called Profit, and
     // renaming it matches Reports > Ad Efficiency, where the same figure has always been Kept).
     case 'kept': return win.profitAfterSpend;
     // A style with nothing sold has no per-sale figure. Sent to the far end so it never sits among real ones.
-    case 'keptper': { const v = keptPerSale(win); return v === null ? Number.POSITIVE_INFINITY : v; }
+    case 'keptper': return keptPerSale(win);
   }
 }
 
@@ -165,8 +169,13 @@ function money(v: number): string {
 // is which styles earn their place. This is the same measure Reports > Ad Efficiency ranks months on, so a style and a month are
 // finally read in the same units.
 //
-// Null when nothing sold: there is no per-sale figure for no sales, and a style that spent money selling none is already damned by
-// its Kept column.
+// ZERO, NOT NULL, WHEN NOTHING SOLD (owner, 2026-09-06 — "helps the sort"). Strictly there is no per-sale figure for no sales, and
+// this column used to say so with a dash and push those rows to the end of the sort. That put a real group of styles somewhere the
+// operator never looked. At 0 they sort where they belong: below every earner, above every loser.
+//
+// The trade, stated so nobody reads 0 as harmless: a style that spent £58 and sold nothing also reads £0.00 here. Its KEPT column
+// is -£58 and sits immediately to the left, which is the figure that damns it. Sorting on Kept, not Kept / sale, is what finds
+// those rows — this column ranks earners.
 // Clicks that turned into a sale. THE column that says WHY a row is expensive, and it costs nothing — `clicks` was already in the
 // payload and simply was not drawn.
 //
@@ -175,16 +184,23 @@ function money(v: number): string {
 // 0.9%. The 10x spread in conversion, not the bidding, is the whole difference between a style that keeps 46% of its profit and one
 // that loses four times it. Sorted ascending by default: the worst converter is the row to look at.
 //
-// Null below a click floor. One sale on three clicks is 33% and means nothing; printing it would put noise at the top of the sort.
+// NO NULLS (owner, 2026-09-06 — "Conv % sort is using NULLs, makes it awkward"). This returned null below a click floor and the
+// sort banished those rows past the end, which is exactly where an operator never looks.
+//
+// A rate below the floor is still a real ratio, just a thin one: one sale on three clicks IS 33%, it simply should not be believed.
+// So the number is computed for everyone and the DISPLAY carries the warning instead — rows under the floor are greyed. Ranking and
+// trustworthiness are two different jobs and the sort should not be doing both.
+//
+// No clicks at all reads 0%, which is honest: nothing was offered, nothing converted.
 const CONV_MIN_CLICKS = 20;
-function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number | null {
+function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number {
   const win = r[w];
-  if (win.clicks < CONV_MIN_CLICKS) return null;
+  if (win.clicks <= 0) return 0;
   return Math.round((win.units / win.clicks) * 1000) / 10;
 }
 
-function keptPerSale(w: GoogleAdsWindow): number | null {
-  if (w.units <= 0) return null;
+function keptPerSale(w: GoogleAdsWindow): number {
+  if (w.units <= 0) return 0;
   return Math.round((w.profitAfterSpend / w.units) * 100) / 100;
 }
 
@@ -236,6 +252,13 @@ export default function GoogleAdsPage() {
   const [sortKey, setSortKey] = useState<SortKey>('kept');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // CUT — a per-row manual hide, same idiom as Inventory. The filter cannot always express "these 6 of the 48", because what makes
+  // them different is a judgement rather than a word in the title: a summer sandal you know is about to go quiet is a WINNER on
+  // every column here. So you narrow with the boxes, cut the stragglers by hand, then act on what is left.
+  // VIEW-ONLY and never sent anywhere. Restore or Reset brings them back.
+  const [cut, setCut] = useState<Set<string>>(new Set());
+  // Anchor for shift-click range selection — the index in the CURRENT sort of the last row whose box was clicked.
+  const anchorRef = useRef<number | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
 
   const [assignTo, setAssignTo] = useState('');
@@ -248,12 +271,18 @@ export default function GoogleAdsPage() {
     () => ({ steps, qty, season, bucket }),
     [steps, qty, season, bucket]
   );
-  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null;
+  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || cut.size > 0;
 
-  const visible = useMemo(
+  const matched = useMemo(
     () => applyCriteria(indexed, criteria, win).map((x) => x.row),
     [indexed, criteria, win]
   );
+  // Cuts apply AFTER the filter, so a cut row comes back the moment the filter changes underneath it rather than staying hidden in
+  // a list it was never cut from.
+  // NO CUT COUNT AND NO RESTORE (owner, 2026-09-06). A cut row is simply gone from the working set; Reset is the way back. The
+  // count and the undo link were both spending space on a state the operator has just deliberately created and does not need
+  // reminding of.
+  const visible = useMemo(() => matched.filter((r) => !cut.has(r.groupid)), [matched, cut]);
 
   const sorted = useMemo(() => {
     const list = [...visible];
@@ -293,9 +322,15 @@ export default function GoogleAdsPage() {
   }, [visible, win]);
 
   // ---- actions ------------------------------------------------------------------------------------------------------------
-  // A changed filter or window invalidates the selection — the rows it referred to may no longer be on screen, and a bulk assign
-  // that quietly included something you can no longer see is the worst thing this screen could do.
-  const clearSelection = useCallback(() => { setSelected(new Set()); }, []);
+  // ANY change to what is on screen clears the selection — every filter step added OR removed, the window switch, a campaign chip,
+  // a cut, Reset (owner, 2026-09-06). Two reasons, and the second is the one that bites:
+  //   1. A bulk assign that quietly included a row you can no longer see is the worst thing this screen could do.
+  //   2. The shift-click anchor is an INDEX into the current sort, not an id. Leave it in place across a filter change and it
+  //      points at a different style, so the next shift-click takes a range nobody asked for.
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    anchorRef.current = null;
+  }, []);
 
   const onFind = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -330,7 +365,7 @@ export default function GoogleAdsPage() {
   }, [onFind]);
 
   const onReset = useCallback(() => {
-    setSteps([]); setQty([]); setSeason(null); setBucket(null);
+    setSteps([]); setQty([]); setSeason(null); setBucket(null); setCut(new Set());
     setContains(''); setNotContains(''); setDrill(null);
     clearSelection();
     stylesQ.refresh();
@@ -343,27 +378,61 @@ export default function GoogleAdsPage() {
     else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
   }, [sortKey]);
 
-  const toggleRow = useCallback((groupid: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupid)) next.delete(groupid); else next.add(groupid);
-      return next;
-    });
-  }, []);
+  // SELECTION IS EXPLORER'S, NOT A CHECKBOX LIST (owner, 2026-09-06). The checkboxes were removed: they were a 16px target
+  // competing with the row click, and they made a plain click mean "add to a set" when what the operator wanted was "work on this
+  // one". Selection is now the row highlight and nothing else.
+  //
+  //   click              this row only — everything else clears. Clicking the only selected row clears it.
+  //   ctrl / cmd click   toggle this row, keep the rest.
+  //   shift click        the range from the anchor to here, REPLACING the selection (Explorer's rule, not additive).
+  //
+  // The anchor is the last row given a plain or ctrl click. Shift does not move it, so shift-clicking twice from the same start
+  // grows and shrinks one range instead of walking away from it.
+  const toggleRow = useCallback((groupid: string, index: number, e: React.MouseEvent) => {
+    const additive = e.ctrlKey || e.metaKey;
 
-  const allPaintedSelected = painted.length > 0 && painted.every((r) => selected.has(r.groupid));
-  const toggleAll = useCallback(() => {
-    setSelected((prev) => {
-      if (painted.length > 0 && painted.every((r) => prev.has(r.groupid))) {
+    if (e.shiftKey && anchorRef.current !== null) {
+      const anchor = anchorRef.current;
+      const [lo, hi] = anchor < index ? [anchor, index] : [index, anchor];
+      setSelected(new Set(painted.slice(lo, hi + 1).map((x) => x.groupid)));
+      return;   // anchor deliberately unmoved
+    }
+
+    if (additive) {
+      setSelected((prev) => {
         const next = new Set(prev);
-        for (const r of painted) next.delete(r.groupid);
+        if (next.has(groupid)) next.delete(groupid); else next.add(groupid);
         return next;
-      }
+      });
+      anchorRef.current = index;
+      return;
+    }
+
+    // Plain click: this row alone, or nothing if it was already the only one selected.
+    setSelected((prev) => (prev.size === 1 && prev.has(groupid) ? new Set() : new Set([groupid])));
+    anchorRef.current = index;
+  }, [painted]);
+
+  // Hide a row from the working set. Clears the selection with it: leaving a cut row selected would let a bulk assign move the very
+  // thing just excluded, and every row below it shifts up by one, which strands the shift anchor.
+  const cutRow = useCallback((groupid: string) => {
+    setCut((prev) => new Set(prev).add(groupid));
+    clearSelection();
+  }, [clearSelection]);
+
+  // Cut the whole selection. The row ✕ is for picking off one straggler; this is for the other half of the job — select a run of
+  // summer sandals with shift, drop them, then act on what is left. Same view-only cut, same Reset to undo it.
+  const cutSelected = useCallback(() => {
+    setCut((prev) => {
       const next = new Set(prev);
-      for (const r of painted) next.add(r.groupid);
+      for (const g of selected) next.add(g);
       return next;
     });
-  }, [painted]);
+    clearSelection();
+  }, [selected, clearSelection]);
+
+  // NO SELECT-ALL CONTROL (owner, 2026-09-06). Click the first row, shift-click the last — that covers it, and a pill sitting in
+  // the filter strip for a gesture the operator already has was one more thing to read past.
 
   const buckets = campaignsQ.data?.buckets ?? [];
   const assignable = buckets.filter((b) => !b.archived && b.managed);
@@ -516,25 +585,24 @@ export default function GoogleAdsPage() {
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> styles</span></>
             )}
           </span>
-
           {bucket && (
-            <Chip label={`Campaign: ${bucket}`} onClear={() => { setBucket(null); containsRef.current?.focus(); }} />
+            <Chip label={`Campaign: ${bucket}`} onClear={() => { setBucket(null); clearSelection(); containsRef.current?.focus(); }} />
           )}
           {season && (
-            <Chip label={season} onClear={() => { setSeason(null); containsRef.current?.focus(); }} />
+            <Chip label={season} onClear={() => { setSeason(null); clearSelection(); containsRef.current?.focus(); }} />
           )}
           {qty.map((f) => (
             <Chip
               key={f.metric}
               label={`${f.metric.toUpperCase()} ${f.op} ${f.n}`}
-              onClear={() => { setQty((list) => list.filter((x) => x.metric !== f.metric)); containsRef.current?.focus(); }}
+              onClear={() => { setQty((list) => list.filter((x) => x.metric !== f.metric)); clearSelection(); containsRef.current?.focus(); }}
             />
           ))}
           {steps.map((s, i) => (
             <Chip
               key={`${s.op}-${s.term}-${i}`}
               label={`${s.op === 'not' ? '¬ ' : ''}${s.term}`}
-              onClear={() => { setSteps((list) => list.filter((_, j) => j !== i)); containsRef.current?.focus(); }}
+              onClear={() => { setSteps((list) => list.filter((_, j) => j !== i)); clearSelection(); containsRef.current?.focus(); }}
             />
           ))}
         </div>
@@ -553,9 +621,9 @@ export default function GoogleAdsPage() {
               horizontal scrollbar at every realistic width — owner, 2026-09-06). Fixed layout also stops a long product title
               stretching the Style column and squeezing the money columns off the right, which is what actually caused it: the
               numbers are the point of the row and they must never be the part that gets pushed out of view. */}
-          <table className="w-full min-w-[880px] table-fixed border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[930px] table-fixed border-separate border-spacing-0 text-sm">
             <colgroup>
-              <col className="w-9" />
+              <col className="w-10" />
               <col />
               <col className="w-28" />
               <col className="w-16" />
@@ -564,17 +632,15 @@ export default function GoogleAdsPage() {
               <col className="w-20" />
               <col className="w-24" />
               <col className="w-20" />
+              <col className="w-8" />
             </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allPaintedSelected}
-                    onChange={toggleAll}
-                    aria-label="Select all shown"
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
+                {/* Row number. Position in the CURRENT sort, not an id — it renumbers when you sort or filter, which is the point:
+                    it answers "how far down am I" and "how many did that narrowing leave", both of which the operator asks while
+                    working a long list. */}
+                <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  #
                 </th>
                 <Th label="Style" col="groupid" {...{ sortKey, sortDir, onSort }} align="left" />
                 <Th label="Campaign" col="campaign" {...{ sortKey, sortDir, onSort }} align="left" />
@@ -591,18 +657,19 @@ export default function GoogleAdsPage() {
                 <Th label="Ad spend" col="spend" {...{ sortKey, sortDir, onSort }} seam />
                 <Th label="Kept" col="kept" {...{ sortKey, sortDir, onSort }} />
                 <Th label="Kept / sale" col="keptper" {...{ sortKey, sortDir, onSort }} />
+                <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2" />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
               )}
               {!loading && painted.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">
-                  No styles match. Clear a step or press Reset.
+                <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-400">
+                  No styles left. Press Reset to start again.
                 </td></tr>
               )}
-              {painted.map((r) => {
+              {painted.map((r, i) => {
                 const w = r[win];
                 const isSel = selected.has(r.groupid);
                 const perSale = keptPerSale(w);
@@ -618,19 +685,20 @@ export default function GoogleAdsPage() {
                 return (
                   <tr
                     key={r.groupid}
-                    className={`border-b border-slate-100 ${isSel ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+                    // The whole row is the target — see toggleRow for the click rules. The Style link and the cut ✕ stop
+                    // propagation so they keep doing their own jobs.
+                    onClick={(e) => toggleRow(r.groupid, i, e)}
+                    className={`cursor-pointer select-none border-b border-slate-100 ${isSel ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
                   >
-                    <td className="border-b border-slate-100 px-2 py-1.5 align-top">
-                      <input
-                        type="checkbox"
-                        checked={isSel}
-                        onChange={() => toggleRow(r.groupid)}
-                        aria-label={`Select ${r.groupid}`}
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
+                    <td className="border-b border-slate-100 px-2 py-1.5 text-right align-top text-xs tabular-nums text-slate-400">
+                      {i + 1}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5">
-                      <button type="button" onClick={() => setDrill(r.groupid)} className="block w-full text-left">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setDrill(r.groupid); }}
+                        className="block w-full text-left"
+                      >
                         <span className="font-medium text-slate-800 hover:text-brand-700">{r.groupid}</span>
                         {!r.googleLive && (
                           <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500" title="Not in the Google feed (googlestatus off)">off Google</span>
@@ -654,15 +722,17 @@ export default function GoogleAdsPage() {
                       {r.sizesListed === 0 ? '—' : `${r.sizesInStock}/${r.sizesListed}`}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{w.units}</td>
+                    {/* Greyed below the click floor: the rate is real but too thin to act on, and that is a display caveat rather
+                        than a reason to drop the row out of the sort. */}
                     <td
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
-                        conv === null ? 'text-slate-400' : conv < 2 ? 'font-medium text-amber-700' : 'text-slate-600'
+                        w.clicks < CONV_MIN_CLICKS ? 'text-slate-400' : conv < 2 ? 'font-medium text-amber-700' : 'text-slate-600'
                       }`}
-                      title={conv === null
-                        ? `Under ${CONV_MIN_CLICKS} clicks in this window — too few to read a rate from`
+                      title={w.clicks < CONV_MIN_CLICKS
+                        ? `${w.units} from ${w.clicks} clicks — under ${CONV_MIN_CLICKS}, too few to read much into`
                         : `${w.units} sales from ${w.clicks} clicks`}
                     >
-                      {conv === null ? '—' : `${conv}%`}
+                      {conv}%
                     </td>
                     <td className="border-b border-l border-slate-200 border-b-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{money(w.spend)}</td>
                     <td className={`border-b border-slate-100 px-2 py-1.5 text-right font-semibold tabular-nums ${
@@ -671,9 +741,20 @@ export default function GoogleAdsPage() {
                       {money(w.profitAfterSpend)}
                     </td>
                     <td className={`border-b border-slate-100 px-3 py-1.5 text-right tabular-nums ${
-                      perSale === null ? 'text-slate-400' : perSale < 0 ? 'text-red-600' : 'text-slate-600'
-                    }`} title={perSale === null ? 'Nothing sold in this window' : `${w.units} sold`}>
-                      {perSale === null ? '—' : `£${perSale.toFixed(2)}`}
+                      perSale < 0 ? 'text-red-600' : w.units === 0 ? 'text-slate-400' : 'text-slate-600'
+                    }`} title={w.units === 0 ? 'Nothing sold in this window — see Kept for what it still cost' : `${w.units} sold`}>
+                      £{perSale.toFixed(2)}
+                    </td>
+                    <td className="border-b border-slate-100 px-1 py-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); cutRow(r.groupid); }}
+                        title="Cut this row from the list (Reset brings it back)"
+                        aria-label={`Cut ${r.groupid}`}
+                        className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -705,7 +786,15 @@ export default function GoogleAdsPage() {
           >
             {assigning ? 'Moving…' : 'Move'}
           </button>
-          <button type="button" onClick={() => setSelected(new Set())} className="text-sm text-slate-500 hover:text-slate-700">
+          <button
+            type="button"
+            onClick={cutSelected}
+            title="Hide these rows from the list — Reset brings them back"
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Cut
+          </button>
+          <button type="button" onClick={clearSelection} className="text-sm text-slate-500 hover:text-slate-700">
             Clear selection
           </button>
           <span className="ml-auto text-xs text-slate-400">Reaches Google after tonight&rsquo;s feed</span>
