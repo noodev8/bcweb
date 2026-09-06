@@ -46,7 +46,7 @@ Success Response:
     { "name": "standard", "archived": false, "notes": "...",
       "styles": 284, "stock": 3120, "units": 363, "revenue": 32316.00, "profit": 4122.10,
       "impressions": 383557, "clicks": 8672, "spend": 3645.11, "conversions": 316.22, "convValue": 20436.98,
-      "profitAfterSpend": 476.99, "roas": 5.6,
+      "profitAfterSpend": 476.99, "adTake": 88.4,
       "stale": 23 }                       // members whose last Google-reported label is not this bucket
   ],
   "adsCampaigns": [
@@ -209,8 +209,25 @@ router.get('/', async (req, res) => {
         spend,
         conversions: round2(r.conversions),
         convValue,
+        // profitAfterSpend ("Kept" on screen) is the ONLY verdict this row offers, and deliberately the only one. ROAS was
+        // dropped from the bucket table on 2026-09-06 (owner): it was convValue / spend — Google's attributed revenue over
+        // Google's cost — a different accounting from every other figure in the row, and one the owner does not trust or use.
+        // Recomputing it as our revenue / spend was considered and rejected: with a single campaign covering the whole catalogue
+        // that credits ads with organic, email and repeat sales, which reads better and is more wrong. A ratio of revenue to
+        // spend also cannot see cost of goods, so it can climb while the bucket loses money. Revenue is shown as context;
+        // Kept is the number being managed. `convValue` stays in the payload as evidence, unrendered.
         profitAfterSpend: round2(profit - spend),
-        roas: spend > 0 ? Math.round((convValue / spend) * 10) / 10 : null,
+        // "Ad take" — what share of these styles' net profit Google charged for. The comparator the bucket table ranks on, because
+        // Kept is absolute: a 12-style bucket can never out-Kept a 284-style one, however well it is being run. Same framing the
+        // styles route header already uses ("Google spend was 89% of all Shopify net profit"), so the two agree.
+        //
+        // Stated as a share of profit ON PURPOSE, rather than kept/spend ("16p back per £1"): `profit` here is ALL Shopify profit
+        // for the member styles — organic, email and repeat included — so any "return per £1 spent" phrasing would claim the ads
+        // caused sales this data cannot attribute. A share is a fact about two numbers; a return is a causal claim.
+        //
+        // null when profit <= 0: dividing by nothing, or by a loss, produces a figure that sorts and reads as if it meant
+        // something. A bucket that made no profit is already fully described by a negative Kept.
+        adTake: profit > 0 ? Math.round((spend / profit) * 1000) / 10 : null,
         stale: int(r.stale),
       };
     });

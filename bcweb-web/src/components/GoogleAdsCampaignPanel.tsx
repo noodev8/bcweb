@@ -84,7 +84,9 @@ export default function GoogleAdsCampaignPanel({
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError(null);
-    const res = await googleAdsCampaignCreate({ name: newName.trim(), notes: newNotes.trim() || undefined });
+    // Lowercased again here, not only in the input's onChange — a paste or browser autofill can land a value the
+    // handler never saw, and the name is the key everything else joins on.
+    const res = await googleAdsCampaignCreate({ name: newName.trim().toLowerCase(), notes: newNotes.trim() || undefined });
     setBusy(false);
     if (!res.success) { setError(res.error || 'Could not create the campaign'); return; }
     setAdding(false); setNewName(''); setNewNotes('');
@@ -93,7 +95,7 @@ export default function GoogleAdsCampaignPanel({
 
   async function rename(from: string) {
     setBusy(true); setError(null);
-    const res = await googleAdsCampaignUpdate({ name: from, newName: editName.trim() });
+    const res = await googleAdsCampaignUpdate({ name: from, newName: editName.trim().toLowerCase() });
     setBusy(false);
     if (!res.success) { setError(res.error || 'Could not rename the campaign'); return; }
     setEditing(null);
@@ -167,20 +169,25 @@ export default function GoogleAdsCampaignPanel({
         {open && (<>
 
         {adding && (
-          <form onSubmit={create} className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <form onSubmit={create} className="border-b border-slate-200 bg-slate-50 px-4 pb-7 pt-3">
+            {/* items-end aligns the BOTTOMS of the columns, so anything hanging below an input pushes its neighbours down.
+                The character counter is therefore taken out of flow (absolute) and the form reserves room for it with pb-7:
+                every input in the row then sits on the same line, counter or not. */}
             <div className="flex flex-wrap items-end gap-2">
-              <div>
+              <div className="relative">
                 <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Name</label>
+                {/* Campaign names are lowercase by convention — forced as you type so a shifted key never creates a second
+                    campaign that differs from an existing one only by case. */}
                 <input
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  onChange={(e) => setNewName(e.target.value.toLowerCase())}
                   autoFocus
-                  placeholder="e.g. BIRK-SUMMER"
+                  placeholder="e.g. birk-summer"
                   className="w-56 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
                 {/* The 20-character limit is the database column's width, not a preference. Counted as you type so it is never
                     discovered by finding a truncated label in the Google Ads UI. */}
-                <div className={`mt-1 text-xs tabular-nums ${overLimit ? 'font-medium text-red-600' : 'text-slate-400'}`}>
+                <div className={`absolute left-0 top-full mt-1 text-xs tabular-nums ${overLimit ? 'font-medium text-red-600' : 'text-slate-400'}`}>
                   {newName.trim().length} / {GOOGLE_CAMPAIGN_MAX_NAME} characters
                 </div>
               </div>
@@ -222,7 +229,7 @@ export default function GoogleAdsCampaignPanel({
                 <th className="px-2 py-2 text-right font-semibold">Profit</th>
                 <th className="px-2 py-2 text-right font-semibold">Spend</th>
                 <th className="px-2 py-2 text-right font-semibold">Kept</th>
-                <th className="px-4 py-2 text-right font-semibold">ROAS</th>
+                <th className="px-4 py-2 text-right font-semibold">Ad take</th>
                 <th className="w-20 px-2 py-2" />
               </tr>
             </thead>
@@ -239,7 +246,7 @@ export default function GoogleAdsCampaignPanel({
                         <div className="flex items-center gap-1.5">
                           <input
                             value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
+                            onChange={(e) => setEditName(e.target.value.toLowerCase())}
                             autoFocus
                             maxLength={GOOGLE_CAMPAIGN_MAX_NAME}
                             className="w-40 rounded border border-slate-300 px-2 py-1 text-sm"
@@ -271,7 +278,12 @@ export default function GoogleAdsCampaignPanel({
                     <td className={`px-2 py-2 text-right font-semibold tabular-nums ${b.profitAfterSpend < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                       {money(b.profitAfterSpend)}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-500">{b.roas === null ? '—' : `${b.roas.toFixed(1)}×`}</td>
+                    {/* Last column, where the eye lands: this is what campaigns get compared on. Red only at 100%+, where the ads
+                        have outrun the profit — the same threshold that turns Kept red, so the two never disagree. Everything below
+                        that is slate: a number to compare, not a warning light. */}
+                    <td className={`px-4 py-2 text-right tabular-nums ${b.adTake !== null && b.adTake >= 100 ? 'text-red-600' : 'text-slate-600'}`}>
+                      {b.adTake === null ? '—' : `${b.adTake.toFixed(0)}%`}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {!PROTECTED.has(b.name.toLowerCase()) && b.managed && editing !== b.name && (
                         <div className="flex justify-end gap-1">
@@ -302,7 +314,9 @@ export default function GoogleAdsCampaignPanel({
         </div>
         <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
           Figures are for the styles in each campaign <span className="font-medium">today</span>, over the chosen window — a style
-          brings its history with it when you move it.
+          brings its history with it when you move it. <span className="font-medium">Ad take</span> is what share of a campaign&rsquo;s
+          profit went to Google — lower is better, 100% is break-even — and it is the column to compare campaigns on, since Kept
+          rewards size.
         </p>
         </>)}
       </div>

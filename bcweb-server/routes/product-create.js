@@ -133,7 +133,7 @@ router.post('/', async (req, res) => {
         ) VALUES (
           $1, $2, $3, $3, $4, $5, $6, '', $7,
           '0.00', '0.00', '0.00', 'RRP', '0.00',
-          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
+          1, 0, 1, 'new', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
         )
       `, [groupid, brand, colour, segment, season, supplier, handle]);
 

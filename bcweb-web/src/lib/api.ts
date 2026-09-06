@@ -2365,8 +2365,8 @@ export interface GoogleAdsBucket {
   spend: number;
   conversions: number;
   convValue: number;
-  profitAfterSpend: number;
-  roas: number | null;
+  profitAfterSpend: number;   // "Kept" — the bucket's verdict. No ROAS here on purpose; see the route header.
+  adTake: number | null;      // spend as a % of profit. Lower is better; >= 100 means the ads outran the profit. null when profit <= 0.
   stale: number;           // members whose last Google-reported label is not this bucket
 }
 
