@@ -62,6 +62,7 @@ import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
+  CursorArrowRaysIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -184,6 +185,19 @@ export default function DashboardPage() {
           description="Load the Seller Central reports — sales, returns, FBA stock and fees."
           href="/update-amazon"
           icon={ArrowUpTrayIcon}
+          live
+          compact
+        />
+
+        {/* Google Ads — decide which products sit in which Shopping campaign, against what each one earns after ad spend. Banded
+            here rather than under PRICING because it is not a per-product money decision: it is a marketing one, made over a
+            filtered set, and it sits beside Marketing and the Amazon ingest for the same reason they do — you come to it with a
+            session in mind, and part of the job is loading a report first. */}
+        <ModuleTile
+          title="Google Ads"
+          description="Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing."
+          href="/google-ads"
+          icon={CursorArrowRaysIcon}
           live
           compact
         />

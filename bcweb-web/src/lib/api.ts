@@ -2261,4 +2261,262 @@ export function goodsInCancel(args: { incomingId: number; localstockId: string; 
   );
 }
 
+// ---- Reports: ad efficiency ------------------------------------------------------------------------------------------------------
+// One row per month. `pctKept` and `keptPerUnit` are the point: absolute spend is the wrong yardstick, because it screams at you for
+// spending more in a growing month (correct) and reassures you in a quiet one while efficiency collapses. These two are scale-free.
+export interface AdEfficiencyMonth {
+  month: string;                  // 'YYYY-MM', sortable
+  label: string;                  // 'Aug 26'
+  units: number;
+  profit: number;                 // Shopify net profit
+  spend: number;                  // Google ad spend
+  kept: number;                   // profit - spend
+  pctKept: number | null;         // null when there was no profit to take a share of
+  adCostPerUnit: number | null;   // null when nothing sold
+  keptPerUnit: number | null;
+  partial: boolean;               // the month in progress — ratios are violent and mean nothing yet
+}
+export function getAdEfficiency(months?: number) {
+  return request<{ months: AdEfficiencyMonth[] }>(
+    { url: '/analytics-ad-efficiency', method: 'GET', params: months ? { months } : undefined },
+    (b) => ({ months: b.months || [] })
+  );
+}
+
+// ---- Google Ads module (campaign assignment — docs/google-ads-spec.md) -----------------------------------------------------------
+// The screen decides which STYLES sit in which Google Ads campaign bucket, writing skusummary.googlecampaign, which the nightly
+// merchant feed ships as Google's custom_label_0. Ad performance arrives by uploading two Report editor exports; there is no
+// scheduled job.
+//
+// TWO KINDS OF NUMBER LIVE ON THIS SCREEN AND THE TYPES KEEP THEM APART:
+//   OURS     units / revenue / profit — from `sales`, Shopify channel only, profit NET (after fees, postage, returns).
+//   GOOGLE'S impressions / clicks / spend / conversions / convValue — as Google reported them.
+// `profitAfterSpend` is the one figure that crosses the line, and it is the number the screen leads on.
+
+// One window's figures for a style. Every field is zero rather than null when there is nothing, so the grid can sort on any column
+// without null handling. `roas` is the exception — null when spend is 0, because "no spend" is not a ratio and a 0 would sort as if
+// the style had performed terribly.
+export interface GoogleAdsWindow {
+  units: number;
+  revenue: number;
+  profit: number;          // OURS: net Shopify profit (sales.profit)
+  impressions: number;
+  clicks: number;
+  spend: number;           // GOOGLE'S: cost
+  conversions: number;
+  convValue: number;       // GOOGLE'S attributed revenue — never tie this to `revenue`, they measure different things
+  profitAfterSpend: number;
+  roas: number | null;     // convValue / spend, both sides Google's
+}
+
+export interface GoogleAdsStyleRow {
+  groupid: string;
+  title: string | null;
+  segment: string;
+  season: string;          // skusummary.season — known unreliable (spec §1); shown, not trusted
+  brand: string;
+  campaign: string;        // skusummary.googlecampaign — what WE say
+  googleLabel: string | null;   // what GOOGLE last reported; null if never seen
+  googleLabelAt: string | null; // 'YYYY-MM-DD' that label was last seen
+  googleLive: boolean;     // googlestatus = 1 AND shopify = 1
+  stock: number;
+  // HOW MUCH OF THE SIZE RUN IS BUYABLE. The pair separates "losing money because the shelf is empty" (pause it) from "losing money
+  // fully stocked" (reprice it) — identical on every other column, opposite actions.
+  sizesListed: number;
+  sizesInStock: number;
+  price: number | null;
+  rrp: number | null;
+  cost: number | null;
+  d30: GoogleAdsWindow;
+  d90: GoogleAdsWindow;
+  d365: GoogleAdsWindow;
+  ly30: GoogleAdsWindow;   // the SAME 30 days one year ago — the winter comparison the module exists for
+}
+
+export type GoogleAdsWindowKey = 'd30' | 'd90' | 'd365' | 'ly30';
+export interface GoogleAdsWindowMeta { from: string; to: string; label: string }
+
+// The whole payload: every sellable style with all four windows pre-aggregated, so the window switch is a display change with no
+// round-trip (same reasoning as birk-stock's LIVE/FULL).
+export function getGoogleAdsStyles() {
+  return request<{ count: number; windows: Record<GoogleAdsWindowKey, GoogleAdsWindowMeta>; rows: GoogleAdsStyleRow[] }>(
+    { url: '/google-ads-styles', method: 'GET' },
+    (b) => ({
+      count: b.count ?? 0,
+      windows: b.windows,
+      rows: (b.rows as GoogleAdsStyleRow[]) || [],
+    })
+  );
+}
+
+// OUR bucket: a set of styles. Real money, but NO impression share — a bucket is not a campaign in Google's account.
+export interface GoogleAdsBucket {
+  name: string;
+  archived: boolean;
+  notes: string | null;
+  managed: boolean;        // false = the name is on skusummary but has no row in google_campaign (usually a typo). Never hidden.
+  styles: number;
+  stock: number;
+  units: number;
+  revenue: number;
+  profit: number;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  convValue: number;
+  profitAfterSpend: number;
+  roas: number | null;
+  stale: number;           // members whose last Google-reported label is not this bucket
+}
+
+// GOOGLE'S campaign: the real entity in the Ads account. Impression share and lost-IS exist ONLY here.
+export interface GoogleAdsCampaign {
+  campaign: string;
+  days: number;
+  clicks: number;
+  impressions: number;
+  cost: number;
+  conversions: number | null;
+  convValue: number | null;
+  searchImpShare: number | null;   // null where Google censored it ('--', '< 10%', '> 90%')
+  lostIsRank: number | null;
+  lostIsBudget: number | null;     // 0.0 means NOT budget-constrained — more budget buys nothing
+  censoredDays: number;
+}
+
+export function getGoogleAdsCampaigns(days?: number) {
+  return request<{ window: { from: string; to: string; days: number }; buckets: GoogleAdsBucket[]; adsCampaigns: GoogleAdsCampaign[] }>(
+    { url: '/google-ads-campaigns', method: 'GET', params: days ? { days } : undefined },
+    (b) => ({ window: b.window, buckets: b.buckets || [], adsCampaigns: b.adsCampaigns || [] })
+  );
+}
+
+// One bucket a style has actually served under, as Google reported it, with what it cost. This is the module's evidence.
+export interface GoogleAdsLabelRun {
+  label: string | null;    // null = Google reported no label
+  from: string;
+  to: string;
+  days: number;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  convValue: number;
+  roas: number | null;
+}
+export interface GoogleAdsAssignment { from: string | null; to: string; by: string; at: string }
+export interface GoogleAdsSize { size: string; qty: number }
+export interface GoogleAdsDay {
+  date: string;
+  impressions: number; clicks: number; spend: number; conversions: number; convValue: number;
+  units: number; revenue: number; profit: number;
+}
+export interface GoogleAdsDrillHeader {
+  title: string | null; segment: string; season: string; brand: string;
+  campaign: string; googleLabel: string | null; googleLive: boolean;
+  stock: number; price: number | null; rrp: number | null; cost: number | null;
+}
+
+export function getGoogleAdsDrill(groupid: string, days?: number) {
+  return request<{
+    groupid: string;
+    header: GoogleAdsDrillHeader;
+    sizes: GoogleAdsSize[];
+    labelRuns: GoogleAdsLabelRun[];
+    assignments: GoogleAdsAssignment[];
+    daily: GoogleAdsDay[];
+  }>(
+    { url: '/google-ads-drill', method: 'GET', params: { groupid, ...(days ? { days } : {}) } },
+    (b) => ({
+      groupid: b.groupid, header: b.header, sizes: b.sizes || [],
+      labelRuns: b.labelRuns || [], assignments: b.assignments || [], daily: b.daily || [],
+    })
+  );
+}
+
+// THE ONLY WRITE TO PRODUCT DATA. Sets skusummary.googlecampaign and nothing else — a style is pulled out of Google by assigning it
+// `pause`, never by touching googlestatus. The whole batch is one transaction server-side.
+export function googleAdsAssign(args: { groupids: string[]; campaign: string }) {
+  return request<{ campaign: string; moved: number; unchanged: number; notFound: string[]; movedFrom: Record<string, number> }>(
+    { url: '/google-ads-assign', method: 'POST', data: args },
+    (b) => ({
+      campaign: b.campaign, moved: b.moved ?? 0, unchanged: b.unchanged ?? 0,
+      notFound: b.notFound || [], movedFrom: b.movedFrom || {},
+    })
+  );
+}
+
+// Add a name to the controlled list. Max 20 characters — that is skusummary.googlecampaign's column width, not a style choice.
+export const GOOGLE_CAMPAIGN_MAX_NAME = 20;
+export function googleAdsCampaignCreate(args: { name: string; notes?: string }) {
+  return request<{ name: string; notes: string | null; archived: boolean }>(
+    { url: '/google-ads-campaign-create', method: 'POST', data: args },
+    (b) => b.campaign
+  );
+}
+
+// Rename / edit notes / archive. A rename rewrites every member's googlecampaign and logs each one — to Google it IS a bucket move.
+export function googleAdsCampaignUpdate(args: { name: string; newName?: string; notes?: string; archived?: boolean }) {
+  return request<{ campaign: { name: string; notes: string | null; archived: boolean }; renamed: boolean; membersRewritten: number }>(
+    { url: '/google-ads-campaign-update', method: 'POST', data: args },
+    (b) => ({ campaign: b.campaign, renamed: Boolean(b.renamed), membersRewritten: b.membersRewritten ?? 0 })
+  );
+}
+
+// How fresh the ad data is and WHERE THE HOLES ARE. Gaps matter: google_campaign_daily silently lost 12 Jul - 2 Aug 2026 because
+// imports are sporadic and a Last-30-days window could not reach back far enough. A silent hole reads as a quiet month.
+export interface GoogleAdsCoverage {
+  from: string; to: string; rows: number; days: number; daysOld: number | null;
+  gaps: { from: string; to: string; days: number }[];
+}
+export function getGoogleAdsImportLast() {
+  return request<{ lastRun: string | null; by: string | null; product: GoogleAdsCoverage | null; campaign: GoogleAdsCoverage | null }>(
+    { url: '/google-ads-import-last', method: 'GET' },
+    (b) => ({ lastRun: b.lastRun ?? null, by: b.by ?? null, product: b.product ?? null, campaign: b.campaign ?? null })
+  );
+}
+
+// Import: preview reads and writes nothing; commit re-derives the plan inside its own transaction from the SAME files. The client
+// sends the files twice rather than a plan, so a stale preview can never be committed blind.
+export interface GoogleAdsImportSide {
+  label: string; filename: string;
+  window: { from: string; to: string; days: number } | null;
+  rowsInFile: number;
+  counts: { write: number; unchanged: number; skipped: number; balances: boolean };
+  skipped: { reason: string; label: string; count: number; examples: string[] }[];
+  extraColumns: string[];
+  campaigns: string[];
+  emptyDays: string[];
+  styles?: { inFile: number; unmatched: number; unmatchedExamples: string[] };
+  labelMismatch?: { styles: number; ofStyles: number; examples: { groupid: string; googleSays: string; weSay: string }[] };
+  censoredShareDays?: number;
+}
+
+// Let the BROWSER set the multipart boundary. Passing an explicit Content-Type here omits the boundary and the server parses nothing.
+// The long timeout is for the 13-month backfill (~70k rows), which takes ~10s to write.
+function googleAdsUpload(url: string, files: File[]): AxiosRequestConfig {
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  return { url, method: 'POST', data: form, headers: { 'Content-Type': undefined }, timeout: 120000 };
+}
+
+export function googleAdsImportPreview(files: File[]) {
+  return request<{ rejected: { filename: string; reason: string }[]; product: GoogleAdsImportSide | null; campaign: GoogleAdsImportSide | null }>(
+    googleAdsUpload('/google-ads-import-preview', files),
+    (b) => ({ rejected: b.rejected || [], product: b.product ?? null, campaign: b.campaign ?? null })
+  );
+}
+
+export interface GoogleAdsImportResult {
+  written: number; unchanged: number; skipped: number;
+  window: { from: string; to: string; days: number } | null;
+}
+export function googleAdsImportCommit(files: File[]) {
+  return request<{ product: GoogleAdsImportResult | null; campaign: GoogleAdsImportResult | null }>(
+    googleAdsUpload('/google-ads-import-commit', files),
+    (b) => ({ product: b.product ?? null, campaign: b.campaign ?? null })
+  );
+}
+
 export default api;

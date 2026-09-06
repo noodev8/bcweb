@@ -21,6 +21,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
+  ScaleIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -73,6 +74,18 @@ export default function AnalyticsPage() {
           description="The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user."
           href="/analytics/price-changes"
           icon={ArrowsRightLeftIcon}
+          live
+        />
+
+        {/* Ad Efficiency — the monthly counterweight to the Sales report. Sales says profit is up, which through 2026 was true every
+            month while the share of it surviving Google ad spend fell from 57% to 8%. Nothing else on the platform is shaped to show
+            that: the Google Ads screen works a 30-day window, far too short for a slide this slow. Sits next to Price Changes as the
+            other "is the thing we are doing actually working?" read. */}
+        <ModuleTile
+          title="Ad Efficiency"
+          description="How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept."
+          href="/analytics/ad-efficiency"
+          icon={ScaleIcon}
           live
         />
 

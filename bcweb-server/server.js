@@ -148,6 +148,32 @@ app.use('/birk-stock', require('./routes/birk-stock'));
 app.use('/birk-planner', require('./routes/birk-planner')); // one style's still-to-come units by delivery month + size (the drill)
 app.use('/birk-review', require('./routes/birk-review')); // park a style out of the sheet for 1/2/3 months (the legacy 1 2 3 buttons)
 
+// --- Google Ads module (campaign assignment — docs/google-ads-spec.md) ---
+// The screen decides which STYLES sit in which Google Ads campaign bucket, writing skusummary.googlecampaign, which the nightly
+// merchant feed ships as Google's custom_label_0. (skusummary.custom_label_0 is a DIFFERENT, DEAD column — see its DB comment.)
+// Ad performance arrives by uploading the two Report editor exports here; there is deliberately NO scheduled job. Same two-stage
+// preview/commit shape as the Amazon import, files identified by HEADER not filename, and the window comes from the file's own Day
+// column — so any date range can be imported at any time, and a gap can be backfilled after the fact.
+app.use('/google-ads-import-preview', require('./routes/google-ads-import-preview')); // stage 1: what a commit would do — READ ONLY
+app.use('/google-ads-import-commit', require('./routes/google-ads-import-commit'));   // stage 2: upsert both reports, one transaction
+app.use('/google-ads-import-last', require('./routes/google-ads-import-last'));       // coverage + GAPS in what we hold — READ ONLY
+
+// Reads. One payload of every sellable style with four pre-aggregated windows (incl. the same 30 days LAST year — the winter
+// comparison the module exists for), so the screen's window switch is client-side. The campaign panel returns OUR buckets and
+// GOOGLE's campaigns separately and on purpose: a bucket is a set of styles and has no impression share; only a real Ads campaign
+// does. The drill adds what the list cannot — which buckets a style has actually served under, and what each one cost.
+app.use('/google-ads-styles', require('./routes/google-ads-styles'));
+app.use('/google-ads-campaigns', require('./routes/google-ads-campaigns'));
+app.use('/google-ads-drill', require('./routes/google-ads-drill'));
+
+// Writes. google-ads-assign is the ONLY write this module makes to product data — it sets skusummary.googlecampaign and nothing
+// else (a style is pulled out of Google by assigning it 'pause', never by touching googlestatus). Bulk is one transaction rather
+// than a client-side loop: unlike a price move there is no per-row external push to fire. Campaign names are a controlled list
+// because a typo reaches Google, matches nothing, and never announces itself.
+app.use('/google-ads-assign', require('./routes/google-ads-assign'));
+app.use('/google-ads-campaign-create', require('./routes/google-ads-campaign-create'));
+app.use('/google-ads-campaign-update', require('./routes/google-ads-campaign-update'));
+
 // --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
 // Two stages of one lifecycle, split on the `orderdate` stamp (utils/orderStatus.js): TO PLACE = chosen but not yet bought from the
 // supplier; ON ORDER = placed and now being chased. The picker carries both; the rest of the routes belong to one stage or the other.
@@ -208,6 +234,10 @@ app.use('/brand-overview', require('./routes/brand-overview'));   // GET: per-br
 // Price Changes: recent price moves across BOTH channels (before->after, who/when) + units sold since each change. Filterable by
 // channel (all/shp/amz) and user; per-channel limit. Read-only.
 app.use('/analytics-change-impact', require('./routes/analytics-change-impact'));
+// Ad efficiency — one row per month: units, Shopify net profit, Google spend, and the SHARE of that profit which survived it. The
+// share is the point: 2026 grew on every measure the business normally watches while it fell 57% -> 8% between March and August,
+// and nothing else on the platform is shaped to show that. Absolute spend is the wrong yardstick in both directions.
+app.use('/analytics-ad-efficiency', require('./routes/analytics-ad-efficiency'));
 // Sales: the windowed sales ledger (raw lines + a net-profit summary). Filter by channel (all/shp/amz) and window (today/…/90d/custom),
 // search to one product, returns included & netted. Read-only; the front end builds the CSV export from these rows.
 app.use('/analytics-sales', require('./routes/analytics-sales'));
