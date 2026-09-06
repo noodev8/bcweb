@@ -45,7 +45,8 @@ full reasoning, and what Google does and does not actually delay.
 */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import GoogleAdsMoneyBar from '@/components/GoogleAdsMoneyBar';
 import GoogleAdsCampaignPanel from '@/components/GoogleAdsCampaignPanel';
@@ -105,13 +106,25 @@ function haystack(r: GoogleAdsStyleRow): string {
 }
 interface IndexedRow { row: GoogleAdsStyleRow; hay: string }
 
-function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey): IndexedRow[] {
+function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey, campaignNames: Set<string>): IndexedRow[] {
   let out = indexed;
   for (const s of c.steps) {
     const t = s.term.toLowerCase();
+    // A term that is EXACTLY a live campaign name (e.g. typing "new" when a 'new' bucket exists) filters on the bucket itself —
+    // r.campaign === t — rather than the plain substring search. Otherwise Contains "new" would also catch any title, groupid,
+    // segment or brand that happens to contain the letters "new" (a style genuinely called "New Balance", say), which is not
+    // what typing a real bucket's name means. Does-not-contain gets the same treatment, for the same reason, in both directions.
+    // A one-off, unmanaged bucket typo would just fall through to the substring path, same as before.
+    const isCampaignName = campaignNames.has(t);
     // CONTAINS is a plain substring (operators type partials: "ARIZ" must find Arizona). DOES NOT CONTAIN is its exact mirror — the
     // legacy PowerBuilder rule, and the one Inventory settled on after a whole-word variant broke ¬WOMEN.
-    out = s.op === 'has' ? out.filter((x) => x.hay.includes(t)) : out.filter((x) => !x.hay.includes(t));
+    if (isCampaignName) {
+      out = s.op === 'has'
+        ? out.filter((x) => x.row.campaign.toLowerCase() === t)
+        : out.filter((x) => x.row.campaign.toLowerCase() !== t);
+    } else {
+      out = s.op === 'has' ? out.filter((x) => x.hay.includes(t)) : out.filter((x) => !x.hay.includes(t));
+    }
   }
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign === c.bucket);
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
@@ -315,6 +328,14 @@ export default function GoogleAdsPage() {
 
   const indexed = useMemo<IndexedRow[]>(() => rows.map((row) => ({ row, hay: haystack(row) })), [rows]);
 
+  // Live bucket names, lowercased, so a Contains/Does-not-contain term that exactly matches one filters on the bucket rather than
+  // as a substring — see applyCriteria. Read straight off the campaign panel's own data, so a newly-created bucket is usable here
+  // the moment it exists, with nothing to keep in sync by hand.
+  const campaignNames = useMemo(
+    () => new Set((campaignsQ.data?.buckets ?? []).map((b) => b.name.toLowerCase())),
+    [campaignsQ.data]
+  );
+
   const criteria: Criteria = useMemo(
     () => ({ steps, qty, season, bucket }),
     [steps, qty, season, bucket]
@@ -322,8 +343,8 @@ export default function GoogleAdsPage() {
   const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || cut.size > 0;
 
   const matched = useMemo(
-    () => applyCriteria(indexed, criteria, win).map((x) => x.row),
-    [indexed, criteria, win]
+    () => applyCriteria(indexed, criteria, win, campaignNames).map((x) => x.row),
+    [indexed, criteria, win, campaignNames]
   );
   // Cuts apply AFTER the filter, so a cut row comes back the moment the filter changes underneath it rather than staying hidden in
   // a list it was never cut from.
@@ -378,6 +399,11 @@ export default function GoogleAdsPage() {
   const clearSelection = useCallback(() => {
     setSelected(new Set());
     anchorRef.current = null;
+    // The assign confirmation ("N styles moved to X · reaches Google after tonight's feed") is about the LAST bulk action, and
+    // stops being true the moment the operator moves on to a new filter — it would otherwise sit there describing a set of rows
+    // that is no longer on screen. Same trigger as the selection it sits below, for the same reason: every filter change, not
+    // just Reset.
+    setFlash(null);
   }, []);
 
   const onFind = useCallback((e: React.FormEvent) => {
@@ -394,7 +420,7 @@ export default function GoogleAdsPage() {
     if (next.length > 0) {
       // A Find that would empty the list is treated as a NEW hunt rather than a narrowing — the operator was starting again
       // ("ARIZONA" then "ZERMATT"), not asking for styles that are both. Inventory's rule, and the reason it feels right there.
-      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason }, win);
+      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason }, win, campaignNames);
       setSteps(narrowed.length === 0 && filtering ? next : [...steps, ...next]);
     }
     setQty(nextQty);
@@ -402,7 +428,7 @@ export default function GoogleAdsPage() {
     setContains('');
     setNotContains('');
     clearSelection();
-  }, [contains, notContains, qty, season, steps, indexed, criteria, filtering, win, clearSelection]);
+  }, [contains, notContains, qty, season, steps, indexed, criteria, filtering, win, campaignNames, clearSelection]);
 
   // Enter applies the boxes. Explicit rather than relying on the form's implicit submission: with two text inputs and no submit
   // button, browsers do NOT reliably submit on Enter — and this form deliberately has no Find button.
@@ -776,19 +802,31 @@ export default function GoogleAdsPage() {
                       {i + 1}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setDrill(r.groupid); }}
-                        className="block w-full text-left"
-                      >
-                        <span className="font-medium text-slate-800 hover:text-brand-700">{r.groupid}</span>
+                      {/* Drill disabled (owner, 2026-09-06) in favour of freely selecting rows — not removed, see setDrill above.
+                          Only the icon opens the Shopify price setter (NEW TAB, ad-payback's convention) — the rest of this cell,
+                          including the name, is just row text now, because a link over the whole block was too big a target and
+                          ate clicks meant for selecting the row. stopPropagation on the icon so it doesn't also toggle selection. */}
+                      <div className="w-full text-left">
+                        <span className="inline-flex items-center gap-1 font-medium text-slate-800">
+                          {r.groupid}
+                          <Link
+                            href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=/google-ads`}
+                            target="_blank"
+                            rel="noopener"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Open in Shopify Pricing"
+                            className="text-slate-400 hover:text-brand-700"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-3 w-3 flex-none" />
+                          </Link>
+                        </span>
                         {!r.googleLive && (
                           <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500" title="Not in the Google feed (googlestatus off)">off Google</span>
                         )}
                         {/* The brand prefix is stripped for display only — see styleName. The underlying title is what the filter
                             still matches, so typing BIRKENSTOCK behaves exactly as it did. */}
                         <div className="truncate text-xs text-slate-500" title={r.title || undefined}>{styleName(r.title)}</div>
-                      </button>
+                      </div>
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5">
                       <span className="text-slate-700">{r.campaign || '—'}</span>

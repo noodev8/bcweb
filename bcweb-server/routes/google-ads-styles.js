@@ -134,9 +134,11 @@ Success Response:
       "googleLabel": "BIRK-WINNER",                       // what GOOGLE last reported; null if never seen
       "googleLabelAt": "2026-09-05",                      // the day that label was last seen
       "googleLive": true,                                 // googlestatus = 1 AND shopify = 1 — is it in the feed at all
-      "stock": 12,                                        // FREE local units (ordernum '#FREE'), all sizes
+      "stock": 12,                                        // FREE local units (ordernum '#FREE') PLUS live FBA units — see the
+                                                           // `stock` CTE. FBA can dispatch a Shopify order (owner, 2026-09-06), so
+                                                           // it counts as sellable stock for this ad, not a separate channel's
       "sizesListed": 11,                                  // sizes the style carries in skumap
-      "sizesInStock": 4,                                  // of those, how many have a buyable unit — see the `sizes` CTE
+      "sizesInStock": 4,                                  // of those, how many have a buyable unit in EITHER pool — see `sizes`
       "price": 57.00, "rrp": 80.00, "cost": 28.50,        // safeNumeric — null when the legacy varchar holds junk
       "d7":   { ... },
       "d30":  { "units": 7, "revenue": 399.00, "profit": 62.30,
@@ -231,11 +233,23 @@ router.get('/', async (req, res) => {
                )) AS d
       ),
       stock AS (
-        -- Sellable stock only: FREE rows, not deleted. Deliberately narrower than Inventory's "Local" (which counts picked units) —
-        -- a unit picked for a customer is sold, and this screen is deciding whether to advertise what is left.
-        SELECT groupid, SUM(qty) AS units
-        FROM localstock
-        WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+        -- Sellable stock: local FREE rows PLUS live FBA units (owner, 2026-09-06 — a Shopify order can be dispatched from FBA via
+        -- Amazon multi-channel fulfilment, so a unit sitting at Amazon is still sellable through the Shopify ad this screen is
+        -- scoring, not a separate channel's stock. amzfeed already carries groupid, so it needs no join (same shape as
+        -- analytics-stock-position-list.js / analytics-new-additions.js, which sum the same two pools for the same reason).
+        -- Deliberately narrower than Inventory's "Local" (which counts picked units) — a unit picked for a customer is sold, and
+        -- this screen is deciding whether to advertise what is left.
+        SELECT groupid, SUM(units) AS units FROM (
+          SELECT groupid, SUM(qty) AS units
+          FROM localstock
+          WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+          GROUP BY groupid
+          UNION ALL
+          SELECT groupid, SUM(amzlive) AS units
+          FROM amzfeed
+          WHERE amzlive > 0
+          GROUP BY groupid
+        ) both_pools
         GROUP BY groupid
       ),
       sizes AS (
@@ -249,9 +263,12 @@ router.get('/', async (req, res) => {
         --
         -- skumap is the full run (one row per variant); localstock holds in-stock rows only, so the LEFT JOIN is what makes an
         -- unstocked size count as listed-but-empty rather than vanish. Size is the code's last dash-segment, as in inv-styles.
+        --
+        -- A size can be "in stock" via EITHER pool — FBA dispatch fulfils a Shopify order the same as the local shelf does (see
+        -- the stock CTE above), so a size sitting only at Amazon must not read as an empty shelf here.
         SELECT m.groupid,
-               COUNT(*)                                      AS listed,
-               COUNT(*) FILTER (WHERE COALESCE(ls.q, 0) > 0) AS in_stock
+               COUNT(*)                                                              AS listed,
+               COUNT(*) FILTER (WHERE COALESCE(ls.q, 0) + COALESCE(az.q, 0) > 0)     AS in_stock
         FROM (SELECT groupid, substring(code from '[^-]+$') AS sz FROM skumap GROUP BY groupid, substring(code from '[^-]+$')) m
         LEFT JOIN (
           SELECT groupid, substring(code from '[^-]+$') AS sz, SUM(qty) AS q
@@ -259,6 +276,12 @@ router.get('/', async (req, res) => {
           WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
           GROUP BY groupid, substring(code from '[^-]+$')
         ) ls ON ls.groupid = m.groupid AND ls.sz = m.sz
+        LEFT JOIN (
+          SELECT groupid, substring(code from '[^-]+$') AS sz, SUM(amzlive) AS q
+          FROM amzfeed
+          WHERE amzlive > 0
+          GROUP BY groupid, substring(code from '[^-]+$')
+        ) az ON az.groupid = m.groupid AND az.sz = m.sz
         GROUP BY m.groupid
       ),
       sales_w AS (
