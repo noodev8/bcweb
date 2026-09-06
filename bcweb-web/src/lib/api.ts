@@ -2283,6 +2283,47 @@ export function getAdEfficiency(months?: number) {
   );
 }
 
+// ---- Reports: ad payback -----------------------------------------------------------------------------------------------------------
+// What SOLD on one day, and whether each of those styles is paying for its advertising. The design rule, and the reason this is not
+// a "today" window on the Google Ads screen: THE SALE IS THE DAY, THE VERDICT IS TRAILING. `units`/`revenue`/`profit` are ours and
+// exact for the chosen day; `kept30` is a 30-day window because same-day ad spend does not exist yet (part-day import) and would be
+// the wrong denominator anyway (a sale today can come from a click three days ago). Returns are not listed — they are already
+// carried in the profit figures via the returns haircut. Route header has the full reasoning.
+export interface AdPaybackRow {
+  groupid: string;
+  title: string;
+  units: number;                  // net units sold on the day; always > 0
+  revenue: number;                // signed — a same-day refund on the same style is taken off
+  profit: number;                 // the day's take on this style
+  spend30: number;                // trailing Google spend over [verdictFrom, verdictTo]
+  profit30: number;               // trailing Shopify net profit over the SAME days
+  kept30: number;                 // profit30 - spend30. Negative = not paying for itself
+  sizesListed: number;            // the full size run (skumap); 0 means the style is not in skumap at all — a data gap
+  sizesInStock: number;           // how many are buyable TODAY. Separates "pause it" (empty shelf) from "reprice it" (thin margin)
+  nextReview: string | null;      // Pricing's review cooldown, 'YYYY-MM-DD'. Surfaced so the drill link cannot silently re-price
+}
+export interface AdPayback {
+  day: string;                    // 'YYYY-MM-DD'
+  dayLabel: string;               // 'Sun 06 Sep 2026'
+  isToday: boolean;               // the day is still running — its take is not final
+  verdictFrom: string;            // the trailing 30 days both halves of the verdict cover
+  verdictTo: string;              // = LEAST(day, asOf) — the newest COMPLETE day of ad data
+  adDaysOld: number;              // day - verdictTo. 0 = the ad feed reaches the chosen day
+  totals: { styles: number; units: number; revenue: number; profit: number };
+  rows: AdPaybackRow[];
+}
+export function getAdPayback(day?: string) {
+  return request<AdPayback>(
+    { url: '/analytics-ad-payback', method: 'GET', params: day ? { day } : undefined },
+    (b) => ({
+      day: b.day, dayLabel: b.dayLabel, isToday: Boolean(b.isToday),
+      verdictFrom: b.verdictFrom, verdictTo: b.verdictTo, adDaysOld: Number(b.adDaysOld) || 0,
+      totals: b.totals || { styles: 0, units: 0, revenue: 0, profit: 0 },
+      rows: b.rows || [],
+    })
+  );
+}
+
 // ---- Google Ads module (campaign assignment — docs/google-ads-spec.md) -----------------------------------------------------------
 // The screen decides which STYLES sit in which Google Ads campaign bucket, writing skusummary.googlecampaign, which the nightly
 // merchant feed ships as Google's custom_label_0. Ad performance arrives by uploading two Report editor exports; there is no

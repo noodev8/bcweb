@@ -241,6 +241,11 @@ app.use('/analytics-ad-efficiency', require('./routes/analytics-ad-efficiency'))
 // Sales: the windowed sales ledger (raw lines + a net-profit summary). Filter by channel (all/shp/amz) and window (today/…/90d/custom),
 // search to one product, returns included & netted. Read-only; the front end builds the CSV export from these rows.
 app.use('/analytics-sales', require('./routes/analytics-sales'));
+// Ad Payback: what SOLD on one day (Shopify), with each style's trailing 30-day Google position beside it. Inverts the Google Ads
+// grid on purpose — a one-day WINDOW there is ~95% "took spend, sold nothing" rows, where a one-day LIST of what sold is 3-6 rows.
+// The sale is the day and is exact; the verdict is trailing, because same-day ad spend does not exist yet and would be the wrong
+// denominator anyway. Read-only.
+app.use('/analytics-ad-payback', require('./routes/analytics-ad-payback'));
 // Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
 // are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
 app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first

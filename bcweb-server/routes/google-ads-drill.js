@@ -227,7 +227,10 @@ router.get('/', async (req, res) => {
         GROUP BY snapshot_date
       ),
       s AS (
-        SELECT solddate AS d, SUM(qty) AS units, SUM(soldprice) AS revenue, SUM(profit) AS profit
+        -- soldprice is PER-UNIT and stays POSITIVE on a return row (qty carries the sign), so a bare SUM(soldprice) both
+        -- double-counts refunds and under-counts a multi-unit line. Measured 2026-09-06 over 365 Shopify days: £287,190 bare
+        -- against £221,717 correct — a 30% overstatement. Fixed to match analytics-sales, the authoritative ledger.
+        SELECT solddate AS d, SUM(qty) AS units, SUM(soldprice * qty) AS revenue, SUM(profit) AS profit
         FROM sales
         WHERE groupid = $1 AND channel = 'SHP' AND solddate >= CURRENT_DATE - $2::int
         GROUP BY solddate

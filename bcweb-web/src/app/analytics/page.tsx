@@ -21,7 +21,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
-  ScaleIcon,
+  ScaleIcon, SunIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -86,6 +86,21 @@ export default function AnalyticsPage() {
           description="How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept."
           href="/analytics/ad-efficiency"
           icon={ScaleIcon}
+          live
+        />
+
+        {/* Ad Payback — the DAILY half of the same question Ad Efficiency asks yearly, which is why the two sit together: "is
+            Google paying for itself?" over 13 months and whole-book, then on one day and per style. Kept standalone rather than
+            folded in either direction (owner, 2026-09-06). Not into Ad Efficiency, because that is a rarely-opened strategic read
+            and this is a morning check — the same cadence argument that pulled Amazon Order back out of Reports in Sep 2026. Not
+            into Sales, because Sales is line-grain and all-channel, so a Kept column would repeat on a multi-line style and be
+            blank on every Amazon row. And not a Today button on the Google Ads screen, which is anchored to the last COMPLETE day
+            of ad data — a to-today panel beside it would undo the anchor it depends on. */}
+        <ModuleTile
+          title="Ad Payback"
+          description="What sold on one day and whether each of those styles is paying for its Google ads — the day's profit against its trailing 30-day position. Any day, back a year."
+          href="/analytics/ad-payback"
+          icon={SunIcon}
           live
         />
 

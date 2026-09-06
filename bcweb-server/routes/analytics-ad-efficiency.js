@@ -112,7 +112,9 @@ router.get('/', async (req, res) => {
       ),
       shp AS (
         SELECT date_trunc('month', solddate)::date AS m,
-               SUM(qty) AS units, SUM(soldprice) AS revenue, SUM(profit) AS profit
+               -- revenue is not currently SELECTed by the outer query, but is kept correct so wiring it up later cannot
+               -- reintroduce the bare-SUM fault: soldprice is per-unit and positive on returns. See analytics-ad-payback.
+               SUM(qty) AS units, SUM(soldprice * qty) AS revenue, SUM(profit) AS profit
         FROM sales
         WHERE channel = 'SHP'
         GROUP BY 1

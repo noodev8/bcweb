@@ -128,7 +128,10 @@ router.get('/', async (req, res) => {
         -- these ads can plausibly have caused.
         -- BETWEEN asOf - (days - 1) AND asOf: exactly that many days, inclusive. The old >= CURRENT_DATE - $1 was wrong twice over —
         -- it spanned days + 1 dates (day -N through day 0), and it ended on a day the ad side could not reach.
-        SELECT s.groupid, SUM(s.qty) AS units, SUM(s.soldprice) AS revenue, SUM(s.profit) AS profit
+        -- soldprice is PER-UNIT and stays POSITIVE on a return row (qty carries the sign), so a bare SUM(soldprice) both
+        -- double-counts refunds and under-counts a multi-unit line. Measured 2026-09-06 over 365 Shopify days: £287,190 bare
+        -- against £221,717 correct — a 30% overstatement. Fixed to match analytics-sales, the authoritative ledger.
+        SELECT s.groupid, SUM(s.qty) AS units, SUM(s.soldprice * s.qty) AS revenue, SUM(s.profit) AS profit
         FROM sales s CROSS JOIN asof a
         WHERE s.channel = 'SHP' AND s.solddate BETWEEN a.d - ($1::int - 1) AND a.d
         GROUP BY s.groupid

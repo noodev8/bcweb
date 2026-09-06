@@ -265,20 +265,26 @@ router.get('/', async (req, res) => {
         -- Shopify only (see the header). Positive and negative rows both counted: a return is a negative row in sales and must
         -- pull revenue and profit back down, or a heavily-returned style looks like a winner.
         SELECT s.groupid,
+          -- REVENUE IS SUM(soldprice * qty), NOT SUM(soldprice) (fixed 2026-09-06). soldprice is PER-UNIT and stays POSITIVE on a
+          -- return row — qty carries the sign — so the bare sum both double-counted every refund and under-counted a multi-unit
+          -- line. Over 365 Shopify days that read £287,190 against a true £221,717: a 30% overstatement, live since this route
+          -- shipped. profitAfterSpend and Kept never touched it, so no triage decision was made on the wrong number. Proof
+          -- soldprice is per-unit: 0128201-GIZEH-44 has a qty-1 and a qty-2 line on 2026-07-03 with the identical 36.10, and
+          -- utils/orderSync.js writes it straight from the Shopify line price. Matches analytics-sales, the authoritative ledger.
           SUM(s.qty)       FILTER (WHERE s.solddate BETWEEN a.d - ${D7 - 1} AND a.d)   AS d7_units,
-          SUM(s.soldprice) FILTER (WHERE s.solddate BETWEEN a.d - ${D7 - 1} AND a.d)   AS d7_revenue,
+          SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${D7 - 1} AND a.d)   AS d7_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${D7 - 1} AND a.d)   AS d7_profit,
           SUM(s.qty)       FILTER (WHERE s.solddate BETWEEN a.d - ${D30 - 1} AND a.d)  AS d30_units,
-          SUM(s.soldprice) FILTER (WHERE s.solddate BETWEEN a.d - ${D30 - 1} AND a.d)  AS d30_revenue,
+          SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${D30 - 1} AND a.d)  AS d30_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${D30 - 1} AND a.d)  AS d30_profit,
           SUM(s.qty)       FILTER (WHERE s.solddate BETWEEN a.d - ${D90 - 1} AND a.d)  AS d90_units,
-          SUM(s.soldprice) FILTER (WHERE s.solddate BETWEEN a.d - ${D90 - 1} AND a.d)  AS d90_revenue,
+          SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${D90 - 1} AND a.d)  AS d90_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${D90 - 1} AND a.d)  AS d90_profit,
           SUM(s.qty)       FILTER (WHERE s.solddate BETWEEN a.d - ${D365 - 1} AND a.d) AS d365_units,
-          SUM(s.soldprice) FILTER (WHERE s.solddate BETWEEN a.d - ${D365 - 1} AND a.d) AS d365_revenue,
+          SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${D365 - 1} AND a.d) AS d365_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${D365 - 1} AND a.d) AS d365_profit,
           SUM(s.qty)       FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_units,
-          SUM(s.soldprice) FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_revenue,
+          SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_profit
         FROM sales s CROSS JOIN asof a
         WHERE s.channel = 'SHP' AND s.solddate BETWEEN a.d - ${LY_FROM} AND a.d
