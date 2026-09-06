@@ -38,10 +38,17 @@ Request Payload: none (GET)
 Query params:
   days   optional, default 30, max 400 — the window for the money columns
 
+THE WINDOW ENDS AT `asOf`, NOT AT TODAY
+`days` is a LENGTH, not "days back from today". The window is [asOf - (days-1), asOf] inclusive, where asOf is the newest day
+google_product_daily covers (never later than today) — exactly the anchor google-ads-styles uses, and deliberately the same one, so
+the panel and the grid never report two different windows on the same screen. The full reasoning, including why an Ads API pull does
+not remove the need for it, is in the google-ads-styles header; it is not repeated here. `window.daysOld` says how far behind today
+the reading is, which under manual import is however long since someone last uploaded.
+
 Success Response:
 {
   "return_code": "SUCCESS",
-  "window": { "from": "2026-08-06", "to": "2026-09-05", "days": 30 },
+  "window": { "from": "2026-08-07", "to": "2026-09-05", "days": 30, "daysOld": 1 },
   "buckets": [
     { "name": "standard", "archived": false, "notes": "...",
       "styles": 284, "stock": 3120, "units": 363, "revenue": 32316.00, "profit": 4122.10,
@@ -94,7 +101,18 @@ router.get('/', async (req, res) => {
     // bucket that exists but currently holds no styles still appears (you have to be able to see an empty bucket to move things
     // into it), and a bucket name in use but absent from google_campaign appears too (unmanaged names must never be hidden).
     const bucketRes = await query(`
-      WITH members AS (
+      WITH asof AS (
+        -- THE SAME ANCHOR AS google-ads-styles, and it MUST stay the same. Both halves of this screen are read together — the grid
+        -- says these styles kept £X, the panel says their bucket kept £X — so if one ended its window on today and the other on the
+        -- last imported day, the two would disagree by a day of sales carrying no ad cost, and neither would be wrong on its own
+        -- terms. Read the anchoring section in the google-ads-styles header for what this fixes, and why the Ads API does not
+        -- make it unnecessary.
+        SELECT LEAST(CURRENT_DATE, (
+                 SELECT MAX(snapshot_date) FROM google_product_daily
+                 WHERE (imported_at AT TIME ZONE 'Europe/London')::date > snapshot_date
+               )) AS d
+      ),
+      members AS (
         SELECT groupid, COALESCE(NULLIF(TRIM(googlecampaign), ''), '(none)') AS bucket
         FROM skusummary
         WHERE shopify = 1
@@ -108,17 +126,19 @@ router.get('/', async (req, res) => {
       sales_w AS (
         -- Shopify only, same reasoning as google-ads-styles: Google Shopping points at the Shopify store, so that is the revenue
         -- these ads can plausibly have caused.
-        SELECT groupid, SUM(qty) AS units, SUM(soldprice) AS revenue, SUM(profit) AS profit
-        FROM sales
-        WHERE channel = 'SHP' AND solddate >= CURRENT_DATE - $1::int
-        GROUP BY groupid
+        -- BETWEEN asOf - (days - 1) AND asOf: exactly that many days, inclusive. The old >= CURRENT_DATE - $1 was wrong twice over —
+        -- it spanned days + 1 dates (day -N through day 0), and it ended on a day the ad side could not reach.
+        SELECT s.groupid, SUM(s.qty) AS units, SUM(s.soldprice) AS revenue, SUM(s.profit) AS profit
+        FROM sales s CROSS JOIN asof a
+        WHERE s.channel = 'SHP' AND s.solddate BETWEEN a.d - ($1::int - 1) AND a.d
+        GROUP BY s.groupid
       ),
       ads_w AS (
-        SELECT groupid, SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(cost) AS cost,
-               SUM(conversions) AS conversions, SUM(conv_value) AS conv_value
-        FROM google_product_daily
-        WHERE snapshot_date >= CURRENT_DATE - $1::int
-        GROUP BY groupid
+        SELECT g.groupid, SUM(g.impressions) AS impressions, SUM(g.clicks) AS clicks, SUM(g.cost) AS cost,
+               SUM(g.conversions) AS conversions, SUM(g.conv_value) AS conv_value
+        FROM google_product_daily g CROSS JOIN asof a
+        WHERE g.snapshot_date BETWEEN a.d - ($1::int - 1) AND a.d
+        GROUP BY g.groupid
       ),
       last_label AS (
         SELECT DISTINCT ON (groupid) groupid, NULLIF(google_label, '') AS label
@@ -166,6 +186,14 @@ router.get('/', async (req, res) => {
     // days ('--', '< 10%', '> 90%') and those arrive as NULL. AVG ignores NULLs, which is what we want: a censored day is unknown,
     // and averaging it in as 0 would drag a healthy campaign's share down for no reason.
     const adsRes = await query(`
+      WITH asof AS (
+        -- Its own copy: this is a separate statement from the bucket query above, so the CTE does not carry over. Same expression,
+        -- deliberately — the two lists on this panel must cover the same calendar window.
+        SELECT LEAST(CURRENT_DATE, (
+                 SELECT MAX(snapshot_date) FROM google_product_daily
+                 WHERE (imported_at AT TIME ZONE 'Europe/London')::date > snapshot_date
+               )) AS d
+      )
       SELECT campaign,
              COUNT(*)                 AS days,
              SUM(clicks)              AS clicks,
@@ -177,14 +205,26 @@ router.get('/', async (req, res) => {
              AVG(lost_is_rank)        AS lost_is_rank,
              AVG(lost_is_budget)      AS lost_is_budget,
              COUNT(*) FILTER (WHERE search_imp_share IS NULL) AS censored_days
-      FROM google_campaign_daily
-      WHERE snapshot_date >= CURRENT_DATE - $1::int
+      -- Anchored to the PRODUCT table's last day, not this table's own, so the two lists cover the same calendar window and can be
+      -- read against each other. google_campaign_daily is usually further behind (a second report, and it has silently lost 22 days
+      -- once); when it is, the per-campaign days count above says so — that is exactly what that column is for.
+      FROM google_campaign_daily CROSS JOIN asof a
+      WHERE snapshot_date BETWEEN a.d - ($1::int - 1) AND a.d
       GROUP BY campaign
       ORDER BY SUM(cost) DESC
     `, [days]);
 
     const bounds = await query(
-      `SELECT to_char(CURRENT_DATE - $1::int, 'YYYY-MM-DD') AS "from", to_char(CURRENT_DATE, 'YYYY-MM-DD') AS "to"`,
+      `WITH asof AS (
+         SELECT LEAST(CURRENT_DATE, (
+                  SELECT MAX(snapshot_date) FROM google_product_daily
+                  WHERE (imported_at AT TIME ZONE 'Europe/London')::date > snapshot_date
+                )) AS d
+       )
+       SELECT to_char(d - ($1::int - 1), 'YYYY-MM-DD') AS "from",
+              to_char(d, 'YYYY-MM-DD')                 AS "to",
+              (CURRENT_DATE - d)                       AS days_old
+       FROM asof`,
       [days]
     );
 
@@ -250,7 +290,8 @@ router.get('/', async (req, res) => {
 
     return res.json({
       return_code: 'SUCCESS',
-      window: { from: bounds.rows[0].from, to: bounds.rows[0].to, days },
+      // `to` is the ANCHOR, not today: the last day both sales and ad spend can speak for. daysOld is how far behind today that is.
+      window: { from: bounds.rows[0].from, to: bounds.rows[0].to, days, daysOld: Number(bounds.rows[0].days_old) },
       buckets,
       adsCampaigns,
     });

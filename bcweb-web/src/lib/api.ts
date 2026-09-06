@@ -2327,22 +2327,40 @@ export interface GoogleAdsStyleRow {
   price: number | null;
   rrp: number | null;
   cost: number | null;
+  // The week just gone. The only window that can see a change made last week — and the noisiest, because a style selling two a
+  // month reads 0 across most of them. Free of Google's conversion revision lag: nothing the grid draws comes from `conversions`
+  // or `convValue`. See the route header.
+  d7: GoogleAdsWindow;
   d30: GoogleAdsWindow;
   d90: GoogleAdsWindow;
   d365: GoogleAdsWindow;
   ly30: GoogleAdsWindow;   // the SAME 30 days one year ago — the winter comparison the module exists for
 }
 
-export type GoogleAdsWindowKey = 'd30' | 'd90' | 'd365' | 'ly30';
+export type GoogleAdsWindowKey = 'd7' | 'd30' | 'd90' | 'd365' | 'ly30';
 export interface GoogleAdsWindowMeta { from: string; to: string; label: string }
 
-// The whole payload: every sellable style with all four windows pre-aggregated, so the window switch is a display change with no
+// The whole payload: every sellable style with all five windows pre-aggregated, so the window switch is a display change with no
 // round-trip (same reasoning as birk-stock's LIVE/FULL).
+//
+// EVERY WINDOW ENDS AT `asOf`, NOT AT TODAY. asOf is the newest COMPLETE day of Google ad data — a part day is excluded, because a
+// report downloaded at 14:38 contains that day only up to 14:38. Both the sales side and the ad side of every window are cut off
+// there; otherwise the window would hold sales carrying no ad cost and Kept would read high by exactly that much. Under manual
+// import the gap is however long since someone last uploaded. Trust `windows.*.from` / `.to` for what was actually measured; do not
+// assume a window runs to today. Full reasoning in the google-ads-styles route header.
 export function getGoogleAdsStyles() {
-  return request<{ count: number; windows: Record<GoogleAdsWindowKey, GoogleAdsWindowMeta>; rows: GoogleAdsStyleRow[] }>(
+  return request<{
+    count: number;
+    asOf: string;      // 'YYYY-MM-DD' — the last COMPLETE day both sales and ad spend can speak for
+    daysOld: number;   // today minus asOf; 2 is normal after a same-day import, larger means the import is behind
+    windows: Record<GoogleAdsWindowKey, GoogleAdsWindowMeta>;
+    rows: GoogleAdsStyleRow[];
+  }>(
     { url: '/google-ads-styles', method: 'GET' },
     (b) => ({
       count: b.count ?? 0,
+      asOf: b.asOf,
+      daysOld: b.daysOld ?? 0,
       windows: b.windows,
       rows: (b.rows as GoogleAdsStyleRow[]) || [],
     })
@@ -2386,7 +2404,9 @@ export interface GoogleAdsCampaign {
 }
 
 export function getGoogleAdsCampaigns(days?: number) {
-  return request<{ window: { from: string; to: string; days: number }; buckets: GoogleAdsBucket[]; adsCampaigns: GoogleAdsCampaign[] }>(
+  // `window.to` is the anchor, not today — the same one getGoogleAdsStyles reports, so the panel and the grid always cover the same
+  // calendar window. `daysOld` is how far behind today that is.
+  return request<{ window: { from: string; to: string; days: number; daysOld: number }; buckets: GoogleAdsBucket[]; adsCampaigns: GoogleAdsCampaign[] }>(
     { url: '/google-ads-campaigns', method: 'GET', params: days ? { days } : undefined },
     (b) => ({ window: b.window, buckets: b.buckets || [], adsCampaigns: b.adsCampaigns || [] })
   );

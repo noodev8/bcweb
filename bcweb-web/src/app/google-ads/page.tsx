@@ -20,16 +20,27 @@ THE FILTER IS INVENTORY'S, DELIBERATELY UNCHANGED IN BEHAVIOUR
 Contains / Does not contain, stacked steps, each search narrowing what is already on screen, and a search that would empty the list is
 treated as a fresh hunt instead. The operator has years of muscle memory in it and a second dialect of the same idea would be worse
 than either. Two departures, both the owner's: there is NO Find button (Enter applies the boxes, and so does tabbing out of them),
-and the typed commands differ because the questions do — this screen asks about SPEND and KEPT, not shelf sizes.
+and the typed commands differ because the questions do — this screen asks about SPEND and KEPT first. SIZES is the one command it
+shares with Inventory, and it is here for a money reason rather than a stock one: see THIN_SIZES.
 
 WHY THE DEFAULT SORT IS "KEPT", WORST FIRST
 Every other list in this platform opens on something neutral. This one opens on the money it is losing, because that is the job: over
 the 30 days to 5 Sep 2026, 55 styles cost more in ads than they made in profit — £1,578 of spend against £676 of profit — and another
 78 drew spend having sold nothing at all. Those rows are the reason to open the screen, so they are what it opens on.
 
-ALL FOUR WINDOWS SHIP IN ONE PAYLOAD (see the route header), so the window switch is a display change with no round-trip — the same
+ALL FIVE WINDOWS SHIP IN ONE PAYLOAD (see the route header), so the window switch is a display change with no round-trip — the same
 trade birk-stock makes with LIVE / FULL. Only the 30-day window has a like-for-like year-ago partner, so the comparison bar appears
-there and is dropped rather than faked on the others.
+there and is dropped rather than faked on the others — 7 days included, where a seven-day slice of last September would be one piece
+of noise measured against another.
+
+NO WINDOW ON THIS SCREEN RUNS TO TODAY, AND THAT IS DELIBERATE (2026-09-06)
+Every window ends at `asOf` — the newest COMPLETE day of Google ad data — on BOTH the sales side and the ad side. So a sale made this
+morning does not appear here, and someone will eventually ask why. The answer: sales are live, the ad report only covers days it has
+finished watching, and the newest day in an import is normally a PART day (a report pulled at 14:38 holds that day up to 14:38). A
+window running to today would set N days of sales against fewer days of cost, and Kept would read high by exactly that gap. Anchored,
+the two sides always describe the same days. The money bar prints the real range it measured, and the import panel's freshness line
+says how old that is — between them the screen never claims a day it has not measured. The route header (google-ads-styles) has the
+full reasoning, and what Google does and does not actually delay.
 =======================================================================================================================================
 */
 
@@ -53,14 +64,19 @@ interface FilterStep { op: 'has' | 'not'; term: string }
 // A worded numeric command typed in the Contains box, consumed rather than searched for. Plain-English keywords, not "<10" symbols,
 // exactly as Inventory does — so the two screens read the same and neither clashes with a future meaning for "<".
 //
-// The metrics are this screen's questions: SPEND (what Google charged), KEPT (profit after that), STOCK, SOLD. All four compare
-// against the CURRENTLY SELECTED WINDOW, so "SPEND MORE 50" means something different on 30d and 365d — which is correct, and the
-// active chip names the window so it is never ambiguous.
-type QtyMetric = 'spend' | 'kept' | 'stock' | 'sold';
+// The metrics are this screen's questions: SPEND (what Google charged), KEPT (profit after that), STOCK, SOLD, SIZES. The first
+// four compare against the CURRENTLY SELECTED WINDOW, so "SPEND MORE 50" means something different on 30d and 365d — which is
+// correct, and the active chip names the window so it is never ambiguous.
+//
+// SIZES IS THE ODD ONE AND DELIBERATELY SO: it is today's shelf, not the window's. "SIZES LESS 5" asks how many sizes a shopper can
+// buy RIGHT NOW, which is what decides whether the next click finds anything — a windowed version would answer a question about the
+// past that nobody is acting on. Same standing as STOCK, which is already read straight off the row.
+type QtyMetric = 'spend' | 'kept' | 'stock' | 'sold' | 'sizes';
 interface QtyFilter { metric: QtyMetric; op: 'less' | 'more'; n: number }
 
 function metricValue(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey, metric: QtyMetric): number {
   if (metric === 'stock') return r.stock;
+  if (metric === 'sizes') return r.sizesInStock;
   const win = r[w];
   if (metric === 'spend') return win.spend;
   if (metric === 'kept') return win.profitAfterSpend;
@@ -116,7 +132,7 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
   if (upper === 'WINTER' || upper === 'SUMMER') {
     return { term: '', qty: null, season: upper === 'WINTER' ? 'Winter' : 'Summer' };
   }
-  const m = upper.match(/^(SPEND|KEPT|STOCK|SOLD)\s+(LESS|MORE)\s+(-?\d+(?:\.\d+)?)$/);
+  const m = upper.match(/^(SPEND|KEPT|STOCK|SOLD|SIZES)\s+(LESS|MORE)\s+(-?\d+(?:\.\d+)?)$/);
   if (m) {
     return {
       term: '',
@@ -193,6 +209,33 @@ function money(v: number): string {
 //
 // No clicks at all reads 0%, which is honest: nothing was offered, nothing converted.
 const CONV_MIN_CLICKS = 20;
+
+// THE SHELF-DEPTH LINE, AND WHY IT IS A COUNT AND NOT A SHARE (2026-09-06)
+// This cell was amber under HALF the run. That rule was a guess and the data disagrees with it. Over the 30 days to 5 Sep 2026,
+// grouped by how many sizes are actually buyable today:
+//
+//     sizes in stock    styles   clicks   spend     sold   conv.    kept
+//     0                     32      652   £185        36    5.5%    -£17
+//     1-2                   59    2,841   £972        83    2.9%   -£514
+//     3-4                   41    1,640   £674        60    3.7%    -£73
+//     5-7                   55    2,192   £1,136     219   10.0%   +£448
+//     8+                    16    1,077   £570       114   10.6%   +£677
+//
+// The break is a cliff between 4 and 5, not a slope, and it is not a share: conversion nearly triples the moment a fifth size is
+// buyable. £1,831 of £3,537 — 52% of all spend — sits below the line and returns -£604; everything above it returns +£1,125. Every
+// penny this account keeps comes from deep-stock styles.
+//
+// Scored the two rules against each other on the same 30 days, the count is the better line: it keeps a set converting at 10.2%
+// (the share rule keeps one at 8.6%, because it lets 37 shallow styles through on a flattering denominator) and it stops flagging
+// 4 healthy styles the share rule called thin — they convert at 10.3% and keep £79 between them.
+//
+// The one thing the count gets wrong on purpose: 16 styles list fewer than 5 sizes in total, so they are amber whatever they do.
+// They draw £98 of spend between them and the flag is arguably right anyway — a shopper whose size is not there does not care that
+// the run was never longer. Not worth a second rule.
+//
+// The merchant feed CANNOT catch any of this. It reports style-level availability, and it reports it correctly: these styles ARE in
+// stock. Depth is invisible to it, which is why the money leaks here and nowhere else.
+const THIN_SIZES = 5;
 function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number {
   const win = r[w];
   if (win.clicks <= 0) return 0;
@@ -214,6 +257,11 @@ function styleName(title: string | null): string {
 }
 
 const WINDOWS: { key: GoogleAdsWindowKey; short: string }[] = [
+  // 7 DAYS LEADS THE ROW BUT IS NOT THE DEFAULT (owner, 2026-09-06). It exists because a pause or a bucket move takes a day to reach
+  // Google and a few more to show, so on 30 days the effect of last week's decision is a quarter of a window three-quarters made of
+  // the decision it replaced. It is also the noisiest window here — a style selling two a month reads nothing across most weeks — so
+  // the screen still opens on 30 days, and the chips run short-to-long so the trade is legible left to right.
+  { key: 'd7', short: '7 days' },
   { key: 'd30', short: '30 days' },
   { key: 'd90', short: '90 days' },
   { key: 'd365', short: '365 days' },
@@ -232,7 +280,7 @@ export default function GoogleAdsPage() {
   const stylesQ = useApiQuery('google-ads-styles', getGoogleAdsStyles);
   const [win, setWin] = useState<GoogleAdsWindowKey>('d30');
   // The campaign panel's money follows the window switch, so its key carries the day count.
-  const days = win === 'd30' ? 30 : win === 'd90' ? 90 : 365;
+  const days = win === 'd7' ? 7 : win === 'd30' ? 30 : win === 'd90' ? 90 : 365;
   const campaignsQ = useApiQuery(`google-ads-campaigns:${days}`, () => getGoogleAdsCampaigns(days));
 
   const rows = stylesQ.data?.rows ?? NO_ROWS;
@@ -373,6 +421,24 @@ export default function GoogleAdsPage() {
     containsRef.current?.focus();
   }, [clearSelection, stylesQ, campaignsQ]);
 
+  // THIN SHELF — the one narrowing on this screen that gets a button instead of a typed command (owner, 2026-09-06).
+  // It is exactly `SIZES LESS 5` and composes with everything else, so it is not a special case in the filter; it is a shortcut to
+  // the one step that is worth taking on most visits. Half the ad budget sits behind it (see THIN_SIZES), it is asked for by name
+  // every time the account is reviewed, and it is the only cohort here defined by a fact known BEFORE the money is spent rather
+  // than a verdict reached after it.
+  //
+  // Toggles, like the campaign chip: pressing it again lifts it. Clearing its chip does the same thing, and both routes are live
+  // because the button is where the eye is and the chip is where the other narrowings are lifted.
+  const thinActive = qty.some((f) => f.metric === 'sizes');
+  const onThinShelf = useCallback(() => {
+    setQty((list) => (
+      list.some((f) => f.metric === 'sizes')
+        ? list.filter((f) => f.metric !== 'sizes')
+        : [...list, { metric: 'sizes' as QtyMetric, op: 'less' as const, n: THIN_SIZES }]
+    ));
+    clearSelection();
+  }, [clearSelection]);
+
   const onSort = useCallback((key: SortKey) => {
     if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
@@ -486,7 +552,7 @@ export default function GoogleAdsPage() {
             currentMeta={windows[win]}
             lastYear={totals.lastYear}
             lastYearMeta={windows.ly30}
-            // Only the 30-day window has a like-for-like partner a year back. Comparing 365 days against 30 would be a fake.
+            // Only the 30-day window has a like-for-like partner a year back. Comparing 365 days — or 7 — against 30 would be a fake.
             showLastYear={win === 'd30'}
           />
         </div>
@@ -553,6 +619,21 @@ export default function GoogleAdsPage() {
             <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Reset
           </button>
+          {/* Sits beside Reset rather than among the window chips: it narrows the LIST, which is what this bar does, and it must not
+              read as a change to the period being measured. */}
+          <button
+            type="button"
+            onClick={onThinShelf}
+            aria-pressed={thinActive}
+            title={`Only styles with fewer than ${THIN_SIZES} sizes buyable today — where clicks stop converting`}
+            className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium ${
+              thinActive
+                ? 'border-slate-400 bg-slate-100 text-slate-800'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Thin shelf
+          </button>
           <button
             type="button"
             onClick={() => setShowHelp((v) => !v)}
@@ -571,6 +652,7 @@ export default function GoogleAdsPage() {
               <li><span className="font-mono text-slate-700">SPEND MORE 50</span> · <span className="font-mono text-slate-700">SPEND LESS 5</span><span className="text-slate-400"> — what Google charged, in the chosen window</span></li>
               <li><span className="font-mono text-slate-700">KEPT LESS 0</span><span className="text-slate-400"> — styles that cost more than they earned</span></li>
               <li><span className="font-mono text-slate-700">SOLD LESS 1</span> · <span className="font-mono text-slate-700">STOCK MORE 20</span><span className="text-slate-400"> — units sold in the window, and stock on the shelf</span></li>
+              <li><span className="font-mono text-slate-700">SIZES LESS 5</span><span className="text-slate-400"> — sizes buyable TODAY, not in the window. Under 5 is the Thin shelf button</span></li>
               <li><span className="font-mono text-slate-700">WINTER</span> · <span className="font-mono text-slate-700">SUMMER</span><span className="text-slate-400"> — season (year-round styles show in both)</span></li>
             </ul>
           </div>
@@ -711,13 +793,17 @@ export default function GoogleAdsPage() {
                     <td className="border-b border-slate-100 px-2 py-1.5">
                       <span className="text-slate-700">{r.campaign || '—'}</span>
                     </td>
-                    {/* Sizes in stock out of sizes listed. Amber under half the run: that is the level at which a click is more
-                        likely than not to find nothing, and the row's money problem is a stock problem wearing an ads costume. */}
+                    {/* Sizes buyable today, out of sizes listed. Amber under THIN_SIZES — an absolute count, see the constant for
+                        the numbers behind it. The row's money problem is a stock problem wearing an ads costume. */}
                     <td
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
-                        r.sizesListed > 0 && r.sizesInStock / r.sizesListed < 0.5 ? 'font-medium text-amber-700' : 'text-slate-600'
+                        // sizesListed 0 means the style is not in skumap at all — a data gap, not a thin shelf. It renders as a
+                        // dash and must not also wear the warning colour, or the two faults become one number.
+                        r.sizesListed > 0 && r.sizesInStock < THIN_SIZES ? 'font-medium text-amber-700' : 'text-slate-600'
                       }`}
-                      title={`${r.sizesInStock} of ${r.sizesListed} sizes in stock · ${r.stock} units on the shelf`}
+                      title={`${r.sizesInStock} of ${r.sizesListed} sizes in stock · ${r.stock} units on the shelf${
+                        r.sizesInStock < THIN_SIZES ? ` · under ${THIN_SIZES} buyable sizes, where clicks stop converting` : ''
+                      }`}
                     >
                       {r.sizesListed === 0 ? '—' : `${r.sizesInStock}/${r.sizesListed}`}
                     </td>
