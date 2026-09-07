@@ -138,7 +138,10 @@ function money(v: number | null): string {
 }
 
 function haystack(r: AmazonOrderRow): string {
-  return `${r.title || ''} ${r.code} ${r.groupid}`.toLowerCase();
+  // Supplier (e.g. "UKD") is folded in so typing the supplier code finds every style under it — a brand name is already in the
+  // title, but a supplier grouping several brands (Goor, Roamers, Dek… all UKD) isn't (owner, 2026-09-07). Same rule as the other
+  // three Contains sites (Inventory, amz-find.js, analytics-sales.js) — keep them in step.
+  return `${r.title || ''} ${r.code} ${r.groupid} ${r.supplier || ''}`.toLowerCase();
 }
 
 // Shared by `filtered` below and by addInclude's auto-reset check — same include/exclude test against a haystack, since

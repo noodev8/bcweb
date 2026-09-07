@@ -135,8 +135,11 @@ const WINDOWS = new Set([...SHORT_WINDOWS, ...LONG_WINDOWS]);
 
 // The text every search step is matched against: the same three fields the single-box search always covered, concatenated so one
 // predicate spans all of them (and so a whole-word `not` can't be fooled by a term that straddles two of them). COALESCE because
-// productname/groupid/code are all nullable on legacy rows and a NULL would swallow the whole expression.
-const HAY = `(COALESCE(s.productname,'') || ' ' || COALESCE(s.groupid,'') || ' ' || COALESCE(s.code,''))`;
+// productname/groupid/code are all nullable on legacy rows and a NULL would swallow the whole expression. Also carries
+// skusummary.supplier (sk is LEFT JOINed onto groupid in the `f` CTE below) so typing a supplier code (e.g. "UKD") finds every sale
+// under it — a brand name is already in productname (sales.brand is stamped at booking, see below), but a supplier grouping several
+// brands isn't (owner, 2026-09-07). Same rule as the other three Contains sites — keep them in step.
+const HAY = `(COALESCE(s.productname,'') || ' ' || COALESCE(s.groupid,'') || ' ' || COALESCE(s.code,'') || ' ' || COALESCE(sk.supplier,''))`;
 
 // The sortable columns, as a WHITELIST of ORDER BY fragments keyed by the name the client sends. A whitelist rather than interpolation
 // because an ORDER BY can't be parameterised — `$1` there would sort by the constant, not the column — so the only safe way to accept a
@@ -264,8 +267,11 @@ router.get('/', async (req, res) => {
           END AS to_date
       ),
       f AS (
+        -- LEFT JOIN skusummary for `sk.supplier` (the HAY term match only — no other column of sk is read here), so a sale can still
+        -- match on a groupid skusummary has since dropped rather than disappearing from the search entirely.
         SELECT s.*
-        FROM sales s, b
+        FROM sales s
+        LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
         WHERE (
               ($2::bool AND s.solddate >= (CURRENT_DATE - INTERVAL '12 months'))   -- product mode: rolling last 12 months
               OR (NOT $2::bool AND s.solddate >= b.from_date AND s.solddate <= b.to_date)  -- pulse mode: the chosen preset window

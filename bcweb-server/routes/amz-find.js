@@ -83,8 +83,10 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
 
 // The text every search step is matched against: the same four fields the single box always covered, concatenated so one predicate spans
 // all of them (and so a whole-word `not` can't be fooled by a term straddling two). COALESCE because title is LEFT JOINed and sku/groupid
-// are nullable on odd feed rows — a NULL would swallow the whole expression.
-const HAY = `(COALESCE(a.code,'') || ' ' || COALESCE(a.sku,'') || ' ' || COALESCE(a.groupid,'') || ' ' || COALESCE(t.shopifytitle,''))`;
+// are nullable on odd feed rows — a NULL would swallow the whole expression. Also carries skusummary.supplier (sk is already LEFT JOINed
+// below) so typing a supplier code (e.g. "UKD") finds every style under it — a brand name is already in the title, but a supplier
+// grouping several brands isn't (owner, 2026-09-07). Same rule as the other three Contains sites — keep them in step.
+const HAY = `(COALESCE(a.code,'') || ' ' || COALESCE(a.sku,'') || ' ' || COALESCE(a.groupid,'') || ' ' || COALESCE(t.shopifytitle,'') || ' ' || COALESCE(sk.supplier,''))`;
 
 // Belt-and-braces cap on how many terms one request may carry — the UI can't produce more than a handful, and each is another predicate.
 const MAX_TERMS = 8;

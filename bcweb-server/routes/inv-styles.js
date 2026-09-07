@@ -38,6 +38,8 @@ Success Response:
       "groupid": "1005292-ARIZONA",
       "title": "Birkenstock Arizona Two-Strap Patent Sandals Black Narrow Fit",  // title.shopifytitle; null if none
       "segment": "ARIZONA-GENERAL",
+      "supplier": "UKD",                    // skusummary.supplier; null if unset. Lets the Contains box find "everything from this supplier"
+                                             // by the supplier code even when it isn't in the title (brand names are — supplier codes aren't)
       "season": "Summer",                   // skusummary.season — 'Summer' | 'Winter' | 'Any' (100% populated on live data); '' if ever blank
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
       "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
@@ -206,6 +208,7 @@ router.get('/', async (req, res) => {
         s.groupid,
         t.shopifytitle                                        AS title,
         s.segment,
+        s.supplier,
         -- SEASON, for the browse's WINTER / SUMMER commands (owner, 2026-09-02). A plain column on skusummary — no join, no aggregation.
         -- Shipped rather than inferred from the segment name: only three segments encode season (RIEKER-WIN/-SUM, REMONTE-WIN, 32 styles
         -- between them), so segment-name matching silently missed the other 263 and made the operator trust a naming convention instead
@@ -261,6 +264,9 @@ router.get('/', async (req, res) => {
         groupid: r.groupid,
         title: r.title || null,
         segment: r.segment || null,
+        // skusummary.supplier ('UKD', 'BIRKENSTOCK', …). Included in the client's haystack so typing the supplier code finds every
+        // style under it — a brand name (Roamers, Goor…) is already IN the title, but the supplier that groups several brands isn't.
+        supplier: r.supplier || null,
         // 'Summer' | 'Winter' | 'Any' | '' — the client folds 'Any' into BOTH seasons (a year-round style is sellable in either), so
         // this is shipped raw and the meaning is applied there, next to the filter that depends on it.
         season: r.season || null,

@@ -131,9 +131,12 @@ const CHUNK_ROOT_MARGIN = '800px';
 
 // The text a filter step is matched against. Built once per row and cached. Lowercased here so each step is a plain indexOf.
 // Includes the style's Amazon Seller SKUs (skumap.sku) so a pasted Amazon SKU like 17659-23-42-2607 — which doesn't share the internal
-// code — still finds its style (owner, 2026-07-25).
+// code — still finds its style (owner, 2026-07-25). Includes supplier (skusummary.supplier, e.g. "UKD") so typing the supplier code
+// finds every style under it — a brand name is already in the title, but a supplier that groups several brands (Goor, Roamers, Dek…
+// all UKD) isn't, and there was previously no way to pull that set up in one search (owner, 2026-09-07). Same rule as the other three
+// Contains sites (Amazon Order, amz-find.js, analytics-sales.js) — keep them in step.
 function haystack(r: InvStyleRow): string {
-  return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.amazonSkus || ''}`.toLowerCase();
+  return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.amazonSkus || ''} ${r.supplier || ''}`.toLowerCase();
 }
 
 // Normalise a size token for matching, so a typed "5" finds a stored "05" and "41" finds "41".

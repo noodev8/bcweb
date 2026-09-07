@@ -1231,6 +1231,9 @@ export interface InvStyleRow {
   groupid: string;
   title: string | null;
   segment: string | null;
+  // skusummary.supplier ('UKD', 'BIRKENSTOCK', …) — folded into the Contains haystack so the supplier code finds every style under
+  // it, which the title alone can't do (title carries the brand, e.g. "Roamers", not the supplier that groups several brands).
+  supplier: string | null;
   // skusummary.season — 'Summer' | 'Winter' | 'Any', or null if untagged. Drives the browse's typed WINTER / SUMMER commands. 'Any'
   // means year-round and counts as BOTH seasons there; the folding happens on the client, so this stays the raw tag.
   season: string | null;
