@@ -267,7 +267,7 @@ router.get('/', async (req, res) => {
           END AS to_date
       ),
       f AS (
-        -- LEFT JOIN skusummary for `sk.supplier` (the HAY term match only — no other column of sk is read here), so a sale can still
+        -- LEFT JOIN skusummary for sk.supplier (the HAY term match only - no other column of sk is read here), so a sale can still
         -- match on a groupid skusummary has since dropped rather than disappearing from the search entirely.
         SELECT s.*
         FROM sales s
