@@ -64,6 +64,10 @@ Three buckets, one lifecycle:
 `standard` is the only campaign that is trying to make money. `new` buys data (Rule 4). `pause` is
 excluded from Google entirely. **Not** a set of margin-segmented campaigns — see "Why not segment".
 
+**Ad-hoc spin-off campaigns happen** — a product line pulled out into its own bucket and campaign to test
+an opportunity (e.g. IVES once its Amazon-matched price moved break-even from 7.4x to ~5x). Always MOVE
+the bucket, never duplicate: a style in two campaigns bids against itself in the same auction.
+
 Everything is read on the **90-day window** of the Google Ads screen. 30 days is too noisy at this
 volume; every threshold here was measured on 90.
 
