@@ -2351,6 +2351,13 @@ export interface GoogleAdsWindow {
   convValue: number;       // GOOGLE'S attributed revenue — never tie this to `revenue`, they measure different things
   profitAfterSpend: number;
   roas: number | null;     // convValue / spend, both sides Google's
+  // THE TARGET, NOT A RESULT. revenue / profit — both OURS, no Google figure in it: the revenue ROAS this style must earn before an
+  // ad on it pays for itself, which is the tROAS you would set for a bucket built out of styles like it. Comparable with `roas`
+  // above because both are ratios over VAT-inclusive revenue.
+  //
+  // NULL means profit <= 0 (or nothing sold) — no target rescues a style that loses money before a penny of ad spend, and that is a
+  // different verdict from "needs 25x". A CEILING, not a point estimate: shopifyProfit.js estimates costs high on purpose.
+  breakEvenRoas: number | null;
 }
 
 export interface GoogleAdsStyleRow {
@@ -2527,6 +2534,22 @@ export function googleAdsCampaignUpdate(args: { name: string; newName?: string; 
   return request<{ campaign: { name: string; notes: string | null; archived: boolean }; renamed: boolean; membersRewritten: number }>(
     { url: '/google-ads-campaign-update', method: 'POST', data: args },
     (b) => ({ campaign: b.campaign, renamed: Boolean(b.renamed), membersRewritten: b.membersRewritten ?? 0 })
+  );
+}
+
+// PERMANENTLY REMOVE a bucket's definition. Refused only when the bucket still HOLDS styles, or is 'standard' / 'pause'. Google
+// report history does NOT block it (owner, 2026-09-07): the report tables key on a text label with no foreign key, so the rows keep
+// reading and the name just becomes a historical label — the state 'birk-winner' has been in since May, harmlessly.
+//
+// Both counts come back on success so the operator can see what the name still touches, and NEITHER is deleted:
+//   logRowsKept    google_campaign_assignment_log rows naming it. That log is the only record of what a style's bucket was on a
+//                  given day, and erasing the middle step would make a style that went standard -> thin -> pause look like it never
+//                  moved. History is not configuration.
+//   reportRowsKept rows in Google's own report tables still carrying the name. Information, never a veto.
+export function googleAdsCampaignDelete(args: { name: string }) {
+  return request<{ deleted: string; logRowsKept: number; reportRowsKept: number }>(
+    { url: '/google-ads-campaign-delete', method: 'POST', data: args },
+    (b) => ({ deleted: b.deleted, logRowsKept: b.logRowsKept ?? 0, reportRowsKept: b.reportRowsKept ?? 0 })
   );
 }
 

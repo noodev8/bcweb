@@ -23,10 +23,14 @@ An archived bucket disappears from the assign picker but its label keeps going o
 keep scoping a live campaign. That is exactly the silent-state failure this module exists to end. Move the styles somewhere else
 first; the error says how many are in the way.
 
-'standard' AND 'pause' CANNOT BE RENAMED OR ARCHIVED
-`standard` is the value `routes/product-create.js` seeds on every new style, so a rename would make new products land in a bucket
-that no longer exists. `pause` is the owner's chosen mechanism for pulling a style out of Google (spec §1) and the screen offers it
-as a fixed action. Their notes can still be edited.
+NO NAME IS PROTECTED (owner, 2026-09-07)
+'standard' and 'pause' were refused here on the grounds that other code depended on the literal strings. CHECKED, AND IT DOES NOT.
+`routes/product-create.js` seeds `'new'`, not `'standard'` — this guard was written when it seeded `standard` and was never revisited
+when that changed, so it had been protecting a dependency that no longer existed. 'pause' is not hard-coded anywhere in either app.
+
+'new' IS the live hard-coded seed, and it is deliberately not protected either: renaming it would land new products on a bucket with
+no definition row. That shows in the panel as an unmanaged name rather than failing silently, and it is the owner's call. Recorded
+here so the consequence is known rather than discovered.
 =======================================================================================================================================
 Request Payload:
 {
@@ -51,7 +55,6 @@ Return Codes:
 "NAME_TOO_LONG"
 "INVALID_NAME"
 "DUPLICATE_NAME"
-"PROTECTED_CAMPAIGN"
 "CAMPAIGN_IN_USE"
 "UNAUTHORIZED"
 "SERVER_ERROR"
@@ -69,9 +72,6 @@ router.use(verifyToken);
 
 const MAX_NAME = 20;
 const NAME_OK = /^[A-Za-z0-9 ._-]+$/;
-
-// Seeded names with behaviour attached elsewhere in the codebase — see the header. Notes remain editable.
-const PROTECTED = new Set(['standard', 'pause']);
 
 const UPDATED_EXPR = `to_char(now() AT TIME ZONE 'Europe/London', 'YYYYMMDD HH24:MI:SS')`;
 
@@ -115,11 +115,6 @@ router.post('/', async (req, res) => {
 
       const renaming = newName !== null && newName !== row.name;
       const archiving = archived === true && !row.archived;
-
-      // Protection applies to the two structural operations, never to notes.
-      if ((renaming || archived !== undefined) && PROTECTED.has(row.name.toLowerCase())) {
-        throw fail('PROTECTED_CAMPAIGN', { protectedName: row.name });
-      }
 
       // How many styles currently carry this label. Needed for the archive guard and for the rename's log rows.
       const membersRes = await client.query(
@@ -169,14 +164,28 @@ router.post('/', async (req, res) => {
       }
 
       // Notes / archived on whichever row now holds the definition.
+      //
+      // NOTES CANNOT USE COALESCE, AND DID, WHICH MADE CLEARING ONE IMPOSSIBLE (fixed 2026-09-07). The header has always promised
+      // that an empty string clears the notes; the SQL did the opposite. `notes || null` turned '' into NULL, and
+      // COALESCE(NULL, notes) then kept whatever was already there — so a note could be written and corrected but never removed,
+      // silently, with the route reporting success. Nothing caught it because notes were display-only in the UI until now.
+      //
+      // The two states have to be distinguishable and COALESCE collapses them: NULL means both "leave it alone" (field absent) and
+      // "set it to nothing" (field sent empty). So the flag is passed separately and the CASE decides, leaving NULL free to mean
+      // only one thing. `archived` keeps COALESCE because it is a boolean that is never legitimately set to NULL.
       const target = renaming ? newName : row.name;
       if (notes !== undefined || archived !== undefined) {
         await client.query(`
           UPDATE google_campaign
-             SET notes    = COALESCE($2, notes),
+             SET notes    = CASE WHEN $4::boolean THEN $2 ELSE notes END,
                  archived = COALESCE($3, archived)
            WHERE name = $1
-        `, [target, notes === undefined ? null : (notes || null), archived === undefined ? null : archived]);
+        `, [
+          target,
+          notes === undefined ? null : (notes || null),   // '' -> NULL, which with the flag set means "clear it"
+          archived === undefined ? null : archived,
+          notes !== undefined,                            // was `notes` supplied at all?
+        ]);
       }
 
       const finalRes = await client.query('SELECT name, notes, archived FROM google_campaign WHERE name = $1', [target]);
@@ -195,11 +204,6 @@ router.post('/', async (req, res) => {
     switch (err.code) {
       case 'NOT_FOUND':
         return res.json({ return_code: 'NOT_FOUND', message: 'No campaign with that name' });
-      case 'PROTECTED_CAMPAIGN':
-        return res.json({
-          return_code: 'PROTECTED_CAMPAIGN',
-          message: `"${err.protectedName}" cannot be renamed or archived — new products are created into "standard", and "pause" is how styles are pulled out of Google. You can still edit its notes.`,
-        });
       case 'CAMPAIGN_IN_USE':
         return res.json({
           return_code: 'CAMPAIGN_IN_USE',

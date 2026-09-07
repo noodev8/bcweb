@@ -29,10 +29,10 @@ letting it be assumed.
 */
 
 import { useState } from 'react';
-import { PlusIcon, PencilIcon, ArchiveBoxIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import {
   GoogleAdsBucket, GoogleAdsCampaign, GOOGLE_CAMPAIGN_MAX_NAME,
-  googleAdsCampaignCreate, googleAdsCampaignUpdate,
+  googleAdsCampaignCreate, googleAdsCampaignUpdate, googleAdsCampaignDelete,
 } from '@/lib/api';
 
 function money(v: number): string {
@@ -43,8 +43,6 @@ function pct(v: number | null): string {
   return v === null ? '—' : `${v.toFixed(1)}%`;
 }
 
-// Names that carry behaviour elsewhere and cannot be renamed or archived (the server enforces this too; the UI just doesn't offer it).
-const PROTECTED = new Set(['standard', 'pause']);
 
 // Whether the panel is expanded, remembered per browser. It is COLLAPSED BY DEFAULT (owner, 2026-09-06): the two tables plus their
 // footnotes took about 40% of the page and pushed the filter bar below the fold, so the screen opened on context instead of on the
@@ -78,6 +76,7 @@ export default function GoogleAdsCampaignPanel({
   const [newNotes, setNewNotes] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editNotes, setEditNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,22 +92,38 @@ export default function GoogleAdsCampaignPanel({
     onChanged();
   }
 
-  async function rename(from: string) {
+  // ONE SAVE FOR BOTH FIELDS. The route already took `newName` and `notes` in a single call and applies them in one transaction, so
+  // splitting them into two buttons would be two round-trips and two chances to half-apply an edit the operator made as one.
+  //
+  // `notes` is sent ALWAYS, not only when changed, and that is what makes clearing the text possible: the route reads an empty
+  // string as "blank the notes" and only `undefined` as "leave them alone". Sending it conditionally would mean a note could be
+  // written and corrected but never removed.
+  async function saveEdit(from: string) {
     setBusy(true); setError(null);
-    const res = await googleAdsCampaignUpdate({ name: from, newName: editName.trim().toLowerCase() });
+    const res = await googleAdsCampaignUpdate({
+      name: from,
+      newName: editName.trim().toLowerCase(),
+      notes: editNotes.trim(),
+    });
     setBusy(false);
-    if (!res.success) { setError(res.error || 'Could not rename the campaign'); return; }
+    if (!res.success) { setError(res.error || 'Could not save the campaign'); return; }
     setEditing(null);
     onChanged();
   }
 
-  async function archive(name: string, archived: boolean) {
+  // TWO-STEP, NOT A DIALOG. The app uses no window.confirm anywhere and a modal for one irreversible click would be the only one on
+  // the screen. Arming turns the bin into the word "Delete?" in place, so the confirm sits exactly where the click landed and
+  // dismisses itself the moment attention moves — clicking anything else, or the same row again.
+  const [armed, setArmed] = useState<string | null>(null);
+
+  async function remove(name: string) {
     setBusy(true); setError(null);
-    const res = await googleAdsCampaignUpdate({ name, archived });
+    const res = await googleAdsCampaignDelete({ name });
     setBusy(false);
-    // The server refuses to archive a bucket that still holds styles, and its message says how many are in the way. Surfaced as-is:
-    // it is more useful than anything this component could compose.
-    if (!res.success) { setError(res.error || 'Could not archive the campaign'); return; }
+    setArmed(null);
+    // The server owns every refusal here and each one carries its own remedy — how many styles are in the way, or that the name has
+    // Google history and should be archived instead. Passed through untouched rather than flattened into "could not delete".
+    if (!res.success) { setError(res.error || 'Could not delete the campaign'); return; }
     onChanged();
   }
 
@@ -243,16 +258,28 @@ export default function GoogleAdsCampaignPanel({
                   >
                     <td className="px-4 py-2">
                       {editing === b.name ? (
-                        <div className="flex items-center gap-1.5">
+                        // Stacked, mirroring how the row READS when it is not being edited — name on top, notes in smaller grey
+                        // underneath. The notes field is deliberately unconstrained: it is free text in the database with no length
+                        // limit, unlike the name, which is varchar(20) and shipped to Google as a label.
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value.toLowerCase())}
+                              autoFocus
+                              maxLength={GOOGLE_CAMPAIGN_MAX_NAME}
+                              className="w-40 rounded border border-slate-300 px-2 py-1 text-sm"
+                            />
+                            <button type="button" onClick={() => saveEdit(b.name)} disabled={busy} className="text-xs font-medium text-brand-600 hover:text-brand-700">Save</button>
+                            <button type="button" onClick={() => setEditing(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                          </div>
                           <input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value.toLowerCase())}
-                            autoFocus
-                            maxLength={GOOGLE_CAMPAIGN_MAX_NAME}
-                            className="w-40 rounded border border-slate-300 px-2 py-1 text-sm"
+                            value={editNotes}
+                            onChange={(e) => setEditNotes(e.target.value)}
+                            placeholder="What this bucket is for (optional)"
+                            title="Free text. Clear it to remove the note."
+                            className="w-full max-w-md rounded border border-slate-300 px-2 py-1 text-xs text-slate-600"
                           />
-                          <button type="button" onClick={() => rename(b.name)} disabled={busy} className="text-xs font-medium text-brand-600 hover:text-brand-700">Save</button>
-                          <button type="button" onClick={() => setEditing(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
                         </div>
                       ) : (
                         <button type="button" onClick={() => onFilterBucket(b.name)} className="group text-left">
@@ -285,24 +312,55 @@ export default function GoogleAdsCampaignPanel({
                       {b.adTake === null ? '—' : `${b.adTake.toFixed(0)}%`}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {!PROTECTED.has(b.name.toLowerCase()) && b.managed && editing !== b.name && (
-                        <div className="flex justify-end gap-1">
+                      {/* EVERY MANAGED BUCKET IS EDITABLE (owner, 2026-09-07). 'standard' and 'pause' used to be excluded here and
+                          refused by both routes, on the basis that other code depended on the literal names. It does not:
+                          product-create.js seeds 'new', and 'pause' is hard-coded nowhere. The guard outlived the thing it guarded.
+                          `managed` still gates this — an unmanaged name has no google_campaign row to rename or delete. */}
+                      {b.managed && editing !== b.name && (
+                        // Leaving the row disarms a pending delete. Without it "Delete?" would stay armed indefinitely with no way
+                        // back except deleting something else, and an irreversible action must never be the only exit from a state.
+                        <div className="flex justify-end gap-1" onMouseLeave={() => setArmed((a) => (a === b.name ? null : a))}>
                           <button
                             type="button"
                             title="Rename"
-                            onClick={() => { setEditing(b.name); setEditName(b.name); setError(null); }}
+                            onClick={() => { setEditing(b.name); setEditName(b.name); setEditNotes(b.notes || ''); setError(null); }}
                             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                           >
                             <PencilIcon className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            title={b.archived ? 'Un-archive' : 'Archive'}
-                            onClick={() => archive(b.name, !b.archived)}
-                            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                          >
-                            <ArchiveBoxIcon className="h-4 w-4" />
-                          </button>
+                          {/* ARCHIVE IS GONE FROM THE UI (owner, 2026-09-07), NOT FROM THE SERVER. google-ads-campaign-update still
+                              accepts `archived`, so nothing is lost and it can come back as one button.
+
+                              It was removed because two buttons offering "make this bucket go away" is one too many, and the choice
+                              between them turned on a distinction that turned out not to matter: whether Google had ever reported
+                              the name. It does not — the report tables key on a text label with no foreign key, so deleting the
+                              definition leaves them readable. Delete is now the single, unconditional way to remove a bucket, and
+                              whether to use it is the operator's call rather than the server's.
+
+                              THE ARCHIVED STYLING BELOW STAYS. No bucket is archived today, but if one ever is (an older row, or a
+                              direct call) it must still render, struck through, rather than vanish — a hidden bucket whose label
+                              keeps going out in the feed is precisely the silent state this module exists to end. Note there is now
+                              no way to UN-archive from the screen; that needs the button back. */}
+                          {armed === b.name ? (
+                            <button
+                              type="button"
+                              title={`Permanently delete "${b.name}". Its assignment history is kept.`}
+                              onClick={() => remove(b.name)}
+                              disabled={busy}
+                              className="rounded px-1.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
+                            >
+                              Delete?
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Delete"
+                              onClick={() => { setArmed(b.name); setError(null); }}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>

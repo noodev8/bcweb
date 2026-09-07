@@ -77,10 +77,15 @@ CREATE TABLE IF NOT EXISTS google_campaign (
   created_by  VARCHAR(100)
 );
 
--- The two names that already have meaning. 'standard' is the seed value product-create.js writes on every new style and what all 291
--- rows currently hold. 'pause' is the owner's chosen alternative to switching googlestatus off (spec §1) — reversible, one lever.
+-- The two names that already had meaning when this shipped. Neither is special to the code: nothing reads these literals, and as of
+-- 2026-09-07 neither is protected from rename or delete.
+--
+-- ⚠ THE ORIGINAL 'standard' NOTE HERE WAS "The default bucket. Every new style starts here (product-create.js)." That was true when
+-- written and is not now — product-create.js seeds 'new'. The note stayed wrong in the live row until 2026-09-07 because notes are
+-- display-only in the panel and nothing ever re-read this file. Corrected below and in the live row; if you change where new
+-- products land, this text is one of the places that will not follow on its own.
 INSERT INTO google_campaign (name, notes, created_by) VALUES
-  ('standard', 'The default bucket. Every new style starts here (product-create.js).', 'system'),
+  ('standard', 'A general advertising bucket. NOT the seed for new products — product-create.js writes ''new''.', 'system'),
   ('pause',  'Excluded from Google Ads. Used instead of switching googlestatus off — reversible.', 'system')
 ON CONFLICT (name) DO NOTHING;
 

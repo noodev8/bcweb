@@ -103,6 +103,24 @@ Google Shopping ads point at brookfieldcomfort.com, so Shopify is the channel th
 departure from birk-stock, which uses SHP + CM3: including CM3 here would put revenue Google could not have driven on the same row as
 Google's spend and make `profitAfterSpend` flatter. Amazon is excluded for the same reason, more obviously.
 
+BREAK-EVEN ROAS IS THE ONE NUMBER GOOGLE CANNOT WORK OUT FOR ITSELF (added 2026-09-07)
+Smart bidding buys to a REVENUE target. It does not know our cost, so it buys traffic at roughly the same revenue-efficiency on every
+style regardless of what that style keeps. Measured on the 90 days to 5 Sep 2026, grouped by realised net margin:
+
+    margin band   styles   90d spend   DELIVERED roas   BREAK-EVEN roas
+    negative          11       £231           3.6            never
+    0-6%              14     £1,067           7.6             25.0
+    6-10%             29     £3,047           6.2             12.2
+    10-14%            50     £4,677           6.1              8.4
+    14-18%            31     £3,482           5.4              6.4
+    18%+              17     £1,225           5.6              4.8
+
+Delivered ROAS is FLAT — 5.4 to 7.6 — across bands whose break-even runs from 4.8 to 25 to impossible. Only the top band clears its
+own bar. Margin, not ad performance, is what decides whether a click makes money, and it is invisible to the bidder. `breakEvenRoas`
+puts it on the row so a bucket can be assembled from styles that need the same target, which is the only thing a campaign split can
+actually change here. (The account is NOT budget-constrained — impression share ran 90-94% with lost-to-budget at 0.00% every day in
+August — so the usual reason to split, protecting a winner's budget from a loser, has nothing to do.)
+
 `profit` IS `sales.profit` — the NET per-unit figure (after payment fee, packing, postage and the returns haircut, from
 utils/shopifyProfit.js). NOT the gross measure birk-stock uses. Subtracting ad spend from a gross margin would produce a number that
 looks like profit and is not, on the one screen where that mistake costs money. The two measures differ by a lot: on the current book
@@ -143,7 +161,7 @@ Success Response:
       "d7":   { ... },
       "d30":  { "units": 7, "revenue": 399.00, "profit": 62.30,
                 "impressions": 4210, "clicks": 93, "spend": 41.55, "conversions": 3.25, "convValue": 210.40,
-                "profitAfterSpend": 20.75, "roas": 5.1 },
+                "profitAfterSpend": 20.75, "roas": 5.1, "breakEvenRoas": 6.4 },
       "d90":  { ... }, "d365": { ... }, "ly30": { ... }
     }
   ]
@@ -155,6 +173,10 @@ Success Response:
   - `roas` is convValue / spend (Google's own attributed revenue over Google's own cost), null when spend is 0. It is NOT
     revenue / spend — mixing our revenue with Google's cost would silently credit ads with organic sales.
   - `profitAfterSpend` = our net Shopify profit − Google spend. The one number the screen leads on.
+  - `breakEvenRoas` is revenue / profit — BOTH OURS, no Google figure in it. The revenue ROAS the style must earn to pay for its own
+    advertising, i.e. the tROAS to set for a bucket of styles like it. Directly comparable with `roas` (both over VAT-inclusive
+    revenue). NULL when profit <= 0 or nothing sold: no target rescues a style that loses money before ad spend, and that is a
+    different state from "needs 25x". Read it as a CEILING — utils/shopifyProfit.js estimates costs high on purpose.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -193,11 +215,13 @@ const int = (v) => (v === null || v === undefined ? 0 : Number(v));
 /** Assemble one window's block from the flat SQL row. Zeroes rather than nulls so every column is sortable client-side. */
 function win(r, k) {
   const profit = round2(r[`${k}_profit`]);
+  const revenue = round2(r[`${k}_revenue`]);
   const spend = round2(r[`${k}_spend`]);
   const convValue = round2(r[`${k}_convvalue`]);
+  const units = int(r[`${k}_units`]);
   return {
-    units: int(r[`${k}_units`]),
-    revenue: round2(r[`${k}_revenue`]),
+    units,
+    revenue,
     profit,
     impressions: int(r[`${k}_impressions`]),
     clicks: int(r[`${k}_clicks`]),
@@ -209,6 +233,32 @@ function win(r, k) {
     // Google's attributed revenue over Google's cost — both sides from Google, so the ratio means something. null when nothing was
     // spent: 0 spend is not "infinite ROAS", it is "not applicable", and a 0 there would sort to the bottom as if it were terrible.
     roas: spend > 0 ? Math.round((convValue / spend) * 10) / 10 : null,
+    // THE REVENUE ROAS THIS STYLE HAS TO EARN BEFORE AN AD ON IT PAYS FOR ITSELF. Entirely OURS — revenue and profit both come from
+    // `sales`, and no Google figure appears in it. It is not a performance measure at all; it is the tROAS number you would type
+    // into the Ads UI for a bucket made of styles like this one. See the header note on why that is the missing lever.
+    //
+    // 1 / margin, written as revenue / profit so the arithmetic is visible. A style keeping 11.9p in the pound has to bring back
+    // 8.4x its ad cost in revenue to stand still; one keeping 20p needs 5.0x.
+    //
+    // COMPARABLE TO `roas` ABOVE, AND THAT IS THE WHOLE POINT — both are ratios over VAT-INCLUSIVE revenue (`sales.soldprice` is
+    // what the customer paid, and Shopify reports the same order value to Google), so "delivered 6.1 against a break-even of 8.4"
+    // is a like-for-like reading. The caveat is on the OTHER side: `roas` counts Google's attributed revenue, which is generous,
+    // so clearing this bar is necessary and not sufficient.
+    //
+    // IT IS A CEILING ON THE TRUTH, NOT A POINT ESTIMATE. utils/shopifyProfit.js is deliberately conservative — Royal Mail £3.44
+    // and packing £1.00 are estimated high on purpose and the /1.2 returns haircut sits on top — so real break-even is somewhat
+    // BELOW what this says. Owner's framing: "purposely estimated high so that if I can make a profit with these, I am safe."
+    //
+    // NULL WHEN THERE IS NO PROFIT TO DEFEND (profit <= 0, or nothing sold). Not Infinity and not a big number: a style that loses
+    // money before a penny of ad spend has no break-even target, because no target rescues it. That is a different verdict from
+    // "needs 25x" and the column must not blur the two. Kept is where the loss itself shows.
+    //
+    // THE `units > 0` TEST IS NOT REDUNDANT WITH `revenue > 0`, and it is the one that took a real row. `sales` books a Shopify
+    // return as a row with negative qty, so a style sold once and returned once nets to ZERO units while revenue and profit keep a
+    // few pence of residual — a refund is rarely the penny-exact reverse of the sale. 1030447-ARIZONA came back as "Sold 0" beside
+    // a break-even of 1.6x on 2026-09-07: a ratio of two rounding errors, printed with the authority of a target. Net-zero units
+    // means no margin was realised, whatever arithmetic survives in the columns.
+    breakEvenRoas: units > 0 && profit > 0 && revenue > 0 ? Math.round((revenue / profit) * 10) / 10 : null,
   };
 }
 

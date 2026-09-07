@@ -99,6 +99,10 @@ interface Criteria {
   qty: QtyFilter[];
   season: Season | null;
   bucket: string | null;      // a campaign chip, set by clicking a row in the campaign panel
+  // The Thin shelf button. Its own flag rather than a `sizes` qty step, because the rule is now a compound of count AND share and
+  // no single QtyFilter can express it. `SIZES LESS n` still exists and still means the raw count — the two are no longer the
+  // same narrowing, which is why the button no longer writes one.
+  thin: boolean;
 }
 
 function haystack(r: GoogleAdsStyleRow): string {
@@ -126,6 +130,7 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
       out = s.op === 'has' ? out.filter((x) => x.hay.includes(t)) : out.filter((x) => !x.hay.includes(t));
     }
   }
+  if (c.thin) out = out.filter((x) => isThinShelf(x.row));
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign === c.bucket);
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   for (const f of c.qty) {
@@ -157,9 +162,11 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
 }
 
 // ---- Sorting --------------------------------------------------------------------------------------------------------------------
-type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper';
+type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'be';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
-  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc',
+  // B/E ROAS sorts DESCENDING first: the hardest targets lead. Those are the styles no bid can rescue, and they are what a bucket
+  // pass is looking for — the cheap ones to advertise are already found by sorting on Kept.
+  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc', be: 'desc',
 };
 function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): number | string {
   const win = r[w];
@@ -180,6 +187,9 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
     case 'kept': return win.profitAfterSpend;
     // A style with nothing sold has no per-sale figure. Sent to the far end so it never sits among real ones.
     case 'keptper': return keptPerSale(win);
+    // NULL (no profit to defend) sorts as the WORST possible target, above any finite one, because that is what it is — no tROAS
+    // rescues a style that loses money before ad spend. Infinity does the ranking; the cell draws a dash, not a number.
+    case 'be': return win.breakEvenRoas === null ? Infinity : win.breakEvenRoas;
   }
 }
 
@@ -249,6 +259,35 @@ const CONV_MIN_CLICKS = 20;
 // The merchant feed CANNOT catch any of this. It reports style-level availability, and it reports it correctly: these styles ARE in
 // stock. Depth is invisible to it, which is why the money leaks here and nowhere else.
 const THIN_SIZES = 5;
+
+// THE COUNT ALONE WAS WRONG, AND THE OWNER CAUGHT IT (2026-09-07). "3/4 and 4/6 are nearly the full run but do not reach 5" — and
+// the data agrees. Re-scored over 90 days, crossing the count against the SHARE of the run in stock:
+//
+//     count   share    styles   clicks   conv.     kept
+//     1-4     <50%        101   15,857   3.43%   -£1,299     <- the only cell that loses money
+//     1-4     >=50%        45    4,940   5.65%     +£447
+//     >=5     <50%          3      985   6.40%     +£519
+//     >=5     >=50%        81   11,782   7.25%   +£3,228
+//
+// Exactly ONE cell is unprofitable, and it needs BOTH conditions. The count alone flags all 146 rows in the top two, which sweeps
+// up 45 profitable styles worth +£447 — a short run mostly in stock converts at 5.65%, nowhere near the 3.43% of a deep run that
+// has been picked over. Requiring both narrows the flag to 101 styles carrying -£1,299 and leaves a retained set keeping £4,194
+// against the count rule's £3,747. Better on both sides of the line at once, which is the only kind of threshold change worth making.
+//
+// Share alone is not the answer either, which is why this is an AND and not a replacement: the 5+/<50% cell still converts at 6.40%
+// and earns. Depth carries information at the top of the range, share carries it at the bottom. (That cell is only 3 styles, so the
+// rescue arm is weakly evidenced — it is also only 3 styles' worth of risk.)
+//
+// The earlier note claiming a share rule "lets 37 shallow styles through on a flattering denominator" was measured against share
+// ALONE, never against the pair, and on a fuller book before the season ran the shelves down.
+const THIN_SHARE = 0.5;
+
+/** A shelf too picked-over to advertise: too few sizes AND too little of the run. Both, for the reasons above. */
+function isThinShelf(r: GoogleAdsStyleRow): boolean {
+  // listed 0 means the style is not in skumap at all — a data gap, not a thin shelf, and it must not wear the flag.
+  if (r.sizesListed <= 0) return false;
+  return r.sizesInStock < THIN_SIZES && r.sizesInStock / r.sizesListed < THIN_SHARE;
+}
 function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number {
   const win = r[w];
   if (win.clicks <= 0) return 0;
@@ -258,6 +297,57 @@ function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number {
 function keptPerSale(w: GoogleAdsWindow): number {
   if (w.units <= 0) return 0;
   return Math.round((w.profitAfterSpend / w.units) * 100) / 100;
+}
+
+// THE TARGET COLUMN, AND WHY A RATIO IS BACK ON A GRID THAT SPENT TWO REVISIONS REMOVING ONE (2026-09-07)
+// Google's ROAS was pulled off this grid because it flattered every row and answered a question nobody was asking. B/E ROAS is not
+// that number returning. It contains nothing of Google's — it is our own revenue over our own net profit — and it is not a verdict
+// on how a style performed. Kept already gives the verdict. This gives the SETTING: the tROAS a bucket of styles like this one needs
+// before advertising it pays, which is the number you actually type into the Ads UI.
+//
+// It earns its place because it is the one input smart bidding cannot derive. The bidder buys to revenue and has never seen a cost
+// price, so it delivers roughly the same revenue-efficiency everywhere — 5.4x to 7.6x across the whole book on the 90 days to 5 Sep
+// 2026 — while what a style NEEDS ranges from 4.8x to 25x to unreachable. That spread is the entire case for splitting campaigns
+// here, and this column is where it becomes visible per row.
+//
+// THE AMBER LINE IS WHAT THIS ACCOUNT HAS ACTUALLY DELIVERED, not a rule of thumb. Blended revenue ROAS over those 90 days was 6.0,
+// the best spend decile managed 6.3, and no margin band anywhere in the book came back above 7.6. A style needing more than 10x is
+// therefore asking for something never once achieved on any cohort — it is not a bidding problem and no target will fix it. Those
+// are pause or reprice candidates, which is why they lead the default (descending) sort.
+const BE_UNREACHABLE = 10;
+
+// A margin read off one or two sales is mostly the discount that happened to be running. The ratio is far steadier than Conv % —
+// price and cost barely move within a style — so this floor is low and greys the cell rather than withholding the number, the same
+// bargain the Conv % column strikes: ranking and trustworthiness are separate jobs.
+const BE_MIN_UNITS = 3;
+
+// ---- COLUMNS CURRENTLY HIDDEN (owner, 2026-09-07) -------------------------------------------------------------------------------
+// Hidden, not deleted, and flipping either back to `true` is the whole restore — the cell, the heading, the <col> and the sort all
+// stay wired up behind the flag, and nothing else needs touching.
+//
+// WHY THESE TWO. The screen settled on a two-rule monthly pass: Kept decides which styles come OUT of the campaign, and B/E ROAS
+// plus Sizes decide which come BACK. Conv % and Kept / sale are both good numbers that answer neither question — they explain WHY a
+// row is bad once you already know it is, and that is drill-down work, not list work. Eight columns of evidence for a decision that
+// reads three of them is how a screen stops getting used.
+//
+// Conv % survives in the code because it is still the sharpest single explanation of a bad row (a 10x spread in conversion, not
+// bidding, separates the styles that keep money from the ones that burn it — see CONV_MIN_CLICKS). Kept / sale survives because it
+// is the owner's own target figure ("get kept per product as high as possible"). Both are one flag away when the pass is habit.
+//
+// The column widths were NOT rebalanced for their absence. Style simply absorbs the freed 160px, which reads better anyway, and it
+// means turning either column back on restores the previous layout exactly rather than needing the widths re-tuned again.
+const SHOW_CONV = false;
+const SHOW_KEPT_PER_SALE = false;
+
+// Kept in step with the flags above so the loading and empty-state rows span the full table. Nine columns are permanent: #, Style,
+// Campaign, Sizes, Sold, Ad spend, Kept, B/E ROAS and the cut button.
+const COLUMN_COUNT = 9 + (SHOW_CONV ? 1 : 0) + (SHOW_KEPT_PER_SALE ? 1 : 0);
+
+// The margin behind the ratio, for the tooltip. Shown as well as the multiple because "11.9% net margin" is the sentence the owner
+// prices in, and "8.4x" is the one the Ads UI takes — the tooltip is the only place the two meet.
+function margin(w: GoogleAdsWindow): string {
+  if (w.revenue <= 0) return '0.0';
+  return ((w.profit / w.revenue) * 100).toFixed(1);
 }
 
 // Most titles on this screen start "Birkenstock " or "Womens " — a dozen characters of nothing, repeated down the whole list, that
@@ -304,6 +394,7 @@ export default function GoogleAdsPage() {
   const [notContains, setNotContains] = useState('');
   const [steps, setSteps] = useState<FilterStep[]>([]);
   const [qty, setQty] = useState<QtyFilter[]>([]);
+  const [thin, setThin] = useState(false);
   const [season, setSeason] = useState<Season | null>(null);
   const [bucket, setBucket] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -337,10 +428,10 @@ export default function GoogleAdsPage() {
   );
 
   const criteria: Criteria = useMemo(
-    () => ({ steps, qty, season, bucket }),
-    [steps, qty, season, bucket]
+    () => ({ steps, qty, season, bucket, thin }),
+    [steps, qty, season, bucket, thin]
   );
-  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || cut.size > 0;
+  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || cut.size > 0;
 
   const matched = useMemo(
     () => applyCriteria(indexed, criteria, win, campaignNames).map((x) => x.row),
@@ -360,7 +451,11 @@ export default function GoogleAdsPage() {
       const bv = sortValue(b, sortKey, win);
       let d = 0;
       if (typeof av === 'string' || typeof bv === 'string') d = String(av).localeCompare(String(bv));
-      else d = av - bv;
+      // COMPARED, NOT SUBTRACTED. `av - bv` is NaN when both sides are Infinity, which is exactly what two styles with no
+      // break-even target hand this function — and a NaN here does not merely mis-order that pair, it makes the whole comparator
+      // inconsistent and lets Array.sort scramble rows that had nothing to do with it. Ordering by < is identical for every finite
+      // column and total for the infinite one, so equal values fall through to the tie-break below as they should.
+      else d = av === bv ? 0 : av < bv ? -1 : 1;
       if (d === 0) d = a.groupid.localeCompare(b.groupid);   // stable, readable tie-break
       return sortDir === 'asc' ? d : -d;
     });
@@ -376,6 +471,10 @@ export default function GoogleAdsPage() {
     const blank: GoogleAdsWindow = {
       units: 0, revenue: 0, profit: 0, impressions: 0, clicks: 0, spend: 0,
       conversions: 0, convValue: 0, profitAfterSpend: 0, roas: null,
+      // Both ratios stay null in the totals and neither is summed. The money bar shows money, and a blended break-even for the
+      // filtered set — revenue / profit over the whole selection — is a genuinely useful figure that belongs THERE rather than
+      // being smuggled in as a field nothing reads. Left for when the bar wants it.
+      breakEvenRoas: null,
     };
     const add = (key: GoogleAdsWindowKey) => visible.reduce((a, r) => {
       const w = r[key];
@@ -420,7 +519,7 @@ export default function GoogleAdsPage() {
     if (next.length > 0) {
       // A Find that would empty the list is treated as a NEW hunt rather than a narrowing — the operator was starting again
       // ("ARIZONA" then "ZERMATT"), not asking for styles that are both. Inventory's rule, and the reason it feels right there.
-      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason }, win, campaignNames);
+      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason, thin }, win, campaignNames);
       setSteps(narrowed.length === 0 && filtering ? next : [...steps, ...next]);
     }
     setQty(nextQty);
@@ -428,7 +527,7 @@ export default function GoogleAdsPage() {
     setContains('');
     setNotContains('');
     clearSelection();
-  }, [contains, notContains, qty, season, steps, indexed, criteria, filtering, win, campaignNames, clearSelection]);
+  }, [contains, notContains, qty, season, steps, thin, indexed, criteria, filtering, win, campaignNames, clearSelection]);
 
   // Enter applies the boxes. Explicit rather than relying on the form's implicit submission: with two text inputs and no submit
   // button, browsers do NOT reliably submit on Enter — and this form deliberately has no Find button.
@@ -439,7 +538,7 @@ export default function GoogleAdsPage() {
   }, [onFind]);
 
   const onReset = useCallback(() => {
-    setSteps([]); setQty([]); setSeason(null); setBucket(null); setCut(new Set());
+    setSteps([]); setQty([]); setSeason(null); setBucket(null); setThin(false); setCut(new Set());
     setContains(''); setNotContains(''); setDrill(null);
     clearSelection();
     stylesQ.refresh();
@@ -455,13 +554,9 @@ export default function GoogleAdsPage() {
   //
   // Toggles, like the campaign chip: pressing it again lifts it. Clearing its chip does the same thing, and both routes are live
   // because the button is where the eye is and the chip is where the other narrowings are lifted.
-  const thinActive = qty.some((f) => f.metric === 'sizes');
+  const thinActive = thin;
   const onThinShelf = useCallback(() => {
-    setQty((list) => (
-      list.some((f) => f.metric === 'sizes')
-        ? list.filter((f) => f.metric !== 'sizes')
-        : [...list, { metric: 'sizes' as QtyMetric, op: 'less' as const, n: THIN_SIZES }]
-    ));
+    setThin((v) => !v);
     clearSelection();
   }, [clearSelection]);
 
@@ -651,7 +746,7 @@ export default function GoogleAdsPage() {
             type="button"
             onClick={onThinShelf}
             aria-pressed={thinActive}
-            title={`Only styles with fewer than ${THIN_SIZES} sizes buyable today — where clicks stop converting`}
+            title={`Only styles with fewer than ${THIN_SIZES} sizes buyable today AND under ${Math.round(THIN_SHARE * 100)}% of their run — the one combination that loses money (3.4% conversion against 7.2%). A short run mostly in stock is NOT thin.`}
             className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium ${
               thinActive
                 ? 'border-slate-400 bg-slate-100 text-slate-800'
@@ -678,7 +773,7 @@ export default function GoogleAdsPage() {
               <li><span className="font-mono text-slate-700">SPEND MORE 50</span> · <span className="font-mono text-slate-700">SPEND LESS 5</span><span className="text-slate-400"> — what Google charged, in the chosen window</span></li>
               <li><span className="font-mono text-slate-700">KEPT LESS 0</span><span className="text-slate-400"> — styles that cost more than they earned</span></li>
               <li><span className="font-mono text-slate-700">SOLD LESS 1</span> · <span className="font-mono text-slate-700">STOCK MORE 20</span><span className="text-slate-400"> — units sold in the window, and stock on the shelf</span></li>
-              <li><span className="font-mono text-slate-700">SIZES LESS 5</span><span className="text-slate-400"> — sizes buyable TODAY, not in the window. Under 5 is the Thin shelf button</span></li>
+              <li><span className="font-mono text-slate-700">SIZES LESS 5</span><span className="text-slate-400"> — the raw COUNT of sizes buyable today, not in the window. Not the same as the Thin shelf button, which also requires under half the run in stock</span></li>
               <li><span className="font-mono text-slate-700">WINTER</span> · <span className="font-mono text-slate-700">SUMMER</span><span className="text-slate-400"> — season (year-round styles show in both)</span></li>
             </ul>
           </div>
@@ -698,6 +793,12 @@ export default function GoogleAdsPage() {
           )}
           {season && (
             <Chip label={season} onClear={() => { setSeason(null); clearSelection(); containsRef.current?.focus(); }} />
+          )}
+          {thin && (
+            <Chip
+              label={`THIN SHELF (< ${THIN_SIZES} sizes and < ${Math.round(THIN_SHARE * 100)}% of the run)`}
+              onClear={() => { setThin(false); clearSelection(); containsRef.current?.focus(); }}
+            />
           )}
           {qty.map((f) => (
             <Chip
@@ -722,24 +823,53 @@ export default function GoogleAdsPage() {
 
       {/* ---- The grid --------------------------------------------------------------------------------------------------- */}
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="max-h-[70vh] overflow-auto">
+        {/* SIZED AGAINST THE FURNITURE ABOVE IT, NOT A FLAT SHARE OF THE SCREEN. 70vh took no account of the window switch, money
+            bar, campaign panel, filter card and count sitting above the grid, so on a laptop the stack came to more than the
+            viewport and the table ran off the bottom edge with nothing to terminate it — it read as cut off against the taskbar
+            rather than as a list that continues (owner, 2026-09-07). Subtracting an allowance for that furniture keeps the grid's
+            bottom border, and AppShell's py-6, on screen.
+
+            24rem is a first cut, not a measurement: the campaign panel expands, so no constant is right at every state. Hence the
+            max() — on a short screen calc alone collapses this to a couple of rows, and 20rem holds it at roughly eight, which is
+            enough for the list to still read as a list.
+
+            THE FLOOR IS ON max-height, NOT A min-height, and the difference is the whole reason it is written this way. A
+            min-height would hold the box open at 20rem when a filter leaves four rows in it, and this screen is filtered most of
+            the time — narrowing to ZERMATT would leave a dozen styles adrift in an empty card. A floor on the ceiling shrinks to
+            content and only ever refuses to get SMALLER than 20rem when there is content to fill it. */}
+        <div className="max-h-[max(20rem,calc(100vh-24rem))] overflow-auto">
           {/* BORDER-SEPARATE, not collapse: `position: sticky` on a <th> does not hold under border-collapse, so the heading row
               would scroll away. Same fix as the Birkenstock grid. */}
           {/* TABLE-FIXED with an explicit column plan, and a min-width that fits an ordinary laptop (was 1100px, which forced a
               horizontal scrollbar at every realistic width — owner, 2026-09-06). Fixed layout also stops a long product title
               stretching the Style column and squeezing the money columns off the right, which is what actually caused it: the
               numbers are the point of the row and they must never be the part that gets pushed out of view. */}
+          {/* THE COLUMN PLAN MUST HAVE ONE <col> PER <th> OR table-fixed COLLAPSES THE TAIL. Adding B/E ROAS without adding a
+              col here is exactly what made the last two headings render on top of each other as "Kept / B4EROAS": with a fixed
+              layout the browser sizes from this list, and a column the list does not mention gets whatever is left, which is
+              nothing. Count them against the <thead> row before changing either.
+
+              THE TOTAL IS CAPPED AT 992px AND NOT BY THE SCREEN — AppShell's container is max-w-5xl (1024px) less px-4, shared by
+              every module on purpose. That is the real reason 1100px forced a horizontal scrollbar (owner, 2026-09-06); a wider
+              monitor never helped. So B/E ROAS was paid for out of the columns beside it rather than added to the width:
+                Campaign 28->24  'standard' is the longest bucket in use and fits 96px with room
+                Kept     24->20  '-£1,234' semibold sets in ~72px
+                Kept/sale 20->24 NOT a trim — it was always ~15px too narrow for its own heading and had been bleeding into the
+                                 empty cut column, which is invisible until something is put there. B/E ROAS put something there.
+              Style absorbs the remainder and loses ~80px. The groupid line is unaffected (it needs ~135px); the title beneath it
+              truncates a few characters earlier, and the full title is already on the cell's tooltip. */}
           <table className="w-full min-w-[930px] table-fixed border-separate border-spacing-0 text-sm">
             <colgroup>
               <col className="w-10" />
               <col />
-              <col className="w-28" />
+              <col className="w-24" />
               <col className="w-16" />
               <col className="w-14" />
-              <col className="w-16" />
+              {SHOW_CONV && <col className="w-16" />}
               <col className="w-20" />
+              <col className="w-20" />
+              {SHOW_KEPT_PER_SALE && <col className="w-24" />}
               <col className="w-24" />
-              <col className="w-20" />
               <col className="w-8" />
             </colgroup>
             <thead>
@@ -761,19 +891,29 @@ export default function GoogleAdsPage() {
                     The name matches Reports > Ad Efficiency, where the same figure has always been Kept — one word, one meaning,
                     both screens (owner, 2026-09-06). */}
                 <Th label="Sold" col="sold" {...{ sortKey, sortDir, onSort }} />
-                <Th label="Conv." col="conv" {...{ sortKey, sortDir, onSort }} />
+                {SHOW_CONV && <Th label="Conv." col="conv" {...{ sortKey, sortDir, onSort }} />}
                 <Th label="Ad spend" col="spend" {...{ sortKey, sortDir, onSort }} seam />
                 <Th label="Kept" col="kept" {...{ sortKey, sortDir, onSort }} />
-                <Th label="Kept / sale" col="keptper" {...{ sortKey, sortDir, onSort }} />
+                {SHOW_KEPT_PER_SALE && <Th label="Kept / sale" col="keptper" {...{ sortKey, sortDir, onSort }} />}
+                {/* Sits OUTSIDE the money block on purpose. Sold -> Conv. -> Ad spend -> Kept -> Kept / sale is a settled reading
+                    order the owner has already tuned twice, and it runs from what happened to what was left. This column is a
+                    different kind of thing — a property of the product's economics, and a setting rather than an outcome — so it
+                    goes after that run instead of interrupting it. */}
+                <Th
+                  label="B/E ROAS"
+                  col="be"
+                  {...{ sortKey, sortDir, onSort }}
+                  title="Break-even ROAS — the revenue ROAS this style must earn before its advertising pays for itself. Ours, not Google's: revenue divided by net profit. Set a bucket's tROAS from it."
+                />
                 <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2" />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={COLUMN_COUNT} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
               )}
               {!loading && painted.length === 0 && (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-400">
+                <tr><td colSpan={COLUMN_COUNT} className="px-4 py-10 text-center text-sm text-slate-400">
                   No styles left. Press Reset to start again.
                 </td></tr>
               )}
@@ -837,10 +977,10 @@ export default function GoogleAdsPage() {
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
                         // sizesListed 0 means the style is not in skumap at all — a data gap, not a thin shelf. It renders as a
                         // dash and must not also wear the warning colour, or the two faults become one number.
-                        r.sizesListed > 0 && r.sizesInStock < THIN_SIZES ? 'font-medium text-amber-700' : 'text-slate-600'
+                        isThinShelf(r) ? 'font-medium text-amber-700' : 'text-slate-600'
                       }`}
                       title={`${r.sizesInStock} of ${r.sizesListed} sizes in stock · ${r.stock} units on the shelf${
-                        r.sizesInStock < THIN_SIZES ? ` · under ${THIN_SIZES} buyable sizes, where clicks stop converting` : ''
+                        isThinShelf(r) ? ` · under ${THIN_SIZES} sizes AND under ${Math.round(THIN_SHARE * 100)}% of the run — where clicks stop converting (3.4% vs 7.2%)` : ''
                       }`}
                     >
                       {r.sizesListed === 0 ? '—' : `${r.sizesInStock}/${r.sizesListed}`}
@@ -848,6 +988,7 @@ export default function GoogleAdsPage() {
                     <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{w.units}</td>
                     {/* Greyed below the click floor: the rate is real but too thin to act on, and that is a display caveat rather
                         than a reason to drop the row out of the sort. */}
+                    {SHOW_CONV && (
                     <td
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
                         w.clicks < CONV_MIN_CLICKS ? 'text-slate-400' : conv < 2 ? 'font-medium text-amber-700' : 'text-slate-600'
@@ -858,16 +999,44 @@ export default function GoogleAdsPage() {
                     >
                       {conv}%
                     </td>
+                    )}
                     <td className="border-b border-l border-slate-200 border-b-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{money(w.spend)}</td>
                     <td className={`border-b border-slate-100 px-2 py-1.5 text-right font-semibold tabular-nums ${
                       w.profitAfterSpend < 0 ? 'text-red-600' : 'text-slate-900'
                     }`} title={`£${Math.round(w.profit).toLocaleString('en-GB')} product profit, less £${Math.round(w.spend).toLocaleString('en-GB')} paid to Google`}>
                       {money(w.profitAfterSpend)}
                     </td>
+                    {SHOW_KEPT_PER_SALE && (
                     <td className={`border-b border-slate-100 px-3 py-1.5 text-right tabular-nums ${
                       perSale < 0 ? 'text-red-600' : w.units === 0 ? 'text-slate-400' : 'text-slate-600'
                     }`} title={w.units === 0 ? 'Nothing sold in this window — see Kept for what it still cost' : `${w.units} sold`}>
                       £{perSale.toFixed(2)}
+                    </td>
+                    )}
+                    {/* B/E ROAS. Amber above BE_UNREACHABLE, greyed under the unit floor, dash when there is no margin to defend
+                        at all — three states, because they call for three different actions and a single number would hide that. */}
+                    <td
+                      className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
+                        w.breakEvenRoas === null ? 'text-slate-400'
+                          : w.units < BE_MIN_UNITS ? 'text-slate-400'
+                          : w.breakEvenRoas > BE_UNREACHABLE ? 'font-medium text-amber-700'
+                          : 'text-slate-600'
+                      }`}
+                      title={
+                        w.breakEvenRoas === null
+                          // Two different reasons land here and the operator needs to know which: nothing sold at all, or sold and
+                          // lost money. The first is silence, the second is a finding.
+                          ? (w.units === 0
+                              ? 'Nothing sold in this window — no margin to measure'
+                              : `Sold ${w.units} at a net loss — no ROAS target makes this style pay. Reprice or pause it.`)
+                          : `${margin(w)}% net margin — needs ${w.breakEvenRoas.toFixed(1)}x revenue ROAS to break even${
+                              w.roas !== null ? `; Google delivered ${w.roas.toFixed(1)}x` : ''
+                            }${w.units < BE_MIN_UNITS ? ` · only ${w.units} sold, so the margin is thin evidence` : ''}${
+                              w.breakEvenRoas > BE_UNREACHABLE ? ` · above ${BE_UNREACHABLE}x, which this account has never delivered on any cohort` : ''
+                            }`
+                      }
+                    >
+                      {w.breakEvenRoas === null ? '—' : `${w.breakEvenRoas.toFixed(1)}x`}
                     </td>
                     <td className="border-b border-slate-100 px-1 py-1.5 text-right">
                       <button
@@ -943,7 +1112,7 @@ function Chip({ label, onClear }: { label: string; onClear: () => void }) {
 }
 
 // A sortable heading. `seam` draws the hairline that separates our numbers from Google's.
-function Th({ label, col, sortKey, sortDir, onSort, align = 'right', seam }: {
+function Th({ label, col, sortKey, sortDir, onSort, align = 'right', seam, title }: {
   label: string;
   col: SortKey;
   sortKey: SortKey;
@@ -951,10 +1120,13 @@ function Th({ label, col, sortKey, sortDir, onSort, align = 'right', seam }: {
   onSort: (k: SortKey) => void;
   align?: 'left' | 'right';
   seam?: boolean;
+  // Only for a column whose ABBREVIATED name cannot carry its own meaning (B/E ROAS). Every other heading here is a word the owner
+  // already uses out loud, and hanging a tooltip on those would be noise.
+  title?: string;
 }) {
   const active = sortKey === col;
   return (
-    <th className={`sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-100 px-2 py-2 text-xs font-semibold uppercase tracking-wide ${seam ? 'border-l border-l-slate-300' : ''}`}>
+    <th title={title} className={`sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-100 px-2 py-2 text-xs font-semibold uppercase tracking-wide ${seam ? 'border-l border-l-slate-300' : ''}`}>
       <button
         type="button"
         onClick={() => onSort(col)}

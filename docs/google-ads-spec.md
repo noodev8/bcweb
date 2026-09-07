@@ -7,6 +7,10 @@ web tsc and `next build` all clean. `google_product_daily` holds 68,722 real row
 
 The bucket originally specced as `dropped` is named **`pause`** (owner, 2026-09-05).
 
+> **Looking for the rules for which styles advertise — the OUT / BACK IN pass?**
+> They are in **`docs/google-ads-operating-rules.md`**, one page, with the evidence behind each
+> threshold. This document is how the module was BUILT; that one is how it is USED.
+
 **This document is authoritative** for how Brookfield assigns products to Google Ads
 campaigns and how Ads performance data reaches the database. Where it disagrees with
 anything in `C:\scripts\google-ads\`, `C:\scripts\scale\SCALE_PLAN.md` or an older

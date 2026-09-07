@@ -173,6 +173,7 @@ app.use('/google-ads-drill', require('./routes/google-ads-drill'));
 app.use('/google-ads-assign', require('./routes/google-ads-assign'));
 app.use('/google-ads-campaign-create', require('./routes/google-ads-campaign-create'));
 app.use('/google-ads-campaign-update', require('./routes/google-ads-campaign-update'));
+app.use('/google-ads-campaign-delete', require('./routes/google-ads-campaign-delete'));
 
 // --- Order Status module (supplier orders in orderstatus: local=2, amazon=3 — see docs/order-status-lifecycle.docx) ---
 // Two stages of one lifecycle, split on the `orderdate` stamp (utils/orderStatus.js): TO PLACE = chosen but not yet bought from the
