@@ -185,7 +185,11 @@ export default function GoodsInStation() {
     // Struck through immediately: the operator has the shoe back in their hand and needs the screen to agree at once. A failed cancel
     // puts it back and says so, which is rarer than the round-trip being slow.
     setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, cancelled: true } : r)));
-    if (verdict?.key === row.key) setVerdict({ ...row, cancelled: true });
+    // The verdict panel is an answer to "where does THIS shoe go", and after an undo there is no such shoe — leaving the destination
+    // up is the one way this screen can lie to someone who only glances at it. Cleared back to Ready, and the caret goes straight
+    // back to the input rather than waiting on the round-trip, so the next scan lands whether or not the cancel has answered yet.
+    setVerdict(null);
+    focusInput();
 
     const res = await goodsInCancel({
       incomingId: row.incomingId, localstockId: row.localstockId, ordernum: row.ordernum, code: row.code || '',
@@ -201,7 +205,7 @@ export default function GoodsInStation() {
     }
     await refreshNote();
     focusInput();
-  }, [verdict, refreshNote]);
+  }, [refreshNote]);
 
   const submit = useCallback(async (raw: string) => {
     const typed = raw.trim();
@@ -408,7 +412,9 @@ export default function GoodsInStation() {
             ref={inputRef}
             autoFocus
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            // Uppercased as it is typed, not just displayed: scans are upper case, so a hand-typed code that looks different from a
+            // scanned one reads as a different kind of thing. normaliseScan folds case anyway — this is for the eye.
+            onChange={(e) => setValue(e.target.value.toUpperCase())}
             onKeyDown={(e) => { if (e.key === 'Escape') { setValue(''); reset(); } }}
             placeholder={blocked ? 'Clear the stop before scanning again' : 'Scan a shoe — or a rack label to fill a different shelf'}
             aria-label="Scan a barcode"
@@ -435,29 +441,50 @@ export default function GoodsInStation() {
         {/* UNDO THE LAST SCAN — the cancel you actually reach for, since a mis-scan is noticed with the shoe still in your hand. The
             per-row control below covers going further back. Offered only when there is something to undo: a permanently greyed-out
             button is a worse answer to "can I take that back" than no button at all. */}
-        {lastBooked && (
+        <div className="ml-auto flex items-center gap-4">
+          {lastBooked && (
+            <button
+              type="button"
+              onClick={() => void undo(lastBooked)}
+              title={`Puts ${lastBooked.code} back on order and takes it off ${lastBooked.destination} — or just type UNDO`}
+              className="text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+            >
+              Undo last
+            </button>
+          )}
+
+          {/* CLEAR THE SCREEN — display only. It empties this session's run list so the next box starts clean; it undoes nothing and
+              reverses nothing, because every row on it was a real write that bclog and incoming_stock already hold. It does NOT
+              confirm: at the bench a dialog is one more thing to dismiss with a gun in your hand, and the only thing lost is the
+              Undo handles on units that are already correctly booked in. */}
+          {rows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setRows([]);
+                setVerdict(null);
+                focusInput();
+              }}
+              title="Empties the list on screen. Nothing is un-booked."
+              className="rounded border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            >
+              Clear screen
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => void undo(lastBooked)}
-            title={`Puts ${lastBooked.code} back on order and takes it off ${lastBooked.destination} — or just type UNDO`}
-            className="ml-auto text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+            onClick={() => {
+              const next = !sound;
+              setSound(next);
+              window.localStorage.setItem(SOUND_KEY, next ? 'on' : 'off');
+              focusInput();
+            }}
+            className="text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
           >
-            Undo last
+            {sound ? 'Sound on' : 'Sound off'}
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => {
-            const next = !sound;
-            setSound(next);
-            window.localStorage.setItem(SOUND_KEY, next ? 'on' : 'off');
-            focusInput();
-          }}
-          className={(lastBooked ? '' : 'ml-auto ') + 'text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline'}
-        >
-          {sound ? 'Sound on' : 'Sound off'}
-        </button>
+        </div>
       </div>
 
       {rows.length > 0 && (
