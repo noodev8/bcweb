@@ -1329,10 +1329,14 @@ export interface BirkStockRow {
 // The whole Birkenstock catalogue in one call (~176 styles) — no term/mode/sort params by design: the screen fetches once and does its
 // Contains / Does-not-contain narrowing, sorting and LIVE/FULL switching in the browser.
 export function getBirkStock() {
-  return request<{ count: number; rows: BirkStockRow[] }>(
+  return request<{ count: number; rows: BirkStockRow[]; adsAsOf: string | null; adsDaysOld: number | null }>(
     { url: '/birk-stock', method: 'GET' },
     (b) => ({
       count: b.count ?? 0,
+      // The last COMPLETE day of Google ad data behind every `kept` in this payload. Null-defaulted rather than dated to today: an
+      // older server that does not send it must read as "unknown", never as "fresh".
+      adsAsOf: (b.adsAsOf as string) ?? null,
+      adsDaysOld: b.adsDaysOld === null || b.adsDaysOld === undefined ? null : Number(b.adsDaysOld),
       // Default both maps per row so the grid never guards for a missing map.
       rows: ((b.rows as BirkStockRow[]) || []).map((r) => ({
         ...r,

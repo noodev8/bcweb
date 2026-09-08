@@ -105,6 +105,9 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 176,
+  "adsAsOf": "2026-09-06",                                    // last COMPLETE day of Google ad data behind every `kept` below
+  "adsDaysOld": 2,                                            // CURRENT_DATE - adsAsOf. Kept always reads HIGH by roughly this many
+                                                              // days of spend, so the screen warns once it grows. Nothing is adjusted.
   "rows": [
     {
       "groupid": "0129423-ARIZONA",
@@ -296,7 +299,40 @@ router.get('/', async (req, res) => {
       incomingSizes: toIntMap(r.incoming_sizes),
     }));
 
-    return res.json({ return_code: 'SUCCESS', count: rows.length, rows });
+    // ---- AD DATA FRESHNESS — a dead-feed alarm, not a correction ------------------------------------------------------------
+    // Kept subtracts ad spend up to the last day we hold, while sales.profit is live to today. The gap therefore ALWAYS flatters
+    // Kept, never the reverse, and on a screen whose job is to catch styles that lose money the bias points the wrong way. At the
+    // normal 2-3 day lag that is noise (~2% of the book); at 30 days it is ~21% and nine extra styles climb above the zero rung,
+    // which on a re-order sheet means ordering nine styles that actually lost money.
+    //
+    // THE POINT IS THE STOPPED FEED, NOT THE LAG. Imports are manual today and will be a cron when the Ads API lands; a cron that
+    // dies on an expired token fails SILENTLY, and this module has already had that exact failure once (google_campaign_daily
+    // silently lost 22 days). A date that stops moving is visible in a way that numbers quietly improving are not.
+    //
+    // "Complete" matches routes/google-ads-styles.js exactly — we hold a row for the day captured on a LATER calendar day, so a
+    // part day (a report pulled at 14:38 contains that day up to 14:38) is not eligible. One definition of "how fresh is the ad
+    // data" across both screens. NOT used to anchor the 365-day window: this is an indicator, and re-anchoring would silently
+    // change the measure as well as report on it.
+    const asOfRes = await query(`
+      SELECT to_char(d, 'YYYY-MM-DD') AS as_of, (CURRENT_DATE - d) AS days_old
+      FROM (
+        SELECT LEAST(CURRENT_DATE, (
+                 SELECT MAX(snapshot_date) FROM google_product_daily
+                 WHERE (imported_at AT TIME ZONE 'Europe/London')::date > snapshot_date
+               )) AS d
+      ) x
+    `);
+    const asOf = asOfRes.rows[0] || {};
+
+    return res.json({
+      return_code: 'SUCCESS',
+      count: rows.length,
+      // The last COMPLETE day of Google ad data behind every `kept` on this payload, and how stale that is. The screen renders the
+      // date and warns on it; it does not adjust any figure.
+      adsAsOf: asOf.as_of || null,
+      adsDaysOld: asOf.days_old === undefined || asOf.days_old === null ? null : Number(asOf.days_old),
+      rows,
+    });
   } catch (err) {
     logger.error('[birk-stock] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Birkenstock stock' });

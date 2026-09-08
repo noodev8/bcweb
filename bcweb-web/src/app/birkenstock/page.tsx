@@ -53,6 +53,11 @@ recalibrated to cut the sheet at roughly the ranks the old one did. THE BOTTOM R
 is a real line and gross could never draw it: 57 of 172 styles are negative on kept. GROSS IS STILL IN THE PAYLOAD AND IS NOT DRAWN
 (owner): two profit figures side by side compete and leave the reader doing the subtraction.
 
+AD DATA FRESHNESS IS ON THE COUNT STRIP, and it is a dead-feed alarm rather than a correction. Kept subtracts ad spend up to the last
+complete day we hold while the profit half is live to today, so it always reads slightly HIGH, never low — about 2% of the book at the
+normal 2-3 day lag, ~21% at 30 days, where nine extra styles cross the zero rung. Nothing is adjusted for it: the honest statement is
+"Kept is measured to here". The real risk is the feed STOPPING, which a cron on the coming Ads API will do silently — see ADS_STALE_DAYS.
+
 WHAT IT DID NOT CHANGE: the top of the buy. The same 10 styles lead on gross and on kept, and the top 20 differ by three. The value is
 not a different winners list — it is that the losers became visible. See routes/birk-stock.js for the arithmetic and for the four gates
 of the owner's original query that are deliberately NOT here.
@@ -127,6 +132,17 @@ const GROSS_LEVELS: { label: string; min: number }[] = [
   { label: 'Mid', min: 100 },
   { label: 'Low', min: 0 },
 ];
+// ---- Ad-data freshness ------------------------------------------------------------------------------------------------------
+// Kept subtracts ad spend up to the last day we hold, while the profit half is live to today, so the figure ALWAYS reads high by
+// roughly this many days of spend — never low. At the normal 2-3 day lag that is ~2% of the book and immaterial; by 30 days it is
+// ~21% and nine extra styles climb above the zero rung, which on a re-order sheet means ordering nine styles that lost money.
+//
+// The alarm is really for a STOPPED feed rather than a slow one: imports are manual today and become a cron when the Ads API lands,
+// and a cron that dies on an expired token fails silently — this module has already lost 22 days that way once. A date that stops
+// moving is visible in a way that numbers quietly improving are not.
+const ADS_STALE_DAYS = 7;    // past a week, say so
+const ADS_DEAD_DAYS = 21;    // past three weeks, treat it as broken rather than late
+
 // The name for a threshold, for the chip in the count strip — which shows both, because once a level is ON, the number behind it is
 // the useful half ("what am I working to?") and no longer a button label competing for the eye.
 function grossLabel(min: number): string {
@@ -349,6 +365,10 @@ export default function BirkenstockPage() {
   // The whole catalogue, once. Re-read on Reset (which is the "start a fresh hunt" moment, so it doubles as refresh-from-DB — the
   // legacy screen's Reset did exactly this). `busy` rather than isLoading so a Reset re-fetch spins too.
   const { data, error: loadError, busy: loading, refresh: reload } = useApiQuery(['birk-stock'], () => getBirkStock());
+  // Null until the payload lands, and null from a server that predates the field — "unknown", which renders nothing, rather than a
+  // confident "fresh".
+  const adsAsOf = data?.adsAsOf ?? null;
+  const adsDaysOld = data?.adsDaysOld ?? null;
   const rows: BirkStockRow[] = data?.rows ?? NO_ROWS;
   const error = loadError?.message ?? null;
 
@@ -713,6 +733,29 @@ export default function BirkenstockPage() {
               <span className="font-semibold text-slate-800">{sorted.length}</span>
               <span className="text-slate-400">{steps.length > 0 ? ` of ${rows.length} styles` : ' styles'}</span>
             </span>
+            {/* AD DATA FRESHNESS. Quiet at the normal lag, amber past a week, red past three — the loudest it gets is still a date,
+                because the honest statement is "Kept is measured to here", not a claim about how wrong it is. Rendered only when the
+                server actually sent it, so an older API reads as absent rather than as fresh. */}
+            {adsDaysOld !== null && (
+              <span
+                className={`whitespace-nowrap ${
+                  adsDaysOld >= ADS_DEAD_DAYS ? 'font-medium text-red-600'
+                    : adsDaysOld >= ADS_STALE_DAYS ? 'font-medium text-amber-700'
+                    : 'text-slate-400'
+                }`}
+                title={
+                  `Kept subtracts Google ad spend up to ${adsAsOf}, but the profit it comes out of is live to today. The figure ` +
+                  `therefore reads slightly HIGH — never low — by about ${adsDaysOld} day${adsDaysOld === 1 ? '' : 's'} of spend.` +
+                  (adsDaysOld >= ADS_STALE_DAYS
+                    ? ' Import the Google Ads data before working the order off this sheet.'
+                    : '')
+                }
+              >
+                {adsDaysOld >= ADS_STALE_DAYS ? '⚠ ' : ''}
+                Ads to {adsAsOf}
+                {adsDaysOld >= ADS_STALE_DAYS && <span className="text-slate-400"> · {adsDaysOld} days behind</span>}
+              </span>
+            )}
             {selected.size > 0 && (
               <span className="whitespace-nowrap text-slate-500">
                 <span className="font-semibold text-slate-800">{selected.size}</span> marked
