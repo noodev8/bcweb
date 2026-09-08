@@ -53,10 +53,12 @@ recalibrated to cut the sheet at roughly the ranks the old one did. THE BOTTOM R
 is a real line and gross could never draw it: 57 of 172 styles are negative on kept. GROSS IS STILL IN THE PAYLOAD AND IS NOT DRAWN
 (owner): two profit figures side by side compete and leave the reader doing the subtraction.
 
-AD DATA FRESHNESS IS ON THE COUNT STRIP, and it is a dead-feed alarm rather than a correction. Kept subtracts ad spend up to the last
-complete day we hold while the profit half is live to today, so it always reads slightly HIGH, never low — about 2% of the book at the
-normal 2-3 day lag, ~21% at 30 days, where nine extra styles cross the zero rung. Nothing is adjusted for it: the honest statement is
-"Kept is measured to here". The real risk is the feed STOPPING, which a cron on the coming Ads API will do silently — see ADS_STALE_DAYS.
+AD DATA FRESHNESS IS A SILENT ALARM ON THE COUNT STRIP. Kept subtracts ad spend up to the last complete day we hold while the profit
+half is live to today, so it always reads HIGH, never low — but that is ~2% of the book at the normal 2-3 day lag and moves no band,
+so NOTHING IS SHOWN. The warning appears only past ADS_STALE_DAYS, because a line that is on the strip every day stops being read and
+is then missed on the day it matters. Nothing is ever adjusted for the lag: the honest statement is "Kept is measured to here". The
+real risk is the feed STOPPING, which a cron on the coming Ads API will do silently — at 30 days Kept overstates by ~21% and nine
+extra styles cross the zero rung.
 
 WHAT IT DID NOT CHANGE: the top of the buy. The same 10 styles lead on gross and on kept, and the top 20 differ by three. The value is
 not a different winners list — it is that the losers became visible. See routes/birk-stock.js for the arithmetic and for the four gates
@@ -140,7 +142,7 @@ const GROSS_LEVELS: { label: string; min: number }[] = [
 // The alarm is really for a STOPPED feed rather than a slow one: imports are manual today and become a cron when the Ads API lands,
 // and a cron that dies on an expired token fails silently — this module has already lost 22 days that way once. A date that stops
 // moving is visible in a way that numbers quietly improving are not.
-const ADS_STALE_DAYS = 7;    // past a week, say so
+const ADS_STALE_DAYS = 7;    // under this, show NOTHING — the lag moves Kept ~2% and no band with it, so there is nothing to act on
 const ADS_DEAD_DAYS = 21;    // past three weeks, treat it as broken rather than late
 
 // The name for a threshold, for the chip in the count strip — which shows both, because once a level is ON, the number behind it is
@@ -733,27 +735,25 @@ export default function BirkenstockPage() {
               <span className="font-semibold text-slate-800">{sorted.length}</span>
               <span className="text-slate-400">{steps.length > 0 ? ` of ${rows.length} styles` : ' styles'}</span>
             </span>
-            {/* AD DATA FRESHNESS. Quiet at the normal lag, amber past a week, red past three — the loudest it gets is still a date,
-                because the honest statement is "Kept is measured to here", not a claim about how wrong it is. Rendered only when the
-                server actually sent it, so an older API reads as absent rather than as fresh. */}
-            {adsDaysOld !== null && (
+            {/* AD DATA FRESHNESS — SILENT UNTIL IT MATTERS (owner, 2026-09-08). It first rendered the date at every lag, greyed under
+                a week; that put a line on the strip that was correct every single day and therefore stopped being read, which is
+                exactly how a real warning gets missed when it finally appears. Under ADS_STALE_DAYS the lag moves Kept by ~2% and
+                changes no band, so there is nothing to act on and the strip stays clean. It appears only when there IS.
+                Amber past a week, red past three. The loudest it gets is still a date, because the honest statement is "Kept is
+                measured to here", not a claim about how wrong it is. Also requires the server to have actually sent it, so an older
+                API reads as absent rather than as fresh. */}
+            {adsDaysOld !== null && adsDaysOld >= ADS_STALE_DAYS && (
               <span
                 className={`whitespace-nowrap ${
-                  adsDaysOld >= ADS_DEAD_DAYS ? 'font-medium text-red-600'
-                    : adsDaysOld >= ADS_STALE_DAYS ? 'font-medium text-amber-700'
-                    : 'text-slate-400'
+                  adsDaysOld >= ADS_DEAD_DAYS ? 'font-medium text-red-600' : 'font-medium text-amber-700'
                 }`}
                 title={
                   `Kept subtracts Google ad spend up to ${adsAsOf}, but the profit it comes out of is live to today. The figure ` +
-                  `therefore reads slightly HIGH — never low — by about ${adsDaysOld} day${adsDaysOld === 1 ? '' : 's'} of spend.` +
-                  (adsDaysOld >= ADS_STALE_DAYS
-                    ? ' Import the Google Ads data before working the order off this sheet.'
-                    : '')
+                  `therefore reads HIGH — never low — by about ${adsDaysOld} days of spend. Import the Google Ads data before ` +
+                  `working the order off this sheet.`
                 }
               >
-                {adsDaysOld >= ADS_STALE_DAYS ? '⚠ ' : ''}
-                Ads to {adsAsOf}
-                {adsDaysOld >= ADS_STALE_DAYS && <span className="text-slate-400"> · {adsDaysOld} days behind</span>}
+                ⚠ Ads only to {adsAsOf} <span className="text-slate-400">· {adsDaysOld} days behind</span>
               </span>
             )}
             {selected.size > 0 && (
