@@ -1,0 +1,381 @@
+<title>Birkenstock Stock Depth 2026</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#F5F6F3; --surface:#FFFFFF; --surface-2:#EEF0EB;
+    --ink:#14181A; --ink-2:#4A534F; --ink-3:#78827D;
+    --line:#DCE1D9; --line-strong:#C3CABF;
+    --accent:#2F6F5E;
+    --warn:#8F630F; --warn-soft:#F4E9D0;
+    --crit:#9E362A; --crit-soft:#F4DED9;
+    --flag:#B4501C;
+    --shadow:0 1px 2px rgba(20,24,26,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#121618; --surface:#191E20; --surface-2:#20272A;
+      --ink:#E9EDE9; --ink-2:#A7B2AD; --ink-3:#7C8883;
+      --line:#2A3235; --line-strong:#3C4649;
+      --accent:#74C3A9;
+      --warn:#DDA94E; --warn-soft:#3A2F19;
+      --crit:#E08A7A; --crit-soft:#3A2320;
+      --flag:#EE9E6E;
+      --shadow:none;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#121618; --surface:#191E20; --surface-2:#20272A;
+    --ink:#E9EDE9; --ink-2:#A7B2AD; --ink-3:#7C8883;
+    --line:#2A3235; --line-strong:#3C4649;
+    --accent:#74C3A9;
+    --warn:#DDA94E; --warn-soft:#3A2F19;
+    --crit:#E08A7A; --crit-soft:#3A2320;
+    --flag:#EE9E6E;
+    --shadow:none;
+  }
+
+  body{
+    background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:15px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:40px;}
+
+  header{display:flex; flex-direction:column; gap:14px; border-bottom:2px solid var(--ink); padding-bottom:22px;}
+  .eyebrow{
+    font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+    font-weight:500; display:flex; flex-wrap:wrap; gap:6px 14px;
+  }
+  h1{
+    font-family:"Newsreader", Georgia, serif; font-weight:600; font-size:clamp(30px,5vw,46px);
+    line-height:1.08; margin:0; letter-spacing:-.015em; text-wrap:balance; max-width:20ch;
+  }
+  .standfirst{max-width:62ch; color:var(--ink-2); font-size:16px; margin:0;}
+  .standfirst strong{color:var(--ink); font-weight:600;}
+
+  .figures{display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line);}
+  .fig{background:var(--surface); padding:18px 20px 16px; display:flex; flex-direction:column; gap:3px;}
+  .fig .v{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; font-size:32px; font-weight:500; line-height:1.05; letter-spacing:-.02em;}
+  .fig .k{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); font-weight:500;}
+  .fig .sub{font-size:13px; color:var(--ink-2);}
+  .fig.lead .v{color:var(--crit);}
+
+  .depth{display:flex; flex-direction:column; gap:10px;}
+  .bar{display:flex; height:34px; border:1px solid var(--line-strong); overflow:hidden;}
+  .bar span{display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; color:#FFFFFF;
+            font-family:"IBM Plex Mono",monospace;}
+  .bar .b0{background:var(--crit); flex:33;}
+  .bar .b1{background:var(--warn); flex:25;}
+  .bar .b2{background:var(--accent); flex:114;}
+  .barkey{display:flex; flex-wrap:wrap; gap:6px 20px; font-size:13px; color:var(--ink-2);}
+  .barkey i{display:inline-block; width:10px; height:10px; margin-right:7px;}
+  .k0{background:var(--crit);} .k1{background:var(--warn);} .k2{background:var(--accent);}
+
+  section{display:flex; flex-direction:column; gap:14px;}
+  .shead{display:flex; border-bottom:1px solid var(--line-strong); padding-bottom:8px;}
+  .shead .stripe{width:4px; flex:0 0 4px;}
+  .shead .titles{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding-left:12px;}
+  .s0 .stripe{background:var(--crit);} .s1 .stripe{background:var(--warn);}
+  .s2 .stripe{background:var(--accent);} .sa .stripe{background:var(--ink-3);}
+  h2{font-family:"Newsreader",Georgia,serif; font-weight:600; font-size:25px; margin:0; letter-spacing:-.01em;}
+  .count{font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--ink-2); font-variant-numeric:tabular-nums;}
+  .note{font-size:13.5px; color:var(--ink-2); max-width:74ch; margin:0;}
+  .note strong{color:var(--ink);}
+
+  .tablewrap{overflow-x:auto; border:1px solid var(--line); background:var(--surface); box-shadow:var(--shadow);}
+  table{border-collapse:collapse; width:100%; min-width:760px; font-size:14px;}
+  th{
+    text-align:right; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+    font-weight:600; padding:11px 14px; border-bottom:1px solid var(--line-strong); white-space:nowrap; background:var(--surface-2);
+  }
+  th.l, td.l{text-align:left;}
+  td{padding:12px 14px; border-bottom:1px solid var(--line); text-align:right;
+     font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  td.l{font-family:"IBM Plex Sans",sans-serif; white-space:normal; min-width:250px; line-height:1.35;}
+  .style{font-weight:500;}
+  .code{display:block; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin-top:2px;}
+  .pos{color:var(--accent); font-weight:500;}
+  .neg{color:var(--crit); font-weight:600;}
+  .thin{color:var(--warn); font-weight:500;}
+  .flag{color:var(--flag); font-weight:700; font-family:"IBM Plex Sans",sans-serif;}
+
+  .chip{display:inline-block; font-family:"IBM Plex Sans",sans-serif; font-size:10.5px; font-weight:600;
+        letter-spacing:.05em; padding:2px 7px; border:1px solid; white-space:nowrap;}
+  .chip-disc{color:var(--warn); border-color:var(--warn); background:var(--warn-soft);}
+  .chip-out{color:var(--crit); border-color:var(--crit); background:var(--crit-soft);}
+
+  .rule{border:1px solid var(--line-strong); border-left:4px solid var(--flag); background:var(--surface); padding:16px 20px;
+        display:flex; flex-direction:column; gap:8px;}
+  .rule h3{margin:0; font-family:"IBM Plex Sans",sans-serif; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);}
+  .rule ul{margin:0; padding-left:20px; display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--ink-2); max-width:76ch;}
+  .rule strong{color:var(--ink);}
+
+  /* ---- closing verdict ---- */
+  .verdict{border-top:2px solid var(--ink); padding-top:26px; display:flex; flex-direction:column; gap:22px;}
+  .verdict h2{font-size:30px;}
+  .answer{font-family:"Newsreader",Georgia,serif; font-size:clamp(19px,2.6vw,24px); line-height:1.38; margin:0; max-width:40ch; text-wrap:balance;}
+  .answer em{font-style:italic; color:var(--crit);}
+  .split{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line);}
+  .side{background:var(--surface); padding:20px 22px; display:flex; flex-direction:column; gap:9px;}
+  .side .hd{font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:600;}
+  .side.low .hd{color:var(--warn);} .side.deep .hd{color:var(--crit);}
+  .side .big{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:27px; font-weight:500; line-height:1.1; letter-spacing:-.02em;}
+  .side p{margin:0; font-size:13.5px; color:var(--ink-2);}
+  .side p strong{color:var(--ink);}
+
+  .months{display:flex; flex-direction:column; gap:8px;}
+  .mrow{display:flex; align-items:flex-end; gap:6px; height:104px;}
+  .m{flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:5px; height:100%;}
+  .m b{display:block; background:var(--accent); width:100%;}
+  .m.peak b{background:var(--crit);}
+  .m.part b{background:var(--line-strong);}
+  .m i{font-style:normal; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); text-align:center;}
+  .mlabels{display:flex; gap:6px;}
+  .mlabels span{flex:1; text-align:center; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3);}
+
+  footer{border-top:1px solid var(--line-strong); padding-top:18px; font-size:13px; color:var(--ink-2); display:flex; flex-direction:column; gap:8px;}
+  footer p{margin:0; max-width:82ch;}
+  footer strong{color:var(--ink);}
+  code{font-family:"IBM Plex Mono",monospace; font-size:12px; background:var(--surface-2); padding:1px 5px;}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span>Brookfield Comfort</span>
+      <span>Birkenstock</span>
+      <span>1 Jan – 7 Sep 2026</span>
+    </div>
+    <h1>A third of the Birkenstock range is down to its last size, or gone</h1>
+    <p class="standfirst">
+      172 Birkenstock styles sold something this year. That is nearly the whole range — only 176 exist.
+      <strong>58 of them (33.7%) now have nothing left, or one size left.</strong> None of it can be re-ordered.
+      The season was bought six months ago, so the shelf is all there is.
+    </p>
+  </header>
+
+  <div class="figures">
+    <div class="fig"><span class="k">Styles sold</span><span class="v">172</span><span class="sub">3,999 units · £29,264 net profit</span></div>
+    <div class="fig lead"><span class="k">Sold out</span><span class="v">33</span><span class="sub">19.2% — zero sellable sizes</span></div>
+    <div class="fig"><span class="k">One size left</span><span class="v">25</span><span class="sub">14.5% — effectively finished</span></div>
+    <div class="fig"><span class="k">More than 1 size</span><span class="v">114</span><span class="sub">66.3% — 1,849 pairs still on the shelf</span></div>
+  </div>
+
+  <div class="depth">
+    <div class="bar" role="img" aria-label="33 styles sold out, 25 with one size left, 114 with more than one size left">
+      <span class="b0">33</span><span class="b1">25</span><span class="b2">114</span>
+    </div>
+    <div class="barkey">
+      <span><i class="k0"></i>Sold out — 33 styles (19.2%)</span>
+      <span><i class="k1"></i>1 size left — 25 styles (14.5%)</span>
+      <span><i class="k2"></i>More than 1 size — 114 styles (66.3%)</span>
+    </div>
+  </div>
+
+  <section class="sa">
+    <div class="shead"><div class="stripe"></div><div class="titles">
+      <h2>All Birkenstock</h2><span class="count">172 styles · 3,999 units</span>
+    </div></div>
+    <p class="note">The year's three biggest sellers by units, whatever their stock position.</p>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th class="l">Style</th><th>RRP</th><th>Price now</th><th>Avg sold</th><th>Profit / unit</th><th>Total profit</th><th>Units</th><th>Sizes left</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="l"><span class="style">Milano Birko-Flor Black</span><span class="code">0034791-MILANO · Regular</span></td>
+          <td>£90.00</td><td>£81.49</td><td>£72.45</td><td class="pos">£10.08</td><td>£1,330</td><td>132</td><td>8</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style">Milano Birko-Flor Dark Brown</span><span class="code">0034701-MILANO · Regular</span></td>
+          <td>£90.00</td><td>£85.99</td><td>£77.09</td><td class="pos">£12.73</td><td>£1,502</td><td>118</td><td>6</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style">Madrid Birko-Flor Dark Brown</span><span class="code">0040391-MADRID · Regular</span></td>
+          <td>£75.00</td><td>£64.99</td><td>£61.49</td><td class="thin">£7.79</td><td>£818</td><td>105</td><td class="neg">0</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note">Madrid Dark Brown ran out on 13 August at 3.5 pairs a week, with a month of season left. It is not flagged — at 18% off RRP it was priced sensibly, we simply did not buy enough. The two Milanos are the model: close to RRP, £10–£13 a pair, and still sizes on the shelf.</p>
+  </section>
+
+  <section class="s0">
+    <div class="shead"><div class="stripe"></div><div class="titles">
+      <h2>Sold out</h2><span class="count">33 styles · 19.2%</span>
+    </div></div>
+    <p class="note">No sizes left at all. Nothing to price and nothing to re-order. These matter now only as a guide to next season's buy, and to how the styles still in stock should be priced.</p>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th class="l">Style</th><th>RRP</th><th>Last price</th><th>Avg sold</th><th>Profit / unit</th><th>Total profit</th><th>Units</th><th>Emptied</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="l"><span class="style">Madrid Birko-Flor Dark Brown</span><span class="code">0040391-MADRID · Regular</span></td>
+          <td>£75.00</td><td>£64.99</td><td>£61.49</td><td class="thin">£7.79</td><td>£818</td><td>105</td><td>13 Aug</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style"><span class="flag">⚑</span> Arizona Two-Strap Graceful Pearl White</span><span class="code">1009920-ARIZONA · Regular</span></td>
+          <td>£90.00</td><td>£60.25</td><td>£60.51</td><td class="neg">£3.22</td><td>£110</td><td>34</td><td>9 Jul</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style"><span class="flag">⚑</span> Arizona EVA Black</span><span class="code">0129421-ARIZONA · Regular</span></td>
+          <td>£50.00</td><td>£39.00</td><td>£38.69</td><td class="neg">£3.69</td><td>£114</td><td>31</td><td>23 Jul</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note">Two of these three are flagged, and that is the pattern: the styles that ran out are mostly the ones priced cheap. Graceful Pearl White sold 34 pairs at 33% off RRP and made £3.22 a pair. The same 34 pairs at £70 instead of £60 would have made <strong>about £340 more, from exactly the same stock</strong>. Madrid Dark Brown is the fair case — 18% off is a normal discount, so it is a buying miss rather than a pricing one.</p>
+  </section>
+
+  <section class="s1">
+    <div class="shead"><div class="stripe"></div><div class="titles">
+      <h2>One size left</h2><span class="count">25 styles · 14.5%</span>
+    </div></div>
+    <p class="note">One size in stock, usually one or two pairs. These are finished as products. The last pair is either a price-up or a clear-out, but it is not a range any more.</p>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th class="l">Style</th><th>RRP</th><th>Price now</th><th>Avg sold</th><th>Profit / unit</th><th>Total profit</th><th>Units</th><th>Pairs left</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="l"><span class="style">Arizona Two-Strap Graceful Taupe</span><span class="code">1029470-ARIZONA · Regular</span></td>
+          <td>£90.00</td><td>£78.00</td><td>£74.32</td><td class="pos">£10.30</td><td>£412</td><td>40</td><td>2</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style">Arizona EVA Taupe</span><span class="code">1030447-ARIZONA · Regular</span></td>
+          <td>£50.00</td><td>£42.50</td><td>£40.72</td><td class="thin">£3.86</td><td>£131</td><td>34</td><td>1</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style">Arizona EVA Khaki Green</span><span class="code">1019094-ARIZONA · Regular</span></td>
+          <td>£50.00</td><td>£40.00</td><td>£39.38</td><td class="thin">£3.71</td><td>£89</td><td>24</td><td>2</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note">Nothing flagged in this top three. Graceful Taupe was run well: 17% off RRP, £10.30 a pair, 40 pairs sold. But the EVA problem shows up again — £50 RRP selling at £40 for under £4 a pair. EVA is the thinnest margin in the brand.</p>
+  </section>
+
+  <section class="s2">
+    <div class="shead"><div class="stripe"></div><div class="titles">
+      <h2>More than one size left</h2><span class="count">114 styles · 66.3%</span>
+    </div></div>
+    <p class="note">Still a proper size range on the shelf, so still worth pricing. Top three by units, skipping the two Milanos already shown above.</p>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th class="l">Style</th><th>RRP</th><th>Price now</th><th>Avg sold</th><th>Profit / unit</th><th>Total profit</th><th>Units</th><th>Sizes / pairs left</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="l"><span class="style">Arizona Two-Strap Birko-Flor Blue</span><span class="code">0051751-ARIZONA · Regular</span></td>
+          <td>£80.00</td><td>£79.50</td><td>£70.41</td><td class="pos">£10.65</td><td>£1,076</td><td>101</td><td>10 / 49</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style">Arizona Two-Strap Birko-Flor White</span><span class="code">Regular</span></td>
+          <td>£80.00</td><td>£72.50</td><td>£66.38</td><td class="pos">£9.12</td><td>£730</td><td>80</td><td>4 / 16</td>
+        </tr>
+        <tr>
+          <td class="l"><span class="style"><span class="flag">⚑</span> Arizona EVA White</span><span class="code">Narrow fit</span></td>
+          <td>£50.00</td><td>£38.99</td><td>£36.06</td><td class="neg">£2.17</td><td>£169</td><td>78</td><td>7 / 36</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note"><span class="flag">⚑</span> Arizona EVA White sold 78 pairs — fifth best in the brand — and made £169 all year. There are still 36 pairs across 7 sizes, priced 28% below RRP. This is the clearest price rise on the page. People want it; we are just selling it too cheap.</p>
+  </section>
+
+  <section class="sa">
+    <div class="shead"><div class="stripe"></div><div class="titles">
+      <h2><span class="flag">⚑</span> Flagged — sold fine, priced too cheap</h2><span class="count">22 styles</span>
+    </div></div>
+    <div class="rule">
+      <h3>What gets flagged</h3>
+      <ul>
+        <li>It sold at least <strong>10 pairs</strong> this year — below that the weekly pace means nothing — it was <strong>at least 20% below RRP</strong>, and one of these two applies:</li>
+        <li><span class="chip chip-disc">DISCOUNT</span> &nbsp;It sold at <strong>25% or more below RRP</strong> and was still shifting <strong>a pair a week or better</strong>. The discount was not what made it sell, so it was simply lost margin.</li>
+        <li><span class="chip chip-out">RAN OUT</span> &nbsp;It <strong>emptied before 20 August</strong> while still selling a pair a week. People still wanted it after the stock was gone, so the price was too low for how little we had.</li>
+        <li>Anything sold at <strong>under 20% off is not flagged</strong>, however fast it went. That is a normal trading discount, not a mistake.</li>
+      </ul>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th class="l">Style</th><th>RRP</th><th>Avg sold</th><th>Off RRP</th><th>Profit / unit</th><th>Units</th><th>Pace</th><th>Sizes left</th><th class="l">Flag</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="l"><span class="style">Arizona EVA White</span><span class="code">Narrow</span></td><td>£50</td><td>£36.06</td><td>27.9%</td><td class="neg">£2.17</td><td>78</td><td>2.7/wk</td><td>7</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Khaki Green</span><span class="code">Narrow</span></td><td>£50</td><td>£36.91</td><td>26.2%</td><td class="neg">£2.55</td><td>76</td><td>2.6/wk</td><td>6</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Navy Blue</span><span class="code">Regular</span></td><td>£50</td><td>£36.46</td><td>27.1%</td><td class="neg">£2.49</td><td>75</td><td>4.9/wk</td><td>4</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Bend Low Leather Trainer Black</span><span class="code">Regular</span></td><td>£135</td><td>£93.76</td><td>30.5%</td><td class="thin">£8.59</td><td>64</td><td>2.0/wk</td><td>10</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Patent Black</span><span class="code">Narrow</span></td><td>£90</td><td>£58.58</td><td>34.9%</td><td class="neg">£3.20</td><td>52</td><td>3.0/wk</td><td>7</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Stone Coin</span><span class="code">Regular</span></td><td>£85</td><td>£63.55</td><td>25.2%</td><td class="thin">£6.95</td><td>47</td><td>2.1/wk</td><td>7</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Bend Low Leather Trainer White</span><span class="code">Narrow</span></td><td>£135</td><td>£95.17</td><td>29.5%</td><td class="pos">£10.19</td><td>46</td><td>1.6/wk</td><td>8</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Patent Black</span><span class="code">Regular</span></td><td>£90</td><td>£67.14</td><td>25.4%</td><td class="thin">£8.96</td><td>44</td><td>1.4/wk</td><td>7</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Graceful Pearl White</span><span class="code">Regular</span></td><td>£90</td><td>£60.51</td><td>32.8%</td><td class="neg">£3.22</td><td>34</td><td>1.8/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-disc">DISCOUNT</span> <span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Black</span><span class="code">Regular</span></td><td>£50</td><td>£38.69</td><td>22.6%</td><td class="neg">£3.69</td><td>31</td><td>1.1/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Patent White</span><span class="code">Narrow</span></td><td>£90</td><td>£61.78</td><td>31.4%</td><td class="thin">£5.34</td><td>30</td><td>1.4/wk</td><td>7</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Gizeh Birko-Flor Graceful Taupe</span><span class="code">Regular</span></td><td>£85</td><td>£68.00</td><td>20.0%</td><td class="pos">£10.38</td><td>26</td><td>2.3/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Madrid Birko-Flor Black</span><span class="code">Narrow</span></td><td>£75</td><td>£48.23</td><td>35.7%</td><td class="neg">£1.83</td><td>26</td><td>1.2/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-disc">DISCOUNT</span> <span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Gizeh EVA Eggshell</span><span class="code">Regular</span></td><td>£45</td><td>£32.50</td><td>27.8%</td><td class="neg">£1.70</td><td>25</td><td>3.1/wk</td><td>2</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap Graceful Pearl White</span><span class="code">Narrow</span></td><td>£90</td><td>£63.99</td><td>28.9%</td><td class="thin">£6.55</td><td>22</td><td>1.0/wk</td><td class="thin">1</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Two-Strap White Eggshell</span><span class="code">Regular</span></td><td>£85</td><td>£61.66</td><td>27.5%</td><td class="thin">£6.48</td><td>22</td><td>1.0/wk</td><td class="thin">1</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Mayari Birko-Flor White</span><span class="code">Regular</span></td><td>£85</td><td>£62.45</td><td>26.5%</td><td class="thin">£7.55</td><td>20</td><td>1.8/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-disc">DISCOUNT</span> <span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Anthracite Dark Grey</span><span class="code">Narrow</span></td><td>£50</td><td>£34.55</td><td>30.9%</td><td class="neg">£1.89</td><td>20</td><td>1.7/wk</td><td>4</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Popcorn</span><span class="code">Narrow</span></td><td>£50</td><td>£37.49</td><td>25.0%</td><td class="neg">£3.42</td><td>19</td><td>1.2/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-disc">DISCOUNT</span> <span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Faded Lime Green</span><span class="code">Narrow</span></td><td>£50</td><td>£33.24</td><td>33.5%</td><td class="neg">£0.95</td><td>19</td><td>2.5/wk</td><td>6</td><td class="l"><span class="chip chip-disc">DISCOUNT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona EVA Anthracite Dark Grey</span><span class="code">Regular</span></td><td>£50</td><td>£39.35</td><td>21.3%</td><td class="thin">£4.50</td><td>17</td><td>4.6/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-out">RAN OUT</span></td></tr>
+        <tr><td class="l"><span class="style">Arizona Synthetics Leo Black</span><span class="code">Regular</span></td><td>£90</td><td>£69.91</td><td>22.3%</td><td class="pos">£11.65</td><td>12</td><td>1.9/wk</td><td class="neg">0</td><td class="l"><span class="chip chip-out">RAN OUT</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">
+      Two problems repeat here. <strong>Arizona EVA</strong> — nine of the 22 flags are EVA colours. All are £50 RRP selling near £36 for £1–£4 a pair, and several shift three to five pairs a week. <strong>Bend Low trainers</strong> are the other: £135 RRP selling at £94, 110 pairs sold across the two colours, 114 pairs still sitting there.
+    </p>
+  </section>
+
+  <section class="verdict">
+    <h2>Overall — too low and too quick, or stuck with it?</h2>
+
+    <p class="answer">Both — but on different shoes. <em>Too cheap on the fast sellers</em>, and <em>too deep on everything else</em>. The second one is much the bigger number.</p>
+
+    <div class="split">
+      <div class="side low">
+        <span class="hd">Sold too low, too quick</span>
+        <span class="big">≈ £6,700</span>
+        <p>The flagged styles sold 719 pairs at 25–35% off RRP while still selling a pair a week or more. At a normal 15% off, those same pairs would have made <strong>about £6,700 more</strong>. Free money — but only a fifth of the year's £29,264.</p>
+      </div>
+      <div class="side deep">
+        <span class="hd">Stuck with it</span>
+        <span class="big">1,895 pairs · £65,805</span>
+        <p><strong>1,849 of the 1,895 pairs left are in the 114 styles that still have a full size range</strong> — the ones that never sold fast enough to run down. That is £65,805 of cash sitting on the shelf: ten times the pricing loss on the left.</p>
+      </div>
+    </div>
+
+    <div class="months">
+      <div class="mrow" role="img" aria-label="Birkenstock units sold by month 2026: January 57, February 81, March 265, April 353, May 682, June 994, July 960, August 559, September 48 to the 7th">
+        <div class="m"><i>57</i><b style="height:6%"></b></div>
+        <div class="m"><i>81</i><b style="height:8%"></b></div>
+        <div class="m"><i>265</i><b style="height:27%"></b></div>
+        <div class="m"><i>353</i><b style="height:36%"></b></div>
+        <div class="m"><i>682</i><b style="height:69%"></b></div>
+        <div class="m peak"><i>994</i><b style="height:100%"></b></div>
+        <div class="m peak"><i>960</i><b style="height:97%"></b></div>
+        <div class="m"><i>559</i><b style="height:56%"></b></div>
+        <div class="m part"><i>48</i><b style="height:5%"></b></div>
+      </div>
+      <div class="mlabels">
+        <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep*</span>
+      </div>
+      <p class="note">Pairs sold each month. *September is only to the 7th. Sandal season peaked in June and is over. Most of those 1,895 pairs will not move this year at any price — they wait for spring 2027. The exceptions are the Bend trainers and Zermatt slippers, which are autumn/winter stock and can still sell now.</p>
+    </div>
+
+    <p class="note">
+      <strong>What to do about it.</strong> Raising prices on the fast sellers is worth a few thousand a year and is worth doing. But the real money is in the buying. A third of the range is left over, and it is concentrated in a handful of styles: Bend Low Black (81 pairs left), Bend Low White (73), Arizona Dark Brown (64), Arizona Black (58). Those are the ones to order fewer of next season — not to discount harder now. The leftover stock is £131k at current prices against £66k of cost, and Birkenstock does not go out of fashion, so it is money tied up rather than money lost.
+    </p>
+  </section>
+
+  <footer>
+    <p><strong>What counts as a sale.</strong> Every sale from 1 January to 7 September 2026, all channels, for products branded Birkenstock. A "style" is the whole product (the <code>groupid</code>), not the individual sizes.</p>
+    <p><strong>What counts as stock.</strong> Sizes left is the number of different sizes with real, sellable stock on the shelf right now — free stock, not deleted, quantity above zero. The old <code>stockvariants</code> figure is not used because it is out of date.</p>
+    <p><strong>What the money columns mean.</strong> Avg sold is the average price a pair actually went out at, after discounts — not the list price. Profit per unit is the average net profit on a pair. Pace is pairs per week between the style's first and last sale this year.</p>
+    <p><strong>Sense check.</strong> Working from the brand recorded on each sale, rather than the product record as it stands today, gives 175 styles, 36 sold out and 25 with one size left — 34.9%. Same story. The small difference is a few styles that sold and have since been re-branded or removed.</p>
+  </footer>
+
+</div>
