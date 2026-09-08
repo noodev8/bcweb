@@ -1314,6 +1314,12 @@ export interface BirkStockRow {
   // indication for ranking and for the "at least £1000" bands. null = no sales in the window or an unusable cost; never render as 0.
   // Can legitimately be NEGATIVE where a style has sold below cost.
   gross: number | null;
+  // KEPT — THE BANDED MEASURE (owner, 2026-09-08). 365-day NET profit (sales.profit: VAT, cost, payment fee, packing, postage and the
+  // returns haircut all already in it) LESS the Google spend that went on the style over the same window. This is what the screen
+  // shows and bands on; `gross` above is retained in the payload but no longer rendered. Same null discipline as gross — null means
+  // no sales in the window or an unusable cost, never 0. Legitimately NEGATIVE: 57 of 172 styles are, and that is the finding.
+  kept: number | null;
+  adSpend: number;               // Google spend over the same 365 days. A real 0 when the style was never advertised — never estimated.
   live: number;                  // FREE local units, all sizes — on the shelf, sellable now
   incoming: number;              // still to arrive on the Birkenstock order book (requested - arrived)
   liveSizes: Record<string, number>;      // {size: units} for EVERY size the style carries (0 = none)

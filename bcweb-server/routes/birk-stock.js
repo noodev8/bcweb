@@ -37,9 +37,34 @@ DEFINITIONS (owner, 2026-09-04 — reconciled cell-by-cell against the legacy sc
                    payload depend on which band the operator happens to be on, and the whole screen is built on one payload.
   - Sizes        = every size the style carries in skumap (EU, the last dash-segment of the code), so a sold-out MIDDLE size stays
                    visible in its column instead of the grid closing up. Birkenstock runs 35-48 with no half sizes.
-  - Profit       = (qty-weighted average sold price EX VAT, minus cost) x units sold, over the same 365 days. See the block below.
+  - Kept         = the style's NET profit over the same 365 days, less the Google spend that went on it. The banded measure. See the
+                   block below for why it replaced gross profit on 2026-09-08.
 
-PROFIT HERE IS GROSS PROFIT — AN INDICATION, NOT ACCOUNTING (owner, 2026-09-04). It started as a straight port of the owner's own
+THE BANDED MEASURE IS NOW `KEPT` — NET PROFIT LESS AD SPEND (owner, 2026-09-08). THIS REVERSED THE DECISION RECORDED BELOW, AND THE
+OLD REASONING IS KEPT DELIBERATELY so nobody re-argues it from scratch.
+
+WHAT CHANGED. When this screen was built, advertising was not measurable per style, so the choice was between a gross margin and
+sales.profit — and gross won because expenses are near-flat per unit and would have shifted every row by about the same amount. Ad
+spend is NOT flat per unit, and that is the whole point: measured over the last 365 days it is 32% of the gross figure this screen
+ranked on, it varies from nothing to 38% of a style's gross, and 57 of 172 styles are NEGATIVE once their own spend is charged to
+them. A cost that big and that uneven cannot be left out of a number whose job is to rank a buy.
+
+WHY NOT GROSS MINUS ADS. Because that is neither figure: it charges one selling cost while ignoring the payment fee, packing, postage
+and the returns haircut. sales.profit already carries all of those, so net-minus-ads is the only internally consistent answer, and it
+is the one the owner chose. On the current book: gross GBP 70,408, net GBP 37,730, ad spend GBP 22,427, kept GBP 15,303.
+
+WHAT IT COST. The named ladder had to be recalibrated — Top/High/Mid/Low were GBP 1000/750/500/250 against gross, which on kept would
+have put two styles in Top. They are now GBP 300/200/100/0, chosen to cut the book at roughly the ranks the old ladder did (16/28/46
+/85 of 172). The bottom rung is 0 rather than a positive step, because on a RE-ORDER sheet "did not lose money" is a real line and
+gross could never draw it.
+
+WHAT IT DID NOT CHANGE. The top of the buy barely moves: the top 10 styles by gross and by kept are the same 10, and the top 20 differ
+by three. The value is not a different winners list, it is that the losers are now visible — a style can rank well on gross and still
+be handing its margin to Google, and that is invisible on a gross measure.
+
+--- the original reasoning, superseded above, retained for the argument ---
+
+PROFIT HERE WAS GROSS PROFIT — AN INDICATION, NOT ACCOUNTING (owner, 2026-09-04). It started as a straight port of the owner's own
 hand-written query (Birkenstock-Order-Performance.txt), which left its VAT adjustment switched off. THE VAT IS NOW TAKEN OUT (owner's
 call, same day): sold prices on this book are VAT-INCLUSIVE and skusummary.cost is NET of VAT, so subtracting one from the other
 compared two different things and inflated every row by a fifth of its revenue. Ex-VAT price minus cost is a like-for-like margin.
@@ -54,6 +79,9 @@ WHY NOT `sales.profit` (the net per-unit figure the Pricing screens use)? Becaus
 everything, on a unit — and it is a MUCH smaller number: on the current book 35 Birk styles clear 1000 by the gross measure and only 6
 clear it net. The owner's threshold bands are set against the gross measure. Anyone tempted to unify the two should read this paragraph
 and the one above it first: the difference is intentional, not drift.
+                                            ^^^ THIS IS THE PARAGRAPH THAT WAS REVERSED. It was right that net is a much smaller number
+and that the bands were set against gross; what it could not weigh was ad spend, which nothing measured per style at the time. Both
+points were addressed rather than ignored — the bands were recalibrated, not stretched. See the block at the top.
 
 WHAT WAS DROPPED FROM THE OWNER'S QUERY, DELIBERATELY: that query also gated on skusummary.shopify = 1, on the style having at least
 one out-of-stock size, on `check_stock` being due, and on a minimum sold quantity. Those gates make it a REPRICING REVIEW list. This
@@ -84,7 +112,13 @@ Success Response:
       "segment": "EVA-SEG",
       "review": "2026-10-01",                                 // skusummary.check_stock: parked out of the sheet until this date; null if never parked
       "sold365": 39,                                          // shp365 + cmb365, summed over the style's variants
-      "gross": 1150,                                          // 365-day gross profit ex VAT, whole pounds; null if there are no sales or the cost is junk
+      "kept": 412,                                            // THE BANDED MEASURE: 365-day net profit less this style's Google spend,
+                                                              // whole pounds. null if there are no sales in the window or the cost is junk
+      "adSpend": 188,                                         // Google spend over the same 365 days; a real 0 when the style was never advertised
+      "gross": 1150,                                          // 365-day GROSS profit ex VAT. Still returned, NO LONGER RENDERED (owner,
+                                                              // 2026-09-08): it is the legacy figure this screen was built on and the
+                                                              // arithmetic is documented above, so it is kept as one ROUND() over data
+                                                              // already selected rather than deleted and re-derived if it is ever wanted
       "live": 45,                                             // FREE local units, all sizes
       "incoming": 0,                                          // still to arrive on the Birk order book (requested - arrived)
       "liveSizes":     { "35": 3, "36": 10, "37": 8 },        // 0 for a size the style carries but has none of
@@ -172,13 +206,30 @@ router.get('/', async (req, res) => {
         -- this is gross rather than sales.profit, and for the four gates of the original query that are deliberately not here.
         SELECT s.groupid,
                SUM(s.soldprice * s.qty)::numeric / NULLIF(SUM(s.qty), 0) AS avg_price,
-               SUM(s.qty)                                                AS units
+               SUM(s.qty)                                                AS units,
+               -- The NET per-unit figure utils/shopifyProfit.js wrote on every row, summed: VAT, cost, payment fee, packing, postage
+               -- and the returns haircut are all already inside it. Everything except advertising, which is what the ads CTE adds below.
+               SUM(s.profit)                                             AS net_profit
         FROM sales s
         JOIN styles st ON st.groupid = s.groupid
         WHERE s.channel IN ('SHP', 'CM3')
           AND s.qty > 0 AND s.soldprice > 0
           AND s.solddate >= CURRENT_DATE - 365
         GROUP BY s.groupid
+      ),
+      ads AS (
+        -- Google spend over the SAME 365 days. Verified coverage before this was built: google_product_daily runs from 2025-08-01
+        -- unbroken, so the window is fully covered rather than silently part-measured.
+        --
+        -- NO ROW MEANS ZERO, NEVER AN ESTIMATE (owner, 2026-09-08). The ad floor borrows a segment median when a style's own data is
+        -- too thin, because it answers a HYPOTHETICAL — what would a customer cost. Kept measures WHAT HAPPENED, so imputing spend to
+        -- a style that never spent would invent a loss, and would do it to exactly the styles selling organically: the best ones.
+        -- On the current book the case does not arise at all (0 of the 172 Birkenstock styles that sold have no spend; 3 catalogue-
+        -- wide), but the rule is what protects the number if it ever does.
+        SELECT groupid, SUM(cost) AS spend
+        FROM google_product_daily
+        WHERE snapshot_date >= CURRENT_DATE - 365
+        GROUP BY groupid
       ),
       grid AS (
         -- One row per style carrying both size maps and both totals. Built off the sizes CTE (the full size range) and LEFT JOINed to the
@@ -200,6 +251,11 @@ router.get('/', async (req, res) => {
              -- The same 1/6 rule utils/shopifyProfit.js uses, written the other way round; if the VAT rate ever moves, both change.
              -- NULL (not 0) when the style has no sales in the window or an unusable cost — the client draws those as a dash.
              ROUND((perf.avg_price / 1.2 - st.cost) * perf.units, 0) AS gross,
+             -- KEPT — the banded measure. Net profit less the style's own Google spend: what the style actually left behind.
+             -- NULL when there are no sales in the window, exactly like gross, so "unknown" never reads as a confident zero and
+             -- never satisfies a threshold. A style with sales but no ad spend is a real 0 deduction, not a null.
+             ROUND(perf.net_profit - COALESCE(a.spend, 0), 0)         AS kept,
+             ROUND(COALESCE(a.spend, 0), 0)                           AS ad_spend,
              COALESCE(grid.live_units, 0)               AS live_units,
              COALESCE(grid.incoming_units, 0)           AS incoming_units,
              COALESCE(grid.live_sizes, '{}'::jsonb)     AS live_sizes,
@@ -208,6 +264,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN grid ON grid.groupid = st.groupid
       LEFT JOIN sold ON sold.groupid = st.groupid
       LEFT JOIN perf ON perf.groupid = st.groupid
+      LEFT JOIN ads  a  ON a.groupid   = st.groupid
       ORDER BY st.title NULLS LAST, st.groupid
     `);
 
@@ -230,6 +287,9 @@ router.get('/', async (req, res) => {
       // null stays null: no sales in the window, or a cost we could not read. `Number(null) || 0` would have turned "unknown" into a
       // confident zero, which on a threshold screen means the row quietly fails every "over 1000" test for the wrong reason.
       gross: r.gross === null || r.gross === undefined ? null : Number(r.gross),
+      // Same null discipline as gross, and for the same reason — see the note above it.
+      kept: r.kept === null || r.kept === undefined ? null : Number(r.kept),
+      adSpend: Number(r.ad_spend) || 0,
       live: Number(r.live_units) || 0,
       incoming: Number(r.incoming_units) || 0,
       liveSizes: toIntMap(r.live_sizes),

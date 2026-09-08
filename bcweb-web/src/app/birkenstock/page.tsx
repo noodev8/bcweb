@@ -34,14 +34,28 @@ and thirty-two in August is a different season from thirty-five in May. The mont
 figure sits directly beneath the size it belongs to and beneath the stock we already hold in that size. See SEASON for why they run
 September -> August, and routes/birk-planner.js for why a delivery that has fully landed shows nothing at all.
 
-PROFIT, AND THE PERFORMANCE LEVELS. A gross-profit figure per style over the same 365 days — sold price ex VAT minus cost, times units — with four
-fixed steps above the grid: Top / High / Mid / Low (£1000/750/500/250, cumulative) and All. It is an INDICATION, not accounting:
-selling expenses are not deducted, at the owner's call, so it reads above the net figure on the Pricing screens. Its job is to order
-the sheet, because the buy is made top down against a budget: work the top earners, then drop a level and work the next tier. Pressing
-a level sorts by profit descending, so the list only ever grows downwards and the tier already dealt with stays above the new arrivals.
-The steps wear NAMES rather than the pound figures they stand for (owner, 2026-09-05 — see GROSS_LEVELS); the figure is on the hover
-and on the chip in the strip. See routes/birk-stock.js for the arithmetic and for the four gates of the owner's original query that
-are deliberately NOT here.
+KEPT, AND THE PERFORMANCE LEVELS. One money column: what each style KEPT over the last 365 days — its net profit (VAT, cost, payment
+fee, packing, postage and the returns haircut all already out) LESS the Google ad spend that went on it. Four cumulative steps above
+the grid: Top / High / Mid / Low (£300/200/100/0) and All. Its job is to order the sheet, because the buy is made top down against a
+budget: work the top earners, then drop a level and work the next tier. Pressing a level sorts descending, so the list only ever grows
+downwards and the tier already dealt with stays above the new arrivals. The steps wear NAMES rather than the pound figures they stand
+for (owner, 2026-09-05 — see GROSS_LEVELS); the figure is on the hover and on the chip in the strip.
+
+WHY KEPT AND NOT GROSS (owner, 2026-09-08). This column was gross profit — price ex VAT minus cost, times units — chosen because
+selling expenses are near-flat per unit and would have shifted every row by about the same amount. Advertising is not like that: over
+the last 365 days it is 32% of this book's gross, and it runs from nothing on one style to 38% of gross on another. A style could
+therefore rank as a Top earner here and still be handing its margin to Google, with nothing on the screen saying so. Ad spend is now
+measurable per style, so it is charged, and because sales.profit already carries every other selling cost, net-minus-ads is the only
+internally consistent version of the number — gross-minus-ads would deduct advertising while still ignoring postage and fees.
+
+WHAT THAT COST, STATED PLAINLY: this is a much smaller number (the book's gross is £70,408 and its kept is £15,303), so the ladder was
+recalibrated to cut the sheet at roughly the ranks the old one did. THE BOTTOM RUNG IS £0 — on a re-order sheet "did not lose money"
+is a real line and gross could never draw it: 57 of 172 styles are negative on kept. GROSS IS STILL IN THE PAYLOAD AND IS NOT DRAWN
+(owner): two profit figures side by side compete and leave the reader doing the subtraction.
+
+WHAT IT DID NOT CHANGE: the top of the buy. The same 10 styles lead on gross and on kept, and the top 20 differ by three. The value is
+not a different winners list — it is that the losers became visible. See routes/birk-stock.js for the arithmetic and for the four gates
+of the owner's original query that are deliberately NOT here.
 
 CUT (owner, 2026-09-04). Mark rows — click, ctrl-click to add one, shift-click for a range, Windows rules — and Cut pushes them out of
 the view. A PURE DISPLAY FILTER: nothing is written, nothing outlives the visit, and there is deliberately NO restore, because Reset is
@@ -99,11 +113,19 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { groupid: 'asc', sold365: 
 //
 // They are cumulative, and the "at least" in the label is what says so: Mid is everything from £500 up, Top included. Named steps down
 // a single ladder read that way naturally; four bare numbers side by side read as four separate buckets.
+// RECALIBRATED FOR KEPT (owner, 2026-09-08). The old ladder was £1000/750/500/250 against GROSS profit, and it cut the book
+// 16/28/46/85 of 176 — one session's work per press, which is the whole design. Kept is a much smaller number (the book's gross is
+// £70,408 and its kept is £15,303), so those same thresholds would have put TWO styles in Top. These four cut it 20/27/49/115, which
+// restores the shape of the ladder rather than the size of its numbers.
+//
+// THE BOTTOM RUNG IS 0, NOT A POSITIVE STEP (owner's call). On a re-order sheet "did not lose money" is a real line, and gross could
+// never draw it — 57 of 172 styles are negative on kept. Low is therefore not "the small earners", it is everything that washed its
+// own face, which is the last question worth asking before a style goes on the order.
 const GROSS_LEVELS: { label: string; min: number }[] = [
-  { label: 'Top', min: 1000 },
-  { label: 'High', min: 750 },
-  { label: 'Mid', min: 500 },
-  { label: 'Low', min: 250 },
+  { label: 'Top', min: 300 },
+  { label: 'High', min: 200 },
+  { label: 'Mid', min: 100 },
+  { label: 'Low', min: 0 },
 ];
 // The name for a threshold, for the chip in the count strip — which shows both, because once a level is ON, the number behind it is
 // the useful half ("what am I working to?") and no longer a button label competing for the eye.
@@ -365,7 +387,7 @@ export default function BirkenstockPage() {
     // So the same row is present or absent depending on which of those two things you are doing, which is right: the park is a
     // statement about the working list, not about the style. It also means nothing can be lost behind it — press All and it is there.
     if (minGross !== null) {
-      out = out.filter((r) => r.gross !== null && r.gross >= minGross && !isParked(r, today));
+      out = out.filter((r) => r.kept !== null && r.kept >= minGross && !isParked(r, today));
     }
     // Cut LAST, so the "N cut" count below counts rows the operator actually pushed out of THIS view rather than rows a text step, a
     // profit band or a park had already removed for him.
@@ -379,7 +401,7 @@ export default function BirkenstockPage() {
     if (minGross === null) return 0;
     return applySteps(indexed, steps)
       .map((x) => x.row)
-      .filter((r) => r.gross !== null && r.gross >= minGross && isParked(r, today) && !cut.has(r.groupid)).length;
+      .filter((r) => r.kept !== null && r.kept >= minGross && isParked(r, today) && !cut.has(r.groupid)).length;
   }, [indexed, steps, minGross, cut, today]);
 
   // How many of the rows this filter WOULD show have been cut by hand — the only feedback the cut gives, and enough of it: it says the
@@ -387,7 +409,7 @@ export default function BirkenstockPage() {
   const cutInView = useMemo(() => {
     if (cut.size === 0) return 0;
     let out = applySteps(indexed, steps).map((x) => x.row);
-    if (minGross !== null) out = out.filter((r) => r.gross !== null && r.gross >= minGross && !isParked(r, today));
+    if (minGross !== null) out = out.filter((r) => r.kept !== null && r.kept >= minGross && !isParked(r, today));
     return out.filter((r) => cut.has(r.groupid)).length;
   }, [indexed, steps, minGross, cut, today]);
 
@@ -402,7 +424,7 @@ export default function BirkenstockPage() {
       // An unknown profit sorts as the lowest there is, so the styles with no answer sit at the bottom of the descending sort the
       // operator actually uses, rather than floating to the top of it as a 0 would if the two were conflated. It also has to sit below
       // the styles that genuinely made a loss, which are real rows and are not unknowns.
-      else if (sortKey === 'gross') d = (a.gross ?? Number.NEGATIVE_INFINITY) - (b.gross ?? Number.NEGATIVE_INFINITY);
+      else if (sortKey === 'gross') d = (a.kept ?? Number.NEGATIVE_INFINITY) - (b.kept ?? Number.NEGATIVE_INFINITY);
       else d = stockOf(a, mode) - stockOf(b, mode);
       if (d === 0) return a.groupid.localeCompare(b.groupid);
       return d * dir;
@@ -597,9 +619,10 @@ export default function BirkenstockPage() {
             {/* ---- The profit level ---------------------------------------------------------------------------------------------
                 THE BEST SELLERS FIRST, THEN DOWNWARDS (owner, 2026-09-04). Four fixed steps and no free entry — what is being chosen
                 is a BUDGET TIER, not a search term: press Top and the sheet becomes the styles worth ordering first, spend against it,
-                press High and the tier just done stays above the new arrivals (the sort is gross-descending, so the list only ever
+                press High and the tier just done stays above the new arrivals (the sort is Kept-descending, so the list only ever
                 grows downwards). The free-entry box that was here first came out at the owner's call (2026-09-04), and the pound
-                figures on the buttons followed it out a day later for the same reason — see GROSS_LEVELS.
+                figures on the buttons followed it out a day later for the same reason — see GROSS_LEVELS, which also records why the
+                thresholds moved when the column became Kept.
                 It sits in the same row as the text boxes because narrowing to a model and narrowing to a level are the same gesture
                 and get combined constantly.
                 A QUIET SEGMENTED CONTROL — a raised white segment on a recessed track, not a black fill (2026-09-05). The black
@@ -619,9 +642,11 @@ export default function BirkenstockPage() {
                     type="button"
                     onClick={() => applyGross(l.min)}
                     title={
-                      l.min === GROSS_LEVELS[0].min
-                        ? `${l.label}: styles that have made at least £${money(l.min)} gross profit in the last 365 days`
-                        : `${l.label} and above: styles that have made at least £${money(l.min)} gross profit in the last 365 days`
+                      l.min === 0
+                        ? `${l.label} and above: styles that KEPT anything at all over the last 365 days — net profit after their own Google ad spend. Everything below this line lost money once advertising is charged to it.`
+                        : l.min === GROSS_LEVELS[0].min
+                          ? `${l.label}: styles that kept at least £${money(l.min)} over the last 365 days — net profit after their own Google ad spend`
+                          : `${l.label} and above: styles that kept at least £${money(l.min)} over the last 365 days — net profit after their own Google ad spend`
                     }
                     className={`rounded px-3 py-1.5 text-sm font-medium ${
                       minGross === l.min ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
@@ -707,7 +732,10 @@ export default function BirkenstockPage() {
                 a label competing for the eye and becomes the thing you are working to, which is worth stating exactly. */}
             {minGross !== null && (
               <span className="whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-                {grossLabel(minGross)} <span className="font-medium text-slate-800">£{money(minGross)}+</span>
+                {grossLabel(minGross)}{' '}
+                <span className="font-medium text-slate-800">
+                  {minGross === 0 ? 'kept anything' : `£${money(minGross)}+`}
+                </span>
               </span>
             )}
             {steps.map((s, i) => (
@@ -856,7 +884,7 @@ export default function BirkenstockPage() {
                   Style
                 </th>
                 <SortTh label="Sold 365" colKey="sold365" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                <SortTh label="Profit" colKey="gross" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Kept" colKey="gross" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 <SortTh label="Stock" colKey="stock" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 {sizeCols.map((sz, i) => (
                   <th
@@ -919,16 +947,26 @@ export default function BirkenstockPage() {
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
                       <span className="inline-block px-1.5">{r.sold365 || ''}</span>
                     </td>
-                    {/* GROSS PROFIT, AND IT IS DRAWN AS AN INDICATION — lighter than Sold 365 and Stock, which are counted units.
-                        (average sold price EX VAT − cost) × units over the same year. The VAT comes out because our cost is net of it
-                        and the shop price is not, so leaving it in was comparing two different things (owner, 2026-09-04). Selling
-                        expenses stay IN, also his call: they are near-flat per unit, so taking them out would move every row by about
-                        the same amount and barely change the order — which is what this column is for. It ranks; it is not a P&L.
-                        A dash is a style with no sales in the window or a cost we could not read; it is not a zero, and a NEGATIVE is
-                        real (a handful of styles have sold below cost) and is shown as it stands. */}
+                    {/* KEPT — what the style actually left behind over the year: net profit (VAT, cost, payment fee, packing, postage
+                        and the returns haircut all already deducted) LESS the Google spend that went on it. It replaced the gross
+                        figure on 2026-09-08 because ad spend is 32% of gross across this book and is NOT flat per unit — it runs from
+                        nothing to 38% of a style's gross, so leaving it out was hiding the difference between a style that earns its
+                        margin and one that hands it to Google. Gross is still in the payload and is deliberately NOT drawn (owner):
+                        two profit figures side by side put them in competition and left the reader doing the subtraction.
+                        Drawn as an INDICATION — lighter than Sold 365 and Stock, which are counted units.
+                        A dash is no sales in the window or a cost we could not read; it is not a zero. A NEGATIVE is real and is the
+                        point of the column — 57 of 172 styles are — so it is drawn in red to separate "kept little" from "lost". */}
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                      <span className="inline-block px-1.5" title={r.gross === null ? 'No sales in the last 365 days, or no usable cost' : 'Gross profit over 365 days: (sold price ex VAT − cost) × units. Selling expenses are not deducted.'}>
-                        {r.gross === null ? <span className="text-slate-300">—</span> : money(r.gross)}
+                      <span
+                        className={`inline-block px-1.5 ${r.kept !== null && r.kept < 0 ? 'font-medium text-red-600' : ''}`}
+                        title={
+                          r.kept === null
+                            ? 'No sales in the last 365 days, or no usable cost'
+                            : `Kept over 365 days: net profit after all selling expenses, less £${money(r.adSpend)} of Google ad spend.` +
+                              (r.kept < 0 ? ' This style lost money once its advertising is charged to it.' : '')
+                        }
+                      >
+                        {r.kept === null ? <span className="text-slate-300">—</span> : money(r.kept)}
                       </span>
                     </td>
                     <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-slate-800">
