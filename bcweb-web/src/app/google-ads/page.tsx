@@ -181,6 +181,16 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
   return { term: text, qty: null, season: null };
 }
 
+// A row with NOTHING TO RANK ON in the current column — as opposed to a low value. Only 'vs floor' has this state: 127 of 285
+// styles have too little ad data to place a floor, and they draw a dash rather than a number.
+//
+// It is NOT the same as B/E ROAS's null, which sorts as Infinity on purpose (a style with no margin to defend really is the worst
+// possible target, and that ordering is meaningful — see the note on `case 'be'`). A missing floor means "we cannot say", which is
+// not an extreme value in either direction, so it must not be ranked as one.
+function isUnranked(r: GoogleAdsStyleRow, key: SortKey): boolean {
+  return key === 'floor' && floorGap(r) === null;
+}
+
 // ---- Sorting --------------------------------------------------------------------------------------------------------------------
 type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'be' | 'floor';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
@@ -214,9 +224,9 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
     // rescues a style that loses money before ad spend. Infinity does the ranking; the cell draws a dash, not a number.
     case 'be': return win.breakEvenRoas === null ? Infinity : win.breakEvenRoas;
     // The GAP, not the floor itself: £5 under on a £40 shoe and £5 under on a £90 shoe are the same size of problem to fix, and the
-    // floor on its own would just re-sort the list by price. No floor sorts to the far positive end — nothing to act on — so the
-    // default ascending sort puts the deepest shortfalls first, which is the order the repair list wants.
-    case 'floor': return floorGap(r) ?? Infinity;
+    // floor on its own would just re-sort the list by price. Rows with no floor never reach this comparison — isUnranked() parks
+    // them at the bottom first — so the 0 here is unreachable, and is a defensive default rather than a ranking decision.
+    case 'floor': return floorGap(r) ?? 0;
   }
 }
 
@@ -475,6 +485,15 @@ export default function GoogleAdsPage() {
   const sorted = useMemo(() => {
     const list = [...visible];
     list.sort((a, b) => {
+      // UNRANKED ROWS SINK, AND THE DIRECTION FLIP BELOW MUST NOT REACH THIS. Returned before the flip on purpose: parking them
+      // with a sentinel value instead (the old `?? Infinity`) put all 127 dashes ABOVE the winners the moment the arrow turned
+      // descending — which is exactly when the operator is looking for the best of them. Bottom in both directions is the only
+      // behaviour that reads as "ignored".
+      const aMissing = isUnranked(a, sortKey);
+      const bMissing = isUnranked(b, sortKey);
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
+      if (aMissing && bMissing) return a.groupid.localeCompare(b.groupid);
+
       const av = sortValue(a, sortKey, win);
       const bv = sortValue(b, sortKey, win);
       let d = 0;
