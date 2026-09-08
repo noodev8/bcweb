@@ -64,6 +64,41 @@ function shopifyProfit(sold, cost) {
 }
 
 /*
+ * priceForProfit(targetProfit, cost) -> number | null
+ *   The INVERSE of shopifyProfit(): the VAT-inclusive sold price at which a unit nets exactly `targetProfit`.
+ *
+ * Why it lives here and not in the caller: this is the same formula read backwards, so it MUST share the constants above. Solving it
+ * in utils/adFloor.js (its only caller today) would put a second copy of VAT, the payment fee and the returns haircut in the codebase
+ * — exactly the drift this module exists to prevent. A rate change stays a one-line edit.
+ *
+ * The algebra, with the constants named above:
+ *     profit = ((sold - sold/6 - cost) - (0.30 + 0.029*sold) - 1.00 - 3.44) / 1.2
+ * Collect the terms in `sold`:
+ *     profit * 1.2 = sold * (1 - 1/6 - 0.029) - cost - (0.30 + 1.00 + 3.44)
+ * and rearrange for sold:
+ *     sold = (cost + 4.74 + 1.2 * profit) / 0.804333...
+ *
+ * Verified against the live DB: priceForProfit(13.05, 37.50) = 71.99, the actual price 1030498-ARIZONA sold at, and shopifyProfit()
+ * returns 13.05 for that pair — the round trip closes to the penny.
+ *
+ * Returns null on unusable input, for the same load-bearing reason shopifyProfit() does: a caller must show "—", never a wrong price.
+ */
+function priceForProfit(targetProfit, cost) {
+  const p = toNumber(targetProfit);
+  const c = toNumber(cost);
+  if (p === null || c === null) return null;
+
+  // The share of a VAT-inclusive price that survives VAT and the percentage payment fee. Derived from the constants, never typed as
+  // a literal, so it cannot drift from shopifyProfit() above.
+  const priceCoefficient = 1 - 1 / VAT_DIVISOR - PAYMENT_RATE;
+  const flatCosts = PAYMENT_FIXED + PACKING + ROYAL_MAIL;
+
+  const sold = (c + flatCosts + RETURNS_DIVISOR * p) / priceCoefficient;
+  if (!Number.isFinite(sold)) return null;
+  return Math.round(sold * 100) / 100;
+}
+
+/*
  * toNumber(v) -> number | null
  * Defensive parse for the legacy VARCHAR money columns. Anything that isn't a finite number (NULL, '', 'RRP', 'n/a') becomes null so
  * the caller ends up storing NULL rather than NaN. Mirrors the try/except float() the Python does around skusummary.cost.
@@ -74,4 +109,4 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-module.exports = { shopifyProfit, toNumber };
+module.exports = { shopifyProfit, priceForProfit, toNumber };

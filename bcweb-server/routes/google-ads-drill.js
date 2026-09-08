@@ -54,7 +54,8 @@ Success Response:
   "groupid": "1005299-GIZEH",
   "header": { "title": "...", "imagename": "birkenstock-gizeh.jpg", "segment": "GIZEH-SEG", "brand": "Birkenstock", "season": "Summer",
               "campaign": "standard", "googleLabel": "STANDARD", "googleLive": true,
-              "stock": 23, "price": 57.00, "rrp": 80.00, "cost": 28.50 },
+              "stock": 23, "price": 57.00, "rrp": 80.00, "cost": 28.50,
+              "adFloor": 63.65, "adCostPerSale": 7.46, "adFloorConfidence": "own", "belowAdFloor": true },
   "sizes": [ { "size": "38", "qty": 0 }, { "size": "39", "qty": 2 } ],   // EVERY size in skumap, 0 included, numeric order
   "labelRuns": [
     { "label": "C00", "from": "2025-08-01", "to": "2026-04-13", "days": 241,
@@ -82,6 +83,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { safeNumeric } = require('../utils/sql');
+const { getAdFloors } = require('../utils/adFloor');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -242,6 +244,9 @@ router.get('/', async (req, res) => {
       ORDER BY COALESCE(a.d, s.d)
     `, [groupid, days]);
 
+    // One style, so one batched call of size one (utils/adFloor.js owns the window and the confidence rules).
+    const floor = (await getAdFloors([groupid])).get(groupid) || null;
+
     return res.json({
       return_code: 'SUCCESS',
       groupid: h.groupid,
@@ -260,6 +265,12 @@ router.get('/', async (req, res) => {
         price: h.price === null ? null : Number(h.price),
         rrp: h.rrp === null ? null : Number(h.rrp),
         cost: h.cost === null ? null : Number(h.cost),
+        // Ad floor (utils/adFloor.js) — shown beside Price because that is the number it judges. Fixed 90-day basis, so it does not
+        // move with this drill's `days` window; advisory only, nothing enforces it. null = not enough ad data to say.
+        adFloor: floor ? floor.adFloor : null,
+        adCostPerSale: floor ? floor.adCostPerSale : null,
+        adFloorConfidence: floor ? floor.confidence : 'none',
+        belowAdFloor: floor && floor.adFloor !== null && h.price !== null && Number(h.price) < floor.adFloor,
       },
       sizes: curveRes.rows.map((r) => ({ size: r.sz, qty: int(r.qty) })),
       labelRuns: runsRes.rows.map((r) => {

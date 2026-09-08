@@ -123,7 +123,33 @@ export default function GoogleAdsDrill({ groupid, onClose }: { groupid: string; 
                 </dd>
               </div>
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Stock</dt><dd className="font-medium tabular-nums text-slate-800">{d.header.stock}</dd></div>
-              <div><dt className="text-xs uppercase tracking-wide text-slate-400">Price</dt><dd className="font-medium tabular-nums text-slate-800">{d.header.price === null ? '—' : money(d.header.price)}</dd></div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-400">Price</dt>
+                {/* Amber when the price sits under the ad floor — the one state where a perfectly ordinary-looking price is losing
+                    money on every unit once the click is paid for. */}
+                <dd className={`font-medium tabular-nums ${d.header.belowAdFloor ? 'text-amber-700' : 'text-slate-800'}`}>
+                  {d.header.price === null ? '—' : money(d.header.price)}
+                </dd>
+              </div>
+              {/* Rendered only when the server could derive a floor: a number built on a handful of clicks would read as confidently
+                  as a solid one. 'segment' is an estimate borrowed from neighbouring styles and is labelled (est). */}
+              {d.header.adFloor !== null && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-400">Ad floor</dt>
+                  <dd
+                    className={`font-medium tabular-nums ${d.header.belowAdFloor ? 'text-amber-700' : 'text-slate-800'}`}
+                    title={
+                      `A customer cost £${d.header.adCostPerSale?.toFixed(2)} over the last 90 days (Google spend / units sold). ` +
+                      `Below £${d.header.adFloor.toFixed(2)} the unit does not cover that.` +
+                      (d.header.adFloorConfidence === 'segment' ? ' Estimated from this style’s segment — its own ad data is too thin to trust.' : '') +
+                      ' Fixed 90-day basis, so it does not follow the window switch. Advisory only.'
+                    }
+                  >
+                    {money(d.header.adFloor)}
+                    {d.header.adFloorConfidence === 'segment' && <span className="text-slate-400"> (est)</span>}
+                  </dd>
+                </div>
+              )}
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Segment</dt><dd className="text-slate-700">{d.header.segment || '—'}</dd></div>
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Brand</dt><dd className="text-slate-700">{d.header.brand || '—'}</dd></div>
               <div><dt className="text-xs uppercase tracking-wide text-slate-400">Season</dt><dd className="text-slate-700">{d.header.season || '—'}</dd></div>

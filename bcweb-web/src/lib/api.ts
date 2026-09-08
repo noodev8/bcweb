@@ -199,6 +199,13 @@ export interface DrillHeader {
   next_review: string | null;
   match_amazon: boolean;                // true = Shopify price is auto-matched to Amazon (manual setter hidden; apply refused)
   amazon_lowest: number | null;         // Amazon's cheapest in-stock size = the match target (null if none in stock)
+  // Ad floor (server: utils/adFloor.js) — the price below which the style stops paying for its own Google advertising.
+  // ADVISORY: pricing-apply does NOT enforce it, so the UI warns and never blocks. null when there isn't enough ad data to say.
+  ad_floor: number | null;
+  ad_cost_per_sale: number | null;      // Google spend / units over the window — what one customer cost
+  ad_floor_confidence: 'own' | 'segment' | 'none';   // 'segment' is an ESTIMATE from neighbours; render it as one
+  ad_floor_basis: { clicks: number; units: number; spend: number; days: number } | null;
+  below_ad_floor: boolean;              // current price < ad_floor (precomputed server-side; false when the floor is null)
 }
 export interface TimelineRow {
   price: number; units: number;
@@ -2378,6 +2385,13 @@ export interface GoogleAdsStyleRow {
   price: number | null;
   rrp: number | null;
   cost: number | null;
+  // Ad floor (server: utils/adFloor.js) — the price below which the style stops paying for its own Google advertising.
+  // NOT per-window on purpose: it is a property of the style, fixed at 90 days, and the window switch leaves it alone. Where
+  // profitAfterSpend says a style LOST money, the floor says what the price would have to be for it to stop.
+  adFloor: number | null;
+  adCostPerSale: number | null;
+  adFloorConfidence: 'own' | 'segment' | 'none';  // 'segment' is an ESTIMATE from neighbours; render it as one
+  belowAdFloor: boolean;   // price < adFloor (precomputed; false when the floor is null). Advisory — nothing enforces it.
   // The week just gone. The only window that can see a change made last week — and the noisiest, because a style selling two a
   // month reads 0 across most of them. Free of Google's conversion revision lag: nothing the grid draws comes from `conversions`
   // or `convValue`. See the route header.
@@ -2489,6 +2503,11 @@ export interface GoogleAdsDrillHeader {
   segment: string; season: string; brand: string;
   campaign: string; googleLabel: string | null; googleLive: boolean;
   stock: number; price: number | null; rrp: number | null; cost: number | null;
+  // Ad floor (server: utils/adFloor.js). Fixed 90-day basis — it does NOT move with this drill's `days` window. Advisory only.
+  adFloor: number | null;
+  adCostPerSale: number | null;
+  adFloorConfidence: 'own' | 'segment' | 'none';
+  belowAdFloor: boolean;
 }
 
 export function getGoogleAdsDrill(groupid: string, days?: number) {

@@ -36,6 +36,11 @@ Success Response:
     "stock": 8, "colour": "Brown", "width": "Narrow", "season": "SS25",
     "imagename": "arizona-birko-flor-brown.jpg",  // product image filename (served from images.brookfieldcomfort.com) or null
     "next_review": "2026-07-10",              // cooldown date (or null)
+    "ad_floor": 71.55,                        // ADVISORY price floor: below this the style stops paying for its own Google ads
+    "ad_cost_per_sale": 12.76,                // Google spend / units over the window — what one customer cost
+    "ad_floor_confidence": "own",             // 'own' | 'segment' (an ESTIMATE from neighbours) | 'none' (render nothing)
+    "ad_floor_basis": { "clicks": 309, "units": 12, "spend": 153.17, "days": 90 },
+    "below_ad_floor": false,                  // now < ad_floor. Advisory — pricing-apply does NOT enforce it
     "match_amazon": false,                    // true = price is auto-matched to Amazon (manual setter hidden; apply refused)
     "amazon_lowest": 36.29                    // Amazon's cheapest in-stock size = the match target (null if none in stock)
   },
@@ -77,6 +82,7 @@ const VAT_MULTIPLIER = 1.2;
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { getAdFloors } = require('../utils/adFloor');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -170,6 +176,22 @@ router.get('/', async (req, res) => {
       match_amazon: h.match_amazon === true,
       amazon_lowest: num(h.amazon_lowest)
     };
+
+    // ---- Ad floor — the price below which the style stops paying for its own Google advertising (utils/adFloor.js). ----
+    // ADVISORY ONLY. It is not a bound: pricing-apply does not check it and will not refuse a price beneath it (owner's call — a hard
+    // block on an estimate over drifting ad data eventually refuses a price that was right). It sits beside `margin` because it
+    // answers the question `margin` cannot: the margin can look healthy and still be smaller than what the click cost to buy.
+    // `confidence` is load-bearing for the UI — 'segment' is an estimate borrowed from the style's neighbours and must be rendered as
+    // one, and 'none' means show nothing at all rather than implying the (separately enforced) below-cost bound is an ad floor.
+    const floors = await getAdFloors([groupid]);
+    const floor = floors.get(groupid) || null;
+    header.ad_floor = floor ? floor.adFloor : null;
+    header.ad_cost_per_sale = floor ? floor.adCostPerSale : null;
+    header.ad_floor_confidence = floor ? floor.confidence : 'none';
+    header.ad_floor_basis = floor ? { clicks: floor.clicks, units: floor.units, spend: floor.spend, days: floor.windowDays } : null;
+    // Below the floor the unit is sold at a loss once the click is paid for. Precomputed so the screen does not re-derive the
+    // comparison (and cannot get it wrong when the floor is null).
+    header.below_ad_floor = header.ad_floor !== null && now !== null && now < header.ad_floor;
 
     // ---- S4: pricing timeline (CLAUDE.md) — verbatim. Pace computed app-side below. ----
     const timelineResult = await query(`

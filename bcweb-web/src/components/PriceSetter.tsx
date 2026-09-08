@@ -87,6 +87,9 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
   // Bounds. (min/max removed per owner — unused; only the below-cost block and above-RRP warning remain.)
   const belowCost = header.cost !== null && Number.isFinite(price) && price < header.cost;
   const aboveRrp = header.rrp !== null && Number.isFinite(price) && price > header.rrp;
+  // Ad floor — recomputed against the price IN THE BOX, not header.below_ad_floor (which describes the price already saved), so the
+  // warning tracks the nudge buttons live the way the margin does. Advisory only: it never gates Apply.
+  const belowAdFloor = header.ad_floor !== null && Number.isFinite(price) && price < header.ad_floor;
   const priceValid = Number.isFinite(price) && price > 0;
   const changed = now === null || (Number.isFinite(price) && Math.round(price * 100) !== Math.round(now * 100));
 
@@ -142,6 +145,25 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         </span>
         <span className="text-slate-400">cost {header.cost !== null ? header.cost.toFixed(2) : '—'}</span>
         <span className="text-slate-400">RRP {header.rrp !== null ? header.rrp.toFixed(2) : '—'}</span>
+        {/* Ad floor. Rendered ONLY when the server could actually derive one — a floor built on a handful of clicks reads as
+            authoritative as a solid one, so 'none' shows nothing rather than a hedged number. A 'segment' floor is an estimate
+            borrowed from neighbouring styles and says so, both in the label and in the tooltip. */}
+        {header.ad_floor !== null && (
+          <span
+            className="text-slate-500"
+            title={
+              `Below this price the style stops paying for its own Google ads. A customer cost £${header.ad_cost_per_sale?.toFixed(2)} ` +
+              `over the last ${header.ad_floor_basis?.days ?? 90} days` +
+              (header.ad_floor_confidence === 'segment'
+                ? ', estimated from this style’s segment because its own ad data is too thin to trust.'
+                : ` (${header.ad_floor_basis?.clicks} clicks, ${header.ad_floor_basis?.units} sold, £${header.ad_floor_basis?.spend.toFixed(2)} spent).`) +
+              ' Advisory only — it does not block an apply.'
+            }
+          >
+            Ad floor: <span className="font-semibold text-slate-800">£{header.ad_floor.toFixed(2)}</span>
+            {header.ad_floor_confidence === 'segment' && <span className="text-slate-400"> (est)</span>}
+          </span>
+        )}
       </div>
 
       {/* New price row: nudge down | editable | nudge up */}
@@ -168,6 +190,14 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         {belowCost && <span className="text-red-600">Below cost (£{header.cost!.toFixed(2)}) — can&apos;t apply.</span>}
         {!belowCost && aboveRrp && (
           <span className="text-amber-600">Above RRP (£{header.rrp!.toFixed(2)}) — allowed, but check.</span>
+        )}
+        {/* The ad-floor advisory sits BELOW the two existing bounds in priority: those are about the price itself, this is about what
+            the customer cost to buy. Shown only when neither of them is already speaking, so the line never stacks two warnings. */}
+        {!belowCost && !aboveRrp && belowAdFloor && (
+          <span className="text-amber-600">
+            Below the ad floor (£{header.ad_floor!.toFixed(2)}
+            {header.ad_floor_confidence === 'segment' ? ', est' : ''}) — at this price the ads cost more than the unit makes.
+          </span>
         )}
       </div>
 

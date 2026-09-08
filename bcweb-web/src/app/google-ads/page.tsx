@@ -103,6 +103,10 @@ interface Criteria {
   // no single QtyFilter can express it. `SIZES LESS n` still exists and still means the raw count — the two are no longer the
   // same narrowing, which is why the button no longer writes one.
   thin: boolean;
+  // The Below-ad-floor button. Its own flag for the same reason as `thin`: it is a compound of price against a server-computed
+  // floor, which no QtyFilter can express. It is also the only narrowing on this screen that does NOT move with the window —
+  // the floor is fixed at 90 days by design (see utils/adFloor.js).
+  belowFloor: boolean;
 }
 
 function haystack(r: GoogleAdsStyleRow): string {
@@ -131,6 +135,7 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
     }
   }
   if (c.thin) out = out.filter((x) => isThinShelf(x.row));
+  if (c.belowFloor) out = out.filter((x) => x.row.belowAdFloor);
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign === c.bucket);
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   for (const f of c.qty) {
@@ -395,6 +400,7 @@ export default function GoogleAdsPage() {
   const [steps, setSteps] = useState<FilterStep[]>([]);
   const [qty, setQty] = useState<QtyFilter[]>([]);
   const [thin, setThin] = useState(false);
+  const [belowFloor, setBelowFloor] = useState(false);
   const [season, setSeason] = useState<Season | null>(null);
   const [bucket, setBucket] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -428,10 +434,10 @@ export default function GoogleAdsPage() {
   );
 
   const criteria: Criteria = useMemo(
-    () => ({ steps, qty, season, bucket, thin }),
-    [steps, qty, season, bucket, thin]
+    () => ({ steps, qty, season, bucket, thin, belowFloor }),
+    [steps, qty, season, bucket, thin, belowFloor]
   );
-  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || cut.size > 0;
+  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || belowFloor || cut.size > 0;
 
   const matched = useMemo(
     () => applyCriteria(indexed, criteria, win, campaignNames).map((x) => x.row),
@@ -557,6 +563,11 @@ export default function GoogleAdsPage() {
   const thinActive = thin;
   const onThinShelf = useCallback(() => {
     setThin((v) => !v);
+    clearSelection();
+  }, [clearSelection]);
+
+  const onBelowFloor = useCallback(() => {
+    setBelowFloor((v) => !v);
     clearSelection();
   }, [clearSelection]);
 
@@ -754,6 +765,23 @@ export default function GoogleAdsPage() {
             }`}
           >
             Thin shelf
+          </button>
+          {/* Below ad floor. The remedy half of the screen's question: Kept says a style LOST money, this says its price is beneath
+              what a customer costs to buy, so there is a price that would fix it. Fixed 90-day basis, so unlike every other
+              narrowing here it does NOT move when the window switches — the tooltip says so, because a filter that ignores the
+              window switch would otherwise look broken. */}
+          <button
+            type="button"
+            onClick={onBelowFloor}
+            aria-pressed={belowFloor}
+            title="Only styles priced below their ad floor — the price at which the unit's profit covers what a customer costs to buy (Google spend / units sold). Always measured over 90 days, so this one does not follow the window switch. Advisory: nothing blocks these prices."
+            className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium ${
+              belowFloor
+                ? 'border-amber-400 bg-amber-50 text-amber-800'
+                : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Below ad floor
           </button>
           <button
             type="button"

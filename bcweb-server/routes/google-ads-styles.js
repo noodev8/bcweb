@@ -158,6 +158,10 @@ Success Response:
       "sizesListed": 11,                                  // sizes the style carries in skumap
       "sizesInStock": 4,                                  // of those, how many have a buyable unit in EITHER pool — see `sizes`
       "price": 57.00, "rrp": 80.00, "cost": 28.50,        // safeNumeric — null when the legacy varchar holds junk
+      "adFloor": 63.65,                                   // ADVISORY: price below which the style stops paying for its own ads
+      "adCostPerSale": 7.46,                              // Google spend / units sold. Fixed 90d — NOT the selected window
+      "adFloorConfidence": "own",                         // 'own' | 'segment' (an ESTIMATE) | 'none' (render nothing)
+      "belowAdFloor": false,                              // price < adFloor. Advisory only; nothing enforces it
       "d7":   { ... },
       "d30":  { "units": 7, "revenue": 399.00, "profit": 62.30,
                 "impressions": 4210, "clicks": 93, "spend": 41.55, "conversions": 3.25, "convValue": 210.40,
@@ -189,6 +193,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { safeNumeric } = require('../utils/sql');
+const { getAdFloors } = require('../utils/adFloor');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -467,6 +472,25 @@ router.get('/', async (req, res) => {
       d365: win(r, 'd365'),
       ly30: win(r, 'ly30'),
     }));
+
+    // ---- Ad floor (utils/adFloor.js) — one batched call for the whole list, never per row (CLAUDE.md: no N+1). ----
+    // It is deliberately NOT a sixth window. The floor is a property of the STYLE ("what does a customer cost, and what price covers
+    // that"), not of whichever window the screen happens to be showing, and recomputing it per window would let the same style read
+    // "below floor" on d7 and "above" on d365 with nothing saying which to believe. It is fixed at 90 days — long enough to be stable
+    // on a low-volume style, short enough to track current conditions — and the window switch leaves it alone.
+    //
+    // profitAfterSpend already tells the operator a style LOST money over a window. The floor answers the next question, which that
+    // number cannot: what price would have to be for it to stop. Read together, they are the diagnosis and the remedy.
+    const floors = await getAdFloors(rows.map((r) => r.groupid));
+    for (const row of rows) {
+      const f = floors.get(row.groupid);
+      row.adFloor = f ? f.adFloor : null;
+      row.adCostPerSale = f ? f.adCostPerSale : null;
+      // 'segment' is an ESTIMATE borrowed from neighbouring styles and must be rendered as one; 'none' means render nothing at all.
+      row.adFloorConfidence = f ? f.confidence : 'none';
+      // Precomputed so the client filters on a boolean rather than re-deriving a comparison that has to handle a null floor.
+      row.belowAdFloor = row.adFloor !== null && row.price !== null && row.price < row.adFloor;
+    }
 
     // The window boundaries, so the screen can label its own switch honestly ("30 days to 5 Sep") rather than hard-coding dates that
     // drift out of step with what the server actually measured.
