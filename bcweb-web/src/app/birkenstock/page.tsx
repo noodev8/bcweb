@@ -12,6 +12,14 @@ THE TWO THINGS THE SCREEN SAYS, and they are the whole design:
      threshold, no cover maths (owner: keep it simple at first) — and NOT applied to a zero-stock row, which stays blank. That looks
      inconsistent until you remember what the colour is for: it is a nudge to re-order based on sales volume, and a style sitting at
      zero is a decision that has already been made elsewhere (discontinued, or waiting on a delivery), not a nudge.
+  1b. COVER = HOW MANY WEEKS THE STOCK WOULD LAST at the rate the style actually sold over the last year (added 2026-09-08). It is the
+     mirror of the red rule and the reason it was added: the sheet already shouted about styles we hold too FEW of, and said nothing
+     about the ones we hold too MANY of — which is where the cash is. On the current book 47 styles carry more than a year of cover and
+     about GBP 30k of stock at cost, against GBP 84k held in total. Amber past 52 weeks, because that is when next season's delivery
+     lands on stock that has not cleared. Like the red rule it reads off WHICHEVER QUANTITY IS DISPLAYED, so LIVE and FULL disagree and
+     the disagreement is the answer: 30 weeks on LIVE and 90 on FULL means it has already been re-ordered.
+     A style holding stock that sold NOTHING all year shows an amber dash, not a big number — there is no rate to divide by, so the
+     answer is undefined rather than large. It still sorts as the worst case, because it is.
   2. LIVE vs FULL. LIVE = what is on the shelf, ready to sell. FULL = that plus everything still to come from Birkenstock on the
      pre-order book. The switch exists to stop an OVER-ORDER: a style that reads red on LIVE and black on FULL is already handled —
      the stock is bought, it just has not landed. So the red rule deliberately reads off WHICHEVER NUMBER IS DISPLAYED. Rows change
@@ -102,10 +110,11 @@ type Mode = 'live' | 'full';
 
 // The sort keys the owner asked for, and only those: the raw identity and the two numbers the decision is made on. Every key works in
 // both directions; clicking the active key reverses it.
-type SortKey = 'groupid' | 'sold365' | 'gross' | 'stock';
+type SortKey = 'groupid' | 'sold365' | 'gross' | 'stock' | 'cover';
 // The direction a key adopts when first picked. Groupid reads naturally A->Z; the two numbers open high->low, because the reason to
 // sort on either of them is to bring the big sellers (or the big piles) to the top.
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { groupid: 'asc', sold365: 'desc', gross: 'desc', stock: 'desc' };
+// Cover sorts DESCENDING first: the most over-covered lead, because they are the ones holding the cash.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { groupid: 'asc', sold365: 'desc', gross: 'desc', stock: 'desc', cover: 'desc' };
 
 // ---- Gross ------------------------------------------------------------------------------------------------------------------------
 // The threshold bands. 1000 is the owner's own working number (the figure hard-coded in the query this came from); the rest are the
@@ -199,6 +208,29 @@ interface IndexedRow { row: BirkStockRow; hay: string }
 function stockOf(r: BirkStockRow, mode: Mode): number {
   return mode === 'live' ? r.live : r.live + r.incoming;
 }
+
+// ---- Cover -----------------------------------------------------------------------------------------------------------------------
+// COVER = how many WEEKS the stock we hold would last at the rate the style actually sold over the last year. It is the whole target
+// for the 2027 buy: the sheet already shouts about styles we hold too FEW of (the red rule), and had nothing at all to say about the
+// ones we hold too MANY of, which is where the cash is. On the current book 47 styles carry more than a year of cover and hold about
+// GBP 30k of stock at cost.
+//
+// IT READS OFF THE DISPLAYED QUANTITY, exactly like the red rule, so LIVE and FULL give different answers and the difference is the
+// point: a style with 30 weeks of cover on LIVE and 90 on FULL has already been re-ordered, and the decision is about the order, not
+// the shelf.
+//
+// null when the style sold NOTHING in the window but still holds stock — that is not a big number, it is an undefined one, and the
+// cell says so rather than printing a made-up ceiling. It still sorts to the worst end (see sortValue) because it IS the worst case.
+function coverWeeks(r: BirkStockRow, mode: Mode): number | null {
+  const stock = stockOf(r, mode);
+  if (stock <= 0) return 0;          // nothing held: zero weeks, and a real answer
+  if (r.sold365 <= 0) return null;   // holds stock, sold none — undefined, not infinite
+  return stock / (r.sold365 / 52);
+}
+
+// A year. Past this, next season's delivery lands on top of stock that has not cleared yet — which is the compounding version of the
+// problem, and the reason the line is drawn here rather than at some tidier-looking number.
+const OVER_COVER_WEEKS = 52;
 
 // The displayed stock for ONE size in the current mode. The two maps share a key set (the server builds them off the same size list),
 // so an absent key means the style does not carry that size at all — which is a blank cell, not a zero.
@@ -447,7 +479,14 @@ export default function BirkenstockPage() {
       // operator actually uses, rather than floating to the top of it as a 0 would if the two were conflated. It also has to sit below
       // the styles that genuinely made a loss, which are real rows and are not unknowns.
       else if (sortKey === 'gross') d = (a.kept ?? Number.NEGATIVE_INFINITY) - (b.kept ?? Number.NEGATIVE_INFINITY);
+      // Holds stock but sold nothing is the WORST cover there is, not an absent one, so it sorts above every finite number rather
+      // than falling to the bottom. That is the opposite treatment to the ad floor's null (which means "cannot say") and to Kept's
+      // (which means "no sales to judge") — here the null IS the finding.
+      else if (sortKey === 'cover') d = (coverWeeks(a, mode) ?? Number.POSITIVE_INFINITY) - (coverWeeks(b, mode) ?? Number.POSITIVE_INFINITY);
       else d = stockOf(a, mode) - stockOf(b, mode);
+      // Two "sold nothing" rows both yield Infinity and Infinity - Infinity is NaN, which does not merely mis-order that pair — it
+      // makes the comparator inconsistent and lets sort() scramble unrelated rows. Same fix as the Google Ads grid.
+      if (!Number.isFinite(d)) d = 0;
       if (d === 0) return a.groupid.localeCompare(b.groupid);
       return d * dir;
     });
@@ -912,6 +951,7 @@ export default function BirkenstockPage() {
               <col className="w-[88px]" />
               <col className="w-[84px]" />
               <col className="w-[72px]" />
+              <col className="w-[64px]" />
               {/* 30px, not 32: two digits at text-sm are ~17px, so 30 holds any quantity this grid can show with room either side,
                   and the 28px it gives back across fourteen columns goes to Style, which is the column that was truncating. */}
               {sizeCols.map((sz) => (
@@ -929,6 +969,7 @@ export default function BirkenstockPage() {
                 <SortTh label="Sold 365" colKey="sold365" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 <SortTh label="Kept" colKey="gross" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 <SortTh label="Stock" colKey="stock" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Cover" colKey="cover" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 {sizeCols.map((sz, i) => (
                   <th
                     key={sz}
@@ -1024,6 +1065,36 @@ export default function BirkenstockPage() {
                         {stock || ''}
                       </span>
                     </td>
+                    {/* COVER, in weeks. The counterpart to the red rule: red says we hold too FEW, this says we hold too MANY, and
+                        the second is where the cash is tied up. Amber past a year, because that is the point at which next season's
+                        delivery lands on stock that has not cleared. A blank cell is a style holding nothing — the ordinary state for
+                        a sold-out line, and not worth a mark. "—" in amber is the loud one: stock on the shelf, nothing sold all
+                        year, so there is no rate to divide by and the answer is not a big number but an undefined one. */}
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {(() => {
+                        const cw = coverWeeks(r, mode);
+                        if (cw === null) {
+                          return (
+                            <span className="inline-block px-1.5 font-semibold text-amber-700"
+                                  title={`Holding ${stock} but sold nothing in 365 days — no selling rate to measure cover against`}>—</span>
+                          );
+                        }
+                        if (cw === 0) return <span className="inline-block px-1.5" />;
+                        const over = cw > OVER_COVER_WEEKS;
+                        return (
+                          <span
+                            className={`inline-block px-1.5 ${over ? 'font-semibold text-amber-700' : 'text-slate-500'}`}
+                            title={
+                              `Holding ${stock} against ${r.sold365} sold in 365 days — about ${Math.round(cw)} weeks of cover` +
+                              (over ? '. Over a year: next season lands before this clears.' : '') +
+                              (mode === 'live' ? '' : ' (FULL — includes stock still to arrive)')
+                            }
+                          >
+                            {cw >= 104 ? '2y+' : `${Math.round(cw)}w`}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     {sizeCols.map((sz, i) => {
                       const q = sizeStockOf(r, sz, mode);
                       return (
@@ -1048,12 +1119,12 @@ export default function BirkenstockPage() {
                       and the grid row above is already counting them. */}
                   {open && plannerBusy && plannerMonths.length === 0 && (
                     <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50">
-                      <td colSpan={5 + sizeCols.length} className="px-8 py-2 text-xs text-slate-400">Loading…</td>
+                      <td colSpan={6 + sizeCols.length} className="px-8 py-2 text-xs text-slate-400">Loading…</td>
                     </tr>
                   )}
                   {open && !plannerBusy && plannerMonths.length === 0 && (
                     <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50">
-                      <td colSpan={5 + sizeCols.length} className="px-8 py-2 text-xs text-slate-500">
+                      <td colSpan={6 + sizeCols.length} className="px-8 py-2 text-xs text-slate-500">
                         Nothing still to come — no outstanding Birkenstock order for this style.
                       </td>
                     </tr>
@@ -1072,6 +1143,9 @@ export default function BirkenstockPage() {
                       <td className="px-2 py-1 text-right text-xs font-semibold tabular-nums text-slate-700">
                         {mode === 'live' && <span className="inline-block px-1.5">+{m.units}</span>}
                       </td>
+                      {/* Under COVER — deliberately empty. A month of incoming stock has no cover of its own; cover is a property of
+                          the style, and the row above already carries it. This cell exists only to keep the size columns aligned. */}
+                      <td className="px-2 py-1" />
                       {sizeCols.map((sz, i) => (
                         <td
                           key={sz}
