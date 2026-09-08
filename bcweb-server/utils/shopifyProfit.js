@@ -20,11 +20,27 @@ THE FORMULA
     Expenses = payment fee (30p + 2.9%) + packing/wages 1.00 + Royal Mail 3.44
     Profit   = (Gross - Expenses) / 1.2    the /1.2 is a flat "cover refunds" haircut
 
-WHY THE /1.2 IS HERE AND STAYS. It is the same haircut the Amazon side carries (utils/amzProfit.js, RETURNS_DIVISOR), and it is here
-for the same reason: `sales.profit` has to read as *what the owner keeps on a unit sold*, because that is the number he buys and prices
-on. Shopify returns are not booked as reversal rows the way Amazon's are, so on this channel the haircut is the ONLY place return cost
-is modelled at all — removing it would overstate what a Shopify sale keeps, with nothing else picking up the slack. Do not "simplify"
-it away. (docs/update-amazon-port.md §2.11 is the long version of this argument, measured.)
+WHY THE /1.2 IS HERE. It is the same haircut the Amazon side carries (utils/amzProfit.js, RETURNS_DIVISOR), and it is here for the same
+reason: sales.profit has to read as *what the owner keeps on a unit sold*, because that is the number he buys and prices on. Removing
+it would overstate what a Shopify sale keeps. Do not "simplify" it away without reading the paragraph below first.
+(docs/update-amazon-port.md 2.11 is the long version of that argument, measured.)
+
+!! THE PREMISE OF THAT ARGUMENT IS WRONG — MEASURED 2026-09-08 !! This block used to claim that "Shopify returns are not booked as
+reversal rows the way Amazon's are, so on this channel the haircut is the ONLY place return cost is modelled at all". THE DATA SAYS
+OTHERWISE. Over the 365 days to 2026-09-08 the SHP rows in sales carry 543 reversals (qty = -1), 363 of them with a returnsaleid,
+totalling -GBP 5,269 of profit: a 12.7% unit return rate, booked as rows exactly like Amazon's.
+
+WHAT THAT MEANS, STATED CAREFULLY. Return cost is modelled TWICE for any consumer that sums every row — once by the reversal rows
+themselves (-GBP 5,269) and again by this haircut, which suppresses roughly GBP 7,826 across the positive rows over the same period.
+Whole-book aggregates (Analytics > Sales, Ad Efficiency) therefore read LOW. Consumers that filter qty > 0 — routes/birk-stock.js
+(Kept) and the pricing WINNERS / LOSERS bars — see the haircut alone and are internally consistent, which is why this has never
+surfaced as an obvious error.
+
+THE FORMULA IS DELIBERATELY NOT CHANGED HERE. It is duplicated in the Python update_orders.py (see the banner above), sales.profit is
+STORED rather than computed on read, and every threshold on the platform is calibrated against the number as it stands today: the
+pricing WINNERS bar (GBP 2 average net profit), the Birkenstock Kept ladder, and utils/adFloor.js, which inverts this exact formula to
+place a price. Correcting the double-count is a real decision with a backfill behind it, not a tidy-up. Whoever takes it on: decide
+whether returns live in the ROWS or in the HAIRCUT — not both — and recalibrate the thresholds in the same pass.
 
 The estimates are deliberately conservative — owner's words: "purposely estimated high so that if I can make a profit with these, I am
 safe." Packing and Royal Mail are flat estimates left high on purpose. Read the output as a floor, not an accounting figure.
