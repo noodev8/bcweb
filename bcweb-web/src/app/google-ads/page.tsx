@@ -103,10 +103,22 @@ interface Criteria {
   // no single QtyFilter can express it. `SIZES LESS n` still exists and still means the raw count — the two are no longer the
   // same narrowing, which is why the button no longer writes one.
   thin: boolean;
-  // The Below-ad-floor button. Its own flag for the same reason as `thin`: it is a compound of price against a server-computed
-  // floor, which no QtyFilter can express. It is also the only narrowing on this screen that does NOT move with the window —
-  // the floor is fixed at 90 days by design (see utils/adFloor.js).
-  belowFloor: boolean;
+  // The ad-floor button. Its own flag for the same reason as `thin`: it is a compound of price against a server-computed floor,
+  // which no QtyFilter can express. It is also the only narrowing on this screen that does NOT move with the window — the floor is
+  // fixed at 90 days by design (see utils/adFloor.js).
+  //
+  // THREE STATES, NOT TWO. 'below' is the repair list. 'above' is the one the operator asked for by name: the styles already
+  // clearing their own ad cost, which is where a "what does good look like, do more of it" pass starts. Styles with NO floor
+  // (adFloor null — too little ad data to say) are in NEITHER list, never silently swept into 'above'.
+  floorSide: 'below' | 'above' | null;
+}
+
+// How far the price sits from the ad floor, in pounds. NEGATIVE = under it (losing money on the click), positive = clear of it.
+// null when the style has no usable floor, which the cell draws as a dash rather than a zero — "no evidence" and "exactly on the
+// floor" are different states and must not share a rendering.
+function floorGap(r: GoogleAdsStyleRow): number | null {
+  if (r.adFloor === null || r.price === null) return null;
+  return Math.round((r.price - r.adFloor) * 100) / 100;
 }
 
 function haystack(r: GoogleAdsStyleRow): string {
@@ -135,7 +147,10 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
     }
   }
   if (c.thin) out = out.filter((x) => isThinShelf(x.row));
-  if (c.belowFloor) out = out.filter((x) => x.row.belowAdFloor);
+  if (c.floorSide === 'below') out = out.filter((x) => x.row.belowAdFloor);
+  // Above = has a real floor AND clears it. The adFloor null test is what keeps the 127 styles with no usable ad data out of the
+  // winners list — absence of evidence is not a win.
+  if (c.floorSide === 'above') out = out.filter((x) => x.row.adFloor !== null && !x.row.belowAdFloor);
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign === c.bucket);
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   for (const f of c.qty) {
@@ -167,11 +182,14 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
 }
 
 // ---- Sorting --------------------------------------------------------------------------------------------------------------------
-type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'be';
+type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'be' | 'floor';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   // B/E ROAS sorts DESCENDING first: the hardest targets lead. Those are the styles no bid can rescue, and they are what a bucket
   // pass is looking for — the cheap ones to advertise are already found by sorting on Kept.
+  // vs floor sorts ASCENDING first: the deepest shortfall leads, because that is the biggest single repricing win on the screen.
+  // (Styles with no floor sort to Infinity, so they land at the far end either way and never head the list.)
   groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc', be: 'desc',
+  floor: 'asc',
 };
 function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): number | string {
   const win = r[w];
@@ -195,6 +213,10 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
     // NULL (no profit to defend) sorts as the WORST possible target, above any finite one, because that is what it is — no tROAS
     // rescues a style that loses money before ad spend. Infinity does the ranking; the cell draws a dash, not a number.
     case 'be': return win.breakEvenRoas === null ? Infinity : win.breakEvenRoas;
+    // The GAP, not the floor itself: £5 under on a £40 shoe and £5 under on a £90 shoe are the same size of problem to fix, and the
+    // floor on its own would just re-sort the list by price. No floor sorts to the far positive end — nothing to act on — so the
+    // default ascending sort puts the deepest shortfalls first, which is the order the repair list wants.
+    case 'floor': return floorGap(r) ?? Infinity;
   }
 }
 
@@ -400,7 +422,7 @@ export default function GoogleAdsPage() {
   const [steps, setSteps] = useState<FilterStep[]>([]);
   const [qty, setQty] = useState<QtyFilter[]>([]);
   const [thin, setThin] = useState(false);
-  const [belowFloor, setBelowFloor] = useState(false);
+  const [floorSide, setFloorSide] = useState<'below' | 'above' | null>(null);
   const [season, setSeason] = useState<Season | null>(null);
   const [bucket, setBucket] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -434,10 +456,10 @@ export default function GoogleAdsPage() {
   );
 
   const criteria: Criteria = useMemo(
-    () => ({ steps, qty, season, bucket, thin, belowFloor }),
-    [steps, qty, season, bucket, thin, belowFloor]
+    () => ({ steps, qty, season, bucket, thin, floorSide }),
+    [steps, qty, season, bucket, thin, floorSide]
   );
-  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || belowFloor || cut.size > 0;
+  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || floorSide !== null || cut.size > 0;
 
   const matched = useMemo(
     () => applyCriteria(indexed, criteria, win, campaignNames).map((x) => x.row),
@@ -566,8 +588,10 @@ export default function GoogleAdsPage() {
     clearSelection();
   }, [clearSelection]);
 
-  const onBelowFloor = useCallback(() => {
-    setBelowFloor((v) => !v);
+  // Cycles off -> below -> above -> off. One button rather than two because the two lists are mutually exclusive views of the same
+  // measure, and a pair of toggles would let the operator select both and get an empty grid with nothing explaining why.
+  const onFloorSide = useCallback(() => {
+    setFloorSide((v) => (v === null ? 'below' : v === 'below' ? 'above' : null));
     clearSelection();
   }, [clearSelection]);
 
@@ -772,16 +796,24 @@ export default function GoogleAdsPage() {
               window switch would otherwise look broken. */}
           <button
             type="button"
-            onClick={onBelowFloor}
-            aria-pressed={belowFloor}
-            title="Only styles priced below their ad floor — the price at which the unit's profit covers what a customer costs to buy (Google spend / units sold). Always measured over 90 days, so this one does not follow the window switch. Advisory: nothing blocks these prices."
+            onClick={onFloorSide}
+            aria-pressed={floorSide !== null}
+            title={
+              floorSide === null
+                ? 'Show only styles priced BELOW their ad floor — the price at which a unit’s profit covers what a customer costs to buy (Google spend / units sold). Click again for the styles above it. Always 90 days, so it does not follow the window switch.'
+                : floorSide === 'below'
+                  ? 'Showing styles priced BELOW their ad floor — the repair list. Click for the ones ABOVE it.'
+                  : 'Showing styles ABOVE their ad floor — already paying for their own advertising. Styles with too little ad data to judge are in neither list. Click to clear.'
+            }
             className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium ${
-              belowFloor
+              floorSide === 'below'
                 ? 'border-amber-400 bg-amber-50 text-amber-800'
-                : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                : floorSide === 'above'
+                  ? 'border-green-400 bg-green-50 text-green-800'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            Below ad floor
+            {floorSide === 'above' ? 'Above ad floor' : 'Below ad floor'}
           </button>
           <button
             type="button"
@@ -898,6 +930,7 @@ export default function GoogleAdsPage() {
               <col className="w-20" />
               {SHOW_KEPT_PER_SALE && <col className="w-24" />}
               <col className="w-24" />
+              <col className="w-20" />
               <col className="w-8" />
             </colgroup>
             <thead>
@@ -933,6 +966,16 @@ export default function GoogleAdsPage() {
                   {...{ sortKey, sortDir, onSort }}
                   title="Break-even ROAS — the revenue ROAS this style must earn before its advertising pays for itself. Ours, not Google's: revenue divided by net profit. Set a bucket's tROAS from it."
                 />
+                {/* Sits beside B/E ROAS because it is the same kind of thing — a property of the product's economics rather than an
+                    outcome of the window — and because the two answer the same question in the two units the operator thinks in: a
+                    ROAS target to give Google, and a price to type into Shopify. Paid for out of the Style column's slack, which had
+                    ~386px at the table's minimum width once Conv. and Kept/sale were switched off; the 992px cap is unmoved. */}
+                <Th
+                  label="vs floor"
+                  col="floor"
+                  {...{ sortKey, sortDir, onSort }}
+                  title="How far the price is from the ad floor. Negative means the price is under it, so the advertising costs more than the unit makes. Fixed 90-day basis — it does not follow the window switch. Advisory: nothing blocks these prices."
+                />
                 <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2" />
               </tr>
             </thead>
@@ -950,6 +993,8 @@ export default function GoogleAdsPage() {
                 const isSel = selected.has(r.groupid);
                 const perSale = keptPerSale(w);
                 const conv = convPct(r, win);
+                // Not windowed — the floor is a 90-day property of the style, so this is the same number whichever window is showing.
+                const gap = floorGap(r);
                 // NO "Google says …" LINE HERE (owner, 2026-09-06). The row used to flag any style whose last Google-reported label
                 // differed from ours, as a feed-health warning. It cannot actually be that: our copy of Google's view is only as
                 // fresh as the last import, so the flag really said "the ad data I hold predates this assignment" — true of every
@@ -1065,6 +1110,27 @@ export default function GoogleAdsPage() {
                       }
                     >
                       {w.breakEvenRoas === null ? '—' : `${w.breakEvenRoas.toFixed(1)}x`}
+                    </td>
+                    {/* vs floor. The SIGNED GAP, so the size of the problem reads without opening the style: the operator asked to
+                        see how far off the price is before clicking through to Shopify. A dash means no usable floor — never 0,
+                        which would claim the price sits exactly on it. */}
+                    <td
+                      className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
+                        gap === null ? 'text-slate-400'
+                          : gap < 0 ? 'font-medium text-amber-700'
+                          : 'text-green-700'
+                      }`}
+                      title={
+                        gap === null
+                          ? 'Not enough ad data in the last 90 days to place a floor for this style'
+                          : `Ad floor £${r.adFloor!.toFixed(2)}${r.adFloorConfidence === 'segment' ? ' (estimated from this style’s segment)' : ''} — a customer cost £${r.adCostPerSale!.toFixed(2)}. ` +
+                            (gap < 0
+                              ? `Priced £${Math.abs(gap).toFixed(2)} under it, so the ads cost more than the unit makes.`
+                              : `Priced £${gap.toFixed(2)} clear of it.`)
+                      }
+                    >
+                      {gap === null ? '—' : `${gap < 0 ? '−' : '+'}£${Math.abs(gap).toFixed(2)}`}
+                      {gap !== null && r.adFloorConfidence === 'segment' && <span className="text-slate-400">*</span>}
                     </td>
                     <td className="border-b border-slate-100 px-1 py-1.5 text-right">
                       <button
