@@ -25,8 +25,10 @@ the ON ORDER batch view uses), so the order can be tuned here without bouncing t
 WHOLE-STYLE REMOVAL sits on the style heading ("Remove style"). Checking real availability at this stage often turns up a style the
 supplier has NOTHING of, in any size — and the only way to bin it used to be "−" per size, per unit. One click archives every unit
 under the heading via POST /order-status-archive. No undo strip (owner): the archive table is the backstop. It IS two-step, though —
-removing a style closes the list up and lands the next style's button under a resting cursor, which nearly cost the owner the wrong
-style. Arming, not asking, is the fix: a button that arrives under the pointer is un-armed, so one stray click can't remove anything.
+removing a style used to close the list up and land the next style's button under a resting cursor, which nearly cost the owner the
+wrong style. Arming, not asking, is the fix: a button that arrives under the pointer is un-armed, so one stray click can't remove
+anything. The card ALSO stays put afterwards, struck through (see the zeroed-line note below — a removed style is just all its rows at
+0 at once), so nothing slides under the cursor in the first place.
 
 A LINE WALKED DOWN TO 0 STAYS ON SCREEN (owner, 2026-07-22: the disappearance "feels jerky"). The last "−" deletes the line's final
 orderstatus row, so it drops out of the next fetch and everything below jumps up under the cursor. Instead the row is kept, greyed, at
@@ -237,14 +239,19 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
     const res = await archiveOrderStatus(ordernums);
     setBusy(false); setRemovingKey(null);
     if (res.success) {
-      // The whole style is leaving the sheet, so nothing here should hold a place at 0, and no stale "unticked" state should survive
-      // to surprise the operator if the same SKU is added again later.
-      const codes = new Set(style.rows.map((r) => r.code));
-      codes.forEach((code) => forget(code));
+      // The style's rows are absent from the next fetch, so the card would vanish and every card under it would jump up into a cursor
+      // that hasn't moved — the same jerkiness "-" to zero used to cause. So each row it held becomes a ghost at 0
+      // (lib/zeroedLines.ts): the card holds its place, struck through and out of the totals, the CSV and the placement, and goes for
+      // good on the next full page load. No stale "unticked" state survives either, or the same SKU would come back excluded later.
       setExcluded((prev) => {
         const next = new Set(prev);
-        codes.forEach((code) => next.delete(code));
+        style.rows.forEach((r) => next.delete(r.code));
         return next;
+      });
+      style.rows.forEach((r) => {
+        if (r.qty === 0) return;   // already a ghost: it keeps the index and the ordernums it was remembered with
+        const index = display.findIndex((d) => d.code === r.code);
+        remember(r.code, { payload: { ...r, qty: 0, line_cost: 0 }, index: Math.max(index, 0), removed: r.ordernums });
       });
       await onChanged();
     }
@@ -382,21 +389,31 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
         {styles.map((s) => {
           const styleUnits = s.rows.reduce((n, r) => n + r.qty, 0);
           const styleCost = s.rows.reduce((n, r) => n + (r.line_cost || 0), 0);
+          // Nothing left under the heading: either "Remove style" took it, or every size was walked to 0 one at a time. Same state
+          // either way, so it reads the same way -- struck through, greyed, holding its place until the next page load.
+          const gone = styleUnits === 0;
           return (
-            <div key={s.key} className="rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div key={s.key} className={'rounded-lg border border-slate-200 shadow-sm ' + (gone ? 'bg-slate-50' : 'bg-white')}>
               <div className="flex items-baseline gap-3 border-b border-slate-100 px-4 py-2.5">
-                <span className="flex-1 truncate text-sm font-medium text-slate-800">
+                <span className={'flex-1 truncate text-sm font-medium ' + (gone ? 'text-slate-400 line-through' : 'text-slate-800')}>
                   {s.title || <span className="text-slate-400">{s.groupid}</span>}
                 </span>
-                <span className="text-xs text-slate-400">{styleUnits} unit{styleUnits === 1 ? '' : 's'}</span>
-                <span className="text-sm font-medium text-slate-600">{money(styleCost)}</span>
+                {!gone && <span className="text-xs text-slate-400">{styleUnits} unit{styleUnits === 1 ? '' : 's'}</span>}
+                <span className={'text-sm font-medium ' + (gone ? 'text-slate-300' : 'text-slate-600')}>{gone ? '—' : money(styleCost)}</span>
                 {/* Whole-style removal — for "the supplier has none of it, in any size". Deliberately quiet and set apart from the row
                     controls: it's a different kind of act from a tick (which keeps the line for next time) or a "−" (one unit).
                     Two-step: the first click arms it and states what will go, the second does it. Moving the pointer off disarms, so
                     a button that has just slid under a resting cursor can't stay armed behind your back. */}
+                {/* Removed: the button goes rather than sitting there disabled, and a chip says what happened. The sizes below keep
+                    their own "+", so a mis-click is still recoverable one line at a time. */}
+                {gone ? (
+                  <span className="whitespace-nowrap rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-400">
+                    removed
+                  </span>
+                ) : (
                 <button
                   type="button"
-                  disabled={busy || styleUnits === 0}
+                  disabled={busy}
                   onClick={() => (armedKey === s.key ? doRemoveStyle(s) : arm(s.key))}
                   onMouseLeave={() => { if (armedKey === s.key) disarm(); }}
                   title={`Remove all ${styleUnits} unit${styleUnits === 1 ? '' : 's'} of this style from the order`}
@@ -413,6 +430,7 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
                       ? `Remove all ${styleUnits}? Click again`
                       : 'Remove style'}
                 </button>
+                )}
               </div>
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
