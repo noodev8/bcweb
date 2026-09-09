@@ -143,6 +143,9 @@ export interface AmazonOrderRow {
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
 }
+// Screen-level, not per row: Amazon order lines queued from this screen that nobody has actually placed with a supplier yet
+// (orderstatus, ordertype 3, arrived=0, orderdate=''). Drives the "waiting to be placed" indicator on /amazon-order.
+export interface AmazonOrderToPlace { units: number; skus: number; suppliers: number; oldest_days: number | null; }
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
@@ -323,9 +326,19 @@ export function getAmzAll(segment: string) {
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {
-  return request<{ count: number; rows: AmazonOrderRow[] }>(
+  return request<{ count: number; rows: AmazonOrderRow[]; to_place: AmazonOrderToPlace }>(
     { url: '/amazon-order-list', method: 'GET' },
-    (b) => ({ count: b.count ?? (b.rows || []).length, rows: b.rows || [] })
+    (b) => ({
+      count: b.count ?? (b.rows || []).length,
+      rows: b.rows || [],
+      // Absent (an older server) reads as "nothing waiting" rather than NaN — the indicator then simply doesn't appear.
+      to_place: {
+        units: Number(b.to_place?.units) || 0,
+        skus: Number(b.to_place?.skus) || 0,
+        suppliers: Number(b.to_place?.suppliers) || 0,
+        oldest_days: b.to_place?.oldest_days === null || b.to_place?.oldest_days === undefined ? null : Number(b.to_place.oldest_days),
+      },
+    })
   );
 }
 

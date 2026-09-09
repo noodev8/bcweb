@@ -54,6 +54,14 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          the web page's optional "Sold in 6mo" toggle uses this to tell a genuinely recent sale apart from a stale one. Null when
          the SKU has never sold on Amazon.
 
+         `to_place` (a single object beside `rows`, not per row) is the screen-level "you have queued orders nobody has placed yet"
+         figure: Amazon orderstatus lines (ordertype=3, arrived=0) still sitting at orderdate='' — chosen here, but never turned into
+         an actual supplier order on Order Status. Confirm Basket writes exactly those rows and then this screen says nothing more
+         about them, so they can sit for weeks unnoticed while `ord` quietly counts them as incoming stock (owner, 2026-09-09). It is
+         deliberately its OWN aggregate over orderstatus rather than a sum of the row set: a queued line whose SKU has since left
+         amzfeed would be invisible in `rows`, and the one thing this figure must never do is under-report. `oldest_days` is the age
+         of the longest-waiting line, which is what makes it worth acting on rather than just true.
+
          Order and Pick QUANTITIES have no server field — they are a session-only scratchpad the web page keeps in browser state,
          not persisted. What IS persisted is what the operator CONFIRMS: an Order becomes orderstatus rows (visible here through
          `ord`), a Pick becomes flagged shelf rows (visible here through pick_pending).
@@ -71,6 +79,7 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 522,
+  "to_place": { "units": 14, "skus": 6, "suppliers": 2, "oldest_days": 9 },   // Amazon lines queued here but not yet placed
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
@@ -92,6 +101,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { notPlaced } = require('../utils/orderStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -200,7 +210,25 @@ router.get('/', async (req, res) => {
       };
     });
 
-    return res.json({ return_code: 'SUCCESS', count: rows.length, rows });
+    // The un-placed backlog, as its own aggregate — see `to_place` in the header for why it isn't derived from `rows`. Cheap: the
+    // same narrow orderstatus scan the `ord` CTE above already does, filtered one step further.
+    const pending = await query(`
+      SELECT COUNT(*) AS units,
+             COUNT(DISTINCT o.shopifysku) AS skus,
+             COUNT(DISTINCT o.supplier) AS suppliers,
+             MAX(CURRENT_DATE - o.createddate) AS oldest_days
+      FROM orderstatus o
+      WHERE o.arrived = 0 AND o.ordertype = 3 AND ${notPlaced()}
+    `);
+    const p = pending.rows[0] || {};
+    const toPlace = {
+      units: Number(p.units) || 0,
+      skus: Number(p.skus) || 0,
+      suppliers: Number(p.suppliers) || 0,
+      oldest_days: p.oldest_days === null || p.oldest_days === undefined ? null : Number(p.oldest_days),
+    };
+
+    return res.json({ return_code: 'SUCCESS', count: rows.length, to_place: toPlace, rows });
   } catch (err) {
     logger.error('[amazon-order-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Amazon Order list' });

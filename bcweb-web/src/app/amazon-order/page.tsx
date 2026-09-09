@@ -112,6 +112,14 @@ LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recy
       hands doing the editing. The row currently FOCUSED is exempt from the filter as well, regardless of what it reads
       (focusedOrderCode).
 
+UNPLACED BACKLOG: a small indicator in the panel's bottom strip — "14 units waiting to be placed" — whenever Amazon orderstatus
+      lines confirmed from this screen are still sitting un-placed (orderdate='', ordertype 3, arrived=0; the server's `to_place`
+      aggregate). Confirm Basket writes those rows and then this screen goes quiet about them, while the FBA Total column quietly
+      counts them as stock that's coming — so an order nobody ever placed with the supplier looks exactly like one that's on its way
+      (owner, 2026-09-09). It carries the age of the oldest line once that's over 3 days, and turns amber there, because "how long
+      has this been sitting" is the part that decides whether to act. It links to Order Status's TO PLACE queue in a NEW TAB: the
+      basket on this screen is unsaved scratchpad plus a browser draft, and going to look must not cost you the sitting.
+
 RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE sold at some point, just not within the last 6
       months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
       null, excluded): this is stock with a track record that's gone quiet, worth a fresh look (reprice, re-list, bundle) rather
@@ -126,7 +134,7 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
-import { getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow } from '@/lib/api';
+import { getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow, AmazonOrderToPlace } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
@@ -342,6 +350,11 @@ export default function AmazonOrderHome() {
     () => getAmazonOrderList(),
   );
   const rows: AmazonOrderRow[] = data?.rows ?? NO_ROWS;
+  // Amazon lines already queued to Order Status and still sitting un-placed — see the UNPLACED BACKLOG note in the header block.
+  const toPlace: AmazonOrderToPlace | null = data?.to_place ?? null;
+  // 3 days is the line between "sent it this morning" and "this has been sitting". Under it the indicator is quiet slate and says
+  // no age at all — a "0d" on the day you confirmed the basket reads as a problem where there isn't one.
+  const stale = !!toPlace && toPlace.oldest_days !== null && toPlace.oldest_days >= 3;
   const error = loadError?.message ?? null;
 
   // Committed steps — each Enter/Add stacks another one; multiple of the same kind AND together.
@@ -1547,11 +1560,38 @@ export default function AmazonOrderHome() {
           </div>
         </div>
 
-        {(orderError || sendNote) && (
+        {(orderError || sendNote || (toPlace && toPlace.units > 0)) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
             {orderError && <span className="text-red-600">{orderError}</span>}
             {/* A shortfall is amber, not red: the send worked, the shelf just had less on it than the screen thought. */}
             {sendNote && <span className="text-amber-600">{sendNote}</span>}
+            {/* UNPLACED BACKLOG — see the note above the component. Sits at the end of the strip the send already reports into, so
+                it lands where the eye goes after a Confirm and doesn't cost a row of its own when there's nothing waiting. A link,
+                not a button: placing the order is a different screen and a different sitting, so it opens in a NEW TAB (owner) —
+                a basket half-typed here must survive going to look. Goes straight to ?stage=place, the TO PLACE queue itself. */}
+            {toPlace && toPlace.units > 0 && (
+              <a
+                href="/order-status?stage=place"
+                target="_blank"
+                rel="noopener noreferrer"
+                title={
+                  `${toPlace.units} Amazon unit${toPlace.units === 1 ? '' : 's'} across ${toPlace.skus} SKU${toPlace.skus === 1 ? '' : 's'}`
+                  + ` and ${toPlace.suppliers} supplier${toPlace.suppliers === 1 ? '' : 's'} have been confirmed here but not yet ordered`
+                  + ` from the supplier. Opens Order Status (TO PLACE) in a new tab.`
+                }
+                className={
+                  'ml-auto flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium hover:underline '
+                  + (stale ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500')
+                }
+              >
+                <ClockIcon className="h-3.5 w-3.5" />
+                {toPlace.units} unit{toPlace.units === 1 ? '' : 's'} waiting to be placed
+                {/* The age is what makes it worth a click rather than just true — but only once it's actually old: on the day it
+                    was sent, "0d" would read as a problem where there isn't one yet. */}
+                {stale && ` · oldest ${toPlace.oldest_days}d`}
+                <span aria-hidden>&#8599;</span>
+              </a>
+            )}
           </div>
         )}
       </div>
