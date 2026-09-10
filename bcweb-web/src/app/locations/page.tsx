@@ -11,8 +11,9 @@ with a style already in hand, so it only ever has to offer the racks that style 
 hands is the opposite errand — the shelf is the thing you know and the stock is what you are looking up — and the two need different
 first screens even though they end up writing the same `localstock` rows.
 
-SCAFFOLD ONLY (2026-09-10, owner). The tile and the route exist so the module has a door; the logic is the next job. When it lands it
-belongs on the two sources utils/locations.js already separates — the `location` table for the racks that EXIST (including the empty
+UI FIRST (2026-09-10, owner). The screen is built and worked-through; the routes behind it are the next job, so LocationsBoard holds
+its racks in component state off a placeholder fixture and says so on its face. When the data lands it comes off the two sources
+utils/locations.js already separates — the `location` table for the racks that EXIST (including the empty
 ones, which is exactly where a box gets put), `localstock` for what is currently ON them (`ordernum='#FREE' AND COALESCE(deleted,0)=0
 AND qty>0`, per the CLAUDE.md landmine — never skusummary.stockvariants). Writes go through withTransaction like every other write,
 and 'C3-Amazon' stays the staging bay that Goods In and Pick already treat as special rather than a shelf like any other.
@@ -20,17 +21,12 @@ and 'C3-Amazon' stays the staging bay that Goods In and Pick already treat as sp
 */
 
 import AppShell from '@/components/AppShell';
+import LocationsBoard from '@/components/LocationsBoard';
 
 export default function LocationsPage() {
   return (
     <AppShell title="Locations" backHref="/dashboard" backLabel="Dashboard">
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-        <p className="font-semibold text-slate-900">Not built yet.</p>
-        <p className="mt-2">
-          This screen will start from a shelf rather than a product: pick a rack, see every unit on it, and add or remove stock
-          without going through a style first.
-        </p>
-      </div>
+      <LocationsBoard />
     </AppShell>
   );
 }
