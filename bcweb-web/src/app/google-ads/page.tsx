@@ -1035,7 +1035,7 @@ export default function GoogleAdsPage() {
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5">
                       {/* Drill disabled (owner, 2026-09-06) in favour of freely selecting rows — not removed, see setDrill above.
-                          Only the icon opens the Shopify price setter (NEW TAB, ad-payback's convention) — the rest of this cell,
+                          Only the icon opens the Shopify price setter (NEW TAB, the GoogleAdsDrill NavPill convention) — the rest of this cell,
                           including the name, is just row text now, because a link over the whole block was too big a target and
                           ate clicks meant for selecting the row. stopPropagation on the icon so it doesn't also toggle selection. */}
                       <div className="w-full text-left">

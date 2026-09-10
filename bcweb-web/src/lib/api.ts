@@ -2316,43 +2316,100 @@ export function getAdEfficiency(months?: number) {
   );
 }
 
-// ---- Reports: ad payback -----------------------------------------------------------------------------------------------------------
-// What SOLD on one day, and whether each of those styles is paying for its advertising. The design rule, and the reason this is not
-// a "today" window on the Google Ads screen: THE SALE IS THE DAY, THE VERDICT IS TRAILING. `units`/`revenue`/`profit` are ours and
-// exact for the chosen day; `kept30` is a 30-day window because same-day ad spend does not exist yet (part-day import) and would be
-// the wrong denominator anyway (a sale today can come from a click three days ago). Returns are not listed — they are already
-// carried in the profit figures via the returns haircut. Route header has the full reasoning.
-export interface AdPaybackRow {
-  groupid: string;
-  title: string;
-  units: number;                  // net units sold on the day; always > 0
-  revenue: number;                // signed — a same-day refund on the same style is taken off
-  profit: number;                 // the day's take on this style
-  spend30: number;                // trailing Google spend over [verdictFrom, verdictTo]
-  profit30: number;               // trailing Shopify net profit over the SAME days
-  kept30: number;                 // profit30 - spend30. Negative = not paying for itself
-  sizesListed: number;            // the full size run (skumap); 0 means the style is not in skumap at all — a data gap
-  sizesInStock: number;           // how many are buyable TODAY. Separates "pause it" (empty shelf) from "reprice it" (thin margin)
-  nextReview: string | null;      // Pricing's review cooldown, 'YYYY-MM-DD'. Surfaced so the drill link cannot silently re-price
-}
-export interface AdPayback {
+// ---- Reports: ad daily -------------------------------------------------------------------------------------------------------
+// One row per day: what Google spent, what Shopify sold. Replaced Ad Payback (2026-09-10) — its per-style rows and trailing 30-day
+// columns put two time periods on one row, which is what made it unexplainable to staff.
+//
+// TWO RULES CARRY OVER FROM THE ROUTE HEADER AND THE UI MUST RESPECT BOTH:
+//   1. A ROW'S `kept` IS ALWAYS A NUMBER, including on a no-ads day, where it equals profit — with nothing spent, we kept all of
+//      it. It was briefly nulled there and that broke the column's reconciliation with its own total. The `adsRan` chip and the
+//      £0.00 spend cell supply the context instead. Daily kept IS noisy (units are a small count against smooth spend), so a row's
+//      kept is never coloured: colour is a verdict and only the total earns one.
+//   2. `adsRan` FALSE IS NOT A FREE DAY. A deliberate pause and a day of free advertising both read £0.00 in a spend column. Read
+//      the totals against `daysWithAds`, never `days`.
+// The series ends at the last COMPLETE day of ad data, not today — `adDaysOld` says how far back that necessarily is.
+export interface AdDailyRow {
   day: string;                    // 'YYYY-MM-DD'
-  dayLabel: string;               // 'Sun 06 Sep 2026'
-  isToday: boolean;               // the day is still running — its take is not final
-  verdictFrom: string;            // the trailing 30 days both halves of the verdict cover
-  verdictTo: string;              // = LEAST(day, asOf) — the newest COMPLETE day of ad data
-  adDaysOld: number;              // day - verdictTo. 0 = the ad feed reaches the chosen day
-  totals: { styles: number; units: number; revenue: number; profit: number };
-  rows: AdPaybackRow[];
+  label: string;                  // 'Sun 06 Sep'
+  spend: number;                  // Google cost for the day
+  clicks: number;                 // beside costPerSale it separates "no traffic" from "traffic that didn't convert"
+  spendOnSellers: number;         // of the day's spend, what went to styles that sold THAT DAY (same-day, returns excluded)
+  spendOnNonSellers: number;      // and what did not. The two sum to `spend`
+  pctOnSellers: number | null;    // share of the day's spend that reached a style which SOLD that day. Higher is better and the
+                                  // owner tracks it for growth — but 100% is unreachable (~200 styles charged, 3-13 sell); the
+                                  // measured ceiling to 9 Sep 2026 was 41%, median 19%. NULL when nothing was spent.
+  stylesSold: number;             // charged styles that sold that day
+  stylesCharged: number;          // styles that drew any cost that day
+  units: number;                  // units SOLD. Returns are excluded entirely (qty > 0), not netted off — a refund lands on the
+                                  // day it came back, so it would be charged to advertising that ran weeks later
+  revenue: number;                // SUM(soldprice * qty). Deliberately will NOT match analytics-sales, which includes returns
+  profit: number;                 // sales.profit — net of fees, packing, postage and returns, but BEFORE ad spend
+  kept: number;                   // profit - spend. Equals profit on a no-ads day — see rule 1 above
+  costPerSale: number | null;     // spend / units. NULL when nothing sold: undefined, not zero — a day that spent £18 for no sale
+                                  // must never render as the cheapest day on the screen. Render a dash.
+  adsRan: boolean;                // false = no impressions at all that day
 }
-export function getAdPayback(day?: string) {
-  return request<AdPayback>(
-    { url: '/analytics-ad-payback', method: 'GET', params: day ? { day } : undefined },
+export interface AdDailyTotals {
+  days: number;
+  daysWithAds: number;            // the honest denominator when a pause falls inside the period
+  spend: number;
+  clicks: number;
+  spendOnSellers: number;
+  spendOnNonSellers: number;
+  pctOnSellers: number | null;
+  units: number;
+  revenue: number;
+  profit: number;
+  kept: number;                   // profit - spend. The verdict, at the only grain that supports one
+  costPerSale: number | null;     // spend / units across the whole window
+}
+export interface AdDaily {
+  from: string;                   // the series, inclusive
+  to: string;                     // = the newest COMPLETE day of ad data
+  adDaysOld: number;              // CURRENT_DATE - to. 0 = the series reaches today
+  totals: AdDailyTotals;
+  rows: AdDailyRow[];             // newest first
+}
+export function getAdDaily(days?: number) {
+  return request<AdDaily>(
+    { url: '/analytics-ad-daily', method: 'GET', params: days ? { days } : undefined },
     (b) => ({
-      day: b.day, dayLabel: b.dayLabel, isToday: Boolean(b.isToday),
-      verdictFrom: b.verdictFrom, verdictTo: b.verdictTo, adDaysOld: Number(b.adDaysOld) || 0,
-      totals: b.totals || { styles: 0, units: 0, revenue: 0, profit: 0 },
-      rows: b.rows || [],
+      from: b.from, to: b.to, adDaysOld: Number(b.adDaysOld) || 0,
+      // Every money/count field is coerced rather than passed through. pg returns numerics as STRINGS, and a field the server has
+      // not shipped yet (an API running an older build than the web app — the usual state during a dev restart) arrives undefined
+      // and formats as "£NaN" on screen. `|| 0` turns both into a figure that is at least readable and obviously wrong.
+      totals: {
+        days: Number(b.totals?.days) || 0,
+        daysWithAds: Number(b.totals?.daysWithAds) || 0,
+        spend: Number(b.totals?.spend) || 0,
+        clicks: Number(b.totals?.clicks) || 0,
+        spendOnSellers: Number(b.totals?.spendOnSellers) || 0,
+        spendOnNonSellers: Number(b.totals?.spendOnNonSellers) || 0,
+        pctOnSellers: b.totals?.pctOnSellers === null || b.totals?.pctOnSellers === undefined ? null : Number(b.totals.pctOnSellers),
+        units: Number(b.totals?.units) || 0,
+        revenue: Number(b.totals?.revenue) || 0,
+        profit: Number(b.totals?.profit) || 0,
+        kept: Number(b.totals?.kept) || 0,
+        costPerSale: b.totals?.costPerSale === null || b.totals?.costPerSale === undefined ? null : Number(b.totals.costPerSale),
+      },
+      rows: (b.rows || []).map((r: Record<string, unknown>) => ({
+        day: String(r.day ?? ''),
+        label: String(r.label ?? ''),
+        spend: Number(r.spend) || 0,
+        clicks: Number(r.clicks) || 0,
+        spendOnSellers: Number(r.spendOnSellers) || 0,
+        spendOnNonSellers: Number(r.spendOnNonSellers) || 0,
+        pctOnSellers: r.pctOnSellers === null || r.pctOnSellers === undefined ? null : Number(r.pctOnSellers),
+        stylesSold: Number(r.stylesSold) || 0,
+        stylesCharged: Number(r.stylesCharged) || 0,
+        units: Number(r.units) || 0,
+        revenue: Number(r.revenue) || 0,
+        profit: Number(r.profit) || 0,
+        kept: Number(r.kept) || 0,
+        // null is meaningful here (nothing sold) and must survive the coercion that protects the rest of the row from NaN.
+        costPerSale: r.costPerSale === null || r.costPerSale === undefined ? null : Number(r.costPerSale),
+        adsRan: Boolean(r.adsRan),
+      })),
     })
   );
 }
