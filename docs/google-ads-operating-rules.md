@@ -40,8 +40,84 @@ being asked — "do units hold when spend falls?" is about the aggregate relatio
 lever caused the fall — but it does mean the target change cannot be scored on its own, and a second
 target move should be made alone if one is wanted.
 
+### ADS WENT FULLY OFF on 2026-09-07 — the target experiment is suspended, a better one replaced it
+
+The campaign was **switched off entirely** on Mon 2026-09-07, the same day as the OUT pass and the
+850% target raise. That kills the target experiment above (a target cannot be scored on days the
+campaign did not run) but hands over a **cleaner** answer to the same question: a real blackout is a
+far better dependency test than a spend reduction.
+
+⚠ **BCWEB HAS NO RECORD OF THE OFF SWITCH.** `skusummary.googlecampaign` still reads 149 `standard`
+/ 142 `pause` — those are OUR bucket labels, and the on/off lever lives in the Google Ads account.
+Do not read the bucket counts as evidence the campaign is running. Nothing in this repo can tell you.
+
+**Read the blackout with the SHOPIFY/AMAZON UNIT RATIO, not with Shopify units.** Amazon is the
+control: same stock, same brand, same season, no Google Shopping. Anything that moves both channels
+(weather, the end of sandal season) divides out; only what is specific to Shopify survives.
+
+| Week | Shopify/day | Amazon/day | Ratio |
+|---|---|---|---|
+| Aug 10–16 | 23.0 | 23.0 | 1.00 |
+| Aug 17–23 | 15.0 | 21.9 | 0.69 |
+| Aug 24–30 | 9.9 | 22.1 | 0.45 |
+| Aug 31–Sep 6 | 7.4 | 18.9 | 0.39 |
+| **Sep 7–8 (ads off)** | **3.0** | **16.5** | **0.18** |
+
+**The ratio was already falling steeply before the ads went off** — that is the trap in this data. A
+raw "Shopify halved" reading is mostly the seasonal slide that was running through all of August.
+The blackout's own contribution is the step from 0.39 to 0.18.
+
+**Do not call it yet: 0.18 is two days and n=6 units.** Sep 2025 shows the ratio decaying seasonally
+anyway (1.17 → 0.71 → 0.72 → **0.33** → 0.61 across September) and reaching 0.33 unaided, so a single
+low reading is inside the historical noise. 0.18 is below anything in that series, which is why it
+looks real — but a fortnight is the minimum honest read, and the review date above still applies.
+
+**What the sold styles say — and why it does NOT answer the question.** Of the 8 Shopify units sold
+in the blackout, 7 were styles that had been advertised, 5 of them at £20–46 of 30d spend. Tempting to
+read as "ads are not needed for these". It is not: the mix by ad-spend band is **unchanged** by the
+blackout (63/25/13 off vs 64/33/3 the week before, and ~66/32/2 all August). Advertised styles are
+simply the popular styles, so the mix cannot separate advertising from demand. **The volume-against-
+control test is the only one that carries information here.** Don't rebuild the mix cut.
+
 Aug-on-Aug for context — the reason the target moved at all: units +77% (237 → 420) and profit +£2,625,
 but ad spend +£3,164, so **Kept fell £900 → £361**. Growth and cash were pulling opposite ways.
+
+### The winter plan (owner, 2026-09-09) — and the one number in it that the data contradicts
+
+The intent: stay off through the tail of the sandal season, bank the saved spend, then restart the main
+campaign at **£20/day instead of £200/day** and work the winter lines through to spring. The shape of
+that is well supported — the seasonal slide is real and it was visible in Sep 2025 too.
+
+**£20/day is not "back to last winter", it is DOUBLE it.** Worth knowing before it is set. Actual
+delivered spend Nov 25 – Feb 26 was **£9–13/day** (£341 / £265 / £305 / £374 a month) — and that ran
+positive every month. The "£558/month off-season" figure quoted in the baseline above is a Sep–Feb
+average pulled up by Sep (£28/day) and Oct (£39/day); it is not the deep-winter rate. So £20/day is a
+deliberate step up on a period that already worked, not a retreat to it. Fine if intended — but it is
+roughly £600/month, and the winter book it is buying into is small.
+
+**⚠ "Push the boots" points at the wrong category. Shopify's winter seller is SLIPPERS.**
+Nov 25 – Feb 26 on Shopify, by category:
+
+| | Units | Profit |
+|---|---|---|
+| Sandals (still, in deep winter) | 159 | £1,663 |
+| Shoes / trainers | 91 | £578 |
+| Boots | **10** | **£132** |
+
+Boots did **ten units in four months**. Inside the top winter sellers, **six of the top fourteen styles
+were Birkenstock Zermatt slippers** — 52 units, £572 profit, roughly 5x the entire boot category. The
+stock backs the same conclusion: **264 slipper units across 12 styles in hand today, against 70 boot
+units** (and boots are ~3% of the 2,157 units held). Sandals outsell boots 16:1 even in November.
+
+So the seasonal pivot is right and the target is wrong. **The winter campaign should carry the Zermatt
+slippers and the winter-surviving sandals/trainers, not a boot push.** Boots are a 15-style, thin-stock
+corner that has never earned advertising here.
+
+**Restart bidding — a LEANING, not a decision (owner, 2026-09-09).** The relaunched campaign will
+*probably* open on **Maximise conversion value** rather than Maximise clicks, on the reasoning that the
+account carries enough conversion history to bid on. **The owner has explicitly reserved the right to
+change their mind, so do not treat this as settled and do not build anything that assumes it.** If the
+campaign comes back on a different strategy, that is a change of plan, not a mistake to flag.
 
 ---
 
