@@ -207,6 +207,7 @@ app.use('/locations-racks', require('./routes/locations-racks'));     // every r
 app.use('/locations-stock', require('./routes/locations-stock'));     // what is on ONE rack, collapsed by code + state
 app.use('/locations-empty', require('./routes/locations-empty'));     // WRITES: soft-delete every unit on one rack, picked and Amazon included
 app.use('/locations-find-sku', require('./routes/locations-find-sku')); // resolve a scanned barcode (or typed SKU) to a code, before the add
+app.use('/locations-transfer', require('./routes/locations-transfer')); // WRITES: one shelf to another, keeping ordernum/allocated — a move, not a remove+add
 
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the

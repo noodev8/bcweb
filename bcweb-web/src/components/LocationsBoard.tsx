@@ -57,9 +57,13 @@ EVERY BUTTON ON THIS SCREEN NOW WRITES, and there is no client-side overlay left
   - putting a shoe on     POST /locations-find-sku then /inv-adjust with EMPTY ids — resolve the scan, then place it. In that order,
                           so an unreadable barcode is caught before anything is written and the confirmation can name the shoe.
   - Empty rack            POST /locations-empty  every unit off in one transaction, soft-deleted.
-TRANSFER IS THE EXCEPTION AND IS UI ONLY (owner, 2026-09-10 — "lets only do the ui, no backend"): choosing a destination says what it
-WOULD do, in amber, and writes nothing. The note on startTransfer says what the write has to be when it lands, and the short version
-is that it must not be the remove-plus-add it reads like.
+  - Transfer              POST /locations-transfer  one shelf to another. A MOVE: the row changes location and keeps `ordernum` /
+                          `allocated`, so a unit picked for a customer order is still picked when it lands. Deliberately NOT two
+                          inv-adjust calls, which would mint a free unallocated pair at the far end and un-pick the order waiting for
+                          it with nothing recording that it happened.
+THE TWO IRREVERSIBLE-VERSUS-REVERSIBLE BARGAINS ARE OPPOSITE, on purpose. Empty rack asks first and cannot be undone. Transfer does not
+ask at all and can: the route returns the ids of the rows it landed, so undo sends exactly those back rather than whatever now happens
+to sit on that rack under the same code. A wrong rack should cost a click, not a hunt.
 After any of them the panel and the rack list both re-read, so what is on screen is what the DB says rather than a local guess that
 agreed with it until someone else picked from the same shelf. A write in flight disables the controls: a gun and a mouse can both
 outrun a round-trip.
@@ -75,7 +79,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock,
+  adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
   type InvLocationState, type LocationStockLine,
 } from '@/lib/api';
 import { AREA_LABEL, AREA_ORDER, areaOf } from '@/lib/locationsUi';
@@ -115,7 +119,9 @@ export default function LocationsBoard() {
   // The transfer in progress: the chip being moved and the rack it is coming off. Non-null puts the whole screen in transfer mode.
   const [transfer, setTransfer] = useState<{ line: LocationStockLine; from: string } | null>(null);
   const [askAmazon, setAskAmazon] = useState<string | null>(null);   // a destination that needs a word first — see chooseDestination
-  const [flash, setFlash] = useState<{ tone: 'ok' | 'bad' | 'pending'; text: string } | null>(null);
+  // `undo` is only ever set by a transfer: it is the one action here that is exactly reversible, which is why it gets an undo instead
+  // of a confirm — the opposite bargain to Empty rack, which gets a confirm and no undo.
+  const [flash, setFlash] = useState<{ tone: 'ok' | 'bad' | 'pending'; text: string; undo?: () => void } | null>(null);
   const findRef = useRef<HTMLInputElement>(null);
 
   // Every rack in the building, in walking order. One call, cached for the session — the list of shelves changes about never, so a
@@ -260,16 +266,12 @@ export default function LocationsBoard() {
 
   // ---- Transfer: one shoe off this rack and onto another one. -----------------------------------------------------------------
   //
-  // NOT WIRED YET (owner, 2026-09-10 — "lets only do the ui, no backend"). Choosing a destination reports what it WOULD do and writes
-  // nothing, which is why its flash is amber rather than green and why the shelf does not change under it. Everything up to that last
-  // step is the real thing, so the flow can be judged at the shelving before a row is touched.
+  // POST /locations-transfer, which is a MOVE and not a remove plus an add, however much it reads like one: the row changes shelf and
+  // keeps who it is promised to. That is the whole reason it is not two inv-adjust calls — see the route header.
   //
-  // WHEN IT IS WIRED IT MUST BE A MOVE, NOT A REMOVE PLUS AN ADD, however much it reads like one. A localstock row carries who the
-  // unit is promised to — `ordernum` for a customer pick, `allocated='amz'` — and minting a fresh row at the destination would hand
-  // back a free, unallocated pair and silently un-pick the order that is waiting for it. Carrying a shoe to another shelf changes
-  // where it is, not who it is for. So: UPDATE the row's location when the whole row moves, split it (cloning ordernum/allocated/
-  // assigned, as amz-pick-allocate.js already does) when only part of it does. Legacy phrasing for the audit, which the PowerBuilder
-  // screen has been writing since May: `Transfer <code> from <SRC> >> to <DEST>`, section 'Transfer'.
+  // IT IS THE ONE UNDOABLE THING ON THIS SCREEN, so it is the one that does not ask first. A wrong rack is a shrug, not a hunt: the
+  // route hands back the ids of the rows it actually landed there, and undo sends exactly those back the other way — never "whatever
+  // is now sitting on that rack under this code", which could be somebody else's pick that happened to be the same size.
   function startTransfer(line: LocationStockLine, from: string) {
     setTransfer({ line, from });
     setAskAmazon(null);
@@ -287,20 +289,50 @@ export default function LocationsBoard() {
   // on the list. Same treatment the empty gets — say what it does, then let them decide.
   function chooseDestination(to: string) {
     if (!transfer || to === transfer.from) return;
+    // A rack the racks table does not know is not somewhere a shoe can be PUT — 'Ordered' is a marker meaning the units are still with
+    // the supplier, not a shelf. Stock can come off one, which is a real tidy-up, so those racks stay selectable in the normal way and
+    // are refused only as a destination. The route refuses it too (BAD_SHELF); this is so the operator never gets that far.
+    if (!racks.find((r) => r.location === to)?.known) {
+      setFlash({ tone: 'bad', text: `${to} is not a rack — stock can come off it, but not go onto it.` });
+      return;
+    }
     if (areaOf(to) === 'C3-Amazon') { setAskAmazon(to); return; }
     completeTransfer(to);
   }
 
-  function completeTransfer(to: string) {
-    if (!transfer) return;
+  async function completeTransfer(to: string) {
+    if (!transfer || busy) return;
     const { line, from } = transfer;
     setTransfer(null);
     setAskAmazon(null);
     setPicked(null);
-    setFlash({
-      tone: 'pending',
-      text: `Transfers are not saved yet — this would move one ${line.code} from ${from} to ${to}.`,
-    });
+    setBusy(true);
+    const res = await transferStock({ code: line.code, from, to, ids: line.ids, units: 1 });
+    setBusy(false);
+    if (res.success && res.data) {
+      const { movedIds, to: landed } = res.data;
+      setFlash({
+        tone: 'ok',
+        text: `Moved one ${line.code} from ${from} to ${landed}.`,
+        undo: () => undoTransfer(line.code, from, landed, movedIds),
+      });
+    } else {
+      setFlash({ tone: 'bad', text: res.error || `Could not move ${line.code} to ${to}.` });
+    }
+    await reread();
+  }
+
+  // The same route, the other way round, with the ids it just handed us. An undo that fails says so and leaves the flash alone —
+  // there is nothing to fall back to, and re-reading shows the truth either way.
+  async function undoTransfer(code: string, from: string, to: string, ids: string[]) {
+    if (busy) return;
+    setBusy(true);
+    const res = await transferStock({ code, from: to, to: from, ids, units: 1 });
+    setBusy(false);
+    setFlash(res.success
+      ? { tone: 'ok', text: `Put ${code} back on ${from}.` }
+      : { tone: 'bad', text: res.error || `Could not put ${code} back on ${from}.` });
+    await reread();
   }
 
   // Changing area drops the rack with it — a shelf in C1 is not a thing you are still looking at once you have moved to C3-Front.
@@ -565,6 +597,18 @@ export default function LocationsBoard() {
                   }
                 >
                   <span className="min-w-0 flex-1">{flash.text}</span>
+                  {/* Undo sits IN the sentence that reports the move, because that is the moment you realise it was the wrong rack. It
+                      is offered by transfers only — nothing else here can be taken back — and it disappears with the message. */}
+                  {flash.undo && (
+                    <button
+                      type="button"
+                      onClick={flash.undo}
+                      disabled={busy}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-sm font-semibold underline underline-offset-2 hover:bg-black/5 disabled:opacity-40"
+                    >
+                      Undo
+                    </button>
+                  )}
                   <button type="button" onClick={() => setFlash(null)} className="shrink-0 rounded p-0.5 hover:bg-black/5">
                     <XMarkIcon className="h-4 w-4" />
                   </button>

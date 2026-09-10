@@ -2734,4 +2734,29 @@ export function findLocationSku(scan: string) {
   );
 }
 
+// Move stock from one rack to another. NOT a remove plus an add: the row changes shelf and keeps `ordernum`/`allocated`, so a unit
+// picked for a customer order — or allocated to Amazon — is still promised to it afterwards. `ids` is the whole cluster behind the
+// line, as inv-adjust takes it. The destination must be a real rack in `location`; a stray like 'Ordered' can be moved OFF, not ONTO.
+export interface LocationTransferResult {
+  moved: number; code: string; from: string; to: string; fromUnits: number; toUnits: number;
+  // The rows that landed at the destination because of this call. Hand them straight back — swapping from and to — to undo it exactly,
+  // rather than moving back whatever happens to be sitting there under the same code with a different promise on it.
+  movedIds: string[];
+}
+
+export function transferStock(args: { code: string; from: string; to: string; ids: string[]; units?: number }) {
+  return request<LocationTransferResult>(
+    { url: '/locations-transfer', method: 'POST', data: args },
+    (b) => ({
+      moved: Number(b.moved) || 0,
+      code: (b.code as string) || args.code,
+      from: (b.from as string) || args.from,
+      to: (b.to as string) || args.to,
+      fromUnits: Number(b.fromUnits) || 0,
+      toUnits: Number(b.toUnits) || 0,
+      movedIds: (b.movedIds as string[]) || [],
+    })
+  );
+}
+
 export default api;
