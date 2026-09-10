@@ -45,7 +45,7 @@ full reasoning, and what Google does and does not actually delay.
 */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon, ArrowTopRightOnSquareIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import GoogleAdsMoneyBar from '@/components/GoogleAdsMoneyBar';
@@ -184,22 +184,21 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
 // A row with NOTHING TO RANK ON in the current column — as opposed to a low value. Only 'vs floor' has this state: 127 of 285
 // styles have too little ad data to place a floor, and they draw a dash rather than a number.
 //
-// It is NOT the same as B/E ROAS's null, which sorts as Infinity on purpose (a style with no margin to defend really is the worst
-// possible target, and that ordering is meaningful — see the note on `case 'be'`). A missing floor means "we cannot say", which is
-// not an extreme value in either direction, so it must not be ranked as one.
+// A missing floor means "we cannot say", which is not an extreme value in either direction, so it must not be ranked as one — the
+// distinction the retired B/E ROAS column got the other way round, sorting its own null to Infinity because "no margin to defend"
+// really was the worst possible target.
 function isUnranked(r: GoogleAdsStyleRow, key: SortKey): boolean {
   return key === 'floor' && floorGap(r) === null;
 }
 
 // ---- Sorting --------------------------------------------------------------------------------------------------------------------
-type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'be' | 'floor';
+type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'price' | 'floor';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
-  // B/E ROAS sorts DESCENDING first: the hardest targets lead. Those are the styles no bid can rescue, and they are what a bucket
-  // pass is looking for — the cheap ones to advertise are already found by sorting on Kept.
-  // vs floor sorts ASCENDING first: the deepest shortfall leads, because that is the biggest single repricing win on the screen.
-  // (Styles with no floor sort to Infinity, so they land at the far end either way and never head the list.)
-  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc', be: 'desc',
-  floor: 'asc',
+  // Floor sorts ASCENDING first: the deepest shortfall leads, because that is the biggest single repricing win on the screen.
+  // It still ranks on the GAP even though the cell now prints the floor — see the note on `case 'floor'`.
+  // (Styles with no floor are parked at the bottom by isUnranked() and never head the list either way.)
+  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc',
+  price: 'asc', floor: 'asc',
 };
 function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): number | string {
   const win = r[w];
@@ -220,12 +219,12 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
     case 'kept': return win.profitAfterSpend;
     // A style with nothing sold has no per-sale figure. Sent to the far end so it never sits among real ones.
     case 'keptper': return keptPerSale(win);
-    // NULL (no profit to defend) sorts as the WORST possible target, above any finite one, because that is what it is — no tROAS
-    // rescues a style that loses money before ad spend. Infinity does the ranking; the cell draws a dash, not a number.
-    case 'be': return win.breakEvenRoas === null ? Infinity : win.breakEvenRoas;
-    // The GAP, not the floor itself: £5 under on a £40 shoe and £5 under on a £90 shoe are the same size of problem to fix, and the
-    // floor on its own would just re-sort the list by price. Rows with no floor never reach this comparison — isUnranked() parks
-    // them at the bottom first — so the 0 here is unreachable, and is a defensive default rather than a ranking decision.
+    case 'price': return r.price ?? 0;
+    // STILL THE GAP, even though the column now PRINTS the floor. £5 under on a £40 shoe and £5 under on a £90 shoe are the same
+    // size of problem to fix, so ranking on the gap puts the worst repricing jobs together; ranking on the printed floor would
+    // just re-sort the list by price, which is what the Price column beside it is for. The two columns are read together and
+    // sorted differently on purpose. Rows with no floor never reach this comparison — isUnranked() parks them at the bottom
+    // first — so the 0 is a defensive default, not a ranking decision.
     case 'floor': return floorGap(r) ?? 0;
   }
 }
@@ -336,27 +335,29 @@ function keptPerSale(w: GoogleAdsWindow): number {
   return Math.round((w.profitAfterSpend / w.units) * 100) / 100;
 }
 
-// THE TARGET COLUMN, AND WHY A RATIO IS BACK ON A GRID THAT SPENT TWO REVISIONS REMOVING ONE (2026-09-07)
-// Google's ROAS was pulled off this grid because it flattered every row and answered a question nobody was asking. B/E ROAS is not
-// that number returning. It contains nothing of Google's — it is our own revenue over our own net profit — and it is not a verdict
-// on how a style performed. Kept already gives the verdict. This gives the SETTING: the tROAS a bucket of styles like this one needs
-// before advertising it pays, which is the number you actually type into the Ads UI.
+// B/E ROAS — RETIRED FROM THE GRID 2026-09-10 (owner: "how does B/E ROAS help?"). The constants, the amber line and the margin
+// tooltip went with it. `breakEvenRoas` is STILL COMPUTED PER WINDOW BY THE ROUTE and still ships on every row, so bringing the
+// figure back anywhere is a render change and nothing else.
 //
-// It earns its place because it is the one input smart bidding cannot derive. The bidder buys to revenue and has never seen a cost
-// price, so it delivers roughly the same revenue-efficiency everywhere — 5.4x to 7.6x across the whole book on the 90 days to 5 Sep
-// 2026 — while what a style NEEDS ranges from 4.8x to 25x to unreachable. That spread is the entire case for splitting campaigns
-// here, and this column is where it becomes visible per row.
+// WHY IT LEFT, STATED FAIRLY. Break-even ROAS is revenue / net profit — which is net margin, inverted. Margin sits near 18% across
+// most of this book, so down the page the column read 4.8x, 6.1x, 6.4x: the same number three times, in a unit nobody prices in.
+// Where it did move it moved for the wrong reason — as profit approaches zero the ratio explodes on a shrinking denominator, and
+// 54.5x off two units sold is a rounding error wearing an "x". Per row it was a figure that looked like a signal and behaved like
+// noise.
 //
-// THE AMBER LINE IS WHAT THIS ACCOUNT HAS ACTUALLY DELIVERED, not a rule of thumb. Blended revenue ROAS over those 90 days was 6.0,
-// the best spend decile managed 6.3, and no margin band anywhere in the book came back above 7.6. A style needing more than 10x is
-// therefore asking for something never once achieved on any cohort — it is not a bidding problem and no target will fix it. Those
-// are pause or reprice candidates, which is why they lead the default (descending) sort.
-const BE_UNREACHABLE = 10;
-
-// A margin read off one or two sales is mostly the discount that happened to be running. The ratio is far steadier than Conv % —
-// price and cost barely move within a style — so this floor is low and greys the cell rather than withholding the number, the same
-// bargain the Conv % column strikes: ranking and trustworthiness are separate jobs.
-const BE_MIN_UNITS = 3;
+// WHAT WAS TRUE IN THE ORIGINAL ARGUMENT, AND IS STILL TRUE. It is the one input smart bidding cannot derive: the bidder buys to
+// revenue and has never seen a cost price, so it delivers roughly the same revenue-efficiency everywhere (5.4x to 7.6x across the
+// book on the 90 days to 5 Sep 2026) while what a style NEEDS ranges from 4.8x to 25x to unreachable. That spread is real and it is
+// the case for splitting campaigns.
+//
+// SO IT IS THE GRAIN THAT WAS WRONG, NOT THE FIGURE. A tROAS is set per CAMPAIGN, not per style, so the useful form is the BLENDED
+// break-even for a bucket — its revenue over its profit — which is a number to hand Google, computed off a sample big enough to
+// mean something. That belongs on the campaign panel and on the bulk bar while a selection is being grouped. NOT BUILT YET; it is
+// the agreed next step, and the money-bar totals block already carries a note reserving the same idea for the bar.
+//
+// The old amber line is worth keeping on record for whoever builds that: blended revenue ROAS over those 90 days was 6.0, the best
+// spend decile managed 6.3, and no margin band anywhere in the book came back above 7.6. A bucket needing more than 10x is asking
+// for something this account has never once achieved on any cohort — not a bidding problem, and no target fixes it.
 
 // ---- COLUMNS CURRENTLY HIDDEN (owner, 2026-09-07) -------------------------------------------------------------------------------
 // Hidden, not deleted, and flipping either back to `true` is the whole restore — the cell, the heading, the <col> and the sort all
@@ -376,16 +377,12 @@ const BE_MIN_UNITS = 3;
 const SHOW_CONV = false;
 const SHOW_KEPT_PER_SALE = false;
 
-// Kept in step with the flags above so the loading and empty-state rows span the full table. Nine columns are permanent: #, Style,
-// Campaign, Sizes, Sold, Ad spend, Kept, B/E ROAS and the cut button.
-const COLUMN_COUNT = 9 + (SHOW_CONV ? 1 : 0) + (SHOW_KEPT_PER_SALE ? 1 : 0);
+// Kept in step with the flags above so the loading and empty-state rows span the full table. TEN columns are permanent: #, Style,
+// Campaign, Sizes, Sold, Ad spend, Kept, Price, Floor and the cut button. It said NINE until 2026-09-10 and had done since the
+// floor column was added — an off-by-one nothing could show, because colSpan only paints the "Loading…" and "No styles left" rows
+// and a short span just leaves the last column blank. Count it against the <col> list below whenever either changes.
+const COLUMN_COUNT = 10 + (SHOW_CONV ? 1 : 0) + (SHOW_KEPT_PER_SALE ? 1 : 0);
 
-// The margin behind the ratio, for the tooltip. Shown as well as the multiple because "11.9% net margin" is the sentence the owner
-// prices in, and "8.4x" is the one the Ads UI takes — the tooltip is the only place the two meet.
-function margin(w: GoogleAdsWindow): string {
-  if (w.revenue <= 0) return '0.0';
-  return ((w.profit / w.revenue) * 100).toFixed(1);
-}
 
 // Most titles on this screen start "Birkenstock " or "Womens " — a dozen characters of nothing, repeated down the whole list, that
 // push the part which actually distinguishes one row from another (model, colour, fit) out past the truncation. Stripped for DISPLAY
@@ -414,6 +411,10 @@ const NO_ROWS: GoogleAdsStyleRow[] = [];
 // numbers and the whole catalogue is ~284 of them. What it cost instead was legibility — sorting re-ordered a list you could only
 // see part of, so it was never clear where the hidden rows began or whether "Show more" would bring back something that belonged
 // higher up. Every matching row is rendered.
+
+// Where the two report links tell their back arrow to return to. A constant because it is this screen's own path and both links
+// must agree; encoded once here rather than at each use.
+const GOOGLE_ADS_BACK = encodeURIComponent('/google-ads');
 
 export default function GoogleAdsPage() {
   // ---- data ---------------------------------------------------------------------------------------------------------------
@@ -698,6 +699,18 @@ export default function GoogleAdsPage() {
 
   const loading = stylesQ.isLoading;
 
+  // ONE HREF FOR BOTH WAYS INTO AD DAILY — the button up in the header and the money bar itself. They were built separately and
+  // disagreed: the button always landed on Ad Daily's own default while the bar carried the window, so switching to 7 days and then
+  // going to the report showed 30 days with nothing saying why (owner, 2026-09-10). Two doors into one room have to open on the
+  // same view, so there is now one value and neither can drift from it.
+  //
+  // 365 CARRIES NO ?days=: Ad Daily caps at 90 by design (past that a DAILY series is the wrong shape — Ad Efficiency's monthly one
+  // is right), so it falls back to that report's own default rather than asking for a window its switcher cannot show. The BAR is
+  // not clickable at all on 365, because a bar that drills to a different period than the one it draws would be a lie; the header
+  // button survives because it is a general "go to the report" and never claimed to carry the window.
+  const adDailyHref =
+    `/analytics/ad-daily?${win === 'd365' ? '' : `days=${days}&`}from=${GOOGLE_ADS_BACK}&back=Google%20Ads`;
+
   return (
     <AppShell title="Google Ads">
       {/* ---- Window switch + import ------------------------------------------------------------------------------------ */}
@@ -716,7 +729,37 @@ export default function GoogleAdsPage() {
             </button>
           ))}
         </div>
-        <GoogleAdsImport onImported={() => { stylesQ.refresh(); campaignsQ.refresh(); }} />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The two reports that answer the same question over time, which this screen only ever answers as a snapshot: Ad
+              Efficiency month by month, Ad Daily day by day. They live under Reports and were only reachable from there, so the
+              operator had to go up two levels and back down to check whether a change of course worked (owner, 2026-09-10).
+
+              ?from=/&back= SO THE REPORT'S BACK ARROW COMES BACK HERE, the convention /pricing/[segment] and /amz/[segment] already
+              use. Without it the arrow said "Reports" and led to the list of reports — a dead end from here, because the operator
+              was mid-job on a filtered grid and Reports is not where they were. Arriving from Reports itself is unaffected: the
+              pages fall back to /analytics when the params are absent.
+
+              WHAT THIS DOES NOT RESTORE IS THE GRID'S STATE. The window switch, the search steps and the cut rows are component
+              state, not URL state (deliberate — see the filter bar), so coming back lands on a fresh screen. Threading all of it
+              through the query string to survive a round trip would make every narrowing a navigation, which is a much larger
+              change to how the screen works than this was; if the round trip turns out to be common, the honest fix is to open the
+              reports in a NEW TAB the way Analytics > Sales opens the price pages, leaving this one untouched behind them. */}
+          <Link
+            href={`/analytics/ad-efficiency?from=${GOOGLE_ADS_BACK}&back=Google%20Ads`}
+            className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <ChartBarIcon className="h-4 w-4 text-slate-400" />
+            Ad Efficiency
+          </Link>
+          <Link
+            href={adDailyHref}
+            className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <ChartBarIcon className="h-4 w-4 text-slate-400" />
+            Ad Daily
+          </Link>
+          <GoogleAdsImport onImported={() => { stylesQ.refresh(); campaignsQ.refresh(); }} />
+        </div>
       </div>
 
       {/* ---- The headline ----------------------------------------------------------------------------------------------- */}
@@ -729,6 +772,10 @@ export default function GoogleAdsPage() {
             lastYearMeta={windows.ly30}
             // Only the 30-day window has a like-for-like partner a year back. Comparing 365 days — or 7 — against 30 would be a fake.
             showLastYear={win === 'd30'}
+            // The bar's own working, day by day, for the window it is currently showing. UNDEFINED ON 365: Ad Daily caps at 90 days
+            // by design, so there is nothing honest to link to and the bar simply stops offering it rather than landing the reader
+            // on a different period than the one they clicked.
+            drillHref={win === 'd365' ? undefined : adDailyHref}
           />
         </div>
       )}
@@ -819,10 +866,10 @@ export default function GoogleAdsPage() {
             aria-pressed={floorSide !== null}
             title={
               floorSide === null
-                ? 'Show only styles priced BELOW their ad floor — the price at which a unit’s profit covers what a customer costs to buy (Google spend / units sold). Click again for the styles above it. Always 90 days, so it does not follow the window switch.'
+                ? 'Show only styles priced BELOW their floor — the price at which a unit’s profit covers what a customer costs to buy (Google spend / units sold). Click again for the styles above it. Always 90 days, so it does not follow the window switch.'
                 : floorSide === 'below'
-                  ? 'Showing styles priced BELOW their ad floor — the repair list. Click for the ones ABOVE it.'
-                  : 'Showing styles ABOVE their ad floor — already paying for their own advertising. Styles with too little ad data to judge are in neither list. Click to clear.'
+                  ? 'Showing styles priced BELOW their floor — the repair list. Click for the ones ABOVE it.'
+                  : 'Showing styles ABOVE their floor — already paying for their own advertising. Styles with too little ad data to judge are in neither list. Click to clear.'
             }
             className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium ${
               floorSide === 'below'
@@ -832,7 +879,7 @@ export default function GoogleAdsPage() {
                   : 'border-slate-300 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            {floorSide === 'above' ? 'Above ad floor' : 'Below ad floor'}
+            {floorSide === 'above' ? 'Above floor' : 'Below floor'}
           </button>
           <button
             type="button"
@@ -936,7 +983,11 @@ export default function GoogleAdsPage() {
                 Kept/sale 20->24 NOT a trim — it was always ~15px too narrow for its own heading and had been bleeding into the
                                  empty cut column, which is invisible until something is put there. B/E ROAS put something there.
               Style absorbs the remainder and loses ~80px. The groupid line is unaffected (it needs ~135px); the title beneath it
-              truncates a few characters earlier, and the full title is already on the cell's tooltip. */}
+              truncates a few characters earlier, and the full title is already on the cell's tooltip.
+
+              2026-09-10: B/E ROAS (24) became Price (20), and 'vs floor' became 'Floor' at the same 20. "Price" is a short
+              heading and "£1,234.00" sets inside 80px, so the freed 16px goes back to Style rather than being left as slack. The
+              column COUNT is unchanged — one out, one in — and so is the 992px cap. */}
           <table className="w-full min-w-[930px] table-fixed border-separate border-spacing-0 text-sm">
             <colgroup>
               <col className="w-10" />
@@ -948,7 +999,7 @@ export default function GoogleAdsPage() {
               <col className="w-20" />
               <col className="w-20" />
               {SHOW_KEPT_PER_SALE && <col className="w-24" />}
-              <col className="w-24" />
+              <col className="w-20" />
               <col className="w-20" />
               <col className="w-8" />
             </colgroup>
@@ -979,21 +1030,27 @@ export default function GoogleAdsPage() {
                     order the owner has already tuned twice, and it runs from what happened to what was left. This column is a
                     different kind of thing — a property of the product's economics, and a setting rather than an outcome — so it
                     goes after that run instead of interrupting it. */}
-                <Th
-                  label="B/E ROAS"
-                  col="be"
-                  {...{ sortKey, sortDir, onSort }}
-                  title="Break-even ROAS — the revenue ROAS this style must earn before its advertising pays for itself. Ours, not Google's: revenue divided by net profit. Set a bucket's tROAS from it."
-                />
+                {/* PRICE, so the floor beside it can be read rather than reconstructed. It replaced B/E ROAS (owner, 2026-09-10),
+                    which was retired for being a constant dressed as a signal: break-even ROAS is revenue / profit, i.e. net margin
+                    inverted, and margin sits near 18% on almost everything here — so the column read 4.8x, 6.1x, 6.4x down the page
+                    and only moved when profit collapsed toward zero, where it exploded on a tiny denominator (54.5x off 2 units).
+                    The figure is real and worth having, but a tROAS is set per CAMPAIGN, not per style, so the useful form is the
+                    blended one for a bucket or a selection. That belongs on the campaign panel; it is not built yet. */}
+                <Th label="Price" col="price" {...{ sortKey, sortDir, onSort }} title="Current Shopify price." />
                 {/* Sits beside B/E ROAS because it is the same kind of thing — a property of the product's economics rather than an
                     outcome of the window — and because the two answer the same question in the two units the operator thinks in: a
                     ROAS target to give Google, and a price to type into Shopify. Paid for out of the Style column's slack, which had
                     ~386px at the table's minimum width once Conv. and Kept/sale were switched off; the 992px cap is unmoved. */}
+                {/* THE FLOOR ITSELF, NOT THE SIGNED GAP (owner, 2026-09-10 — "shall we just show ad floor without calculating
+                    it"). "−£17.67" asked the reader to reconstruct two numbers neither of which was on the screen. Printed as a
+                    price beside the price, the comparison is two cells and no arithmetic, in the unit that gets typed into Shopify.
+                    The gap has not gone — it still does the colouring, the sort and the tooltip, which is the right division: it is
+                    a good thing to RANK by and a poor thing to READ. */}
                 <Th
-                  label="vs floor"
+                  label="Floor"
                   col="floor"
                   {...{ sortKey, sortDir, onSort }}
-                  title="How far the price is from the ad floor. Negative means the price is under it, so the advertising costs more than the unit makes. Fixed 90-day basis — it does not follow the window switch. Advisory: nothing blocks these prices."
+                  title="The price at which a unit's profit covers what a customer costs to win (90-day Google spend / units sold). Under it, the advertising costs more than the unit makes. Fixed 90-day basis — it does not follow the window switch. Advisory: nothing blocks these prices."
                 />
                 <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 px-2 py-2" />
               </tr>
@@ -1093,63 +1150,86 @@ export default function GoogleAdsPage() {
                     </td>
                     )}
                     <td className="border-b border-l border-slate-200 border-b-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{money(w.spend)}</td>
-                    <td className={`border-b border-slate-100 px-2 py-1.5 text-right font-semibold tabular-nums ${
-                      w.profitAfterSpend < 0 ? 'text-red-600' : 'text-slate-900'
-                    }`} title={`£${Math.round(w.profit).toLocaleString('en-GB')} product profit, less £${Math.round(w.spend).toLocaleString('en-GB')} paid to Google`}>
+                    {/* NO RED ON A NEGATIVE KEPT (owner, 2026-09-10), and the reason is the Price column two cells along. Red on
+                        this screen now means ONE thing — priced under the floor — and a row carrying two reds that answer different
+                        questions on different bases teaches the reader to trust neither. Kept loses nothing by it: the figure is
+                        already signed, semibold and the column the list sorts on, so a negative one is not exactly hiding.
+                        The money bar and the campaign panel keep their red, deliberately — neither sits beside a price, so there is
+                        nothing there for it to be confused with. */}
+                    <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-900"
+                      title={`£${Math.round(w.profit).toLocaleString('en-GB')} product profit, less £${Math.round(w.spend).toLocaleString('en-GB')} paid to Google`}>
                       {money(w.profitAfterSpend)}
                     </td>
                     {SHOW_KEPT_PER_SALE && (
                     <td className={`border-b border-slate-100 px-3 py-1.5 text-right tabular-nums ${
-                      perSale < 0 ? 'text-red-600' : w.units === 0 ? 'text-slate-400' : 'text-slate-600'
+                      w.units === 0 ? 'text-slate-400' : 'text-slate-600'
                     }`} title={w.units === 0 ? 'Nothing sold in this window — see Kept for what it still cost' : `${w.units} sold`}>
                       £{perSale.toFixed(2)}
                     </td>
                     )}
-                    {/* B/E ROAS. Amber above BE_UNREACHABLE, greyed under the unit floor, dash when there is no margin to defend
-                        at all — three states, because they call for three different actions and a single number would hide that. */}
+                    {/* PRICE CARRIES THE MARK, NOT THE FLOOR (owner, 2026-09-10). It was the other way round for a day: the floor
+                        went amber when the price sat under it. Colouring the price is better and the reason is worth keeping — the
+                        price is the LEVER and the floor is the REFERENCE. Marking the reference asks the reader to work out which
+                        of the two they are supposed to change; marking the price says it.
+                        A dash when skusummary.shopifyprice is unusable: the column is character varying and can hold junk, so
+                        safeNumeric hands us null rather than a wrong number. */}
+                    {/* THE PRICE IS THE WAY TO CHANGE THE PRICE (owner, 2026-09-10). Same target as the ↗ beside the style id and
+                        the same NEW TAB, so the filtered grid survives the trip — but this is the one the operator reaches for,
+                        because the cell that shows the number they want to change is where they aim. stopPropagation so it does not
+                        also toggle the row's selection, matching the style-id link.
+                        No underline and no link colour: the row is already dense, and a whole column drawn as links would shout
+                        over the one thing coloured on purpose here — the red on a price under its floor. Hover says it instead. */}
                     <td
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
-                        w.breakEvenRoas === null ? 'text-slate-400'
-                          : w.units < BE_MIN_UNITS ? 'text-slate-400'
-                          : w.breakEvenRoas > BE_UNREACHABLE ? 'font-medium text-amber-700'
-                          : 'text-slate-600'
+                        gap !== null && gap < 0 ? 'font-medium text-red-600' : 'text-slate-600'
                       }`}
-                      title={
-                        w.breakEvenRoas === null
-                          // Two different reasons land here and the operator needs to know which: nothing sold at all, or sold and
-                          // lost money. The first is silence, the second is a finding.
-                          ? (w.units === 0
-                              ? 'Nothing sold in this window — no margin to measure'
-                              : `Sold ${w.units} at a net loss — no ROAS target makes this style pay. Reprice or pause it.`)
-                          : `${margin(w)}% net margin — needs ${w.breakEvenRoas.toFixed(1)}x revenue ROAS to break even${
-                              w.roas !== null ? `; Google delivered ${w.roas.toFixed(1)}x` : ''
-                            }${w.units < BE_MIN_UNITS ? ` · only ${w.units} sold, so the margin is thin evidence` : ''}${
-                              w.breakEvenRoas > BE_UNREACHABLE ? ` · above ${BE_UNREACHABLE}x, which this account has never delivered on any cohort` : ''
-                            }`
-                      }
                     >
-                      {w.breakEvenRoas === null ? '—' : `${w.breakEvenRoas.toFixed(1)}x`}
+                      {r.price === null ? '—' : (
+                        <Link
+                          href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=/google-ads`}
+                          target="_blank"
+                          rel="noopener"
+                          onClick={(e) => e.stopPropagation()}
+                          title={`Set the price in Shopify Pricing${gap !== null && gap < 0
+                            ? ` — £${Math.abs(gap).toFixed(2)} under the floor, so the ads cost more than the unit makes`
+                            : ''}`}
+                          className="hover:underline"
+                        >
+                          {`£${r.price.toFixed(2)}`}
+                        </Link>
+                      )}
                     </td>
-                    {/* vs floor. The SIGNED GAP, so the size of the problem reads without opening the style: the operator asked to
-                        see how far off the price is before clicking through to Shopify. A dash means no usable floor — never 0,
-                        which would claim the price sits exactly on it. */}
+                    {/* THE FLOOR ITSELF, NOT THE SIGNED GAP (owner, 2026-09-10 — "shall we just show ad floor without calculating
+                        it"). "−£17.67" asked the reader to reconstruct two numbers, neither of which was on the screen. Printed as a
+                        price beside the price, the comparison is two cells and no arithmetic, in the unit that gets typed into
+                        Shopify. The gap has not gone: it still drives the colour, the sort and the tooltip — which is the right
+                        division of labour, because it is a good thing to RANK by and a poor thing to READ. */}
+                    {/* Plain in every state now that the price wears the finding. A second colour here would be the same fact told
+                        twice, in two hues, on two cells that are read as one pair — and the green in particular was overclaiming:
+                        "above the floor" means a sale would pay for its click, not that the style is doing well. Row 6 of the
+                        owner's 2026-09-10 screenshot was green on £29 of spend and nothing sold. Kept says how it is doing. */}
                     <td
                       className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
-                        gap === null ? 'text-slate-400'
-                          : gap < 0 ? 'font-medium text-amber-700'
-                          : 'text-green-700'
+                        gap === null ? 'text-slate-400' : 'text-slate-600'
                       }`}
                       title={
                         gap === null
                           ? 'Not enough ad data in the last 90 days to place a floor for this style'
-                          : `Ad floor £${r.adFloor!.toFixed(2)}${r.adFloorConfidence === 'segment' ? ' (estimated from this style’s segment)' : ''} — a customer cost £${r.adCostPerSale!.toFixed(2)}. ` +
+                          // The GAP lives on here, as a sentence rather than a number to decode — the arithmetic the cell used to
+                          // make the reader do, done for them, at the moment they ask for it.
+                          // THE 90-DAY BASIS IS SAID OUT LOUD (owner, 2026-09-10 — "I'm struggling to correlate price and ad floor").
+                          // The Ad spend and Sold cells on the same row follow the WINDOW SWITCH; this floor never does. So a row can
+                          // read £48 of spend against 2 sales while its floor was built on 90 days of both, and dividing what is on
+                          // screen gives a customer cost nothing like the one the floor used. Naming the basis in the first sentence
+                          // is what stops that subtraction being attempted at all.
+                          : `Over 90 days, not this window: a customer cost £${r.adCostPerSale!.toFixed(2)} to win${r.adFloorConfidence === 'segment' ? ', estimated from this style’s segment' : ''}. ` +
                             (gap < 0
-                              ? `Priced £${Math.abs(gap).toFixed(2)} under it, so the ads cost more than the unit makes.`
+                              ? `Priced £${Math.abs(gap).toFixed(2)} UNDER the floor, so the ads cost more than the unit makes.`
                               : `Priced £${gap.toFixed(2)} clear of it.`)
                       }
                     >
-                      {gap === null ? '—' : `${gap < 0 ? '−' : '+'}£${Math.abs(gap).toFixed(2)}`}
-                      {gap !== null && r.adFloorConfidence === 'segment' && <span className="text-slate-400">*</span>}
+                      {r.adFloor === null ? '—' : `£${r.adFloor.toFixed(2)}`}
+                      {r.adFloor !== null && r.adFloorConfidence === 'segment' && <span className="text-slate-400">*</span>}
                     </td>
                     <td className="border-b border-slate-100 px-1 py-1.5 text-right">
                       <button

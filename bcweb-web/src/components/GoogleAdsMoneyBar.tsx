@@ -31,6 +31,8 @@ where it would contradict the thing this component is for.
 =======================================================================================================================================
 */
 
+import Link from 'next/link';
+import { ChevronRightIcon } from '@heroicons/react/24/outline';
 import { GoogleAdsWindow, GoogleAdsWindowMeta } from '@/lib/api';
 
 // Whole pounds. Pence on a figure this size is noise, and every number here is a comparison rather than a reconciliation.
@@ -57,9 +59,15 @@ interface RowProps {
   w: GoogleAdsWindow;
   scale: number;
   muted?: boolean;
+  // Where the day-by-day working for THIS bar lives. Set only on the current window, and only when Ad Daily can actually show it.
+  drillHref?: string;
 }
 
-function Bar({ title, sub, w, scale, muted }: RowProps) {
+function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
+  // THE WHOLE ROW IS THE TARGET WHEN IT HAS ONE (owner, 2026-09-10 — "I've switched to 7 days and pressed the bar"). It was built
+  // with only the title as a link, which is precisely the affordance nobody aims at: the bar IS the figure being read, so the bar
+  // is what gets clicked. Wrapping the row costs the segment tooltips nothing (title= still resolves inside an anchor) and the
+  // hover ground makes the whole strip announce itself as one target.
   const kept = w.profitAfterSpend;
   const overspent = kept < 0;
 
@@ -70,11 +78,16 @@ function Bar({ title, sub, w, scale, muted }: RowProps) {
   // How far the loss runs past the earned total. Capped so a catastrophic window still fits its row.
   const overPct = overspent ? pct(Math.min(-kept, scale)) : 0;
 
-  return (
-    <div className={muted ? 'opacity-80' : ''}>
+  // Built as one fragment and then either wrapped in a link or not. A polymorphic `const Row = drillHref ? Link : 'div'` reads
+  // tidier and does not typecheck — Link's props demand an href the div branch cannot supply — so the branch is explicit.
+  const content = (
+    <>
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-slate-800">{title}</span>
+          <span className="inline-flex items-baseline gap-0.5 text-sm font-semibold text-slate-800">
+            {title}
+            {drillHref && <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 self-center text-slate-400" aria-hidden />}
+          </span>
           <span className="text-xs text-slate-400">{sub}</span>
         </div>
         <div className="text-right">
@@ -121,6 +134,22 @@ function Bar({ title, sub, w, scale, muted }: RowProps) {
         <span><span className="font-medium text-slate-700">{money(w.spend)}</span> to Google</span>
         <span className="text-slate-400">{w.units.toLocaleString('en-GB')} units · {w.clicks.toLocaleString('en-GB')} clicks</span>
       </div>
+    </>
+  );
+
+  return (
+    <div className={muted ? 'opacity-80' : ''}>
+      {drillHref ? (
+        <Link
+          href={drillHref}
+          title="See this window day by day"
+          className="-mx-2 block rounded-md px-2 py-1 hover:bg-slate-50"
+        >
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
     </div>
   );
 }
@@ -133,9 +162,18 @@ interface Props {
   // Only the 30-day window has a like-for-like year-ago partner. On 90d/365d the comparison is dropped rather than faked against a
   // mismatched span — half a comparison is worse than none, because it still invites the subtraction.
   showLastYear: boolean;
+  // THE DRILL, AND WHY IT IS ONLY EVER ON THE TOP BAR.
+  // Reports > Ad Daily is this bar's working: the same window, the same spend, and since 2026-09-10 the same Kept to the penny — so
+  // the bar summarises exactly what that report lists day by day, and clicking the thing you are reading is the shortest route to
+  // "which days did that?".
+  // NOT on the last-year bar: Ad Daily measures N days back from now and cannot express a window a year ago, so the link would have
+  // to quietly show a different period than the row it sits on.
+  // NOT on 365 either — the caller passes undefined there. Ad Daily's route caps at 90 on purpose (past that a DAILY series is the
+  // wrong shape and Ad Efficiency's monthly one is right), so there is no honest target for that window.
+  drillHref?: string;
 }
 
-export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, lastYearMeta, showLastYear }: Props) {
+export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, lastYearMeta, showLastYear, drillHref }: Props) {
   // ONE SHARED SCALE across both bars, or the year-on-year comparison is a lie — two bars each normalised to themselves would show a
   // shrinking business as two identical shapes. Taken from the largest of every figure drawn, so nothing can exceed the track.
   const scale = Math.max(
@@ -149,7 +187,10 @@ export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, last
       {/* The legend says what the two colours are, once, rather than leaving it to be inferred from the figures under each bar. Two
           swatches is cheap; guessing which block is which is not. */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        <h2
+          className="text-xs font-medium uppercase tracking-wide text-slate-500"
+          title="Bar length is what you earned; both bars share one scale, so a shorter bar earned less. Shopify sales only, profit net of fees, postage and returns."
+        >
           Shopify profit after Google ad spend
         </h2>
         <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -164,15 +205,11 @@ export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, last
         </div>
       </div>
       <div className="space-y-4">
-        <Bar title={currentMeta.label} sub={range(currentMeta)} w={current} scale={scale} />
+        <Bar title={currentMeta.label} sub={range(currentMeta)} w={current} scale={scale} drillHref={drillHref} />
         {showLastYear && (
           <Bar title="Same window last year" sub={range(lastYearMeta)} w={lastYear} scale={scale} muted />
         )}
       </div>
-      <p className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-400">
-        Bar length is what you earned; both bars share one scale, so a shorter bar earned less. Shopify sales only, profit net of
-        fees, postage and returns.
-      </p>
     </section>
   );
 }

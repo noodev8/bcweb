@@ -33,6 +33,8 @@ recovery. Dropping the row instead would leave the reader wondering where this m
 =======================================================================================================================================
 */
 
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { getAdEfficiency } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -46,6 +48,22 @@ function money(v: number): string {
 }
 
 export default function AdEfficiencyPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <AdEfficiencyPageInner />
+    </Suspense>
+  );
+}
+
+function AdEfficiencyPageInner() {
+  const searchParams = useSearchParams();
+
+// WHERE "← BACK" GOES, threaded via ?from=/&back= — the same convention the pricing and segment screens use, and for the same
+// reason. Google Ads links out to this report; without the thread the back arrow returned the operator to Reports, which is a
+// LIST OF REPORTS and not where they were. Arriving from Reports (no params) is unchanged.
+const backHref = searchParams.get('from') || '/analytics';
+const backLabel = searchParams.get('back') || 'Reports';
+
   const q = useApiQuery('analytics-ad-efficiency', () => getAdEfficiency());
   // Newest first (owner). The API returns oldest-first; nothing here compares a row to its neighbour, so a plain reverse is safe.
   const rows = (q.data?.months ?? []).slice().reverse();
@@ -55,7 +73,7 @@ export default function AdEfficiencyPage() {
   const scale = Math.max(...rows.filter((r) => !r.partial).map((r) => r.pctKept ?? 0), 1);
 
   return (
-    <AppShell title="Ad Efficiency" backHref="/analytics" backLabel="Reports">
+    <AppShell title="Ad Efficiency" backHref={backHref} backLabel={backLabel}>
       <div className="mb-4">
         <p className="text-sm text-slate-500">
           How much of each month&rsquo;s Shopify profit survived Google ad spend. Watch the share, not the spend — spend should rise

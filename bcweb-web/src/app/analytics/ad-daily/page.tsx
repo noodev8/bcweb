@@ -88,7 +88,8 @@ costed and deliberately not built, because the Google Ads screen already covers 
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { getAdDaily } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -103,8 +104,15 @@ function money2(v: number): string {
   return `${v < 0 ? '-' : ''}£${Math.abs(v).toFixed(2)}`;
 }
 
-// The windows. 14 is the default and the one the screen was designed around: long enough for the total to mean something (91 units
-// over the fortnight to 9 Sep 2026) and short enough to read without scrolling.
+// The windows. 30 IS THE DEFAULT, AND IT IS 30 TO MATCH /google-ads (owner, 2026-09-10, settled after 14 and then 7). The screen was
+// designed around 14 and the owner briefly preferred 7, but the two screens are now linked in both directions and are read as a
+// pair: the Google Ads money bar opens on 30 days, so anything else here made every trip across a silent change of period, with two
+// different Kept figures and nothing on either screen saying why they differed. Matching costs the shorter default and buys a
+// comparison that holds — and since 2026-09-10 the two agree to the penny on the same window, which is only worth anything if the
+// window is actually the same one.
+//
+// IF /google-ads EVER CHANGES ITS DEFAULT WINDOW, CHANGE THIS WITH IT. The pairing is the reason for the number; nothing else here
+// argues for 30 over 14.
 //   2  — yesterday and the day before (owner, 2026-09-10). The quick "what just happened" glance. It is the ONE window where the
 //        total carries no more authority than a row, because it IS barely more than a row — at ~6.5 units/day, two days is a dozen
 //        sales and the swing is the whole figure. Kept there is a fact to look at, not a verdict to act on.
@@ -114,20 +122,57 @@ function money2(v: number): string {
 //   90 — the season. The route caps here on purpose: past 90 days a DAILY series is the wrong shape and Ad Efficiency's monthly
 //        one is the right one, so there is deliberately no 180 or 365.
 const WINDOWS = [2, 7, 14, 30, 90] as const;
-const DEFAULT_DAYS = 14;
+
+// ?days= — which window to open on, so the Google Ads money bar can drill into the SAME period it is showing rather than dropping
+// the reader on the default and making them re-pick. Validated against WINDOWS and never trusted as a number: an arbitrary ?days=
+// would ask the route for a window the switcher cannot represent, so the chip row would show nothing selected while the table showed
+// something else. Anything unrecognised falls back to the default, which is the honest reading of a link we did not write.
+function windowFromParam(raw: string | null): number | null {
+  const n = Number(raw);
+  return (WINDOWS as readonly number[]).includes(n) ? n : null;
+}
+const DEFAULT_DAYS = 30;
 
 export default function AdDailyPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <AdDailyPageInner />
+    </Suspense>
+  );
+}
+
+function AdDailyPageInner() {
+  const searchParams = useSearchParams();
+
+// WHERE "← BACK" GOES, threaded via ?from=/&back= — the same convention the pricing and segment screens use, and for the same
+// reason. Google Ads links out to this report; without the thread the back arrow returned the operator to Reports, which is a
+// LIST OF REPORTS and not where they were. Arriving from Reports (no params) is unchanged.
+const backHref = searchParams.get('from') || '/analytics';
+const backLabel = searchParams.get('back') || 'Reports';
+
   // Local state, not the URL: nothing on this screen links out or deep-links back in (that was Ad Payback's problem, and the reason
   // its day lived in the query string). SWR keys on the window, so switching back to one already fetched is instant.
-  const [days, setDays] = useState<number>(DEFAULT_DAYS);
+  const [days, setDays] = useState<number>(() => windowFromParam(searchParams.get('days')) ?? DEFAULT_DAYS);
 
   const q = useApiQuery(['analytics-ad-daily', String(days)], () => getAdDaily(days));
   const d = q.data;
   const rows = d?.rows ?? [];
   const t = d?.totals;
 
+  // BREAK-EVEN COST PER SALE — the window's own profit per unit BEFORE advertising, which is the most a sale can afford to have
+  // cost to win. Above it the day's advertising outran the goods it sold.
+  //
+  // COMPUTED FROM THE WINDOW, NEVER HARD-CODED. It came out at £11.21 over the 30 days to 9 Sep 2026 (£4,258 of profit before ads
+  // across 380 units) and it is tempting to write that down, but it moves with the mix — a fortnight of full-price Birkenstock and
+  // a fortnight of clearance do not share a break-even. A stale constant here would be worse than no line at all, because it would
+  // still look authoritative.
+  //
+  // Profit before ads is recovered as kept + spend rather than asked of the route: the two are the same figure by construction
+  // (kept IS profit less spend), so deriving it cannot disagree with the column above it the way a second server-side sum could.
+  const breakEven = t && t.units > 0 ? (t.kept + t.spend) / t.units : null;
+
   return (
-    <AppShell title="Ad Daily" backHref="/analytics" backLabel="Reports">
+    <AppShell title="Ad Daily" backHref={backHref} backLabel={backLabel}>
       {/* ---- The window ------------------------------------------------------------------------------------------------------
           The summary card that used to sit here is gone (owner, 2026-09-10). It carried the same five figures the table's total row
           now carries, one card-width above them and in a different order — so the eye had to travel to compare a day against the
@@ -171,7 +216,10 @@ export default function AdDailyPage() {
                 <th className="px-2 py-2 text-right font-semibold">Sold</th>
                 {/* Why a day was bad, where Kept only says that it was. Spend/units — derivable from its neighbours, but the
                     division is the finding and nobody does it while scanning. */}
-                <th className="px-2 py-2 text-right font-semibold">Cost/sale</th>
+                <th
+                  className="px-2 py-2 text-right font-semibold"
+                  title="What one sale cost in advertising. The break-even under the total is the most it can afford to be — the profit a unit made before ads."
+                >Cost/sale</th>
                 <th className="px-2 py-2 text-right font-semibold">Takings</th>
                 {/* Kept, not Profit (owner, 2026-09-10): "that's what I'll be interested in". Profit before ads is recoverable on
                     any row as Kept + Ad spend, and the footer says so. */}
@@ -196,8 +244,19 @@ export default function AdDailyPage() {
                   </td>
                   <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-slate-800">{t.clicks.toLocaleString('en-GB')}</td>
                   <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-slate-800">{t.units}</td>
+                  {/* The line itself lives HERE, under the window's actual cost per sale and in the same column as the days it
+                      judges — so "was that day dear?" is a glance up one column, the same movement every other comparison on this
+                      screen already uses. It is not a separate card or a footnote for exactly that reason. */}
                   <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-slate-800">
                     {t.costPerSale === null ? '—' : money2(t.costPerSale)}
+                    {breakEven !== null && (
+                      <div
+                        className="text-xs font-normal text-slate-400"
+                        title={`Profit per unit before advertising over this window (${money(t.kept + t.spend)} across ${t.units} units). A day whose cost per sale is above this spent more to win a sale than the sale made.`}
+                      >
+                        {money2(breakEven)} b/e
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-slate-800">{money(t.revenue)}</td>
                   <td className={`px-4 py-2.5 text-right text-xl font-semibold tabular-nums ${t.kept < 0 ? 'text-red-600' : 'text-slate-900'}`}>
@@ -242,18 +301,45 @@ export default function AdDailyPage() {
                     {r.clicks.toLocaleString('en-GB')}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-700">{r.units}</td>
-                  {/* A dash when nothing sold: the value is undefined, and £0.00 would sort/scan as the cheapest day on screen. */}
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">
+                  {/* A dash when nothing sold: the value is undefined, and £0.00 would sort/scan as the cheapest day on screen.
+
+                      AMBER, NOT RED, AND THAT IS THE WHOLE POINT OF THE COLOUR CHOICE. This mark and the red on Kept do NOT select
+                      the same days — the break-even is the window's AVERAGE profit per unit, so a day that happened to sell a
+                      richer mix clears its cost per sale and still keeps money (Thu 20 Aug 2026: £12.37 a sale against an £11.21
+                      line, +£19.11 kept). Two reds disagreeing on one row would make the reader distrust both. Red stays the
+                      verdict; amber says "this sale was dear", which is a reason, not a result.
+
+                      FIRST OUT IF THE SCREEN GETS BUSY (owner, 2026-09-10 — "it might come out if things look too crowded"). The
+                      reference figure on the total row is the part that carries the information; this only saves the reader a
+                      comparison they can make by looking up the column. Delete the className ternary and nothing else moves. */}
+                  <td
+                    className={`px-2 py-2 text-right tabular-nums ${
+                      breakEven !== null && r.costPerSale !== null && r.costPerSale > breakEven ? 'text-amber-700' : 'text-slate-700'
+                    }`}
+                    title={
+                      breakEven !== null && r.costPerSale !== null && r.costPerSale > breakEven
+                        ? `Dearer than the ${money2(breakEven)} a unit this window made before advertising`
+                        : undefined
+                    }
+                  >
                     {r.costPerSale === null ? '—' : money2(r.costPerSale)}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money2(r.revenue)}</td>
-                  {/* NOT coloured, deliberately. A red day here would read as a bad day and most red days are quiet days, not bad
-                      ones — Sun 30 Aug 2026 (-£32.70) sat next to Mon 31 Aug (+£82.58) on identical advertising. Colour is a
-                      verdict and only the total earns one.
+                  {/* NEGATIVE DAYS ARE MARKED (owner, 2026-09-10), reversing the rule below. Kept it recorded because the reason
+                      has not stopped being true, it has been overruled: a red day reads as a BAD day, and most negative days here
+                      are QUIET days — Sun 30 Aug 2026 (-£32.70) sat next to Mon 31 Aug (+£82.58) on identical advertising. The
+                      owner reads this screen themselves, knows which days were quiet, and wants the losing ones findable at a
+                      glance rather than read for.
+
+                      SO IT IS THE MINIMUM THAT ACHIEVES THAT: red type on the Kept figure alone, the same red the total uses, so
+                      the two never disagree about what a negative number looks like. No tinted row, no icon, no red on the
+                      neighbouring cells — the day's spend and units were not themselves bad, and colouring them would turn a
+                      findable figure back into a verdict on the whole day, which is what the rule below was protecting against.
+
                       A no-ads day shows its number like any other: nothing was spent, so all of it was kept. Nulling it here was
-                      tried and reverted — it stopped the column adding up to the total above it, and the £0.00 spend cell and the
-                      "no ads" chip already say why the figure is untouched. */}
-                  <td className="px-4 py-2 text-right font-medium tabular-nums text-slate-900">
+                      tried and reverted — it stopped the column adding up to the total above it, and the £0.00 spend cell already
+                      says why the figure is untouched. */}
+                  <td className={`px-4 py-2 text-right font-medium tabular-nums ${r.kept < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                     {money2(r.kept)}
                   </td>
                 </tr>

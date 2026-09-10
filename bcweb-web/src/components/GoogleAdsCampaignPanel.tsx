@@ -43,6 +43,29 @@ function pct(v: number | null): string {
   return v === null ? '—' : `${v.toFixed(1)}%`;
 }
 
+// BLENDED BREAK-EVEN ROAS — the revenue ROAS this bucket must earn before its advertising pays for itself, which is the number that
+// gets typed into the Ads UI as a tROAS target. Revenue over net profit: earn less than this multiple of spend-driving revenue and
+// the goods do not cover the ads.
+//
+// AT BUCKET GRAIN ON PURPOSE, and this is the whole reason it lives here instead of on the grid where it started (owner,
+// 2026-09-10: "how does B/E ROAS help?"). Per style it was net margin inverted — ~18% on most of the book, so it printed the same
+// 5-6x down the page — and it detonated wherever profit approached zero, because the denominator was shrinking, not the finding.
+// Summed over a bucket the denominator is big enough to mean something, AND a tROAS is a per-campaign setting anyway, so the figure
+// and the thing it configures finally share a grain.
+//
+// NULL WHEN THERE IS NO PROFIT TO DEFEND (profit <= 0, or no revenue). Not Infinity and not a large number: a bucket that loses
+// money before a penny of ad spend has no target that rescues it, which is a different statement from "needs 25x". Kept is where
+// that loss is already reported.
+function blendedBreakEven(b: GoogleAdsBucket): number | null {
+  if (b.profit <= 0 || b.revenue <= 0) return null;
+  return Math.round((b.revenue / b.profit) * 10) / 10;
+}
+
+// The most this account has ever actually delivered. Blended revenue ROAS over the 90 days to 5 Sep 2026 was 6.0, the best spend
+// decile managed 6.3, and no margin band anywhere in the book came back above 7.6. A bucket needing more than this is asking for
+// something never once achieved on any cohort — not a bidding problem, and no target fixes it.
+const BE_UNREACHABLE = 10;
+
 
 // Whether the panel is expanded, remembered per browser. It is COLLAPSED BY DEFAULT (owner, 2026-09-06): the two tables plus their
 // footnotes took about 40% of the page and pushed the filter bar below the fold, so the screen opened on context instead of on the
@@ -163,7 +186,7 @@ export default function GoogleAdsCampaignPanel({
               {/* Collapsed, this line IS the panel. Expanded, it would just repeat the table underneath, so it steps back to the
                   caption it was before. */}
               {open ? (
-                <p className="text-xs text-slate-400">Styles in each bucket today, over {windowLabel.toLowerCase()}</p>
+                <p className="text-xs text-slate-400">{windowLabel}</p>
               ) : (
                 <p className="truncate text-xs text-slate-500">
                   {live.length} campaign{live.length === 1 ? '' : 's'} · {totals.styles} styles ·{' '}
@@ -234,7 +257,7 @@ export default function GoogleAdsCampaignPanel({
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-2 text-left font-semibold">Campaign</th>
@@ -244,13 +267,22 @@ export default function GoogleAdsCampaignPanel({
                 <th className="px-2 py-2 text-right font-semibold">Profit</th>
                 <th className="px-2 py-2 text-right font-semibold">Spend</th>
                 <th className="px-2 py-2 text-right font-semibold">Kept</th>
-                <th className="px-4 py-2 text-right font-semibold">Ad take</th>
+                <th
+                  className="px-2 py-2 text-right font-semibold"
+                  title="What share of a campaign's profit went to Google — lower is better, 100% is break-even. The column to compare campaigns on, since Kept rewards size. Figures are for the styles in each campaign TODAY over the chosen window: a style brings its history with it when you move it."
+                >Ad take</th>
+                {/* The SETTING, where every other column is an outcome — so it sits last, after the figures that justify it. */}
+                <th
+                  className="px-4 py-2 text-right font-semibold"
+                  title="Break-even ROAS — the revenue ROAS this campaign must earn before its ads pay for themselves. Ours, not Google's: these styles' revenue divided by their net profit. This is the number to set as the campaign's tROAS target, with headroom on top."
+                >B/E ROAS</th>
                 <th className="w-20 px-2 py-2" />
               </tr>
             </thead>
             <tbody>
               {buckets.map((b) => {
                 const active = activeBucket === b.name;
+                const be = blendedBreakEven(b);
                 return (
                   <tr
                     key={b.name}
@@ -308,8 +340,30 @@ export default function GoogleAdsCampaignPanel({
                     {/* Last column, where the eye lands: this is what campaigns get compared on. Red only at 100%+, where the ads
                         have outrun the profit — the same threshold that turns Kept red, so the two never disagree. Everything below
                         that is slate: a number to compare, not a warning light. */}
-                    <td className={`px-4 py-2 text-right tabular-nums ${b.adTake !== null && b.adTake >= 100 ? 'text-red-600' : 'text-slate-600'}`}>
+                    <td className={`px-2 py-2 text-right tabular-nums ${b.adTake !== null && b.adTake >= 100 ? 'text-red-600' : 'text-slate-600'}`}>
                       {b.adTake === null ? '—' : `${b.adTake.toFixed(0)}%`}
+                    </td>
+                    {/* Amber above BE_UNREACHABLE, dash when there is no margin to defend at all. Two states, not three: the grid's
+                        old "too few units to trust the margin" grey does not apply to a bucket, which is the aggregate that made
+                        the sample big enough in the first place. */}
+                    <td
+                      className={`px-4 py-2 text-right tabular-nums ${
+                        be === null ? 'text-slate-400'
+                          : be > BE_UNREACHABLE ? 'font-medium text-amber-700'
+                          : 'text-slate-600'
+                      }`}
+                      title={
+                        be === null
+                          ? (b.units === 0
+                              ? 'Nothing sold in this window — no margin to measure'
+                              : 'These styles lost money before a penny of ad spend, so no ROAS target makes the bucket pay. Reprice or split it.')
+                          : `${((b.profit / b.revenue) * 100).toFixed(1)}% net margin — needs ${be.toFixed(1)}x revenue ROAS to break even.` +
+                            (be > BE_UNREACHABLE
+                              ? ` Above ${BE_UNREACHABLE}x, which this account has never delivered on any cohort.`
+                              : ' Set the campaign tROAS above this, not at it.')
+                      }
+                    >
+                      {be === null ? '—' : `${be.toFixed(1)}x`}
                     </td>
                     <td className="px-2 py-2 text-right">
                       {/* EVERY MANAGED BUCKET IS EDITABLE (owner, 2026-09-07). 'standard' and 'pause' used to be excluded here and
@@ -370,12 +424,6 @@ export default function GoogleAdsCampaignPanel({
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
-          Figures are for the styles in each campaign <span className="font-medium">today</span>, over the chosen window — a style
-          brings its history with it when you move it. <span className="font-medium">Ad take</span> is what share of a campaign&rsquo;s
-          profit went to Google — lower is better, 100% is break-even — and it is the column to compare campaigns on, since Kept
-          rewards size.
-        </p>
         </>)}
       </div>
 
@@ -418,9 +466,6 @@ export default function GoogleAdsCampaignPanel({
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-4 py-2.5">
           <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">In Google Ads</h2>
-          <p className="text-xs text-slate-400">
-            Impression share only exists at this level — a campaign here can hold several of your buckets
-          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
@@ -431,8 +476,8 @@ export default function GoogleAdsCampaignPanel({
                 <th className="px-2 py-2 text-right font-semibold">Spend</th>
                 <th className="px-2 py-2 text-right font-semibold">Clicks</th>
                 <th className="px-2 py-2 text-right font-semibold">Impr. share</th>
-                <th className="px-2 py-2 text-right font-semibold">Lost to rank</th>
-                <th className="px-4 py-2 text-right font-semibold">Lost to budget</th>
+                <th className="px-2 py-2 text-right font-semibold" title="A bid or quality problem, not a budget one.">Lost to rank</th>
+                <th className="px-4 py-2 text-right font-semibold" title="Near zero means spending more buys nothing — the impressions are already being won.">Lost to budget</th>
               </tr>
             </thead>
             <tbody>
@@ -473,10 +518,6 @@ export default function GoogleAdsCampaignPanel({
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
-          Lost to <span className="font-medium">budget</span> near zero means spending more buys nothing — the impressions are already
-          being won. Lost to <span className="font-medium">rank</span> is a bid or quality problem instead.
-        </p>
       </div>
       )}
     </section>
