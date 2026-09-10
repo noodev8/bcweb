@@ -2650,4 +2650,50 @@ export function googleAdsImportCommit(files: File[]) {
   );
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------
+// LOCATIONS — the warehouse from the shelf end: what is on a rack, and moving stock on and off it.
+// -------------------------------------------------------------------------------------------------------------------------------
+
+// One rack. `units` is what is on it right now, `known` says whether it is a real rack from the `location` table (false = stock is
+// sitting somewhere that is not a shelf, most often the 'Ordered' marker — surfaced rather than hidden, see locations-racks.js).
+export interface LocationRack {
+  location: string;
+  barcode: string | null;      // the rack's own printed label, 'LC-58' — what the gun scans
+  pickorder: number | null;    // the walking sequence; the list is sorted by it, so scrolling is walking the aisle
+  units: number;
+  known: boolean;
+}
+
+export function getLocationRacks() {
+  return request<{ racks: LocationRack[]; total: number }>(
+    { url: '/locations-racks', method: 'GET' },
+    (b) => ({ racks: (b.racks as LocationRack[]) || [], total: Number(b.total) || 0 })
+  );
+}
+
+// One line of a rack: a code in one state, already collapsed server-side across however many localstock rows hold it. `ids` are those
+// rows, carried so a later write adjusts exactly them.
+export interface LocationStockLine {
+  key: string;
+  code: string;
+  groupid: string | null;
+  title: string | null;
+  size: string;
+  uksize: string | null;
+  qty: number;
+  state: InvLocationState;     // the same three states as the Inventory panel, from the same rules — see locations-stock.js
+  ids: string[];
+}
+
+export function getLocationStock(location: string) {
+  return request<{ location: string; lines: LocationStockLine[]; units: number }>(
+    { url: '/locations-stock', method: 'POST', data: { location } },
+    (b) => ({
+      location: (b.location as string) || location,
+      lines: (b.lines as LocationStockLine[]) || [],
+      units: Number(b.units) || 0,
+    })
+  );
+}
+
 export default api;

@@ -199,6 +199,13 @@ app.use('/goods-in-shelves', require('./routes/goods-in-shelves'));   // every r
 app.use('/goods-in-book', require('./routes/goods-in-book'));         // WRITES: arrived + localstock + incoming_stock + bclog
 app.use('/goods-in-cancel', require('./routes/goods-in-cancel'));     // WRITES: undo one booking, and reopen the order line
 
+// --- Locations (the warehouse read from the shelf end: what is on a rack, and moving stock on and off it) ---
+// The reads are two because the screen is two panels: the rack list is loaded once and stays put, the contents change with every
+// click. Racks come from `location` FULL JOINed to localstock so neither an empty rack nor stock parked somewhere off-list can go
+// missing — see the header of locations-racks.js, and utils/locations.js for why the two sources are not the same question.
+app.use('/locations-racks', require('./routes/locations-racks'));     // every rack + how many units are on it
+app.use('/locations-stock', require('./routes/locations-stock'));     // what is on ONE rack, collapsed by code + state
+
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the
 // `orderstatus` table and little else — utils/customerOrders.js opens with why `orderdate` must NOT be read through
