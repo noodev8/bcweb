@@ -20,6 +20,10 @@ and logging a bclog line per code. The per-unit +/- goes through the EXISTING /i
 than reimplemented — with /locations-find-sku resolving a scanned barcode to a code first, since inv-adjust takes a SKU and a gun
 fires a barcode. 'C3-Amazon' is a shelf like any other here: inv-adjust deliberately locks nothing (the operator is in control), and
 the panel shows the state on every chip so they can see what they are touching.
+STILL TO COME: the transfer. The screen can already work one — pick a chip, press Transfer, choose the rack it goes on — but the last
+step only reports what it would do. The write is a MOVE (the row changes shelf and keeps its ordernum/allocated), never a remove and
+an add, which would hand back a free pair and un-pick the order waiting for it; audit follows the legacy PowerBuilder phrasing,
+`Transfer <code> from <SRC> >> to <DEST>` in bclog section 'Transfer', which that screen has been writing since May.
 =======================================================================================================================================
 */
 

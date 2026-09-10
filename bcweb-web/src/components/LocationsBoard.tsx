@@ -57,6 +57,9 @@ EVERY BUTTON ON THIS SCREEN NOW WRITES, and there is no client-side overlay left
   - putting a shoe on     POST /locations-find-sku then /inv-adjust with EMPTY ids — resolve the scan, then place it. In that order,
                           so an unreadable barcode is caught before anything is written and the confirmation can name the shoe.
   - Empty rack            POST /locations-empty  every unit off in one transaction, soft-deleted.
+TRANSFER IS THE EXCEPTION AND IS UI ONLY (owner, 2026-09-10 — "lets only do the ui, no backend"): choosing a destination says what it
+WOULD do, in amber, and writes nothing. The note on startTransfer says what the write has to be when it lands, and the short version
+is that it must not be the remove-plus-add it reads like.
 After any of them the panel and the rack list both re-read, so what is on screen is what the DB says rather than a local guess that
 agreed with it until someone else picked from the same shelf. A write in flight disables the controls: a gun and a mouse can both
 outrun a round-trip.
@@ -67,7 +70,9 @@ pressed.
 */
 
 import { useMemo, useRef, useState } from 'react';
-import { ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowRightCircleIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, TrashIcon, XMarkIcon,
+} from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock,
@@ -107,7 +112,10 @@ export default function LocationsBoard() {
   const [picked, setPicked] = useState<string | null>(null);   // the chip being worked on, by line key
   const [confirmEmpty, setConfirmEmpty] = useState(false);     // the footer is asking whether to clear the whole rack
   const [busy, setBusy] = useState(false);                     // a write is in flight; the gun can fire faster than a round-trip
-  const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
+  // The transfer in progress: the chip being moved and the rack it is coming off. Non-null puts the whole screen in transfer mode.
+  const [transfer, setTransfer] = useState<{ line: LocationStockLine; from: string } | null>(null);
+  const [askAmazon, setAskAmazon] = useState<string | null>(null);   // a destination that needs a word first — see chooseDestination
+  const [flash, setFlash] = useState<{ tone: 'ok' | 'bad' | 'pending'; text: string } | null>(null);
   const findRef = useRef<HTMLInputElement>(null);
 
   // Every rack in the building, in walking order. One call, cached for the session — the list of shelves changes about never, so a
@@ -196,9 +204,9 @@ export default function LocationsBoard() {
       setConfirmEmpty(false);
       const { units: took, codes, picked: wasPicked, amz: wasAmz } = res.data;
       const caveat = [wasPicked ? `${wasPicked} picked` : '', wasAmz ? `${wasAmz} Amazon` : ''].filter(Boolean).join(', ');
-      setFlash({ ok: true, text: `Took ${took} ${took === 1 ? 'unit' : 'units'} off ${location} across ${codes} ${codes === 1 ? 'size' : 'sizes'}${caveat ? ` — including ${caveat}` : ''}.` });
+      setFlash({ tone: 'ok', text: `Took ${took} ${took === 1 ? 'unit' : 'units'} off ${location} across ${codes} ${codes === 1 ? 'size' : 'sizes'}${caveat ? ` — including ${caveat}` : ''}.` });
     } else {
-      setFlash({ ok: false, text: res.error || 'Could not empty that rack.' });
+      setFlash({ tone: 'bad', text: res.error || 'Could not empty that rack.' });
       setConfirmEmpty(false);
     }
     // Either way the screen re-reads: on success to show the empty shelf, on a CHANGED refusal because the rack moved under us.
@@ -215,13 +223,13 @@ export default function LocationsBoard() {
     setBusy(false);
     if (res.success) {
       setFlash({
-        ok: true,
+        tone: 'ok',
         text: delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`,
       });
     } else {
       // NOT_FOUND here means the cluster is gone — someone else cleared the line while it was on screen. The re-read below is the fix,
       // so the message says that rather than reading as a failure of the button.
-      setFlash({ ok: false, text: res.error || 'Could not change that line.' });
+      setFlash({ tone: 'bad', text: res.error || 'Could not change that line.' });
     }
     await reread();
   }
@@ -236,7 +244,7 @@ export default function LocationsBoard() {
     const found = await findLocationSku(typed);
     if (!found.success || !found.data) {
       setBusy(false);
-      setFlash({ ok: false, text: found.error || `Nothing matches ${typed.toUpperCase()}.` });
+      setFlash({ tone: 'bad', text: found.error || `Nothing matches ${typed.toUpperCase()}.` });
       return;
     }
     const sku = found.data;
@@ -245,14 +253,62 @@ export default function LocationsBoard() {
     const res = await adjustStock({ code: sku.code, location, delta: qty, ids: [] });
     setBusy(false);
     setFlash(res.success
-      ? { ok: true, text: `Put ${qty} × ${sku.code}${sku.title ? ` (${sku.title})` : ''} on ${location}.` }
-      : { ok: false, text: res.error || `Could not put ${sku.code} on ${location}.` });
+      ? { tone: 'ok', text: `Put ${qty} × ${sku.code}${sku.title ? ` (${sku.title})` : ''} on ${location}.` }
+      : { tone: 'bad', text: res.error || `Could not put ${sku.code} on ${location}.` });
     await reread();
   }
 
+  // ---- Transfer: one shoe off this rack and onto another one. -----------------------------------------------------------------
+  //
+  // NOT WIRED YET (owner, 2026-09-10 — "lets only do the ui, no backend"). Choosing a destination reports what it WOULD do and writes
+  // nothing, which is why its flash is amber rather than green and why the shelf does not change under it. Everything up to that last
+  // step is the real thing, so the flow can be judged at the shelving before a row is touched.
+  //
+  // WHEN IT IS WIRED IT MUST BE A MOVE, NOT A REMOVE PLUS AN ADD, however much it reads like one. A localstock row carries who the
+  // unit is promised to — `ordernum` for a customer pick, `allocated='amz'` — and minting a fresh row at the destination would hand
+  // back a free, unallocated pair and silently un-pick the order that is waiting for it. Carrying a shoe to another shelf changes
+  // where it is, not who it is for. So: UPDATE the row's location when the whole row moves, split it (cloning ordernum/allocated/
+  // assigned, as amz-pick-allocate.js already does) when only part of it does. Legacy phrasing for the audit, which the PowerBuilder
+  // screen has been writing since May: `Transfer <code> from <SRC> >> to <DEST>`, section 'Transfer'.
+  function startTransfer(line: LocationStockLine, from: string) {
+    setTransfer({ line, from });
+    setAskAmazon(null);
+    setFlash(null);
+    setFind('');
+  }
+
+  function cancelTransfer() {
+    setTransfer(null);
+    setAskAmazon(null);
+  }
+
+  // A destination was clicked or scanned. C3-Amazon is the one that does not just happen: per amz-pick-allocate.js a row is on the
+  // Amazon gather list BECAUSE it is not at the bay yet, so putting a unit there quietly does a Pick, and taking one out puts it back
+  // on the list. Same treatment the empty gets — say what it does, then let them decide.
+  function chooseDestination(to: string) {
+    if (!transfer || to === transfer.from) return;
+    if (areaOf(to) === 'C3-Amazon') { setAskAmazon(to); return; }
+    completeTransfer(to);
+  }
+
+  function completeTransfer(to: string) {
+    if (!transfer) return;
+    const { line, from } = transfer;
+    setTransfer(null);
+    setAskAmazon(null);
+    setPicked(null);
+    setFlash({
+      tone: 'pending',
+      text: `Transfers are not saved yet — this would move one ${line.code} from ${from} to ${to}.`,
+    });
+  }
+
   // Changing area drops the rack with it — a shelf in C1 is not a thing you are still looking at once you have moved to C3-Front.
+  // EXCEPT MID-TRANSFER, when the areas are how you reach the rack you are moving TO: the source has to stay put underneath, or
+  // walking to another zone would cancel the move you are in the middle of making.
   function goToArea(a: string) {
     setArea(a);
+    if (transfer) return;
     setChosen(null);
     setPicked(null);
     setConfirmEmpty(false);
@@ -267,16 +323,22 @@ export default function LocationsBoard() {
     setFlash(null);
   }
 
-  // A rack label typed or scanned into the search box selects that shelf and clears the box, ready for the next one.
+  // A rack label typed or scanned into the search box selects that shelf and clears the box, ready for the next one — and MID-TRANSFER
+  // the same scan names the destination instead of navigating to it. One input, two meanings, decided by what the operator is in the
+  // middle of: walking to a rack with a shoe in your hand and scanning it is the same gesture either way, and it would be perverse for
+  // it to abandon the move.
   function onFindKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Escape') { setFind(''); return; }
+    if (e.key === 'Escape') { setFind(''); if (transfer) cancelTransfer(); return; }
     if (e.key !== 'Enter') return;
     const typed = find.trim();
     if (!typed) return;
     const hit = RACK_LABEL.test(typed)
       ? racks.find((r) => (r.barcode ?? '').toLowerCase() === typed.toLowerCase())
       : racks.find((r) => r.location.toLowerCase() === typed.toLowerCase()) ?? listed[0];
-    if (hit) { goToRack(hit.location); setFind(''); }
+    if (!hit) return;
+    setFind('');
+    if (transfer) chooseDestination(hit.location);
+    else goToRack(hit.location);
   }
 
   const emptyRacks = racks.filter((r) => r.units === 0).length;
@@ -314,7 +376,26 @@ export default function LocationsBoard() {
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[17rem_minmax(0,1fr)]">
         {/* ---- The racks. Permanent furniture: this is the screen's subject, so it never collapses into a dropdown. ---- */}
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <aside className={
+          'flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white transition ' +
+          (transfer ? 'border-brand-400 ring-1 ring-brand-300' : 'border-slate-200')
+        }>
+          {/* THE RACK LIST IS THE DESTINATION PICKER. There is no second widget for "where to", because the racks are already on
+              screen, in walking order, with their counts — the thing you would have had to build a dropdown to show. Mid-transfer the
+              list changes what a click MEANS, and says so, rather than changing what it looks like. */}
+          {transfer && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-brand-200 bg-brand-50 px-3 py-1.5">
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-brand-800">Transfer to which rack?</span>
+              <button
+                type="button"
+                onClick={cancelTransfer}
+                className="shrink-0 rounded p-0.5 text-brand-700 hover:bg-brand-100"
+                title="Cancel the transfer"
+              >
+                <XMarkIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <div className="relative shrink-0 border-b border-slate-100 p-2">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-slate-400" />
             <input
@@ -322,7 +403,7 @@ export default function LocationsBoard() {
               value={find}
               onChange={(e) => setFind(e.target.value)}
               onKeyDown={onFindKey}
-              placeholder="Find a rack, or scan its label"
+              placeholder={transfer ? 'Scan the rack it goes on' : 'Find a rack, or scan its label'}
               className="w-full rounded-lg border border-slate-200 py-1.5 pl-8 pr-7 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             {find && (
@@ -344,6 +425,9 @@ export default function LocationsBoard() {
             )}
             {listed.map((r) => {
               const on = r.location === selected;
+              // The rack the shoe is coming OFF is not somewhere it can go. Marked and inert rather than hidden: it is the one you are
+              // standing at, and a list that quietly loses a rack mid-move is a list you stop trusting.
+              const source = transfer?.from === r.location;
               // The count comes straight off the rack list, which is re-read after every write — so it agrees with the panel because
               // both were told by the server, not because the client kept them in step.
               const n = r.location === selected ? units : r.units;
@@ -351,13 +435,19 @@ export default function LocationsBoard() {
                 <li key={r.location}>
                   <button
                     type="button"
-                    onClick={() => goToRack(r.location)}
+                    disabled={source}
+                    onClick={() => (transfer ? chooseDestination(r.location) : goToRack(r.location))}
                     className={
                       'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:bg-slate-100 ' +
-                      (on ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-700 hover:bg-slate-50')
+                      (source
+                        ? 'cursor-default bg-slate-50 text-slate-400'
+                        : transfer
+                          ? 'text-slate-700 hover:bg-brand-50 hover:font-semibold hover:text-brand-700'
+                          : on ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-700 hover:bg-slate-50')
                     }
                   >
                     <span className="min-w-0 flex-1 truncate">{r.location}</span>
+                    {source && <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">from here</span>}
                     {/* Not a rack in the `location` table — stock is sitting somewhere that isn't a shelf. Flagged, never hidden. */}
                     {!r.known && <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700">stray</span>}
                     {/* An empty rack keeps its number, greyed — it is not missing, it is where the next box goes. */}
@@ -392,7 +482,7 @@ export default function LocationsBoard() {
                       prominence — it sits last, in slate, and only turns red once it has been pressed and the footer is asking. A
                       destructive control that shouts is one that gets pressed by mistake; the weight belongs on the confirm, not on
                       the way in. Hidden entirely on an empty rack: there is nothing to take off. */}
-                  {serverUnits > 0 && (
+                  {serverUnits > 0 && !transfer && (
                     <button
                       type="button"
                       onClick={() => { setPicked(null); setFlash(null); setConfirmEmpty(true); }}
@@ -437,12 +527,16 @@ export default function LocationsBoard() {
                             <button
                               key={c.key}
                               type="button"
+                              disabled={!!transfer}
                               onClick={() => setPicked(picked === c.key ? null : c.key)}
                               title={`${c.code} · ${c.qty} ${c.qty === 1 ? 'pair' : 'pairs'} · ${STATE_WORD[c.state]}`}
                               className={
                                 'inline-flex min-w-[2.1rem] items-center justify-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs font-medium tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ' +
                                 CHIP_STATE[c.state] +
-                                (picked === c.key ? ' ring-2 ring-brand-500' : '')
+                                (picked === c.key ? ' ring-2 ring-brand-500' : '') +
+                                // Mid-transfer the shelf is not what is being chosen from — the rack list is — so the chips stop
+                                // inviting a click rather than accepting one the footer has no room to answer.
+                                (transfer && picked !== c.key ? ' opacity-40' : '')
                               }
                             >
                               {c.size}
@@ -463,7 +557,11 @@ export default function LocationsBoard() {
                 <div
                   className={
                     'flex shrink-0 items-start gap-2 border-t px-4 py-2 text-sm ' +
-                    (flash.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-rose-100 bg-rose-50 text-rose-800')
+                    // Amber is its own outcome, not a soft red: "this would have worked, and nothing happened" is a different thing
+                    // from a failure, and on a screen where every other button writes it is the one that must not be mistaken for one.
+                    (flash.tone === 'ok' ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+                      : flash.tone === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900'
+                      : 'border-rose-100 bg-rose-50 text-rose-800')
                   }
                 >
                   <span className="min-w-0 flex-1">{flash.text}</span>
@@ -477,7 +575,16 @@ export default function LocationsBoard() {
                   chip swaps in that unit's controls, and asking to empty the rack swaps in the confirm. Same strip, same position, so
                   nothing moves and there is never a dialog over the shelf you are deciding about. */}
               <div className="shrink-0 border-t border-slate-100 bg-slate-50">
-                {confirmEmpty ? (
+                {askAmazon ? (
+                  <ConfirmAmazonBay
+                    code={transfer?.line.code ?? ''}
+                    to={askAmazon}
+                    onConfirm={() => completeTransfer(askAmazon)}
+                    onCancel={() => setAskAmazon(null)}
+                  />
+                ) : transfer ? (
+                  <TransferBar line={transfer.line} from={transfer.from} onCancel={cancelTransfer} />
+                ) : confirmEmpty ? (
                   <ConfirmEmpty
                     location={rack.location}
                     units={serverUnits}
@@ -492,6 +599,7 @@ export default function LocationsBoard() {
                     line={pickedLine}
                     busy={busy}
                     onAdjust={(d) => adjust(rack.location, pickedLine, d)}
+                    onTransfer={() => startTransfer(pickedLine, rack.location)}
                     onDone={() => setPicked(null)}
                   />
                 ) : (
@@ -563,6 +671,78 @@ function ConfirmEmpty({ location, units, picked, amz, busy, onConfirm, onCancel 
 }
 
 /*
+The transfer, waiting for somewhere to go. It says the shoe and the shelf it is leaving, and then gets out of the way — the choice is
+being made in the rack list to its left, so this bar is a reminder of what is in your hand, not a control in its own right.
+
+Its one job beyond that is the way out. Cancel, or Escape in the search box, and nothing has happened.
+*/
+function TransferBar({ line, from, onCancel }: { line: LocationStockLine; from: string; onCancel: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-brand-50 px-4 py-2.5">
+      <ArrowRightCircleIcon className="h-5 w-5 shrink-0 text-brand-600" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-brand-900">
+          Moving one <span className="font-mono font-medium">{line.code}</span> off{' '}
+          <span className="font-medium">{from}</span> — pick the rack it goes on.
+        </p>
+        {line.state !== 'FREE' && (
+          // Worth saying out loud, because it is the thing a move must not break: the unit stays promised to whatever claimed it.
+          <p className="truncate text-xs text-brand-700">
+            {line.state === 'PICKED' ? 'Picked for a customer order' : 'Allocated to Amazon'} — it stays that way wherever it goes.
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-md px-2.5 py-1.5 text-sm text-brand-800 hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/*
+The one destination that is not just a shelf. amz-pick-allocate.js puts it plainly — a row is on the Amazon gather list BECAUSE it is
+not at the bay yet — so dropping a unit on C3-Amazon quietly marks it gathered, and lifting one off puts it back on the list. Goods In
+refuses the bay as a manual destination outright for this reason; here it is allowed, because moving stock is the whole point of the
+screen, but never silently.
+*/
+function ConfirmAmazonBay({ code, to, onConfirm, onCancel }: {
+  code: string; to: string; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 bg-amber-50 px-4 py-2.5">
+      <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-amber-900">
+          <span className="font-medium">{to}</span> is the Amazon staging bay. Putting{' '}
+          <span className="font-mono">{code}</span> there takes it off the Amazon gather list.
+        </p>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md px-2.5 py-1.5 text-sm text-amber-900 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        >
+          Pick another rack
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          autoFocus
+          className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        >
+          Put it in the bay
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/*
 The chip's controls. Named for the thing it acts on ("Arizona · 38"), because the alternative — a bare stepper — makes the operator
 remember which chip they clicked while they are looking at their hands.
 
@@ -570,10 +750,11 @@ EVERY PRESS IS A WRITE — one inv-adjust call, audited to bclog — so both but
 both outrun a round-trip, and two presses racing each other against the same cluster is the one way to take off a pair you meant to
 take off once.
 */
-function PickedChip({ line, busy, onAdjust, onDone }: {
+function PickedChip({ line, busy, onAdjust, onTransfer, onDone }: {
   line: LocationStockLine;
   busy: boolean;
   onAdjust: (delta: number) => void;
+  onTransfer: () => void;
   onDone: () => void;
 }) {
   return (
@@ -601,6 +782,17 @@ function PickedChip({ line, busy, onAdjust, onDone }: {
           className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <PlusSmallIcon className="h-4 w-4" /> Put one on
+        </button>
+        {/* TRANSFER SITS AFTER THE TWO COUNTS because it is the rarer errand, and it is worded as the warehouse words it — the legacy
+            PowerBuilder screen has been logging 'Transfer ... >> to ...' since May, so calling it anything else here would give one
+            job two names across two apps. */}
+        <button
+          type="button"
+          onClick={onTransfer}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          <ArrowRightCircleIcon className="h-4 w-4" /> Transfer
         </button>
         <button
           type="button"
