@@ -258,11 +258,12 @@ function win(r, k) {
     // money before a penny of ad spend has no break-even target, because no target rescues it. That is a different verdict from
     // "needs 25x" and the column must not blur the two. Kept is where the loss itself shows.
     //
-    // THE `units > 0` TEST IS NOT REDUNDANT WITH `revenue > 0`, and it is the one that took a real row. `sales` books a Shopify
-    // return as a row with negative qty, so a style sold once and returned once nets to ZERO units while revenue and profit keep a
-    // few pence of residual — a refund is rarely the penny-exact reverse of the sale. 1030447-ARIZONA came back as "Sold 0" beside
-    // a break-even of 1.6x on 2026-09-07: a ratio of two rounding errors, printed with the authority of a target. Net-zero units
-    // means no margin was realised, whatever arithmetic survives in the columns.
+    // THE `units > 0` TEST IS NOW BELT AND BRACES, and the history is worth keeping. `sales` books a Shopify return as a row with
+    // negative qty; while this route summed those rows, a style sold once and returned once netted to ZERO units while revenue and
+    // profit kept a few pence of residual — a refund is rarely the penny-exact reverse of the sale. 1030447-ARIZONA came back as
+    // "Sold 0" beside a break-even of 1.6x on 2026-09-07: a ratio of two rounding errors, printed with the authority of a target.
+    // The sales CTE filters qty > 0 as of 2026-09-10, so that state can no longer arise from a return. The guard stays because it
+    // is also the honest answer for a style with no sales at all, and because it costs nothing.
     breakEvenRoas: units > 0 && profit > 0 && revenue > 0 ? Math.round((revenue / profit) * 10) / 10 : null,
   };
 }
@@ -365,7 +366,13 @@ router.get('/', async (req, res) => {
           SUM(s.soldprice * s.qty) FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_revenue,
           SUM(s.profit)    FILTER (WHERE s.solddate BETWEEN a.d - ${LY_FROM} AND a.d - ${LY_BACK}) AS ly30_profit
         FROM sales s CROSS JOIN asof a
-        WHERE s.channel = 'SHP' AND s.solddate BETWEEN a.d - ${LY_FROM} AND a.d
+        -- RETURNS EXCLUDED (qty > 0), owner 2026-09-10. Netting the reversal rows in here charged returns TWICE: every positive
+        -- row's profit already carries the flat /1.2 refund haircut from utils/shopifyProfit.js, and the reversal row then
+        -- subtracted the refund again. Measured over 11 Aug - 9 Sep 2026 it cost 70 units and GBP 729.88 of profit, which is exactly
+        -- why this screen read GBP 411 kept where Reports > Ad Daily read GBP 1,141 over the same days on the same GBP 3,117 of spend.
+        -- Ad Daily was the correct one; it has filtered qty > 0 since it was built, and this now matches it. See the header of
+        -- utils/shopifyProfit.js for the measurement and for why the haircut, not the rows, is the thing to remove one day.
+        WHERE s.channel = 'SHP' AND s.qty > 0 AND s.solddate BETWEEN a.d - ${LY_FROM} AND a.d
         GROUP BY s.groupid
       ),
       ads_w AS (

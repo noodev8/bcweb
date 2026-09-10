@@ -116,7 +116,13 @@ router.get('/', async (req, res) => {
                -- reintroduce the bare-SUM fault: soldprice is per-unit and positive on returns. See analytics-sales / analytics-ad-daily.
                SUM(qty) AS units, SUM(soldprice * qty) AS revenue, SUM(profit) AS profit
         FROM sales
-        WHERE channel = 'SHP'
+        -- RETURNS EXCLUDED (qty > 0), owner 2026-09-10. Netting the reversal rows in here charged returns TWICE: every positive
+        -- row's profit already carries the flat /1.2 refund haircut from utils/shopifyProfit.js, and the reversal row then
+        -- subtracted the refund again. Measured over 11 Aug - 9 Sep 2026 it cost 70 units and GBP 729.88 of profit, which is exactly
+        -- why this screen read GBP 411 kept where Reports > Ad Daily read GBP 1,141 over the same days on the same GBP 3,117 of spend.
+        -- Ad Daily was the correct one; it has filtered qty > 0 since it was built, and this now matches it. See the header of
+        -- utils/shopifyProfit.js for the measurement and for why the haircut, not the rows, is the thing to remove one day.
+        WHERE channel = 'SHP' AND qty > 0
         GROUP BY 1
       )
       SELECT to_char(span.m, 'YYYY-MM')  AS month,

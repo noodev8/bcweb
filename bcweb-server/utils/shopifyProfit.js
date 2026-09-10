@@ -32,9 +32,18 @@ totalling -GBP 5,269 of profit: a 12.7% unit return rate, booked as rows exactly
 
 WHAT THAT MEANS, STATED CAREFULLY. Return cost is modelled TWICE for any consumer that sums every row — once by the reversal rows
 themselves (-GBP 5,269) and again by this haircut, which suppresses roughly GBP 7,826 across the positive rows over the same period.
-Whole-book aggregates (Analytics > Sales, Ad Efficiency) therefore read LOW. Consumers that filter qty > 0 — routes/birk-stock.js
-(Kept) and the pricing WINNERS / LOSERS bars — see the haircut alone and are internally consistent, which is why this has never
-surfaced as an obvious error.
+Whole-book aggregates that sum every row therefore read LOW. Consumers that filter qty > 0 see the haircut alone and are internally
+consistent, which is why this went unnoticed for so long.
+
+THE OWNER'S DECISION, 2026-09-10: RETURNS LIVE IN THE HAIRCUT, NOT THE ROWS — so every ad/profit consumer now filters qty > 0. It
+surfaced because the Google Ads money bar and Reports > Ad Daily disagreed on the same 30 days and the same GBP 3,117 of spend
+(GBP 411 kept against GBP 1,141); the whole GBP 729.88 gap was 70 return rows. Ad Daily had filtered qty > 0 since it was built and
+was the correct one. Brought into line the same day: routes/google-ads-styles.js, google-ads-campaigns.js, google-ads-drill.js and
+analytics-ad-efficiency.js.
+
+STILL SUMMING EVERY ROW, DELIBERATELY: Analytics > Sales, which is the ledger and must reconcile to what actually happened, refunds
+included. It will therefore read lower than the ad screens over the same window, by exactly the returns that landed in it — that is
+the documented disagreement in the analytics-ad-daily header, not a new one.
 
 THE FORMULA IS DELIBERATELY NOT CHANGED HERE. It is duplicated in the Python update_orders.py (see the banner above), sales.profit is
 STORED rather than computed on read, and every threshold on the platform is calibrated against the number as it stands today: the

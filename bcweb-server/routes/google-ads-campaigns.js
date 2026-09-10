@@ -133,7 +133,13 @@ router.get('/', async (req, res) => {
         -- against £221,717 correct — a 30% overstatement. Fixed to match analytics-sales, the authoritative ledger.
         SELECT s.groupid, SUM(s.qty) AS units, SUM(s.soldprice * s.qty) AS revenue, SUM(s.profit) AS profit
         FROM sales s CROSS JOIN asof a
-        WHERE s.channel = 'SHP' AND s.solddate BETWEEN a.d - ($1::int - 1) AND a.d
+        -- RETURNS EXCLUDED (qty > 0), owner 2026-09-10. Netting the reversal rows in here charged returns TWICE: every positive
+        -- row's profit already carries the flat /1.2 refund haircut from utils/shopifyProfit.js, and the reversal row then
+        -- subtracted the refund again. Measured over 11 Aug - 9 Sep 2026 it cost 70 units and GBP 729.88 of profit, which is exactly
+        -- why this screen read GBP 411 kept where Reports > Ad Daily read GBP 1,141 over the same days on the same GBP 3,117 of spend.
+        -- Ad Daily was the correct one; it has filtered qty > 0 since it was built, and this now matches it. See the header of
+        -- utils/shopifyProfit.js for the measurement and for why the haircut, not the rows, is the thing to remove one day.
+        WHERE s.channel = 'SHP' AND s.qty > 0 AND s.solddate BETWEEN a.d - ($1::int - 1) AND a.d
         GROUP BY s.groupid
       ),
       ads_w AS (
