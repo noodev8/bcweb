@@ -30,7 +30,8 @@ FIVE THINGS THE REAL FILES DO THAT A NAIVE PARSER GETS WRONG (all verified again
 
   3. GOOGLE LOWERCASES CUSTOM LABELS. The file says `0043693-gizeh`; our groupid is `0043693-GIZEH`. Every style id is upper-cased
      here, at the parse boundary, so nothing downstream has to remember. A case-sensitive join matches ZERO rows and looks exactly
-     like an empty report.
+     like an empty report. THE CAMPAIGN NAME IS UPPER-CASED FOR THE SAME REASON PLUS A SHARPER ONE: it is part of the
+     primary key of both daily tables, so two spellings of one campaign are two rows, and every roll-up over them double-counts.
 
   4. `" --"` IS GOOGLE'S NULL, WITH A LEADING SPACE. It appears in Custom label 0 (no bucket set) and in the share columns
      (reporting lag). It must become NULL, never a bucket literally named `--`.
@@ -363,7 +364,13 @@ function parseReport(text) {
     const date = parseDate(at(cells, 'day'));
     if (!date) { addSkip(skipped, 'BAD_DATE', 'Unreadable date in the Day column', cells); continue; }
 
-    const campaign = String(at(cells, 'campaign') || '').trim();
+    // UPPER-CASED AT THE BOUNDARY, for the same reason the style id is (header note 3) — and because `campaign` is part of the
+    // PRIMARY KEY of both daily tables, so a case difference does not collide with the existing row, it INSERTS A SECOND ONE and
+    // every total built from those rows doubles. That is not hypothetical: on 2026-09-10 the 30-day screen read GBP 6,234 spend
+    // against Google's own GBP 3,117, because a year of history was stored as 'STANDARD' (the legacy Python's form) and the
+    // 11 Aug - 9 Sep import arrived as 'standard' (Google's own form) and sat alongside it. Normalising here is what keeps the two
+    // writers of these tables agreeing on one key. Nothing joins this column to google_campaign.name, so the case is free to change.
+    const campaign = String(at(cells, 'campaign') || '').trim().toUpperCase();
     if (!campaign) { addSkip(skipped, 'NO_CAMPAIGN', 'No campaign name on the row', cells); continue; }
 
     if (id.type === 'PRODUCT') {
