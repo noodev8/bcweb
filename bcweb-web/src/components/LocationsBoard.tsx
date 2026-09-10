@@ -49,17 +49,20 @@ case the Inventory picker gets wrong by deriving its list from localstock. A rac
 somewhere that is not a shelf at all — today exactly one, 'Ordered', which is a marker meaning the units are still with the supplier.
 It is tagged, never hidden.
 
-THE READS ARE LIVE; THE EDITS ARE NOT WRITTEN YET (owner, 2026-09-10 — reads first, the write route next). Every adjustment is held in
-`edits`, a per-rack overlay laid over the server's lines at render time, and the footer says so where the editing happens rather than
-in a banner across the top of a screen that is mostly reading. The overlay is shaped like the write it stands in for: which rack,
-which code, which localstock ids, by how much.
+ONE WRITE IS REAL, THE REST ARE NOT YET, and the screen has to be honest about which is which. POST /locations-empty takes everything
+off a rack for good (soft-deleted, so recoverable by hand, but not from here). The per-chip +/- is still held in `edits`, a per-rack
+overlay laid over the server's lines at render time, and the chip footer says so where the editing happens rather than in a banner
+across the top of a screen that is mostly reading. The overlay is shaped like the write it stands in for — which rack, which code,
+which localstock ids, by how much — which is the shape inv-adjust already takes, so wiring it up is a swap rather than a rewrite.
+The asymmetry is why Empty rack is the quietest control in the header and the loudest thing on the page once pressed: it is the only
+button here that does something that lasts.
 =======================================================================================================================================
 */
 
 import { useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getLocationRacks, getLocationStock, type InvLocationState, type LocationStockLine } from '@/lib/api';
+import { emptyLocation, getLocationRacks, getLocationStock, type InvLocationState, type LocationStockLine } from '@/lib/api';
 import { AREA_LABEL, AREA_ORDER, areaOf } from '@/lib/locationsUi';
 
 // A rack label as printed on the shelving. Typed or scanned into the search box it jumps straight to that rack rather than filtering
@@ -93,11 +96,14 @@ export default function LocationsBoard() {
   const [find, setFind] = useState('');
   const [edits, setEdits] = useState<Record<string, RackEdits>>({});
   const [picked, setPicked] = useState<string | null>(null);   // the chip being worked on, by line key
+  const [confirmEmpty, setConfirmEmpty] = useState(false);     // the footer is asking whether to clear the whole rack
+  const [emptying, setEmptying] = useState(false);
+  const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
   const findRef = useRef<HTMLInputElement>(null);
 
   // Every rack in the building, in walking order. One call, cached for the session — the list of shelves changes about never, so a
   // revalidate on every rack click would be load on the live DB for a list that is already right.
-  const { data: rackData, isLoading: racksLoading, error: racksError } = useApiQuery(
+  const { data: rackData, isLoading: racksLoading, error: racksError, refresh: refreshRacks } = useApiQuery(
     ['locations-racks'],
     () => getLocationRacks(),
     { revalidateIfStale: false, revalidateOnReconnect: false },
@@ -133,7 +139,7 @@ export default function LocationsBoard() {
 
   // What is on the chosen rack. Keyed on the rack, so SWR keeps each shelf's contents and stepping back to one just looked at is
   // instant. `null` while nothing is selected = no request at all.
-  const { data: stockData, isLoading: stockLoading, error: stockError } = useApiQuery(
+  const { data: stockData, isLoading: stockLoading, error: stockError, refresh: refreshStock } = useApiQuery(
     selected ? ['locations-stock', selected] : null,
     () => getLocationStock(selected as string),
   );
@@ -170,6 +176,35 @@ export default function LocationsBoard() {
   const units = lines.reduce((n, l) => n + l.qty, 0);
   const pickedLine = lines.find((l) => l.key === picked) ?? null;
   const unsaved = Object.keys(rackEdits.deltas).length > 0 || rackEdits.added.length > 0;
+
+  // WHAT THE RACK ACTUALLY HOLDS, taken from the server's lines and NOT from the overlay above. Emptying is a real write, so the
+  // count it warns with and the count it guards on must both be the truth the DB will see — an unsaved +2 held on screen is a
+  // fiction, and sending it would get the sweep refused as CHANGED for no reason.
+  const serverLines = stockData?.lines ?? [];
+  const serverUnits = stockData?.units ?? 0;
+  const serverPicked = serverLines.filter((l) => l.state === 'PICKED').reduce((n, l) => n + l.qty, 0);
+  const serverAmz = serverLines.filter((l) => l.state === 'AMZ').reduce((n, l) => n + l.qty, 0);
+
+  // Take everything off the rack. The confirm has already happened in the footer; this is the button at the end of it.
+  async function doEmpty(location: string) {
+    setEmptying(true);
+    const res = await emptyLocation(location, serverUnits);
+    setEmptying(false);
+    if (res.success && res.data) {
+      // The overlay for this rack is moot the moment the shelf is cleared — keeping it would re-draw stock that is no longer there.
+      setEdits((prev) => { const next = { ...prev }; delete next[location]; return next; });
+      setPicked(null);
+      setConfirmEmpty(false);
+      const { units: took, codes, picked: wasPicked, amz: wasAmz } = res.data;
+      const caveat = [wasPicked ? `${wasPicked} picked` : '', wasAmz ? `${wasAmz} Amazon` : ''].filter(Boolean).join(', ');
+      setFlash({ ok: true, text: `Took ${took} ${took === 1 ? 'unit' : 'units'} off ${location} across ${codes} ${codes === 1 ? 'size' : 'sizes'}${caveat ? ` — including ${caveat}` : ''}.` });
+    } else {
+      setFlash({ ok: false, text: res.error || 'Could not empty that rack.' });
+      setConfirmEmpty(false);
+    }
+    // Either way the screen re-reads: on success to show the empty shelf, on a CHANGED refusal because the rack moved under us.
+    await Promise.all([refreshStock(), refreshRacks()]);
+  }
 
   // A rack's badge in the left list has to agree with the panel, so it carries that rack's unsaved edits too. Only the chosen rack has
   // a loaded line list, so every other rack is the server's count plus its own pending deltas.
@@ -229,12 +264,16 @@ export default function LocationsBoard() {
     setArea(a);
     setChosen(null);
     setPicked(null);
+    setConfirmEmpty(false);
+    setFlash(null);
   }
 
   function goToRack(location: string) {
     setChosen(location);
     setArea(areaOf(location));
     setPicked(null);        // a chip belongs to the rack it was on
+    setConfirmEmpty(false); // ...and so does a half-answered "empty this?"
+    setFlash(null);
   }
 
   // A rack label typed or scanned into the search box selects that shelf and clears the box, ready for the next one.
@@ -353,10 +392,23 @@ export default function LocationsBoard() {
                     <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">not a shelf</span>
                   )}
                 </div>
-                <div className="flex items-baseline gap-2 text-sm text-slate-500">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
                   {unsaved && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">unsaved</span>}
                   <span><span className="font-semibold tabular-nums text-slate-900">{units}</span> {units === 1 ? 'unit' : 'units'}</span>
                   <span className="tabular-nums">{shelf.length} {shelf.length === 1 ? 'style' : 'styles'}</span>
+                  {/* QUIET UNTIL IT IS ASKED FOR. The one button on this screen that cannot be undone gets no red, no fill and no
+                      prominence — it sits last, in slate, and only turns red once it has been pressed and the footer is asking. A
+                      destructive control that shouts is one that gets pressed by mistake; the weight belongs on the confirm, not on
+                      the way in. Hidden entirely on an empty rack: there is nothing to take off. */}
+                  {serverUnits > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setPicked(null); setFlash(null); setConfirmEmpty(true); }}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" /> Empty rack
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -413,10 +465,38 @@ export default function LocationsBoard() {
                 )}
               </div>
 
-              {/* ONE FOOTER, TWO MODES. Adding is the default because it is what you come to a shelf holding a box to do; picking a
-                  chip swaps in that unit's controls and Escape or Done swaps back. Same strip, same position, so nothing moves. */}
+              {/* What just happened, said once, where the thing happened. It stays until the next action rather than fading, because
+                  "I took 14 units off a shelf" is not a thing to blink at someone for three seconds. */}
+              {flash && (
+                <div
+                  className={
+                    'flex shrink-0 items-start gap-2 border-t px-4 py-2 text-sm ' +
+                    (flash.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-rose-100 bg-rose-50 text-rose-800')
+                  }
+                >
+                  <span className="min-w-0 flex-1">{flash.text}</span>
+                  <button type="button" onClick={() => setFlash(null)} className="shrink-0 rounded p-0.5 hover:bg-black/5">
+                    <XMarkIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* ONE FOOTER, THREE MODES. Adding is the default because it is what you come to a shelf holding a box to do; picking a
+                  chip swaps in that unit's controls, and asking to empty the rack swaps in the confirm. Same strip, same position, so
+                  nothing moves and there is never a dialog over the shelf you are deciding about. */}
               <div className="shrink-0 border-t border-slate-100 bg-slate-50">
-                {pickedLine ? (
+                {confirmEmpty ? (
+                  <ConfirmEmpty
+                    location={rack.location}
+                    units={serverUnits}
+                    picked={serverPicked}
+                    amz={serverAmz}
+                    unsaved={unsaved}
+                    busy={emptying}
+                    onConfirm={() => doEmpty(rack.location)}
+                    onCancel={() => setConfirmEmpty(false)}
+                  />
+                ) : pickedLine ? (
                   <PickedChip
                     line={pickedLine}
                     location={rack.location}
@@ -430,6 +510,66 @@ export default function LocationsBoard() {
             </>
           )}
         </section>
+      </div>
+    </div>
+  );
+}
+
+/*
+The one irreversible thing on this screen, so it is the only place that spends any red.
+
+WHAT IT SAYS IS THE WHOLE CONTROL. The counts are read off the SERVER's lines, not the screen's unsaved overlay, and picked and Amazon
+units are named separately because those are the two that cost something elsewhere: a picked unit is committed to a customer order
+that still expects it, and clearing the shelf tells that order nothing (owner, 2026-09-10 — "everything, with a warning"). If the rack
+holds neither, the sentence stays short rather than padding itself with two zeroes.
+
+It sits in the footer like every other action rather than in a modal over the shelf. A dialog would cover the very thing being decided
+about — you want to be able to look at the rack while reading the question.
+*/
+function ConfirmEmpty({ location, units, picked, amz, unsaved, busy, onConfirm, onCancel }: {
+  location: string;
+  units: number;
+  picked: number;
+  amz: number;
+  unsaved: boolean;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const flagged = [picked ? `${picked} picked for a customer order` : '', amz ? `${amz} allocated to Amazon` : ''].filter(Boolean);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 bg-rose-50 px-4 py-2.5" onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}>
+      <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-rose-600" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-rose-900">
+          Take all <span className="font-semibold tabular-nums">{units}</span> {units === 1 ? 'unit' : 'units'} off{' '}
+          <span className="font-semibold">{location}</span>? This cannot be undone from here.
+        </p>
+        {flagged.length > 0 && (
+          <p className="text-xs text-rose-800">
+            Includes {flagged.join(' and ')} — those units are removed too, and nothing tells the order.
+          </p>
+        )}
+        {/* The overlay is about to be dropped along with the shelf, so say so rather than letting it disappear quietly. */}
+        {unsaved && <p className="text-xs text-rose-800">The unsaved changes on this rack are discarded with it.</p>}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md px-2.5 py-1.5 text-sm text-rose-900 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+        >
+          Keep it
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          autoFocus
+          className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+        >
+          {busy ? 'Emptying…' : 'Empty the rack'}
+        </button>
       </div>
     </div>
   );

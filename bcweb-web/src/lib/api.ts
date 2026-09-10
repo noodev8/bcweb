@@ -2696,4 +2696,25 @@ export function getLocationStock(location: string) {
   );
 }
 
+// Take everything off one rack. `units` is the count the operator was shown and is a GUARD, not data — the route refuses (CHANGED) if
+// the rack no longer holds exactly that, so a shelf someone else picked from between the warning and the button is never cleared
+// blind. Picked and Amazon-allocated units go too, which is why the screen must show those counts before it calls this.
+export interface LocationEmptyResult {
+  location: string; units: number; rows: number; codes: number; picked: number; amz: number;
+}
+
+export function emptyLocation(location: string, units: number) {
+  return request<LocationEmptyResult>(
+    { url: '/locations-empty', method: 'POST', data: { location, units } },
+    (b) => ({
+      location: (b.location as string) || location,
+      units: Number(b.units) || 0,
+      rows: Number(b.rows) || 0,
+      codes: Number(b.codes) || 0,
+      picked: Number(b.picked) || 0,
+      amz: Number(b.amz) || 0,
+    })
+  );
+}
+
 export default api;

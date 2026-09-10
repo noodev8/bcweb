@@ -205,6 +205,7 @@ app.use('/goods-in-cancel', require('./routes/goods-in-cancel'));     // WRITES:
 // missing — see the header of locations-racks.js, and utils/locations.js for why the two sources are not the same question.
 app.use('/locations-racks', require('./routes/locations-racks'));     // every rack + how many units are on it
 app.use('/locations-stock', require('./routes/locations-stock'));     // what is on ONE rack, collapsed by code + state
+app.use('/locations-empty', require('./routes/locations-empty'));     // WRITES: soft-delete every unit on one rack, picked and Amazon included
 
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the
