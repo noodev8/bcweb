@@ -2717,4 +2717,21 @@ export function emptyLocation(location: string, units: number) {
   );
 }
 
+// Resolve a scan to the one size code a stock write needs. The add box on the Locations screen takes a BARCODE, inv-adjust takes a
+// code, and this is what sits between them — so an unreadable scan is caught before anything is written rather than after. Matching is
+// Goods In's rule: the code exactly, or skumap.ean with the trailing 'B' stripped.
+export interface LocationSku { code: string; groupid: string | null; title: string | null; size: string }
+
+export function findLocationSku(scan: string) {
+  return request<LocationSku>(
+    { url: '/locations-find-sku', method: 'POST', data: { scan } },
+    (b) => ({
+      code: (b.code as string) || '',
+      groupid: (b.groupid as string) ?? null,
+      title: (b.title as string) ?? null,
+      size: (b.size as string) || '',
+    })
+  );
+}
+
 export default api;

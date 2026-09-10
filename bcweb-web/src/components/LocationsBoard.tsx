@@ -49,29 +49,35 @@ case the Inventory picker gets wrong by deriving its list from localstock. A rac
 somewhere that is not a shelf at all — today exactly one, 'Ordered', which is a marker meaning the units are still with the supplier.
 It is tagged, never hidden.
 
-ONE WRITE IS REAL, THE REST ARE NOT YET, and the screen has to be honest about which is which. POST /locations-empty takes everything
-off a rack for good (soft-deleted, so recoverable by hand, but not from here). The per-chip +/- is still held in `edits`, a per-rack
-overlay laid over the server's lines at render time, and the chip footer says so where the editing happens rather than in a banner
-across the top of a screen that is mostly reading. The overlay is shaped like the write it stands in for — which rack, which code,
-which localstock ids, by how much — which is the shape inv-adjust already takes, so wiring it up is a swap rather than a rewrite.
-The asymmetry is why Empty rack is the quietest control in the header and the loudest thing on the page once pressed: it is the only
-button here that does something that lasts.
+EVERY BUTTON ON THIS SCREEN NOW WRITES, and there is no client-side overlay left. Three routes do it:
+  - the chip's +/-        POST /inv-adjust      the EXISTING Inventory write, unchanged. It already took exactly the shape this screen
+                          needed (code, location, delta, and the localstock ids behind the line), so Locations never grew a second
+                          write for the same job — one route, one set of rules, one bclog phrasing, and a fix to either screen's
+                          behaviour is a fix to both.
+  - putting a shoe on     POST /locations-find-sku then /inv-adjust with EMPTY ids — resolve the scan, then place it. In that order,
+                          so an unreadable barcode is caught before anything is written and the confirmation can name the shoe.
+  - Empty rack            POST /locations-empty  every unit off in one transaction, soft-deleted.
+After any of them the panel and the rack list both re-read, so what is on screen is what the DB says rather than a local guess that
+agreed with it until someone else picked from the same shelf. A write in flight disables the controls: a gun and a mouse can both
+outrun a round-trip.
+NOTHING HERE IS UNDOABLE FROM THE SCREEN. Removals are soft deletes (`deleted=1`) so they are recoverable by hand, and every change
+writes a bclog line under the operator's name — which is why the destructive control is the quietest one in the header until it is
+pressed.
 =======================================================================================================================================
 */
 
 import { useMemo, useRef, useState } from 'react';
 import { ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { emptyLocation, getLocationRacks, getLocationStock, type InvLocationState, type LocationStockLine } from '@/lib/api';
+import {
+  adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock,
+  type InvLocationState, type LocationStockLine,
+} from '@/lib/api';
 import { AREA_LABEL, AREA_ORDER, areaOf } from '@/lib/locationsUi';
 
 // A rack label as printed on the shelving. Typed or scanned into the search box it jumps straight to that rack rather than filtering
 // to it — a scan is a statement about where you are standing, not a query.
 const RACK_LABEL = /^LC-\d+$/i;
-
-// The unsaved overlay: per rack, a delta against each existing line's key, plus whole lines added that the server has never seen.
-interface RackEdits { deltas: Record<string, number>; added: LocationStockLine[] }
-const NO_EDITS: RackEdits = { deltas: {}, added: [] };
 
 // A chip's three states. Free stock is unstyled on purpose: it is most of the shelf, and tinting it would leave nothing for the two
 // exceptions to stand out against. Ring rather than fill so a chip stays a chip — the tint says "takeable, with a condition", and a
@@ -87,6 +93,10 @@ const STATE_WORD: Record<InvLocationState, string> = {
   AMZ: 'allocated to Amazon',
 };
 
+// inv-adjust caps one call at 50 units (MAX_DELTA there, so a typo's extra zero cannot mint a warehouse). Mirrored here so the box
+// refuses it rather than the write doing so after the operator has committed.
+const MAX_ADD = 50;
+
 // Sizes are text (RIGHT(code,2)), so they sort numerically or a 40 lands before a 5. Non-numeric sizes go last rather than nowhere.
 const sizeRank = (s: string) => (/^\d+$/.test(s) ? Number(s) : 999);
 
@@ -94,10 +104,9 @@ export default function LocationsBoard() {
   const [area, setArea] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [find, setFind] = useState('');
-  const [edits, setEdits] = useState<Record<string, RackEdits>>({});
   const [picked, setPicked] = useState<string | null>(null);   // the chip being worked on, by line key
   const [confirmEmpty, setConfirmEmpty] = useState(false);     // the footer is asking whether to clear the whole rack
-  const [emptying, setEmptying] = useState(false);
+  const [busy, setBusy] = useState(false);                     // a write is in flight; the gun can fire faster than a round-trip
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
   const findRef = useRef<HTMLInputElement>(null);
 
@@ -144,18 +153,10 @@ export default function LocationsBoard() {
     () => getLocationStock(selected as string),
   );
 
-  // ---- The unsaved overlay. Laid over the server's lines at render time; see the header. ----
-
-  const rackEdits = (selected && edits[selected]) || NO_EDITS;
-
-  // Server lines with their deltas applied, then the added ones. A line worked down to zero drops out — it is no longer stock in a
-  // place — which is what the write will do to the underlying localstock rows.
-  const lines = useMemo(() => {
-    const base = (stockData?.lines ?? [])
-      .map((l) => ({ ...l, qty: l.qty + (rackEdits.deltas[l.key] ?? 0) }))
-      .filter((l) => l.qty > 0);
-    return [...base, ...rackEdits.added];
-  }, [stockData, rackEdits]);
+  // WHAT IS ON THE SHELF IS WHAT THE SERVER SAYS IS ON THE SHELF. There is no client-side overlay any more: every +/- is a real
+  // inv-adjust write and the panel re-reads after it, so what you are looking at is the DB rather than a local guess that agreed with
+  // it until someone else picked from the same rack.
+  const lines = stockData?.lines ?? [];
 
   // The shelf as it looks: one row per style, its sizes along it. Grouped on groupid (the style), falling back to the code so a
   // localstock row with no groupid still appears as its own row rather than being swept into someone else's.
@@ -175,24 +176,22 @@ export default function LocationsBoard() {
 
   const units = lines.reduce((n, l) => n + l.qty, 0);
   const pickedLine = lines.find((l) => l.key === picked) ?? null;
-  const unsaved = Object.keys(rackEdits.deltas).length > 0 || rackEdits.added.length > 0;
-
-  // WHAT THE RACK ACTUALLY HOLDS, taken from the server's lines and NOT from the overlay above. Emptying is a real write, so the
-  // count it warns with and the count it guards on must both be the truth the DB will see — an unsaved +2 held on screen is a
-  // fiction, and sending it would get the sweep refused as CHANGED for no reason.
-  const serverLines = stockData?.lines ?? [];
+  // Emptying guards on the count it was shown, so it sends the SERVER's total rather than anything derived — see locations-empty.js.
   const serverUnits = stockData?.units ?? 0;
-  const serverPicked = serverLines.filter((l) => l.state === 'PICKED').reduce((n, l) => n + l.qty, 0);
-  const serverAmz = serverLines.filter((l) => l.state === 'AMZ').reduce((n, l) => n + l.qty, 0);
+  const serverPicked = lines.filter((l) => l.state === 'PICKED').reduce((n, l) => n + l.qty, 0);
+  const serverAmz = lines.filter((l) => l.state === 'AMZ').reduce((n, l) => n + l.qty, 0);
+
+  // Both panels re-read after any write: the shelf because it changed, the rack list because its count did.
+  async function reread() {
+    await Promise.all([refreshStock(), refreshRacks()]);
+  }
 
   // Take everything off the rack. The confirm has already happened in the footer; this is the button at the end of it.
   async function doEmpty(location: string) {
-    setEmptying(true);
+    setBusy(true);
     const res = await emptyLocation(location, serverUnits);
-    setEmptying(false);
+    setBusy(false);
     if (res.success && res.data) {
-      // The overlay for this rack is moot the moment the shelf is cleared — keeping it would re-draw stock that is no longer there.
-      setEdits((prev) => { const next = { ...prev }; delete next[location]; return next; });
       setPicked(null);
       setConfirmEmpty(false);
       const { units: took, codes, picked: wasPicked, amz: wasAmz } = res.data;
@@ -203,60 +202,52 @@ export default function LocationsBoard() {
       setConfirmEmpty(false);
     }
     // Either way the screen re-reads: on success to show the empty shelf, on a CHANGED refusal because the rack moved under us.
-    await Promise.all([refreshStock(), refreshRacks()]);
+    await reread();
   }
 
-  // A rack's badge in the left list has to agree with the panel, so it carries that rack's unsaved edits too. Only the chosen rack has
-  // a loaded line list, so every other rack is the server's count plus its own pending deltas.
-  function unitsOn(location: string, serverUnits: number) {
-    if (location === selected) return units;
-    const e = edits[location];
-    if (!e) return serverUnits;
-    const delta = Object.values(e.deltas).reduce((n, d) => n + d, 0) + e.added.reduce((n, l) => n + l.qty, 0);
-    return Math.max(0, serverUnits + delta);
+  // ONE UNIT ON OR OFF ONE SHELF LINE — the existing inv-adjust write, unchanged and shared with the Inventory panel, which is why
+  // this screen never grew a write of its own for it. `ids` is the whole cluster behind the chip: localstock stores two pairs on a
+  // shelf as either one row of qty 2 or two rows of qty 1, so the route peels units off the cluster rather than assuming a row.
+  async function adjust(location: string, line: LocationStockLine, delta: number) {
+    if (busy) return;
+    setBusy(true);
+    const res = await adjustStock({ code: line.code, location, delta, ids: line.ids });
+    setBusy(false);
+    if (res.success) {
+      setFlash({
+        ok: true,
+        text: delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`,
+      });
+    } else {
+      // NOT_FOUND here means the cluster is gone — someone else cleared the line while it was on screen. The re-read below is the fix,
+      // so the message says that rather than reading as a failure of the button.
+      setFlash({ ok: false, text: res.error || 'Could not change that line.' });
+    }
+    await reread();
   }
 
-  function applyEdit(location: string, fn: (e: RackEdits) => RackEdits) {
-    setEdits((prev) => ({ ...prev, [location]: fn(prev[location] ?? NO_EDITS) }));
-  }
-
-  function adjust(location: string, line: LocationStockLine, delta: number) {
-    applyEdit(location, (e) => {
-      // An added line is not on the server, so it is corrected in place rather than carried as a delta against something real.
-      if (e.added.some((l) => l.key === line.key)) {
-        return { ...e, added: e.added.map((l) => (l.key === line.key ? { ...l, qty: l.qty + delta } : l)).filter((l) => l.qty > 0) };
-      }
-      return { ...e, deltas: { ...e.deltas, [line.key]: (e.deltas[line.key] ?? 0) + delta } };
-    });
-  }
-
-  function addStock(location: string, code: string, qty: number) {
-    const clean = code.trim().toUpperCase();
-    if (!clean || qty < 1) return;
-    applyEdit(location, (e) => {
-      const hit = e.added.find((l) => l.code === clean);
-      if (hit) return { ...e, added: e.added.map((l) => (l === hit ? { ...l, qty: l.qty + qty } : l)) };
-      // Anything already on the rack under this code is a server line, so it is topped up as a delta instead of a second line.
-      const server = (stockData?.lines ?? []).find((l) => l.code === clean && l.state === 'FREE');
-      if (server && location === selected) {
-        return { ...e, deltas: { ...e.deltas, [server.key]: (e.deltas[server.key] ?? 0) + qty } };
-      }
-      return {
-        ...e,
-        added: [...e.added, {
-          key: `new-${clean}-${Date.now()}`,
-          code: clean,
-          groupid: null,
-          // The name is the server's to fill in — a code is resolved against skumap by the write, never guessed here.
-          title: null,
-          size: clean.slice(-2),
-          uksize: null,
-          qty,
-          state: 'FREE',
-          ids: [],
-        }],
-      };
-    });
+  // PUT A SHOE ON THE SHELF, in two steps, and the order matters: RESOLVE the scan first, then write. A barcode is not a code, so
+  // handing the raw scan to inv-adjust would fail as an unknown SKU after the operator had already committed. Resolving first means an
+  // unreadable scan is caught before anything is written, and the confirmation can name the shoe rather than the barcode.
+  async function addStock(location: string, scan: string, qty: number) {
+    const typed = scan.trim();
+    if (!typed || qty < 1 || busy) return;
+    setBusy(true);
+    const found = await findLocationSku(typed);
+    if (!found.success || !found.data) {
+      setBusy(false);
+      setFlash({ ok: false, text: found.error || `Nothing matches ${typed.toUpperCase()}.` });
+      return;
+    }
+    const sku = found.data;
+    // ids EMPTY is inv-adjust's "put it somewhere it isn't yet" path: it mints a free, unallocated row from the catalogue. That is the
+    // right shape even when the code IS already on this rack — a second free row joins the same cluster and the panel re-collapses it.
+    const res = await adjustStock({ code: sku.code, location, delta: qty, ids: [] });
+    setBusy(false);
+    setFlash(res.success
+      ? { ok: true, text: `Put ${qty} × ${sku.code}${sku.title ? ` (${sku.title})` : ''} on ${location}.` }
+      : { ok: false, text: res.error || `Could not put ${sku.code} on ${location}.` });
+    await reread();
   }
 
   // Changing area drops the rack with it — a shelf in C1 is not a thing you are still looking at once you have moved to C3-Front.
@@ -353,7 +344,9 @@ export default function LocationsBoard() {
             )}
             {listed.map((r) => {
               const on = r.location === selected;
-              const n = unitsOn(r.location, r.units);
+              // The count comes straight off the rack list, which is re-read after every write — so it agrees with the panel because
+              // both were told by the server, not because the client kept them in step.
+              const n = r.location === selected ? units : r.units;
               return (
                 <li key={r.location}>
                   <button
@@ -393,7 +386,6 @@ export default function LocationsBoard() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-500">
-                  {unsaved && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">unsaved</span>}
                   <span><span className="font-semibold tabular-nums text-slate-900">{units}</span> {units === 1 ? 'unit' : 'units'}</span>
                   <span className="tabular-nums">{shelf.length} {shelf.length === 1 ? 'style' : 'styles'}</span>
                   {/* QUIET UNTIL IT IS ASKED FOR. The one button on this screen that cannot be undone gets no red, no fill and no
@@ -491,20 +483,19 @@ export default function LocationsBoard() {
                     units={serverUnits}
                     picked={serverPicked}
                     amz={serverAmz}
-                    unsaved={unsaved}
-                    busy={emptying}
+                    busy={busy}
                     onConfirm={() => doEmpty(rack.location)}
                     onCancel={() => setConfirmEmpty(false)}
                   />
                 ) : pickedLine ? (
                   <PickedChip
                     line={pickedLine}
-                    location={rack.location}
+                    busy={busy}
                     onAdjust={(d) => adjust(rack.location, pickedLine, d)}
                     onDone={() => setPicked(null)}
                   />
                 ) : (
-                  <AddToRack key={rack.location} location={rack.location} onAdd={addStock} />
+                  <AddToRack key={rack.location} location={rack.location} busy={busy} onAdd={addStock} />
                 )}
               </div>
             </>
@@ -518,20 +509,18 @@ export default function LocationsBoard() {
 /*
 The one irreversible thing on this screen, so it is the only place that spends any red.
 
-WHAT IT SAYS IS THE WHOLE CONTROL. The counts are read off the SERVER's lines, not the screen's unsaved overlay, and picked and Amazon
-units are named separately because those are the two that cost something elsewhere: a picked unit is committed to a customer order
+WHAT IT SAYS IS THE WHOLE CONTROL. Picked and Amazon units are named separately because those are the two that cost something elsewhere: a picked unit is committed to a customer order
 that still expects it, and clearing the shelf tells that order nothing (owner, 2026-09-10 — "everything, with a warning"). If the rack
 holds neither, the sentence stays short rather than padding itself with two zeroes.
 
 It sits in the footer like every other action rather than in a modal over the shelf. A dialog would cover the very thing being decided
 about — you want to be able to look at the rack while reading the question.
 */
-function ConfirmEmpty({ location, units, picked, amz, unsaved, busy, onConfirm, onCancel }: {
+function ConfirmEmpty({ location, units, picked, amz, busy, onConfirm, onCancel }: {
   location: string;
   units: number;
   picked: number;
   amz: number;
-  unsaved: boolean;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -550,8 +539,6 @@ function ConfirmEmpty({ location, units, picked, amz, unsaved, busy, onConfirm, 
             Includes {flagged.join(' and ')} — those units are removed too, and nothing tells the order.
           </p>
         )}
-        {/* The overlay is about to be dropped along with the shelf, so say so rather than letting it disappear quietly. */}
-        {unsaved && <p className="text-xs text-rose-800">The unsaved changes on this rack are discarded with it.</p>}
       </div>
       <div className="flex items-center gap-1.5">
         <button
@@ -579,12 +566,13 @@ function ConfirmEmpty({ location, units, picked, amz, unsaved, busy, onConfirm, 
 The chip's controls. Named for the thing it acts on ("Arizona · 38"), because the alternative — a bare stepper — makes the operator
 remember which chip they clicked while they are looking at their hands.
 
-It also carries the unsaved warning, and that placement is the point: it sits where the change is being made rather than in a banner
-across the top of a screen that is mostly reading, so it is read at the moment it matters instead of dismissed on arrival.
+EVERY PRESS IS A WRITE — one inv-adjust call, audited to bclog — so both buttons go dead while one is in flight. A gun and a mouse can
+both outrun a round-trip, and two presses racing each other against the same cluster is the one way to take off a pair you meant to
+take off once.
 */
-function PickedChip({ line, location, onAdjust, onDone }: {
+function PickedChip({ line, busy, onAdjust, onDone }: {
   line: LocationStockLine;
-  location: string;
+  busy: boolean;
   onAdjust: (delta: number) => void;
   onDone: () => void;
 }) {
@@ -600,7 +588,8 @@ function PickedChip({ line, location, onAdjust, onDone }: {
         <button
           type="button"
           onClick={() => onAdjust(-1)}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <MinusSmallIcon className="h-4 w-4" /> Take one off
         </button>
@@ -608,7 +597,8 @@ function PickedChip({ line, location, onAdjust, onDone }: {
         <button
           type="button"
           onClick={() => onAdjust(1)}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <PlusSmallIcon className="h-4 w-4" /> Put one on
         </button>
@@ -620,10 +610,6 @@ function PickedChip({ line, location, onAdjust, onDone }: {
           Done
         </button>
       </div>
-
-      <p className="w-full text-xs text-amber-700">
-        Held on screen only — {location} is not updated until the save is built.
-      </p>
     </div>
   );
 }
@@ -635,7 +621,11 @@ were about to add to C1-04 should not follow you to C1-05.
 ALWAYS OPEN, not behind an "add" link. On a screen whose job is moving stock on and off shelves, the add IS the screen — hiding it
 costs a click on the most common action to save one strip of a panel the operator is already looking at.
 */
-function AddToRack({ location, onAdd }: { location: string; onAdd: (location: string, code: string, qty: number) => void }) {
+function AddToRack({ location, busy, onAdd }: {
+  location: string;
+  busy: boolean;
+  onAdd: (location: string, scan: string, qty: number) => void;
+}) {
   const [code, setCode] = useState('');
   const [qty, setQty] = useState(1);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -660,17 +650,19 @@ function AddToRack({ location, onAdd }: { location: string; onAdd: (location: st
       <input
         type="number"
         min={1}
+        max={MAX_ADD}
         value={qty}
-        onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+        // Clamped to inv-adjust's own MAX_DELTA rather than letting the write refuse it: the operator finds out here, before pressing.
+        onChange={(e) => setQty(Math.min(MAX_ADD, Math.max(1, Number(e.target.value) || 1)))}
         aria-label="How many"
         className="w-14 rounded-md border border-slate-200 px-2 py-1.5 text-sm tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
       />
       <button
         type="submit"
-        disabled={!code.trim()}
+        disabled={!code.trim() || busy}
         className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       >
-        Put it on
+        {busy ? 'Putting on…' : 'Put it on'}
       </button>
     </form>
   );

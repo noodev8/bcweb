@@ -11,13 +11,15 @@ with a style already in hand, so it only ever has to offer the racks that style 
 hands is the opposite errand — the shelf is the thing you know and the stock is what you are looking up — and the two need different
 first screens even though they end up writing the same `localstock` rows.
 
-READS ARE LIVE, AND THE FIRST WRITE HAS LANDED (2026-09-10, owner — the screen first, then the data, then the write). GET /locations-racks and POST
+LIVE END TO END (2026-09-10, owner — the screen first, then the data, then the writes). GET /locations-racks and POST
 /locations-stock are real: the racks come off the two sources utils/locations.js separates, FULL JOINed so that neither an empty rack
 nor stock parked somewhere that isn't a shelf can go missing, and a rack's contents come off `localstock` (`COALESCE(deleted,0)=0 AND
 qty>0`, per the CLAUDE.md landmine — never skusummary.stockvariants) collapsed by code and state. POST /locations-empty clears a whole
 rack, soft-deleting every unit on it (picked and Amazon-allocated included, with the warning that entails) inside one withTransaction
-and logging a bclog line per code. What is still to come is the per-unit +/-, which is inv-adjust's existing contract; until it is
-wired LocationsBoard holds those edits in an overlay and says so.
+and logging a bclog line per code. The per-unit +/- goes through the EXISTING /inv-adjust — the Inventory panel's write, shared rather
+than reimplemented — with /locations-find-sku resolving a scanned barcode to a code first, since inv-adjust takes a SKU and a gun
+fires a barcode. 'C3-Amazon' is a shelf like any other here: inv-adjust deliberately locks nothing (the operator is in control), and
+the panel shows the state on every chip so they can see what they are touching.
 =======================================================================================================================================
 */
 
