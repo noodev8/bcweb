@@ -89,17 +89,20 @@ export default function AnalyticsPage() {
           live
         />
 
-        {/* Ad Payback — the DAILY half of the same question Ad Efficiency asks yearly, which is why the two sit together: "is
-            Google paying for itself?" over 13 months and whole-book, then on one day and per style. Kept standalone rather than
-            folded in either direction (owner, 2026-09-06). Not into Ad Efficiency, because that is a rarely-opened strategic read
-            and this is a morning check — the same cadence argument that pulled Amazon Order back out of Reports in Sep 2026. Not
-            into Sales, because Sales is line-grain and all-channel, so a Kept column would repeat on a multi-line style and be
-            blank on every Amazon row. And not a Today button on the Google Ads screen, which is anchored to the last COMPLETE day
-            of ad data — a to-today panel beside it would undo the anchor it depends on. */}
+        {/* Ad Daily — the DAILY half of the question Ad Efficiency asks monthly, which is why the two sit together: "is Google
+            paying for itself?" over 13 months, then day by day over a fortnight. It exists because a month is too slow to show a
+            decision working — August 2026 is one row at 8% kept, and it could not show that the change of course on 31 Aug worked
+            until October — while the Google Ads grid is per style and never totals the book.
+
+            REPLACED "Ad Payback" (owner, 2026-09-10), which listed the styles that sold on one day with a trailing 30-day verdict
+            beside each. It was presented to staff and could not be explained: every other list here has a membership rule that IS
+            the job, and "styles that happened to sell yesterday" is not one. Note the description says WHOSE question this is —
+            staff act on styles from the Google Ads screen; this is the owner's budget-level read, and handing it to staff is what
+            went wrong the first time. */}
         <ModuleTile
-          title="Ad Payback"
-          description="What sold on one day and whether each of those styles is paying for its Google ads — the day's profit against its trailing 30-day position. Any day, back a year."
-          href="/analytics/ad-payback"
+          title="Ad Daily"
+          description="Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner's read on whether a budget change is working."
+          href="/analytics/ad-daily"
           icon={SunIcon}
           live
         />

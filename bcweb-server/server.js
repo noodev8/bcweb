@@ -199,6 +199,16 @@ app.use('/goods-in-shelves', require('./routes/goods-in-shelves'));   // every r
 app.use('/goods-in-book', require('./routes/goods-in-book'));         // WRITES: arrived + localstock + incoming_stock + bclog
 app.use('/goods-in-cancel', require('./routes/goods-in-cancel'));     // WRITES: undo one booking, and reopen the order line
 
+// --- Locations (the warehouse read from the shelf end: what is on a rack, and moving stock on and off it) ---
+// The reads are two because the screen is two panels: the rack list is loaded once and stays put, the contents change with every
+// click. Racks come from `location` FULL JOINed to localstock so neither an empty rack nor stock parked somewhere off-list can go
+// missing — see the header of locations-racks.js, and utils/locations.js for why the two sources are not the same question.
+app.use('/locations-racks', require('./routes/locations-racks'));     // every rack + how many units are on it
+app.use('/locations-stock', require('./routes/locations-stock'));     // what is on ONE rack, collapsed by code + state
+app.use('/locations-empty', require('./routes/locations-empty'));     // WRITES: soft-delete every unit on one rack, picked and Amazon included
+app.use('/locations-find-sku', require('./routes/locations-find-sku')); // resolve a scanned barcode (or typed SKU) to a code, before the add
+app.use('/locations-transfer', require('./routes/locations-transfer')); // WRITES: one shelf to another, keeping ordernum/allocated — a move, not a remove+add
+
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the
 // `orderstatus` table and little else — utils/customerOrders.js opens with why `orderdate` must NOT be read through
@@ -242,11 +252,11 @@ app.use('/analytics-ad-efficiency', require('./routes/analytics-ad-efficiency'))
 // Sales: the windowed sales ledger (raw lines + a net-profit summary). Filter by channel (all/shp/amz) and window (today/…/90d/custom),
 // search to one product, returns included & netted. Read-only; the front end builds the CSV export from these rows.
 app.use('/analytics-sales', require('./routes/analytics-sales'));
-// Ad Payback: what SOLD on one day (Shopify), with each style's trailing 30-day Google position beside it. Inverts the Google Ads
-// grid on purpose — a one-day WINDOW there is ~95% "took spend, sold nothing" rows, where a one-day LIST of what sold is 3-6 rows.
-// The sale is the day and is exact; the verdict is trailing, because same-day ad spend does not exist yet and would be the wrong
-// denominator anyway. Read-only.
-app.use('/analytics-ad-payback', require('./routes/analytics-ad-payback'));
+// Ad Daily: one row per day — what Google spent, what Shopify sold — over a short series with one total across it. Replaced Ad
+// Payback (2026-09-10), whose per-style rows and trailing 30-day columns put two time periods on one row and could not be explained
+// to staff. Fills the gap between Ad Efficiency (monthly, too slow to show a decision working) and the Google Ads grid (per style,
+// never totals the book). No kept column on a ROW: daily units are a small count and the swing would be noise. Read-only.
+app.use('/analytics-ad-daily', require('./routes/analytics-ad-daily'));
 // Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
 // are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
 app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first

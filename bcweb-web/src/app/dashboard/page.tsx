@@ -50,9 +50,13 @@ flat twelve-tile grid it replaced, and a band of two tiles in a three-wide grid 
 Together the whole menu lands in about the height DAILY and STOCK & PRODUCTS used to take on their own.
 
 KEEP EVERY BAND ONE ROW OF TILES. That is the rule the 2026-09-03 tidy-up came down to (owner: the page was "looking a bit odd with
-all the different heights"), and with a four-wide grid it means a band of at most four. All four are currently 3 / 3 / 4 / 2. A fifth
+all the different heights"), and with a four-wide grid it means a band of at most four. A fifth
 tile in any band wraps it, and a wrapped band is the thing that looked wrong — so a fifth tile is a prompt to move something out or
 split the band, not something to absorb.
+  THAT RULE IS CURRENTLY BROKEN IN ONE BAND, knowingly. STOCK & PRODUCTS is at six (Birkenstock took it to five, Locations to six on
+  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 4 / 6 / 2. It was allowed rather than fixed because the alternative is moving
+  a tile into a band it doesn't belong in to keep a row tidy, and the six are one coherent chain — decide, place, receive, shelve,
+  season-buy, edit. If it is to be fixed, split the band (procurement vs the catalogue), don't evict a tile.
 =======================================================================================================================================
 */
 
@@ -62,7 +66,7 @@ import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon,
+  CursorArrowRaysIcon, MapPinIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -251,6 +255,18 @@ export default function DashboardPage() {
             A calendar rather than the clipboard this tile first carried: Amazon Order has since taken the clipboard, and two tiles in
             one band wearing the same icon is worse than either choice of icon. The calendar is the truer one anyway — what makes this
             screen hard is that it is months ahead of itself. */}
+        {/* Locations — the warehouse read from the shelf end instead of the product end: stand at a rack, see what is on it, add or
+            take off. Straight after Goods In because it is the same handling job one step on — Goods In puts a delivery on a shelf,
+            this is every other reason stock moves on or off one. NEW 2026-09-10 (owner); scaffold for now, logic to follow. */}
+        <ModuleTile
+          title="Locations"
+          description="Work from the shelf, not the product — what's on a rack, and moving stock on and off it."
+          href="/locations"
+          icon={MapPinIcon}
+          live
+          compact
+        />
+
         <ModuleTile
           title="Birkenstock"
           description="Sold in 365 days against what we hold, size by size — what to put on the next order."
