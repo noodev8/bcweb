@@ -44,41 +44,59 @@ a mouse means putting the gun down. It is NOT a full scan station though — Goo
 unit and an error stops the line. This screen is worked both ways: at the bench during a stock check, and at the desk when someone
 asks what is on C1-04.
 
-WHICH IS TWO DISTANCES, AND THEY NEEDED SEPARATING (owner, 2026-09-11: "when scanning the person is not at the computer, they are at a
-distance"). At the desk you are 60cm from 12px type with a mouse in your hand. At the shelving you are two metres away holding a gun
-and a box, and you glance up between scans and take one word off the screen. Six things broke at the second distance, and the fixes
-are the shape of everything below:
+FOUR TABS, ONE SCREEN (owner, 2026-09-11). The job is mostly done standing two metres from the monitor with a gun in one hand, and for
+a while that lived in a separate full-size scan station beside this panel. It made the screen two screens sharing a URL — you had to
+know which one you were in before you could read anything — so the verbs moved INSIDE the rack panel instead ("I prefer the layout of
+the shelf view and don't like it being 2 screens in 1"). The rack list, the rack's name and its count never move. The tab only decides
+what fills the box beneath them:
+
+  ADD       scan a shoe, it goes on this rack
+  REMOVE    scan a shoe, one pair comes off it
+  TRANSFER  scan every pair you are carrying, then scan the rack they go on
+  DISPLAY   the shelf itself — the size runs, the chips, the picked-chip controls. The resting tab, and the only one that writes
+            nothing, which is why it is where the screen opens and is never remembered from last time.
+
+On the three verbs the box is a LOG: one row per thing that happened, OLDEST FIRST, with a dot for how it went and its own Undo where
+the thing can be taken back. It reads top to bottom like a delivery note and follows its own foot as it grows, so the newest line is
+always the one nearest the scan box that produced it. Same idea as Goods In's run list and for the same reason — at the shelving you
+cannot scroll back through a toast. Clear screen empties that list and nothing else, in Goods In's words exactly, because it is the
+same button; changing tab clears it too, since the log is the record of the run you are on and a different verb is a different run.
+
+WHAT BROKE AT TWO METRES, and is fixed underneath all of that:
 
   1. TWO BOXES TOOK A GUN — the rack finder and the add box — and which had the caret depended on the last click, which you cannot
      see from the aisle. A rack label fired into the add box came back "Nothing matches LC-58"; a shoe fired into the finder quietly
      filtered the aisle instead of going on a shelf. Both now go through `onScan`, which decides what a scan means from WHAT IT IS
-     (a rack's barcode or name, or else a shoe) rather than from where it landed. That is the flow change: at a shelf, scanning a
-     shoe IS putting it there.
-  2. FAST SCANS WERE DROPPED IN SILENCE. `addStock` returned early while a write was in flight and AddToRack had already cleared the
-     box, so a gun outrunning the round-trip lost a pair with nothing on screen saying so — the worst possible failure for a stock
-     check, because you only find out when the count is wrong weeks later. Scans are now HELD one deep (`queued`) and run when the
-     write lands; a second one on top of that is refused out loud.
-  3. NOTHING MADE A NOISE. Goods In beeps only on a stop and can afford to — its operator is at arm's length. Here silence after a
-     scan is indistinguishable from the gun not firing, so a write blips and a refusal gets Goods In's low buzz. Toggleable, and
+     (a rack's barcode or name, or else a shoe) and from the tab you are on — never from where it landed.
+  2. FAST SCANS WERE DROPPED IN SILENCE. `addStock` returned early while a write was in flight and the box had already cleared
+     itself, so a gun outrunning the round-trip lost a pair with nothing on screen saying so — the worst failure there is for a stock
+     check, because you find out when the count is wrong weeks later. Scans are now HELD one deep (`queued`) and run when the write
+     lands; a second on top of that is refused out loud.
+  3. ENTER DID NOTHING ON ADD. A form only submits implicitly on Enter when it has a submit button or exactly one field, and the scan
+     bar grows a second field (pairs per scan) on Add. Enter is handled on the inputs now — see `submitScan`.
+  4. NOTHING MADE A NOISE. Goods In beeps only on a stop and can afford to — its operator is at arm's length. Here silence after a
+     scan is indistinguishable from the gun not firing, so a write blips and a refusal gets Goods In's low buzz. Toggleable and
      remembered, exactly as it is there.
-  4. THE ANSWER WAS 14px AT THE BOTTOM EDGE. The flash strip was right to persist rather than fade, but it sat below a list that can
-     be 43 rows long. In scan mode it is an answer BAND, next to the scan box, and it prints the number the job is actually checking
-     — what is on the shelf NOW, read back off the re-read rather than added up from the delta we sent.
-  5. EVERY WRITE LOST YOUR PLACE in the desk shelf. The touched line now keeps a ring until the next action and is scrolled to.
-  6. THE SHELF ITSELF WAS THE WRONG THING TO SHOW (owner, 2026-09-11: "scan mode I don't care about displaying what's on the rack —
-     transfer, add or remove, don't want to overwhelm the user with needed info"). At the shelving the shelf is in front of your face.
-     So scan mode is not a bigger version of this screen, it is a different one: three verbs, the rack you are standing at, the answer
-     band and the box. Nothing to read past. The desk view keeps the size runs, the chips and the footer exactly as they were —
-     averaging the two would give a screen too big to browse and too small to read.
+  5. THE CARET WANDERED. Every action left focus wherever it landed, so the next scan went nowhere. On a verb tab it goes back to the
+     scan box after everything.
+  6. EVERY WRITE LOST YOUR PLACE on the shelf. The touched line keeps a ring until the next action, and is scrolled to.
 
-TRANSFER IS A BASKET, filled by scanning and emptied onto one rack (owner, 2026-09-11: "needs to work for multiple pairs in one go — I
-don't want to do one at a time and keep choosing"). Scan every pair you are carrying off the shelf, then name the destination ONCE.
-That is the shape of the errand: an armful off one rack and onto another, where the walk is the expensive part and choosing the far
-rack five times is pure tax. Scanning the same size twice makes it two of that size, capped at what the shelf actually holds.
-It is the same `transfer` state the desk's chip button fills (with one line) and the same POST /locations-transfer — warnings, the
-Amazon-bay question and the undo all included — so there is one move on this screen, reached two ways, and not two to keep in step.
-Emptying the basket LOOPS that route, one call per line, the same shape the bulk price move uses. So a basket can land half-moved, and
-the message says which lines did not go rather than reporting one cheerful total.
+TRANSFER IS A BASKET, filled by scanning and emptied onto one rack (owner: "needs to work for multiple pairs in one go — I don't want
+to do one at a time and keep choosing"). Scan every pair you are carrying off the shelf, then name the destination ONCE. That is the
+shape of the errand: an armful off one rack and onto another, where the walk is the expensive part and choosing the far rack five
+times is pure tax. ONE SCAN IS ONE LINE, never a "×3" — lines are what can be checked against the shoes in your hands, and a mis-scan
+is then one line to take back rather than a number to decrement.
+
+A PAIR THE SOURCE CANNOT GIVE UP IS PUT ON THE DESTINATION INSTEAD, never refused (owner: "if a user tries to transfer something that
+isn't there just do it as an add"). That applies twice over: to a code the shelf never listed, and to a move the route answers with
+"that line is no longer on this rack" — the line went stale while the basket was filled, or somebody picked from it. Whichever it is,
+the fact in the room does not change: the operator is holding those shoes and putting them on this rack, so they are booked ON it with
+inv-adjust rather than nothing being written anywhere. The difference is NOT said out loud — it is bookkeeping, bclog records which
+write actually happened, and the operator carried the shoe to the other shelf either way.
+It is the same `transfer` state the Display tab's chip button fills (with one line, then hands you to the Transfer tab) and the same
+POST /locations-transfer — warnings, the Amazon-bay question and the undo all included — so there is one move on this screen, reached
+two ways, and not two to keep in step. Emptying the basket LOOPS that route, one call per line, the same shape the bulk price move
+uses. So a basket can land half-moved, and the message names the lines that did not go rather than reporting one cheerful total.
 
 WHICH UNIT A SCAN MEANS, for Remove and Transfer, is `STATE_PREFERENCE`: a rack can hold the same code as a free pair and a picked one
 at once, and they are not interchangeable. Free first, Amazon next, picked last, and the confirmation names the state whenever it is
@@ -115,8 +133,8 @@ pressed.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeftIcon, ArrowRightCircleIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, QrCodeIcon,
-  TrashIcon, XMarkIcon,
+  ArrowRightCircleIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MinusSmallIcon, PlusSmallIcon, QrCodeIcon, TrashIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
@@ -133,29 +151,11 @@ const RACK_LABEL = /^LC-\d+$/i;
 // Remembered preferences. Same lazy-initialiser trick as GoodsInStation, and safe for the same reason: AppShell renders a splash
 // instead of its children until auth has hydrated, so this component never renders on the server and there is no first paint for a
 // localStorage value to disagree with. KEEP THE TWO IN STEP if that assumption ever changes.
-const SCAN_KEY = 'bc_locations_scan';
 const SOUND_KEY = 'bc_locations_sound';
 function remembered(key: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback;
   try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
-
-// THE TWO DISTANCES THIS SCREEN IS READ FROM (owner, 2026-09-11). The header already said this screen is worked two ways — at the desk
-// when someone asks what is on C1-04, and at the shelving during a stock check — and they are not the same screen. At the desk you are
-// 60cm from 12px type with a mouse; at the shelving you are two metres away with a gun in one hand and a box in the other, and you
-// glance up between scans the way Goods In describes.
-//
-// SCAN MODE IS NOT A BIGGER VERSION OF THIS SCREEN, it is a different one (owner, 2026-09-11: "scan mode I don't care about displaying
-// what's on the rack — transfer, add or remove, don't want to overwhelm the user with needed info"). At the shelving you already have
-// the shelf: it is in front of your face, and reading 43 rows of it off a monitor two metres away is work the operator did not ask
-// for. What they cannot see is whether the gun landed. So scan mode drops the shelf entirely and is three verbs, a rack, and a box:
-// see ScanStation. The desk view keeps everything — the size runs, the chips, the footer — unchanged.
-//
-// What the two modes still share is the way into a rack, so this is only the tabs and the aisle list.
-const SCALE = {
-  desk: { area: 'px-3 py-1.5 text-sm', rackRow: 'px-3 py-1.5 text-sm' },
-  scan: { area: 'px-4 py-2 text-base', rackRow: 'px-4 py-2.5 text-lg' },
-} as const;
 
 // A chip's three states. Free stock is unstyled on purpose: it is most of the shelf, and tinting it would leave nothing for the two
 // exceptions to stand out against. Ring rather than fill so a chip stays a chip — the tint says "takeable, with a condition", and a
@@ -171,14 +171,30 @@ const STATE_WORD: Record<InvLocationState, string> = {
   AMZ: 'allocated to Amazon',
 };
 
-// THE THREE VERBS OF SCAN MODE. Everything that screen can do, said as the operator would say it, because at the shelving the whole
-// interface is "which of these am I doing, and did it land". Transfer is last: it is two scans rather than one, and the rarest errand.
-type ScanAction = 'add' | 'remove' | 'transfer';
-const ACTIONS: { key: ScanAction; label: string; hint: (rack: string) => string }[] = [
+// THE FOUR TABS ACROSS THE TOP OF THE RACK PANEL. Three verbs and a view: what you are DOING to this shelf, or just looking at it.
+//
+// ONE SCREEN, NOT TWO (owner, 2026-09-11: "I prefer the layout of the shelf view and don't like it being 2 screens in 1"). There was
+// briefly a separate full-size scan station beside this panel; it made the screen two screens sharing a URL, and the operator had to
+// know which one they were in before they could read anything. The verbs live INSIDE the shelf panel now, where the rack, its name
+// and its count already are — the tab only changes what fills the box beneath them: the shelf itself, or the log of what you have
+// just scanned at it.
+//
+// Display is the resting state because it is the only one of the four that writes nothing.
+type Panel = 'display' | 'add' | 'remove' | 'transfer';
+const PANELS: { key: Panel; label: string; hint: (rack: string) => string }[] = [
   { key: 'add', label: 'Add', hint: (r) => `Scan a shoe to put it on ${r}` },
   { key: 'remove', label: 'Remove', hint: (r) => `Scan a shoe to take it off ${r}` },
   { key: 'transfer', label: 'Transfer', hint: (r) => `Scan the pairs to move off ${r}` },
+  { key: 'display', label: 'Display', hint: (r) => `What is on ${r}` },
 ];
+// The tint each verb carries, the same colour language the rest of the platform uses: rose takes stock away, brand moves it, emerald
+// puts it on. Display is slate because looking is not an action.
+const PANEL_TINT: Record<Panel, string> = {
+  add: 'bg-emerald-600 text-white',
+  remove: 'bg-rose-600 text-white',
+  transfer: 'bg-brand-600 text-white',
+  display: 'bg-slate-800 text-white',
+};
 
 // WHICH UNIT A SCANNED CODE MEANS when the shelf holds it more than once. A code is one size of one style, but a rack can carry it as
 // several localstock clusters at the same time — a free pair standing next to one picked for a customer order — and those are not
@@ -189,10 +205,42 @@ const STATE_PREFERENCE: InvLocationState[] = ['FREE', 'AMZ', 'PICKED'];
 // WHAT IS IN YOUR HANDS. A transfer is a BASKET, not a shoe (owner, 2026-09-11: "needs to work for multiple pairs in one go — I don't
 // want to do one at a time and keep choosing"). You fill it at one rack — scan, scan, scan — and then name the destination ONCE. That
 // is how the errand actually looks: an armful off one shelf and onto another, where the walk is the expensive part and choosing the
-// far rack five times is pure tax. One entry per shelf line, carrying how many of that line are going; scanning the same size twice
-// makes it two rather than a second entry.
-interface TransferItem { line: LocationStockLine; units: number }
+// far rack five times is pure tax.
+//
+// ONE SCAN, ONE LINE. The basket is a LOG in the order the scans happened, never a tally: three scans of the same size are three lines
+// and not "×3" (owner). Three lines is what can be checked against the shoes in your hands, and a mis-scan is then one line to take
+// back rather than a number to decrement — which is why every line carries its own ✕.
+//
+// A SHOE THE RACK DOES NOT HAVE IS STILL A SHOE IN YOUR HAND (owner: "if a user tries to transfer something that isn't there just do
+// it as an add"). It is put ON the destination instead of being refused: the system thought that pair was somewhere else and it
+// plainly is not, so the useful thing is to book it where it actually ends up. That is the same inv-adjust "put it somewhere it isn't
+// yet" the Add verb makes, and the basket says which lines are moves and which are adds before anything is written.
+interface TransferItem {
+  id: number;                       // this scan, so it can be taken back on its own
+  code: string;
+  title: string | null;
+  line: LocationStockLine | null;   // the shelf line it comes off — null when this rack does not have it, i.e. an add
+}
 interface TransferBasket { from: string; items: TransferItem[] }
+
+// THE RUN LOG. One row per thing that happened, newest first, and it is the whole body of the screen while a verb is selected — the
+// operator's record of what they have just done to the shelf they are standing at. Same idea as Goods In's run list, and for the same
+// reason: at the shelving you cannot scroll back through a toast. A row that CAN be taken back carries its own Undo and is struck
+// through once it has been, rather than vanishing — a log that edits itself is not a log.
+interface LogRow {
+  id: number;
+  tone: 'ok' | 'bad' | 'pending';
+  code: string | null;
+  text: string;
+  undo?: () => void;
+  undone?: boolean;
+}
+
+// What a finished basket needs to be able to take back. A move goes back the way it came, with the ids the route handed us; an add is
+// undone at the DESTINATION, because that is the only place it ever existed.
+type UndoOp =
+  | { kind: 'move'; code: string; ids: string[]; units: number }
+  | { kind: 'add'; code: string; units: number };
 
 // inv-adjust caps one call at 50 units (MAX_DELTA there, so a typo's extra zero cannot mint a warehouse). Mirrored here so the box
 // refuses it rather than the write doing so after the operator has committed.
@@ -213,22 +261,21 @@ export default function LocationsBoard() {
   // The basket mirrored in a ref, for the same reason `inFlight` is one: a scan that was held while a write was in the air is run by
   // `drain` from inside that write's closure, where the `transfer` of a render ago is what you would read. The ref is always now.
   const basketRef = useRef<TransferBasket | null>(null);
+  const scanSeq = useRef(0);   // ids for basket lines; a counter, because two scans of the same size are two different lines
   const [askAmazon, setAskAmazon] = useState<string | null>(null);   // a destination that needs a word first — see chooseDestination
   // `undo` is only ever set by a transfer: it is the one action here that is exactly reversible, which is why it gets an undo instead
   // of a confirm — the opposite bargain to Empty rack, which gets a confirm and no undo.
   // `code` is the SKU the message is about, and it is what lets the answer band print a count that is still true after the re-read
   // (see `flashQty`) and ring the line on the shelf that changed — the two things a stock check is actually checking.
   const [flash, setFlash] = useState<{ tone: 'ok' | 'bad' | 'pending'; text: string; code?: string; undo?: () => void } | null>(null);
+  const [log, setLog] = useState<LogRow[]>([]);
+  const logSeq = useRef(0);
   const findRef = useRef<HTMLInputElement>(null);
   const scanRef = useRef<HTMLInputElement>(null);
+  const runEndRef = useRef<HTMLDivElement>(null);   // the foot of the log, kept in view as it grows
   const touchedRef = useRef<HTMLLIElement>(null);
 
-  // See SCALE. Scan mode is the shelving; desk mode is the desk. Remembered per operator because nobody switches jobs mid-morning.
-  // DEFAULTS TO ON (owner): this screen is mostly worked at the shelving, so the station is what it opens on and the desk view is the
-  // thing you switch TO. The other way round meant the commonest job began by hunting for a small button in the corner.
-  const [scanMode, setScanMode] = useState(() => remembered(SCAN_KEY, 'on') !== 'off');
   const [sound, setSound] = useState(() => remembered(SOUND_KEY, 'on') !== 'off');
-  const T = scanMode ? SCALE.scan : SCALE.desk;
 
   // A WRITE IN FLIGHT, held in a ref as well as in state. `busy` drives the disabled buttons; this is what the scan path tests,
   // because a handler called from inside another handler reads the `busy` of the render it was built in — which is exactly the case a
@@ -242,9 +289,9 @@ export default function LocationsBoard() {
   // every scan, so a 12 typed once for a box can never quietly multiply the shoe scanned after it.
   const [scanQty, setScanQty] = useState(1);
   const [scanValue, setScanValue] = useState('');
-  // ALWAYS OPENS ON ADD, never remembered. The difference between putting a shoe on and taking one off is a scan you cannot take
-  // back, and an operator walking up to a machine somebody else left in Remove would find that out one pair too late.
-  const [action, setAction] = useState<ScanAction>('add');
+  // ALWAYS OPENS ON DISPLAY, never remembered. Display is the only tab that writes nothing, and an operator walking up to a machine
+  // somebody else left on Remove would find out it was not Display one pair too late.
+  const [panel, setPanel] = useState<Panel>('display');
 
   // Every rack in the building, in walking order. One call, cached for the session — the list of shelves changes about never, so a
   // revalidate on every rack click would be load on the live DB for a list that is already right.
@@ -340,8 +387,21 @@ export default function LocationsBoard() {
   // Said once, in one place, so every outcome on this screen sounds and reads the same way.
   const say = useCallback((tone: 'ok' | 'bad' | 'pending', text: string, extra?: { code?: string; undo?: () => void }) => {
     setFlash({ tone, text, ...extra });
+    logSeq.current += 1;
+    // APPENDED, not prepended (owner): the log reads top to bottom like a delivery note, so the newest line is the one nearest the
+    // scan box that produced it and the eye never travels back up the panel for what just happened. Capped at 200 from the front, so
+    // a long stock check cannot grow an unbounded list under the operator.
+    setLog((prev) => [...prev, { id: logSeq.current, tone, text, code: extra?.code ?? null, undo: extra?.undo }].slice(-200));
     if (tone !== 'pending') beep(tone === 'ok');
   }, [beep]);
+
+  // Undo, from the row that reported the thing. The row is struck through rather than removed, and its Undo goes with it, so the log
+  // still reads as the history it is — including the bit you took back.
+  function undoRow(row: LogRow) {
+    if (!row.undo || row.undone || busy) return;
+    setLog((prev) => prev.map((r) => (r.id === row.id ? { ...r, undone: true } : r)));
+    row.undo();
+  }
 
   // Both panels re-read after any write: the shelf because it changed, the rack list because its count did.
   async function reread() {
@@ -442,29 +502,39 @@ export default function LocationsBoard() {
   }
 
   function startTransfer(line: LocationStockLine, from: string) {
-    setBasket({ from, items: [{ line, units: 1 }] });
+    scanSeq.current += 1;
+    setBasket({ from, items: [{ id: scanSeq.current, code: line.code, title: line.title, line }] });
     setAskAmazon(null);
     setFlash(null);
     setFind('');
   }
 
-  // One more pair into the basket. The cap is what is ON THE SHELF: you cannot carry off three of a size the rack holds two of, and
-  // finding that out from a failed write after the walk is the wrong time.
-  function addToBasket(line: LocationStockLine, from: string): boolean {
+  // One more scan into the basket — its own line, never a count on an existing one. The cap is what is ON THE SHELF: you cannot carry
+  // off three of a size the rack holds two of, and finding that out from a failed write after the walk is the wrong time. A code the
+  // rack does not have at all has no cap, because it is not coming off this rack; it is going ON the destination.
+  function addToBasket(entry: Omit<TransferItem, 'id'>, from: string): boolean {
     const basket = basketRef.current && basketRef.current.from === from ? basketRef.current : { from, items: [] };
-    const at = basket.items.findIndex((i) => i.line.key === line.key);
-    if (at >= 0) {
-      if (basket.items[at].units >= line.qty) {
-        say('bad', `${line.code} — only ${line.qty} on ${from}, and ${line.qty === 1 ? 'it is' : 'they are'} already in hand.`);
+    const shelfLine = entry.line;
+    if (shelfLine) {
+      const already = basket.items.filter((i) => i.line?.key === shelfLine.key).length;
+      if (already >= shelfLine.qty) {
+        say('bad', `${entry.code} — ${from} only has ${shelfLine.qty}, and ${shelfLine.qty === 1 ? 'it is' : 'they are'} already in hand.`);
         return false;
       }
-      const items = [...basket.items];
-      items[at] = { ...items[at], units: items[at].units + 1 };
-      setBasket({ from, items });
-    } else {
-      setBasket({ from, items: [...basket.items, { line, units: 1 }] });
     }
+    scanSeq.current += 1;
+    setBasket({ from, items: [...basket.items, { ...entry, id: scanSeq.current }] });
     return true;
+  }
+
+  // Take one scan back out before it is written. Emptying the basket ends the transfer, which is the right way round: nothing is in
+  // your hands, so there is no destination left to choose.
+  function removeFromBasket(id: number) {
+    const basket = basketRef.current;
+    if (!basket) return;
+    const items = basket.items.filter((i) => i.id !== id);
+    setBasket(items.length > 0 ? { from: basket.from, items } : null);
+    scanRef.current?.focus();
   }
 
   function cancelTransfer() {
@@ -493,72 +563,114 @@ export default function LocationsBoard() {
     const basket = basketRef.current;
     if (!basket || inFlight.current) return;
     const { from, items } = basket;
-    const asked = items.reduce((n, i) => n + i.units, 0);
     setBasket(null);
     setAskAmazon(null);
     setPicked(null);
     inFlight.current = true;
     setBusy(true);
 
-    // What actually landed, line by line, so the undo sends back exactly those rows and the message can name what did not go.
-    const moved: { code: string; ids: string[]; units: number }[] = [];
-    const failed: string[] = [];
-    const short: string[] = [];   // moved, but fewer than asked — the cluster had been picked from under us
-    let movedUnits = 0;
-    let landed = to;
-    for (const item of items) {
-      const res = await transferStock({ code: item.line.code, from, to, ids: item.line.ids, units: item.units });
-      if (res.success && res.data && res.data.moved > 0) {
-        // `moved` is what the route ACTUALLY shifted — it caps at what the cluster still held, so a size someone else picked from a
-        // moment ago comes back short. Reporting anything else here would be reporting our own intention as fact.
-        moved.push({ code: item.line.code, ids: res.data.movedIds, units: res.data.moved });
-        movedUnits += res.data.moved;
-        landed = res.data.to;
-        if (res.data.moved < item.units) short.push(`${item.line.code} (${res.data.moved} of ${item.units})`);
+    // GROUPED FOR THE WRITE ONLY — the log stays one line per scan. Two scans of a size become one call for two units rather than two
+    // calls for one, because /locations-transfer peels units off a cluster and asking it twice about the same cluster is two chances
+    // to race itself.
+    const moves = new Map<string, { line: LocationStockLine; units: number }>();
+    const adds = new Map<string, number>();
+    for (const it of items) {
+      if (it.line) {
+        const cur = moves.get(it.line.key);
+        if (cur) cur.units += 1;
+        else moves.set(it.line.key, { line: it.line, units: 1 });
       } else {
-        failed.push(item.line.code);
+        adds.set(it.code, (adds.get(it.code) ?? 0) + 1);
       }
     }
+
+    const ops: UndoOp[] = [];
+    const failed: string[] = [];
+    let movedUnits = 0;
+    let addedUnits = 0;
+    let landed = to;
+
+    for (const { line, units } of moves.values()) {
+      const res = await transferStock({ code: line.code, from, to, ids: line.ids, units });
+      // `moved` is what the route ACTUALLY shifted. It caps at what the cluster still held, and answers NOT_FOUND outright when the
+      // line has gone — so this is never assumed from what we asked for.
+      const done = res.success && res.data ? res.data : null;
+      const moved = done ? done.moved : 0;
+      if (done && moved > 0) {
+        ops.push({ kind: 'move', code: line.code, ids: done.movedIds, units: moved });
+        movedUnits += moved;
+        landed = done.to;
+      }
+      // WHATEVER THE SOURCE COULD NOT GIVE UP BECOMES AN ADD (owner: "if a user tries to transfer something that isn't there just do
+      // it as an add"). The source said it has none of that line — it went stale while the basket was being filled, or somebody
+      // picked from it, or the rack never really had it. None of that changes the fact in the room: the operator is holding those
+      // shoes and putting them on this rack. So they are booked ON the destination instead of the move being refused, which is what
+      // used to happen — a red "that line is no longer on this rack" and nothing written anywhere.
+      const shortfall = units - moved;
+      if (shortfall > 0) adds.set(line.code, (adds.get(line.code) ?? 0) + shortfall);
+    }
+    // The pairs the source did not have go ON the destination instead — inv-adjust with empty ids, the very write the Add verb makes.
+    // Nothing comes off the source for these, because there was nothing there to come off. Both kinds land here: the ones the shelf
+    // never listed, and the ones the move above could not give up.
+    for (const [code, units] of adds) {
+      const res = await adjustStock({ code, location: to, delta: units, ids: [] });
+      if (res.success) { ops.push({ kind: 'add', code, units }); addedUnits += units; }
+      else failed.push(code);
+    }
+
     inFlight.current = false;
     setBusy(false);
 
-    const pairs = (n: number) => `${n} ${n === 1 ? 'pair' : 'pairs'}`;
-    if (moved.length > 0) {
-      const undo = () => undoTransfer(from, landed, moved);
-      // A basket of one code can still print its shelf count in the band; several cannot without picking a favourite, so it does not.
-      const code = moved.length === 1 ? moved[0].code : undefined;
-      if (failed.length === 0 && short.length === 0) {
-        say('ok', `Moved ${pairs(movedUnits)} from ${from} to ${landed}.`, { code, undo });
-      } else if (failed.length === 0) {
-        say('pending', `Moved ${movedUnits} of ${asked} from ${from} to ${landed} — ${short.join(', ')} had less on the shelf than that.`, { code, undo });
-      } else {
-        // Amber, not red: most of it worked. Naming the ones that did not is the whole value of the message — those pairs are still
-        // on the old shelf and somebody has to know which.
-        say('pending', `Moved ${movedUnits} of ${asked} from ${from} to ${landed} — ${[...failed, ...short].join(', ')} did not all move.`, { code, undo });
-      }
+    if (ops.length > 0) {
+      const undo = () => undoBasket(from, landed, ops);
+      const code = items.length === 1 ? items[0].code : undefined;
+      // ONE SENTENCE FOR ONE ERRAND. A pair the source did not have was booked ON the destination rather than moved to it, and bclog
+      // has that distinction; the operator carried an armful to another shelf and does not need the bookkeeping read back at them.
+      const total = movedUnits + addedUnits;
+      const text = `Moved ${total} ${total === 1 ? 'pair' : 'pairs'} from ${from} to ${landed}.`;
+      // Amber, not red, when some of it worked: naming what did not go is the whole value of the message, because those pairs are
+      // still on the old shelf and somebody has to know which.
+      if (failed.length === 0) say('ok', text, { code, undo });
+      else say('pending', `${text} ${failed.join(', ')} did not go.`, { code, undo });
     } else {
-      say('bad', `Could not move ${failed.join(', ')} to ${to}.`);
+      say('bad', `Nothing went to ${to} — ${failed.join(', ')}.`);
     }
+
     await reread();
     drain();
   }
 
-  // The same route, the other way round, with the ids it just handed us. An undo that fails says so and leaves the flash alone —
-  // there is nothing to fall back to, and re-reading shows the truth either way.
-  async function undoTransfer(from: string, to: string, moved: { code: string; ids: string[]; units: number }[]) {
+  // The other way round. A move goes back with the ids the route handed us; an add is taken off the DESTINATION, because that is the
+  // only place it ever existed.
+  async function undoBasket(from: string, to: string, ops: UndoOp[]) {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    const back: string[] = [];
     const stuck: string[] = [];
-    for (const m of moved) {
-      const res = await transferStock({ code: m.code, from: to, to: from, ids: m.ids, units: m.units });
-      (res.success ? back : stuck).push(m.code);
+    // An add minted fresh rows and inv-adjust needs ids to take anything off again, so the destination is asked what it holds under
+    // those codes NOW. At undo time rather than at write time on purpose: the ids are then current, and a basket nobody takes back
+    // costs nothing.
+    const asked = ops.some((o) => o.kind === 'add') ? await getLocationStock(to) : null;
+    const there = asked?.success ? asked.data?.lines ?? [] : [];
+    for (const op of ops) {
+      if (op.kind === 'move') {
+        const res = await transferStock({ code: op.code, from: to, to: from, ids: op.ids, units: op.units });
+        if (!res.success) stuck.push(op.code);
+        continue;
+      }
+      let hit: LocationStockLine | null = null;
+      for (const state of STATE_PREFERENCE) {
+        const found = there.find((l) => l.code === op.code && l.state === state);
+        if (found) { hit = found; break; }
+      }
+      if (!hit) { stuck.push(op.code); continue; }
+      const res = await adjustStock({ code: op.code, location: to, delta: -op.units, ids: hit.ids });
+      if (!res.success) stuck.push(op.code);
     }
     inFlight.current = false;
     setBusy(false);
-    if (stuck.length === 0) say('ok', `Put ${back.length === 1 ? back[0] : `${back.length} lines`} back on ${from}.`, { code: back.length === 1 ? back[0] : undefined });
-    else say('bad', `Could not put ${stuck.join(', ')} back on ${from}.`);
+    if (stuck.length === 0) say('ok', `Undone — ${to} is back as it was.`);
+    else say('bad', `Could not take ${stuck.join(', ')} back off ${to}.`);
     await reread();
     drain();
   }
@@ -608,7 +720,11 @@ export default function LocationsBoard() {
     if (byLabel) return byLabel.location;
     const byName = racks.find((r) => r.location.toLowerCase() === low);
     if (byName) return byName.location;
-    const narrowed = racks.filter((r) => r.location.toLowerCase().includes(low) || (r.barcode ?? '').toLowerCase().includes(low));
+    // STARTS WITH, not contains. A partial rack name is a PREFIX — "c3-front-1" — and that is the only shape the typed search ever
+    // had a use for. Matching anywhere in the string let a scan that happened to appear inside one rack's name be read as that rack,
+    // which does not refuse anything or make a noise: it quietly walks you to another shelf instead of putting the shoe in your hand.
+    // A shoe code cannot be the start of a rack name, so this can no longer eat one.
+    const narrowed = racks.filter((r) => r.location.toLowerCase().startsWith(low) || (r.barcode ?? '').toLowerCase().startsWith(low));
     return narrowed.length === 1 ? narrowed[0].location : null;
   }
 
@@ -647,24 +763,29 @@ export default function LocationsBoard() {
     if (!selected) { say('bad', `Scan a rack first — ${typed.toUpperCase()} has nowhere to go yet.`); return; }
     // WHICH VERB IS IN FORCE decides what a shoe means. The desk has no verb — its add box is the only place a scan can arrive — so
     // it adds, exactly as it always did.
-    if (!scanMode || action === 'add') { addStock(selected, typed, qty); return; }
-    if (action === 'remove') { removeScanned(selected, typed); return; }
-    pickUpScanned(selected, typed);
+    if (panel === 'add') { addStock(selected, typed, qty); return; }
+    if (panel === 'remove') { removeScanned(selected, typed); return; }
+    if (panel === 'transfer') { pickUpScanned(selected, typed); return; }
+    // Display is a view, not a verb — a shoe scanned at it has no meaning yet, and guessing one would be guessing whether to put a
+    // pair on the shelf or take one off it.
+    say('bad', `Pick Add, Remove or Transfer first — Display is only a view.`);
   }
 
-  // Both Remove and Transfer start the same way: turn the scan into a code (a barcode is not a SKU), then find that code ON THIS
-  // RACK. Resolving before looking means an unreadable scan is reported as an unreadable scan and a readable one that simply is not
-  // on this shelf is reported as that — two different problems, fixed two different ways, and from two metres away the operator only
-  // gets the sentence.
-  async function findOnRack(location: string, typed: string): Promise<LocationStockLine | null> {
+  // WHAT AM I HOLDING. A barcode is not a SKU, so every verb but Add resolves first and asks questions after — an unreadable scan is
+  // then reported as an unreadable scan rather than as a failed write.
+  async function resolveSku(typed: string): Promise<{ code: string; title: string | null } | null> {
     const found = await findLocationSku(typed);
     if (!found.success || !found.data) { say('bad', found.error || `Nothing matches ${typed.toUpperCase()}.`); return null; }
-    const { code } = found.data;
+    return { code: found.data.code, title: found.data.title ?? null };
+  }
+
+  // ...and where it is on this shelf, if it is. Separate from resolveSku because the two verbs want different things from a miss:
+  // Remove cannot proceed without a line, Transfer treats the miss as an add.
+  function lineOnRack(code: string): LocationStockLine | null {
     for (const state of STATE_PREFERENCE) {
       const hit = lines.find((l) => l.code === code && l.state === state);
       if (hit) return hit;
     }
-    say('bad', `${code} is not on ${location}.`);
     return null;
   }
 
@@ -675,7 +796,9 @@ export default function LocationsBoard() {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    const line = await findOnRack(location, typed);
+    const sku = await resolveSku(typed);
+    const line = sku ? lineOnRack(sku.code) : null;
+    if (sku && !line) say('bad', `${sku.code} is not on ${location}.`);
     if (!line) { inFlight.current = false; setBusy(false); drain(); return; }
     const res = await adjustStock({ code: line.code, location, delta: -1, ids: line.ids });
     inFlight.current = false;
@@ -697,23 +820,38 @@ export default function LocationsBoard() {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    const line = await findOnRack(location, typed);
+    const sku = await resolveSku(typed);
     inFlight.current = false;
     setBusy(false);
-    if (line) {
+    if (sku) {
       // The first scan starts the basket and every one after adds to it — the operator is doing the same thing each time, and a
-      // basket that behaved differently on the second shoe is one you would have to think about.
+      // basket that behaved differently on the second shoe is one you would have to think about. A code this rack does not have goes
+      // in as an ADD rather than being refused; see the basket's own note.
       if (!basketRef.current) { setAskAmazon(null); setFlash(null); setFind(''); }
-      if (addToBasket(line, location)) beep(true);
+      if (addToBasket({ code: sku.code, title: sku.title, line: lineOnRack(sku.code) }, location)) beep(true);
     }
     drain();
   }
 
   // Changing verb drops anything half done. A shoe picked up for a transfer is not a shoe you still meant to pick up once you have
   // decided you are removing instead.
-  function chooseAction(next: ScanAction) {
-    setAction(next);
-    if (transfer) cancelTransfer();
+  function choosePanel(next: Panel) {
+    setPanel(next);
+    // A FRESH SCREEN PER VERB (owner). The log is the record of the run you are on, and switching verb starts a different one —
+    // leaving the last tab's lines under the new tab's box would read as things this verb had just done. Nothing is un-booked.
+    setLog([]);
+    // A shoe picked up for a transfer is not a shoe you still meant to pick up once you have decided you are removing instead.
+    if (transfer && next !== 'transfer') cancelTransfer();
+    setFlash(null);
+    setPicked(null);
+    setConfirmEmpty(false);
+    scanRef.current?.focus();
+  }
+
+  // Empties the LIST ON SCREEN. Nothing is un-booked — same wording and same promise as Goods In's, because it is the same button and
+  // an operator who has used one should not have to find out whether this one is more dangerous.
+  function clearLog() {
+    setLog([]);
     setFlash(null);
     scanRef.current?.focus();
   }
@@ -762,27 +900,26 @@ export default function LocationsBoard() {
 
   const emptyRacks = racks.filter((r) => r.units === 0).length;
 
-  // The count the answer band prints is READ OFF THE SHELF rather than added up from the delta we just sent, so it is still true after
-  // the re-read — and if someone else picked from the same rack in between, it says what is there now instead of what we hoped.
-  const transferUnits = transfer ? transfer.items.reduce((n, i) => n + i.units, 0) : 0;
-  const flashQty = flash?.code ? lines.filter((l) => l.code === flash.code).reduce((n, l) => n + l.qty, 0) : null;
+  // How many scans are in hand. Lines, not units: one scan is one line, so counting the lines IS counting the pairs.
+  const transferUnits = transfer ? transfer.items.length : 0;
 
-  // WHAT IS ON THE RACK IS A DESK QUESTION. Scan mode never shows the shelf — see SCALE for why — so the whole right-hand pane is
-  // gone there, and the aisle list stays only while it is something to DO: the way into a rack when none is chosen, and the fallback
-  // destination picker mid-transfer when a shelf label will not scan. Once you are standing at a rack with a verb chosen, the screen
-  // is three buttons, a rack name and a box.
-  const verb = ACTIONS.find((a) => a.key === action) ?? ACTIONS[0];
-  const showShelf = !scanMode;
-  const showAside = !scanMode || !selected || !!transfer;
-  const twoCol = showAside && showShelf;
+  const verb = PANELS.find((a) => a.key === panel) ?? PANELS[0];
+  const scanning = panel !== 'display';
 
   // THE CARET LIVES IN THE SCAN BOX, and only scan mode gets that discipline. Every action here — picking a chip, finishing a
   // transfer, dismissing the answer — used to leave focus wherever it landed, so the next scan went nowhere and, from two metres,
   // looked exactly like the gun failing to fire. At the desk the mouse is in the operator's hand and stealing focus is the rude
   // behaviour rather than the helpful one, so nothing changes there. A confirm is the one exception: its own button wants the focus.
   useEffect(() => {
-    if (scanMode && !confirmEmpty && !askAmazon) scanRef.current?.focus();
-  }, [scanMode, selected, transfer, picked, busy, confirmEmpty, askAmazon]);
+    if (scanning && !confirmEmpty && !askAmazon) scanRef.current?.focus();
+  }, [scanning, panel, selected, transfer, busy, confirmEmpty, askAmazon]);
+
+  // FOLLOW THE FOOT OF THE LOG. New rows are appended, so the newest is at the bottom and a run of any length would push it under the
+  // fold — on a screen read from two metres, the one line that matters would be the one you cannot see. `nearest` scrolls the panel
+  // and never the page.
+  useEffect(() => {
+    if (scanning) runEndRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [scanning, log.length, transferUnits]);
 
   // Walk to the line that just changed. The shelf is rebuilt from the server after every write and a 43-row rack gives no clue which
   // row moved; the ring says which one, and this puts it in front of you instead of making you find it again.
@@ -803,7 +940,7 @@ export default function LocationsBoard() {
             type="button"
             onClick={() => goToArea(a)}
             className={
-              'rounded-lg font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ' + T.area + ' ' +
+              'rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ' +
               (a === activeArea ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50')
             }
           >
@@ -812,24 +949,6 @@ export default function LocationsBoard() {
         ))}
         <span className="ml-auto flex items-center gap-3 text-sm text-slate-400">
           {racks.length > 0 && <span className="text-xs max-sm:hidden">{racks.length} racks · {emptyRacks} empty</span>}
-          {/* THE MODE SWITCH. It is a real change of screen rather than a preference, so it is a filled button when it is on and says
-              its own name — an operator who walks up to a machine someone else left in scan mode should be able to see why it looks
-              like that, and press the same thing to get their desk back. */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !scanMode;
-              setScanMode(next);
-              window.localStorage.setItem(SCAN_KEY, next ? 'on' : 'off');
-            }}
-            title="Add, remove or transfer by scanning — for working at the shelving with a gun. Switch it off for the shelf view."
-            className={
-              'rounded-lg px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ' +
-              (scanMode ? 'bg-brand-600 text-white' : 'text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50')
-            }
-          >
-            {scanMode ? 'Scan mode' : 'Shelf view'}
-          </button>
           <button
             type="button"
             onClick={() => {
@@ -844,194 +963,14 @@ export default function LocationsBoard() {
         </span>
       </div>
 
-      {/* ---- SCAN MODE — three verbs, a rack, and a box. -------------------------------------------------------------------
-              What is on the rack is deliberately NOT here (owner, 2026-09-11). At the shelving the shelf is in front of your face;
-              reading 43 rows of it back off a monitor two metres away is work nobody asked for. What you cannot see from there is
-              whether the gun landed — so that is all this says, at a size that reads across the room.
-
-              THE ORDER OF THE THREE STRIPS IS LOAD-BEARING: verb, rack, box, and only then the answer. The box never moves, because
-              it is the thing the operator aims at; the answer appears under it when there is one and is not there the rest of the
-              time. It used to sit ABOVE the box carrying an idle "scan a shoe to put it on C3-Front-19", which read as the field
-              itself (owner: "I keep thinking I need to scan in there") and pushed the real box down the screen when a message
-              arrived. The instruction now lives in the box, as its placeholder, where the thing it is instructing you to do is.
-
-              THERE IS NO "SCAN A RACK TO START" (owner, 2026-09-11: "we barely do that"). Rack labels are scanned rarely — the rack is
-              picked off the list — so opening on a box that would only accept a shelf label meant the first shoe scanned came back
-              "scan a rack first", which reads as the screen being broken. The station does not exist without a rack now: no rack, no
-              verbs and no box, just the list to pick one from. A rack label scanned INTO the box still moves you; it is simply no
-              longer advertised as the way in. ---- */}
-      {scanMode && rack && (
-        <div
-          className="flex flex-col gap-3"
-          // THE CARET COMES BACK ON ITS OWN. A stray click on the panel — or on the rack card — used to leave the gun firing into
-          // nothing, which from two metres looks exactly like a dead scanner. Anything that is not itself a control hands focus back.
-          onMouseUp={(e) => {
-            if ((e.target as HTMLElement).closest('button, input, a')) return;
-            scanRef.current?.focus();
-          }}
-        >
-          {/* THE VERB IN FORCE, and the only thing on this screen with three colours. "Which one am I in" is the question that costs a
-              pair when it is answered wrong, so the live one is FILLED — from two metres a border is not a state — and each takes the
-              colour the rest of the platform already gives it: rose takes stock away, brand moves it, emerald puts it on. */}
-          <div className="grid grid-cols-3 gap-2">
-            {ACTIONS.map((a) => {
-              const on = a.key === action;
-              const live = a.key === 'remove' ? 'bg-rose-600 text-white' : a.key === 'transfer' ? 'bg-brand-600 text-white' : 'bg-emerald-600 text-white';
-              return (
-                <button
-                  key={a.key}
-                  type="button"
-                  onClick={() => chooseAction(a.key)}
-                  className={
-                    'rounded-xl py-3 text-xl font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-500 ' +
-                    (on ? live : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50')
-                  }
-                >
-                  {a.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* WHERE YOU ARE STANDING. The rack's name at reading size and how MUCH is on it — not what, just the total, which is the one
-              number that confirms you are at the shelf you think you are. */}
-          <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white px-5 py-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="truncate text-3xl font-semibold tracking-tight text-slate-900">{rack.location}</span>
-                {!rack.known && (
-                  <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">not a shelf</span>
-                )}
-              </div>
-              <div className="text-sm text-slate-400">
-                <span className="tabular-nums">{units}</span> {units === 1 ? 'unit' : 'units'} on it{rack.barcode ? ` · ${rack.barcode}` : ''}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => { if (transfer) cancelTransfer(); setChosen(null); setFlash(null); }}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-base font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-            >
-              <ArrowLeftIcon className="h-5 w-5" /> Change rack
-            </button>
-          </div>
-
-          {/* ONE BOX, ALWAYS THE SAME BOX, AND IT NEVER MOVES. What a scan means is decided by what it IS (a rack label or a shoe) and
-              by the verb above it — never by which field has the caret, because from the shelving you cannot see which field has the
-              caret. The icon is a scan code and not a magnifying glass on purpose: a magnifier had it read as a search box, which is
-              the one thing it is not (owner). */}
-          <form onSubmit={(e) => { e.preventDefault(); submitScan(); }} className="flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
-              <QrCodeIcon className="pointer-events-none absolute left-4 top-1/2 h-7 w-7 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={scanRef}
-                value={scanValue}
-                onChange={(e) => setScanValue(e.target.value)}
-                onKeyDown={onScanKey}
-                autoFocus
-                placeholder={transfer ? 'Scan another pair, or the rack they go on' : verb.hint(rack.location)}
-                className="w-full rounded-xl border-2 border-slate-300 py-3.5 pl-14 pr-4 text-xl placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            </div>
-            {/* Pairs per scan, and ONLY on Add — it is for putting a box of twelve on a shelf, and there is no errand in the other
-                direction that a gun cannot do one pair at a time. It snaps back to 1 after every scan, so a 12 typed once can never
-                quietly multiply the shoe scanned after it. */}
-            {action === 'add' && !transfer && (
-              <input
-                type="number"
-                min={1}
-                max={MAX_ADD}
-                value={scanQty}
-                onChange={(e) => setScanQty(Math.min(MAX_ADD, Math.max(1, Number(e.target.value) || 1)))}
-                onKeyDown={onScanKey}
-                aria-label="Pairs per scan"
-                className="w-20 rounded-xl border-2 border-slate-300 px-3 py-3.5 text-center text-xl tabular-nums focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            )}
-          </form>
-
-          {/* THE ANSWER, and only when there IS one. It stays until the next scan rather than fading — you are not always looking when
-              it arrives — and it prints the number the job is actually checking: what is on the shelf NOW, read back off the re-read
-              rather than added up from the delta we just sent. Mid-transfer it says what is in your hand instead, because that is then
-              the live question and there is no result yet to report. */}
-          {(flash || transfer) && (
-            <div
-              className={
-                'flex items-center gap-4 rounded-xl border px-5 py-3 ' +
-                (transfer ? 'border-brand-300 bg-brand-50 text-brand-900'
-                  : flash?.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                  : flash?.tone === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900'
-                  : 'border-rose-200 bg-rose-50 text-rose-900')
-              }
-            >
-              <p className="min-w-0 flex-1 text-lg leading-snug">
-                {transfer ? (
-                  <>
-                    Holding {transferUnits} {transferUnits === 1 ? 'pair' : 'pairs'} off {transfer.from} — keep scanning, or scan the rack
-                    {transferUnits === 1 ? ' it goes' : ' they go'} on.
-                    {/* The armful itself, so you can see a size went in without counting the beeps. */}
-                    <span className="mt-1 block font-mono text-sm text-brand-700">
-                      {transfer.items.map((i) => `${i.line.code}${i.units > 1 ? ` ×${i.units}` : ''}`).join('   ·   ')}
-                    </span>
-                    {transfer.items.some((i) => i.line.state !== 'FREE') && (
-                      <span className="block text-sm text-brand-700">
-                        Some are picked or allocated to Amazon — they stay that way wherever they go.
-                      </span>
-                    )}
-                  </>
-                ) : flash?.text}
-              </p>
-              {!transfer && flashQty !== null && selected && (
-                <span className="shrink-0 text-right leading-none">
-                  <span className="text-3xl font-semibold tabular-nums">{flashQty}</span>
-                  <span className="ml-1.5 text-base">on {selected}</span>
-                </span>
-              )}
-              {transfer ? (
-                <button
-                  type="button"
-                  onClick={cancelTransfer}
-                  className="shrink-0 rounded-md px-2.5 py-1.5 text-base font-medium hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                >
-                  Cancel
-                </button>
-              ) : flash?.undo ? (
-                <button
-                  type="button"
-                  onClick={flash.undo}
-                  disabled={busy}
-                  className="shrink-0 rounded-md px-2 py-1 text-lg font-semibold underline underline-offset-2 hover:bg-black/5 disabled:opacity-40"
-                >
-                  Undo
-                </button>
-              ) : null}
-            </div>
-          )}
-
-          {/* The one destination that is not just a shelf — the same question the desk asks, asked here in the same words. */}
-          {askAmazon && (
-            <div className="overflow-hidden rounded-xl border border-amber-200">
-              <ConfirmAmazonBay
-                what={transfer ? (transfer.items.length === 1 ? transfer.items[0].line.code : `${transferUnits} pairs`) : ''}
-                to={askAmazon}
-                onConfirm={() => completeTransfer(askAmazon)}
-                onCancel={() => setAskAmazon(null)}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
       {racksError && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">
           Could not load the racks: {racksError.message}
         </div>
       )}
 
-      {(showAside || showShelf) && (
-      <div className={'grid min-h-0 flex-1 gap-3 ' + (twoCol ? 'lg:grid-cols-[17rem_minmax(0,1fr)]' : 'grid-cols-1')}>
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[17rem_minmax(0,1fr)]">
         {/* ---- The racks. Permanent furniture: this is the screen's subject, so it never collapses into a dropdown. ---- */}
-        {showAside && (
         <aside className={
           'flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white transition ' +
           (transfer ? 'border-brand-400 ring-1 ring-brand-300' : 'border-slate-200')
@@ -1077,12 +1016,6 @@ export default function LocationsBoard() {
             )}
           </div>
 
-          {/* The list is the entire screen in scan mode until a rack is chosen, so there it says what it is for. Nothing in desk mode,
-              where it sits beside a shelf panel that explains it. */}
-          {scanMode && !selected && (
-            <div className="shrink-0 border-b border-slate-100 px-3 py-2 text-base font-medium text-slate-500">Pick a rack</div>
-          )}
-
           {/* Walked in pickorder, which is the order the racks stand in — so scrolling this list is walking the aisle. */}
           <ul className="min-h-0 flex-1 overflow-y-auto py-1 max-lg:max-h-64">
             {racksLoading && <li className="px-3 py-6 text-center text-sm text-slate-400">Loading racks…</li>}
@@ -1104,7 +1037,7 @@ export default function LocationsBoard() {
                     disabled={source}
                     onClick={() => (transfer ? chooseDestination(r.location) : goToRack(r.location))}
                     className={
-                      'flex w-full items-center gap-2 text-left transition focus-visible:outline-none focus-visible:bg-slate-100 ' + T.rackRow + ' ' +
+                      'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:bg-slate-100 ' +
                       (source
                         ? 'cursor-default bg-slate-50 text-slate-400'
                         : transfer
@@ -1124,10 +1057,8 @@ export default function LocationsBoard() {
             })}
           </ul>
         </aside>
-        )}
 
         {/* ---- The shelf itself. ---- */}
-        {showShelf && (
         <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
           {!rack ? (
             <div className="flex flex-1 items-center justify-center p-10 text-sm text-slate-400">
@@ -1150,7 +1081,7 @@ export default function LocationsBoard() {
                       prominence — it sits last, in slate, and only turns red once it has been pressed and the footer is asking. A
                       destructive control that shouts is one that gets pressed by mistake; the weight belongs on the confirm, not on
                       the way in. Hidden entirely on an empty rack: there is nothing to take off. */}
-                  {serverUnits > 0 && !transfer && (
+                  {serverUnits > 0 && panel === 'display' && (
                     <button
                       type="button"
                       onClick={() => { setPicked(null); setFlash(null); setConfirmEmpty(true); }}
@@ -1162,6 +1093,130 @@ export default function LocationsBoard() {
                 </div>
               </div>
 
+              {/* THE FOUR TABS. They sit inside the rack panel, under the rack's name, because they are what you are doing TO that
+                  rack — not a different screen. The live one is filled in its own colour (rose takes stock away, brand moves it,
+                  emerald puts it on), which is the same colour language the rest of the panel already speaks. Transfer carries a
+                  count when something is in your hands, so the one tab holding unfinished work says so from any of the others. */}
+              <div className="flex shrink-0 items-center gap-1 border-b border-slate-100 px-2 py-1.5">
+                {PANELS.map((t) => {
+                  const on = t.key === panel;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => choosePanel(t.key)}
+                      className={
+                        'rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ' +
+                        (on ? PANEL_TINT[t.key] : 'text-slate-500 hover:bg-slate-100')
+                      }
+                    >
+                      {t.label}
+                      {t.key === 'transfer' && transferUnits > 0 && (
+                        <span className={'ml-1.5 rounded px-1 text-xs tabular-nums ' + (on ? 'bg-white/25' : 'bg-brand-100 text-brand-700')}>
+                          {transferUnits}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {/* Empties the LIST ON SCREEN. Nothing is un-booked — same button, same wording and same promise as Goods In's, so an
+                    operator who has used one never has to wonder whether this one is more dangerous. */}
+                {scanning && log.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearLog}
+                    title="Empties the list on screen. Nothing is un-booked."
+                    className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  >
+                    Clear screen
+                  </button>
+                )}
+              </div>
+
+              {/* THE BOX UNDER THE TABS is either the shelf or the log — what is on this rack, or what you have just done to it. */}
+              {scanning ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {log.length === 0 && !(panel === 'transfer' && transfer) ? (
+                    <div className="px-4 py-12 text-center text-sm text-slate-400">{verb.hint(rack.location)}.</div>
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {log.map((r, i) => (
+                        <li key={r.id} className={'flex items-start gap-3 px-4 py-1.5 text-sm ' + (i === log.length - 1 ? 'bg-slate-50' : '')}>
+                          {/* A dot rather than a tinted row: the log is read by running down it, and four coloured bands would make
+                              that the hardest thing on the panel to skim. */}
+                          <span
+                            className={
+                              'mt-1.5 h-2 w-2 shrink-0 rounded-full ' +
+                              (r.tone === 'ok' ? 'bg-emerald-500' : r.tone === 'pending' ? 'bg-amber-500' : 'bg-rose-500')
+                            }
+                          />
+                          <span className={'min-w-0 flex-1 ' + (r.undone ? 'text-slate-400 line-through' : 'text-slate-700')}>
+                            {r.text}
+                          </span>
+                          {/* Struck through rather than removed once taken back — a log that edits itself is not a log. */}
+                          {r.undo && !r.undone && (
+                            <button
+                              type="button"
+                              onClick={() => undoRow(r)}
+                              disabled={busy}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-900 disabled:opacity-40"
+                            >
+                              Undo
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* IN HAND. The transfer basket sits at the FOOT of the run, under everything that has already happened and hard
+                      against the scan box that fills it — it is the live part, and the live part belongs where the eye already is.
+                      One line per scan in the order they were scanned, each with its own ✕: a mis-scan is one line to take back,
+                      never a number to decrement. */}
+                  {panel === 'transfer' && transfer && (
+                    <div className="border-t border-brand-200 bg-brand-50/60">
+                      <div className="flex items-center gap-2 px-4 py-2 text-sm text-brand-800">
+                        <ArrowRightCircleIcon className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-semibold tabular-nums">{transferUnits}</span> in hand off {transfer.from} — keep
+                          scanning, or scan the rack {transferUnits === 1 ? 'it goes' : 'they go'} on.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={cancelTransfer}
+                          className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100"
+                        >
+                          Put it all back
+                        </button>
+                      </div>
+                      <ul className="divide-y divide-brand-100">
+                        {transfer.items.map((it) => (
+                          <li key={it.id} className="flex items-center gap-3 px-4 py-1.5">
+                            <span className="w-44 shrink-0 truncate font-mono text-xs text-brand-900" title={it.title ?? it.code}>
+                              {it.code}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-xs text-brand-700">
+                              {/* Only the two states worth flagging get words. Whether the rack has this pair on file is the write's
+                                  business, not the operator's — they are carrying it either way. */}
+                              {it.line && it.line.state !== 'FREE' ? STATE_WORD[it.line.state] : (it.title ?? '')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeFromBasket(it.id)}
+                              title="Take this one back out"
+                              className="shrink-0 rounded p-0.5 text-brand-400 hover:bg-brand-100 hover:text-brand-800"
+                            >
+                              <XMarkIcon className="h-4 w-4" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div ref={runEndRef} />
+                </div>
+              ) : (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {stockError ? (
                   <div className="px-4 py-10 text-center text-sm text-rose-700">Could not load this rack: {stockError.message}</div>
@@ -1227,10 +1282,11 @@ export default function LocationsBoard() {
                   </ul>
                 )}
               </div>
+              )}
 
               {/* What just happened, said once, where the thing happened. It stays until the next action rather than fading, because
                   "I took 14 units off a shelf" is not a thing to blink at someone for three seconds. */}
-              {flash && (
+              {panel === 'display' && flash && (
                 <div
                   className={
                     'flex shrink-0 items-start gap-2 border-t px-4 py-2 text-sm ' +
@@ -1260,19 +1316,19 @@ export default function LocationsBoard() {
                 </div>
               )}
 
-              {/* ONE FOOTER, THREE MODES. Adding is the default because it is what you come to a shelf holding a box to do; picking a
-                  chip swaps in that unit's controls, and asking to empty the rack swaps in the confirm. Same strip, same position, so
-                  nothing moves and there is never a dialog over the shelf you are deciding about. */}
+              {/* ONE FOOTER, AND WHAT IS IN IT FOLLOWS THE TAB. On a verb it is the scan box, always in the same place and always
+                  holding the caret — so the gun has one home whichever verb is up. On Display it is the picked chip's controls, or
+                  nothing. A question (the Amazon bay, emptying the rack) takes the strip over, because it is asked about the very
+                  thing above it and a dialog would cover that. */}
+              {(askAmazon || confirmEmpty || scanning || pickedLine) && (
               <div className="shrink-0 border-t border-slate-100 bg-slate-50">
                 {askAmazon ? (
                   <ConfirmAmazonBay
-                    what={transfer ? (transfer.items.length === 1 ? transfer.items[0].line.code : `${transferUnits} pairs`) : ''}
+                    what={transfer ? (transferUnits === 1 ? transfer.items[0].code : `${transferUnits} pairs`) : ''}
                     to={askAmazon}
                     onConfirm={() => completeTransfer(askAmazon)}
                     onCancel={() => setAskAmazon(null)}
                   />
-                ) : transfer ? (
-                  <TransferBar basket={transfer} units={transferUnits} onCancel={cancelTransfer} />
                 ) : confirmEmpty ? (
                   <ConfirmEmpty
                     location={rack.location}
@@ -1283,24 +1339,55 @@ export default function LocationsBoard() {
                     onConfirm={() => doEmpty(rack.location)}
                     onCancel={() => setConfirmEmpty(false)}
                   />
+                ) : scanning ? (
+                  /* The icon is a scan code and not a magnifying glass on purpose: a magnifier had this read as a search box, which
+                     is the one thing it is not. Enter is handled on the inputs rather than by the form — see submitScan. */
+                  <form onSubmit={(e) => { e.preventDefault(); submitScan(); }} className="flex items-center gap-2 px-4 py-2.5">
+                    <div className="relative min-w-0 flex-1">
+                      <QrCodeIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        ref={scanRef}
+                        value={scanValue}
+                        onChange={(e) => setScanValue(e.target.value)}
+                        onKeyDown={onScanKey}
+                        autoFocus
+                        placeholder={transfer ? 'Scan another pair, or the rack they go on' : verb.hint(rack.location)}
+                        className="w-full rounded-lg border-2 border-slate-300 py-2 pl-10 pr-3 text-lg placeholder:text-base placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      />
+                    </div>
+                    {/* Pairs per scan, and only on Add — it is for putting a box of twelve on a shelf, and there is no errand in the
+                        other direction a gun cannot do one pair at a time. It snaps back to 1 after every scan, so a 12 typed once
+                        can never quietly multiply the shoe scanned after it. */}
+                    {panel === 'add' && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={MAX_ADD}
+                        value={scanQty}
+                        onChange={(e) => setScanQty(Math.min(MAX_ADD, Math.max(1, Number(e.target.value) || 1)))}
+                        onKeyDown={onScanKey}
+                        aria-label="Pairs per scan"
+                        className="w-16 rounded-lg border-2 border-slate-300 px-2 py-2 text-center text-lg tabular-nums focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      />
+                    )}
+                  </form>
                 ) : pickedLine ? (
                   <PickedChip
                     line={pickedLine}
                     busy={busy}
                     onAdjust={(d) => adjust(rack.location, pickedLine, d)}
-                    onTransfer={() => startTransfer(pickedLine, rack.location)}
+                    // Picking a chip and pressing Transfer hands off to the Transfer tab, basket and all — the mouse way in and the
+                    // gun way in end up in the same place, which is the only way the two can stay honest about each other.
+                    onTransfer={() => { startTransfer(pickedLine, rack.location); setPanel('transfer'); }}
                     onDone={() => setPicked(null)}
                   />
-                ) : (
-                  <AddToRack key={rack.location} location={rack.location} busy={busy} onAdd={addStock} />
-                )}
+                ) : null}
               </div>
+              )}
             </>
           )}
         </section>
-        )}
       </div>
-      )}
     </div>
   );
 }
@@ -1357,44 +1444,6 @@ function ConfirmEmpty({ location, units, picked, amz, busy, onConfirm, onCancel 
           {busy ? 'Emptying…' : 'Empty the rack'}
         </button>
       </div>
-    </div>
-  );
-}
-
-/*
-The transfer, waiting for somewhere to go. It says the shoe and the shelf it is leaving, and then gets out of the way — the choice is
-being made in the rack list to its left, so this bar is a reminder of what is in your hand, not a control in its own right.
-
-Its one job beyond that is the way out. Cancel, or Escape in the search box, and nothing has happened.
-*/
-function TransferBar({ basket, units, onCancel }: { basket: TransferBasket; units: number; onCancel: () => void }) {
-  // The desk fills the basket one chip at a time, so it is usually a basket of one and reads best said that way. A scan-mode basket
-  // can land here too (the modes share the state), which is why it counts rather than assuming.
-  const only = basket.items.length === 1 && basket.items[0].units === 1 ? basket.items[0].line : null;
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-brand-50 px-4 py-2.5">
-      <ArrowRightCircleIcon className="h-5 w-5 shrink-0 text-brand-600" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-brand-900">
-          Moving {only ? <>one <span className="font-mono font-medium">{only.code}</span></> : `${units} pairs`} off{' '}
-          <span className="font-medium">{basket.from}</span> — pick the rack {units === 1 ? 'it goes' : 'they go'} on.
-        </p>
-        {basket.items.some((i) => i.line.state !== 'FREE') && (
-          // Worth saying out loud, because it is the thing a move must not break: the unit stays promised to whatever claimed it.
-          <p className="truncate text-xs text-brand-700">
-            {only
-              ? `${only.state === 'PICKED' ? 'Picked for a customer order' : 'Allocated to Amazon'} — it stays that way wherever it goes.`
-              : 'Some are picked or allocated to Amazon — they stay that way wherever they go.'}
-          </p>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="rounded-md px-2.5 py-1.5 text-sm text-brand-800 hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-      >
-        Cancel
-      </button>
     </div>
   );
 }
@@ -1502,56 +1551,3 @@ function PickedChip({ line, busy, onAdjust, onTransfer, onDone }: {
   );
 }
 
-/*
-Put a shoe on the chosen rack. Its own component, mounted under the rack's key, so the box empties when the rack changes — what you
-were about to add to C1-04 should not follow you to C1-05.
-
-ALWAYS OPEN, not behind an "add" link. On a screen whose job is moving stock on and off shelves, the add IS the screen — hiding it
-costs a click on the most common action to save one strip of a panel the operator is already looking at.
-*/
-function AddToRack({ location, busy, onAdd }: {
-  location: string;
-  busy: boolean;
-  onAdd: (location: string, scan: string, qty: number) => void;
-}) {
-  const [code, setCode] = useState('');
-  const [qty, setQty] = useState(1);
-  const codeRef = useRef<HTMLInputElement>(null);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    onAdd(location, code, qty);
-    setCode('');
-    setQty(1);
-    codeRef.current?.focus();   // the gun fires again straight away
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-      <input
-        ref={codeRef}
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        placeholder={`Scan a shoe to put it on ${location}`}
-        className="min-w-0 flex-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-      />
-      <input
-        type="number"
-        min={1}
-        max={MAX_ADD}
-        value={qty}
-        // Clamped to inv-adjust's own MAX_DELTA rather than letting the write refuse it: the operator finds out here, before pressing.
-        onChange={(e) => setQty(Math.min(MAX_ADD, Math.max(1, Number(e.target.value) || 1)))}
-        aria-label="How many"
-        className="w-14 rounded-md border border-slate-200 px-2 py-1.5 text-sm tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-      />
-      <button
-        type="submit"
-        disabled={!code.trim() || busy}
-        className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-      >
-        {busy ? 'Putting on…' : 'Put it on'}
-      </button>
-    </form>
-  );
-}

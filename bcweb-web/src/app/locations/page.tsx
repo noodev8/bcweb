@@ -25,10 +25,10 @@ row changes shelf and keeps its ordernum/allocated), never a remove and an add, 
 waiting for it; audit follows the legacy PowerBuilder phrasing, `Transfer <code> from <SRC> >> to <DEST>` in bclog section 'Transfer',
 which that screen has been writing since May.
 
-SCAN MODE (2026-09-11, owner). This screen is mostly worked from two metres away with a gun in one hand, and that is not the screen the
-desk needs. Switched by hand from the board's own header, it drops the shelf contents entirely and becomes three verbs — Add, Remove,
-Transfer — a rack, and one scan box. It writes through the same three routes as the desk view, never its own; the reasoning is all in
-LocationsBoard.
+FOUR TABS (2026-09-11, owner). The job is mostly done standing two metres from the monitor with a gun in one hand, so the rack panel
+carries Add / Remove / Transfer / Display across the top. The rack list and the rack's heading never move; the tab only decides whether
+the box beneath is the shelf or the log of what has just been scanned at it. Every tab writes through the same routes as before, never
+its own; the reasoning is all in LocationsBoard.
 =======================================================================================================================================
 */
 
