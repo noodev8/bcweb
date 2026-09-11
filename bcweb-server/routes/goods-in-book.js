@@ -81,7 +81,8 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-// The FBA staging bay. Matches AMAZON_SHELF in utils/pick.js and the exclusion in goods-in-shelves.js.
+// The FBA staging bay. Matches AMAZON_SHELF in utils/pick.js. Still where a claimed AMAZON line is sent whatever the operator picked;
+// no longer a shelf the operator is forbidden to pick (see step 2).
 const AMAZON_SHELF = 'C3-Amazon';
 
 router.post('/', async (req, res) => {
@@ -116,14 +117,14 @@ router.post('/', async (req, res) => {
       if (skuRes.rows.length === 0) return { fail: 'NOT_FOUND' };
       const sku = skuRes.rows[0];
 
-      // --- 2. IS THAT SHELF REAL. Checked against the racks table, not against a string the client sent. C3-Amazon is refused as a
-      // manual choice for the same reason goods-in-shelves.js doesn't offer it: a unit reaches the outbound bay by claiming an Amazon
-      // line, never by being told to.
+      // --- 2. IS THAT SHELF REAL. Checked against the racks table, not against a string the client sent. Any rack in `location` is
+      // allowed, C3-Amazon included: it used to be refused here to match goods-in-shelves.js, and both were opened up together
+      // (owner, 2026-09-11) — see the NOT_A_DESTINATION note there for what booking a local unit onto the bay does and does not mean.
+      // The route still refuses anything that is not in the table at all, which is what BAD_SHELF is for.
       const shelfRes = await client.query(
         `SELECT location FROM location WHERE lower(btrim(location)) = lower($1) LIMIT 1`, [shelf]
       );
       if (shelfRes.rows.length === 0) return { fail: 'BAD_SHELF' };
-      if (shelfRes.rows[0].location.trim().toLowerCase() === AMAZON_SHELF.toLowerCase()) return { fail: 'BAD_SHELF' };
       const chosenShelf = shelfRes.rows[0].location.trim();
 
       // --- 3. CLAIM AN ORDER LINE. Amazon before local (of_scan2), oldest order first within each. FOR UPDATE so two operators

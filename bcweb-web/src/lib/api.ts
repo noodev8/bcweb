@@ -2261,7 +2261,7 @@ export function getGoodsInExpected() {
 // It takes the RAW SCAN rather than a resolved code, so a scan costs ONE round-trip on a screen whose entire job is scanning. Two
 // non-SUCCESS codes are normal outcomes rather than faults, and the screen treats them differently:
 //   NOT_FOUND  nothing in the catalogue matches — the label is unreadable or the SKU was never set up. This STOPS the line.
-//   BAD_SHELF  the shelf isn't a rack in `location` (or is the Amazon bay, which is never a manual choice).
+//   BAD_SHELF  the shelf isn't a rack in `location`. (The Amazon bay used to be refused here too; it is a normal destination now.)
 export interface GoodsInBooking {
   code: string;
   title: string | null;

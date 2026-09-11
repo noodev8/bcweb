@@ -15,8 +15,9 @@ not by the Inventory picker's AREA_ORDER: the operator is standing in the buildi
 they are thought about. Areas are still grouped so the picker can offer them by zone, but the ZONES come out in pickorder order too
 rather than in a list someone typed.
 
-THREE RACKS ARE EXCLUDED and they are listed, with reasons, at NOT_A_DESTINATION below — the FBA staging bay plus two bays a delivery
-is never unpacked onto. Everything else in `location` is offered. Note what is NOT in that table at all: 'Ordered', which turns up in
+TWO RACKS ARE EXCLUDED and they are listed, with reasons, at NOT_A_DESTINATION below. Everything else in `location` is offered —
+including the C3-Amazon staging bay, which used to be excluded and is now a destination like any other (owner, 2026-09-11).
+See the note on that constant for what that means. Note what is NOT in that table at all: 'Ordered', which turns up in
 localstock.location and is a marker meaning "on order" rather than somewhere you can put a shoe. Reading the authoritative table is
 what keeps strays like it out, which is why the exclusion list is three deliberate entries and not a growing list of typos.
 
@@ -51,14 +52,19 @@ const logger = require('../utils/logger');
 router.use(verifyToken);
 
 // Racks that exist in `location` but are never somewhere a DELIVERY is put, so they are not offered as a destination:
-//   C3-Amazon   the FBA staging bay. A unit reaches it by being claimed against an Amazon order line and Goods In routes it there on
-//               its own; offering it manually would let local stock be dropped into the outbound bay by accident, and nothing
-//               downstream would question it. (Matches AMAZON_SHELF in utils/pick.js.)
 //   C3-Office   } not shelving a box gets unpacked onto (owner). Both hold stock that got there some other way, and both being in the
 //   C3-Socks    } picker only made the list longer to walk past.
 // Named individually rather than by zone: everything else in this table is a real rack, including UKD-Tests, and a prefix rule would
 // eventually take out something the owner does want. Compared lower-cased — nothing constrains the column's casing.
-const NOT_A_DESTINATION = ['C3-Amazon', 'C3-Office', 'C3-Socks'];
+//
+// C3-AMAZON WAS THE THIRD, AND IS NOT ANY MORE (owner, 2026-09-11). The argument for excluding it was that a unit reaches the FBA
+// staging bay by claiming an Amazon order line and never by being told to, so offering it by hand let local stock be dropped into the
+// outbound bay by accident. The owner wants it on the list; what that costs is that a LOCAL unit can now be booked straight onto the
+// bay as `allocated='unallocated'`. That is not an Amazon unit and nothing downstream treats it as one — utils/pick.js puts a row on
+// the gather list for being `allocated='amz'` AND somewhere other than the bay, so an unallocated row sitting there is simply stock at
+// that location, which the Locations screen shows and can move like any other. An Amazon-claimed line still overrides the choice and
+// goes to the bay regardless (goods-in-book.js), so the automatic route is unchanged.
+const NOT_A_DESTINATION = ['C3-Office', 'C3-Socks'];
 
 router.get('/', async (req, res) => {
   try {
