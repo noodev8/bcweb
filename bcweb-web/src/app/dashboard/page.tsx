@@ -54,7 +54,8 @@ all the different heights"), and with a four-wide grid it means a band of at mos
 tile in any band wraps it, and a wrapped band is the thing that looked wrong — so a fifth tile is a prompt to move something out or
 split the band, not something to absorb.
   THAT RULE IS CURRENTLY BROKEN IN ONE BAND, knowingly. STOCK & PRODUCTS is at six (Birkenstock took it to five, Locations to six on
-  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 4 / 6 / 2. It was allowed rather than fixed because the alternative is moving
+  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 5 / 6 / 2 (REPORTS & MARKETING took Finance on 2026-09-11 and now
+  wraps 4 + 1 for the same reason). It was allowed rather than fixed because the alternative is moving
   a tile into a band it doesn't belong in to keep a row tidy, and the six are one coherent chain — decide, place, receive, shelve,
   season-buy, edit. If it is to be fixed, split the band (procurement vs the catalogue), don't evict a tile.
 =======================================================================================================================================
@@ -66,7 +67,7 @@ import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon,
+  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -202,6 +203,23 @@ export default function DashboardPage() {
           description="Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing."
           href="/google-ads"
           icon={CursorArrowRaysIcon}
+          live
+          compact
+        />
+
+        {/* Finance -> Month End. Banded here (owner, 2026-09-11) rather than given a band of its own, which is what it had for
+            half a day and which read as a lonely tile rather than a deliberate part-row.
+            It belongs with Update Amazon and Google Ads specifically: all three are "load a file, get a result and walk away"
+            jobs rather than screens worked continuously, and this band is already read-a-number screens plus run-and-leave jobs.
+            It is LAST because it is the rarest — once a month, in the first week, and never twice.
+            NOTE this takes the band to FIVE, so it wraps 4 + 1 against the four-wide grid. Knowingly, and for the same reason
+            STOCK & PRODUCTS is allowed to run 4 + 2: the alternative is evicting a tile into a band it does not belong in to keep
+            a row tidy. If it is ever to be fixed, split this band (reports vs the run-and-leave jobs) rather than moving one out. */}
+        <ModuleTile
+          title="Finance"
+          description="Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files."
+          href="/finance"
+          icon={BanknotesIcon}
           live
           compact
         />

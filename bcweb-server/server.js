@@ -280,6 +280,14 @@ app.use('/social-posts', require('./routes/social-posts'));                   //
 app.use('/social-post-cancel', require('./routes/social-post-cancel'));       // POST: SCHEDULED targets -> CANCELLED       WRITES
 app.use('/social-post-publish-now', require('./routes/social-post-publish-now')); // POST: fire one target now (Retry)      WRITES
 
+// --- Finance -> Month End: close the books and produce the two QuickFile import files (docs/finance-month-end-spec.md) ---
+// Replaces the PowerBuilder Finance window (CALCULATE Accounts + QUICKFILE Invoice). STATELESS by decision (owner, 2026-09-11):
+// no tables, no history, nothing stored between the two calls. Both routes are READ ONLY — the only DB reads are skusummary.tax for
+// the VAT treatment and the stock valuation. Uploads are identified by HEADER, never filename, which retires two rename rituals:
+// Amazon's 'AMAZON-Sales.csv' and PayPal's exact-case 'Download.CSV'.
+app.use('/finance-calculate', require('./routes/finance-calculate')); // POST multipart: files + typed figures -> the month  READ ONLY
+app.use('/finance-quickfile', require('./routes/finance-quickfile')); // POST multipart: figures -> the CSVs as text         READ ONLY
+
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {
   res.json({ return_code: 'NOT_FOUND', message: `No such endpoint: ${req.method} ${req.originalUrl}` });

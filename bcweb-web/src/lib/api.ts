@@ -2816,4 +2816,184 @@ export function transferStock(args: { code: string; from: string; to: string; id
   );
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------
+// Finance -> Month End. Close the books: upload the month's files, read the figures, download the two QuickFile import files.
+//
+// STATELESS (owner, 2026-09-11). Nothing is stored server-side between the two calls, so the SCREEN holds the month's state and
+// sends it back to /finance-quickfile. That is why the figures make a round trip: they include what the operator typed, which only
+// the screen has. The Amazon FILE makes the same round trip for a different reason — kidsvatcharged.csv is a verbatim subset of its
+// rows, so it is re-read server-side rather than shipping hundreds of raw CSV rows to the browser and back.
+// -------------------------------------------------------------------------------------------------------------------------------
+
+export interface FinanceRejectedFile { filename: string; reason: string }
+
+export interface FinanceCheck {
+  key: string;
+  level: 'ok' | 'warn';
+  message: string;
+}
+
+// One row of the per-type breakdown behind the Amazon figures — the drill-down evidence.
+export interface FinanceAmazonType {
+  type: string;
+  rows: number;
+  net: number;
+  vat: number;
+  fees: number;
+  other: number;
+  total: number;
+  excluded: boolean;
+  income: boolean;
+}
+
+export interface FinanceAmazon {
+  present: boolean;
+  filename?: string;
+  rowCount?: number;
+  window?: { from: string | null; to: string | null };
+  // `gross` is what customers paid, INCLUDING VAT charged on zero-rated items; `vatDeclared` excludes it. The two differ on purpose
+  // — see utils/financeAmazon.js. `vatZeroRated` is the difference, shown on screen as the Kids VAT line.
+  net?: number;
+  vatCharged?: number;
+  vatZeroRated?: number;
+  vatDeclared?: number;
+  gross?: number;
+  fees?: number;
+  reimbursements?: number;
+  byType?: FinanceAmazonType[];
+  zeroRated?: { rows: number; vat: number; examples: { sku: string; code: string; description: string; vat: number }[] };
+  unmatched?: { sku: string; rows: number; value: number; description?: string }[];
+  liquidationUnmatched?: { rows: number; vat: number };
+  reconciliation?: { fileTotal: number; allocated: number; difference: number; excludedRows: number; excludedTotal: number };
+  extraColumns?: string[];
+  droppedColumns?: string[];
+}
+
+export interface FinancePayPal {
+  present: boolean;
+  filename?: string;
+  fees?: number;
+  count?: number;
+  rowCount?: number;
+  currencies?: { code: string; rows: number }[];
+}
+
+// Sign convention, and the Phase 2 API port must honour it: sales/salesVat POSITIVE, refund/refundVat NEGATIVE, fees NEGATIVE.
+// Pulled live from the Shopify API by the server (Phase 2) — never typed on the screen, never sent up.
+// Sign convention: sales/salesVat POSITIVE, refund/refundVat NEGATIVE, fees NEGATIVE.
+// `fees` is null (not 0) when the sales pull succeeded but the FEES call failed — a different token and a different scope, so it can
+// fail on its own, and a null says so where a 0 would quietly become a missing purchase line.
+// VAT is derived server-side from skusummary.tax, NOT from Shopify, which reports 0.00 tax on every line for this shop.
+export interface FinanceShopify {
+  present: boolean;
+  source: 'api';
+  // true when the screen asked the server NOT to pull (it already holds a good read of this month). The client then merges its own
+  // cached block over this one — the figures never make the round trip, because the CSV alone is 128KB.
+  skipped?: boolean;
+  sales: number;
+  salesVat: number;
+  refund: number;
+  refundVat: number;
+  fees: number | null;
+  feesError?: string | null;
+  error?: string | null;
+  csv?: string;
+  rowCount?: number;
+  orderCount?: number;
+  truncated?: boolean;
+  zeroRated?: { rows: number; value: number };
+  unmatched?: { sku: string; rows: number; value: number }[];
+  window?: { start: string; end: string };
+}
+
+export interface FinanceManual {
+  sumupSales: number;
+  sumupFees: number;
+  cashSales: number;
+  car: number;
+}
+
+export interface FinanceMonth {
+  month: string;
+  rejected: FinanceRejectedFile[];
+  amazon: FinanceAmazon;
+  paypal: FinancePayPal;
+  shopify: FinanceShopify;
+  manual: FinanceManual;
+  stock: { units: number; value: number } | null;
+  checks: FinanceCheck[];
+}
+
+export interface FinanceFile {
+  name: string;
+  csv: string;
+  rows: Record<string, unknown>[];
+  note?: string;
+  rowCount?: number;
+}
+
+// Three minutes, and it needs them. Since Phase 2 the calculate call walks every Shopify order created in the month plus 90 days of
+// refund lookback — ~540 orders for August 2026, about 28 seconds — then the balance-transactions pages on top. The shared 15s
+// timeout would kill a perfectly good run halfway through.
+const FINANCE_TIMEOUT = 180000;
+
+function financeForm(files: File[], fields: Record<string, string>): FormData {
+  const form = new FormData();
+  files.forEach((f) => form.append('files', f));
+  Object.entries(fields).forEach(([k, v]) => form.append(k, v));
+  return form;
+}
+
+// Stage 1: the month's figures, with the evidence behind each one. Writes nothing.
+export function calculateFinanceMonth(args: {
+  files: File[];
+  month: string;
+  manual: FinanceManual;
+  /** false = skip the Shopify pull (about half a minute) and reuse what the screen already has. Default true. */
+  includeShopify?: boolean;
+}) {
+  return request<FinanceMonth>(
+    {
+      url: '/finance-calculate',
+      method: 'POST',
+      data: financeForm(args.files, {
+        month: args.month,
+        manual: JSON.stringify(args.manual),
+        includeShopify: args.includeShopify === false ? 'false' : 'true',
+      }),
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: FINANCE_TIMEOUT,
+    },
+    (b) => ({
+      month: b.month as string,
+      rejected: (b.rejected as FinanceRejectedFile[]) || [],
+      amazon: (b.amazon as FinanceAmazon) || { present: false },
+      paypal: (b.paypal as FinancePayPal) || { present: false },
+      shopify: b.shopify as FinanceShopify,
+      manual: b.manual as FinanceManual,
+      stock: (b.stock as { units: number; value: number } | null) ?? null,
+      checks: (b.checks as FinanceCheck[]) || [],
+    })
+  );
+}
+
+// Stage 2: the files. Returns CSV TEXT in the envelope rather than a file body, so a failure can still be an ordinary return_code
+// (docs/API-RULES.md) and the browser builds the download from something it already holds.
+export function buildFinanceQuickFile(args: {
+  files: File[];
+  month: string;
+  figures: { amazon: FinanceAmazon; shopify: FinanceShopify; paypal: FinancePayPal; manual: FinanceManual };
+}) {
+  return request<{ month: string; files: FinanceFile[] }>(
+    {
+      url: '/finance-quickfile',
+      method: 'POST',
+      data: financeForm(args.files, { month: args.month, figures: JSON.stringify(args.figures) }),
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: FINANCE_TIMEOUT,
+    },
+    (b) => ({ month: b.month as string, files: (b.files as FinanceFile[]) || [] })
+  );
+}
+
 export default api;
