@@ -242,10 +242,6 @@ type UndoOp =
   | { kind: 'move'; code: string; ids: string[]; units: number }
   | { kind: 'add'; code: string; units: number };
 
-// inv-adjust caps one call at 50 units (MAX_DELTA there, so a typo's extra zero cannot mint a warehouse). Mirrored here so the box
-// refuses it rather than the write doing so after the operator has committed.
-const MAX_ADD = 50;
-
 // Sizes are text (RIGHT(code,2)), so they sort numerically or a 40 lands before a 5. Non-numeric sizes go last rather than nowhere.
 const sizeRank = (s: string) => (/^\d+$/.test(s) ? Number(s) : 999);
 
@@ -284,10 +280,7 @@ export default function LocationsBoard() {
   // A SCAN THAT LANDS MID-WRITE IS HELD, NOT DROPPED. It used to be dropped in silence: addStock returned early on `busy` and the box
   // had already cleared itself, so at the shelving a pair simply never got written and nothing said so. One deep — a second scan on
   // top of a held one is refused out loud, because three shoes in the air is a stock check you will be doing again anyway.
-  const queued = useRef<{ typed: string; qty: number } | null>(null);
-  // How many pairs the next scan puts on. Lives up here because the scan bar is rendered inline in scan mode; it snaps back to 1 after
-  // every scan, so a 12 typed once for a box can never quietly multiply the shoe scanned after it.
-  const [scanQty, setScanQty] = useState(1);
+  const queued = useRef<string | null>(null);
   const [scanValue, setScanValue] = useState('');
   // ALWAYS OPENS ON DISPLAY, never remembered. Display is the only tab that writes nothing, and an operator walking up to a machine
   // somebody else left on Remove would find out it was not Display one pair too late.
@@ -730,22 +723,22 @@ export default function LocationsBoard() {
 
   // The gate, and the only place that asks whether a write is in the air. runScan must NOT ask — draining the queue calls it from
   // inside the very write that was blocking it, where the answer would still be yes.
-  function onScan(raw: string, qty = 1) {
+  function onScan(raw: string) {
     const typed = raw.trim();
     if (!typed) return;
     if (inFlight.current) {
       if (queued.current === null) {
-        queued.current = { typed, qty };
+        queued.current = typed;
         say('pending', `Holding ${typed.toUpperCase()} — the one before it is still being written.`);
       } else {
         say('bad', 'Too fast — that scan was not taken. Scan it again.');
       }
       return;
     }
-    runScan(typed, qty);
+    runScan(typed);
   }
 
-  function runScan(typed: string, qty: number) {
+  function runScan(typed: string) {
     // The basket off the ref, not off state: `drain` runs this from inside the write that was blocking it, where the `transfer` of a
     // render ago is what a closure would hand you.
     const basket = basketRef.current;
@@ -763,7 +756,9 @@ export default function LocationsBoard() {
     if (!selected) { say('bad', `Scan a rack first — ${typed.toUpperCase()} has nowhere to go yet.`); return; }
     // WHICH VERB IS IN FORCE decides what a shoe means. The desk has no verb — its add box is the only place a scan can arrive — so
     // it adds, exactly as it always did.
-    if (panel === 'add') { addStock(selected, typed, qty); return; }
+    // ONE SCAN, ONE PAIR. A gun fires once per shoe, so a box of twelve is twelve scans — which is also twelve chances to notice you
+    // are holding the wrong box. addStock still takes a count, because /inv-adjust does; nothing on this screen sends more than one.
+    if (panel === 'add') { addStock(selected, typed, 1); return; }
     if (panel === 'remove') { removeScanned(selected, typed); return; }
     if (panel === 'transfer') { pickUpScanned(selected, typed); return; }
     // Display is a view, not a verb — a shoe scanned at it has no meaning yet, and guessing one would be guessing whether to put a
@@ -861,7 +856,7 @@ export default function LocationsBoard() {
   function drain() {
     const held = queued.current;
     queued.current = null;
-    if (held) runScan(held.typed, held.qty);
+    if (held) runScan(held);
   }
 
   // FIRE THE SCAN BOX. It is a function and not the form's onSubmit because IMPLICIT FORM SUBMISSION DOES NOT HAPPEN when a form has
@@ -869,14 +864,11 @@ export default function LocationsBoard() {
   // and Transfer and did nothing at all in Add, which is a gun that looks broken on the one verb it is used for most. Enter is now
   // handled on the inputs themselves and preventDefault'd, so there is exactly one path in whatever the form happens to contain.
   //
-  // The pairs box is read BEFORE it is reset, because state set here is not readable until the next render.
   function submitScan() {
     const v = scanValue.trim();
     if (!v) return;
-    const qty = scanQty;
     setScanValue('');
-    setScanQty(1);
-    onScan(v, qty);
+    onScan(v);
   }
 
   // Enter fires the scan, Escape clears it and backs out of a half-made transfer. Shared by both boxes in the scan bar so the pairs
@@ -1355,21 +1347,6 @@ export default function LocationsBoard() {
                         className="w-full rounded-lg border-2 border-slate-300 py-2 pl-10 pr-3 text-lg placeholder:text-base placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
                       />
                     </div>
-                    {/* Pairs per scan, and only on Add — it is for putting a box of twelve on a shelf, and there is no errand in the
-                        other direction a gun cannot do one pair at a time. It snaps back to 1 after every scan, so a 12 typed once
-                        can never quietly multiply the shoe scanned after it. */}
-                    {panel === 'add' && (
-                      <input
-                        type="number"
-                        min={1}
-                        max={MAX_ADD}
-                        value={scanQty}
-                        onChange={(e) => setScanQty(Math.min(MAX_ADD, Math.max(1, Number(e.target.value) || 1)))}
-                        onKeyDown={onScanKey}
-                        aria-label="Pairs per scan"
-                        className="w-16 rounded-lg border-2 border-slate-300 px-2 py-2 text-center text-lg tabular-nums focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                      />
-                    )}
                   </form>
                 ) : pickedLine ? (
                   <PickedChip
