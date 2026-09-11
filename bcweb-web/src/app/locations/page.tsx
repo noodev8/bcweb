@@ -24,6 +24,11 @@ POST /locations-transfer moves one shoe to another rack — pick a chip, press T
 row changes shelf and keeps its ordernum/allocated), never a remove and an add, which would hand back a free pair and un-pick the order
 waiting for it; audit follows the legacy PowerBuilder phrasing, `Transfer <code> from <SRC> >> to <DEST>` in bclog section 'Transfer',
 which that screen has been writing since May.
+
+SCAN MODE (2026-09-11, owner). This screen is mostly worked from two metres away with a gun in one hand, and that is not the screen the
+desk needs. Switched by hand from the board's own header, it drops the shelf contents entirely and becomes three verbs — Add, Remove,
+Transfer — a rack, and one scan box. It writes through the same three routes as the desk view, never its own; the reasoning is all in
+LocationsBoard.
 =======================================================================================================================================
 */
 
