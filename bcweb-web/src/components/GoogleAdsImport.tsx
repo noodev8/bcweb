@@ -13,11 +13,13 @@ Imports are deliberately unscheduled (docs/google-ads-spec.md §7.8). The operat
 screen, which may be weekly or quarterly. That makes staleness a normal state rather than a fault — so it is reported plainly instead
 of being treated as an error.
 
-THE GAPS ARE WHY THE FRESHNESS LINE EXISTS
+WHY THE FRESHNESS LINE EXISTS (AND WHY IT NO LONGER SHOWS GAPS)
 google_campaign_daily silently lost 12 July – 2 August 2026 — 22 days — because imports were sporadic and a Last-30-days window on
 3 September could not reach back far enough. Nothing announced it. On screen a silent hole reads as a quiet month, which in August
 would have read as a seasonal slowdown rather than a missing import. Holes are recoverable while you know about them: Google still
-holds the data, and a custom-range export imports like any other file.
+holds the data, and a custom-range export imports like any other file. The per-day gap badge was removed in Sep 2026 all the same:
+with ads switched off for days at a time, Google exports no campaign rows for those days and the count flagged intended behaviour as
+a hole. Age of the newest day is the signal that survives; the gaps are still on the API response (see Coverage below).
 
 PREVIEW THEN COMMIT, AND THE FILES ARE SENT TWICE
 Nothing is stashed on the server between the two calls. Commit re-derives the plan inside its own transaction from the same files, so
@@ -52,8 +54,13 @@ function staleness(c: GoogleAdsCoverage | null): string {
   return `to ${shortDate(c.to)} · ${c.daysOld} days old`;
 }
 
+/*
+ * Gaps are computed and returned by the API (google-ads-import-last) but deliberately NOT shown here. Ads get switched off for days
+ * at a time; Google then exports no campaign rows for those days, which the route cannot tell apart from a missed import, so the
+ * badge fired on normal, intended behaviour. The freshness line below still shows how old the data is, which is the part that
+ * matters day to day. `coverage.gaps` is still on the response if this ever needs reinstating.
+ */
 function Coverage({ title, c }: { title: string; c: GoogleAdsCoverage | null }) {
-  const missing = c?.gaps.reduce((a, g) => a + g.days, 0) ?? 0;
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
       <span className="font-medium text-slate-600">{title}</span>
@@ -61,14 +68,6 @@ function Coverage({ title, c }: { title: string; c: GoogleAdsCoverage | null }) 
       {c && (
         <span className="text-slate-400">
           · {c.days.toLocaleString('en-GB')} days from {shortDate(c.from)}
-        </span>
-      )}
-      {missing > 0 && (
-        <span
-          className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800"
-          title={c!.gaps.map((g) => (g.days === 1 ? shortDate(g.from) : `${shortDate(g.from)} – ${shortDate(g.to)}`)).join(', ')}
-        >
-          {missing} day{missing === 1 ? '' : 's'} missing
         </span>
       )}
     </div>
