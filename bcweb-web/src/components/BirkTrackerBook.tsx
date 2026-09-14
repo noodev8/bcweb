@@ -73,21 +73,23 @@ no state where both are set. Status tabs and the search box are genuine co-filte
   Edge and Firefox on Windows honour but other browsers ignore entirely, so the words carry the meaning and the colour is the glance.
 
 -- SCANNING A DELIVERY IN (owner, 2026-09-14) ------------------------------------------------------------------------------------------
-THERE IS NO SCAN MODE (owner: "i wanna be able to just scan"). No button arms the gun and there is no box to aim it at — the page
-listens the whole time it is open, and each beep adds 1 to that line's `arrived`. How it listens matters:
-  A SCANNER IS A KEYBOARD THAT TYPES IMPOSSIBLY FAST and finishes with Enter, so a document-level listener buffers single characters,
-  starts a new buffer whenever the gap between two of them is human-sized (60ms), and treats what Enter closes as a barcode if it is
-  at least 6 characters. The handler lives in a ref refreshed every render so the listener binds ONCE — re-binding per keystroke would
-  drop the burst it is halfway through reading.
-  IT NEVER SWALLOWS KEYS AIMED AT A FIELD. Counts, search terms and invoice numbers are all typed on this screen, and no burst
-  detector can reliably tell a fast typist from a gun once they share a target — so the page listens only when nothing else does.
-  That is also the real scanning posture: pair down, hands free, nothing focused.
+A REAL BOX, AND NO MODE. Two owner notes pull in opposite directions and both are right: "i wanna be able to just scan" (no switch to
+arm first) and "i would like an actual input rather than just assuming its on" (not an invisible listener you have to trust). So the
+scan box is permanently visible in the toolbar, autofocused on load and refocused after every beep — and any typing that lands on the
+PAGE rather than in a field is redirected into it, the first character appended by hand since it is consumed before the box can take
+focus, the rest arriving there on their own. You can therefore beep the moment the screen opens without clicking anything, and still
+watch the digits arrive and correct them. It is also the only way to book in the six lines that carry no EAN: type the barcode, or use
+the row's Arrived cell.
+  The earlier version detected the gun by keystroke SPEED and had no box at all. It worked, and it was the wrong shape: a scanner
+  that silently does nothing is indistinguishable from one that is not plugged in.
+  KEYS AIMED AT A FIELD ARE NEVER TOUCHED. Counts, search terms and invoice numbers are all typed on this screen; only keystrokes with
+  no field to land in are redirected.
   IT WRITES IMMEDIATELY, one beep at a time (owner), which is the opposite of the typed edits above. A delivery is dozens of pairs
   over a few minutes and a closed tab must not lose the lot. The safety net that immediate writing needs is the log: every beep is
   listed and every one can be undone — and Undo goes back through /birk-tracker-save with the values the line held a moment ago
   rather than through a decrement endpoint, because there should be one way to change this column, not two.
-  THE GUN STANDS DOWN WHILE THERE IS UNSAVED TYPING. Scans and edits write the same column on different schedules, and rather than
-  make the operator choose a mode, the listener refuses and says why. The indicator in the summary says which of the two it is doing.
+  THE GUN STANDS DOWN WHILE THERE IS UNSAVED TYPING. Scans and edits write the same column on different schedules, so rather than
+  make the operator choose a mode, the box disables itself and its placeholder says why.
   THE SCREEN'S FILTER IS THE SCAN'S SCOPE. A barcode does NOT identify an order line — the same EAN sits on up to four orders — so
   picking the order or invoice you are unpacking first is what makes a repeated barcode unambiguous. When it still isn't, the server
   returns the candidates and the operator taps one; see routes/birk-tracker-scan.js for why it asks rather than guesses.
@@ -96,8 +98,12 @@ listens the whole time it is open, and each beep adds 1 to that line's `arrived`
 Six lines in the live book carry no EAN and can never be scanned; they are keyed by hand, which is the other reason the typed columns
 stay exactly where they are.
 
-UPLOAD is present but inert until the Birkenstock order-confirmation file format is known. Wire it to a real parse route before
-enabling it; don't guess the columns.
+LOAD ORDER and LOAD INVOICE are both present and both inert, awaiting a real Birkenstock file of each kind (the second added on the
+owner's ask, 2026-09-14, as a placeholder). Wire each to its own parse route before enabling it, and do not guess the columns — a
+parser written against an imagined layout is worse than no button, because it fails quietly against the real thing. They are named
+for what they load rather than for the act of loading: "Upload" stopped meaning anything once there were two of them, and the operator
+is holding one piece of paper or the other. Load order feeds the Ordered column; Load invoice feeds Invoiced plus the invoice number
+and date.
 
 NOTHING SCROLLS SIDEWAYS AT ANY WIDTH. Fixed-width slots keep the counts in a straight line down the page; the invoice column takes
 what is left and truncates. Below `sm` the Birkenstock size label drops out, leaving size, the three counts and the invoice — which
@@ -107,7 +113,8 @@ is the minimum that still answers "where is this size, and what paid for it?".
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, ExclamationTriangleIcon, TrashIcon, XMarkIcon,
+  ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, ExclamationTriangleIcon, TrashIcon,
+  XMarkIcon, QrCodeIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
@@ -216,6 +223,10 @@ export default function BirkTrackerBook() {
   // which is the opposite of the typed edits above; the two are kept from colliding by pausing the listener while edits are pending
   // rather than by making the operator choose a mode.
   const [scanBusy, setScanBusy] = useState(false);
+  // The scan box is a real, permanently visible field (owner, 2026-09-14) — not an invisible listener you have to trust is running.
+  // It is also the page's default keyboard target, so nothing has to be clicked before beeping; see the listener below.
+  const [scanInput, setScanInput] = useState('');
+  const scanRef = useRef<HTMLInputElement>(null);
   // Newest first. `candidates` carries the choices when a barcode could not be resolved; `undo` the values to write back.
   const [scanLog, setScanLog] = useState<{
     id: number;
@@ -459,6 +470,7 @@ export default function BirkTrackerBook() {
     // The scope is whatever the screen is focused on — unpacking a known delivery is what makes an ambiguous barcode unambiguous.
     const body = await scanBirkTrackerArrival({ ...args, scope: focus ? { kind: focus.kind, value: focus.value } : undefined });
     setScanBusy(false);
+    scanRef.current?.focus(); // hand the gun its box back, so a delivery is one beep after another with nothing to click
 
     if (body.return_code === 'SUCCESS' && body.line) {
       const l = body.line;
@@ -478,56 +490,36 @@ export default function BirkTrackerBook() {
     logScan({ tone: 'warn', text: body.message || 'That scan could not be recorded' });
   }
 
-  // The gun, listened for globally. Held in a ref and reassigned every render so the listener below can be bound ONCE and still see
-  // the current filter and edit state — a listener re-bound on every keystroke would drop the burst it is in the middle of reading.
-  const onGunScan = useRef<(barcode: string) => void>(() => {});
-  // Kept current in an effect rather than assigned during render (a render must have no side effects, and React's lint rule enforces
-  // it). No dependency array: every render refreshes the handler, which is the point — it must see the live filter and edit state.
-  useEffect(() => {
-    onGunScan.current = (barcode: string) => {
-      // Typed edits batch and scans commit instantly; both write `arrived`. Rather than make the operator pick a mode, the gun
-      // stands down while there is unsaved typing, and says so.
-      if (dirtyRows.length > 0) {
-        logScan({ tone: 'warn', text: `${barcode} — save or discard your typed changes first` });
-        return;
-      }
-      if (scanBusy) return; // one beep at a time; the gun outruns the round trip otherwise
-      sendScan({ barcode });
-    };
-  });
+  // The scan box is submitted by the gun's own trailing Enter, or by hand for one of the six lines that carry no barcode.
+  function submitScan() {
+    const barcode = scanInput.trim();
+    setScanInput('');
+    if (!barcode) return;
+    // Typed edits batch and scans commit instantly; both write `arrived`. Rather than make the operator pick a mode, scanning stands
+    // down while there is unsaved typing, and says so.
+    if (dirtyRows.length > 0) {
+      logScan({ tone: 'warn', text: `${barcode} — save or discard your typed changes first` });
+      return;
+    }
+    if (scanBusy) return; // one beep at a time; the gun outruns the round trip otherwise
+    sendScan({ barcode });
+  }
 
+  // Keystrokes that land on the PAGE rather than in a field are pushed into the scan box, which is then focused so the rest of the
+  // burst arrives there on its own. That is what keeps "just scan" true without pretending the box isn't there: you can beep without
+  // clicking into it first, and you still see the digits arrive and can correct them.
+  //   The first character has already been consumed by the time we react, so it is appended by hand; everything after it types
+  //   straight into the now-focused input.
+  //   Keys aimed at a real field are never touched — counts, search terms and invoice numbers are all typed on this screen.
   useEffect(() => {
-    // A scanner is a keyboard that types impossibly fast and finishes with Enter. So: buffer single characters, start a new buffer
-    // whenever the gap between them is human-sized, and treat what Enter closes as a barcode if it is long enough.
-    const GUN_GAP_MS = 60;   // no one types a character every 60ms for eight characters; a gun is nearer 5ms
-    const MIN_LENGTH = 6;    // shorter than any EAN — guards against Enter on a stray keypress
-    let buffer = '';
-    let last = 0;
-
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      // NEVER swallow keys aimed at a field. A count, a search term and an invoice number are all typed on this screen, and a burst
-      // detector cannot reliably tell a fast typist from a gun once they share a target — so the rule is simply that the page
-      // listens when nothing else is. In practice that is exactly the scanning posture: pair down, hands free, page focused.
+      if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-
-      const now = Date.now();
-      if (e.key === 'Enter') {
-        const code = buffer;
-        buffer = '';
-        if (code.length >= MIN_LENGTH) {
-          e.preventDefault();
-          onGunScan.current(code);
-        }
-        return;
-      }
-      if (e.key.length !== 1) return;
-      if (now - last > GUN_GAP_MS) buffer = '';
-      last = now;
-      buffer += e.key;
+      e.preventDefault();
+      setScanInput((v) => v + e.key);
+      scanRef.current?.focus();
     };
-
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
@@ -631,15 +623,54 @@ export default function BirkTrackerBook() {
           unrelated jobs — narrowing the list, and acting on it — and left a void in its middle where neither reached. As their own
           strip under the page title they read as a toolbar, which is what they are, and the filter row below is free to be only
           about filtering. Right-aligned so the eye still starts at the left edge, where the content does. */}
-      <section className="flex flex-wrap items-center justify-end gap-2">
-        {/* Inert until someone hands over a Birkenstock confirmation file — the columns can't be guessed. */}
+      <section className="flex flex-wrap items-center gap-2">
+        {/* THE SCAN BOX, always present and never a mode (owner: an actual input rather than assuming it is on). It is autofocused on
+            load and refocused after every beep, and any typing that lands on the page rather than in a field is redirected into it —
+            so you can beep the moment the screen opens without clicking anything, while still SEEING what the gun sent and being able
+            to fix it. It also takes a barcode typed by hand, which is the only way to book in the six lines that carry no EAN. */}
+        <form onSubmit={(e) => { e.preventDefault(); submitScan(); }} className="relative w-full sm:w-72">
+          <QrCodeIcon className={'pointer-events-none absolute left-3 top-2.5 h-4 w-4 ' + (dirtyRows.length > 0 ? 'text-slate-300' : 'text-emerald-600')} />
+          <input
+            ref={scanRef}
+            autoFocus
+            value={scanInput}
+            onChange={(e) => setScanInput(e.target.value)}
+            disabled={dirtyRows.length > 0}
+            placeholder={dirtyRows.length > 0 ? 'Save your changes to scan' : 'Scan a pair to book it in'}
+            aria-label="Scan a barcode to mark a pair arrived"
+            className={
+              'w-full rounded-md border py-2 pl-9 pr-3 font-mono text-sm tabular-nums placeholder:font-sans focus:outline-none focus:ring-1 ' +
+              (dirtyRows.length > 0
+                ? 'border-slate-200 bg-slate-50 text-slate-400 placeholder:text-slate-400'
+                : 'border-emerald-300 bg-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500')
+            }
+          />
+        </form>
+        {scanBusy && <span className="text-xs text-slate-400">working…</span>}
+
+        <span className="ml-auto" />
+
+        {/* THE TWO FILE LOADERS, both inert until someone hands over a real file — the columns cannot be guessed, and a parser
+            written against an imagined layout would be worse than none.
+            They sit together and are named for WHAT THEY LOAD rather than for the act of loading: "Upload" alone stopped meaning
+            anything the moment there were two of them, and an operator holding a piece of paper knows which one they have.
+              Load order    the Birkenstock order confirmation — what we asked for, i.e. the Ordered column.
+              Load invoice  what Birkenstock has billed — the Invoiced column, and the invoice number and date with it. */}
         <button
           type="button"
           disabled
           title="Needs a sample Birkenstock order confirmation file before it can read one"
           className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
         >
-          <ArrowUpTrayIcon className="h-4 w-4" /> Upload
+          <ArrowUpTrayIcon className="h-4 w-4" /> Load order
+        </button>
+        <button
+          type="button"
+          disabled
+          title="Needs a sample Birkenstock invoice file before it can read one"
+          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
+        >
+          <DocumentArrowUpIcon className="h-4 w-4" /> Load invoice
         </button>
         <button
           type="button"
@@ -698,13 +729,6 @@ export default function BirkTrackerBook() {
               ].filter(Boolean).join(', ')}
           </p>
         </div>
-
-        {/* The scanner is always live, so this says so rather than offering a switch. It sits in the summary's empty right-hand side
-            because a standing status has no business taking a row to itself. */}
-        <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500">
-          <span className={'inline-block h-2 w-2 rounded-full ' + (dirtyRows.length > 0 ? 'bg-slate-300' : 'bg-emerald-500')} />
-          {dirtyRows.length > 0 ? 'Scanner paused while you have unsaved changes' : 'Scanner ready — beep a pair to book it in'}
-        </span>
       </section>
 
       {/* Counted across the whole book and shown whatever the filters are — this is the one thing on the screen that costs money to miss. */}
