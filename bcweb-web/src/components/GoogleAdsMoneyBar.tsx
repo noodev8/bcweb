@@ -31,8 +31,9 @@ where it would contradict the thing this component is for.
 =======================================================================================================================================
 */
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRightIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { GoogleAdsWindow, GoogleAdsWindowMeta } from '@/lib/api';
 
 // Whole pounds. Pence on a figure this size is noise, and every number here is a comparison rather than a reconciliation.
@@ -78,6 +79,13 @@ function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
   // How far the loss runs past the earned total. Capped so a catastrophic window still fits its row.
   const overPct = overspent ? pct(Math.min(-kept, scale)) : 0;
 
+  // RETURN ON THE SPEND, as a percentage rather than a multiple (owner, 2026-09-14). Kept divided by what Google was paid: 100% means
+  // every pound handed over came back again as kept profit on top of itself; 13% means a pound bought 13p. Deliberately measured
+  // against SPEND and not against earned profit — the question the bar is asked is "was the money given to Google worth giving", and
+  // that question's denominator is the money given. Null when nothing was spent: a ratio over zero spend is not a large number, it is
+  // an undefined one, and printing anything there would invent a verdict on a window that never ran an ad.
+  const keptOverSpend = w.spend > 0 ? (kept / w.spend) * 100 : null;
+
   // Built as one fragment and then either wrapped in a link or not. A polymorphic `const Row = drillHref ? Link : 'div'` reads
   // tidier and does not typecheck — Link's props demand an href the div branch cannot supply — so the branch is explicit.
   const content = (
@@ -94,7 +102,25 @@ function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
           <span className={`text-lg font-semibold tabular-nums ${overspent ? 'text-red-600' : 'text-slate-900'}`}>
             {money(kept)}
           </span>
-          <span className="ml-1.5 text-xs text-slate-500">kept</span>
+          {/* Kept AS A SHARE OF SPEND, on the SAME LINE as the figure it reads (owner, 2026-09-14 — a second line under the hero
+              number bought a whole extra row of height for a parenthetical). It is a reading of the number beside it, not a fifth
+              measurement, so it is punctuated onto it. Sub-10% carries a decimal so a barely-breaking-even window does not print
+              "0%" and read as a total loss; anything larger is whole percent, at this size the decimal is noise. The tooltip's
+              per-pound figure is written in pence rather than through money(), which rounds to whole pounds and would say
+              "£0 was kept" of a window that kept 13p in every pound. */}
+          <span className="ml-1.5 text-xs text-slate-500">
+            kept
+            {keptOverSpend !== null && (
+              <span
+                className={`tabular-nums ${overspent ? 'text-red-600' : ''}`}
+                title={`For every £1 paid to Google, ${kept < 0 ? '-' : ''}£${Math.abs(kept / w.spend).toFixed(2)} was kept. Kept (${money(kept)}) as a percentage of ad spend (${money(w.spend)}).`}
+              >
+                {' · '}
+                {keptOverSpend > 0 && '+'}
+                {Math.abs(keptOverSpend) < 10 ? keptOverSpend.toFixed(1) : Math.round(keptOverSpend)}% of spend
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
@@ -154,6 +180,85 @@ function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
   );
 }
 
+
+// ======================================================================================================================================
+// THE WORKING (collapsed by default)
+// ======================================================================================================================================
+// The bars say WHAT was kept. Six ratios say WHY, and all six are already in hand — every one is two of the four figures the bars are
+// drawn from, divided. Nothing is fetched for this panel.
+//
+// NO PROSE UNDER IT (owner, 2026-09-14 — "it is getting noisy"). A paragraph spelling out what the columns showed was drafted and
+// cut: the two columns and the row labels already say it, and a sentence asserting the conclusion turns a thing you read into a thing
+// you are told. The reader investigates from here if a row looks wrong; that is the panel working.
+//
+// COLLAPSED, because it is the second question. The screen's job is to say "you kept £1,088, 44% of what you paid Google" before
+// anything else; a permanently-open six-row table underneath competes with that and pushes the year-ago bar off the first screen. Open
+// it when the bar has already told you something is wrong and you want to know which half moved — traffic bought, or traffic converted.
+//
+// "UNITS PER 100 CLICKS" IS NOT A CONVERSION RATE AND MUST NOT BE CALLED ONE.
+// `units` is OURS — every Shopify unit those styles sold in the window, from `sales`, including the ones that never saw an ad. `clicks`
+// is GOOGLE'S. The ratio is still worth reading (it is the one line that separates "we bought more traffic" from "the traffic got
+// worse"), but a click and a unit here are not two ends of one funnel, and a name like "conversion rate" would claim they were — the
+// same trap the route header flags for convValue vs revenue. Google's own attributed conversions exist on the payload and are
+// deliberately not used: they are revised upward for weeks, so a recent window would read falsely low.
+const fmtInt = (v: number) => Math.round(v).toLocaleString('en-GB');
+const fmtPence = (v: number) => `${v < 0 ? '-' : ''}£${Math.abs(v).toFixed(2)}`;
+
+interface MetricRow {
+  label: string;
+  hint: string;
+  value: (w: GoogleAdsWindow) => string;
+}
+
+// Ordered as the money actually flows: how much traffic, what it cost, what it turned into, and what was left per unit at the end.
+// Kept per unit last, because it is the per-unit restatement of the hero figure and the row the other five explain.
+const METRICS: MetricRow[] = [
+  { label: 'Clicks', hint: "Google's clicks on these styles in this window.",
+    value: (w) => fmtInt(w.clicks) },
+  { label: 'Cost per click', hint: 'Ad spend divided by clicks — what a visit cost.',
+    value: (w) => (w.clicks > 0 ? fmtPence(w.spend / w.clicks) : '—') },
+  { label: 'Units per 100 clicks', hint: "OUR Shopify units over GOOGLE'S clicks. Not a conversion rate: the units include sales no ad touched. It separates buying more traffic from the traffic getting worse.",
+    value: (w) => (w.clicks > 0 ? `${((w.units / w.clicks) * 100).toFixed(1)}` : '—') },
+  { label: 'Ad cost per unit sold', hint: 'Ad spend divided by every unit sold in the window.',
+    value: (w) => (w.units > 0 ? fmtPence(w.spend / w.units) : '—') },
+  { label: 'Profit per unit before ads', hint: 'Net Shopify profit per unit, before a penny of advertising.',
+    value: (w) => (w.units > 0 ? fmtPence(w.profit / w.units) : '—') },
+  { label: 'Kept per unit', hint: 'What survived per unit once Google was paid. The hero figure, per unit.',
+    value: (w) => (w.units > 0 ? fmtPence(w.profitAfterSpend / w.units) : '—') },
+];
+
+function Working({ current, currentMeta, lastYear, lastYearMeta, showLastYear }: {
+  current: GoogleAdsWindow; currentMeta: GoogleAdsWindowMeta;
+  lastYear: GoogleAdsWindow; lastYearMeta: GoogleAdsWindowMeta; showLastYear: boolean;
+}) {
+  return (
+    <div className="mt-4 border-t border-slate-200 pt-3">
+      <table className="w-full text-xs tabular-nums">
+        <thead>
+          {/* LAST YEAR ON THE LEFT, NOW ON THE RIGHT (owner, 2026-09-14). The columns read left-to-right as time runs, so the eye
+              travels from the past to the present and the movement is the sentence. Built the other way round first, which made
+              every row a subtraction performed backwards. The present column stays the emphasised one — it is still the subject. */}
+          <tr className="text-slate-400">
+            <th className="pb-1.5 text-left font-medium">&nbsp;</th>
+            {showLastYear && <th className="pb-1.5 text-right font-medium">{lastYearMeta.label}</th>}
+            <th className="pb-1.5 text-right font-medium">{currentMeta.label}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {METRICS.map((m) => (
+            <tr key={m.label} className="border-t border-slate-100">
+              <td className="py-1.5 pr-3 text-left text-slate-500" title={m.hint}>{m.label}</td>
+              {showLastYear && <td className="py-1.5 pr-3 text-right text-slate-500">{m.value(lastYear)}</td>}
+              <td className="py-1.5 pl-3 text-right font-medium text-slate-800">{m.value(current)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+    </div>
+  );
+}
+
 interface Props {
   current: GoogleAdsWindow;
   currentMeta: GoogleAdsWindowMeta;
@@ -174,6 +279,10 @@ interface Props {
 }
 
 export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, lastYearMeta, showLastYear, drillHref }: Props) {
+  // Session-local and deliberately NOT remembered across visits: the collapsed state is the one that states the module's point, so
+  // every arrival should get it. Someone who wants the working open wants it for the question they are on, not for ever.
+  const [showWorking, setShowWorking] = useState(false);
+
   // ONE SHARED SCALE across both bars, or the year-on-year comparison is a lie — two bars each normalised to themselves would show a
   // shrinking business as two identical shapes. Taken from the largest of every figure drawn, so nothing can exceed the track.
   const scale = Math.max(
@@ -202,6 +311,21 @@ export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, last
             <span className="h-2.5 w-2.5 rounded-sm bg-slate-800" aria-hidden />
             kept
           </span>
+          {/* The disclosure lives in the header, beside the legend, rather than under the bars — a control below the content it opens
+              moves down the page as the content grows, and this one sits next to the title that names what is being explained. */}
+          <button
+            type="button"
+            onClick={() => setShowWorking((v) => !v)}
+            aria-expanded={showWorking}
+            className="flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            title="Clicks, cost per click, and what each unit kept — the ratios behind the bars"
+          >
+            {showWorking ? 'Hide working' : 'Working'}
+            <ChevronDownIcon
+              className={`h-3 w-3 transition-transform ${showWorking ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
         </div>
       </div>
       <div className="space-y-4">
@@ -210,6 +334,15 @@ export default function GoogleAdsMoneyBar({ current, currentMeta, lastYear, last
           <Bar title="Same window last year" sub={range(lastYearMeta)} w={lastYear} scale={scale} muted />
         )}
       </div>
+      {showWorking && (
+        <Working
+          current={current}
+          currentMeta={currentMeta}
+          lastYear={lastYear}
+          lastYearMeta={lastYearMeta}
+          showLastYear={showLastYear}
+        />
+      )}
     </section>
   );
 }

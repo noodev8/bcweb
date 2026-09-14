@@ -72,7 +72,14 @@ interface FilterStep { op: 'has' | 'not'; term: string }
 // SIZES IS THE ODD ONE AND DELIBERATELY SO: it is today's shelf, not the window's. "SIZES LESS 5" asks how many sizes a shopper can
 // buy RIGHT NOW, which is what decides whether the next click finds anything — a windowed version would answer a question about the
 // past that nobody is acting on. Same standing as STOCK, which is already read straight off the row.
-type QtyMetric = 'spend' | 'kept' | 'stock' | 'sold' | 'sizes';
+//
+// SHOWN is IMPRESSIONS, and it is the one metric that measures GOOGLE'S behaviour rather than ours or the shopper's. It exists for a
+// single question, asked by every agency pitch: how much of the book is Google simply not showing? Smart bidding concentrates budget
+// where it already has conversion history, so a style can sit in the `standard` bucket, in stock, and still be invisible — and
+// nothing else on this screen can tell it apart from a style that WAS shown and ignored. SPEND LESS 1 cannot: a style Google never
+// showed and a style shown 5,000 times that nobody clicked both spent nothing. Impressions separate "not offered" from "offered and
+// refused", which are opposite problems with opposite fixes (a bid/feed problem versus a price/product problem).
+type QtyMetric = 'spend' | 'kept' | 'stock' | 'sold' | 'sizes' | 'shown';
 interface QtyFilter { metric: QtyMetric; op: 'less' | 'more'; n: number }
 
 function metricValue(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey, metric: QtyMetric): number {
@@ -80,6 +87,7 @@ function metricValue(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey, metric: QtyMet
   if (metric === 'sizes') return r.sizesInStock;
   const win = r[w];
   if (metric === 'spend') return win.spend;
+  if (metric === 'shown') return win.impressions;
   if (metric === 'kept') return win.profitAfterSpend;
   return win.units;
 }
@@ -170,7 +178,7 @@ function parseContains(raw: string): { term: string; qty: QtyFilter | null; seas
   if (upper === 'WINTER' || upper === 'SUMMER') {
     return { term: '', qty: null, season: upper === 'WINTER' ? 'Winter' : 'Summer' };
   }
-  const m = upper.match(/^(SPEND|KEPT|STOCK|SOLD|SIZES)\s+(LESS|MORE)\s+(-?\d+(?:\.\d+)?)$/);
+  const m = upper.match(/^(SPEND|KEPT|STOCK|SOLD|SIZES|SHOWN)\s+(LESS|MORE)\s+(-?\d+(?:\.\d+)?)$/);
   if (m) {
     return {
       term: '',
@@ -897,7 +905,8 @@ export default function GoogleAdsPage() {
             <div className="mb-1 font-medium uppercase tracking-wide text-slate-400">Commands — type in Contains, then Find</div>
             <ul className="space-y-1">
               <li><span className="font-mono text-slate-700">SPEND MORE 50</span> · <span className="font-mono text-slate-700">SPEND LESS 5</span><span className="text-slate-400"> — what Google charged, in the chosen window</span></li>
-              <li><span className="font-mono text-slate-700">KEPT LESS 0</span><span className="text-slate-400"> — styles that cost more than they earned</span></li>
+              <li><span className="font-mono text-slate-700">KEPT LESS 0</span><span className="text-slate-400"> — styles that cost more than they earned. With <span className="font-mono">SPEND MORE 0</span>, the money that burned; add <span className="font-mono">SOLD LESS 1</span> for the ones that sold nothing at all</span></li>
+              <li><span className="font-mono text-slate-700">SHOWN LESS 1000</span><span className="text-slate-400"> — impressions in the window: what Google actually put in front of shoppers. With <span className="font-mono">STOCK MORE 0</span>, the stock Google is overlooking. Not the same as SPEND LESS 1 — a style shown 5,000 times and never clicked also spent nothing</span></li>
               <li><span className="font-mono text-slate-700">SOLD LESS 1</span> · <span className="font-mono text-slate-700">STOCK MORE 20</span><span className="text-slate-400"> — units sold in the window, and stock on the shelf</span></li>
               <li><span className="font-mono text-slate-700">SIZES LESS 5</span><span className="text-slate-400"> — the raw COUNT of sizes buyable today, not in the window. Not the same as the Thin shelf button, which also requires under half the run in stock</span></li>
               <li><span className="font-mono text-slate-700">WINTER</span> · <span className="font-mono text-slate-700">SUMMER</span><span className="text-slate-400"> — season (year-round styles show in both)</span></li>
