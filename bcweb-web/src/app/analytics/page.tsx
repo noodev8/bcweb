@@ -21,7 +21,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
-  ScaleIcon, SunIcon,
+  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -104,6 +104,16 @@ export default function AnalyticsPage() {
           description="Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner's read on whether a budget change is working."
           href="/analytics/ad-daily"
           icon={SunIcon}
+          live
+        />
+
+        {/* Activity Log — a read of `bclog`, the "who did what, when" ledger both bcweb and PowerBuilder write. Not a number to read
+            like the rest of this grid, but it is still "go somewhere to look something up", which is what Reports is the door for. */}
+        <ModuleTile
+          title="Bclog"
+          description="Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person."
+          href="/analytics/activity-log"
+          icon={DocumentMagnifyingGlassIcon}
           live
         />
 

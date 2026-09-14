@@ -261,6 +261,8 @@ app.use('/analytics-stock-position', require('./routes/analytics-stock-position'
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
+// Activity Log: read-only view of `bclog`, the "who did what, when" ledger written by both bcweb and PowerBuilder. Search + filters.
+app.use('/analytics-activity-log', require('./routes/analytics-activity-log'));
 
 // Brands module — revenue/profit per brand over a long window (12 or 6 months) against the window before it. Skechers is excluded
 // outright and the sub-1%-of-revenue tail folds into one "Others" row; both rules live in the route.

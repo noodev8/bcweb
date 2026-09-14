@@ -950,6 +950,51 @@ export function getNewAdditions(days?: number) {
   );
 }
 
+// One bclog row (Reports -> Activity Log). `who` is the `workstation` column, which honestly holds BOTH a PowerBuilder machine name
+// (WS1…) and a bcweb login name (Summer) — see routes/analytics-activity-log.js. `date` is 'YYYY-MM-DD', `time` 'HH:MM', London-local.
+export interface ActivityLogRow {
+  id: number;
+  who: string;
+  section: string;
+  date: string;
+  time: string;
+  log: string;
+}
+
+export interface ActivityLogData {
+  total: number;
+  truncated: boolean;
+  rows: ActivityLogRow[];
+  sections: string[];
+  people: string[];
+}
+
+export interface ActivityLogFilters {
+  days: number;      // 0 = the whole log
+  section: string;   // '' = all
+  who: string;       // '' = all
+  q: string;         // '' = no search
+  limit?: number;
+}
+
+// Load the activity log, newest first. Empty filters are dropped so the URL only carries what is actually set.
+export function getActivityLog(f: ActivityLogFilters) {
+  return request<ActivityLogData>(
+    {
+      url: '/analytics-activity-log',
+      method: 'GET',
+      params: { days: f.days, section: f.section || undefined, who: f.who || undefined, q: f.q || undefined, limit: f.limit },
+    },
+    (b) => ({
+      total: b.total ?? 0,
+      truncated: !!b.truncated,
+      rows: b.rows || [],
+      sections: b.sections || [],
+      people: b.people || [],
+    })
+  );
+}
+
 // One scratchpad note — a free-form product jotting on the New Additions screen. `body` is the loose note text; `created_by` is who
 // wrote it (server-resolved); `created_at` is an ISO timestamp.
 export interface ScratchpadNote {

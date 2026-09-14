@@ -54,8 +54,8 @@ all the different heights"), and with a four-wide grid it means a band of at mos
 tile in any band wraps it, and a wrapped band is the thing that looked wrong — so a fifth tile is a prompt to move something out or
 split the band, not something to absorb.
   THAT RULE IS CURRENTLY BROKEN IN ONE BAND, knowingly. STOCK & PRODUCTS is at six (Birkenstock took it to five, Locations to six on
-  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 5 / 6 / 2 (REPORTS & MARKETING took Finance on 2026-09-11 and now
-  wraps 4 + 1 for the same reason). It was allowed rather than fixed because the alternative is moving
+  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 6 / 6 / 2 (REPORTS & MARKETING took Finance on 2026-09-11 and Bclog on
+  2026-09-14, and now wraps 4 + 2 for the same reason). It was allowed rather than fixed because the alternative is moving
   a tile into a band it doesn't belong in to keep a row tidy, and the six are one coherent chain — decide, place, receive, shelve,
   season-buy, edit. If it is to be fixed, split the band (procurement vs the catalogue), don't evict a tile.
 =======================================================================================================================================
@@ -67,7 +67,7 @@ import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon,
+  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -166,6 +166,18 @@ export default function DashboardPage() {
           description="Sales, stock, margin and brand reporting — everything you go to read a number on."
           href="/analytics"
           icon={ChartBarIcon}
+          live
+          compact
+        />
+
+        {/* Bclog — the "who did what, when" ledger (bclog, written by bcweb and PowerBuilder). It also lives inside Reports; given
+            its own tile here as well (owner, 2026-09-14) because it is looked up often enough to earn a direct door. Takes this
+            band to SIX, so it now wraps 4 + 2 — see the header note on over-full bands. */}
+        <ModuleTile
+          title="Bclog"
+          description="Who did what, and when — search the activity log from here and PowerBuilder."
+          href="/analytics/activity-log"
+          icon={DocumentMagnifyingGlassIcon}
           live
           compact
         />
