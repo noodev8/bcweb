@@ -7,62 +7,73 @@ Purpose: The Birk Tracker screen — where a Birkenstock season order lives betw
          invoice gets keyed against it. Answers: what is still to come, what is on its way, what has landed, and what Birkenstock has
          billed us for that we never ordered. Reads /birk-tracker-lines; writes /birk-tracker-save and /birk-tracker-clear-arrived.
 
-NOT A PORT OF THE LEGACY GRID (owner, 2026-09-14). Its twelve columns were mostly per-ORDER facts repeated down forty rows, or one
-fact split in two, and it made you derive the status yourself by comparing three columns across a row. Folded up, nothing needs a
-table at all — so there isn't one; flex rows reflow, and a table would put the columns back and the side-scroll with them.
+-- ONE ROW PER SIZE (owner, 2026-09-14 — after a size-grid pass was tried and rejected) -------------------------------------------
+A size is a ROW: size, Birkenstock's size label, the three counts, and THE INVOICE IT CAME ON. The size-grid
+layout (sizes across the top, the three counts stacked down) reads beautifully and was the wrong answer for one concrete reason: it
+has nowhere to put a per-size invoice number. A grid can only carry one invoice per style heading, and in this book four styles
+already span two invoices — so the moment a style is delivered across two invoices, the grid either lies or hides the split. Checking
+paperwork is the job, the invoice number is the paperwork, and it belongs on the same line as the numbers it paid for.
 
-EVERY SIZE IS ITS OWN ROW, ALWAYS VISIBLE (owner). Checking a delivery is a size-by-size errand and a size you have to click to see is
-a size you will miss, so there is no expand/collapse in this component at all: order, then style, then every size, all open. What makes
-166 rows glanceable rather than a wall is the left colour stripe — one column of colour down the page, so "what is still to come" is
-answered by looking rather than by reading.
+So: rows, but not the legacy grid's rows. The three things carried over from the grid attempt, which were real improvements:
+  1. THE THREE COUNTS ARE ONE BLOCK. Ordered / Invoiced / Arrived sit adjacent in a tinted group rather than spread across the row
+     with other columns between them. "Do these three agree?" is then a glance at one object, not a scan across a row.
+  2. NO STATUS COLUMN AT ALL. It first held a status WORD, which only restated the stripe colour; that was replaced by a computed
+     "outstanding" note ("2 to come", "1 not billed"), and the note went too (owner, 2026-09-14). With the three counts sitting
+     adjacent, the gap between them IS visible — spelling it out in a fourth column was the screen doing arithmetic out loud that
+     the reader can already see, and it cost the invoice column the width instead.
+  3. KEYBOARD FLOW. Tab moves across a size (invoiced, then arrived, then the next size), and ENTER MOVES DOWN THE COLUMN to the same
+     field of the next size. Keying an invoice is a column of numbers down a size run, so Enter is the stroke that matches the job.
 
--- THE INVOICED COLUMN, AND WHY IT IS THE POINT (owner, 2026-09-14: "we need that to make sure they not charging for more than ordered")
-Ordered / Invoiced / Arrived sit side by side because the gaps between them are three different problems:
-    ordered vs arrived    where is it? (the three states below)
+-- WHAT THE THREE NUMBERS MEAN ---------------------------------------------------------------------------------------------------------
+Their gaps are three different problems, which is why all three are on screen at once:
+    ordered vs arrived    where is it?
     ordered vs invoiced   ARE WE BEING OVERCHARGED? — billed for more than we asked for
-    invoiced vs arrived   billed and not here yet (in transit), or here and not yet billed (a credit note still to come)
-An over-invoice is a FLAG, not a state: a line can be fully arrived AND over-invoiced, and collapsing the two would hide exactly the
-case worth catching. So it renders on top of the state — red figure, red outline, its own filter tab and a banner that survives
-whatever else is filtered, because an overcharge you only see when you happen to filter the right way is one you will pay.
-The server never blocks an over-invoice either (see routes/birk-tracker-save.js): you must be able to key what the invoice ACTUALLY
-says in order to see that it is wrong and go and argue it.
+    invoiced vs arrived   billed and not here yet, or here and not yet billed
+An over-invoice is a FLAG, not a state: a line can be fully arrived AND over-invoiced, and collapsing the two would hide the case
+worth catching. It renders on top of the state — red row, its own filter tab, and a banner counted across the whole book, because
+an overcharge you only see when you happen to filter the right way is one you will pay. The server never blocks it either (see
+routes/birk-tracker-save.js): you must be able to key what the invoice ACTUALLY says in order to argue with it.
 
-THE THREE STATES are the rest of the vocabulary — same words, same colours, at every level (book bar, order bar, style dot, row stripe):
+THE THREE STATES, the screen's whole vocabulary — same words, same colours, at every level (book bar, order bar, style dot, row stripe):
   STILL TO COME (slate)    ordered, not invoiced, not here. A promise with a month against it.
-  ON THE WAY (amber)       billed or part-delivered, but the three numbers do not yet agree. Worth chasing, hence the only warm colour.
+  ON THE WAY (amber)       billed or part-delivered, but the three do not yet agree. Worth chasing, hence the only warm colour.
   ARRIVED (emerald)        ordered, invoiced and arrived ALL MATCH. Done, so it recedes.
 
-GREEN NEEDS ALL THREE TO AGREE (owner, 2026-09-14), not merely "everything turned up". The three numbers are three separate promises
-and a line is finished only when none is left open: under-invoiced means Birkenstock still owes us the billing, over-invoiced means
-money to argue about. Either way the line still carries a question, and a line with a question stays on the screen that asks it. The
-rule lives in three places that must move together — `stateOf` here, `complete` in routes/birk-tracker-lines.js, and the DELETE
-predicate in routes/birk-tracker-clear-arrived.js, which removes exactly the rows this paints green.
+GREEN NEEDS ALL THREE TO AGREE (owner), not merely "everything turned up". The three numbers are three separate promises and a line is
+finished only when none is left open: under-invoiced means Birkenstock still owes us the billing, over-invoiced means money to argue
+about. Either way the line carries a question, and a line with a question stays on the screen that asks it. The rule lives in three
+places that must move together — `stateOf` here, `complete` in routes/birk-tracker-lines.js, and the DELETE predicate in
+routes/birk-tracker-clear-arrived.js, which removes exactly the rows this paints green.
 
-"X OF Y ARRIVED" COUNTS AGAINST INVOICED, NOT ORDERED (owner, 2026-09-14). You can only receive what has been billed, so the invoice
-is the right denominator for a delivery — measured against the order, a fully-delivered part-invoice reads as though it were short,
-which is the opposite of the truth. What has NOT been invoiced is a separate fact and the bar carries it: the bar stays proportioned
-against the order (the whole commitment, split three ways) and is the one place the un-invoiced remainder is visible.
+"X OF Y ARRIVED" COUNTS AGAINST INVOICED, NOT ORDERED (owner). You can only receive what has been billed, so the invoice is the right
+denominator for a delivery — measured against the order, a fully-delivered part-invoice reads as though it were short. What has NOT
+been invoiced is a separate fact and the bar carries it: the bar stays proportioned against the order (the whole commitment, split
+three ways) and is the one place the un-invoiced remainder is visible.
 
-EDITING IS INLINE AND BATCHED. Invoiced and Arrived are typed straight into the row — that is the job, and a modal per size would be
-absurd — but nothing is written until Save. Two reasons it batches rather than saving per keystroke: keying an invoice is one act
-covering tens of sizes and should land as one act (the server writes the batch in one transaction), and an invoice number and date
-belong to all of those rows at once, so they are typed ONCE in the save bar and stamped across everything you touched rather than
-retyped into every row.
-  The state and colours recompute as you type, so a row turns green the moment you key the last pair in. That live feedback is the
-  reason the editable columns are the same columns you read, rather than a separate "edit mode".
-  Rows changed but unsaved carry an amber ring; leaving them is safe (nothing is written) but the save bar stays on screen.
+EDITING IS INLINE AND BATCHED. Nothing is written until Save. It batches because keying an invoice is ONE act covering tens of sizes
+(the server writes the batch in one transaction), and because the invoice number and date belong to all of those rows at once — typed
+once in the save bar, stamped across everything touched, rather than retyped into every size.
+  THE STYLE HEADING IS NOT A CONTROL (owner, 2026-09-14). It briefly carried a pair count and two bulk shortcuts ("All as ordered",
+  "Arrived = invoiced"); all three went. The pair count was already said by the order's own totals above and by the rows below it, and
+  the shortcuts put two clickable things on a line whose whole job is to label the block beneath it — the row colours and the order
+  summary already answer what those shortcuts were shortcutting to. The heading now says what the style is, when it is due and what it
+  costs, and nothing else.
+  State and colour recompute as you type, so a row turns green the moment the last pair is keyed in. That live feedback is why the
+  editable cells are the same cells you read, rather than a separate edit mode.
 
-CLEAR ARRIVED is the legacy "Delete Green", and it DELETES — no undo, no archive (see the route). Three things here reflect that: it
-is confirmed with the count and the scope spelled out, it is disabled while there are unsaved edits (clearing rows while holding
-un-keyed changes to them is how you lose work you thought you had), and it sends the count it expects so a stale screen is refused by
-the server rather than silently taking rows nobody looked at.
+CLEAR ARRIVED is the legacy "Delete Green" and it DELETES — no undo, no archive (see the route). Hence: confirmed with the count and
+scope spelled out, disabled while edits are unsaved, and sends the count it expects so a stale screen is refused by the server rather
+than silently taking rows nobody looked at.
 
-ORDER AND INVOICE ARE ONE FILTER (owner): two ways of asking for one delivery's lines, and combining them mostly yields an empty
-screen, so picking either REPLACES the other. Structural — there is no state where both are set. The status tabs and search box are
-genuine co-filters and do still stack. The Clear scope follows this filter, so what gets deleted is what you were looking at.
+ORDER AND INVOICE ARE ONE FILTER (owner): two ways of asking for one delivery's lines, so picking either REPLACES the other — there is
+no state where both are set. Status tabs and the search box are genuine co-filters and do still stack.
 
-UPLOAD is present but inert until the Birkenstock order-confirmation file format is known — it is the one thing here that cannot be
-written from this side. Wire it to a real parse route before enabling it; don't guess the columns.
+UPLOAD is present but inert until the Birkenstock order-confirmation file format is known. Wire it to a real parse route before
+enabling it; don't guess the columns.
+
+NOTHING SCROLLS SIDEWAYS AT ANY WIDTH. Fixed-width slots keep the counts in a straight line down the page; the invoice column takes
+what is left and truncates. Below `sm` the Birkenstock size label drops out, leaving size, the three counts and the invoice — which
+is the minimum that still answers "where is this size, and what paid for it?".
 =======================================================================================================================================
 */
 
@@ -79,17 +90,10 @@ import {
 // --- the three states ----------------------------------------------------------------------------------------------------------
 type State = 'awaiting' | 'transit' | 'arrived';
 
-// Takes the counts rather than the row, so it can be asked about a row's SAVED values or about what is currently typed into it — the
+// Takes the counts rather than the row, so it can be asked about a line's SAVED values or about what is currently typed into it — the
 // screen needs both, and one definition has to answer both or the colours drift from the numbers.
-//
-// GREEN NEEDS ALL THREE NUMBERS TO AGREE (owner, 2026-09-14) — ordered, billed and received. Not "arrived >= requested", which is what
-// this was first built as. The three numbers are three different promises, and a line is finished only when none of them is left open:
-// under-invoiced means Birkenstock still owes us the billing, over-invoiced means money to argue about, and either way the line still
-// has a question against it. The same rule lives server-side on `complete` (routes/birk-tracker-lines.js) and is what Clear arrived
-// deletes on — all three must move together.
 function stateOf(requested: number, invoiced: number, arrived: number): State {
   if (requested > 0 && invoiced === requested && arrived === requested) return 'arrived';
-  // Something has moved — billed, or partly delivered — but the three do not yet agree.
   if (invoiced > 0 || arrived > 0) return 'transit';
   return 'awaiting';
 }
@@ -100,11 +104,20 @@ const STATE_LABEL: Record<State, string> = {
   arrived: 'Arrived',
 };
 
-const STATE_STYLE: Record<State, { bar: string; dot: string; stripe: string; text: string; row: string }> = {
-  awaiting: { bar: 'bg-slate-300', dot: 'bg-slate-300', stripe: 'border-l-slate-300', text: 'text-slate-500', row: 'hover:bg-slate-50' },
-  transit: { bar: 'bg-amber-400', dot: 'bg-amber-400', stripe: 'border-l-amber-400', text: 'text-amber-700', row: 'bg-amber-50/40 hover:bg-amber-50' },
-  arrived: { bar: 'bg-emerald-500', dot: 'bg-emerald-500', stripe: 'border-l-emerald-500', text: 'text-emerald-700', row: 'hover:bg-slate-50' },
+// Bar fill, row stripe, the tint behind the three-count block, and the figure colour. One table because these colours are a
+// vocabulary: if the rows' greens stop matching the bar's, the screen needs a legend, and a screen that needs a legend is not
+// glanceable.
+const STATE_STYLE: Record<State, { bar: string; dot: string; stripe: string; group: string; text: string }> = {
+  awaiting: { bar: 'bg-slate-300', dot: 'bg-slate-300', stripe: 'border-l-slate-300', group: 'bg-slate-100/70', text: 'text-slate-400' },
+  transit: { bar: 'bg-amber-400', dot: 'bg-amber-400', stripe: 'border-l-amber-400', group: 'bg-amber-100/70', text: 'text-amber-800' },
+  arrived: { bar: 'bg-emerald-500', dot: 'bg-emerald-500', stripe: 'border-l-emerald-500', group: 'bg-emerald-100/60', text: 'text-emerald-800' },
 };
+
+// Stable DOM id per editable cell, so Enter can hand focus to the same field of the next size. getElementById takes any string, so
+// the style names with spaces in them need no escaping.
+function cellId(r: { ordernum: string; code: string }, field: 'invoiced' | 'arrived'): string {
+  return `bt|${r.ordernum}|${r.code}|${field}`;
+}
 
 // Codes are `<style>-<2-digit EU size>` — verified across the whole live table. The fallback matters anyway: a code that ever stops
 // following the rule must still appear (as its own single-size block) rather than vanish from the order it is part of.
@@ -117,17 +130,14 @@ function money(v: number | null): string {
   return v == null ? '' : v.toFixed(2);
 }
 
-// The natural key of a line, and the key of an edit against it — (ordernum, code), the same pair the write route addresses rows by.
+// The natural key of a line, and of an edit against it — (ordernum, code), the pair the write route addresses rows by.
 function keyOf(r: BirkTrackerLine): string {
   return r.ordernum + '|' + r.code;
 }
 
-// --- shapes the screen reads ---------------------------------------------------------------------------------------------------
-// `invoiced` and `arrived` are the RAW keyed totals — uncapped, so an over-invoice shows up as a bigger number, which is the entire
-// point of having the column. `barArrived` is the same arrived figure clamped to what was ordered, used only for the bar, because a
-// segment must never run past its own total.
 interface Tally { requested: number; invoiced: number; arrived: number; barArrived: number; transit: number; awaiting: number }
 interface Edit { invoiced: number; arrived: number }
+interface Live { r: BirkTrackerLine; invoiced: number; arrived: number; state: State; over: boolean; dirty: boolean }
 
 export default function BirkTrackerBook() {
   const { data, error, isLoading, busy, refresh } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
@@ -136,7 +146,7 @@ export default function BirkTrackerBook() {
   const [focus, setFocus] = useState<{ kind: 'order' | 'invoice'; value: string } | null>(null);
   const [find, setFind] = useState('');
 
-  // Unsaved edits, keyed by (ordernum|code). Absence means "unchanged" — so discarding is emptying this, and nothing has to be
+  // Unsaved edits, keyed by (ordernum|code). Absence means "unchanged", so discarding is emptying this and nothing has to be
   // reconciled against the server's copy.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [stampNum, setStampNum] = useState('');
@@ -147,19 +157,18 @@ export default function BirkTrackerBook() {
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
 
-  // What a row currently SHOWS — its saved values with any unsaved edit laid over the top. Every count, colour and filter on the
-  // screen reads through this, so typing into a row moves it through the states and tabs exactly as saving it would.
+  // What a line currently SHOWS — saved values with any unsaved edit laid over the top. Every count, colour and filter reads through
+  // this, so typing moves a column through the states and the tabs exactly as saving it would.
   const live = useMemo(() => {
-    const m = new Map<string, { r: BirkTrackerLine; invoiced: number; arrived: number; state: State; over: boolean; dirty: boolean }>();
+    const m = new Map<string, Live>();
     for (const r of rows) {
-      const k = keyOf(r);
-      const e = edits[k];
+      const e = edits[keyOf(r)];
       const invoiced = e ? e.invoiced : r.invoiced;
       const arrived = e ? e.arrived : r.arrived;
-      m.set(k, {
+      m.set(keyOf(r), {
         r, invoiced, arrived,
         state: stateOf(r.requested, invoiced, arrived),
-        // Billed OR delivered above what we ordered. Both are "they sent/charged more than we asked", and both want chasing.
+        // Billed OR delivered above what we ordered — both mean they sent or charged more than we asked, and both want chasing.
         over: invoiced > r.requested || arrived > r.requested,
         dirty: !!e && (e.invoiced !== r.invoiced || e.arrived !== r.arrived),
       });
@@ -167,7 +176,7 @@ export default function BirkTrackerBook() {
     return m;
   }, [rows, edits]);
 
-  const view = (r: BirkTrackerLine) => live.get(keyOf(r))!;
+  const view = (r: BirkTrackerLine): Live => live.get(keyOf(r))!;
 
   // Everything except the status tabs — the tab COUNTS come from this, so they always say what clicking that tab would show.
   const scoped = useMemo(() => {
@@ -180,6 +189,7 @@ export default function BirkTrackerBook() {
     });
   }, [rows, focus, find]);
 
+  /* eslint-disable react-hooks/exhaustive-deps -- `view` closes over `live`, which is the real dependency in each of these */
   const counts = useMemo(() => {
     const c = { all: scoped.length, awaiting: 0, transit: 0, arrived: 0, over: 0 };
     for (const r of scoped) {
@@ -188,19 +198,21 @@ export default function BirkTrackerBook() {
       if (v.over) c.over += 1;
     }
     return c;
-  }, [scoped, live]); // eslint-disable-line react-hooks/exhaustive-deps -- `view` reads `live`, which is the real dependency
+  }, [scoped, live]);
 
   // Over-invoicing across the WHOLE book, not just the filtered view: an overcharge you only see after filtering the right way is one
   // you will end up paying.
-  const overAll = useMemo(() => rows.filter((r) => view(r).over).length, [rows, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overAll = useMemo(() => rows.filter((r) => view(r).over).length, [rows, live]);
 
   const shown = useMemo(() => {
     if (state === 'all') return scoped;
     if (state === 'over') return scoped.filter((r) => view(r).over);
     return scoped.filter((r) => view(r).state === state);
-  }, [scoped, state, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scoped, state, live]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
-  // Units, not lines: a line is a row in a table, a pair is a shoe. Reads through `live`, so every figure moves as you type.
+  // Units, not lines: a line is a row in a table, a pair is a shoe. `invoiced`/`arrived` are the RAW keyed totals — uncapped, so an
+  // over-invoice shows as a bigger number, which is the point of the column. `barArrived` is clamped, for the bar only.
   const tally = (list: BirkTrackerLine[]): Tally => {
     let requested = 0, invoiced = 0, arrived = 0, barArrived = 0, transit = 0;
     for (const r of list) {
@@ -210,26 +222,25 @@ export default function BirkTrackerBook() {
       arrived += v.arrived;
       const landed = Math.min(v.arrived, r.requested);
       barArrived += landed;
-      // Billed but not landed. Clamped both ends: an over-invoice must not push a bar past its own total or run it backwards.
       transit += Math.max(0, Math.min(v.invoiced, r.requested) - landed);
     }
     return { requested, invoiced, arrived, barArrived, transit, awaiting: Math.max(0, requested - barArrived - transit) };
   };
 
-  // "X of Y arrived", where Y is what has been INVOICED, not what was ordered (owner, 2026-09-14). You can only receive what they have
-  // billed, so invoiced is the right denominator for a delivery: measured against what was ordered, a fully-delivered part-invoice
-  // reads as though it were short. What is still un-invoiced is a separate fact, and the bar beside it carries that.
+  // "X of Y arrived", where Y is what has been INVOICED (owner) — see the header.
   const arrivedOf = (t: Tally) => (t.invoiced === 0 ? 'not invoiced yet' : `${t.arrived} of ${t.invoiced} arrived`);
 
-  const totals = useMemo(() => tally(shown), [shown, live]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Order -> style -> size, in the order the route already sorted (ordernum, then code, which puts sizes in size order).
+  // Order -> style -> the style's own size run, in the order the route already sorted (ordernum, then code, which puts sizes in size
+  // order). Nothing is re-sorted here.
   const orders = useMemo(() => {
-    type StyleBlock = { key: string; style: string; lines: BirkTrackerLine[]; due: string; cost: number | null; rrp: number | null };
+    type StyleBlock = {
+      key: string; style: string; lines: BirkTrackerLine[]; sizes: string[];
+      due: string; cost: number | null; rrp: number | null;
+    };
     type OrderBlock = { ordernum: string; placed: string; styles: StyleBlock[]; lines: BirkTrackerLine[] };
     const out: OrderBlock[] = [];
     for (const r of shown) {
-      const { style } = splitCode(r.code);
+      const { style, size } = splitCode(r.code);
       let o = out[out.length - 1];
       if (!o || o.ordernum !== r.ordernum) {
         o = { ordernum: r.ordernum, placed: r.placed, styles: [], lines: [] };
@@ -238,10 +249,11 @@ export default function BirkTrackerBook() {
       o.lines.push(r);
       let s = o.styles[o.styles.length - 1];
       if (!s || s.style !== style) {
-        s = { key: keyOf(r) + '|style', style, lines: [], due: r.due, cost: null, rrp: null };
+        s = { key: keyOf(r) + '|style', style, lines: [], sizes: [], due: r.due, cost: null, rrp: null };
         o.styles.push(s);
       }
       s.lines.push(r);
+      s.sizes.push(size);
       // Cost/RRP are per line in the table but per style in reality; first known value wins, as on the legacy screen.
       if (s.cost == null) s.cost = r.cost;
       if (s.rrp == null) s.rrp = r.rrp;
@@ -253,7 +265,7 @@ export default function BirkTrackerBook() {
   const filtered = state !== 'all' || focus !== null || find.trim() !== '';
 
   // What "Clear arrived" would delete. Deliberately reads the SAVED values and ignores the status tab and search box: the server
-  // counts the database, and the guard only works if both sides are asking the same question.
+  // counts the database, and the guard only works if both sides ask the same question.
   const clearScope = focus ? { scope: focus.kind, value: focus.value } : { scope: 'all' as const };
   const clearable = useMemo(
     () => rows.filter((r) => {
@@ -270,17 +282,19 @@ export default function BirkTrackerBook() {
     setFind('');
   }
 
-  function setEdit(r: BirkTrackerLine, patch: Partial<Edit>) {
-    const k = keyOf(r);
+  // Stage one edit. Typing a value back to what it already was drops the entry, so the save bar disappears on its own rather than
+  // claiming a change that isn't one.
+  function stage(r: BirkTrackerLine, patch: Partial<Edit>) {
     setEdits((prev) => {
+      const k = keyOf(r);
       const cur = prev[k] ?? { invoiced: r.invoiced, arrived: r.arrived };
-      const next = { ...cur, ...patch };
-      // Typing a value back to what it already was is not a change — drop the entry so the save bar disappears on its own.
-      if (next.invoiced === r.invoiced && next.arrived === r.arrived) {
-        const { [k]: _drop, ...rest } = prev;
+      const merged = { ...cur, ...patch };
+      if (merged.invoiced === r.invoiced && merged.arrived === r.arrived) {
+        const rest = { ...prev };
+        delete rest[k];
         return rest;
       }
-      return { ...prev, [k]: next };
+      return { ...prev, [k]: merged };
     });
   }
 
@@ -364,8 +378,8 @@ export default function BirkTrackerBook() {
     );
   }
 
-  // The bar stays proportioned against what was ORDERED, deliberately — it shows the whole commitment split three ways, which is the
-  // one place the un-invoiced remainder is visible. The counters beside it are the ones measured against invoiced.
+  // The bar stays proportioned against what was ORDERED — it shows the whole commitment split three ways, and is the one place the
+  // un-invoiced remainder is visible. The counters beside it are the ones measured against invoiced.
   const pct = (t: Tally, n: number) => (t.requested > 0 ? (n / t.requested) * 100 : 0);
   const bar = (t: Tally, className: string) => (
     <div className={'flex overflow-hidden rounded-full bg-slate-200 ' + className} role="presentation">
@@ -375,6 +389,9 @@ export default function BirkTrackerBook() {
     </div>
   );
 
+  // One tally for the headline. Plain render-time work, not a hook: it reads `live`, which already memoises the expensive part.
+  const totals = tally(shown);
+
   const TABS: { key: State | 'all' | 'over'; label: string; count: number }[] = [
     { key: 'all', label: 'Everything', count: counts.all },
     { key: 'awaiting', label: STATE_LABEL.awaiting, count: counts.awaiting },
@@ -383,32 +400,39 @@ export default function BirkTrackerBook() {
     { key: 'over', label: 'Over-invoiced', count: counts.over },
   ];
 
-  // Column widths declared once and shared by the heading and the rows, so they cannot drift apart. Fixed widths (not a table) keep
-  // the numbers in a straight line down the page while still letting the row reflow.
+  // Column widths, declared once and shared by the heading and the rows so they cannot drift apart. Fixed slots (not a table) keep the
+  // counts in a straight line down the page while still letting the row reflow; the invoice takes whatever is left.
   const COL = {
-    size: 'w-10 shrink-0',
-    bk: 'hidden w-20 shrink-0 sm:block',
-    num: 'w-14 shrink-0 text-right tabular-nums',
-    field: 'w-16 shrink-0',
-    state: 'hidden w-28 shrink-0 lg:block',
-    invoice: 'hidden min-w-0 flex-1 truncate md:block',
+    size: 'w-9 shrink-0',
+    bk: 'hidden w-16 shrink-0 sm:block',
+    count: 'w-[4.5rem] shrink-0 text-center tabular-nums',
+    invoice: 'min-w-0 flex-1 truncate',
   };
+  // Inputs sit flush in the row — no visible box until you touch one. A permanent box on every count made the book look like a form
+  // rather than something you read.
+  const FIELD = 'w-full rounded border border-transparent bg-transparent py-0.5 text-center text-sm tabular-nums hover:border-slate-300 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500';
 
-  const input = 'w-full rounded border bg-transparent px-1.5 py-0.5 text-right text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-brand-500';
+  // Enter moves DOWN the column — same field, next size — because keying an invoice is a column of numbers down a size run. Tab is
+  // left alone and still walks across a size (invoiced, then arrived, then on to the next size).
+  const onCellKey = (e: React.KeyboardEvent<HTMLInputElement>, next: BirkTrackerLine | undefined, field: 'invoiced' | 'arrived') => {
+    if (e.key !== 'Enter' || !next) return;
+    e.preventDefault();
+    document.getElementById(cellId(next, field))?.focus();
+  };
 
   return (
     <div className="space-y-5 pb-24">
-      {/* --- the book in one line ------------------------------------------------------------------------------------------------ */}
+      {/* --- the book in three numbers ------------------------------------------------------------------------------------------- */}
       <section>
-        {/* The three numbers the screen is about, in the order the question is asked: what we asked for, what they billed, what
-            turned up. Reading them side by side is how an overcharge or a short delivery announces itself without any arithmetic. */}
         <p className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="text-lg text-slate-900">
             <span className="font-semibold tabular-nums">{totals.requested}</span>
             <span className="ml-1.5 text-sm text-slate-500">pairs {filtered ? 'in view' : 'ordered'}</span>
           </span>
           <span className="text-lg text-slate-900">
-            <span className={'font-semibold tabular-nums ' + (totals.invoiced > totals.requested ? 'text-red-700' : '')}>{totals.invoiced}</span>
+            <span className={'font-semibold tabular-nums ' + (totals.invoiced > totals.requested ? 'text-red-700' : '')}>
+              {totals.invoiced}
+            </span>
             <span className="ml-1.5 text-sm text-slate-500">invoiced</span>
           </span>
           <span className="text-lg text-slate-900">
@@ -417,8 +441,6 @@ export default function BirkTrackerBook() {
           </span>
         </p>
         <div className="mt-2.5">{bar(totals, 'h-2.5 w-full')}</div>
-        {/* The bar's own key, in words: what it is split into, and the delivery progress measured against the invoice rather than
-            against the order. */}
         <p className="mt-1.5 text-sm text-slate-500">
           {arrivedOf(totals)}
           {totals.transit > 0 && <>, <span className="tabular-nums text-amber-700">{totals.transit}</span> on the way</>}
@@ -426,8 +448,7 @@ export default function BirkTrackerBook() {
         </p>
       </section>
 
-      {/* The overcharge banner. Counted across the whole book and shown whatever the filters are, because this is the one thing on the
-          screen that costs money to miss. */}
+      {/* Counted across the whole book and shown whatever the filters are — this is the one thing on the screen that costs money to miss. */}
       {overAll > 0 && (
         <button
           type="button"
@@ -542,8 +563,8 @@ export default function BirkTrackerBook() {
         </div>
       )}
 
-      {/* The delete confirmation. Spells out the count AND the scope, because the button's effect depends on a filter set somewhere
-          else on the screen, and because nothing it removes can be brought back. */}
+      {/* Spells out the count AND the scope, because the button's effect depends on a filter set elsewhere on the screen, and because
+          nothing it removes can be brought back. */}
       {confirmClear && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm text-red-900">
@@ -589,16 +610,13 @@ export default function BirkTrackerBook() {
             const ot = tally(o.lines);
             return (
               <section key={o.ordernum} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {/* Per-order facts live here ONCE instead of repeating down every row — which is what the legacy grid did, and what
-                    made it need scrolling. */}
+                {/* Per-order facts live here ONCE instead of repeating down every row. */}
                 <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3">
                   <div className="min-w-0">
                     <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">{o.ordernum}</span>
                     {o.placed && <span className="ml-3 text-xs tabular-nums text-slate-500">placed {o.placed}</span>}
                   </div>
                   <div className="ml-auto flex items-center gap-3">
-                    {/* Ordered, billed, received — the same triple as the headline, so an order's position reads the same way the
-                        book's does. "of {invoiced}" because you can only receive what has been invoiced. */}
                     <span className="text-xs tabular-nums text-slate-500">
                       <span className="text-slate-700">{ot.requested}</span> ordered
                       <span className={'ml-3 ' + (ot.invoiced > ot.requested ? 'font-semibold text-red-700' : 'text-slate-700')}>{ot.invoiced}</span> invoiced
@@ -608,108 +626,110 @@ export default function BirkTrackerBook() {
                   </div>
                 </header>
 
-                {/* Column headings once per order, not once per style — a heading every eight rows would break the run of colour the
-                    stripes exist to make. */}
+                {/* Column headings once per order, not once per style — a heading every few rows would break the run of stripe colour
+                    that makes the book glanceable. */}
                 <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-1.5 pl-[19px] text-xs text-slate-400">
                   <span className={COL.size}>Size</span>
-                  <span className={COL.bk}>Birkenstock</span>
-                  <span className={COL.num}>Ordered</span>
-                  <span className={COL.field + ' text-right'}>Invoiced</span>
-                  <span className={COL.field + ' text-right'}>Arrived</span>
-                  <span className={COL.state}>Status</span>
+                  <span className={COL.bk}>BK</span>
+                  <span className="flex shrink-0 items-center">
+                    <span className={COL.count}>Ordered</span>
+                    <span className={COL.count}>Invoiced</span>
+                    <span className={COL.count}>Arrived</span>
+                  </span>
                   <span className={COL.invoice}>Invoice</span>
                 </div>
 
-                {o.styles.map((s) => {
-                  const st = tally(s.lines);
-                  const styleState = s.lines.some((l) => view(l).state === 'awaiting') ? 'awaiting'
-                    : s.lines.some((l) => view(l).state === 'transit') ? 'transit' : 'arrived';
-                  return (
-                    <div key={s.key}>
-                      {/* The style heading — not a control. It carries what belongs to the style rather than to a size. */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-slate-100 bg-slate-50/50 px-4 py-1.5">
-                        <span className={'inline-block h-2 w-2 shrink-0 rounded-full ' + STATE_STYLE[styleState].dot} />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={s.style}>{s.style}</span>
-                        <span className="shrink-0 text-xs tabular-nums text-slate-400">
-                          {st.requested} {st.requested === 1 ? 'pair' : 'pairs'}
-                        </span>
-                        {s.due && (
-                          <span className={'shrink-0 text-xs font-medium ' + (styleState === 'arrived' ? 'text-slate-400' : STATE_STYLE[styleState].text)}>
-                            Due {s.due}
-                          </span>
-                        )}
-                        {(s.cost != null || s.rrp != null) && (
-                          <span className="shrink-0 text-xs tabular-nums text-slate-400">
-                            {s.cost != null && <>cost {money(s.cost)}</>}
-                            {s.cost != null && s.rrp != null && <span className="mx-1.5">/</span>}
-                            {s.rrp != null && <>rrp {money(s.rrp)}</>}
-                          </span>
-                        )}
-                      </div>
+                <div className="divide-y divide-slate-100">
+                  {o.styles.map((s) => {
+                    const views = s.lines.map((l) => view(l));
+                    const styleState: State = views.some((v) => v.state === 'awaiting') ? 'awaiting'
+                      : views.some((v) => v.state === 'transit') ? 'transit' : 'arrived';
 
-                      {/* ONE ROW PER SIZE, always, with the two keyed columns editable in place. */}
-                      {s.lines.map((r) => {
-                        const v = view(r);
-                        const { size } = splitCode(r.code);
-                        return (
-                          <div
-                            key={r.code}
-                            className={
-                              'flex items-center gap-3 border-l-[3px] px-4 py-1 text-sm ' +
-                              STATE_STYLE[v.state].stripe + ' ' +
-                              (v.over ? 'bg-red-50/60 hover:bg-red-50' : v.dirty ? 'bg-amber-50/60' : STATE_STYLE[v.state].row)
-                            }
-                          >
-                            <span className={COL.size + ' font-semibold tabular-nums text-slate-800'}>{size}</span>
-                            {/* Birkenstock's own size label — what the paperwork in your hand is printed with, so it sits next to ours. */}
-                            <span className={COL.bk + ' tabular-nums text-slate-400'}>{r.bksize}</span>
-                            <span className={COL.num + ' text-slate-700'}>{r.requested}</span>
+                    return (
+                      <div key={s.key}>
+                        {/* The style heading — not a control. It carries what belongs to the style rather than to a size. The invoice
+                            is deliberately NOT here: it belongs on each size's own row, because a style can be delivered across two. */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-slate-50/60 px-4 py-1.5">
+                          <span className={'inline-block h-2 w-2 shrink-0 rounded-full ' + STATE_STYLE[styleState].dot} />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={s.style}>{s.style}</span>
 
-                            {/* Invoiced. Red the moment it passes what was ordered — that comparison is why the column is here. */}
-                            <span className={COL.field}>
-                              <input
-                                type="number"
-                                min={0}
-                                value={v.invoiced}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setEdit(r, { invoiced: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-                                aria-label={`Invoiced, size ${size}`}
-                                className={input + ' ' + (v.invoiced > r.requested
-                                  ? 'border-red-300 font-semibold text-red-700'
-                                  : v.dirty ? 'border-amber-300 text-slate-800' : 'border-transparent text-slate-700 hover:border-slate-200')}
-                              />
+                          {s.due && (
+                            <span className={'shrink-0 text-xs font-medium ' + (styleState === 'arrived' ? 'text-slate-400' : STATE_STYLE[styleState].text)}>
+                              Due {s.due}
                             </span>
-
-                            <span className={COL.field}>
-                              <input
-                                type="number"
-                                min={0}
-                                value={v.arrived}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setEdit(r, { arrived: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-                                aria-label={`Arrived, size ${size}`}
-                                className={input + ' ' + (v.arrived > r.requested
-                                  ? 'border-red-300 font-semibold text-red-700'
-                                  : v.dirty ? 'border-amber-300 text-slate-800'
-                                    : 'border-transparent hover:border-slate-200 ' + (v.arrived ? STATE_STYLE[v.state].text + ' font-medium' : 'text-slate-300'))}
-                              />
+                          )}
+                          {(s.cost != null || s.rrp != null) && (
+                            <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                              {s.cost != null && <>cost {money(s.cost)}</>}
+                              {s.cost != null && s.rrp != null && ' / '}
+                              {s.rrp != null && <>rrp {money(s.rrp)}</>}
                             </span>
+                          )}
+                        </div>
 
-                            <span className={COL.state + ' text-xs ' + (v.over ? 'font-medium text-red-700' : STATE_STYLE[v.state].text)}>
-                              {v.over ? 'Over-invoiced' : STATE_LABEL[v.state]}
-                            </span>
-                            <span
-                              className={COL.invoice + ' font-mono text-xs tabular-nums text-slate-400'}
-                              title={r.invoice_date ? `Invoiced ${r.invoice_date}` : undefined}
+                        {/* ONE ROW PER SIZE. The three counts sit adjacent in a tinted block so the comparison is a glance at one
+                            object; the invoice that paid for this size is on the same line, which is what a size grid could not do. */}
+                        {s.lines.map((r, i) => {
+                          const v = view(r);
+                          const next = s.lines[i + 1];
+                          // Red when over, amber while unsaved, otherwise the line's own state.
+                          const group = v.over ? 'bg-red-100/70' : v.dirty ? 'bg-amber-100/70' : STATE_STYLE[v.state].group;
+                          return (
+                            <div
+                              key={r.code}
+                              className={
+                                'flex items-center gap-3 border-l-[3px] px-4 py-0.5 text-sm ' +
+                                STATE_STYLE[v.state].stripe + ' ' + (v.over ? 'bg-red-50/50' : 'hover:bg-slate-50')
+                              }
                             >
-                              {r.invoice_num}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                              <span className={COL.size + ' font-semibold tabular-nums text-slate-800'}>{s.sizes[i]}</span>
+                              {/* Birkenstock's own size label — what the paperwork in your hand is printed with. */}
+                              <span className={COL.bk + ' text-xs tabular-nums text-slate-400'}>{r.bksize}</span>
+
+                              <span className={'flex shrink-0 items-center rounded ' + group}>
+                                {/* Ordered is the baseline the other two are measured against, and the only count that is not
+                                    editable: it is what we asked Birkenstock for, and it arrives with the order, not a delivery. */}
+                                <span className={COL.count + ' py-0.5 text-slate-600'}>{r.requested || '–'}</span>
+                                <span className={COL.count}>
+                                  <input
+                                    id={cellId(r, 'invoiced')}
+                                    inputMode="numeric"
+                                    value={v.invoiced || ''}
+                                    placeholder="–"
+                                    onFocus={(e) => e.target.select()}
+                                    onKeyDown={(e) => onCellKey(e, next, 'invoiced')}
+                                    onChange={(e) => stage(r, { invoiced: toCount(e.target.value) })}
+                                    aria-label={`${s.style} size ${s.sizes[i]} invoiced`}
+                                    className={FIELD + ' ' + (v.invoiced > r.requested ? 'font-semibold text-red-700' : 'text-slate-800')}
+                                  />
+                                </span>
+                                <span className={COL.count}>
+                                  <input
+                                    id={cellId(r, 'arrived')}
+                                    inputMode="numeric"
+                                    value={v.arrived || ''}
+                                    placeholder="–"
+                                    onFocus={(e) => e.target.select()}
+                                    onKeyDown={(e) => onCellKey(e, next, 'arrived')}
+                                    onChange={(e) => stage(r, { arrived: toCount(e.target.value) })}
+                                    aria-label={`${s.style} size ${s.sizes[i]} arrived`}
+                                    className={FIELD + ' ' + (v.arrived > r.requested ? 'font-semibold text-red-700' : 'text-slate-800')}
+                                  />
+                                </span>
+                              </span>
+
+                              {/* THE INVOICE THIS SIZE CAME ON — the reason this is a row layout and not a size grid. */}
+                              <span className={COL.invoice + ' font-mono text-xs tabular-nums text-slate-500'}>
+                                {r.invoice_num}
+                                {r.invoice_date && <span className="ml-2 text-slate-400">{r.invoice_date}</span>}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             );
           })}
@@ -718,19 +738,19 @@ export default function BirkTrackerBook() {
 
       {!dirtyRows.length && (
         <p className="text-xs text-slate-400">
-          Type into Invoiced or Arrived to key a delivery. Nothing is written until you save.
+          Type into Invoiced or Arrived to key a delivery — Tab across a size, Enter down the column. Nothing is written until you save.
           {busy && <span className="ml-2">Refreshing.</span>}
         </p>
       )}
 
       {/* --- the save bar -------------------------------------------------------------------------------------------------------
-          Appears only when something has been typed. The invoice number and date live HERE rather than on every row because they
-          belong to all the rows you just keyed — one invoice, many sizes — and typing them once is the whole reason editing batches. */}
+          The invoice number and date live HERE rather than in every grid because they belong to all the sizes you just keyed — one
+          invoice, many sizes — and typing them once is the whole reason editing batches. */}
       {dirtyRows.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <span className="text-sm font-medium text-slate-800">
-              <span className="tabular-nums">{dirtyRows.length}</span> {dirtyRows.length === 1 ? 'line' : 'lines'} changed
+              <span className="tabular-nums">{dirtyRows.length}</span> {dirtyRows.length === 1 ? 'size' : 'sizes'} changed
             </span>
             <label className="inline-flex items-center gap-2 text-sm text-slate-500">
               Invoice
@@ -750,7 +770,7 @@ export default function BirkTrackerBook() {
                 className="w-28 rounded-md border border-slate-300 px-2 py-1.5 font-mono text-xs tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
             </label>
-            <span className="hidden text-xs text-slate-400 lg:inline">stamped on every changed line</span>
+            <span className="hidden text-xs text-slate-400 lg:inline">stamped on every changed size</span>
 
             <div className="ml-auto flex items-center gap-2">
               <button
@@ -767,7 +787,7 @@ export default function BirkTrackerBook() {
                 disabled={saving}
                 className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
               >
-                {saving ? 'Saving…' : `Save ${dirtyRows.length} ${dirtyRows.length === 1 ? 'line' : 'lines'}`}
+                {saving ? 'Saving…' : `Save ${dirtyRows.length} ${dirtyRows.length === 1 ? 'size' : 'sizes'}`}
               </button>
             </div>
           </div>
@@ -775,4 +795,12 @@ export default function BirkTrackerBook() {
       )}
     </div>
   );
+}
+
+// A keyed count. Anything that isn't digits is ignored rather than rejected, and an empty box means zero — the grid prints 0 as "–"
+// so that a block of nothing-yet reads as quiet space instead of a wall of zeros.
+function toCount(raw: string): number {
+  const digits = raw.replace(/[^\d]/g, '');
+  if (digits === '') return 0;
+  return Math.min(99999, parseInt(digits, 10));
 }
