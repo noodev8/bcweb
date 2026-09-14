@@ -98,12 +98,14 @@ the row's Arrived cell.
 Six lines in the live book carry no EAN and can never be scanned; they are keyed by hand, which is the other reason the typed columns
 stay exactly where they are.
 
-LOAD ORDER and LOAD INVOICE are both present and both inert, awaiting a real Birkenstock file of each kind (the second added on the
-owner's ask, 2026-09-14, as a placeholder). Wire each to its own parse route before enabling it, and do not guess the columns — a
-parser written against an imagined layout is worse than no button, because it fails quietly against the real thing. They are named
-for what they load rather than for the act of loading: "Upload" stopped meaning anything once there were two of them, and the operator
-is holding one piece of paper or the other. Load order feeds the Ordered column; Load invoice feeds Invoiced plus the invoice number
-and date.
+LOAD ORDER and LOAD INVOICE open a real file dialog (owner, 2026-09-14), starting in Downloads on the browsers that allow it to be
+asked. What they do NOT do yet is read the file: the chosen file's name, size and first lines are reported back and nothing is
+imported, because the parser has to be written against a real Birkenstock file rather than an imagined one — a parser built on a
+guessed layout is worse than no button, since it fails quietly against the real thing. The first lines are echoed deliberately: that
+header row is most of what building the importer needs.
+They are named for what they load rather than for the act of loading — "Upload" stopped meaning anything once there were two of them,
+and the operator is holding one piece of paper or the other. Load order feeds the Ordered column; Load invoice feeds Invoiced plus the
+invoice number and date.
 
 NOTHING SCROLLS SIDEWAYS AT ANY WIDTH. Fixed-width slots keep the counts in a straight line down the page; the invoice column takes
 what is left and truncates. Below `sm` the Birkenstock size label drops out, leaving size, the three counts and the invoice — which
@@ -541,6 +543,57 @@ export default function BirkTrackerBook() {
     setScanLog((prev) => prev.map((e) => (e.id === entry.id ? { ...e, tone: 'warn', text: `${u.code} — undone`, undo: undefined } : e)));
   }
 
+  // --- picking a file to load ------------------------------------------------------------------------------------------------------
+  // Opens the operator's Downloads folder where the browser allows it (owner: "it should open my downloads"). Only Chrome and Edge
+  // can be told WHERE to start — `showOpenFilePicker({ startIn: 'downloads' })`, and only on a secure origin, which localhost and
+  // Vercel both are. Everywhere else falls back to a plain file input, which opens wherever the OS last left the dialog. The
+  // fallback is not a lesser path to be removed later: Safari and Firefox have no equivalent at all.
+  async function chooseFile(): Promise<File | null> {
+    const picker = (window as unknown as {
+      showOpenFilePicker?: (o: unknown) => Promise<Array<{ getFile(): Promise<File> }>>;
+    }).showOpenFilePicker;
+
+    if (picker) {
+      try {
+        const [handle] = await picker({
+          startIn: 'downloads',
+          multiple: false,
+          types: [{ description: 'Birkenstock file', accept: { 'text/csv': ['.csv'], 'text/plain': ['.txt'], 'application/vnd.ms-excel': ['.xls', '.xlsx'] } }],
+        });
+        return await handle.getFile();
+      } catch {
+        return null; // the operator cancelled the dialog — not an error
+      }
+    }
+
+    return new Promise((resolve) => {
+      const el = document.createElement('input');
+      el.type = 'file';
+      el.accept = '.csv,.txt,.xls,.xlsx';
+      el.onchange = () => resolve(el.files?.[0] ?? null);
+      el.click();
+    });
+  }
+
+  // The picker works; the parsing does not, and will not until there is a real file to write it against. So the file is accepted and
+  // DESCRIBED rather than silently dropped — name, size, and for a text file its first line, which is exactly the header row needed
+  // to build the importer. Saying "not built yet" after the dialog is honest; opening a dialog that swallows the file is not.
+  async function loadFile(kind: 'order' | 'invoice') {
+    const file = await chooseFile();
+    if (!file) return;
+    let head = '';
+    if (/\.(csv|txt)$/i.test(file.name)) {
+      try {
+        head = (await file.text()).split(/\r?\n/).slice(0, 2).join('  ⏎  ').slice(0, 240);
+      } catch { /* unreadable is not worth an error here — the name and size still tell us something */ }
+    }
+    setNotice({
+      tone: 'warn',
+      text: `Picked ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB). Reading a Birkenstock ${kind} file is not built yet — `
+        + `it needs the real layout first.${head ? ` First lines: ${head}` : ''}`,
+    });
+  }
+
   // Exports what is on screen: the filter is part of the question. Flat, one row per size, every legacy column — a spreadsheet has no
   // width problem, and flat is what makes it sortable.
   function exportCsv() {
@@ -650,25 +703,25 @@ export default function BirkTrackerBook() {
 
         <span className="ml-auto" />
 
-        {/* THE TWO FILE LOADERS, both inert until someone hands over a real file — the columns cannot be guessed, and a parser
-            written against an imagined layout would be worse than none.
+        {/* THE TWO FILE LOADERS. The dialog is live (owner) and opens in Downloads where the browser allows it; what is not built is
+            the PARSING, so a chosen file is described back rather than swallowed. See loadFile.
             They sit together and are named for WHAT THEY LOAD rather than for the act of loading: "Upload" alone stopped meaning
             anything the moment there were two of them, and an operator holding a piece of paper knows which one they have.
               Load order    the Birkenstock order confirmation — what we asked for, i.e. the Ordered column.
               Load invoice  what Birkenstock has billed — the Invoiced column, and the invoice number and date with it. */}
         <button
           type="button"
-          disabled
-          title="Needs a sample Birkenstock order confirmation file before it can read one"
-          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
+          onClick={() => loadFile('order')}
+          title="Choose a Birkenstock order confirmation file"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
         >
           <ArrowUpTrayIcon className="h-4 w-4" /> Load order
         </button>
         <button
           type="button"
-          disabled
-          title="Needs a sample Birkenstock invoice file before it can read one"
-          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
+          onClick={() => loadFile('invoice')}
+          title="Choose a Birkenstock invoice file"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
         >
           <DocumentArrowUpIcon className="h-4 w-4" /> Load invoice
         </button>
