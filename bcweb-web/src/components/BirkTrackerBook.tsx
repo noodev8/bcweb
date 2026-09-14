@@ -30,9 +30,15 @@ Their gaps are three different problems, which is why all three are on screen at
     ordered vs invoiced   ARE WE BEING OVERCHARGED? — billed for more than we asked for
     invoiced vs arrived   billed and not here yet, or here and not yet billed
 An over-invoice is a FLAG, not a state: a line can be fully arrived AND over-invoiced, and collapsing the two would hide the case
-worth catching. It renders on top of the state — red row, its own filter tab, and a banner counted across the whole book, because
-an overcharge you only see when you happen to filter the right way is one you will pay. The server never blocks it either (see
-routes/birk-tracker-save.js): you must be able to key what the invoice ACTUALLY says in order to argue with it.
+worth catching. It shows ON TOP of the state — the row turns red, its invoiced figure turns red, and so does the invoiced total in
+the headline and on the order it belongs to.
+  IT NO LONGER HAS A BANNER OR A TAB OF ITS OWN (owner, 2026-09-14: "is rare so seems unnecessary"). Both were built on the argument
+  that an overcharge is expensive to miss; the owner's judgement is that it is rare enough not to hold permanent space at the top of
+  a screen that is worked every week, and a standing "Over-invoiced 0" told nobody anything. The DETECTION is untouched — a red row
+  is impossible to scroll past, and the picker lists still label an affected order "over-invoiced", which is the one place a rare
+  thing can be found without hunting for it. If it ever stops being rare, the tab is a two-line restoration.
+The server never blocks an over-invoice either (see routes/birk-tracker-save.js): you must be able to key what the invoice ACTUALLY
+says in order to argue with it.
 
 THE THREE STATES, the screen's whole vocabulary — same words, same colours, at every level (book bar, order bar, style dot, row stripe):
   STILL TO COME (slate)    ordered, not invoiced, not here. A promise with a month against it.
@@ -115,7 +121,7 @@ is the minimum that still answers "where is this size, and what paid for it?".
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, ExclamationTriangleIcon, TrashIcon,
+  ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, TrashIcon,
   XMarkIcon, QrCodeIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -207,7 +213,7 @@ interface Live { r: BirkTrackerLine; invoiced: number; arrived: number; state: S
 export default function BirkTrackerBook() {
   const { data, error, isLoading, busy, refresh, mutate } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
 
-  const [state, setState] = useState<State | 'all' | 'over'>('all');
+  const [state, setState] = useState<State | 'all'>('all');
   const [focus, setFocus] = useState<{ kind: 'order' | 'invoice'; value: string } | null>(null);
   const [find, setFind] = useState('');
 
@@ -278,22 +284,13 @@ export default function BirkTrackerBook() {
 
   /* eslint-disable react-hooks/exhaustive-deps -- `view` closes over `live`, which is the real dependency in each of these */
   const counts = useMemo(() => {
-    const c = { all: scoped.length, awaiting: 0, transit: 0, arrived: 0, over: 0 };
-    for (const r of scoped) {
-      const v = view(r);
-      c[v.state] += 1;
-      if (v.over) c.over += 1;
-    }
+    const c = { all: scoped.length, awaiting: 0, transit: 0, arrived: 0 };
+    for (const r of scoped) c[view(r).state] += 1;
     return c;
   }, [scoped, live]);
 
-  // Over-invoicing across the WHOLE book, not just the filtered view: an overcharge you only see after filtering the right way is one
-  // you will end up paying.
-  const overAll = useMemo(() => rows.filter((r) => view(r).over).length, [rows, live]);
-
   const shown = useMemo(() => {
     if (state === 'all') return scoped;
-    if (state === 'over') return scoped.filter((r) => view(r).over);
     return scoped.filter((r) => view(r).state === state);
   }, [scoped, state, live]);
   /* eslint-enable react-hooks/exhaustive-deps */
@@ -662,12 +659,11 @@ export default function BirkTrackerBook() {
   // One tally for the headline. Plain render-time work, not a hook: it reads `live`, which already memoises the expensive part.
   const totals = tally(shown);
 
-  const TABS: { key: State | 'all' | 'over'; label: string; count: number }[] = [
+  const TABS: { key: State | 'all'; label: string; count: number }[] = [
     { key: 'all', label: 'Everything', count: counts.all },
     { key: 'awaiting', label: STATE_LABEL.awaiting, count: counts.awaiting },
     { key: 'transit', label: STATE_LABEL.transit, count: counts.transit },
     { key: 'arrived', label: STATE_LABEL.arrived, count: counts.arrived },
-    { key: 'over', label: 'Over-invoiced', count: counts.over },
   ];
 
   // Column widths, declared once and shared by the heading and the rows so they cannot drift apart. Fixed slots (not a table) keep the
@@ -806,22 +802,6 @@ export default function BirkTrackerBook() {
         </div>
       </section>
 
-      {/* Counted across the whole book and shown whatever the filters are — this is the one thing on the screen that costs money to miss. */}
-      {overAll > 0 && (
-        <button
-          type="button"
-          onClick={() => { setFocus(null); setFind(''); setState('over'); }}
-          className="flex w-full items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-sm text-red-800 hover:bg-red-100"
-        >
-          <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
-          <span>
-            <span className="font-semibold tabular-nums">{overAll}</span>{' '}
-            {overAll === 1 ? 'line is' : 'lines are'} invoiced or delivered above what was ordered
-          </span>
-          <span className="ml-auto shrink-0 text-xs underline">Show them</span>
-        </button>
-      )}
-
       {/* --- filters and actions --------------------------------------------------------------------------------------------------
           ORDER OF CONTROLS (owner, 2026-09-14): status tabs, then search, then the order/invoice pickers. Broadest to narrowest, and
           the tabs lead because they are the question the screen exists for — the count on each says whether there is anything to do
@@ -831,7 +811,6 @@ export default function BirkTrackerBook() {
         <div className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
           {TABS.map((t) => {
             const active = state === t.key;
-            const over = t.key === 'over';
             return (
               <button
                 key={t.key}
@@ -840,12 +819,10 @@ export default function BirkTrackerBook() {
                 aria-pressed={active}
                 className={
                   'inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm transition ' +
-                  (active ? 'bg-white font-medium shadow-sm ring-1 ring-slate-200 ' : 'hover:text-slate-800 ') +
-                  (over && t.count > 0 ? 'text-red-700' : active ? 'text-slate-900' : 'text-slate-500')
+                  (active ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800')
                 }
               >
-                {t.key !== 'all' && !over && <span className={'inline-block h-2 w-2 shrink-0 rounded-full ' + STATE_STYLE[t.key as State].dot} />}
-                {over && t.count > 0 && <ExclamationTriangleIcon className="h-3.5 w-3.5" />}
+                {t.key !== 'all' && <span className={'inline-block h-2 w-2 shrink-0 rounded-full ' + STATE_STYLE[t.key as State].dot} />}
                 {t.label}
                 <span className="tabular-nums opacity-60">{t.count}</span>
               </button>
@@ -1006,9 +983,7 @@ export default function BirkTrackerBook() {
           <p className="text-sm text-slate-600">
             {state === 'transit' && !focus && !find
               ? 'Nothing is on the way — everything Birkenstock has invoiced has already arrived.'
-              : state === 'over' && !focus && !find
-                ? 'Nothing is over-invoiced. Every line has been billed for what we ordered or less.'
-                : 'Nothing here matches.'}
+              : 'Nothing here matches.'}
           </p>
           {filtered && (
             <button onClick={reset} className="mt-2 text-sm text-brand-600 underline hover:text-brand-700">Show the whole book</button>
