@@ -228,6 +228,15 @@ app.use('/order-status-customer-delete', require('./routes/order-status-customer
 app.use('/pick-list', require('./routes/pick-list'));       // GET: one mode's shelf rows (shopify = customer picks, amazon = FBA gather)
 app.use('/pick-action', require('./routes/pick-action'));   // POST: action a selection — mode re-checked in the UPDATE's own WHERE
 
+// --- Birk Tracker module (the Birkenstock ORDER BOOK — not the analytics gauge two blocks down, see below) ---
+// The season's orders line by line: requested vs invoiced vs arrived, with the invoice that did it. Port of the legacy PowerBuilder
+// screen, reading the same legacy `birktracker` table that screen still writes. Read-only for now (owner: screen first, writes after).
+// ⚠ TWO DIFFERENT THINGS SHARE THE NAME "Birk Tracker": this module, and the Analytics availability snapshot registered below as
+// `/birk-tracker` + `/birk-tracker-update`. They share nothing but the words. The mounts do not collide (Express matches on a path
+// segment boundary, so `/birk-tracker` never swallows `/birk-tracker-lines`) — but read the header of birk-tracker-lines.js before
+// renaming either, it records which one should move if the clash is ever resolved.
+app.use('/birk-tracker-lines', require('./routes/birk-tracker-lines')); // GET: the whole order book + filter rails + totals
+
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
 app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)

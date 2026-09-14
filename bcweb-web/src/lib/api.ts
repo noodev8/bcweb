@@ -2996,4 +2996,56 @@ export function buildFinanceQuickFile(args: {
   );
 }
 
+// =============================================================================================================================
+// Birk Tracker — the Birkenstock ORDER BOOK (module at /birk-tracker).
+//
+// NOT the analytics availability gauge, which confusingly shares the name and lives at /analytics/birk-tracker off
+// getBirkTracker* further up this file. This one is the season's orders line by line, out of the legacy `birktracker` table:
+// what was requested, what Birkenstock has invoiced, what has physically arrived.
+//
+// Every date here is a DISPLAY STRING passed through verbatim from the legacy table, and the two are in different formats —
+// `placed` is dd/MM/yyyy (ours), `invoice_date` is dd.MM.yyyy (Birkenstock's, off their invoice). Don't feed either to `new
+// Date()`; the server's route header explains why they are not parsed anywhere. `due` is a month NAME ('MAY') or ''.
+// =============================================================================================================================
+export interface BirkTrackerLine {
+  ordernum: string;
+  code: string;
+  placed: string;        // dd/MM/yyyy, or '' — display string, see above
+  bksize: string;        // Birkenstock's own size label, e.g. '225/2.5'
+  requested: number;
+  invoiced: number;
+  arrived: number;
+  invoice_date: string;  // dd.MM.yyyy, or '' — display string, see above
+  invoice_num: string;
+  due: string;           // month name ('MAY') or '' — the window quoted, not a date
+  ean: string;
+  cost: number | null;   // null when the legacy varchar column holds junk or is blank
+  rrp: number | null;
+  complete: boolean;     // requested > 0 && arrived >= requested — the legacy screen's green row
+}
+export interface BirkTrackerLinesData {
+  total: number;
+  truncated: boolean;
+  ordernums: string[];
+  invoices: string[];
+  totals: { requested: number; invoiced: number; arrived: number };
+  rows: BirkTrackerLine[];
+}
+
+// No filter arguments on purpose: the whole book comes over once and the screen filters it in the browser. See the route header —
+// the rails are a click and the Find box types a letter at a time, and neither should cost a round trip.
+export function getBirkTrackerLines() {
+  return request<BirkTrackerLinesData>(
+    { url: '/birk-tracker-lines', method: 'GET' },
+    (b) => ({
+      total: Number(b.total) || 0,
+      truncated: Boolean(b.truncated),
+      ordernums: (b.ordernums as string[]) || [],
+      invoices: (b.invoices as string[]) || [],
+      totals: (b.totals as BirkTrackerLinesData['totals']) || { requested: 0, invoiced: 0, arrived: 0 },
+      rows: (b.rows as BirkTrackerLine[]) || [],
+    })
+  );
+}
+
 export default api;

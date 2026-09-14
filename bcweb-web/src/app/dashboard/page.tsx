@@ -67,7 +67,7 @@ import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon,
+  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon,
 } from '@heroicons/react/24/outline';
 
 // One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
@@ -290,6 +290,23 @@ export default function DashboardPage() {
           description="Sold in 365 days against what we hold, size by size — what to put on the next order."
           href="/birkenstock"
           icon={CalendarDaysIcon}
+          live
+          compact
+        />
+
+        {/* Birk Tracker — the season order, tracked from placed to landed: requested vs invoiced vs arrived, line by line. Directly
+            after Birkenstock because the two are the same errand at its two ends — that screen decides what goes ON the order, this
+            one is where that order then lives for the six months it takes to turn up. NEW 2026-09-14 (owner); the screen and the read
+            are live, the writes follow.
+            NOTE this takes STOCK & PRODUCTS to SEVEN, so it runs 4 + 3 against the four-wide grid. The band was already knowingly
+            over (see the page header) and the same reasoning holds: the alternative is filing a Birkenstock-buying screen somewhere
+            it doesn't belong to keep a row tidy. It does strengthen the case the header already makes — if this band is ever fixed,
+            split it (procurement vs the catalogue) rather than evicting a tile, and this one goes with Birkenstock either way. */}
+        <ModuleTile
+          title="Birk Tracker"
+          description="Track the Birkenstock order from placed to landed — requested, invoiced, arrived."
+          href="/birk-tracker"
+          icon={TruckIcon}
           live
           compact
         />
