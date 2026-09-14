@@ -235,7 +235,11 @@ app.use('/pick-action', require('./routes/pick-action'));   // POST: action a se
 // `/birk-tracker` + `/birk-tracker-update`. They share nothing but the words. The mounts do not collide (Express matches on a path
 // segment boundary, so `/birk-tracker` never swallows `/birk-tracker-lines`) — but read the header of birk-tracker-lines.js before
 // renaming either, it records which one should move if the clash is ever resolved.
-app.use('/birk-tracker-lines', require('./routes/birk-tracker-lines')); // GET: the whole order book + filter rails + totals
+app.use('/birk-tracker-lines', require('./routes/birk-tracker-lines')); // GET: the whole order book + filter lists + totals
+app.use('/birk-tracker-save', require('./routes/birk-tracker-save'));   // WRITES: key invoiced + arrived, stamp an invoice across them
+// DESTRUCTIVE, and the rows are unrecoverable — no soft-delete, no archive. Guarded by a count the client must get right; read the
+// route header before touching either guard.
+app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines
 
 // Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
 // stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).

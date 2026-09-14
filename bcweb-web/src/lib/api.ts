@@ -3048,4 +3048,31 @@ export function getBirkTrackerLines() {
   );
 }
 
+// THE WRITE. Keys what an invoice says and what turned up, for a batch of lines — one transaction server-side. `invoice_num` /
+// `invoice_date` are stamped across EVERY row in the batch, because that is the job: one invoice, many sizes.
+//
+// `over` is the point of the invoiced column, not an error: it lists lines Birkenstock has billed (or delivered) above what we
+// ordered. The save still went through — you have to be able to key what the invoice actually says in order to argue with it.
+// `missing` lists lines that no longer exist; the legacy PowerBuilder screen writes this table too and may have deleted them.
+export interface BirkTrackerSaveRow { ordernum: string; code: string; invoiced: number; arrived: number }
+export interface BirkTrackerOver { code: string; requested: number; invoiced: number; arrived: number }
+export interface BirkTrackerSaveResult { saved: number; missing: string[]; over: BirkTrackerOver[] }
+
+export function saveBirkTrackerLines(args: { rows: BirkTrackerSaveRow[]; invoice_num?: string; invoice_date?: string }) {
+  return request<BirkTrackerSaveResult>(
+    { url: '/birk-tracker-save', method: 'POST', data: args },
+    (b) => ({ saved: Number(b.saved) || 0, missing: (b.missing as string[]) || [], over: (b.over as BirkTrackerOver[]) || [] })
+  );
+}
+
+// DESTRUCTIVE and unrecoverable — the legacy "Delete Green". `expected` is a guard, not bookkeeping: the server refuses the delete if
+// its own count differs from what the screen is showing, which is how a stale screen is stopped from taking rows nobody looked at.
+// A mismatch comes back as return_code 'CHANGED' (a normal outcome — reload and ask again), so the caller must branch on it.
+export function clearBirkTrackerArrived(args: { scope: 'all' | 'order' | 'invoice'; value?: string; expected: number }) {
+  return request<{ deleted: number }>(
+    { url: '/birk-tracker-clear-arrived', method: 'POST', data: args },
+    (b) => ({ deleted: Number(b.deleted) || 0 })
+  );
+}
+
 export default api;

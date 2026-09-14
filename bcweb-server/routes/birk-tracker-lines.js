@@ -28,10 +28,18 @@ legacy landmine applies:
   - The natural key is (ordernum, code); verified unique on the live table. There is no surrogate id and no declared PK, so a future
     write must address a row by that pair.
 
-`complete` is the only thing computed here, and it is the green row on the legacy screen: requested > 0 AND arrived >= requested, i.e.
-the line is fully in the building. Invoiced is NOT part of it — a line can be invoiced and still be sitting on a lorry, and the gap
-between those two facts is the whole point of the screen. It is computed server-side so the rule is stated once, where the two numbers
-come from, rather than re-derived by every caller that renders a row.
+`complete` is the only thing computed here, and it is the green row: requested > 0 AND invoiced = requested AND arrived = requested —
+ALL THREE NUMBERS AGREE (owner, 2026-09-14). Not "arrived >= requested", which is what it was first built as. The stricter rule is the
+right one because the three numbers are three different promises and a line is only finished when none of them is outstanding:
+  invoiced < requested   Birkenstock has not yet billed the rest, so the rest is still owed even if everything billed has landed.
+  invoiced > requested   they have billed for more than we ordered — money to argue about, and never "done".
+  arrived  < invoiced    billed and not here: in transit.
+  arrived  > requested   more turned up than was asked for.
+On the live book today the two rules select exactly the same 59 lines, because `invoiced` equals `arrived` on every row. They diverge
+only when the three stop agreeing — which is precisely the case the screen exists to surface, so the loose rule was hiding the very
+thing it was meant to show.
+  ⚠ THIS RULE IS SHARED WITH routes/birk-tracker-clear-arrived.js, whose DELETE removes exactly the rows this flag paints green. If
+  one changes and the other does not, that button deletes something other than what the operator was looking at. Change both.
 
 NO PAGINATION, NO FILTER PARAMS. The table is season-scale (hundreds of rows — an order book, not a ledger), the screen's two filter
 rails are a click each, and its Find box types letter by letter; round-tripping either would make a screen meant to feel like the
@@ -127,6 +135,7 @@ router.get('/', async (req, res) => {
 
     const rows = rowsRes.rows.map((r) => {
       const requested = int(r.requested);
+      const invoiced = int(r.invoiced);
       const arrived = int(r.arrived);
       return {
         ordernum: text(r.ordernum),
@@ -134,7 +143,7 @@ router.get('/', async (req, res) => {
         placed: text(r.placedate),
         bksize: text(r.bksize),
         requested,
-        invoiced: int(r.invoiced),
+        invoiced,
         arrived,
         invoice_date: text(r.invoicedate),
         invoice_num: text(r.invoicenum),
@@ -143,8 +152,8 @@ router.get('/', async (req, res) => {
         // safeNumeric already returned NULL for junk; Number() here only turns pg's numeric-as-string into a number.
         cost: r.cost == null ? null : Number(r.cost),
         rrp: r.rrp == null ? null : Number(r.rrp),
-        // The green row. See the header for why `invoiced` is deliberately not part of this test.
-        complete: requested > 0 && arrived >= requested,
+        // The green row: all three numbers agree. See the header, and keep it in step with birk-tracker-clear-arrived.js.
+        complete: requested > 0 && invoiced === requested && arrived === requested,
       };
     });
 
