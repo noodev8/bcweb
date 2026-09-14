@@ -3075,4 +3075,38 @@ export function clearBirkTrackerArrived(args: { scope: 'all' | 'order' | 'invoic
   );
 }
 
+// ONE BEEP = ONE PAIR ARRIVED. Tracker only — it writes `arrived` on the order book and touches no stock (see the route header).
+//
+// Three of its return codes are NORMAL OUTCOMES the caller must handle rather than errors to toast:
+//   AMBIGUOUS         the barcode is on more than one open order line and the rule could not narrow it — `candidates` lists them and
+//                     the operator picks; call again with that line's ordernum + code to name it explicitly.
+//   ALREADY_COMPLETE  the pair is real but the book already says every matching line is fully arrived (a double-scan).
+//   NOT_FOUND         the barcode is not in this order book at all.
+// Because api.ts never throws on a return_code, all three arrive as `success: false` with the code — branch on `return_code`, not on
+// the message. The raw envelope is needed for `candidates`, so this one returns the body rather than a narrowed shape.
+export interface BirkTrackerScanLine {
+  ordernum: string; code: string; size: string;
+  requested: number; invoiced: number; arrived: number; complete: boolean;
+}
+export interface BirkTrackerScanBody {
+  return_code: string;
+  message?: string;
+  line?: BirkTrackerScanLine;
+  candidates?: BirkTrackerScanLine[];
+}
+
+export async function scanBirkTrackerArrival(args: {
+  barcode?: string;
+  scope?: { kind: 'order' | 'invoice'; value: string };
+  ordernum?: string;
+  code?: string;
+}): Promise<BirkTrackerScanBody> {
+  try {
+    const res = await api.request({ url: '/birk-tracker-scan', method: 'POST', data: args });
+    return (res.data || { return_code: 'UNKNOWN' }) as BirkTrackerScanBody;
+  } catch {
+    return { return_code: 'NETWORK_ERROR', message: 'Network error - please check your connection' };
+  }
+}
+
 export default api;

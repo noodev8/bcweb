@@ -72,6 +72,30 @@ no state where both are set. Status tabs and the search box are genuine co-filte
   read the screen, once per order. Colour alone would not do: an <option> can only be coloured through an inline style, which Chrome,
   Edge and Firefox on Windows honour but other browsers ignore entirely, so the words carry the meaning and the colour is the glance.
 
+-- SCANNING A DELIVERY IN (owner, 2026-09-14) ------------------------------------------------------------------------------------------
+THERE IS NO SCAN MODE (owner: "i wanna be able to just scan"). No button arms the gun and there is no box to aim it at — the page
+listens the whole time it is open, and each beep adds 1 to that line's `arrived`. How it listens matters:
+  A SCANNER IS A KEYBOARD THAT TYPES IMPOSSIBLY FAST and finishes with Enter, so a document-level listener buffers single characters,
+  starts a new buffer whenever the gap between two of them is human-sized (60ms), and treats what Enter closes as a barcode if it is
+  at least 6 characters. The handler lives in a ref refreshed every render so the listener binds ONCE — re-binding per keystroke would
+  drop the burst it is halfway through reading.
+  IT NEVER SWALLOWS KEYS AIMED AT A FIELD. Counts, search terms and invoice numbers are all typed on this screen, and no burst
+  detector can reliably tell a fast typist from a gun once they share a target — so the page listens only when nothing else does.
+  That is also the real scanning posture: pair down, hands free, nothing focused.
+  IT WRITES IMMEDIATELY, one beep at a time (owner), which is the opposite of the typed edits above. A delivery is dozens of pairs
+  over a few minutes and a closed tab must not lose the lot. The safety net that immediate writing needs is the log: every beep is
+  listed and every one can be undone — and Undo goes back through /birk-tracker-save with the values the line held a moment ago
+  rather than through a decrement endpoint, because there should be one way to change this column, not two.
+  THE GUN STANDS DOWN WHILE THERE IS UNSAVED TYPING. Scans and edits write the same column on different schedules, and rather than
+  make the operator choose a mode, the listener refuses and says why. The indicator in the summary says which of the two it is doing.
+  THE SCREEN'S FILTER IS THE SCAN'S SCOPE. A barcode does NOT identify an order line — the same EAN sits on up to four orders — so
+  picking the order or invoice you are unpacking first is what makes a repeated barcode unambiguous. When it still isn't, the server
+  returns the candidates and the operator taps one; see routes/birk-tracker-scan.js for why it asks rather than guesses.
+  IT TOUCHES NO STOCK (owner). It marks the order book, nothing else. This is not Goods In for Birkenstock — that supplier has never
+  been in `orderstatus` at all.
+Six lines in the live book carry no EAN and can never be scanned; they are keyed by hand, which is the other reason the typed columns
+stay exactly where they are.
+
 UPLOAD is present but inert until the Birkenstock order-confirmation file format is known. Wire it to a real parse route before
 enabling it; don't guess the columns.
 
@@ -81,14 +105,14 @@ is the minimum that still answers "where is this size, and what paid for it?".
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, ExclamationTriangleIcon, TrashIcon,
+  ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, ExclamationTriangleIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived,
-  type BirkTrackerLine,
+  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival,
+  type BirkTrackerLine, type BirkTrackerScanLine,
 } from '@/lib/api';
 
 // --- the three states ----------------------------------------------------------------------------------------------------------
@@ -171,7 +195,7 @@ interface Edit { invoiced: number; arrived: number }
 interface Live { r: BirkTrackerLine; invoiced: number; arrived: number; state: State; over: boolean; dirty: boolean }
 
 export default function BirkTrackerBook() {
-  const { data, error, isLoading, busy, refresh } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
+  const { data, error, isLoading, busy, refresh, mutate } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
 
   const [state, setState] = useState<State | 'all' | 'over'>('all');
   const [focus, setFocus] = useState<{ kind: 'order' | 'invoice'; value: string } | null>(null);
@@ -185,6 +209,21 @@ export default function BirkTrackerBook() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // --- scanning a delivery in ----------------------------------------------------------------------------------------------------
+  // THERE IS NO SCAN MODE (owner, 2026-09-14: "i wanna be able to just scan"). The page listens for the gun the whole time it is
+  // open — no button to arm it, no box to aim at. Every beep is committed on its own so a closed tab mid-delivery loses nothing,
+  // which is the opposite of the typed edits above; the two are kept from colliding by pausing the listener while edits are pending
+  // rather than by making the operator choose a mode.
+  const [scanBusy, setScanBusy] = useState(false);
+  // Newest first. `candidates` carries the choices when a barcode could not be resolved; `undo` the values to write back.
+  const [scanLog, setScanLog] = useState<{
+    id: number;
+    tone: 'ok' | 'ask' | 'warn';
+    text: string;
+    candidates?: BirkTrackerScanLine[];
+    undo?: { ordernum: string; code: string; invoiced: number; arrived: number };
+  }[]>([]);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
 
@@ -398,6 +437,118 @@ export default function BirkTrackerBook() {
     setNotice({ tone: 'ok', text: `Cleared ${res.data!.deleted} fully-arrived ${res.data!.deleted === 1 ? 'line' : 'lines'}` });
   }
 
+  // Patch one line in the SWR cache after a scan instead of refetching the book. A delivery is dozens of beeps in a couple of
+  // minutes, and a full reload per beep would put that many round trips on the live DB for data we already have in hand.
+  function applyScanned(line: BirkTrackerScanLine) {
+    mutate(
+      (cur) => (cur ? {
+        ...cur,
+        rows: cur.rows.map((r) => (r.ordernum === line.ordernum && r.code === line.code
+          ? { ...r, invoiced: line.invoiced, arrived: line.arrived, complete: line.complete }
+          : r)),
+      } : cur),
+      false,
+    );
+  }
+
+  const logScan = (entry: Omit<(typeof scanLog)[number], 'id'>) =>
+    setScanLog((prev) => [{ id: Date.now() + Math.random(), ...entry }, ...prev].slice(0, 40));
+
+  async function sendScan(args: { barcode?: string; ordernum?: string; code?: string }) {
+    setScanBusy(true);
+    // The scope is whatever the screen is focused on — unpacking a known delivery is what makes an ambiguous barcode unambiguous.
+    const body = await scanBirkTrackerArrival({ ...args, scope: focus ? { kind: focus.kind, value: focus.value } : undefined });
+    setScanBusy(false);
+
+    if (body.return_code === 'SUCCESS' && body.line) {
+      const l = body.line;
+      // The undo target holds the values from BEFORE this scan, so undoing writes them back verbatim.
+      applyScanned(l);
+      logScan({
+        tone: 'ok',
+        text: `${l.code} — arrived ${l.arrived} of ${l.requested}${l.complete ? ', all in' : ''}`,
+        undo: { ordernum: l.ordernum, code: l.code, invoiced: l.invoiced, arrived: l.arrived - 1 },
+      });
+      return;
+    }
+    if (body.return_code === 'AMBIGUOUS') {
+      logScan({ tone: 'ask', text: body.message || 'That barcode is on more than one order', candidates: body.candidates });
+      return;
+    }
+    logScan({ tone: 'warn', text: body.message || 'That scan could not be recorded' });
+  }
+
+  // The gun, listened for globally. Held in a ref and reassigned every render so the listener below can be bound ONCE and still see
+  // the current filter and edit state — a listener re-bound on every keystroke would drop the burst it is in the middle of reading.
+  const onGunScan = useRef<(barcode: string) => void>(() => {});
+  // Kept current in an effect rather than assigned during render (a render must have no side effects, and React's lint rule enforces
+  // it). No dependency array: every render refreshes the handler, which is the point — it must see the live filter and edit state.
+  useEffect(() => {
+    onGunScan.current = (barcode: string) => {
+      // Typed edits batch and scans commit instantly; both write `arrived`. Rather than make the operator pick a mode, the gun
+      // stands down while there is unsaved typing, and says so.
+      if (dirtyRows.length > 0) {
+        logScan({ tone: 'warn', text: `${barcode} — save or discard your typed changes first` });
+        return;
+      }
+      if (scanBusy) return; // one beep at a time; the gun outruns the round trip otherwise
+      sendScan({ barcode });
+    };
+  });
+
+  useEffect(() => {
+    // A scanner is a keyboard that types impossibly fast and finishes with Enter. So: buffer single characters, start a new buffer
+    // whenever the gap between them is human-sized, and treat what Enter closes as a barcode if it is long enough.
+    const GUN_GAP_MS = 60;   // no one types a character every 60ms for eight characters; a gun is nearer 5ms
+    const MIN_LENGTH = 6;    // shorter than any EAN — guards against Enter on a stray keypress
+    let buffer = '';
+    let last = 0;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // NEVER swallow keys aimed at a field. A count, a search term and an invoice number are all typed on this screen, and a burst
+      // detector cannot reliably tell a fast typist from a gun once they share a target — so the rule is simply that the page
+      // listens when nothing else is. In practice that is exactly the scanning posture: pair down, hands free, page focused.
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+
+      const now = Date.now();
+      if (e.key === 'Enter') {
+        const code = buffer;
+        buffer = '';
+        if (code.length >= MIN_LENGTH) {
+          e.preventDefault();
+          onGunScan.current(code);
+        }
+        return;
+      }
+      if (e.key.length !== 1) return;
+      if (now - last > GUN_GAP_MS) buffer = '';
+      last = now;
+      buffer += e.key;
+    };
+
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Undo writes the old values back through the ordinary save route rather than a decrement endpoint — the client knows exactly what
+  // the line held a moment ago, and reusing the tested write beats adding a second way to change the same column.
+  async function undoScan(entry: (typeof scanLog)[number]) {
+    if (!entry.undo) return;
+    const u = entry.undo;
+    setScanBusy(true);
+    const res = await saveBirkTrackerLines({ rows: [{ ordernum: u.ordernum, code: u.code, invoiced: u.invoiced, arrived: u.arrived }] });
+    setScanBusy(false);
+    if (!res.success) {
+      logScan({ tone: 'warn', text: `Could not undo ${u.code} — ${res.error}` });
+      return;
+    }
+    applyScanned({ ...u, size: '', requested: 0, complete: false });
+    await refresh(); // the patch above cannot know the line's `requested`, so take the real row back
+    setScanLog((prev) => prev.map((e) => (e.id === entry.id ? { ...e, tone: 'warn', text: `${u.code} — undone`, undo: undefined } : e)));
+  }
+
   // Exports what is on screen: the filter is part of the question. Flat, one row per size, every legacy column — a spreadsheet has no
   // width problem, and flat is what makes it sortable.
   function exportCsv() {
@@ -475,30 +626,85 @@ export default function BirkTrackerBook() {
 
   return (
     <div className="space-y-5 pb-24">
-      {/* --- the book in three numbers ------------------------------------------------------------------------------------------- */}
-      <section>
-        <p className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          <span className="text-lg text-slate-900">
-            <span className="font-semibold tabular-nums">{totals.requested}</span>
-            <span className="ml-1.5 text-sm text-slate-500">pairs {filtered ? 'in view' : 'ordered'}</span>
-          </span>
-          <span className="text-lg text-slate-900">
-            <span className={'font-semibold tabular-nums ' + (totals.invoiced > totals.requested ? 'text-red-700' : '')}>
-              {totals.invoiced}
+      {/* --- the actions ---------------------------------------------------------------------------------------------------------
+          ABOVE EVERYTHING (owner, 2026-09-14). They used to ride on the right-hand end of the filter row, which made that row do two
+          unrelated jobs — narrowing the list, and acting on it — and left a void in its middle where neither reached. As their own
+          strip under the page title they read as a toolbar, which is what they are, and the filter row below is free to be only
+          about filtering. Right-aligned so the eye still starts at the left edge, where the content does. */}
+      <section className="flex flex-wrap items-center justify-end gap-2">
+        {/* Inert until someone hands over a Birkenstock confirmation file — the columns can't be guessed. */}
+        <button
+          type="button"
+          disabled
+          title="Needs a sample Birkenstock order confirmation file before it can read one"
+          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
+        >
+          <ArrowUpTrayIcon className="h-4 w-4" /> Upload
+        </button>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={shown.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          <ArrowDownTrayIcon className="h-4 w-4" /> Export
+        </button>
+        {/* Disabled while there are unsaved edits: clearing rows you are part-way through keying is how work gets lost. */}
+        <button
+          type="button"
+          onClick={() => setConfirmClear(true)}
+          disabled={clearable === 0 || dirtyRows.length > 0 || saving}
+          title={dirtyRows.length > 0 ? 'Save or discard your changes first' : undefined}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          <TrashIcon className="h-4 w-4" /> Clear arrived
+          {clearable > 0 && <span className="tabular-nums text-slate-400">{clearable}</span>}
+        </button>
+      </section>
+
+      {/* --- the book in three numbers -------------------------------------------------------------------------------------------
+          THE SUMMARY IS ONE BLOCK, not three stacked ones (owner, 2026-09-14: "stuff is split awkwardly onto their own rows"). The
+          three figures, the bar and the line that reads the bar are one statement about the book, so they sit tight together with no
+          gaps between them, and the scanner indicator takes the empty right-hand side rather than earning a row of its own.
+          The gloss no longer repeats "x of y arrived": with invoiced and arrived side by side an arm's length above it, saying it
+          again in words was the screen talking to itself. It now carries only what the numbers above do not — the two parts of the
+          order that have NOT landed. The per-order lines still spell out "x of y arrived", which is where that phrasing was asked for
+          and where the denominator is not otherwise visible. */}
+      <section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+            <span className="text-lg text-slate-900">
+              <span className="font-semibold tabular-nums">{totals.requested}</span>
+              <span className="ml-1.5 text-sm text-slate-500">pairs {filtered ? 'in view' : 'ordered'}</span>
             </span>
-            <span className="ml-1.5 text-sm text-slate-500">invoiced</span>
-          </span>
-          <span className="text-lg text-slate-900">
-            <span className="font-semibold tabular-nums text-emerald-700">{totals.arrived}</span>
-            <span className="ml-1.5 text-sm text-slate-500">arrived</span>
-          </span>
-        </p>
-        <div className="mt-2.5">{bar(totals, 'h-2.5 w-full')}</div>
-        <p className="mt-1.5 text-sm text-slate-500">
-          {arrivedOf(totals)}
-          {totals.transit > 0 && <>, <span className="tabular-nums text-amber-700">{totals.transit}</span> on the way</>}
-          {totals.awaiting > 0 && <>, <span className="tabular-nums text-slate-700">{totals.awaiting}</span> still to come</>}
-        </p>
+            <span className="text-lg text-slate-900">
+              <span className={'font-semibold tabular-nums ' + (totals.invoiced > totals.requested ? 'text-red-700' : '')}>
+                {totals.invoiced}
+              </span>
+              <span className="ml-1.5 text-sm text-slate-500">invoiced</span>
+            </span>
+            <span className="text-lg text-slate-900">
+              <span className="font-semibold tabular-nums text-emerald-700">{totals.arrived}</span>
+              <span className="ml-1.5 text-sm text-slate-500">arrived</span>
+            </span>
+          </p>
+          <div className="mt-2">{bar(totals, 'h-2.5 w-full')}</div>
+          <p className="mt-1.5 text-sm text-slate-500">
+            {totals.transit === 0 && totals.awaiting === 0
+              ? 'Everything ordered is here and billed.'
+              : [
+                totals.transit > 0 ? `${totals.transit} on the way` : null,
+                totals.awaiting > 0 ? `${totals.awaiting} still to come` : null,
+              ].filter(Boolean).join(', ')}
+          </p>
+        </div>
+
+        {/* The scanner is always live, so this says so rather than offering a switch. It sits in the summary's empty right-hand side
+            because a standing status has no business taking a row to itself. */}
+        <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500">
+          <span className={'inline-block h-2 w-2 rounded-full ' + (dirtyRows.length > 0 ? 'bg-slate-300' : 'bg-emerald-500')} />
+          {dirtyRows.length > 0 ? 'Scanner paused while you have unsaved changes' : 'Scanner ready — beep a pair to book it in'}
+        </span>
       </section>
 
       {/* Counted across the whole book and shown whatever the filters are — this is the one thing on the screen that costs money to miss. */}
@@ -517,7 +723,11 @@ export default function BirkTrackerBook() {
         </button>
       )}
 
-      {/* --- filters and actions -------------------------------------------------------------------------------------------------- */}
+      {/* --- filters and actions --------------------------------------------------------------------------------------------------
+          ORDER OF CONTROLS (owner, 2026-09-14): status tabs, then search, then the order/invoice pickers. Broadest to narrowest, and
+          the tabs lead because they are the question the screen exists for — the count on each says whether there is anything to do
+          before you touch anything else. Search sits second as the way in when you already have a style in mind, and the pickers
+          last, since they narrow to one delivery. */}
       <section className="space-y-3">
         <div className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
           {TABS.map((t) => {
@@ -544,24 +754,33 @@ export default function BirkTrackerBook() {
           })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="relative min-w-0 flex-1 sm:max-w-xs">
-            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+        {/* THE FILTER ROW SPANS THE SAME MEASURE AS THE SUMMARY (owner, 2026-09-14: "make sure it used the same length as the summary
+            one cause rn it looks awkward"). It is built the same way as the summary block above — one thing at the left edge, the rest
+            hard right — so the two rows reach both margins and read as the same column of page rather than two different widths
+            stacked. The search keeps a ~24rem ceiling (it holds a style code; a full-bleed box would be a lot of white for a short
+            string) and the pickers take the right, where the summary puts its scanner pill. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="relative w-full min-w-[14rem] sm:w-auto sm:flex-1 sm:max-w-sm">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
               value={find}
               onChange={(e) => setFind(e.target.value)}
               placeholder="Find a style, order or invoice"
-              className="w-full rounded-md border border-slate-300 py-2 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
+
           {/* Both pickers write the SAME state, so choosing one visibly resets the other to "Any". */}
+
           {([
             { label: 'Order', kind: 'order' as const, options: data?.ordernums ?? [], roll: rollups.order },
             { label: 'Invoice', kind: 'invoice' as const, options: data?.invoices ?? [], roll: rollups.invoice },
-          ]).map((p) => {
+          ]).map((p, i) => {
             const selected = focus?.kind === p.kind ? focus.value : '';
             return (
-              <label key={p.kind} className="inline-flex items-center gap-2 text-sm text-slate-500">
+              // The first picker carries the auto-margin that pushes this half of the row to the right edge — a spacer element would
+              // do the same until the row wraps, at which point it becomes a stray blank item.
+              <label key={p.kind} className={'inline-flex items-center gap-2 text-sm text-slate-500' + (i === 0 ? ' sm:ml-auto' : '')}>
                 {p.label}
                 <select
                   value={selected}
@@ -590,40 +809,63 @@ export default function BirkTrackerBook() {
           {filtered && (
             <button type="button" onClick={reset} className="text-sm text-slate-500 underline hover:text-slate-700">Clear</button>
           )}
-
-          <div className="ml-auto flex items-center gap-2">
-            {/* Inert until someone hands over a Birkenstock confirmation file — the columns can't be guessed. */}
-            <button
-              type="button"
-              disabled
-              title="Needs a sample Birkenstock order confirmation file before it can read one"
-              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400"
-            >
-              <ArrowUpTrayIcon className="h-4 w-4" /> Upload
-            </button>
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={shown.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-            >
-              <ArrowDownTrayIcon className="h-4 w-4" /> Export
-            </button>
-            {/* Disabled while there are unsaved edits: clearing rows you are part-way through keying is how work gets lost. */}
-            <button
-              type="button"
-              onClick={() => setConfirmClear(true)}
-              disabled={clearable === 0 || dirtyRows.length > 0 || saving}
-              title={dirtyRows.length > 0 ? 'Save or discard your changes first' : undefined}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-            >
-              <TrashIcon className="h-4 w-4" /> Clear arrived
-              {clearable > 0 && <span className="tabular-nums text-slate-400">{clearable}</span>}
-            </button>
-          </div>
         </div>
-        <p className="text-xs text-slate-400">An order or an invoice, one at a time — picking one clears the other.</p>
       </section>
+
+      {/* --- what the gun has just done -----------------------------------------------------------------------------------------
+          There is no scanning MODE any more (owner, 2026-09-14: "i wanna be able to just scan"), so there is no station to open and
+          no box to aim at — the page listens, and this appears only once something has been beeped. Each beep commits on its own, so
+          the undo on each line is the safety net that immediate writing needs. */}
+      {scanLog.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="mb-2 flex items-center gap-3 text-xs text-slate-500">
+            <span className="font-medium text-slate-700">Scanned just now</span>
+            {focus
+              ? <span>into {focus.kind} <span className="font-mono">{focus.value}</span></span>
+              : <span>across the whole book — pick an order or invoice above to stop a repeated barcode being ambiguous</span>}
+            {scanBusy && <span className="text-slate-400">working…</span>}
+            <button type="button" onClick={() => setScanLog([])} className="ml-auto underline hover:text-slate-700">Clear list</button>
+          </div>
+
+          <ul className="space-y-1">
+              {scanLog.map((e) => (
+                <li
+                  key={e.id}
+                  className={
+                    'flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1.5 text-sm ' +
+                    (e.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : e.tone === 'ask' ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-600')
+                  }
+                >
+                  <span className="min-w-0 flex-1 font-mono text-xs">{e.text}</span>
+
+                  {/* The barcode could not be resolved to one line — the operator names it. See the route header for why this asks
+                      rather than guesses: a wrong guess puts two orders out, one over and one under. */}
+                  {e.candidates?.map((c) => (
+                    <button
+                      key={c.ordernum + c.code}
+                      type="button"
+                      onClick={() => { setScanLog((prev) => prev.filter((x) => x.id !== e.id)); sendScan({ ordernum: c.ordernum, code: c.code }); }}
+                      className="rounded border border-amber-300 bg-white px-2 py-0.5 font-mono text-xs hover:bg-amber-100"
+                    >
+                      {c.ordernum} · {c.arrived}/{c.requested}
+                    </button>
+                  ))}
+
+                  {e.undo && (
+                    <button
+                      type="button"
+                      onClick={() => undoScan(e)}
+                      disabled={scanBusy}
+                      className="inline-flex items-center gap-1 text-xs underline opacity-70 hover:opacity-100 disabled:opacity-30"
+                    >
+                      <XMarkIcon className="h-3.5 w-3.5" /> Undo
+                    </button>
+                  )}
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
 
       {notice && (
         <div className={'rounded-md px-3 py-2 text-sm ' + (notice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900')}>

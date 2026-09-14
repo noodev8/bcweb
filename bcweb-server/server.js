@@ -237,6 +237,10 @@ app.use('/pick-action', require('./routes/pick-action'));   // POST: action a se
 // renaming either, it records which one should move if the clash is ever resolved.
 app.use('/birk-tracker-lines', require('./routes/birk-tracker-lines')); // GET: the whole order book + filter lists + totals
 app.use('/birk-tracker-save', require('./routes/birk-tracker-save'));   // WRITES: key invoiced + arrived, stamp an invoice across them
+// WRITES: one beep = one pair arrived. TRACKER ONLY — it never touches localstock, and it is NOT Goods In for Birkenstock (that
+// supplier has never been in `orderstatus`). The hard part is that a barcode does not identify an order line; the route header sets
+// out the four-step resolution and why it asks rather than guesses.
+app.use('/birk-tracker-scan', require('./routes/birk-tracker-scan'));
 // DESTRUCTIVE, and the rows are unrecoverable — no soft-delete, no archive. Guarded by a count the client must get right; read the
 // route header before touching either guard.
 app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines
