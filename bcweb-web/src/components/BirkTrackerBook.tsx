@@ -67,6 +67,10 @@ than silently taking rows nobody looked at.
 
 ORDER AND INVOICE ARE ONE FILTER (owner): two ways of asking for one delivery's lines, so picking either REPLACES the other — there is
 no state where both are set. Status tabs and the search box are genuine co-filters and do still stack.
+  BOTH LISTS CARRY THEIR OWN STATE (owner, 2026-09-14): each entry is coloured and labelled by how much of it is finished — "all
+  arrived", "3 of 14", "nothing yet", "over-invoiced". Before, the only way to learn whether an order was done was to select it and
+  read the screen, once per order. Colour alone would not do: an <option> can only be coloured through an inline style, which Chrome,
+  Edge and Firefox on Windows honour but other browsers ignore entirely, so the words carry the meaning and the colour is the glance.
 
 UPLOAD is present but inert until the Birkenstock order-confirmation file format is known. Wire it to a real parse route before
 enabling it; don't guess the columns.
@@ -112,6 +116,33 @@ const STATE_STYLE: Record<State, { bar: string; dot: string; stripe: string; gro
   transit: { bar: 'bg-amber-400', dot: 'bg-amber-400', stripe: 'border-l-amber-400', group: 'bg-amber-100/70', text: 'text-amber-800' },
   arrived: { bar: 'bg-emerald-500', dot: 'bg-emerald-500', stripe: 'border-l-emerald-500', group: 'bg-emerald-100/60', text: 'text-emerald-800' },
 };
+
+// --- the picker roll-ups -------------------------------------------------------------------------------------------------------
+// An order or invoice summarised for the dropdown: how many of its sizes are finished, whether any is over-invoiced, and whether
+// anything has moved at all. The same three states as everywhere else, plus over, so the lists speak the screen's own vocabulary.
+interface Roll { done: number; total: number; over: boolean; moved: boolean }
+
+// Raw hex rather than Tailwind classes: these go through an inline `style` on an <option>, which a class cannot reach. Values are
+// the same palette steps the rest of the screen uses (red-700, emerald-700, amber-700, slate-400).
+const ROLL_COLOUR = { over: '#b91c1c', all: '#047857', part: '#b45309', none: '#94a3b8' };
+
+function rollColour(g: Roll | undefined): string {
+  if (!g) return ROLL_COLOUR.none;
+  if (g.over) return ROLL_COLOUR.over;
+  if (g.done === g.total) return ROLL_COLOUR.all;
+  if (g.done > 0 || g.moved) return ROLL_COLOUR.part;
+  return ROLL_COLOUR.none;
+}
+
+// The words that carry the same meaning where the colour cannot be relied on. "x of y" counts SIZES rather than pairs: this is a
+// glance at how much of a delivery is settled, and a part-arrived size is not settled however many pairs of it turned up.
+function rollLabel(g: Roll): string {
+  if (g.over) return 'over-invoiced';
+  if (g.done === g.total) return 'all arrived';
+  if (g.done > 0) return `${g.done} of ${g.total}`;
+  if (g.moved) return 'part arrived';
+  return 'nothing yet';
+}
 
 // Stable DOM id per editable cell, so Enter can hand focus to the same field of the next size. getElementById takes any string, so
 // the style names with spaces in them need no escaping.
@@ -266,6 +297,28 @@ export default function BirkTrackerBook() {
 
   // What "Clear arrived" would delete. Deliberately reads the SAVED values and ignores the status tab and search box: the server
   // counts the database, and the guard only works if both sides ask the same question.
+  // Per-order and per-invoice roll-ups for the two pickers (owner, 2026-09-14: "so i dont need to go through each one"). Without
+  // these, finding out whether an order is finished meant selecting it and reading the screen — seven times. Reads through `live`, so
+  // an order goes green in the list the moment its last size is keyed in, before saving.
+  const rollups = useMemo(() => {
+    const build = (keyFor: (r: BirkTrackerLine) => string) => {
+      const m = new Map<string, { done: number; total: number; over: boolean; moved: boolean }>();
+      for (const r of rows) {
+        const k = keyFor(r);
+        if (!k) continue;
+        const v = view(r);
+        const g = m.get(k) ?? { done: 0, total: 0, over: false, moved: false };
+        g.total += 1;
+        if (v.state === 'arrived') g.done += 1;
+        if (v.over) g.over = true;
+        if (v.invoiced > 0 || v.arrived > 0) g.moved = true;
+        m.set(k, g);
+      }
+      return m;
+    };
+    return { order: build((r) => r.ordernum), invoice: build((r) => r.invoice_num) };
+  }, [rows, live]); // eslint-disable-line react-hooks/exhaustive-deps -- `view` closes over `live`
+
   const clearScope = focus ? { scope: focus.kind, value: focus.value } : { scope: 'all' as const };
   const clearable = useMemo(
     () => rows.filter((r) => {
@@ -503,21 +556,37 @@ export default function BirkTrackerBook() {
           </div>
           {/* Both pickers write the SAME state, so choosing one visibly resets the other to "Any". */}
           {([
-            { label: 'Order', kind: 'order' as const, options: data?.ordernums ?? [] },
-            { label: 'Invoice', kind: 'invoice' as const, options: data?.invoices ?? [] },
-          ]).map((p) => (
-            <label key={p.kind} className="inline-flex items-center gap-2 text-sm text-slate-500">
-              {p.label}
-              <select
-                value={focus?.kind === p.kind ? focus.value : ''}
-                onChange={(e) => setFocus(e.target.value ? { kind: p.kind, value: e.target.value } : null)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs tabular-nums text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              >
-                <option value="">Any</option>
-                {p.options.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </label>
-          ))}
+            { label: 'Order', kind: 'order' as const, options: data?.ordernums ?? [], roll: rollups.order },
+            { label: 'Invoice', kind: 'invoice' as const, options: data?.invoices ?? [], roll: rollups.invoice },
+          ]).map((p) => {
+            const selected = focus?.kind === p.kind ? focus.value : '';
+            return (
+              <label key={p.kind} className="inline-flex items-center gap-2 text-sm text-slate-500">
+                {p.label}
+                <select
+                  value={selected}
+                  onChange={(e) => setFocus(e.target.value ? { kind: p.kind, value: e.target.value } : null)}
+                  // The closed box takes the selected entry's colour too, so the picker keeps saying "this one is finished" while
+                  // you work inside it.
+                  style={{ color: rollColour(p.roll.get(selected)) }}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="" style={{ color: ROLL_COLOUR.none }}>Any</option>
+                  {p.options.map((o) => {
+                    const g = p.roll.get(o);
+                    // Colour AND words. Option colouring is honoured by Chrome, Edge and Firefox on Windows — which is what this is
+                    // run on — but is ignored outright by some browsers, so the state is spelled out in the label as well and the
+                    // colour is the bonus rather than the message.
+                    return (
+                      <option key={o} value={o} style={{ color: rollColour(g) }}>
+                        {o}{g ? ` — ${rollLabel(g)}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            );
+          })}
           {filtered && (
             <button type="button" onClick={reset} className="text-sm text-slate-500 underline hover:text-slate-700">Clear</button>
           )}
