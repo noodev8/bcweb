@@ -120,9 +120,10 @@ import {
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival,
-  type BirkTrackerLine, type BirkTrackerScanLine,
+  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival, previewBirkInvoice,
+  type BirkTrackerLine, type BirkTrackerScanLine, type BirkInvoicePreview,
 } from '@/lib/api';
+import BirkInvoiceDialog from '@/components/BirkInvoiceDialog';
 
 // --- the three states ----------------------------------------------------------------------------------------------------------
 type State = 'awaiting' | 'transit' | 'arrived';
@@ -218,6 +219,9 @@ export default function BirkTrackerBook() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // The parsed invoice awaiting review. Non-null means the dialog is up; nothing has been written at that point.
+  const [invoicePreview, setInvoicePreview] = useState<BirkInvoicePreview | null>(null);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
 
   // --- scanning a delivery in ----------------------------------------------------------------------------------------------------
   // THERE IS NO SCAN MODE (owner, 2026-09-14: "i wanna be able to just scan"). The page listens for the gun the whole time it is
@@ -575,10 +579,27 @@ export default function BirkTrackerBook() {
     });
   }
 
-  // The picker works; the parsing does not, and will not until there is a real file to write it against. So the file is accepted and
-  // DESCRIBED rather than silently dropped — name, size, and for a text file its first line, which is exactly the header row needed
-  // to build the importer. Saying "not built yet" after the dialog is honest; opening a dialog that swallows the file is not.
-  async function loadFile(kind: 'order' | 'invoice') {
+  // LOAD INVOICE. Parses the PDF server-side and matches it against the order book, then hands the plan to BirkInvoiceDialog for
+  // review. NOTHING IS WRITTEN by this — the preview route is read-only, and the dialog's own button does the commit.
+  async function loadInvoice() {
+    const file = await chooseFile();
+    if (!file) return;
+    setNotice(null);
+    setInvoiceBusy(true);
+    const res = await previewBirkInvoice(file);
+    setInvoiceBusy(false);
+    if (!res.success) {
+      // NOT_A_PDF / UNREADABLE_PDF / NO_INVOICE_NUMBER are ordinary outcomes of pointing this at the wrong file, and the server's
+      // message already says which — so it is shown as it is rather than translated into something vaguer.
+      setNotice({ tone: 'warn', text: res.error || 'That invoice could not be read' });
+      return;
+    }
+    setInvoicePreview(res.data!);
+  }
+
+  // LOAD ORDER is still only a picker: the order-confirmation layout has not been seen yet, so the file is described back rather than
+  // silently dropped, and the first lines are echoed because that header row is most of what writing the parser needs.
+  async function loadOrderFile() {
     const file = await chooseFile();
     if (!file) return;
     let head = '';
@@ -589,8 +610,8 @@ export default function BirkTrackerBook() {
     }
     setNotice({
       tone: 'warn',
-      text: `Picked ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB). Reading a Birkenstock ${kind} file is not built yet — `
-        + `it needs the real layout first.${head ? ` First lines: ${head}` : ''}`,
+      text: `Picked ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB). Reading a Birkenstock order confirmation is not `
+        + `built yet — it needs the real layout first.${head ? ` First lines: ${head}` : ''}`,
     });
   }
 
@@ -711,7 +732,7 @@ export default function BirkTrackerBook() {
               Load invoice  what Birkenstock has billed — the Invoiced column, and the invoice number and date with it. */}
         <button
           type="button"
-          onClick={() => loadFile('order')}
+          onClick={loadOrderFile}
           title="Choose a Birkenstock order confirmation file"
           className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
         >
@@ -719,11 +740,12 @@ export default function BirkTrackerBook() {
         </button>
         <button
           type="button"
-          onClick={() => loadFile('invoice')}
-          title="Choose a Birkenstock invoice file"
-          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          onClick={loadInvoice}
+          disabled={invoiceBusy}
+          title="Choose a Birkenstock invoice PDF"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
-          <DocumentArrowUpIcon className="h-4 w-4" /> Load invoice
+          <DocumentArrowUpIcon className="h-4 w-4" /> {invoiceBusy ? 'Reading…' : 'Load invoice'}
         </button>
         <button
           type="button"
@@ -1129,6 +1151,19 @@ export default function BirkTrackerBook() {
           Type into Invoiced or Arrived to key a delivery — Tab across a size, Enter down the column. Nothing is written until you save.
           {busy && <span className="ml-2">Refreshing.</span>}
         </p>
+      )}
+
+      {/* The review step of Load invoice. Read-only until its own Apply button — see BirkInvoiceDialog. */}
+      {invoicePreview && (
+        <BirkInvoiceDialog
+          preview={invoicePreview}
+          onClose={() => setInvoicePreview(null)}
+          onApplied={async (summary) => {
+            setInvoicePreview(null);
+            await refresh();
+            setNotice({ tone: 'ok', text: summary });
+          }}
+        />
       )}
 
       {/* --- the save bar -------------------------------------------------------------------------------------------------------

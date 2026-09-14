@@ -241,6 +241,12 @@ app.use('/birk-tracker-save', require('./routes/birk-tracker-save'));   // WRITE
 // supplier has never been in `orderstatus`). The hard part is that a barcode does not identify an order line; the route header sets
 // out the four-step resolution and why it asks rather than guesses.
 app.use('/birk-tracker-scan', require('./routes/birk-tracker-scan'));
+// Load invoice: read a Birkenstock invoice PDF and apply it to the order book. Split in two because the Python tool this ports
+// (C:\projects\birk-tracker\birk-tracker.py, STILL LIVE) asks questions at a terminal prompt and a web request cannot block —
+// preview computes the whole plan read-only, the screen asks everything at once, commit applies the answers in one transaction.
+// utils/birkInvoice.js holds the parse, and opens with why the rules there must stay in step with that script.
+app.use('/birk-invoice-preview', require('./routes/birk-invoice-preview')); // READ ONLY: what applying this PDF would do
+app.use('/birk-invoice-commit', require('./routes/birk-invoice-commit'));   // WRITES: invoiced += qty + stamp, or add a missing row
 // DESTRUCTIVE, and the rows are unrecoverable — no soft-delete, no archive. Guarded by a count the client must get right; read the
 // route header before touching either guard.
 app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines

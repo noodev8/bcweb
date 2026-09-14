@@ -3109,4 +3109,71 @@ export async function scanBirkTrackerArrival(args: {
   }
 }
 
+// =============================================================================================================================
+// Birk Tracker — LOAD INVOICE. A port of the live Python tool (C:\projects\birk-tracker\birk-tracker.py); see utils/birkInvoice.js
+// on the server for why the parse rules must stay in step with it.
+//
+// TWO STEPS ON PURPOSE. The Python asks its questions at a terminal prompt and a web request cannot block, so preview returns the
+// WHOLE plan read-only, the screen asks everything at once, and commit applies the answers. Nothing is written until commit.
+// =============================================================================================================================
+export interface BirkInvoiceRow {
+  code: string; ordernum: string; bksize: string;
+  requested: number | null; invoiced: number | null; invoicedate: string; invoicenum: string;
+}
+
+// One invoice line, matched against the order book. `kind` is what the screen has to ask, if anything:
+//   update            one row matched — just add the quantity. No question.
+//   already_invoiced  that row already carries THIS invoice number; almost always the same PDF loaded twice. Skipped by default.
+//   ambiguous         several rows matched — the operator picks one. Never guessed.
+//   missing           no row matched — accept the suggested code, type another, or skip the line.
+export interface BirkInvoiceEntry {
+  kind: 'update' | 'already_invoiced' | 'ambiguous' | 'missing';
+  article: string;
+  ordernum: string;
+  size: string;          // Birkenstock's own label, e.g. "240/4.5"
+  eu: string;            // the EU size it maps to, e.g. "37" — '' if the label is not in the map
+  qty: number;
+  row?: BirkInvoiceRow;
+  candidates: BirkInvoiceRow[];
+  suggested_code?: string;
+}
+
+export interface BirkInvoicePreview {
+  invoice: { invoice_number: string; invoice_date: string; order_number: string; total_invoiced: number | null };
+  parsed_pairs: number;
+  // False when the lines read do not add up to the invoice's own "Sum of pos." total — the parse missed something, and the operator
+  // needs to see that before applying it.
+  totals_agree: boolean;
+  entries: BirkInvoiceEntry[];
+}
+
+export function previewBirkInvoice(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return request<BirkInvoicePreview>(
+    { url: '/birk-invoice-preview', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 },
+    (b) => ({
+      invoice: b.invoice as BirkInvoicePreview['invoice'],
+      parsed_pairs: Number(b.parsed_pairs) || 0,
+      totals_agree: Boolean(b.totals_agree),
+      entries: (b.entries as BirkInvoiceEntry[]) || [],
+    })
+  );
+}
+
+// The RESOLVED plan — the operator's answers, not the PDF. The server does not re-parse, so what lands is exactly what was approved.
+export interface BirkInvoiceAction { op: 'update' | 'insert'; code: string; ordernum: string; qty: number; size?: string }
+
+export function commitBirkInvoice(args: { invoice_num: string; invoice_date: string; actions: BirkInvoiceAction[] }) {
+  return request<{ updated: number; inserted: number; pairs: number; missing: string[] }>(
+    { url: '/birk-invoice-commit', method: 'POST', data: args },
+    (b) => ({
+      updated: Number(b.updated) || 0,
+      inserted: Number(b.inserted) || 0,
+      pairs: Number(b.pairs) || 0,
+      missing: (b.missing as string[]) || [],
+    })
+  );
+}
+
 export default api;
