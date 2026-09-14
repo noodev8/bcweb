@@ -21,8 +21,9 @@ standing filter rails — is wrong for the question rather than merely old, and 
 both directions to answer "what is still to come?". BirkTrackerBook opens with what was kept, what was dropped and why; read that
 before reshaping this screen against the old one again.
 
-NAME CLASH TO BE AWARE OF: Reports also has a "Birk Tracker" (/analytics/birk-tracker) — the daily core-size availability gauge. Same
-words, unrelated screen. routes/birk-tracker-lines.js records which of the two should be renamed if that is ever worth doing.
+THE NAME IS NOW THIS SCREEN'S ALONE. Reports used to carry a second "Birk Tracker" — the daily core-size availability gauge — which
+was renamed to Birk Availability (/analytics/birk-availability) in Sep 2026. Unrelated screen, unrelated data; if you are looking for
+the Full / Styles / Full% trend, that is where it went.
 =======================================================================================================================================
 */
 

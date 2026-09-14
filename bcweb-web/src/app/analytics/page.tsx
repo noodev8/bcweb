@@ -43,9 +43,9 @@ export default function AnalyticsPage() {
 
         {/* The one live analytics view in v1. */}
         <ModuleTile
-          title="Birk Tracker"
+          title="Birk Availability"
           description="How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge."
-          href="/analytics/birk-tracker"
+          href="/analytics/birk-availability"
           icon={PresentationChartLineIcon}
           live
         />

@@ -1,7 +1,7 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /analytics/birk-tracker  (Analytics module — Birk Tracker)
+Page: /analytics/birk-availability  (Analytics module — Birk Availability)
 =======================================================================================================================================
 Purpose: A snapshot gauge of Birkenstock core-size availability — the Google-Ads push/scale-back signal (ported from the reference
          tool C:\scripts\birk-stock, but self-contained here with history in Postgres).
@@ -11,11 +11,14 @@ Purpose: A snapshot gauge of Birkenstock core-size availability — the Google-A
            - Styles = every in-range Birk style (grid offers 38/39/40). The ceiling.
            - Full % = Full / Styles. The trend gauge (progress toward a fully stocked range), not the decision driver.
 
-         The headline shows the latest stored snapshot. "Update now" recomputes today's reading (POST /birk-tracker-update, which
+         The headline shows the latest stored snapshot. "Update now" recomputes today's reading (POST /birk-availability-update, which
          upserts one row per day and prunes anything older than 2 years — so the store can never grow unbounded). Below: a simple
          line chart of Full over the window, and the raw daily table (newest first).
 
-Guarded by AppShell. Consumes GET /birk-tracker + POST /birk-tracker-update.
+Guarded by AppShell. Consumes GET /birk-availability + POST /birk-availability-update.
+
+Named "Birk Tracker" until Sep 2026. Renamed because the Birkenstock ORDER BOOK module at /birk-tracker owns that name; this screen
+is a view inside Reports, so it was the one to move.
 =======================================================================================================================================
 */
 
@@ -23,13 +26,13 @@ import { useMemo, useState } from 'react';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getBirkTracker, updateBirkTracker, BirkSnapshot } from '@/lib/api';
+import { getBirkAvailability, updateBirkAvailability, BirkSnapshot } from '@/lib/api';
 
 // Stable identity for "no rows yet". A fresh `[]` on every render would change the identity of anything derived from it (the
 // tableRows useMemo below), defeating the memo and re-running it on every render.
 const NO_ROWS: BirkSnapshot[] = [];
 
-export default function BirkTrackerPage() {
+export default function BirkAvailabilityPage() {
   const { logout } = useAuth();
   const [updating, setUpdating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -38,8 +41,8 @@ export default function BirkTrackerPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
-    ['birk-tracker', 90],
-    () => getBirkTracker(90),
+    ['birk-availability', 90],
+    () => getBirkAvailability(90),
   );
   const rows: BirkSnapshot[] = data?.rows ?? NO_ROWS;
   const latest = data?.latest ?? null;
@@ -49,7 +52,7 @@ export default function BirkTrackerPage() {
     setUpdating(true);
     setNotice(null);
     setActionError(null);
-    const res = await updateBirkTracker();
+    const res = await updateBirkAvailability();
     if (res.success && res.data) {
       const l = res.data.latest;
       const stock = l.total_free != null ? `, ${l.total_free} units in stock` : '';
@@ -66,7 +69,7 @@ export default function BirkTrackerPage() {
   const tableRows = useMemo(() => [...rows].reverse(), [rows]);
 
   return (
-    <AppShell title="Birk Tracker" backHref="/analytics" backLabel="Reports">
+    <AppShell title="Birk Availability" backHref="/analytics" backLabel="Reports">
       <details className="group mb-5 max-w-2xl">
         <summary className="cursor-pointer list-none text-sm text-slate-400 transition hover:text-slate-600">
           <span className="inline-flex items-center gap-1">

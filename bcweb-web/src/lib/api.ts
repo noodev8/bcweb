@@ -804,7 +804,8 @@ export function getBrandOverview(months?: number, channel?: string) {
 }
 
 // =============================================================================================================================
-// Analytics module — Birk Tracker (daily snapshot of Birkenstock core-size availability; the Google-Ads push/scale-back gauge).
+// Analytics module — Birk Availability (daily snapshot of Birkenstock core-size availability; the Google-Ads push/scale-back
+// gauge). Called "Birk Tracker" until Sep 2026; renamed to end the clash with the Birk Tracker ORDER BOOK further down this file.
 // =============================================================================================================================
 // One daily snapshot row. full = Birk styles with all 3 core sizes (38/39/40) in FREE stock (the decision number);
 // styles = all in-range Birk styles (grid offers 38/39/40, the ceiling); full_pct = full/styles (trend gauge).
@@ -818,19 +819,19 @@ export interface BirkSnapshot {
 }
 
 // Read the stored history (default last 90 days) + the latest row for the headline. Oldest -> newest.
-export function getBirkTracker(days?: number) {
+export function getBirkAvailability(days?: number) {
   return request<{ days: number; latest: BirkSnapshot | null; rows: BirkSnapshot[] }>(
-    { url: '/birk-tracker', method: 'GET', params: { days } },
+    { url: '/birk-availability', method: 'GET', params: { days } },
     (b) => ({ days: b.days, latest: b.latest ?? null, rows: b.rows || [] })
   );
 }
 
 // "Update" button — recompute the current snapshot, upsert today's row (latest run of the day wins), prune rows older than 2 years.
-export function updateBirkTracker() {
+export function updateBirkAvailability() {
   return request<{ latest: BirkSnapshot; pruned: number }>(
-    { url: '/birk-tracker-update', method: 'POST' },
+    { url: '/birk-availability-update', method: 'POST' },
     // The POST recomputes stock (full/styles/total_free/core_free) only; units7 & cover (live sales reads) aren't returned here —
-    // default them. The page reloads via GET /birk-tracker straight after, which carries the real units7 + cover.
+    // default them. The page reloads via GET /birk-availability straight after, which carries the real units7 + cover.
     (b) => ({
       latest: {
         ...b.latest,
@@ -3044,8 +3045,8 @@ export function buildFinanceQuickFile(args: {
 // =============================================================================================================================
 // Birk Tracker — the Birkenstock ORDER BOOK (module at /birk-tracker).
 //
-// NOT the analytics availability gauge, which confusingly shares the name and lives at /analytics/birk-tracker off
-// getBirkTracker* further up this file. This one is the season's orders line by line, out of the legacy `birktracker` table:
+// NOT the analytics availability gauge — that used to share this name and is now Birk Availability, at /analytics/birk-availability
+// off getBirkAvailability* further up this file. This one is the season's orders line by line, out of the legacy `birktracker` table:
 // what was requested, what Birkenstock has invoiced, what has physically arrived.
 //
 // Every date here is a DISPLAY STRING passed through verbatim from the legacy table, and the two are in different formats —

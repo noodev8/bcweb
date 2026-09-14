@@ -7,7 +7,7 @@ Purpose: Analytics module — Stock Position. A "living catalogue" gauge, tracke
          right now, kept SEPARATELY for Shopify (style grain) and Amazon (SKU grain). See utils/stockPosition.js for the definition
          (four buckets: in_stock_selling / in_stock_no_sale / oos_sold_recently / dormant; ALIVE = total - dormant; 6-month window).
 
-         READ-ONLY (mirrors the Birk Tracker split): this GET never writes. It computes TODAY's LIVE figures for both channels (so the
+         READ-ONLY (mirrors the Birk Availability split): this GET never writes. It computes TODAY's LIVE figures for both channels (so the
          panels are always fresh, never stale) and returns them as `today`, plus the stored `history` for the trend. Recording a trend
          point is a DELIBERATE act via the "Update now" button -> POST /analytics-stock-position-update (which upserts + prunes). So
          merely viewing the page costs nothing and never appends a snapshot.

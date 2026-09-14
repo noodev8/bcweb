@@ -7,12 +7,11 @@ Purpose: Birk Tracker module — the whole order book, one row per ordered SKU. 
          legacy PowerBuilder "Birk Tracker" screen: what we asked Birkenstock for, what they have invoiced, and what has physically
          arrived, with the invoice number and date that did it. READ ONLY — no writes in this phase.
 
-NAME CLASH, ON PURPOSE — READ THIS BEFORE RENAMING ANYTHING. There is an unrelated `/birk-tracker` (+ `/birk-tracker-update`) already
-mounted: the Analytics daily availability snapshot (Full / Styles / Full%), which lives at /analytics/birk-tracker on the web. This
-route is the ORDER BOOK and has nothing to do with it beyond the brand and the word. They do not collide at the router — Express mounts
-match on a path-segment boundary, so `/birk-tracker` never swallows `/birk-tracker-lines` — but a human reading server.js will trip
-over it. The owner's name for THIS module is "Birk Tracker" (it is what the legacy screen is called and what the table is called); if
-one of the two is ever renamed, the analytics one is the one that should move, being a view inside Reports rather than a module.
+THE NAME CLASH IS RESOLVED — this note is kept so the history reads straight. Until Sep 2026 an unrelated `/birk-tracker` (+
+`/birk-tracker-update`) was also mounted: the Analytics daily availability snapshot (Full / Styles / Full%). The two shared nothing but
+the brand and the word, and the plan recorded here was that the analytics one should move, being a view inside Reports rather than a
+module. It did: it is now Birk Availability, `/birk-availability` (+ `-update`), at /analytics/birk-availability on the web. "Birk
+Tracker" means the ORDER BOOK — this module — and nothing else.
 
 THE TABLE IS LEGACY AND SHARED. `birktracker` is written today by the PowerBuilder screen — this module reads the same rows, so every
 legacy landmine applies:

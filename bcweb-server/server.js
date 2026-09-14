@@ -228,13 +228,12 @@ app.use('/order-status-customer-delete', require('./routes/order-status-customer
 app.use('/pick-list', require('./routes/pick-list'));       // GET: one mode's shelf rows (shopify = customer picks, amazon = FBA gather)
 app.use('/pick-action', require('./routes/pick-action'));   // POST: action a selection — mode re-checked in the UPDATE's own WHERE
 
-// --- Birk Tracker module (the Birkenstock ORDER BOOK — not the analytics gauge two blocks down, see below) ---
+// --- Birk Tracker module (the Birkenstock ORDER BOOK) ---
 // The season's orders line by line: requested vs invoiced vs arrived, with the invoice that did it. Port of the legacy PowerBuilder
 // screen, reading the same legacy `birktracker` table that screen still writes. Read-only for now (owner: screen first, writes after).
-// ⚠ TWO DIFFERENT THINGS SHARE THE NAME "Birk Tracker": this module, and the Analytics availability snapshot registered below as
-// `/birk-tracker` + `/birk-tracker-update`. They share nothing but the words. The mounts do not collide (Express matches on a path
-// segment boundary, so `/birk-tracker` never swallows `/birk-tracker-lines`) — but read the header of birk-tracker-lines.js before
-// renaming either, it records which one should move if the clash is ever resolved.
+// The name "Birk Tracker" now belongs to THIS module alone: the Analytics availability snapshot used to share it, and was renamed to
+// Birk Availability (`/birk-availability`) in Sep 2026 precisely so the two could never be confused again. `/birk-stock` is a third,
+// unrelated thing (the Birkenstock screen's size-by-size read, mounted far above) — check which you mean before adding to any of them.
 app.use('/birk-tracker-lines', require('./routes/birk-tracker-lines')); // GET: the whole order book + filter lists + totals
 app.use('/birk-tracker-save', require('./routes/birk-tracker-save'));   // WRITES: key invoiced + arrived, stamp an invoice across them
 // WRITES: one beep = one pair arrived. TRACKER ONLY — it never touches localstock, and it is NOT Goods In for Birkenstock (that
@@ -251,12 +250,13 @@ app.use('/birk-invoice-commit', require('./routes/birk-invoice-commit'));   // W
 // route header before touching either guard.
 app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines
 
-// Analytics module. Birk Tracker: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in FREE
-// stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual Update).
-app.use('/birk-tracker', require('./routes/birk-tracker'));         // GET: stored daily snapshot history (trend)
-app.use('/birk-tracker-update', require('./routes/birk-tracker-update')); // POST: recompute + upsert today's snapshot, prune >2yr
+// Analytics module. Birk Availability: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in
+// FREE stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual
+// Update). Called "Birk Tracker" until Sep 2026 — renamed to end the clash with the order-book module above.
+app.use('/birk-availability', require('./routes/birk-availability'));         // GET: stored daily snapshot history (trend)
+app.use('/birk-availability-update', require('./routes/birk-availability-update')); // POST: recompute + upsert today's snapshot, prune >2yr
 // Stock Position: living-catalogue gauge per channel (Shopify styles / Amazon SKUs). GET is read-only (today's live figures + stored
-// history); POST "Update now" upserts today's two rows + prunes >2yr (mirrors the Birk Tracker read/update split).
+// history); POST "Update now" upserts today's two rows + prunes >2yr (mirrors the Birk Availability read/update split).
 app.use('/analytics-stock-position', require('./routes/analytics-stock-position'));
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)

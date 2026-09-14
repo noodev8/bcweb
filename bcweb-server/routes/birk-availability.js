@@ -1,11 +1,11 @@
 /*
 =======================================================================================================================================
-API Route: birk_tracker
+API Route: birk_availability
 =======================================================================================================================================
 Method: GET
-Purpose: Analytics module — Birk Tracker read. Returns the stored daily snapshot history (birk_stock_snapshot) so the /analytics/birk
-         -tracker page can render the Full / Styles / Full% trend (table + line chart). Also returns the most recent row as `latest`
-         for the headline. Read-only; the snapshot itself is (re)computed by the "Update" button -> POST /birk-tracker-update.
+Purpose: Analytics module — Birk Availability read. Returns the stored daily snapshot history (birk_stock_snapshot) so the /analytics/birk
+         -availability page can render the Full / Styles / Full% trend (table + line chart). Also returns the most recent row as `latest`
+         for the headline. Read-only; the snapshot itself is (re)computed by the "Update" button -> POST /birk-availability-update.
 
            - Full   = Birk styles holding all 3 core sizes (38/39/40) in FREE stock — the decision number.
            - Styles = all in-range Birk styles (grid offers 38/39/40) — the ceiling.
@@ -107,8 +107,8 @@ router.get('/', async (req, res) => {
 
     return res.json({ return_code: 'SUCCESS', days, latest, rows });
   } catch (err) {
-    logger.error('[birk-tracker] error:', err.message);
-    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Birk Tracker history' });
+    logger.error('[birk-availability] error:', err.message);
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Birk Availability history' });
   }
 });
 

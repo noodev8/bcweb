@@ -1,6 +1,6 @@
 /*
 =======================================================================================================================================
-Util: birkStock — the Birk Tracker "Full count" gauge (Analytics module).
+Util: birkStock — the Birk Availability "Full count" gauge (Analytics module).
 =======================================================================================================================================
 Purpose: Compute the current Birkenstock core-size availability snapshot, self-contained for the bcweb Analytics module. Ported from
          the reference tool C:\scripts\birk-stock\availability.py (its "locked output": Full / Styles).

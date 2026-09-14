@@ -1,9 +1,9 @@
 /*
 =======================================================================================================================================
-API Route: birk_tracker_update
+API Route: birk_availability_update
 =======================================================================================================================================
 Method: POST
-Purpose: Analytics module — Birk Tracker "Update" button. Recomputes the current Birkenstock core-size availability snapshot
+Purpose: Analytics module — Birk Availability "Update" button. Recomputes the current Birkenstock core-size availability snapshot
          (utils/birkStock.js) and UPSERTs it into birk_stock_snapshot as TODAY's row (latest run of the day wins), then prunes any
          rows older than 2 years. Manual-trigger only (no cron) — the owner clicks Update when they want a fresh reading.
 
@@ -76,8 +76,8 @@ router.post('/', async (req, res) => {
       pruned,
     });
   } catch (err) {
-    logger.error('[birk-tracker-update] error:', err.message);
-    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to update Birk Tracker snapshot' });
+    logger.error('[birk-availability-update] error:', err.message);
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to update Birk Availability snapshot' });
   }
 });
 
