@@ -44,7 +44,8 @@ Success Response:
   "rows": 12,                      // localstock rows soft-deleted (a row can hold more than one unit)
   "codes": 9,                      // distinct sizes cleared — one bclog line each
   "picked": 3,                     // of those units, committed to a customer order
-  "amz": 2                         // of those units, allocated to Amazon
+  "amz": 2,                        // of those units, allocated to Amazon
+  "touched": [{ "id": "WS7-...", "units": 2, "deleted": true }]   // every row cleared — the undo's input (locations-restore.js)
 }
 =======================================================================================================================================
 Return Codes:
@@ -138,7 +139,10 @@ router.post('/', async (req, res) => {
         [changedBy, `Inv Empty: ${location} x${units}`]
       );
 
-      return { units, rows: rows.length, codes: byCode.size, picked, amz };
+      // `touched` is every row soft-deleted, in the shape inv-adjust reports a remove, so POST /locations-restore can put the whole
+      // rack back — each unit with its own ordernum/allocated — when the sweep is undone from the screen.
+      const touched = rows.map((r) => ({ id: r.id, units: Number(r.qty) || 0, deleted: true }));
+      return { units, rows: rows.length, codes: byCode.size, picked, amz, touched };
     });
 
     if (result.fail === 'NOT_FOUND') {

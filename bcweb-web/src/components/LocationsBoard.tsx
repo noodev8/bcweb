@@ -119,15 +119,19 @@ EVERY BUTTON ON THIS SCREEN NOW WRITES, and there is no client-side overlay left
                           `allocated`, so a unit picked for a customer order is still picked when it lands. Deliberately NOT two
                           inv-adjust calls, which would mint a free unallocated pair at the far end and un-pick the order waiting for
                           it with nothing recording that it happened.
-THE TWO IRREVERSIBLE-VERSUS-REVERSIBLE BARGAINS ARE OPPOSITE, on purpose. Empty rack asks first and cannot be undone. Transfer does not
-ask at all and can: the route returns the ids of the rows it landed, so undo sends exactly those back rather than whatever now happens
-to sit on that rack under the same code. A wrong rack should cost a click, not a hunt.
+EVERYTHING IS UNDOABLE WHILE IT IS STILL ON SCREEN (owner, 2026-09-15). Each write's line in the log (or the answer band on Display)
+carries an Undo until Clear screen, a tab change or the next message takes the line away. Every undo reverses EXACTLY the rows the
+write touched, never "whatever is on that rack under that code now", because the routes hand those rows back:
+  - a transfer     sends back the ids /locations-transfer landed
+  - an add         peels off the one row /inv-adjust minted (`addedId`)
+  - a remove/empty un-deletes or tops up the rows it changed (`touched`) via /locations-restore — so a picked or Amazon unit comes back
+                   still picked or still Amazon's, which an add of a fresh free pair would not
+  - a new rack     is taken back out by /locations-add-undo, only while it is still empty
+Empty rack still asks first: an undo is for the mistake you notice, a confirm is for the one you would not.
 After any of them the panel and the rack list both re-read, so what is on screen is what the DB says rather than a local guess that
 agreed with it until someone else picked from the same shelf. A write in flight disables the controls: a gun and a mouse can both
-outrun a round-trip.
-NOTHING HERE IS UNDOABLE FROM THE SCREEN. Removals are soft deletes (`deleted=1`) so they are recoverable by hand, and every change
-writes a bclog line under the operator's name — which is why the destructive control is the quietest one in the header until it is
-pressed.
+outrun a round-trip. Removals are soft deletes (`deleted=1`) and every change — undo included — writes a bclog line under the
+operator's name.
 =======================================================================================================================================
 */
 
@@ -138,7 +142,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  addLocation, adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
+  addLocation, adjustStock, emptyLocation, restoreStock, undoAddLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
   type InvLocationState, type LocationStockLine,
 } from '@/lib/api';
 import { AREA_LABEL, AREA_ORDER, areaOf, isAmazonBay } from '@/lib/locationsUi';
@@ -232,7 +236,7 @@ interface LogRow {
   tone: 'ok' | 'bad' | 'pending';
   code: string | null;
   text: string;
-  undo?: () => void;
+  undo?: () => Promise<boolean>;   // resolves true when the undo landed — only then is the row struck through
   undone?: boolean;
 }
 
@@ -259,11 +263,13 @@ export default function LocationsBoard() {
   const basketRef = useRef<TransferBasket | null>(null);
   const scanSeq = useRef(0);   // ids for basket lines; a counter, because two scans of the same size are two different lines
   const [askAmazon, setAskAmazon] = useState<string | null>(null);   // a destination that needs a word first — see chooseDestination
-  // `undo` is only ever set by a transfer: it is the one action here that is exactly reversible, which is why it gets an undo instead
-  // of a confirm — the opposite bargain to Empty rack, which gets a confirm and no undo.
+  // `undo` is set by every write that succeeded, and `logId` ties the band to its row in the log so an undo from either place strikes
+  // the same line through.
   // `code` is the SKU the message is about, and it is what lets the answer band print a count that is still true after the re-read
   // (see `flashQty`) and ring the line on the shelf that changed — the two things a stock check is actually checking.
-  const [flash, setFlash] = useState<{ tone: 'ok' | 'bad' | 'pending'; text: string; code?: string; undo?: () => void } | null>(null);
+  const [flash, setFlash] = useState<{
+    tone: 'ok' | 'bad' | 'pending'; text: string; code?: string; undo?: () => Promise<boolean>; logId: number;
+  } | null>(null);
   const [log, setLog] = useState<LogRow[]>([]);
   const logSeq = useRef(0);
   const findRef = useRef<HTMLInputElement>(null);
@@ -380,9 +386,9 @@ export default function LocationsBoard() {
   }, [sound]);
 
   // Said once, in one place, so every outcome on this screen sounds and reads the same way.
-  const say = useCallback((tone: 'ok' | 'bad' | 'pending', text: string, extra?: { code?: string; undo?: () => void }) => {
-    setFlash({ tone, text, ...extra });
+  const say = useCallback((tone: 'ok' | 'bad' | 'pending', text: string, extra?: { code?: string; undo?: () => Promise<boolean> }) => {
     logSeq.current += 1;
+    setFlash({ tone, text, ...extra, logId: logSeq.current });
     // APPENDED, not prepended (owner): the log reads top to bottom like a delivery note, so the newest line is the one nearest the
     // scan box that produced it and the eye never travels back up the panel for what just happened. Capped at 200 from the front, so
     // a long stock check cannot grow an unbounded list under the operator.
@@ -392,10 +398,29 @@ export default function LocationsBoard() {
 
   // Undo, from the row that reported the thing. The row is struck through rather than removed, and its Undo goes with it, so the log
   // still reads as the history it is — including the bit you took back.
-  function undoRow(row: LogRow) {
-    if (!row.undo || row.undone || busy) return;
-    setLog((prev) => prev.map((r) => (r.id === row.id ? { ...r, undone: true } : r)));
-    row.undo();
+  // UNDO WHILE IT IS ON SCREEN (owner, 2026-09-15). Every write that landed offers one, for as long as the line reporting it is still
+  // there — the log row on a verb tab, the answer band on Display. Clear screen, a tab change or the next action takes the line away,
+  // and the undo with it: nothing on this screen undoes something you can no longer see. Struck through only once the undo has
+  // actually landed, so a refused one leaves the row as it was and its own red line says why.
+  async function undoRow(logId: number, undo: () => Promise<boolean>) {
+    if (inFlight.current || log.some((r) => r.id === logId && r.undone)) return;
+    const ok = await undo();
+    if (ok) setLog((prev) => prev.map((r) => (r.id === logId ? { ...r, undone: true } : r)));
+  }
+
+  // The body of every undo but a transfer's: one write, then the same say / re-read / drain every forward write ends with.
+  async function undoWrite(write: () => Promise<{ success: boolean; error?: string }>, done: string, failed: string, code?: string) {
+    if (inFlight.current) return false;
+    inFlight.current = true;
+    setBusy(true);
+    const res = await write();
+    inFlight.current = false;
+    setBusy(false);
+    if (res.success) say('ok', done, { code });
+    else say('bad', res.error || failed);
+    await reread();
+    drain();
+    return res.success;
   }
 
   // Both panels re-read after any write: the shelf because it changed, the rack list because its count did.
@@ -414,9 +439,15 @@ export default function LocationsBoard() {
     if (res.success && res.data) {
       setPicked(null);
       setConfirmEmpty(false);
-      const { units: took, codes, picked: wasPicked, amz: wasAmz } = res.data;
+      const { units: took, codes, picked: wasPicked, amz: wasAmz, touched } = res.data;
       const caveat = [wasPicked ? `${wasPicked} picked` : '', wasAmz ? `${wasAmz} Amazon` : ''].filter(Boolean).join(', ');
-      say('ok', `Took ${took} ${took === 1 ? 'unit' : 'units'} off ${location} across ${codes} ${codes === 1 ? 'size' : 'sizes'}${caveat ? ` — including ${caveat}` : ''}.`);
+      // Undone by un-deleting exactly the rows it cleared, so picked and Amazon units come back still picked and still Amazon's.
+      const undo = () => undoWrite(
+        () => restoreStock(location, touched),
+        `Undone — ${took} ${took === 1 ? 'unit' : 'units'} back on ${location}.`,
+        `Could not put ${location} back.`,
+      );
+      say('ok', `Took ${took} ${took === 1 ? 'unit' : 'units'} off ${location} across ${codes} ${codes === 1 ? 'size' : 'sizes'}${caveat ? ` — including ${caveat}` : ''}.`, { undo });
     } else {
       say('bad', res.error || 'Could not empty that rack.');
       setConfirmEmpty(false);
@@ -441,7 +472,12 @@ export default function LocationsBoard() {
       setNewRack(null);
       await refreshRacks();
       goToRack(location);
-      say('ok', `Added ${location} — its label is ${barcode}.`);
+      // Undo takes the row back out, only while the rack is still empty (locations-add-undo.js); the re-read then drops it from the list
+      // and, with it, the selection.
+      const undo = () => undoWrite(
+        () => undoAddLocation(location, barcode),
+        `Undone — ${location} is no longer a rack.`, `Could not undo ${location}.`);
+      say('ok', `Added ${location} — its label is ${barcode}.`, { undo });
     } else {
       say('bad', res.error || `Could not add ${name}.`);
     }
@@ -457,8 +493,17 @@ export default function LocationsBoard() {
     const res = await adjustStock({ code: line.code, location, delta, ids: line.ids });
     inFlight.current = false;
     setBusy(false);
-    if (res.success) {
-      say('ok', delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`, { code: line.code });
+    if (res.success && res.data) {
+      const { addedId, touched } = res.data;
+      // An add is undone by peeling off the one row it minted; a remove by reversing the rows it changed.
+      const undo = delta > 0
+        ? () => undoWrite(
+            () => adjustStock({ code: line.code, location, delta: -delta, ids: addedId ? [addedId] : [] }),
+            `Undone — took the ${line.code} back off ${location}.`, `Could not take ${line.code} back off ${location}.`, line.code)
+        : () => undoWrite(
+            () => restoreStock(location, touched),
+            `Undone — ${line.code} is back on ${location}.`, `Could not put ${line.code} back on ${location}.`, line.code);
+      say('ok', delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`, { code: line.code, undo });
     } else {
       // NOT_FOUND here means the cluster is gone — someone else cleared the line while it was on screen. The re-read below is the fix,
       // so the message says that rather than reading as a failure of the button.
@@ -490,8 +535,13 @@ export default function LocationsBoard() {
     const res = await adjustStock({ code: sku.code, location, delta: qty, ids: [] });
     inFlight.current = false;
     setBusy(false);
-    if (res.success) say('ok', `Put ${qty} × ${sku.code} on ${location}.`, { code: sku.code });
-    else say('bad', res.error || `Could not put ${sku.code} on ${location}.`);
+    if (res.success && res.data) {
+      const addedId = res.data.addedId;
+      const undo = () => undoWrite(
+        () => adjustStock({ code: sku.code, location, delta: -qty, ids: addedId ? [addedId] : [] }),
+        `Undone — took the ${sku.code} back off ${location}.`, `Could not take ${sku.code} back off ${location}.`, sku.code);
+      say('ok', `Put ${qty} × ${sku.code} on ${location}.`, { code: sku.code, undo });
+    } else say('bad', res.error || `Could not put ${sku.code} on ${location}.`);
     await reread();
     // Whatever was fired while that was in the air goes now, in the order it was fired.
     drain();
@@ -502,7 +552,7 @@ export default function LocationsBoard() {
   // POST /locations-transfer, which is a MOVE and not a remove plus an add, however much it reads like one: the row changes shelf and
   // keeps who it is promised to. That is the whole reason it is not two inv-adjust calls — see the route header.
   //
-  // IT IS THE ONE UNDOABLE THING ON THIS SCREEN, so it is the one that does not ask first. A wrong rack is a shrug, not a hunt: the
+  // IT IS UNDOABLE, so it does not ask first. A wrong rack is a shrug, not a hunt: the
   // route hands back the ids of the rows it actually landed there, and undo sends exactly those back the other way — never "whatever
   // is now sitting on that rack under this code", which could be somebody else's pick that happened to be the same size.
   //
@@ -659,8 +709,8 @@ export default function LocationsBoard() {
 
   // The other way round. A move goes back with the ids the route handed us; an add is taken off the DESTINATION, because that is the
   // only place it ever existed.
-  async function undoBasket(from: string, to: string, ops: UndoOp[]) {
-    if (inFlight.current) return;
+  async function undoBasket(from: string, to: string, ops: UndoOp[]): Promise<boolean> {
+    if (inFlight.current) return false;
     inFlight.current = true;
     setBusy(true);
     const stuck: string[] = [];
@@ -690,6 +740,7 @@ export default function LocationsBoard() {
     else say('bad', `Could not take ${stuck.join(', ')} back off ${to}.`);
     await reread();
     drain();
+    return stuck.length === 0;
   }
 
   // Changing area drops the rack with it — a shelf in C1 is not a thing you are still looking at once you have moved to C3-Front.
@@ -822,10 +873,14 @@ export default function LocationsBoard() {
     const res = await adjustStock({ code: line.code, location, delta: -1, ids: line.ids });
     inFlight.current = false;
     setBusy(false);
-    if (res.success) {
+    if (res.success && res.data) {
+      const touched = res.data.touched;
+      const undo = () => undoWrite(
+        () => restoreStock(location, touched),
+        `Undone — ${line.code} is back on ${location}.`, `Could not put ${line.code} back on ${location}.`, line.code);
       // Naming the state only when it is not FREE: on a free pair it is noise, and on the other two it is the thing the operator has
       // to know they have just done.
-      say('ok', `Took one ${line.code} off ${location}${line.state === 'FREE' ? '' : ` — it was ${STATE_WORD[line.state]}`}.`, { code: line.code });
+      say('ok', `Took one ${line.code} off ${location}${line.state === 'FREE' ? '' : ` — it was ${STATE_WORD[line.state]}`}.`, { code: line.code, undo });
     } else {
       say('bad', res.error || `Could not take ${line.code} off ${location}.`);
     }
@@ -1141,7 +1196,7 @@ export default function LocationsBoard() {
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <span><span className="font-semibold tabular-nums text-slate-900">{units}</span> {units === 1 ? 'unit' : 'units'}</span>
                   <span className="tabular-nums">{shelf.length} {shelf.length === 1 ? 'style' : 'styles'}</span>
-                  {/* QUIET UNTIL IT IS ASKED FOR. The one button on this screen that cannot be undone gets no red, no fill and no
+                  {/* QUIET UNTIL IT IS ASKED FOR. The biggest write on this screen gets no red, no fill and no
                       prominence — it sits last, in slate, and only turns red once it has been pressed and the footer is asking. A
                       destructive control that shouts is one that gets pressed by mistake; the weight belongs on the confirm, not on
                       the way in. Hidden entirely on an empty rack: there is nothing to take off. */}
@@ -1221,7 +1276,7 @@ export default function LocationsBoard() {
                           {r.undo && !r.undone && (
                             <button
                               type="button"
-                              onClick={() => undoRow(r)}
+                              onClick={() => r.undo && void undoRow(r.id, r.undo)}
                               disabled={busy}
                               className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-900 disabled:opacity-40"
                             >
@@ -1362,12 +1417,12 @@ export default function LocationsBoard() {
                   }
                 >
                   <span className="min-w-0 flex-1">{flash.text}</span>
-                  {/* Undo sits IN the sentence that reports the move, because that is the moment you realise it was the wrong rack. It
-                      is offered by transfers only — nothing else here can be taken back — and it disappears with the message. */}
+                  {/* Undo sits IN the sentence that reports the write, because that is the moment you realise it was the wrong rack
+                      or the wrong shoe. Every write that landed offers one, and it disappears with the message. */}
                   {flash.undo && (
                     <button
                       type="button"
-                      onClick={flash.undo}
+                      onClick={() => flash.undo && void undoRow(flash.logId, flash.undo)}
                       disabled={busy}
                       className="shrink-0 rounded px-1.5 py-0.5 text-sm font-semibold underline underline-offset-2 hover:bg-black/5 disabled:opacity-40"
                     >
@@ -1442,7 +1497,7 @@ export default function LocationsBoard() {
 }
 
 /*
-The one irreversible thing on this screen, so it is the only place that spends any red.
+The biggest write on this screen, so it is the only place that spends any red. It can be undone afterwards, but the confirm stays.
 
 WHAT IT SAYS IS THE WHOLE CONTROL. Picked and Amazon units are named separately because those are the two that cost something elsewhere: a picked unit is committed to a customer order
 that still expects it, and clearing the shelf tells that order nothing (owner, 2026-09-10 — "everything, with a warning"). If the rack
@@ -1467,7 +1522,7 @@ function ConfirmEmpty({ location, units, picked, amz, busy, onConfirm, onCancel 
       <div className="min-w-0 flex-1">
         <p className="text-sm text-rose-900">
           Take all <span className="font-semibold tabular-nums">{units}</span> {units === 1 ? 'unit' : 'units'} off{' '}
-          <span className="font-semibold">{location}</span>? This cannot be undone from here.
+          <span className="font-semibold">{location}</span>?
         </p>
         {flagged.length > 0 && (
           <p className="text-xs text-rose-800">

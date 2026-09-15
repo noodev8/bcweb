@@ -1539,7 +1539,13 @@ export interface InvAdjustResult {
   removed: number;
   units: number;
   local: number;
+  // Exactly which rows the call wrote, for the Location screen's undo: the row an add minted, and the rows a remove changed.
+  addedId: string | null;
+  touched: RemovedRow[];
 }
+
+// A row a removal changed — soft-deleted whole, or decremented by `units`. Handed back verbatim to restoreStock() to undo it.
+export interface RemovedRow { id: string; units: number; deleted: boolean }
 
 // Phase 2 WRITE — +/- local stock at ONE location for ONE size. `ids` are every localstock row in that (code, location) cluster (the
 // locations panel already holds them). Positive delta adds units, negative removes them; the server audits each change to bclog.
@@ -1547,7 +1553,10 @@ export interface InvAdjustResult {
 export function adjustStock(args: { code: string; location: string; delta: number; ids: string[] }) {
   return request<InvAdjustResult>(
     { url: '/inv-adjust', method: 'POST', data: args },
-    (b) => ({ added: b.added ?? 0, removed: b.removed ?? 0, units: b.units ?? 0, local: b.local ?? 0 })
+    (b) => ({
+      added: b.added ?? 0, removed: b.removed ?? 0, units: b.units ?? 0, local: b.local ?? 0,
+      addedId: (b.addedId as string | null) ?? null, touched: (b.touched as RemovedRow[]) || [],
+    })
   );
 }
 
@@ -2804,6 +2813,7 @@ export function getLocationStock(location: string) {
 // blind. Picked and Amazon-allocated units go too, which is why the screen must show those counts before it calls this.
 export interface LocationEmptyResult {
   location: string; units: number; rows: number; codes: number; picked: number; amz: number;
+  touched: RemovedRow[];       // every row cleared — restoreStock() puts the rack back
 }
 
 export function emptyLocation(location: string, units: number) {
@@ -2816,7 +2826,25 @@ export function emptyLocation(location: string, units: number) {
       codes: Number(b.codes) || 0,
       picked: Number(b.picked) || 0,
       amz: Number(b.amz) || 0,
+      touched: (b.touched as RemovedRow[]) || [],
     })
+  );
+}
+
+// Undo a removal (a Remove scan, a chip's minus, an Empty rack) by reversing exactly the rows it changed, so each unit comes back with
+// its own ordernum/allocated rather than as a fresh free pair. See locations-restore.js for the guards.
+export function restoreStock(location: string, rows: RemovedRow[]) {
+  return request<{ restored: number; skipped: number }>(
+    { url: '/locations-restore', method: 'POST', data: { location, rows } },
+    (b) => ({ restored: Number(b.restored) || 0, skipped: Number(b.skipped) || 0 })
+  );
+}
+
+// Undo a rack just added. Recent and empty only — this takes back a mistake, it does not retire a rack.
+export function undoAddLocation(location: string, barcode: string) {
+  return request<{ location: string; barcode: string }>(
+    { url: '/locations-add-undo', method: 'POST', data: { location, barcode } },
+    (b) => ({ location: (b.location as string) || location, barcode: (b.barcode as string) || barcode })
   );
 }
 

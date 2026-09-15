@@ -209,6 +209,8 @@ app.use('/locations-empty', require('./routes/locations-empty'));     // WRITES:
 app.use('/locations-find-sku', require('./routes/locations-find-sku')); // resolve a scanned barcode (or typed SKU) to a code, before the add
 app.use('/locations-transfer', require('./routes/locations-transfer')); // WRITES: one shelf to another, keeping ordernum/allocated — a move, not a remove+add
 app.use('/locations-add', require('./routes/locations-add'));         // WRITES: a new rack in `location` — name typed, LC- label and pickorder chosen server-side
+app.use('/locations-restore', require('./routes/locations-restore')); // WRITES: undo a removal — reverse exactly the rows inv-adjust/locations-empty reported
+app.use('/locations-add-undo', require('./routes/locations-add-undo')); // WRITES: undo a rack just added — recent and empty only
 
 // --- Order Status module, CUSTOMER ORDERS stage (ordertype 1 — Shopify customer orders being fulfilled) ---
 // The FULFILMENT side, ported from the legacy PowerBuilder Status screen; the routes above are the PROCUREMENT side. They share the

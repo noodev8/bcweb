@@ -46,8 +46,10 @@ Request Payload:
 }
 
 Success Response:
-{ "return_code": "SUCCESS", "added": 0, "removed": 1, "units": 5, "local": 41 }
+{ "return_code": "SUCCESS", "added": 0, "removed": 1, "units": 5, "local": 41,
+  "addedId": null, "touched": [{ "id": "WS7-...", "units": 1, "deleted": true }] }
   // units = the line's new unit total at this code+location; local = the size's new local total across all locations (drives the chip)
+  // addedId / touched = exactly which rows this call wrote, for the Location screen's undo (see locations-restore.js)
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -103,6 +105,12 @@ router.post('/', async (req, res) => {
 
       let added = 0;
       let removed = 0;
+      // WHAT THIS CALL CHANGED, row by row, so the Location screen can undo it EXACTLY (additive — the Inventory panel ignores both):
+      //   addedId  the row an add minted; undo peels it back off with ids=[addedId]
+      //   touched  the rows a remove changed — soft-deleted, or decremented by `units`; POST /locations-restore reverses them, which
+      //            puts back the unit's own ordernum/allocated rather than minting a free pair in its place
+      let addedId = null;
+      const touched = [];
 
       if (delta > 0 && ids.length === 0) {
         // ADD TO A (POSSIBLY NEW) LOCATION — no existing row to clone (slice 2). A fresh placement is takeable free stock, so it is
@@ -122,6 +130,7 @@ router.post('/', async (req, res) => {
           [newId, stamp, location, groupid, code, supplier, delta, brand]
         );
         added = delta;
+        addedId = newId;
       } else {
         // Existing shelf line: the live cluster is the given ids still at this code+location and not deleted. Smallest qty first, so a
         // -1 clears a stray qty=1 row before nibbling a big one. Row-locked so a concurrent adjust can't double-spend units.
@@ -150,6 +159,7 @@ router.post('/', async (req, res) => {
             [newId, stamp, t.ordernum, location, t.groupid, code, t.supplier, delta, t.brand, t.assigned, t.pickorder, t.allocated]
           );
           added = delta;
+          addedId = newId;
         } else {
           // Peel |delta| units off the cluster, smallest row first. Decrement a row that has more than we still need; otherwise
           // soft-delete it and carry the remainder onto the next row. Capped at what the cluster holds.
@@ -158,9 +168,11 @@ router.post('/', async (req, res) => {
             if (remaining <= 0) break;
             if (r.qty > remaining) {
               await client.query(`UPDATE localstock SET qty = qty - $1, updated = $2 WHERE id = $3`, [remaining, stamp, r.id]);
+              touched.push({ id: r.id, units: remaining, deleted: false });
               remaining = 0;
             } else {
               await client.query(`UPDATE localstock SET deleted = 1, updated = $1 WHERE id = $2`, [stamp, r.id]);
+              touched.push({ id: r.id, units: Number(r.qty), deleted: true });
               remaining -= r.qty;
             }
           }
@@ -189,7 +201,7 @@ router.post('/', async (req, res) => {
         `SELECT COALESCE(SUM(qty), 0) AS local FROM localstock WHERE code = $1 AND COALESCE(deleted, 0) = 0`,
         [code]
       );
-      return { added, removed, units: Number(lineRes.rows[0].units) || 0, local: Number(sizeRes.rows[0].local) || 0 };
+      return { added, removed, units: Number(lineRes.rows[0].units) || 0, local: Number(sizeRes.rows[0].local) || 0, addedId, touched };
     });
 
     if (result === null) {
