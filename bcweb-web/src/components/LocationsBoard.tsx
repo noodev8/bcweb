@@ -138,7 +138,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
+  addLocation, adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
   type InvLocationState, type LocationStockLine,
 } from '@/lib/api';
 import { AREA_LABEL, AREA_ORDER, areaOf, isAmazonBay } from '@/lib/locationsUi';
@@ -285,6 +285,8 @@ export default function LocationsBoard() {
   // ALWAYS OPENS ON DISPLAY, never remembered. Display is the only tab that writes nothing, and an operator walking up to a machine
   // somebody else left on Remove would find out it was not Display one pair too late.
   const [panel, setPanel] = useState<Panel>('display');
+  // The new-rack box at the foot of the list: null = closed, a string = open with that much typed.
+  const [newRack, setNewRack] = useState<string | null>(null);
 
   // Every rack in the building, in walking order. One call, cached for the session — the list of shelves changes about never, so a
   // revalidate on every rack click would be load on the live DB for a list that is already right.
@@ -421,6 +423,28 @@ export default function LocationsBoard() {
     }
     // Either way the screen re-reads: on success to show the empty shelf, on a CHANGED refusal because the rack moved under us.
     await reread();
+  }
+
+  // A NEW RACK. The list re-reads BEFORE the rack is selected, because `selected` only honours a rack the list knows — selecting first
+  // would leave the panel asking for a rack while the one just made sat unhighlighted. The success line is said after goToRack, which
+  // clears the answer band, and names the label because that is the next job: printing it.
+  async function createRack() {
+    const name = (newRack ?? '').trim();
+    if (!name || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    const res = await addLocation(name);
+    inFlight.current = false;
+    setBusy(false);
+    if (res.success && res.data) {
+      const { location, barcode } = res.data.rack;
+      setNewRack(null);
+      await refreshRacks();
+      goToRack(location);
+      say('ok', `Added ${location} — its label is ${barcode}.`);
+    } else {
+      say('bad', res.error || `Could not add ${name}.`);
+    }
   }
 
   // ONE UNIT ON OR OFF ONE SHELF LINE — the existing inv-adjust write, unchanged and shared with the Inventory panel, which is why
@@ -1048,6 +1072,55 @@ export default function LocationsBoard() {
               );
             })}
           </ul>
+
+          {/* NEW RACK, at the foot of the list it adds to. Only a name is asked for: the LC- label and the walking order are the
+              server's to choose (locations-add.js), and the label is said back so it can be printed. Hidden mid-transfer, when a
+              click on this list means "put the basket here" and a half-typed rack name is not somewhere a shoe can go yet. */}
+          {!transfer && (
+            <div className="shrink-0 border-t border-slate-100 p-2">
+              {newRack === null ? (
+                <button
+                  type="button"
+                  onClick={() => setNewRack('')}
+                  className="flex w-full items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                >
+                  <PlusSmallIcon className="h-4 w-4" />
+                  New rack
+                </button>
+              ) : (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); void createRack(); }}
+                  className="flex items-center gap-1.5"
+                >
+                  <input
+                    autoFocus
+                    value={newRack}
+                    maxLength={50}
+                    onChange={(e) => setNewRack(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setNewRack(null); }}
+                    placeholder="Rack name, e.g. C3-Front-28"
+                    disabled={busy}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy || !newRack.trim()}
+                    className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRack(null)}
+                    title="Cancel"
+                    className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600"
+                  >
+                    <XMarkIcon className="h-4 w-4" />
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
         </aside>
 
         {/* ---- The shelf itself. ---- */}

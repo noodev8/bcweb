@@ -2820,6 +2820,15 @@ export function emptyLocation(location: string, units: number) {
   );
 }
 
+// Add a new rack. Only the name is sent: the LC- label and the walking order are chosen server-side (see locations-add.js), and the
+// label comes back so the screen can say what to print.
+export function addLocation(location: string) {
+  return request<{ rack: { location: string; barcode: string; pickorder: number } }>(
+    { url: '/locations-add', method: 'POST', data: { location } },
+    (b) => ({ rack: b.rack as { location: string; barcode: string; pickorder: number } })
+  );
+}
+
 // Resolve a scan to the one size code a stock write needs. The add box on the Locations screen takes a BARCODE, inv-adjust takes a
 // code, and this is what sits between them — so an unreadable scan is caught before anything is written rather than after. Matching is
 // Goods In's rule: the code exactly, or skumap.ean with the trailing 'B' stripped.
