@@ -153,8 +153,35 @@ function DrillContent() {
     </div>
   ) : null);
 
+  // THE IDENTITY LINE, WITH THE WAY INTO ADD / MODIFY ON IT (owner, 2026-09-16). The jump belongs beside the groupid rather than on
+  // it: the code is the thing operators COPY — that is what the button next to it is for — so making the text itself a link would
+  // take a click that used to start a text selection and navigate with it. A labelled pill says where it goes before you commit,
+  // which matters on a screen you arrive at mid-job with a price half-typed. Same idiom Inventory's breakdown already uses.
+  //
+  // SAME TAB, AND IT THREADS THE WHOLE CHAIN BACK (owner: "I will go back and forth"). `from` carries this page's own url INCLUDING
+  // its own ?from=, so Add / Modify returns to this style, and this style's back arrow still returns to the list it came from —
+  // a Google Ads grid, with its filter, all the way at the end of it. `back` is the groupid, so the arrow over there names the
+  // style rather than a path.
+  const priceHref = `/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(backTo)}`;
+  const addModifyHref =
+    `/products?groupid=${encodeURIComponent(groupid)}` +
+    `&from=${encodeURIComponent(priceHref)}&back=${encodeURIComponent(groupid)}`;
+
   return (
-    <AppShell title={data?.header.title || groupid} subtitle={groupid} subtitleCopy backHref={backTo} backLabel={backLabel} headerRight={thumb}>
+    <AppShell
+      title={data?.header.title || groupid}
+      // THE PRODUCT NAME IS THE WAY INTO ADD / MODIFY (owner, 2026-09-16). It started as a pill beside the groupid and that was one
+      // more thing in a header that is already carrying a back arrow, a code, a copy button and a thumbnail — "an extra button and
+      // noise". The title is the honest place for it: the heading names the product, and Add / Modify is where the product itself
+      // is edited, so the link goes exactly where the words already point. The groupid keeps its copy button and stays plain text.
+      titleHref={addModifyHref}
+      titleTitle="Open this product in Add / Modify — title, attributes, sizes, images"
+      subtitle={groupid}
+      subtitleCopy
+      backHref={backTo}
+      backLabel={backLabel}
+      headerRight={thumb}
+    >
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 

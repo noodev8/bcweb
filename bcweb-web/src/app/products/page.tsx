@@ -307,6 +307,12 @@ function ProductsContent() {
   // Deep link in from elsewhere (Inventory's Detail panel jumps here by groupid). `?groupid=` searches and loads that product on
   // arrival, so the operator lands on the edit panel rather than an empty search box they'd have to retype the code into.
   const initialGroupid = searchParams.get('groupid') || '';
+  // WHERE "BACK" GOES, threaded via ?from=/&back= - the convention the pricing, Amazon and analytics screens already use. This
+  // screen is increasingly arrived at FROM somewhere (Inventory, the Google Ads drill, and now a style's price screen), and a back
+  // arrow that always said "Dashboard" sent the operator to the top of the app rather than to the job they were doing. Arriving
+  // from the dashboard itself passes no params and is unchanged.
+  const backHref = searchParams.get('from') || '/dashboard';
+  const backLabel = searchParams.get('back') || 'Dashboard';
 
   // ---- Search state (left) -------------------------------------------------------------------------------------------------------
   const [term, setTerm] = useState('');
@@ -529,7 +535,7 @@ function ProductsContent() {
   }
 
   return (
-    <AppShell title="Add / Modify Product" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell title="Add / Modify Product" backHref={backHref} backLabel={backLabel}>
       {/* Search bar — fills the shared max-w-5xl column (same as the Pricing "Find a product" bar), so it lines up with the header,
           the results and the detail panel below. */}
       <form onSubmit={onSearch} className="mb-5 flex gap-2">
