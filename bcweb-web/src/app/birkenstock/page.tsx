@@ -47,7 +47,7 @@ fee, packing, postage and the returns haircut all already out) LESS the Google a
 the grid: Top / High / Mid / Low (£300/200/100/0) and All. Its job is to order the sheet, because the buy is made top down against a
 budget: work the top earners, then drop a level and work the next tier. Pressing a level sorts descending, so the list only ever grows
 downwards and the tier already dealt with stays above the new arrivals. The steps wear NAMES rather than the pound figures they stand
-for (owner, 2026-09-05 — see GROSS_LEVELS); the figure is on the hover and on the chip in the strip.
+for (owner, 2026-09-05 — see GROSS_LEVELS); the figure is on the button's hover.
 
 WHY KEPT AND NOT GROSS (owner, 2026-09-08). This column was gross profit — price ex VAT minus cost, times units — chosen because
 selling expenses are near-flat per unit and would have shifted every row by about the same amount. Advertising is not like that: over
@@ -153,12 +153,6 @@ const GROSS_LEVELS: { label: string; min: number }[] = [
 // moving is visible in a way that numbers quietly improving are not.
 const ADS_STALE_DAYS = 7;    // under this, show NOTHING — the lag moves Kept ~2% and no band with it, so there is nothing to act on
 const ADS_DEAD_DAYS = 21;    // past three weeks, treat it as broken rather than late
-
-// The name for a threshold, for the chip in the count strip — which shows both, because once a level is ON, the number behind it is
-// the useful half ("what am I working to?") and no longer a button label competing for the eye.
-function grossLabel(min: number): string {
-  return GROSS_LEVELS.find((l) => l.min === min)?.label ?? `£${min}+`;
-}
 
 // ---- Review / park --------------------------------------------------------------------------------------------------------------
 // The legacy screen's "1 2 3" (review-date.txt). Once a style has been ORDERED there is nothing left to decide about it this season,
@@ -374,9 +368,22 @@ export default function BirkenstockPage() {
   //   shift-click  — everything between the anchor and this row, in the order currently ON SCREEN
   // Nothing here is written to the database. Selection marks; Cut hides. Neither touches a product.
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
   // Where a shift-range measures FROM. Set by every plain and ctrl click, deliberately NOT moved by a shift-click: keeping it still is
   // what lets a range be stretched and shrunk from the same starting line, which is the behaviour a Windows list has.
   const [anchor, setAnchor] = useState<string | null>(null);
+
+  // ---- MARKS DO NOT SURVIVE A CHANGE OF LIST (owner, 2026-09-15) --------------------------------------------------------------------
+  // Every narrowing clears the marks BEFORE it re-filters. A mark means "this row, in front of me, is one I am about to Cut or Park",
+  // and the moment the list under it changes that is no longer a claim anyone has checked: the marked rows can leave the screen
+  // entirely while Cut and Park go on acting on them, so a press meant for the four styles on screen quietly takes twelve from a
+  // filter two hunts ago. Park WRITES TO THE DATABASE, which makes the invisible version of that unrecoverable from the screen.
+  // Applied to the performance levels, All, the filter boxes and Reset alike — the rule is the change of list, not which control
+  // caused it. Sorting is deliberately NOT included: it reorders the same rows and every mark stays true.
+  const clearMarks = useCallback(() => {
+    setSelected((prev) => (prev.size === 0 ? prev : new Set()));
+    setAnchor(null);
+  }, []);
 
   // CUT — rows pushed out of the view by hand. A PURE DISPLAY FILTER (owner, 2026-09-04): nothing is written, nothing is remembered
   // past this visit. It exists because the text boxes cannot always express "not that one" without over-matching, and because working
@@ -395,6 +402,31 @@ export default function BirkenstockPage() {
   const today = useMemo(() => todayIso(), []);
 
   const containsRef = useRef<HTMLInputElement>(null);
+
+  // ---- COPY THE GROUPID (owner, 2026-09-15) ---------------------------------------------------------------------------------------
+  // The groupid is the handle every other system takes — the legacy screen, Shopify admin, a supplier email — and it was being read off
+  // the screen and retyped. Clicking the code itself copies it.
+  // The click does NOT bubble: the rest of the row marks on click, and copying a code is not a statement about wanting to Cut or Park
+  // it. Double-click still reaches the row, so deliveries open from this cell like any other.
+  // THE CONFIRMATION CHANGES NO LAYOUT — the code turns green for a moment and turns back. It deliberately does not add a tick, a
+  // toast or a line of text: anything that takes up room moves the grid under a mouse that is mid-click, which is the whole reason
+  // the count strip above was emptied out.
+  const [copied, setCopied] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onCopyGroupid = useCallback(async (e: React.MouseEvent, groupid: string) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(groupid);
+    } catch {
+      // A browser that refuses the clipboard (an insecure origin, a denied permission) should say nothing happened rather than flash
+      // green over a copy that never took place.
+      return;
+    }
+    setCopied(groupid);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(null), 900);
+  }, []);
 
   // The whole catalogue, once. Re-read on Reset (which is the "start a fresh hunt" moment, so it doubles as refresh-from-DB — the
   // legacy screen's Reset did exactly this). `busy` rather than isLoading so a Reset re-fetch spins too.
@@ -449,24 +481,6 @@ export default function BirkenstockPage() {
     return out;
   }, [indexed, steps, minGross, cut, today]);
 
-  // How many styles the band is currently holding back BECAUSE THEY ARE PARKED — reported next to the count so a short list is never
-  // a mystery. Without it the only evidence of the park would be styles silently missing from a list the operator is trusting.
-  const parkedHidden = useMemo(() => {
-    if (minGross === null) return 0;
-    return applySteps(indexed, steps)
-      .map((x) => x.row)
-      .filter((r) => r.kept !== null && r.kept >= minGross && isParked(r, today) && !cut.has(r.groupid)).length;
-  }, [indexed, steps, minGross, cut, today]);
-
-  // How many of the rows this filter WOULD show have been cut by hand — the only feedback the cut gives, and enough of it: it says the
-  // list is short because you shortened it, without offering to undo a thing the owner undoes with Reset.
-  const cutInView = useMemo(() => {
-    if (cut.size === 0) return 0;
-    let out = applySteps(indexed, steps).map((x) => x.row);
-    if (minGross !== null) out = out.filter((r) => r.kept !== null && r.kept >= minGross && !isParked(r, today));
-    return out.filter((r) => cut.has(r.groupid)).length;
-  }, [indexed, steps, minGross, cut, today]);
-
   // Sort what is on screen. groupid is the stable tie-break (always ascending) so equal rows keep a fixed order instead of jittering.
   // Sorting on `stock` follows the MODE — sort by what you are looking at, or the order stops matching the numbers under it.
   const sorted = useMemo(() => {
@@ -504,10 +518,11 @@ export default function BirkenstockPage() {
   // in that order. Clearing it leaves the sort alone — by then the operator is working the list and re-sorting under them is rude.
   const applyGross = useCallback((v: number | null) => {
     setMinGross(v);
+    clearMarks();
     if (v === null) return;
     setSortKey('gross');
     setSortDir('desc');
-  }, []);
+  }, [clearMarks]);
 
   // The groupids in the order they are ON SCREEN. A shift-range has to measure down the visible order, not down the underlying data:
   // sort by profit, shift-click two rows, and the range you get must be the block of rows your eye traced between them.
@@ -593,6 +608,7 @@ export default function BirkenstockPage() {
     // Probing rather than reacting to an empty render means the dead intermediate state never paints.
     const startFresh = steps.length > 0 && applySteps(indexed, [...steps, ...next]).length === 0;
     setSteps(startFresh ? next : [...steps, ...next]);
+    clearMarks();
     // Clear ONLY the boxes this commit actually took a term from, and DO NOT move the focus. Both matter now that a blur can commit:
     // pulling the caret back to Contains as you tab away from it would fight the very keystroke that fired the commit, and clearing
     // the other box would swallow a term the operator had already typed into it.
@@ -625,8 +641,7 @@ export default function BirkenstockPage() {
     setSortKey('groupid');
     setSortDir('asc');
     setPlanned(null);
-    setSelected(new Set());
-    setAnchor(null);
+    clearMarks();
     setCut(new Set());
     setParkError(null);
     reload();
@@ -795,42 +810,19 @@ export default function BirkenstockPage() {
                 ⚠ Ads only to {adsAsOf} <span className="text-slate-400">· {adsDaysOld} days behind</span>
               </span>
             )}
-            {selected.size > 0 && (
-              <span className="whitespace-nowrap text-slate-500">
-                <span className="font-semibold text-slate-800">{selected.size}</span> marked
-              </span>
-            )}
-            {parkedHidden > 0 && (
-              <span className="whitespace-nowrap text-slate-400">
-                {parkedHidden} parked <span className="text-slate-300">· press All to see them</span>
-              </span>
-            )}
-            {cutInView > 0 && (
-              <span className="whitespace-nowrap text-slate-400">
-                {cutInView} cut <span className="text-slate-300">· Reset restores</span>
-              </span>
-            )}
-            {/* The level's chip carries the POUNDS the buttons no longer say. Once a level is on, the threshold behind it stops being
-                a label competing for the eye and becomes the thing you are working to, which is worth stating exactly. */}
-            {minGross !== null && (
-              <span className="whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-                {grossLabel(minGross)}{' '}
-                <span className="font-medium text-slate-800">
-                  {minGross === 0 ? 'kept anything' : `£${money(minGross)}+`}
-                </span>
-              </span>
-            )}
+            {/* WHAT THIS STRIP SAYS, AND WHAT IT STOPPED SAYING (owner, 2026-09-15). It had grown into a running commentary —
+                a mark count, a parked count, a cut count, the level's pounds, and a line of gesture hints — read once and then
+                never again, while crowding the two controls that are the actual point of the row. All of it came out.
+                It also fixes the double-click: every one of those counts appeared or changed ON A CLICK, so the strip re-wrapped
+                and the whole grid moved between the two halves of a double-click, landing the second one on the wrong row. What is
+                left is fixed for a given filter, so nothing here can change the page's height while the operator is clicking.
+                The filter's own step chips stay: the boxes clear when a term commits, so these are the only record of what is
+                narrowing the list. The level is still legible from its pressed button above. */}
             {steps.map((s, i) => (
               <span key={i} className="whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
                 {s.op === 'has' ? 'contains' : 'not'} <span className="font-medium text-slate-800">{s.term}</span>
               </span>
             ))}
-            {/* THE GESTURES, SAID ONCE, HERE (2026-09-05). They used to be a `title` on every row, which meant the browser's own
-                tooltip surfaced over the grid a second after the mouse stopped anywhere on it — a black box across the size curve the
-                operator had stopped to read. A grid is the one place a hover hint costs more than it gives. */}
-            <span className="hidden whitespace-nowrap text-xs text-slate-400 xl:inline">
-              Click to mark · shift-click for a range · double-click for deliveries
-            </span>
 
             {/* The two things you do to marked rows, at the right-hand end of the strip that says how many are marked. */}
             <div className="ml-auto flex items-center gap-2">
@@ -1008,7 +1000,18 @@ export default function BirkenstockPage() {
                       ) : (
                         <ChevronRightIcon className="mr-1 inline h-3 w-3 text-slate-300" />
                       )}
-                      {r.groupid}
+                      {/* The code is the click target, not the whole cell — the chevron beside it belongs to the row's own gestures. */}
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onClick={(e) => onCopyGroupid(e, r.groupid)}
+                        title={`Copy ${r.groupid}`}
+                        className={`cursor-copy rounded px-0.5 ${
+                          copied === r.groupid ? 'font-medium text-emerald-600' : 'hover:text-slate-900 hover:underline'
+                        }`}
+                      >
+                        {r.groupid}
+                      </span>
                     </td>
                     <td className="truncate px-2 py-1.5 text-slate-800" title={r.title || ''}>
                       {styleName(r.title) || <span className="text-slate-400">—</span>}
