@@ -249,6 +249,10 @@ app.use('/birk-tracker-scan', require('./routes/birk-tracker-scan'));
 // utils/birkInvoice.js holds the parse, and opens with why the rules there must stay in step with that script.
 app.use('/birk-invoice-preview', require('./routes/birk-invoice-preview')); // READ ONLY: what applying this PDF would do
 app.use('/birk-invoice-commit', require('./routes/birk-invoice-commit'));   // WRITES: invoiced += qty + stamp, or add a missing row
+// Load order: the Birkenstock portal's order export (.xlsx) into the book — the port of the PowerBuilder "Bulk Upload". Same two-step
+// shape as Load invoice. utils/birkOrder.js holds the transforms; utils/xlsxRead.js is the dependency-free spreadsheet reader.
+app.use('/birk-order-preview', require('./routes/birk-order-preview')); // READ ONLY: new / changed / same per line
+app.use('/birk-order-commit', require('./routes/birk-order-commit'));   // WRITES: insert new lines, restate order fields on revised ones
 // DESTRUCTIVE, and the rows are unrecoverable — no soft-delete, no archive. Guarded by a count the client must get right; read the
 // route header before touching either guard.
 app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines

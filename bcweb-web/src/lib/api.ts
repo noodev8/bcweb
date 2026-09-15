@@ -3259,4 +3259,96 @@ export function commitBirkInvoice(args: { invoice_num: string; invoice_date: str
   );
 }
 
+// =============================================================================================================================
+// Birk Tracker — LOAD ORDER. The Birkenstock portal's order export (.xlsx) into the book; the port of the PowerBuilder "Bulk
+// Upload". Same two steps as Load invoice: preview is read-only, commit applies the lines the operator approved. The transforms
+// (code, bksize, due month) are server-side in utils/birkOrder.js.
+// =============================================================================================================================
+
+// How the style part of the codes was decided — see utils/birkOrder.js. 'rule' and 'guess' mean the style is new to the system,
+// so the screen offers it for correction before loading.
+export type BirkOrderStyleSource = 'skumap' | 'book' | 'rule' | 'guess';
+
+export interface BirkOrderLine {
+  code: string;
+  size: string;             // EU size, the code's suffix
+  bksize: string;           // Birkenstock's mm/UK label — '' when the size is off the table
+  requested: number;        // the CONFIRMED quantity
+  cost: string | null;      // 2dp strings, as the book stores them
+  rrp: string | null;
+  due: string;              // JAN..DEC
+  placedate: string;        // dd/MM/yyyy
+  ean: string;
+  in_skumap: boolean;
+  // new: not in the book — inserted. changed: in the book with different order fields — restated. same: nothing to do.
+  kind: 'new' | 'changed' | 'same';
+  existing?: {
+    placedate: string; bksize: string; requested: number | null; cost: string; rrp: string; due: string; ean: string;
+    invoiced: number; arrived: number;
+  };
+}
+
+export interface BirkOrderStyle {
+  ordernum: string;
+  article: string;
+  material: string;
+  colour: string;
+  width: string;
+  style: string;
+  style_source: BirkOrderStyleSource;
+  cost: string | null;
+  rrp: string | null;
+  currency: string;
+  due: string;
+  placedate: string;
+  lines: BirkOrderLine[];
+}
+
+export interface BirkOrderPreview {
+  orders: string[];
+  lines_read: number;
+  skipped_unconfirmed: number;
+  pairs: number;
+  currencies: string[];
+  styles: BirkOrderStyle[];
+  // Book rows for these orders the file does not mention. Reported only — nothing deletes them.
+  not_in_file: { ordernum: string; code: string; requested: number | null; invoiced: number; arrived: number }[];
+}
+
+export function previewBirkOrder(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return request<BirkOrderPreview>(
+    { url: '/birk-order-preview', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 },
+    (b) => ({
+      orders: (b.orders as string[]) || [],
+      lines_read: Number(b.lines_read) || 0,
+      skipped_unconfirmed: Number(b.skipped_unconfirmed) || 0,
+      pairs: Number(b.pairs) || 0,
+      currencies: (b.currencies as string[]) || [],
+      styles: (b.styles as BirkOrderStyle[]) || [],
+      not_in_file: (b.not_in_file as BirkOrderPreview['not_in_file']) || [],
+    })
+  );
+}
+
+export interface BirkOrderCommitLine {
+  op: 'insert' | 'update';
+  ordernum: string; code: string; placedate: string; bksize: string; requested: number;
+  cost: string | null; rrp: string | null; due: string; ean: string;
+}
+
+export function commitBirkOrder(args: { lines: BirkOrderCommitLine[] }) {
+  return request<{ inserted: number; updated: number; pairs: number; conflicts: string[]; missing: string[] }>(
+    { url: '/birk-order-commit', method: 'POST', data: args },
+    (b) => ({
+      inserted: Number(b.inserted) || 0,
+      updated: Number(b.updated) || 0,
+      pairs: Number(b.pairs) || 0,
+      conflicts: (b.conflicts as string[]) || [],
+      missing: (b.missing as string[]) || [],
+    })
+  );
+}
+
 export default api;

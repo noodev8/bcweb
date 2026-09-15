@@ -105,10 +105,9 @@ Six lines in the live book carry no EAN and can never be scanned; they are keyed
 stay exactly where they are.
 
 LOAD ORDER and LOAD INVOICE open a real file dialog (owner, 2026-09-14), starting in Downloads on the browsers that allow it to be
-asked. What they do NOT do yet is read the file: the chosen file's name, size and first lines are reported back and nothing is
-imported, because the parser has to be written against a real Birkenstock file rather than an imagined one — a parser built on a
-guessed layout is worse than no button, since it fails quietly against the real thing. The first lines are echoed deliberately: that
-header row is most of what building the importer needs.
+asked. Both are live and both are two-step — the server reads the file and returns a plan, a dialog reviews it, and only its own
+button writes. Load order takes the portal's .xlsx order export (BirkOrderDialog, utils/birkOrder.js on the server — the port of the
+PowerBuilder Bulk Upload); Load invoice takes the invoice PDF (BirkInvoiceDialog, utils/birkInvoice.js).
 They are named for what they load rather than for the act of loading — "Upload" stopped meaning anything once there were two of them,
 and the operator is holding one piece of paper or the other. Load order feeds the Ordered column; Load invoice feeds Invoiced plus the
 invoice number and date.
@@ -126,10 +125,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival, previewBirkInvoice,
-  type BirkTrackerLine, type BirkTrackerScanLine, type BirkInvoicePreview,
+  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival, previewBirkInvoice, previewBirkOrder,
+  type BirkTrackerLine, type BirkTrackerScanLine, type BirkInvoicePreview, type BirkOrderPreview,
 } from '@/lib/api';
 import BirkInvoiceDialog from '@/components/BirkInvoiceDialog';
+import BirkOrderDialog from '@/components/BirkOrderDialog';
 
 // --- the three states ----------------------------------------------------------------------------------------------------------
 type State = 'awaiting' | 'transit' | 'arrived';
@@ -228,6 +228,9 @@ export default function BirkTrackerBook() {
   // The parsed invoice awaiting review. Non-null means the dialog is up; nothing has been written at that point.
   const [invoicePreview, setInvoicePreview] = useState<BirkInvoicePreview | null>(null);
   const [invoiceBusy, setInvoiceBusy] = useState(false);
+  // The same, for Load order.
+  const [orderPreview, setOrderPreview] = useState<BirkOrderPreview | null>(null);
+  const [orderBusy, setOrderBusy] = useState(false);
 
   // --- scanning a delivery in ----------------------------------------------------------------------------------------------------
   // THERE IS NO SCAN MODE (owner, 2026-09-14: "i wanna be able to just scan"). The page listens for the gun the whole time it is
@@ -549,7 +552,14 @@ export default function BirkTrackerBook() {
   // can be told WHERE to start — `showOpenFilePicker({ startIn: 'downloads' })`, and only on a secure origin, which localhost and
   // Vercel both are. Everywhere else falls back to a plain file input, which opens wherever the OS last left the dialog. The
   // fallback is not a lesser path to be removed later: Safari and Firefox have no equivalent at all.
-  async function chooseFile(): Promise<File | null> {
+  // Each loader offers only its own file type, so the dialog opens showing the one file the operator is looking for.
+  const FILE_TYPES = {
+    order: { description: 'Birkenstock order export', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: '.xlsx' },
+    invoice: { description: 'Birkenstock invoice', mime: 'application/pdf', ext: '.pdf' },
+  } as const;
+
+  async function chooseFile(kind: keyof typeof FILE_TYPES): Promise<File | null> {
+    const t = FILE_TYPES[kind];
     const picker = (window as unknown as {
       showOpenFilePicker?: (o: unknown) => Promise<Array<{ getFile(): Promise<File> }>>;
     }).showOpenFilePicker;
@@ -559,7 +569,7 @@ export default function BirkTrackerBook() {
         const [handle] = await picker({
           startIn: 'downloads',
           multiple: false,
-          types: [{ description: 'Birkenstock file', accept: { 'text/csv': ['.csv'], 'text/plain': ['.txt'], 'application/vnd.ms-excel': ['.xls', '.xlsx'] } }],
+          types: [{ description: t.description, accept: { [t.mime]: [t.ext] } }],
         });
         return await handle.getFile();
       } catch {
@@ -570,7 +580,7 @@ export default function BirkTrackerBook() {
     return new Promise((resolve) => {
       const el = document.createElement('input');
       el.type = 'file';
-      el.accept = '.csv,.txt,.xls,.xlsx';
+      el.accept = t.ext;
       el.onchange = () => resolve(el.files?.[0] ?? null);
       el.click();
     });
@@ -579,7 +589,7 @@ export default function BirkTrackerBook() {
   // LOAD INVOICE. Parses the PDF server-side and matches it against the order book, then hands the plan to BirkInvoiceDialog for
   // review. NOTHING IS WRITTEN by this — the preview route is read-only, and the dialog's own button does the commit.
   async function loadInvoice() {
-    const file = await chooseFile();
+    const file = await chooseFile('invoice');
     if (!file) return;
     setNotice(null);
     setInvoiceBusy(true);
@@ -594,22 +604,22 @@ export default function BirkTrackerBook() {
     setInvoicePreview(res.data!);
   }
 
-  // LOAD ORDER is still only a picker: the order-confirmation layout has not been seen yet, so the file is described back rather than
-  // silently dropped, and the first lines are echoed because that header row is most of what writing the parser needs.
+  // LOAD ORDER. Reads the portal's .xlsx export server-side and matches it against the book, then hands the plan to BirkOrderDialog.
+  // NOTHING IS WRITTEN by this — same shape as Load invoice above.
   async function loadOrderFile() {
-    const file = await chooseFile();
+    const file = await chooseFile('order');
     if (!file) return;
-    let head = '';
-    if (/\.(csv|txt)$/i.test(file.name)) {
-      try {
-        head = (await file.text()).split(/\r?\n/).slice(0, 2).join('  ⏎  ').slice(0, 240);
-      } catch { /* unreadable is not worth an error here — the name and size still tell us something */ }
+    setNotice(null);
+    setOrderBusy(true);
+    const res = await previewBirkOrder(file);
+    setOrderBusy(false);
+    if (!res.success) {
+      // NOT_AN_XLSX / NOT_AN_ORDER_FILE / NO_ORDER_LINES are what pointing this at the wrong file looks like, and the server's message
+      // already says which (naming the missing columns, for the second).
+      setNotice({ tone: 'warn', text: res.error || 'That order file could not be read' });
+      return;
     }
-    setNotice({
-      tone: 'warn',
-      text: `Picked ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB). Reading a Birkenstock order confirmation is not `
-        + `built yet — it needs the real layout first.${head ? ` First lines: ${head}` : ''}`,
-    });
+    setOrderPreview(res.data!);
   }
 
   // Exports what is on screen: the filter is part of the question. Flat, one row per size, every legacy column — a spreadsheet has no
@@ -720,8 +730,7 @@ export default function BirkTrackerBook() {
 
         <span className="ml-auto" />
 
-        {/* THE TWO FILE LOADERS. The dialog is live (owner) and opens in Downloads where the browser allows it; what is not built is
-            the PARSING, so a chosen file is described back rather than swallowed. See loadFile.
+        {/* THE TWO FILE LOADERS. Both open in Downloads where the browser allows it, and both review before they write.
             They sit together and are named for WHAT THEY LOAD rather than for the act of loading: "Upload" alone stopped meaning
             anything the moment there were two of them, and an operator holding a piece of paper knows which one they have.
               Load order    the Birkenstock order confirmation — what we asked for, i.e. the Ordered column.
@@ -729,10 +738,11 @@ export default function BirkTrackerBook() {
         <button
           type="button"
           onClick={loadOrderFile}
-          title="Choose a Birkenstock order confirmation file"
-          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          disabled={orderBusy}
+          title="Choose the Birkenstock portal's order export (.xlsx)"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
-          <ArrowUpTrayIcon className="h-4 w-4" /> Load order
+          <ArrowUpTrayIcon className="h-4 w-4" /> {orderBusy ? 'Reading…' : 'Load order'}
         </button>
         <button
           type="button"
@@ -1135,6 +1145,19 @@ export default function BirkTrackerBook() {
           onClose={() => setInvoicePreview(null)}
           onApplied={async (summary) => {
             setInvoicePreview(null);
+            await refresh();
+            setNotice({ tone: 'ok', text: summary });
+          }}
+        />
+      )}
+
+      {/* The review step of Load order. Read-only until its own Load button — see BirkOrderDialog. */}
+      {orderPreview && (
+        <BirkOrderDialog
+          preview={orderPreview}
+          onClose={() => setOrderPreview(null)}
+          onApplied={async (summary) => {
+            setOrderPreview(null);
             await refresh();
             setNotice({ tone: 'ok', text: summary });
           }}
