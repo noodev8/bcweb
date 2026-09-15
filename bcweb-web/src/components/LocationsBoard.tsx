@@ -141,7 +141,7 @@ import {
   adjustStock, emptyLocation, findLocationSku, getLocationRacks, getLocationStock, transferStock,
   type InvLocationState, type LocationStockLine,
 } from '@/lib/api';
-import { AREA_LABEL, AREA_ORDER, areaOf } from '@/lib/locationsUi';
+import { AREA_LABEL, AREA_ORDER, areaOf, isAmazonBay } from '@/lib/locationsUi';
 import { normaliseScan } from '@/lib/goodsIn';
 
 // A rack label as printed on the shelving. Typed or scanned into the search box it jumps straight to that rack rather than filtering
@@ -466,7 +466,7 @@ export default function LocationsBoard() {
     const res = await adjustStock({ code: sku.code, location, delta: qty, ids: [] });
     inFlight.current = false;
     setBusy(false);
-    if (res.success) say('ok', `Put ${qty} × ${sku.code}${sku.title ? ` (${sku.title})` : ''} on ${location}.`, { code: sku.code });
+    if (res.success) say('ok', `Put ${qty} × ${sku.code} on ${location}.`, { code: sku.code });
     else say('bad', res.error || `Could not put ${sku.code} on ${location}.`);
     await reread();
     // Whatever was fired while that was in the air goes now, in the order it was fired.
@@ -548,7 +548,7 @@ export default function LocationsBoard() {
       say('bad', `${to} is not a rack — stock can come off it, but not go onto it.`);
       return;
     }
-    if (areaOf(to) === 'C3-Amazon') { setAskAmazon(to); return; }
+    if (isAmazonBay(to)) { setAskAmazon(to); return; }
     completeTransfer(to);
   }
 
@@ -1061,7 +1061,6 @@ export default function LocationsBoard() {
               <div className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-100 px-4 py-2.5">
                 <div className="flex items-baseline gap-2">
                   <h2 className="text-base font-semibold text-slate-900">{rack.location}</h2>
-                  {rack.barcode && <span className="text-xs text-slate-400">{rack.barcode}</span>}
                   {!rack.known && (
                     <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">not a shelf</span>
                   )}
@@ -1184,13 +1183,13 @@ export default function LocationsBoard() {
                       <ul className="divide-y divide-brand-100">
                         {transfer.items.map((it) => (
                           <li key={it.id} className="flex items-center gap-3 px-4 py-1.5">
-                            <span className="w-44 shrink-0 truncate font-mono text-xs text-brand-900" title={it.title ?? it.code}>
+                            <span className="w-44 shrink-0 truncate font-mono text-xs text-brand-900">
                               {it.code}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-xs text-brand-700">
                               {/* Only the two states worth flagging get words. Whether the rack has this pair on file is the write's
                                   business, not the operator's — they are carrying it either way. */}
-                              {it.line && it.line.state !== 'FREE' ? STATE_WORD[it.line.state] : (it.title ?? '')}
+                              {it.line && it.line.state !== 'FREE' ? STATE_WORD[it.line.state] : ''}
                             </span>
                             <button
                               type="button"

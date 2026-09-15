@@ -20,13 +20,20 @@ export function areaOf(location: string): string {
   if (l.startsWith('c1-')) return 'C1';
   if (l.startsWith('c3-front-')) return 'C3-Front';
   if (l.startsWith('c3-back-')) return 'C3-Back';
-  if (l.startsWith('c3-amazon')) return 'C3-Amazon';
   if (l.startsWith('c3-shop')) return 'C3-Shop';
+  // C3-Amazon is one bay, not a run of shelving, so it lives under Other on this screen rather than as a tab of its own (owner,
+  // 2026-09-15). A DELIBERATE divergence from utils/locations.js, which still gives it its own area for Inventory and Goods In. The
+  // Amazon-bay warning on a transfer tests the rack itself (isAmazonBay), not this.
   return 'OTHER';
 }
 
-/** Area order: the busy shelving first, the Amazon bay and the stray bucket last (AREA_ORDER, utils/locations.js). */
-export const AREA_ORDER = ['C3-Front', 'C3-Back', 'C1', 'C3-Shop', 'C3-Amazon', 'OTHER'] as const;
+/** The Amazon staging bay — the one destination a transfer asks about first. */
+export function isAmazonBay(location: string): boolean {
+  return location.toLowerCase().startsWith('c3-amazon');
+}
+
+/** Area order: the busy shelving first, the stray bucket (which carries the Amazon bay) last. */
+export const AREA_ORDER = ['C3-Front', 'C3-Back', 'C1', 'C3-Shop', 'OTHER'] as const;
 
 /** Written the way a person says it — only the catch-all reads badly as-is. */
 export const AREA_LABEL: Record<string, string> = { OTHER: 'Other' };

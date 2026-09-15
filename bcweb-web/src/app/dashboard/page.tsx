@@ -289,7 +289,7 @@ export default function DashboardPage() {
             take off. Straight after Goods In because it is the same handling job one step on — Goods In puts a delivery on a shelf,
             this is every other reason stock moves on or off one. NEW 2026-09-10 (owner); scaffold for now, logic to follow. */}
         <ModuleTile
-          title="Locations"
+          title="Location"
           description="Work from the shelf, not the product — what's on a rack, and moving stock on and off it."
           href="/locations"
           icon={MapPinIcon}
