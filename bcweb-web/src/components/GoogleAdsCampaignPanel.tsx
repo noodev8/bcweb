@@ -43,6 +43,13 @@ function pct(v: number | null): string {
   return v === null ? '—' : `${v.toFixed(1)}%`;
 }
 
+// Google's report ships campaign names as they are typed in the Ads account, which is SHOUTED (STANDARD, RIEKER-WIN). Our buckets
+// are lowercase by convention — forced on create and rename — and they are the same names. Lowercased for display only so the two
+// tables read as one vocabulary (owner, 2026-09-15); the raw value is still what gets clicked and matched, case-insensitively.
+function campaignName(v: string): string {
+  return v.toLowerCase();
+}
+
 // BLENDED BREAK-EVEN ROAS — the revenue ROAS this bucket must earn before its advertising pays for itself, which is the number that
 // gets typed into the Ads UI as a tROAS target. Revenue over net profit: earn less than this multiple of spend-driving revenue and
 // the goods do not cover the ads.
@@ -89,10 +96,15 @@ interface Props {
   onChanged: () => void;              // re-fetch after a create / rename / archive
   onFilterBucket: (name: string) => void;  // click a bucket row -> narrow the grid to it
   activeBucket: string | null;
+  // The same pair for Google's own campaigns. THEY SHARE ONE CHIP ON THE PAGE: the two tables name the same campaign, so a click
+  // in one releases the highlight in the other and takes over the filter (owner, 2026-09-15). Which is why these are two separate
+  // `active` props and not one — only the row actually clicked should look selected.
+  onFilterAdsCampaign: (name: string) => void;
+  activeAdsCampaign: string | null;
 }
 
 export default function GoogleAdsCampaignPanel({
-  buckets, adsCampaigns, windowLabel, onChanged, onFilterBucket, activeBucket,
+  buckets, adsCampaigns, windowLabel, onChanged, onFilterBucket, activeBucket, onFilterAdsCampaign, activeAdsCampaign,
 }: Props) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -440,7 +452,18 @@ export default function GoogleAdsCampaignPanel({
           ) : (
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
               <span className="text-xs font-medium uppercase tracking-wide text-slate-500">In Google Ads</span>
-              <span className="font-medium text-slate-800">{adsCampaigns[0].campaign}</span>
+              {/* Clickable for the same reason the table rows are: it narrows the grid to that campaign's styles. */}
+              <button
+                type="button"
+                onClick={() => onFilterAdsCampaign(adsCampaigns[0].campaign)}
+                className={`font-medium ${
+                  activeAdsCampaign === campaignName(adsCampaigns[0].campaign)
+                    ? 'text-brand-700 underline underline-offset-4'
+                    : 'text-slate-800 hover:text-brand-700'
+                }`}
+              >
+                {campaignName(adsCampaigns[0].campaign)}
+              </button>
               <span className="tabular-nums text-slate-600">{money(adsCampaigns[0].cost)} spend</span>
               {/* The censored-day count used to sit here as its own "N days withheld" note (dropped, owner 2026-09-06). It is a
                   caveat on the impression share, not a fact about the campaign, so it belongs on that figure's tooltip. */}
@@ -486,9 +509,24 @@ export default function GoogleAdsCampaignPanel({
                   No campaign report imported for this window yet.
                 </td></tr>
               )}
-              {adsCampaigns.map((c) => (
-                <tr key={c.campaign} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-2 font-medium text-slate-800">{c.campaign}</td>
+              {adsCampaigns.map((c) => {
+                const activeAds = activeAdsCampaign === campaignName(c.campaign);
+                return (
+                <tr
+                  key={c.campaign}
+                  className={`border-b border-slate-100 last:border-0 ${activeAds ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+                >
+                  {/* Filters the grid to this campaign's styles, exactly as a bucket row does — and releases a bucket row's chip,
+                      since the page keeps one campaign filter, not two. */}
+                  <td className="px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={() => onFilterAdsCampaign(c.campaign)}
+                      className="font-medium text-slate-800 hover:text-brand-700"
+                    >
+                      {campaignName(c.campaign)}
+                    </button>
+                  </td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-500">{c.days}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money(c.cost)}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-500">{c.clicks.toLocaleString('en-GB')}</td>
@@ -514,7 +552,8 @@ export default function GoogleAdsCampaignPanel({
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

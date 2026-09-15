@@ -44,9 +44,10 @@ full reasoning, and what Google does and does not actually delay.
 =======================================================================================================================================
 */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon, ArrowTopRightOnSquareIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import GoogleAdsMoneyBar from '@/components/GoogleAdsMoneyBar';
 import GoogleAdsCampaignPanel from '@/components/GoogleAdsCampaignPanel';
@@ -106,7 +107,7 @@ interface Criteria {
   steps: FilterStep[];
   qty: QtyFilter[];
   season: Season | null;
-  bucket: string | null;      // a campaign chip, set by clicking a row in the campaign panel
+  bucket: string | null;      // a campaign chip, set by clicking a row in EITHER campaign table (lowercase — see bucketSide)
   // The Thin shelf button. Its own flag rather than a `sizes` qty step, because the rule is now a compound of count AND share and
   // no single QtyFilter can express it. `SIZES LESS n` still exists and still means the raw count — the two are no longer the
   // same narrowing, which is why the button no longer writes one.
@@ -159,7 +160,9 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
   // Above = has a real floor AND clears it. The adFloor null test is what keeps the 127 styles with no usable ad data out of the
   // winners list — absence of evidence is not a win.
   if (c.floorSide === 'above') out = out.filter((x) => x.row.adFloor !== null && !x.row.belowAdFloor);
-  if (c.bucket !== null) out = out.filter((x) => x.row.campaign === c.bucket);
+  // Case-insensitive: the chip can come from our own bucket list (already lowercase) or from a row in Google's report, where
+  // the campaign name arrives shouted (STANDARD). The two name the same thing and must narrow the grid the same way.
+  if (c.bucket !== null) out = out.filter((x) => x.row.campaign.toLowerCase() === c.bucket!.toLowerCase());
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   for (const f of c.qty) {
     out = out.filter((x) => {
@@ -424,10 +427,94 @@ const NO_ROWS: GoogleAdsStyleRow[] = [];
 // must agree; encoded once here rather than at each use.
 const GOOGLE_ADS_BACK = encodeURIComponent('/google-ads');
 
-export default function GoogleAdsPage() {
+// =====================================================================================================================================
+// COMING BACK TO THE SAME SCREEN YOU LEFT
+// =====================================================================================================================================
+// THE PROBLEM THIS SOLVES (owner, 2026-09-15): the Shopify Pricing links used to open in a NEW TAB, and the drill's "← Back to Google
+// Ads" then pushed /google-ads inside that tab — a second, EMPTY copy of this screen, while the filtered one you actually wanted was
+// still sitting in the tab behind it. You ended up with two identically-named tabs, neither obviously the real one.
+//
+// Every other list in the platform survives a round trip because its state is in the URL (the pricing lists carry ?mode=winners).
+// THIS screen's state is not: window, both search boxes, every stacked step, the qty steps, season, the campaign chip, Thin, the ad
+// floor side, the hand-cut rows and the sort are all React state, so ANY navigation destroys them. Putting all of that in the query
+// string was considered and rejected — the stacked Contains steps alone make an unreadable URL, and this screen is worked, not
+// shared. A snapshot in sessionStorage says the same thing without the URL cost, and dies with the tab, which is right: it is a
+// position in a piece of work, not a preference.
+//
+// SAVED ON THE WAY OUT, NOT ON EVERY CHANGE. The snapshot is written by the click that leaves the screen, so there is no effect
+// mirroring state on every keystroke and nothing to keep in sync.
+//
+// RESTORED ONLY WHEN ASKED. The drill's back link carries ?restore=1; arriving from the dashboard does not, and lands on the full
+// list as before. Restoring unconditionally would be the same confusion in the other direction — opening the screen to find it
+// silently narrowed to fifteen styles, with no memory of why.
+const VIEW_KEY = 'bc_googleads_view';
+// What the drill's back arrow returns to. The `?restore=1` is the whole difference from GOOGLE_ADS_BACK above (the two analytics
+// reports keep the plain path: they are read-and-return trips that do not touch this screen's filter).
+const GOOGLE_ADS_RETURN = encodeURIComponent('/google-ads?restore=1');
+
+interface ViewSnapshot {
+  win: GoogleAdsWindowKey;
+  contains: string;
+  notContains: string;
+  steps: FilterStep[];
+  qty: QtyFilter[];
+  season: Season | null;
+  bucket: string | null;
+  bucketSide: 'ours' | 'ads' | null;
+  thin: boolean;
+  floorSide: 'below' | 'above' | null;
+  cut: string[];
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  scrollY: number;
+  // The style whose price screen this trip was for. Not a selection — see `visited` — but the answer to "which one was I on?",
+  // which the scroll position alone does not give on a list of near-identical rows.
+  lastStyle: string | null;
+}
+
+// Read the snapshot IF this load is a return trip. The snapshot is LEFT IN PLACE: the same trip can be made twice from the same
+// list, and the second return has to work like the first.
+//
+// TWO RULES HERE, BOTH LEARNED THE HARD WAY. Break either and the screen comes back unfiltered while every other part of this works
+// perfectly, which is a miserable thing to debug.
+//
+//  1. THE MARKER COMES FROM THE ROUTER (useSearchParams), NEVER FROM window.location. On a CLIENT-SIDE navigation — which is
+//     exactly what the drill's back link is — the address bar still holds the OLD url while the incoming page's state
+//     initialisers run, so reading window.location.href there finds /pricing/style/... and no marker at all. That version worked
+//     on a hard reload and failed on every real trip. useSearchParams is the router's own view of the route being rendered, so it
+//     is correct in both cases; the cost is the Suspense boundary at the bottom of this file, which is Next's requirement for
+//     reading it in a client page.
+//
+//  2. READING MUST NOT CONSUME THE MARKER. With reactStrictMode on, React double-invokes state initialisers AND simulates an
+//     unmount/remount, so this read happens several times per visit. An earlier version stripped ?restore=1 as it read (and then,
+//     no better, from a mount effect straight afterwards) — the last read then found nothing, returned null, and null is what got
+//     committed. The marker stays in the address bar and is cleared only by Reset, which is a real user action, not a render.
+//
+// sessionStorage can also throw outright (blocked site data), and a stored shape can be from an older build — neither is worth
+// breaking the page for, so anything unexpected means "no restore".
+function readSnapshot(isReturnTrip: boolean): ViewSnapshot | null {
+  if (!isReturnTrip || typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as ViewSnapshot;
+    // Enough of a shape check to catch a stale format without pretending to validate every field.
+    if (!v || !Array.isArray(v.steps) || !Array.isArray(v.qty) || !Array.isArray(v.cut)) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+function GoogleAdsScreen() {
+  // The view we are coming back to, if this is a return trip from a style's price screen. Read ONCE, in a lazy initialiser, so
+  // every piece of state below can open on the restored value rather than being corrected by an effect after first paint.
+  const isReturnTrip = useSearchParams().get('restore') === '1';
+  const [restored] = useState(() => readSnapshot(isReturnTrip));
+
   // ---- data ---------------------------------------------------------------------------------------------------------------
   const stylesQ = useApiQuery('google-ads-styles', getGoogleAdsStyles);
-  const [win, setWin] = useState<GoogleAdsWindowKey>('d30');
+  const [win, setWin] = useState<GoogleAdsWindowKey>(restored?.win ?? 'd30');
   // The campaign panel's money follows the window switch, so its key carries the day count.
   const days = win === 'd7' ? 7 : win === 'd30' ? 30 : win === 'd90' ? 90 : 365;
   const campaignsQ = useApiQuery(`google-ads-campaigns:${days}`, () => getGoogleAdsCampaigns(days));
@@ -436,26 +523,37 @@ export default function GoogleAdsPage() {
   const windows = stylesQ.data?.windows;
 
   // ---- filter state -------------------------------------------------------------------------------------------------------
-  const [contains, setContains] = useState('');
-  const [notContains, setNotContains] = useState('');
-  const [steps, setSteps] = useState<FilterStep[]>([]);
-  const [qty, setQty] = useState<QtyFilter[]>([]);
-  const [thin, setThin] = useState(false);
-  const [floorSide, setFloorSide] = useState<'below' | 'above' | null>(null);
-  const [season, setSeason] = useState<Season | null>(null);
-  const [bucket, setBucket] = useState<string | null>(null);
+  const [contains, setContains] = useState(restored?.contains ?? '');
+  const [notContains, setNotContains] = useState(restored?.notContains ?? '');
+  const [steps, setSteps] = useState<FilterStep[]>(restored?.steps ?? []);
+  const [qty, setQty] = useState<QtyFilter[]>(restored?.qty ?? []);
+  const [thin, setThin] = useState(restored?.thin ?? false);
+  const [floorSide, setFloorSide] = useState<'below' | 'above' | null>(restored?.floorSide ?? null);
+  const [season, setSeason] = useState<Season | null>(restored?.season ?? null);
+  // ONE CAMPAIGN CHIP, TWO PLACES TO SET IT. Clicking a row in 'Your campaigns' and clicking a row in 'In Google Ads' both write
+  // this same filter — they name the same campaign, so two independent chips would only ever contradict each other. `bucketSide`
+  // records which table the live chip came from, purely so the highlight lands on the row that was actually clicked: a click in
+  // one table takes priority and releases the other's row (owner, 2026-09-15). Clicking the SAME row again lifts the filter.
+  const [bucket, setBucket] = useState<string | null>(restored?.bucket ?? null);
+  const [bucketSide, setBucketSide] = useState<'ours' | 'ads' | null>(restored?.bucketSide ?? null);
   const [showHelp, setShowHelp] = useState(false);
   const containsRef = useRef<HTMLInputElement>(null);
 
   // ---- sort / selection / paging ------------------------------------------------------------------------------------------
-  const [sortKey, setSortKey] = useState<SortKey>('kept');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>(restored?.sortKey ?? 'kept');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(restored?.sortDir ?? 'asc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // CUT — a per-row manual hide, same idiom as Inventory. The filter cannot always express "these 6 of the 48", because what makes
   // them different is a judgement rather than a word in the title: a summer sandal you know is about to go quiet is a WINNER on
   // every column here. So you narrow with the boxes, cut the stragglers by hand, then act on what is left.
   // VIEW-ONLY and never sent anywhere. Restore or Reset brings them back.
-  const [cut, setCut] = useState<Set<string>>(new Set());
+  const [cut, setCut] = useState<Set<string>>(() => new Set(restored?.cut ?? []));
+  // WHICH ROW YOU WENT INTO, marked on the way back (owner, 2026-09-16). Restoring the filters and the scroll position still left
+  // the operator hunting: fifteen rows of the same model differing by a colour word, and nothing saying which one they had just
+  // priced. This is NOT the selection — selection drives the bulk bar and is cleared by every change to what is on screen, for good
+  // reasons (see clearSelection). It is a place-marker, drawn as a quiet bar down the left of the row, and it is the sort of thing
+  // a list like this should have had anyway. Cleared by Reset with everything else.
+  const [visited, setVisited] = useState<string | null>(restored?.lastStyle ?? null);
   // Anchor for shift-click range selection — the index in the CURRENT sort of the last row whose box was clicked.
   const anchorRef = useRef<number | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
@@ -561,6 +659,47 @@ export default function GoogleAdsPage() {
     setFlash(null);
   }, []);
 
+  // Called by the click that LEAVES this screen for a style's price setter, so the trip back can put everything where it was. See
+  // the VIEW_KEY block above for why this is a snapshot rather than URL state, and why it is written here rather than on every
+  // change. The SELECTION is deliberately not saved: it is cleared by every other change to what is on screen for the reasons in
+  // clearSelection, and a bulk bar restored over a list you have just been repricing is precisely the state that rule exists to
+  // prevent. The hand-cut rows ARE saved — they are part of the narrowing, and rebuilding them by hand is the tedious part.
+  const saveView = useCallback((lastStyle: string) => {
+    const snap: ViewSnapshot = {
+      win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide,
+      cut: [...cut], sortKey, sortDir, lastStyle,
+      scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
+    };
+    try { window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(snap)); } catch { /* position only — never worth failing the click */ }
+  }, [win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide, cut, sortKey, sortDir]);
+
+  // Put the page back where it was, once there are rows to scroll through — the filters are restored during render, but the height
+  // they produce only exists after the grid has painted. One shot: after that the operator owns the scroll position.
+  //
+  // THE ROW WINS OVER THE PIXEL COUNT where there is one. The grid body has its OWN scroll container, so window.scrollY alone puts
+  // the page back but not necessarily the list: the row you left from can sit just under the fold, or well outside it if you had
+  // scrolled deep inside the grid. Scrolling the marked row into the middle of the view fixes both at once, and needs nothing extra
+  // saved. The saved scrollY stays as the fallback for a trip with no row to aim at.
+  const scrollDone = useRef(false);
+  useEffect(() => {
+    if (scrollDone.current || !restored || rows.length === 0) return;
+    scrollDone.current = true;
+    const row = restored.lastStyle
+      ? document.querySelector(`[data-groupid="${CSS.escape(restored.lastStyle)}"]`)
+      : null;
+    if (row) row.scrollIntoView({ block: 'center' });
+    else window.scrollTo(0, restored.scrollY);
+  }, [restored, rows.length]);
+
+  // Defined here rather than beside the state it sets, because it calls clearSelection above.
+  const pickCampaign = useCallback((name: string, side: 'ours' | 'ads') => {
+    const lower = name.toLowerCase();
+    const same = bucket === lower && bucketSide === side;
+    setBucket(same ? null : lower);
+    setBucketSide(same ? null : side);
+    clearSelection();
+  }, [bucket, bucketSide, clearSelection]);
+
   const onFind = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseContains(contains);
@@ -594,12 +733,29 @@ export default function GoogleAdsPage() {
   }, [onFind]);
 
   const onReset = useCallback(() => {
-    setSteps([]); setQty([]); setSeason(null); setBucket(null); setThin(false); setCut(new Set());
+    // Reset also ENDS the return trip: drop the snapshot and take ?restore=1 out of the address bar, so refreshing after a Reset
+    // gives the full list rather than silently rebuilding the narrowing that was just cleared. Safe to touch the URL here, unlike
+    // anywhere near a render — this only runs when the operator presses the button.
+    try { window.sessionStorage.removeItem(VIEW_KEY); } catch { /* position only */ }
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('restore')) {
+      url.searchParams.delete('restore');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    // EVERYTHING THE SCREEN OPENS ON, not just the filters (owner, 2026-09-15: "as though we refreshed the screen"). That means the
+    // WINDOW back to 30 days and the sort back to Kept worst-first as well — both are part of what a fresh load looks like, and a
+    // Reset that left the screen on 7 days sorted by price would not be the fixed point this button is supposed to be. floorSide is
+    // in here for a plainer reason: it was simply missing, so Below floor survived a Reset that cleared everything beside it.
+    setWin('d30'); setSortKey('kept'); setSortDir('asc'); setVisited(null);
+    setSteps([]); setQty([]); setSeason(null); setBucket(null); setBucketSide(null); setThin(false); setFloorSide(null); setCut(new Set());
     setContains(''); setNotContains(''); setDrill(null);
     clearSelection();
     stylesQ.refresh();
     campaignsQ.refresh();
-    containsRef.current?.focus();
+    // NO FOCUS ON THE SEARCH BOX, AND BACK TO THE TOP. Focusing the Contains input is what made Reset "jump to the middle": the
+    // browser scrolls a focused field into view, so pressing a button at the top of the page threw the operator halfway down it. A
+    // refreshed screen has nothing focused either, so the two now agree.
+    window.scrollTo(0, 0);
   }, [clearSelection, stylesQ, campaignsQ]);
 
   // THIN SHELF — the one narrowing on this screen that gets a button instead of a typed command (owner, 2026-09-06).
@@ -641,10 +797,15 @@ export default function GoogleAdsPage() {
   const toggleRow = useCallback((groupid: string, index: number, e: React.MouseEvent) => {
     const additive = e.ctrlKey || e.metaKey;
 
+    // THE MARKER FOLLOWS THE LAST ROW YOU TOUCHED (owner, 2026-09-16), not only the one you opened a price screen from. Same
+    // question either way — "which one was I on?" — and a row you clicked and then scrolled away from is just as easy to lose as
+    // one you navigated away from. It is dropped when the click UNSELECTS, because then there is no row you are on.
+
     if (e.shiftKey && anchorRef.current !== null) {
       const anchor = anchorRef.current;
       const [lo, hi] = anchor < index ? [anchor, index] : [index, anchor];
       setSelected(new Set(painted.slice(lo, hi + 1).map((x) => x.groupid)));
+      setVisited(groupid);   // the end of the range is where the operator actually is
       return;   // anchor deliberately unmoved
     }
 
@@ -654,14 +815,19 @@ export default function GoogleAdsPage() {
         if (next.has(groupid)) next.delete(groupid); else next.add(groupid);
         return next;
       });
+      // Ctrl-click takes a row OUT as often as it puts one in; only mark it when it went in, and clear the mark when the row it
+      // pointed at is the one just removed.
+      setVisited((v) => (selected.has(groupid) ? (v === groupid ? null : v) : groupid));
       anchorRef.current = index;
       return;
     }
 
     // Plain click: this row alone, or nothing if it was already the only one selected.
+    const clearing = selected.size === 1 && selected.has(groupid);
     setSelected((prev) => (prev.size === 1 && prev.has(groupid) ? new Set() : new Set([groupid])));
+    setVisited(clearing ? null : groupid);
     anchorRef.current = index;
-  }, [painted]);
+  }, [painted, selected]);
 
   // Hide a row from the working set. Clears the selection with it: leaving a cut row selected would let a bulk assign move the very
   // thing just excluded, and every row below it shifts up by one, which strands the shift anchor.
@@ -723,19 +889,40 @@ export default function GoogleAdsPage() {
     <AppShell title="Google Ads">
       {/* ---- Window switch + import ------------------------------------------------------------------------------------ */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5">
-          {WINDOWS.map((w) => (
-            <button
-              key={w.key}
-              type="button"
-              onClick={() => { setWin(w.key); clearSelection(); }}
-              className={`rounded px-3 py-1.5 text-sm font-medium ${
-                win === w.key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {w.short}
-            </button>
-          ))}
+        {/* The period, and beside it the way back to a clean screen. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5">
+            {WINDOWS.map((w) => (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => { setWin(w.key); clearSelection(); }}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  win === w.key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {w.short}
+              </button>
+            ))}
+          </div>
+          {/* RESET, BESIDE THE PERIOD (owner, 2026-09-15). There is already one in the filter bar, but since the screen now REMEMBERS a
+            narrowing across a trip to a style's price — and therefore across F5, because the ?restore=1 marker stays in the
+            address bar — the operator can arrive on a filtered list without having filtered anything this session, with the way
+            out several hundred pixels down the page.
+            ALWAYS SHOWN, AND WITHOUT A COUNT (owner, same day): "it's like Home really". A button that appears only when it has
+            work to do cannot be relied on before you look for it, which is the opposite of what this one is for — the value is
+            knowing, without checking, that the way back to the whole list is in the same place every time. Pressing it on an
+            unfiltered screen simply re-reads from the database. Same handler as the filter bar's Reset: clears the steps, the
+            chip and the cut rows, drops the saved view and takes the marker off the url. */}
+        <button
+          type="button"
+          onClick={onReset}
+          title="Back to the full list — clears the search, the campaign chip and any cut rows, and re-reads from the database"
+          className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+        >
+          <ArrowPathIcon className={`h-4 w-4 text-slate-400 ${loading ? 'animate-spin' : ''}`} />
+          Reset
+        </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* The two reports that answer the same question over time, which this screen only ever answers as a snapshot: Ad
@@ -795,8 +982,10 @@ export default function GoogleAdsPage() {
           adsCampaigns={campaignsQ.data?.adsCampaigns ?? []}
           windowLabel={windows ? windows[win].label : ''}
           onChanged={() => { campaignsQ.refresh(); stylesQ.refresh(); }}
-          onFilterBucket={(name) => { setBucket((b) => (b === name ? null : name)); clearSelection(); }}
-          activeBucket={bucket}
+          onFilterBucket={(name) => pickCampaign(name, 'ours')}
+          activeBucket={bucketSide === 'ours' ? bucket : null}
+          onFilterAdsCampaign={(name) => pickCampaign(name, 'ads')}
+          activeAdsCampaign={bucketSide === 'ads' ? bucket : null}
         />
       </div>
 
@@ -924,7 +1113,7 @@ export default function GoogleAdsPage() {
             )}
           </span>
           {bucket && (
-            <Chip label={`Campaign: ${bucket}`} onClear={() => { setBucket(null); clearSelection(); containsRef.current?.focus(); }} />
+            <Chip label={`Campaign: ${bucket}`} onClear={() => { setBucket(null); setBucketSide(null); clearSelection(); containsRef.current?.focus(); }} />
           )}
           {season && (
             <Chip label={season} onClear={() => { setSeason(null); clearSelection(); containsRef.current?.focus(); }} />
@@ -1094,24 +1283,36 @@ export default function GoogleAdsPage() {
                     // The whole row is the target — see toggleRow for the click rules. The Style link and the cut ✕ stop
                     // propagation so they keep doing their own jobs.
                     onClick={(e) => toggleRow(r.groupid, i, e)}
-                    className={`cursor-pointer select-none border-b border-slate-100 ${isSel ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+                    // The visited bar is an INSET shadow rather than a real left border, so marking a row cannot nudge its content
+                    // sideways, and it survives under the selection tint instead of competing with it: a row can be both the one you
+                    // came back from and one you have since ticked for a bulk move.
+                    data-groupid={r.groupid}
+                    title={visited === r.groupid ? 'You opened this style from here' : undefined}
+                    className={`cursor-pointer select-none border-b border-slate-100 ${isSel ? 'bg-brand-50' : 'hover:bg-slate-50'}${
+                      visited === r.groupid ? ' shadow-[inset_3px_0_0_0_theme(colors.slate.400)]' : ''
+                    }`}
                   >
                     <td className="border-b border-slate-100 px-2 py-1.5 text-right align-top text-xs tabular-nums text-slate-400">
                       {i + 1}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5">
                       {/* Drill disabled (owner, 2026-09-06) in favour of freely selecting rows — not removed, see setDrill above.
-                          Only the icon opens the Shopify price setter (NEW TAB, the GoogleAdsDrill NavPill convention) — the rest of this cell,
-                          including the name, is just row text now, because a link over the whole block was too big a target and
-                          ate clicks meant for selecting the row. stopPropagation on the icon so it doesn't also toggle selection. */}
+                          Only the icon opens the Shopify price setter — the rest of this cell, including the name, is just row text
+                          now, because a link over the whole block was too big a target and ate clicks meant for selecting the row.
+                          stopPropagation on the icon so it doesn't also toggle selection.
+
+                          SAME TAB (owner, 2026-09-15 — it used to be target="_blank"). The price setter is a step in this job, not a
+                          reference to keep open beside it, and opening it in its own tab made the drill's "← Back to Google Ads"
+                          build a SECOND, empty copy of this screen in that tab while the filtered one sat behind it. Going and
+                          coming back in one tab is the whole fix; saveView + ?restore=1 is what makes coming back land here rather
+                          than on the unfiltered list. Ctrl/middle-click still opens a new tab if that is what you want, and the
+                          snapshot is written for that too. */}
                       <div className="w-full text-left">
                         <span className="inline-flex items-center gap-1 font-medium text-slate-800">
                           {r.groupid}
                           <Link
-                            href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=/google-ads`}
-                            target="_blank"
-                            rel="noopener"
-                            onClick={(e) => e.stopPropagation()}
+                            href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=${GOOGLE_ADS_RETURN}`}
+                            onClick={(e) => { e.stopPropagation(); saveView(r.groupid); }}
                             title="Open in Shopify Pricing"
                             className="text-slate-400 hover:text-brand-700"
                           >
@@ -1195,10 +1396,8 @@ export default function GoogleAdsPage() {
                     >
                       {r.price === null ? '—' : (
                         <Link
-                          href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=/google-ads`}
-                          target="_blank"
-                          rel="noopener"
-                          onClick={(e) => e.stopPropagation()}
+                          href={`/pricing/style/${encodeURIComponent(r.groupid)}?from=${GOOGLE_ADS_RETURN}`}
+                          onClick={(e) => { e.stopPropagation(); saveView(r.groupid); }}
                           title={`Set the price in Shopify Pricing${gap !== null && gap < 0
                             ? ` — £${Math.abs(gap).toFixed(2)} under the floor, so the ads cost more than the unit makes`
                             : ''}`}
@@ -1338,5 +1537,16 @@ function Th({ label, col, sortKey, sortDir, onSort, align = 'right', seam, title
         {active && <span aria-hidden>{sortDir === 'asc' ? '↑' : '↓'}</span>}
       </button>
     </th>
+  );
+}
+
+// The Suspense boundary Next requires around a client page that reads useSearchParams — see rule 1 on readSnapshot for why the
+// restore marker has to come from the router rather than the address bar. The fallback matches AppShell's own auth splash, so a
+// hard load of this url shows one "Loading..." rather than two different ones in sequence.
+export default function GoogleAdsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading...</div>}>
+      <GoogleAdsScreen />
+    </Suspense>
   );
 }
