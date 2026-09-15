@@ -1,0 +1,35 @@
+-- =====================================================================================================================
+-- 20260915_amz_match_disable.sql — retire the Shopify "match Amazon price" autopilot (owner, 2026-09-15)
+-- =====================================================================================================================
+-- WHAT THIS TURNS OFF
+--   skusummary.match_amazon_price was the opt-in flag for C:\scripts\amz-match\amz_match_sync.py, a cron job that pinned
+--   a flagged style's shopifyprice to Amazon's cheapest IN-STOCK size once a day. The crontab line is rem'd out on the
+--   VPS; this clears the flag so the rest of the platform stops acting on it.
+--
+-- WHY THE FLAG MUST BE CLEARED, not just the cron
+--   routes/pricing-apply.js refuses a manual price on a flagged style (MATCH_LOCKED). Stopping the cron alone would
+--   leave those styles permanently unpriceable — no autopilot, and no manual pricing either.
+--
+-- WHY IT WAS RETIRED (the IVES WHITE case, 180 days to 2026-09-15)
+--   Amazon sold 1,245 units at £38.69 avg; Shopify sold 15 at £31.70. Amazon prices per SIZE (£37.30-£41.09 on that
+--   style), so "the Amazon price" does not exist and the rule pinned Shopify to whichever single size was cheapest and
+--   in stock that morning. And the same price is worth about twice as much on Shopify — £39.29 nets £9.06 there vs
+--   £4.86 booked on Amazon, there being no referral fee — so matching DOWN gave away margin on the better channel, and
+--   removed the headroom needed to fund Google Shopping ads. Amazon is now shown as context on the drill (the size
+--   curve carries Amazon's price and stock per size; the setter carries the spread) and never acted on.
+--
+-- FALSE, not NULL: NULL was the intent (it reads as "this setting is not in use" rather than "deliberately off") but the
+-- column is `boolean NOT NULL DEFAULT false` from 20260719_skusummary_match_amazon_price.sql, so NULL is rejected.
+-- false is the column's own default and every comparison in the code is `= true` / `=== true`, so the effect is identical.
+--
+-- TO REVIVE: un-rem the crontab line, set AMZ_MATCH_UI = true in bcweb-web/src/lib/features.ts, and flag styles again.
+-- The 22 styles that were ON when this ran (for reference if the feature ever comes back):
+--   FLE030-IVES-BEIGE, -BLACK, -BLACKSOLE, -GREY, -KHAKI, -MIDBLUE, -NAVY-BLUE, -RED, -STONE, -WHITE,
+--   FLEO50-EVIE-WHITE, JLH321-BLAISE-BLACK, JLH321-BLAISE-SILVER, JLH356-DEANAAII-PK, JLH358-CLUSTER-WHITE,
+--   JLH455-CHARL-NAVY, JLH950-BLAZE-BLACK, -NAVY, -NUDE, -PEWTER, -ROSE, -WHITE
+--
+-- The last price the autopilot set on each of those styles STAYS — this clears the setting, not the price.
+-- The column, the route (pricing-match-toggle), the panel and the python script are all KEPT, not deleted.
+-- =====================================================================================================================
+
+UPDATE skusummary SET match_amazon_price = false;

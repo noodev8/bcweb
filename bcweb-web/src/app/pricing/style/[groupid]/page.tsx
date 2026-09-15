@@ -30,6 +30,7 @@ import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import MatchAmazonPanel from '@/components/MatchAmazonPanel';
+import { AMZ_MATCH_UI } from '@/lib/features';
 import PriceBands from '@/components/PriceBands';
 import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle } from '@/lib/api';
@@ -178,11 +179,11 @@ function DrillContent() {
             </div>
           )}
 
-          {/* 1. The action — kept at the top so it is reachable without scrolling. When the style is on Amazon autopilot the
-                 MatchAmazonPanel REPLACES the manual setter here (it is the active control for that style); otherwise the manual
-                 PriceSetter sits here and the Match-Amazon ENABLE card drops to the very bottom (see step 5). */}
+          {/* 1. The action — kept at the top so it is reachable without scrolling. The manual PriceSetter sits here.
+                 The Amazon-match autopilot is RETIRED (AMZ_MATCH_UI, see lib/features.ts): with it off, a style still carrying the
+                 old flag falls through to the manual setter rather than showing a card for a cron that no longer runs. */}
           <section>
-            {data.header.match_amazon ? (
+            {AMZ_MATCH_UI && data.header.match_amazon ? (
               <MatchAmazonPanel
                 groupid={groupid}
                 matchAmazon
@@ -232,9 +233,10 @@ function DrillContent() {
           {/* Size curve (collapsible, rarely opened) */}
           <SizeCurve sizes={data.sizes} />
 
-          {/* 5. Match Amazon enable card — only when matching is OFF (when ON it is the prominent card at step 1). Toggled sparingly,
-                 so it lives at the bottom as a settings-style control rather than competing with the day-to-day reports above. */}
-          {!data.header.match_amazon && (
+          {/* 5. Match Amazon enable card — RETIRED 2026-09-15, hidden behind AMZ_MATCH_UI (lib/features.ts). Kept, not deleted:
+                 flipping that flag back on restores the whole autopilot control. Amazon's per-size prices now live in the size curve
+                 above, as reference for a Shopify decision rather than a rule that drives it. */}
+          {AMZ_MATCH_UI && !data.header.match_amazon && (
             <MatchAmazonPanel
               groupid={groupid}
               matchAmazon={false}

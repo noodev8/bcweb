@@ -5,7 +5,7 @@ Component: PriceSetter  (the set-price control — CLAUDE.md)
 =======================================================================================================================================
 Purpose: The reduced-typing price control. Layout mirrors the owner's desktop app:
 
-   Current: 36.95   Stock: 8   Core 3/3 [38][39][40]   Margin ex VAT: 9.96 (32%)   cost 20.83   RRP 50.00   <- Core = colour-graded gauge
+   Current: 36.95  Stock: 8  Core 3/3 [38][39][40]  Margin ex VAT: 9.96 (32%)  cost 20.83  RRP 50.00  Amazon: 37.30-41.09   <- Core = gauge
    New price:  [-£1][-50p]  [ 37.95 ]  [+50p][+£1][+£2]        <- big editable field; margin recalculates live
    Note:       [ optional — why the price is changing (saved to the price log) ]
    Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days            <- single-select; None (default) = no review. No auto-suggested pick.
@@ -14,6 +14,8 @@ Purpose: The reduced-typing price control. Layout mirrors the owner's desktop ap
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
   - Nudge buttons step the editable price; margin updates live.
   - Disable Apply if price < cost. Warn (but allow) if price > rrp. (min/max shopify-price bounds removed per owner.)
+  - Amazon's live price spread is shown on the reference line, and going under its lowest raises a note. Both ADVISORY, neither blocks:
+    Shopify is priced independently of Amazon (2026-09-15, replacing the autopilot that pinned it to Amazon's cheapest in-stock size).
   - Review is OPTIONAL (None by default): a day chip parks the style out of triage until today+N; None leaves the review date untouched.
   - "No change — just set review" (park) needs a real period, so it's disabled while None is selected.
   - Note is optional and only enabled on a real price change; it's saved to the price_change_log row (was hardcoded blank before).
@@ -90,6 +92,10 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
   // Ad floor — recomputed against the price IN THE BOX, not header.below_ad_floor (which describes the price already saved), so the
   // warning tracks the nudge buttons live the way the margin does. Advisory only: it never gates Apply.
   const belowAdFloor = header.ad_floor !== null && Number.isFinite(price) && price < header.ad_floor;
+  // Undercutting our own Amazon listing. ADVISORY ONLY (owner, 2026-09-15) — deliberately NOT a bound like below-cost: Amazon prices
+  // per size, this compares against the cheapest of them, and there are good reasons to sit under it (funding a Google click, moving
+  // a size Amazon doesn't stock). It replaced the retired autopilot that made this comparison a RULE and pinned Shopify to it.
+  const belowAmazon = header.amazon_lowest !== null && Number.isFinite(price) && price < header.amazon_lowest;
   const priceValid = Number.isFinite(price) && price > 0;
   const changed = now === null || (Number.isFinite(price) && Math.round(price * 100) !== Math.round(now * 100));
 
@@ -145,6 +151,26 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         </span>
         <span className="text-slate-400">cost {header.cost !== null ? header.cost.toFixed(2) : '—'}</span>
         <span className="text-slate-400">RRP {header.rrp !== null ? header.rrp.toFixed(2) : '—'}</span>
+        {/* What Amazon is charging for the same style, as a SPREAD — Amazon prices per size, so a single figure would be a fiction.
+            Shown only when a size is actually live there. Reference for the decision, not a bound on it; the per-size detail is in the
+            size curve below. Collapses to one figure when every live size happens to sit at the same price. */}
+        {header.amazon_lowest !== null && (
+          <span
+            className="text-slate-500"
+            title={
+              `Amazon's live price across its in-stock sizes${header.amazon_live_total ? `, ${header.amazon_live_total} units` : ''}. ` +
+              'Amazon prices per size and Shopify per style, so there is no single price to match. Reference only — it does not block an apply.'
+            }
+          >
+            Amazon:{' '}
+            <span className="font-semibold text-slate-800">
+              £{header.amazon_lowest.toFixed(2)}
+              {header.amazon_highest !== null && Math.round(header.amazon_highest * 100) !== Math.round(header.amazon_lowest * 100)
+                ? `–£${header.amazon_highest.toFixed(2)}`
+                : ''}
+            </span>
+          </span>
+        )}
         {/* Ad floor. Rendered ONLY when the server could actually derive one — a floor built on a handful of clicks reads as
             authoritative as a solid one, so 'none' shows nothing rather than a hedged number. A 'segment' floor is an estimate
             borrowed from neighbouring styles and says so, both in the label and in the tooltip. */}
@@ -197,6 +223,13 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
           <span className="text-amber-600">
             Below the ad floor (£{header.ad_floor!.toFixed(2)}
             {header.ad_floor_confidence === 'segment' ? ', est' : ''}) — at this price the ads cost more than the unit makes.
+          </span>
+        )}
+        {/* Bottom of the priority order: the three above are about whether the price works at all, this is a channel judgement the
+            operator may well overrule. Slate, not amber — it is information, not a warning. Never stacks with the others. */}
+        {!belowCost && !aboveRrp && !belowAdFloor && belowAmazon && (
+          <span className="text-slate-500">
+            Under your Amazon lowest (£{header.amazon_lowest!.toFixed(2)}) — you&apos;d undercut your own listing. Fine if that&apos;s the intent.
           </span>
         )}
       </div>

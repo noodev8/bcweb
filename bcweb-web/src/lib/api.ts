@@ -200,8 +200,13 @@ export interface DrillHeader {
   stock: number; colour: string | null; width: string | null; season: string | null;
   imagename: string | null;             // product image filename (served from images.brookfieldcomfort.com); null = no image
   next_review: string | null;
-  match_amazon: boolean;                // true = Shopify price is auto-matched to Amazon (manual setter hidden; apply refused)
-  amazon_lowest: number | null;         // Amazon's cheapest in-stock size = the match target (null if none in stock)
+  match_amazon: boolean;                // RETIRED 2026-09-15 — the autopilot is off (lib/features.ts AMZ_MATCH_UI); always false
+  // Amazon as ADVISORY CONTEXT for a Shopify decision (it replaced the autopilot): the live price spread across in-stock sizes and
+  // the units behind it. Amazon prices per SIZE, so low/high is the honest summary — the per-size detail is on SizeRow. Nothing here
+  // constrains the price; the setter warns on undercutting and never blocks.
+  amazon_lowest: number | null;         // cheapest live Amazon size (null when no size is in stock on Amazon)
+  amazon_highest: number | null;        // dearest live Amazon size (null likewise)
+  amazon_live_total: number;            // units Amazon holds across in-stock sizes (0 when none)
   // Ad floor (server: utils/adFloor.js) — the price below which the style stops paying for its own Google advertising.
   // ADVISORY: pricing-apply does NOT enforce it, so the UI warns and never blocks. null when there isn't enough ad data to say.
   ad_floor: number | null;
@@ -217,7 +222,12 @@ export interface TimelineRow {
   first_at: string | null; last_at: string | null;
   span_days: number; weeks: number; per_wk: number; is_current: boolean;
 }
-export interface SizeRow { size: string; qty: number; }
+export interface SizeRow {
+  size: string;
+  qty: number;                          // our sellable stock in that size (0 = sold out — shown, not hidden)
+  amz_price: number | null;             // what Amazon charges for THAT size; null = size not on Amazon FBA. Render "—", never 0.
+  amz_live: number;                     // Amazon's stock in that size; 0 = listed but out of stock (a different fact from null price)
+}
 export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; weeks: VelocityWeek[]; bands: PriceBand[]; sizes: SizeRow[]; days: number; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
 export interface PriceHistoryRow { change_date: string | null; changed_time: string | null; old_price: number | null; new_price: number | null; note: string; changed_by: string | null; }

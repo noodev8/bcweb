@@ -10,7 +10,9 @@ Purpose: Stage 2 — drill-down for one style. Returns everything the decision s
                        this week?"), ported from amz-drill so both drills share one Velocity view (drill-evidence-spec §4, block 2).
            - bands   : units sold at each distinct price over 60 days, ascending price, with NET profit-per-unit — the resistance / "how high
                        can I go" guardrail (drill-evidence-spec §3/§4, ported from amz-drill so both drills share one Units-by-price view).
-           - sizes   : remaining stock by EU size (RIGHT(code,2)) — a collapsible guardrail before a CUT (CLAUDE.md).
+           - sizes   : remaining stock by EU size (RIGHT(code,2)), each with Amazon's price and stock for that size — a guardrail
+                       before a CUT (CLAUDE.md) and, since 2026-09-15, the Amazon reference the retired match-Amazon autopilot used to
+                       act on. Shopify is priced independently of Amazon; Amazon is shown, never obeyed (advisory — nothing blocks).
 
 Why pace is computed here (not in SQL): total units mislead across periods of different length. Pace makes eras comparable.
   per_wk   = units / weeks
@@ -41,8 +43,9 @@ Success Response:
     "ad_floor_confidence": "own",             // 'own' | 'segment' (an ESTIMATE from neighbours) | 'none' (render nothing)
     "ad_floor_basis": { "clicks": 309, "units": 12, "spend": 153.17, "days": 90 },
     "below_ad_floor": false,                  // now < ad_floor. Advisory — pricing-apply does NOT enforce it
-    "match_amazon": false,                    // true = price is auto-matched to Amazon (manual setter hidden; apply refused)
-    "amazon_lowest": 36.29                    // Amazon's cheapest in-stock size = the match target (null if none in stock)
+    "match_amazon": false,                    // RETIRED 2026-09-15 — always false now (see the note at the mapping below)
+    "amazon_lowest": 37.30,                   // cheapest live Amazon size (null if none in stock)      "amazon_highest": 41.09,                  // dearest live Amazon size                           |- ADVISORY CONTEXT only
+    "amazon_live_total": 184                  // units Amazon holds across in-stock sizes           /
   },
   "timeline": [
     { "price": 32.95, "units": 17, "profit": 90.44, "profit_wk": 33, "first_at": "2026-04-01", "last_at": "2026-04-20",
@@ -60,7 +63,9 @@ Success Response:
     { "price": 65.00, "units": 18, "profit_per_unit": 29.58, "first": "2026-06-01", "last": "2026-06-30" }
     // ascending price (ceiling reads top-down); profit_per_unit is NET (sales.profit / units), null when no profit data
   ],
-  "sizes": [ { "size": "38", "qty": 3 }, { "size": "39", "qty": 5 } ],  // oldest-first by size
+  "sizes": [ { "size": "38", "qty": 3, "amz_price": 40.39, "amz_live": 36 },
+             { "size": "39", "qty": 5, "amz_price": null,  "amz_live": 0 } ],  // oldest-first by size
+    // amz_price/amz_live = what Amazon charges and holds for THAT size. amz_price null = size not on Amazon FBA (render "—", not 0).
   "days": 90
 }
 =======================================================================================================================================
@@ -121,11 +126,17 @@ router.get('/', async (req, res) => {
         ss.colour, ss.width, ss.season, ss.next_shopify_price_review,
         ss.imagename,
         ss.match_amazon_price AS match_amazon,
-        -- Amazon's cheapest IN-STOCK size for this style (amzlive>0), read via safeNumeric (amzprice is a junk-prone VARCHAR). This is
-        -- exactly what the amz-match cron pins shopifyprice to; surfaced here so the drill can show the live match target. NULL when the
-        -- style has no in-stock Amazon size (not on Amazon FBA, or all sizes out of stock). amzfeed is READ ONLY (CLAUDE.md).
+        -- The style's live Amazon price SPREAD and stock, over in-stock sizes only (amzlive>0), read via safeNumeric (amzprice is a
+        -- junk-prone VARCHAR). Amazon prices per SIZE, so there is no single "the Amazon price" — the low/high pair is the honest
+        -- summary and the per-size detail is in sizes[] below. CONTEXT, NOT A RULE (2026-09-15): the retired amz-match autopilot used
+        -- amazon_lowest as a target to pin shopifyprice to; now it is only shown, because the same price nets roughly twice as much on
+        -- Shopify (no referral fee) and matching down gave that away. amzfeed is READ ONLY (CLAUDE.md).
         (SELECT MIN(${safeNumeric('a.amzprice')}) FROM amzfeed a
           WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive,0) > 0) AS amazon_lowest,
+        (SELECT MAX(${safeNumeric('a.amzprice')}) FROM amzfeed a
+          WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive,0) > 0) AS amazon_highest,
+        COALESCE((SELECT SUM(COALESCE(a.amzlive,0)) FROM amzfeed a
+          WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive,0) > 0),0) AS amazon_live_total,
         t.shopifytitle,
         COALESCE((SELECT SUM(l.qty) FROM localstock l
                   WHERE l.groupid=ss.groupid AND l.ordernum='#FREE'
@@ -171,10 +182,15 @@ router.get('/', async (req, res) => {
       // screens. Purely so the operator can eyeball what they're pricing; not used in any decision logic.
       imagename: h.imagename || null,
       next_review: toIsoDate(h.next_shopify_price_review),
-      // Auto-match-to-Amazon state: the flag + the current match target (Amazon lowest in-stock). When match_amazon is true the price
-      // is on autopilot (the amz-match cron owns it), so the UI hides the manual setter and pricing-apply refuses a manual change.
+      // Auto-match-to-Amazon state. RETIRED 2026-09-15 (owner): the cron that acted on the flag is rem'd out and every row was set
+      // back to false, so this is false everywhere and the UI is switched off behind AMZ_MATCH_UI. Kept (not deleted) so the feature
+      // revives by flipping that flag back on.
       match_amazon: h.match_amazon === true,
-      amazon_lowest: num(h.amazon_lowest)
+      // Amazon as CONTEXT for a Shopify decision: the live price spread across in-stock sizes and how many units sit behind it. The
+      // per-size breakdown is in sizes[]; these three give the screen a one-line summary without it re-deriving min/max itself.
+      amazon_lowest: num(h.amazon_lowest),
+      amazon_highest: num(h.amazon_highest),
+      amazon_live_total: Number(h.amazon_live_total)
     };
 
     // ---- Ad floor — the price below which the style stops paying for its own Google advertising (utils/adFloor.js). ----
@@ -239,8 +255,14 @@ router.get('/', async (req, res) => {
     // qty<=0/deleted rows), so the size universe comes from skumap (the per-groupid size map). We take every non-deleted size in
     // skumap and LEFT JOIN the sellable stock (pre-aggregated per size so multiple stock rows per code don't fan out the join),
     // defaulting to 0.
+    //
+    // Each size also carries what Amazon is charging for it and how many units Amazon holds (2026-09-15, replacing the retired
+    // match-Amazon autopilot). Amazon prices per SIZE while Shopify prices per STYLE, so the operator setting one Shopify price needs
+    // to see the whole Amazon spread — a single "Amazon price" does not exist, and the old autopilot's answer (pin to the cheapest
+    // in-stock size) let one thin size set the price for the style. Aggregated per size before the join for the same reason the stock
+    // side is: multiple amzfeed rows for a code must not fan the size rows out. amzfeed is READ ONLY (CLAUDE.md).
     const sizesResult = await query(`
-      SELECT sizes.size, COALESCE(st.qty, 0) AS qty
+      SELECT sizes.size, COALESCE(st.qty, 0) AS qty, af.amz_price, COALESCE(af.amz_live, 0) AS amz_live
       FROM (
         SELECT DISTINCT RIGHT(code,2) AS size
         FROM skumap WHERE groupid=$1 AND COALESCE(deleted,0)=0
@@ -250,9 +272,23 @@ router.get('/', async (req, res) => {
         WHERE groupid=$1 AND ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0
         GROUP BY RIGHT(code,2)
       ) st ON st.size = sizes.size
+      LEFT JOIN (
+        SELECT RIGHT(code,2) AS size,
+               MAX(${safeNumeric('amzprice')})     AS amz_price,
+               SUM(COALESCE(amzlive,0))            AS amz_live
+        FROM amzfeed WHERE groupid=$1
+        GROUP BY RIGHT(code,2)
+      ) af ON af.size = sizes.size
       ORDER BY sizes.size
     `, [groupid]);
-    const sizes = sizesResult.rows.map((r) => ({ size: r.size, qty: Number(r.qty) }));
+    // amz_price is null when the size is not on Amazon FBA at all (or the feed price is junk) — the UI must render that as "—", never
+    // as 0. amz_live 0 means listed but out of stock, which is a different fact and worth showing as such.
+    const sizes = sizesResult.rows.map((r) => ({
+      size: r.size,
+      qty: Number(r.qty),
+      amz_price: num(r.amz_price),
+      amz_live: Number(r.amz_live)
+    }));
 
     // ---- Velocity trend (drill-evidence-spec §4, block 2) — 6 weeks of units/avg-price/net-profit, zero-filled so a gap week reads 0
     // (not a hidden hole), oldest→newest (a trend is read left-to-right; this is NOT the timeline's "latest on top" rule). Mirror of
