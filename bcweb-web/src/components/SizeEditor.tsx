@@ -5,6 +5,14 @@ Component: SizeEditor
 =======================================================================================================================================
 Purpose: Editable size list for a product (skumap). Barcode and Size Display are editable inline; Code is locked (derived groupid-<size>).
          Supports Add (type the size code, in the brand's own convention — not necessarily EU), Remove, and manual re-order (Up/Down).
+
+         CODE CONVENTION (owner, 2026-09-16). The auto-fill codes each run the way its brand does, and for a brand the template does
+         not know that means the generic run — UK 03..08 — even when the brand is EU-sized. Caprice in the live data is that case:
+         EU 36..42 throughout, coded by hand. So a new product's grid carries an EU | UK toggle that re-codes the run; lib/
+         sizeTemplates.ts holds what each side means and why UK is refused on a brand with half UK sizes.
+           IT IS OFFERED ONLY WHILE THE PRODUCT HAS NO SAVED SIZES. POST /product-sizes reconciles by `code`: re-coding a saved run
+           would hard-delete every existing row and insert new ones, taking the barcodes with them. On a new product there is
+           nothing to lose, and that is the only moment the choice is wanted anyway.
          Saves the FULL list in order via POST /product-sizes,
          which reconciles skumap (renumber optionsize by position, update existing by code, insert new, hard-delete removed).
 
@@ -15,19 +23,56 @@ Purpose: Editable size list for a product (skumap). Barcode and Size Display are
 import { useState, useRef } from 'react';
 import { ChevronUpIcon, ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { updateProductSizes, ProductSize, ShopifyPushResult } from '@/lib/api';
-import { sizeTemplate, lookupTemplateSize } from '@/lib/sizeTemplates';
+import { sizeTemplate, sizeTemplateAs, templateCoding, lookupTemplateSize, type SizeCoding } from '@/lib/sizeTemplates';
 import { useAuth } from '@/contexts/AuthContext';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 
 interface Row { code: string; sizeDisplay: string; barcode: string; uksize: string; }
+
+// EU | UK for the code suffix. A side unavailable for this brand is shown disabled rather than hidden, with the reason on hover:
+// hiding it would read as "this brand has no EU sizes", which is the opposite of true for a Birkenstock.
+function CodingToggle({ value, onChange, brand, gender }: { value: SizeCoding; onChange: (c: SizeCoding) => void; brand?: string; gender?: string }) {
+  const options: { key: SizeCoding; label: string }[] = [{ key: 'eu', label: 'EU' }, { key: 'uk', label: 'UK' }];
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-slate-400">Code</span>
+      <span className="inline-flex overflow-hidden rounded border border-slate-300">
+        {options.map((o) => {
+          // Null means the run cannot be written that way safely — in practice UK on a brand with half UK sizes, where the code
+          // would end '-4.5' and `RIGHT(code,2)` would read '.5' as the size (CLAUDE.md).
+          const available = sizeTemplateAs(brand || '', gender || '', o.key) !== null;
+          const on = value === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onChange(o.key)}
+              disabled={!available}
+              title={available ? `Code sizes the ${o.label} way` : `${brand || 'This brand'} has half UK sizes — a ${o.label} code would end "-4.5", and the size is read as the last two characters`}
+              className={
+                'px-2 py-0.5 text-xs font-medium ' +
+                (on ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50') +
+                (available ? '' : ' cursor-not-allowed opacity-40 hover:bg-white')
+              }
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </span>
+    </span>
+  );
+}
 
 // Map API sizes (nulls -> '') into editable rows.
 function toRows(sizes: ProductSize[]): Row[] {
   return sizes.map((s) => ({ code: s.code, sizeDisplay: s.sizeDisplay || '', barcode: s.barcode || '', uksize: s.uksize || '' }));
 }
 // The standard run for this brand+gender as editable rows (code = groupid-<suffix>, uksize from the template, barcode blank).
-function templateRows(groupid: string, brand?: string, gender?: string): Row[] {
-  return sizeTemplate(brand || '', gender || '').map((t) => ({
+// `coding` picks the convention the codes are written in; omitted, it is the brand's own (see lib/sizeTemplates.ts).
+function templateRows(groupid: string, brand?: string, gender?: string, coding?: SizeCoding): Row[] {
+  const run = (coding ? sizeTemplateAs(brand || '', gender || '', coding) : null) ?? sizeTemplate(brand || '', gender || '');
+  return run.map((t) => ({
     code: `${groupid}-${t.codeSuffix}`, sizeDisplay: t.size, uksize: t.uksize, barcode: '',
   }));
 }
@@ -41,6 +86,9 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
   // (empty for a new product), so an auto-filled grid shows as unsaved until the user saves it.
   const [rows, setRows] = useState<Row[]>(() => (sizes.length > 0 ? toRows(sizes) : templateRows(groupid, brand, gender)));
   const [baseline, setBaseline] = useState<string>(() => rowsKey(toRows(sizes)));
+  // Which convention the CODES are written in. Opens on the brand's own, which is what the template has always produced; the toggle
+  // exists because the brand a new product belongs to is often not one the template knows, and the generic run is UK-coded.
+  const [coding, setCoding] = useState<SizeCoding>(() => templateCoding(brand || '', gender || ''));
   const [newSize, setNewSize] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -116,9 +164,23 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
     if (rows.some((r) => r.code === code)) { setAddError(`Size ${size} already exists`); return; }
     // If the typed size is part of this brand/gender's standard run, borrow its full display + UK size (brand-accurate EU→UK), so a
     // manual add matches the auto-fill. Otherwise fall back to the typed size with a blank UK size for the user to fill. Barcode blank.
-    const tpl = lookupTemplateSize(brand || '', gender || '', size);
+    const tpl = lookupTemplateSize(brand || '', gender || '', size, coding);
     setRows((prev) => [...prev, { code, sizeDisplay: tpl ? tpl.size : size, barcode: '', uksize: tpl ? tpl.uksize : '' }]);
     setNewSize('');
+    touch();
+  }
+
+  // Re-code the whole run. Offered ONLY on a product with no saved sizes (see the control below), so there is nothing here but the
+  // template and whatever has been typed into it — no live code is being renamed.
+  // Barcodes typed so far are carried across by code where the code survives the switch. Usually none do (that is the point of the
+  // switch), but losing a scanned barcode to a mis-click is worth the two lines it costs to prevent.
+  function recode(next: SizeCoding) {
+    if (next === coding) return;
+    const fresh = templateRows(groupid, brand, gender, next);
+    const barcodes = new Map(rows.filter((r) => r.barcode).map((r) => [r.code, r.barcode]));
+    setRows(fresh.map((r) => ({ ...r, barcode: barcodes.get(r.code) || '' })));
+    setCoding(next);
+    setAddError(null);
     touch();
   }
 
@@ -149,9 +211,17 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
 
   return (
     <div>
-      <div className="mb-2 flex items-baseline justify-between">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">Sizes</h3>
-        <span className="text-xs text-slate-400">{rows.length} variant{rows.length === 1 ? '' : 's'}</span>
+        <div className="flex items-center gap-3">
+          {/* CODE CONVENTION. Only while the product has NO SAVED SIZES: product-sizes reconciles by `code`, so re-coding a saved
+              run would hard-delete every existing row and insert fresh ones — taking its barcodes, and everything keyed to those
+              codes, with it. On a new product there is nothing to lose, which is exactly when this is wanted: the brand is often
+              not one the template knows, and the generic run it falls back to is UK-coded even for an EU-sized brand.
+              This changes the CODE only. Size Display and UK Size stay in the brand's own words. */}
+          {sizes.length === 0 && <CodingToggle value={coding} onChange={recode} brand={brand} gender={gender} />}
+          <span className="text-xs text-slate-400">{rows.length} variant{rows.length === 1 ? '' : 's'}</span>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-md border border-slate-200">
