@@ -3158,13 +3158,84 @@ export function saveBirkTrackerLines(args: { rows: BirkTrackerSaveRow[]; invoice
   );
 }
 
-// DESTRUCTIVE and unrecoverable — the legacy "Delete Green". `expected` is a guard, not bookkeeping: the server refuses the delete if
-// its own count differs from what the screen is showing, which is how a stale screen is stopped from taking rows nobody looked at.
-// A mismatch comes back as return_code 'CHANGED' (a normal outcome — reload and ask again), so the caller must branch on it.
+// The legacy "Delete Green" — but it no longer deletes (2026-09-16). The rows MOVE to an archive table and can be put back with
+// restoreBirkTrackerLines below; `batch_id` identifies this one press, which is what an undo is addressed by.
+//
+// `expected` is a guard, not bookkeeping: the server refuses the write if its own count differs from what the screen is showing,
+// which is how a stale screen is stopped from taking rows nobody looked at. It is kept even now there is an undo — the rows an
+// operator never saw go are exactly the ones they will not think to restore. A mismatch comes back as return_code 'CHANGED' (a
+// normal outcome — reload and ask again), so the caller must branch on it.
 export function clearBirkTrackerArrived(args: { scope: 'all' | 'order' | 'invoice'; value?: string; expected: number }) {
-  return request<{ deleted: number }>(
+  return request<{ deleted: number; batch_id: string }>(
     { url: '/birk-tracker-clear-arrived', method: 'POST', data: args },
-    (b) => ({ deleted: Number(b.deleted) || 0 })
+    (b) => ({ deleted: Number(b.deleted) || 0, batch_id: String(b.batch_id || '') })
+  );
+}
+
+// =============================================================================================================================
+// Birk Tracker — THE ARCHIVE. What "Archive arrived" has taken off the book, and the way back.
+//
+// GROUPED BY BATCH because one press is one act: the question asked is "what did that press take?", not "where is this line?".
+// Each batch carries who pressed it, when, and the scope they had filtered to at the time.
+//
+// `restorable` IS THE IMPORTANT FIELD. The book is keyed on (ordernum, code) and the archive is not, so a style cleared this season
+// and ordered again next season has its pair back in use — that line cannot go back without overwriting a live order line, which the
+// server refuses to do. Offer the button only where this is true; the batch's own `restorable` count is how many of its lines can go.
+// =============================================================================================================================
+export interface BirkArchiveLine {
+  id: number;            // archive row id — what a per-line restore is addressed by
+  ordernum: string;
+  code: string;
+  placed: string;        // dd/MM/yyyy, or '' — display string, same as the book
+  bksize: string;
+  requested: number;
+  invoiced: number;
+  arrived: number;
+  invoice_date: string;  // dd.MM.yyyy, or ''
+  invoice_num: string;
+  due: string;
+  ean: string;
+  cost: number | null;
+  rrp: number | null;
+  restorable: boolean;   // false when the pair is live in the book again — see above
+}
+export interface BirkArchiveBatch {
+  batch_id: string;
+  archived_at: string | null;  // ISO timestamp — a real timestamptz, unlike every other date in this module
+  archived_by: string;
+  scope: string;               // as the operator saw it: 'all', or 'order 0001927328'
+  lines: number;
+  pairs: number;
+  restorable: number;
+  rows: BirkArchiveLine[];
+}
+export interface BirkTrackerArchiveData { total: number; truncated: boolean; batches: BirkArchiveBatch[] }
+
+export function getBirkTrackerArchive() {
+  return request<BirkTrackerArchiveData>(
+    { url: '/birk-tracker-archive', method: 'GET' },
+    (b) => ({
+      total: Number(b.total) || 0,
+      truncated: Boolean(b.truncated),
+      batches: (b.batches as BirkArchiveBatch[]) || [],
+    })
+  );
+}
+
+// THE UNDO. `batch` puts a whole press back (the common case — wrong button, wrong filter); `lines` puts back specific archive ids
+// (the press was right, but one line turns out to be short after all).
+//
+// `skipped` is a normal outcome, not a failure: those lines' pairs are live in the book again, so the archive row was KEPT rather
+// than overwriting somebody's current order. `expected` counts only the RESTORABLE lines in scope — the number on the button.
+export interface BirkRestoreSkip { ordernum: string; code: string }
+export interface BirkRestoreResult { restored: number; skipped: BirkRestoreSkip[] }
+
+export function restoreBirkTrackerLines(
+  args: { scope: 'batch'; batch_id: string; expected: number } | { scope: 'lines'; ids: number[]; expected: number }
+) {
+  return request<BirkRestoreResult>(
+    { url: '/birk-tracker-restore', method: 'POST', data: args },
+    (b) => ({ restored: Number(b.restored) || 0, skipped: (b.skipped as BirkRestoreSkip[]) || [] })
   );
 }
 

@@ -6,6 +6,7 @@ Component: BirkTrackerBook
 Purpose: The Birk Tracker screen — where a Birkenstock season order lives between being placed and being on the shelf, and where an
          invoice gets keyed against it. Answers: what is still to come, what is on its way, what has landed, and what Birkenstock has
          billed us for that we never ordered. Reads /birk-tracker-lines; writes /birk-tracker-save and /birk-tracker-clear-arrived.
+         The Archive panel beside it (BirkArchivePanel) reads /birk-tracker-archive and writes /birk-tracker-restore.
 
 -- ONE ROW PER SIZE (owner, 2026-09-14 — after a size-grid pass was tried and rejected) -------------------------------------------
 A size is a ROW: size, Birkenstock's size label, the three counts, and THE INVOICE IT CAME ON. The size-grid
@@ -47,9 +48,10 @@ THE THREE STATES, the screen's whole vocabulary — same words, same colours, at
 
 GREEN NEEDS ALL THREE TO AGREE (owner), not merely "everything turned up". The three numbers are three separate promises and a line is
 finished only when none is left open: under-invoiced means Birkenstock still owes us the billing, over-invoiced means money to argue
-about. Either way the line carries a question, and a line with a question stays on the screen that asks it. The rule lives in three
-places that must move together — `stateOf` here, `complete` in routes/birk-tracker-lines.js, and the DELETE predicate in
-routes/birk-tracker-clear-arrived.js, which removes exactly the rows this paints green.
+about. Either way the line carries a question, and a line with a question stays on the screen that asks it. On the server the rule is
+now stated once, in utils/birkTracker.js, and shared by the read route and the archive button — which archives exactly the rows this
+paints green. `stateOf` here is the third copy and cannot import that one: it recomputes state from unsaved typing, live, before
+anything reaches the server. It must be changed with them.
 
 "X OF Y ARRIVED" COUNTS AGAINST INVOICED, NOT ORDERED (owner). You can only receive what has been billed, so the invoice is the right
 denominator for a delivery — measured against the order, a fully-delivered part-invoice reads as though it were short. What has NOT
@@ -67,9 +69,14 @@ once in the save bar, stamped across everything touched, rather than retyped int
   State and colour recompute as you type, so a row turns green the moment the last pair is keyed in. That live feedback is why the
   editable cells are the same cells you read, rather than a separate edit mode.
 
-CLEAR ARRIVED is the legacy "Delete Green" and it DELETES — no undo, no archive (see the route). Hence: confirmed with the count and
-scope spelled out, disabled while edits are unsaved, and sends the count it expects so a stale screen is refused by the server rather
-than silently taking rows nobody looked at.
+ARCHIVE ARRIVED is the legacy "Delete Green", and since 2026-09-16 (owner) it no longer deletes: the rows move to an archive table and
+can be put back from the Archive panel (BirkArchivePanel, which is where the reasoning for a separate table rather than a status flag
+lives). The safeguards around the button all STAY anyway — confirmed with the count and scope spelled out, disabled while edits are
+unsaved, and sending the count it expects so a stale screen is refused by the server rather than silently taking rows nobody looked at.
+An undo is only reached by an operator who noticed they need it, and the rows taken from a stale screen are exactly the ones nobody
+will think to look for. What changed is the TONE: the confirm is no longer red and no longer says "cannot be undone", because saying
+so would now be a lie and would make people hesitate over something safe.
+  The legacy PowerBuilder screen's own Delete Green still deletes outright. This net is under this screen only.
 
 ORDER AND INVOICE ARE ONE FILTER (owner): two ways of asking for one delivery's lines, so picking either REPLACES the other — there is
 no state where both are set. Status tabs and the search box are genuine co-filters and do still stack.
@@ -120,7 +127,7 @@ is the minimum that still answers "where is this size, and what paid for it?".
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, TrashIcon,
+  ArchiveBoxIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, TrashIcon,
   XMarkIcon, QrCodeIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -130,6 +137,7 @@ import {
 } from '@/lib/api';
 import BirkInvoiceDialog from '@/components/BirkInvoiceDialog';
 import BirkOrderDialog from '@/components/BirkOrderDialog';
+import BirkArchivePanel from '@/components/BirkArchivePanel';
 
 // --- the three states ----------------------------------------------------------------------------------------------------------
 type State = 'awaiting' | 'transit' | 'arrived';
@@ -225,6 +233,9 @@ export default function BirkTrackerBook() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // The archive is a panel rather than a tab, and is only fetched once it is opened — see BirkArchivePanel's header for why it is
+  // kept out of the book's own rows, totals and rails entirely.
+  const [showArchive, setShowArchive] = useState(false);
   // The parsed invoice awaiting review. Non-null means the dialog is up; nothing has been written at that point.
   const [invoicePreview, setInvoicePreview] = useState<BirkInvoicePreview | null>(null);
   const [invoiceBusy, setInvoiceBusy] = useState(false);
@@ -446,12 +457,17 @@ export default function BirkTrackerBook() {
     setSaving(false);
     if (!res.success) {
       // CHANGED is a normal outcome, not a fault: someone booked an arrival on the legacy screen while this one sat open.
-      setNotice({ tone: 'warn', text: res.error || 'Could not clear those lines' });
+      setNotice({ tone: 'warn', text: res.error || 'Could not archive those lines' });
       await refresh();
       return;
     }
     await refresh();
-    setNotice({ tone: 'ok', text: `Cleared ${res.data!.deleted} fully-arrived ${res.data!.deleted === 1 ? 'line' : 'lines'}` });
+    // Says where they went, not just that they are gone — the whole point of the change is that this is reversible, and a message
+    // that only counts what left would leave the operator no better off than the old delete did.
+    setNotice({
+      tone: 'ok',
+      text: `Archived ${res.data!.deleted} fully-arrived ${res.data!.deleted === 1 ? 'line' : 'lines'} — open Archive to put them back`,
+    });
   }
 
   // Patch one line in the SWR cache after a scan instead of refetching the book. A delivery is dozens of beeps in a couple of
@@ -761,7 +777,7 @@ export default function BirkTrackerBook() {
         >
           <ArrowDownTrayIcon className="h-4 w-4" /> Export
         </button>
-        {/* Disabled while there are unsaved edits: clearing rows you are part-way through keying is how work gets lost. */}
+        {/* Disabled while there are unsaved edits: archiving rows you are part-way through keying is how work gets lost. */}
         <button
           type="button"
           onClick={() => setConfirmClear(true)}
@@ -769,10 +785,30 @@ export default function BirkTrackerBook() {
           title={dirtyRows.length > 0 ? 'Save or discard your changes first' : undefined}
           className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
-          <TrashIcon className="h-4 w-4" /> Clear arrived
+          <TrashIcon className="h-4 w-4" /> Archive arrived
           {clearable > 0 && <span className="tabular-nums text-slate-400">{clearable}</span>}
         </button>
+        {/* The way back. Sits next to the button whose effect it undoes, rather than on a screen of its own — restoring is something
+            you do while looking at the book you are restoring to. */}
+        <button
+          type="button"
+          onClick={() => setShowArchive((v) => !v)}
+          className={
+            'inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm ' +
+            (showArchive ? 'border-slate-400 bg-slate-100 text-slate-900' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+          }
+        >
+          <ArchiveBoxIcon className="h-4 w-4" /> Archive
+        </button>
       </section>
+
+      {showArchive && (
+        <BirkArchivePanel
+          onClose={() => setShowArchive(false)}
+          // A restore puts lines back on the book, so the book must be re-read — the panel writes rows this component is displaying.
+          onRestored={refresh}
+        />
+      )}
 
       {/* --- the book in three numbers -------------------------------------------------------------------------------------------
           THE SUMMARY IS ONE BLOCK, not three stacked ones (owner, 2026-09-14: "stuff is split awkwardly onto their own rows"). The
@@ -960,22 +996,23 @@ export default function BirkTrackerBook() {
         </div>
       )}
 
-      {/* Spells out the count AND the scope, because the button's effect depends on a filter set elsewhere on the screen, and because
-          nothing it removes can be brought back. */}
+      {/* Still spells out the count AND the scope, because the button's effect depends on a filter set elsewhere on the screen. It is
+          no longer red or dire — the lines go to the archive and can be brought back — but it is still confirmed, because taking
+          fifty lines off the book is worth a deliberate second press whether or not it can be undone. */}
       {confirmClear && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-          <p className="text-sm text-red-900">
-            Delete <span className="font-semibold tabular-nums">{clearable}</span> fully-arrived{' '}
+        <div className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-3">
+          <p className="text-sm text-slate-800">
+            Archive <span className="font-semibold tabular-nums">{clearable}</span> fully-arrived{' '}
             {clearable === 1 ? 'line' : 'lines'} from{' '}
             {clearScope.scope === 'all' ? 'the whole book' : <>{clearScope.scope} <span className="font-mono">{clearScope.value}</span></>}?
-            This cannot be undone.
+            They come off the book and into the archive, where you can put them back.
           </p>
           <div className="mt-2 flex gap-2">
-            <button onClick={clearArrived} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">
-              Delete {clearable} {clearable === 1 ? 'line' : 'lines'}
+            <button onClick={clearArrived} className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900">
+              Archive {clearable} {clearable === 1 ? 'line' : 'lines'}
             </button>
             <button onClick={() => setConfirmClear(false)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-              Keep them
+              Keep them on the book
             </button>
           </div>
         </div>

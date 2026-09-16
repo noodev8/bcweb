@@ -253,9 +253,13 @@ app.use('/birk-invoice-commit', require('./routes/birk-invoice-commit'));   // W
 // shape as Load invoice. utils/birkOrder.js holds the transforms; utils/xlsxRead.js is the dependency-free spreadsheet reader.
 app.use('/birk-order-preview', require('./routes/birk-order-preview')); // READ ONLY: new / changed / same per line
 app.use('/birk-order-commit', require('./routes/birk-order-commit'));   // WRITES: insert new lines, restate order fields on revised ones
-// DESTRUCTIVE, and the rows are unrecoverable — no soft-delete, no archive. Guarded by a count the client must get right; read the
-// route header before touching either guard.
-app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: delete fully-arrived lines
+// Clearing finished lines off the book, and the undo for it (2026-09-16). The clear MOVES rows to `birktracker_archive` rather than
+// deleting them, so restore can put them back; both are guarded by a count the client must get right — read the route headers before
+// touching either guard. The archive is a separate TABLE, not a status column, because the book is shared with the legacy
+// PowerBuilder app: see migrations/20260916_birktracker_archive.sql.
+app.use('/birk-tracker-clear-arrived', require('./routes/birk-tracker-clear-arrived')); // WRITES: fully-arrived lines → archive
+app.use('/birk-tracker-archive', require('./routes/birk-tracker-archive'));             // READ ONLY: what has been cleared, by batch
+app.use('/birk-tracker-restore', require('./routes/birk-tracker-restore'));             // WRITES: archive → book (whole batch, or lines)
 
 // Analytics module. Birk Availability: a daily snapshot of Birkenstock core-size availability (Full = styles with all 3 core sizes in
 // FREE stock; the Google-Ads push/scale-back gauge). GET reads the stored history; POST recomputes + upserts today's row (manual

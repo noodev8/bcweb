@@ -37,8 +37,9 @@ right one because the three numbers are three different promises and a line is o
 On the live book today the two rules select exactly the same 59 lines, because `invoiced` equals `arrived` on every row. They diverge
 only when the three stop agreeing — which is precisely the case the screen exists to surface, so the loose rule was hiding the very
 thing it was meant to show.
-  ⚠ THIS RULE IS SHARED WITH routes/birk-tracker-clear-arrived.js, whose DELETE removes exactly the rows this flag paints green. If
-  one changes and the other does not, that button deletes something other than what the operator was looking at. Change both.
+  THE RULE IS SHARED WITH routes/birk-tracker-clear-arrived.js, which archives exactly the rows this flag paints green — so it now
+  lives in ONE place, utils/birkTracker.js, and both import it. It used to be typed out in both files under a warning comment asking
+  whoever changed one to remember the other.
 
 NO PAGINATION, NO FILTER PARAMS. The table is season-scale (hundreds of rows — an order book, not a ledger), the screen's two filter
 rails are a click each, and its Find box types letter by letter; round-tripping either would make a screen meant to feel like the
@@ -76,6 +77,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { isComplete } = require('../utils/birkTracker');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -151,8 +153,8 @@ router.get('/', async (req, res) => {
         // safeNumeric already returned NULL for junk; Number() here only turns pg's numeric-as-string into a number.
         cost: r.cost == null ? null : Number(r.cost),
         rrp: r.rrp == null ? null : Number(r.rrp),
-        // The green row: all three numbers agree. See the header, and keep it in step with birk-tracker-clear-arrived.js.
-        complete: requested > 0 && invoiced === requested && arrived === requested,
+        // The green row: all three numbers agree. One shared rule — see utils/birkTracker.js.
+        complete: isComplete(requested, invoiced, arrived),
       };
     });
 
