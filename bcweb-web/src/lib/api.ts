@@ -146,6 +146,8 @@ export interface AmazonOrderRow {
 // Screen-level, not per row: Amazon order lines queued from this screen that nobody has actually placed with a supplier yet
 // (orderstatus, ordertype 3, arrived=0, orderdate=''). Drives the "waiting to be placed" indicator on /amazon-order.
 export interface AmazonOrderToPlace { units: number; skus: number; suppliers: number; oldest_days: number | null; }
+// Amazon order lines already placed with a supplier and not yet arrived (orderstatus, ordertype 3, arrived=0, orderdate<>'').
+export interface AmazonOrderOnOrder { units: number; skus: number; }
 // Stage 2 drill: header economics + the two evidence datasets. Margin here is NET (price - cost - FBA fee).
 export interface AmzDrillHeader {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
@@ -336,7 +338,7 @@ export function getAmzAll(segment: string) {
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {
-  return request<{ count: number; rows: AmazonOrderRow[]; to_place: AmazonOrderToPlace }>(
+  return request<{ count: number; rows: AmazonOrderRow[]; to_place: AmazonOrderToPlace; on_order: AmazonOrderOnOrder }>(
     { url: '/amazon-order-list', method: 'GET' },
     (b) => ({
       count: b.count ?? (b.rows || []).length,
@@ -348,6 +350,7 @@ export function getAmazonOrderList() {
         suppliers: Number(b.to_place?.suppliers) || 0,
         oldest_days: b.to_place?.oldest_days === null || b.to_place?.oldest_days === undefined ? null : Number(b.to_place.oldest_days),
       },
+      on_order: { units: Number(b.on_order?.units) || 0, skus: Number(b.on_order?.skus) || 0 },
     })
   );
 }

@@ -120,6 +120,13 @@ UNPLACED BACKLOG: a small indicator in the panel's bottom strip — "14 units wa
       has this been sitting" is the part that decides whether to act. It links to Order Status's TO PLACE queue in a NEW TAB: the
       basket on this screen is unsaved scratchpad plus a browser draft, and going to look must not cost you the sitting.
 
+OPEN AMAZON ORDERS BANNER: whenever Order Status holds ANY Amazon line that hasn't arrived — still to place, or placed and on its way —
+      a banner above the panel says so, with both counts (owner, 2026-09-17). The point is to know before buying: those units are
+      already coming, and ordering them again doubles the stock. The operator can clear it (X); the dismissal is keyed on the counts,
+      so it stays gone for this visit while nothing changes, and comes back if a Confirm Basket or anyone else changes the numbers.
+      Held in React state, not storage — a fresh visit to the screen should show it again. Not sticky: it is read once on arrival,
+      and the panel's own "waiting to be placed" chip stays for the rest of the sitting.
+
 RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE sold at some point, just not within the last 6
       months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
       null, excluded): this is stock with a track record that's gone quiet, worth a fresh look (reprice, re-list, bundle) rather
@@ -134,7 +141,9 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
-import { getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow, AmazonOrderToPlace } from '@/lib/api';
+import {
+  getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
+} from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
@@ -355,6 +364,12 @@ export default function AmazonOrderHome() {
   // 3 days is the line between "sent it this morning" and "this has been sitting". Under it the indicator is quiet slate and says
   // no age at all — a "0d" on the day you confirmed the basket reads as a problem where there isn't one.
   const stale = !!toPlace && toPlace.oldest_days !== null && toPlace.oldest_days >= 3;
+  // OPEN AMAZON ORDERS BANNER — see the header. The signature is what was dismissed; new numbers bring the banner back.
+  const onOrder: AmazonOrderOnOrder | null = data?.on_order ?? null;
+  const openUnits = (toPlace?.units ?? 0) + (onOrder?.units ?? 0);
+  const openSig = `${toPlace?.units ?? 0}|${onOrder?.units ?? 0}`;
+  const [dismissedOpenSig, setDismissedOpenSig] = useState<string | null>(null);
+  const showOpenBanner = openUnits > 0 && dismissedOpenSig !== openSig;
   const error = loadError?.message ?? null;
 
   // Committed steps — each Enter/Add stacks another one; multiple of the same kind AND together.
@@ -1193,6 +1208,41 @@ export default function AmazonOrderHome() {
 
   return (
     <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
+      {/* OPEN AMAZON ORDERS BANNER — see the header block. */}
+      {showOpenBanner && (
+        <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div>
+            <p className="font-semibold">There are Amazon orders already in Order Status</p>
+            <p className="mt-0.5">
+              {toPlace && toPlace.units > 0 && (
+                <>{toPlace.units} unit{toPlace.units === 1 ? '' : 's'} waiting to be placed</>
+              )}
+              {toPlace && toPlace.units > 0 && onOrder && onOrder.units > 0 && ' · '}
+              {onOrder && onOrder.units > 0 && (
+                <>{onOrder.units} unit{onOrder.units === 1 ? '' : 's'} on order with suppliers</>
+              )}
+              {' — check before ordering the same SKUs again. '}
+              <a
+                href={toPlace && toPlace.units > 0 ? '/order-status?stage=place' : '/order-status'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium underline underline-offset-2 hover:text-amber-700"
+              >
+                Open Order Status &#8599;
+              </a>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDismissedOpenSig(openSig)}
+            aria-label="Dismiss"
+            title="Hide this message"
+            className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+      )}
       {/* CONTROL PANEL — two bands, one per half of the working loop: row 1 NARROWS the list (search steps, presets, cut/reset),
           row 2 FILLS what's left and SENDS it. It used to be five: search, presets+actions, rate strip, counts, chips — each
           behind its own divider, together eating about 15rem before a single row of data. Folding it to two gives roughly seven
