@@ -37,6 +37,12 @@ guess and then hope the write agrees, it renders what came back. That is why the
 than decremented locally: the server is the only thing that knows, and two operators working the same delivery see each other's units
 disappear.
 
+BIRK TRACKER TOGGLE. On, a Birkenstock pair booked in here is also counted arrived on the Birk Tracker (oldest invoice first — the
+server decides, utils/birkTracker.js), so a delivery is scanned once instead of once per screen. It is remembered per browser like the
+sound, and it is visible in the standing line above the verdict because it changes what a scan WRITES. A tracker problem never stops
+the line — the shoe still has a shelf to go to — so it gets its own small strip under the verdict instead of the red stop: a message to
+read when you next look up, not a reason to put the gun down. Undo takes the tick back off the same line.
+
 THE RUN LIST IS THIS SESSION'S, THOUGH, and deliberately not persisted. It is the box in front of you, not an audit trail — bclog and
 incoming_stock are the audit trail. Undo works off the handles the book call returned, so it survives as long as the list does.
 =======================================================================================================================================
@@ -47,7 +53,7 @@ import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getGoodsInShelves, getGoodsInExpected, goodsInBook, goodsInCancel,
-  type GoodsInShelvesData, type GoodsInExpectedData,
+  type GoodsInShelvesData, type GoodsInExpectedData, type GoodsInBirk,
 } from '@/lib/api';
 import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 
@@ -55,6 +61,7 @@ import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 const DEFAULT_SHELF = 'C3-Back-Stage';
 const SHELF_KEY = 'bc_goodsin_shelf';
 const SOUND_KEY = 'bc_goodsin_sound';
+const BIRK_KEY = 'bc_goodsin_birktracker';
 
 // Used only while /goods-in-shelves is unreachable — a shelf picker with nothing in it is a dead screen.
 const FALLBACK_SHELVES: GoodsInShelvesData['areas'] = [
@@ -96,6 +103,7 @@ interface Row {
   ordernum: string | null;             // the claimed line, so an undo can reopen exactly that row
   incomingId: number | null;           // handles from the book call, for the undo
   localstockId: string | null;
+  birk: GoodsInBirk | null;            // what the Birk Tracker step did — a marked line is what undo takes back off
   cancelled: boolean;
 }
 
@@ -110,6 +118,9 @@ function remembered(key: string, fallback: string): string {
 export default function GoodsInStation() {
   const [shelf, setShelf] = useState(() => remembered(SHELF_KEY, DEFAULT_SHELF));
   const [sound, setSound] = useState(() => remembered(SOUND_KEY, 'on') !== 'off');
+  const [birkOn, setBirkOn] = useState(() => remembered(BIRK_KEY, 'off') === 'on');
+  // The last Birk Tracker warning, shown under the verdict until the next scan or undo replaces it. See the header.
+  const [trackerNote, setTrackerNote] = useState<string | null>(null);
   const [value, setValue] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [verdict, setVerdict] = useState<Row | null>(null);
@@ -189,18 +200,23 @@ export default function GoodsInStation() {
     // up is the one way this screen can lie to someone who only glances at it. Cleared back to Ready, and the caret goes straight
     // back to the input rather than waiting on the round-trip, so the next scan lands whether or not the cancel has answered yet.
     setVerdict(null);
+    setTrackerNote(null);
     focusInput();
 
     const res = await goodsInCancel({
       incomingId: row.incomingId, localstockId: row.localstockId, ordernum: row.ordernum, code: row.code || '',
+      birk: row.birk?.marked ? { ordernum: row.birk.ordernum, code: row.birk.code } : null,
     });
+    if (res.success && res.data?.birk && !res.data.birk.undone) {
+      setTrackerNote(res.data.birk.message || 'The Birk Tracker was not updated by that undo — check it there');
+    }
     // NOT_FOUND means it was already undone — the row is correctly struck through either way, so only a real failure is rolled back.
     if (!res.success && res.return_code !== 'NOT_FOUND') {
       setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, cancelled: false } : r)));
       setVerdict({
         key: `${Date.now()}-${Math.random()}`, input: row.code || '', kind: 'error',
         message: res.error || 'Could not undo that unit', code: row.code, title: row.title, destination: null,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
       });
     }
     await refreshNote();
@@ -235,7 +251,7 @@ export default function GoodsInStation() {
       setVerdict({
         key: `${Date.now()}-${Math.random()}`, input: typed, kind: 'shelf-set', message: null,
         code: null, title: null, destination: rack,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
       });
       focusInput();
       return;
@@ -245,9 +261,12 @@ export default function GoodsInStation() {
     // guessed client-side: which order line got claimed is the server's call, and it is what determines the destination.
     inFlight.current = true;
     setBusy(true);
-    const res = await goodsInBook({ scan, shelf });
+    const res = await goodsInBook({ scan, shelf, birkTracker: birkOn });
     setBusy(false);
     inFlight.current = false;
+    // Every answer replaces the last tracker warning: it belongs to the scan before, and leaving it up would pin it on this shoe.
+    const birk = res.data?.birk ?? null;
+    setTrackerNote(birk && !birk.marked ? birk.message : null);
 
     // A fresh key per scan remounts the verdict panel, which is what replays the flash — two identical scans still register as two.
     const key = `${Date.now()}-${Math.random()}`;
@@ -261,7 +280,7 @@ export default function GoodsInStation() {
       setVerdict({
         key, input: typed, kind: stop ? 'not-found' : 'error', message: stop ? null : (res.error || 'Could not book that in'),
         code: null, title: null, destination: null,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
       });
       beep();
       focusInput();
@@ -282,6 +301,7 @@ export default function GoodsInStation() {
       ordernum: b.ordernum,
       incomingId: b.incomingId,
       localstockId: b.localstockId,
+      birk: b.birk,
       cancelled: false,
     };
     setVerdict(row);
@@ -289,7 +309,7 @@ export default function GoodsInStation() {
     focusInput();
     // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
     void refreshNote();
-  }, [blocked, rows, shelf, racks, chooseShelf, beep, reset, undo, refreshNote]);
+  }, [blocked, rows, shelf, birkOn, racks, chooseShelf, beep, reset, undo, refreshNote]);
 
   const booked = rows.filter((r) => !r.cancelled);
   // `rows` is newest-first, so the first un-cancelled row IS the last scan — what both "Undo last" and the typed UNDO act on.
@@ -330,6 +350,22 @@ export default function GoodsInStation() {
             ))}
           </select>
           <span className="text-slate-400">Scan a rack label to change it. Amazon lines override it and go to {AMAZON_SHELF}.</span>
+          <label
+            className="ml-auto flex cursor-pointer items-center gap-1.5 text-slate-600"
+            title="When on, each Birkenstock pair booked in is also marked arrived on the Birk Tracker — oldest invoice first"
+          >
+            <input
+              type="checkbox"
+              checked={birkOn}
+              onChange={(e) => {
+                setBirkOn(e.target.checked);
+                window.localStorage.setItem(BIRK_KEY, e.target.checked ? 'on' : 'off');
+                focusInput();
+              }}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Mark Birks arrived on Birk Tracker
+          </label>
         </div>
 
         {/* --- THE VERDICT --- */}
@@ -393,15 +429,33 @@ export default function GoodsInStation() {
                 </p>
                 <p className={'mt-2 text-sm ' + VERDICT[verdict.kind].sub}>
                   {verdict.title || verdict.code}
-                  {verdict.expected
-                    ? <> · on order from {verdict.supplier}</>
-                    : <> · <span className="font-semibold">nothing on order</span> — putting it away as free stock</>}
+                  {/* A ticked Birk WAS on order — on the Birk Tracker rather than Order Status — so it must not read "nothing on order". */}
+                  {verdict.birk?.marked
+                    ? <> · arrived on Birk Tracker order {verdict.birk.ordernum} ({verdict.birk.arrived} of {verdict.birk.requested})</>
+                    : verdict.expected
+                      ? <> · on order from {verdict.supplier}</>
+                      : <> · <span className="font-semibold">nothing on order</span> — putting it away as free stock</>}
                 </p>
               </div>
               <p className={'shrink-0 font-mono text-sm tabular-nums tracking-tight ' + VERDICT[verdict.kind].sub}>{verdict.code}</p>
             </div>
           )}
         </div>
+
+        {/* --- BIRK TRACKER WARNING. Outside the verdict panel on purpose: the shoe DID book in and the panel says where it goes; this
+            only says the tracker did not follow. Never blocks the line. --- */}
+        {trackerNote && (
+          <div role="status" className="mt-2 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-800">
+            <span><span className="font-semibold">Birk Tracker not updated:</span> {trackerNote}</span>
+            <button
+              type="button"
+              onClick={() => { setTrackerNote(null); focusInput(); }}
+              className="shrink-0 text-xs text-red-600 underline-offset-2 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* --- THE INPUT. Autofocused, re-focused after everything, and the only control a run needs. --- */}
         <form
@@ -499,7 +553,10 @@ export default function GoodsInStation() {
                 <td className="hidden py-1.5 pr-3 sm:table-cell">{r.title}</td>
                 <td className="py-1.5 pr-3 text-right sm:text-left">
                   {r.destination}
-                  {!r.expected && !r.cancelled && <span className="ml-2 text-xs text-amber-700">not on order</span>}
+                  {!r.expected && !r.cancelled && !r.birk?.marked && <span className="ml-2 text-xs text-amber-700">not on order</span>}
+                  {r.birk && !r.cancelled && (r.birk.marked
+                    ? <span className="ml-2 text-xs text-slate-400">Birk order {r.birk.ordernum}</span>
+                    : <span className="ml-2 text-xs text-red-700">tracker not updated</span>)}
                 </td>
                 <td className="w-8 py-1.5 text-right">
                   {r.cancelled ? (

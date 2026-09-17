@@ -11,7 +11,8 @@ TRACKER ONLY — IT DOES NOT TOUCH STOCK (owner, 2026-09-14). It writes `birktra
 onto shelves. Birkenstock has never been in `orderstatus` at all (checked: its supplier history is Lunar, West Midland, Strive,
 Skechers, Rieker) so there is nothing here to duplicate — and the season order's question is "has the thing we bought six months ago
 turned up and been billed correctly", which is answered without moving a single stock row. If Birk stock is ever to be shelved by
-scan, that is goods-in-book.js's job to grow, not this route's.
+scan, that is goods-in-book.js's job to grow, not this route's — and it has: with its "Birk Tracker" toggle on, Goods In shelves the
+pair AND ticks it arrived here (utils/birkTracker.js, header point 3), picking the oldest-invoiced line where this route would ask.
 
 ONE SCAN = ONE PAIR. `arrived` goes up by exactly 1. No quantity field, deliberately: the gun is pointed at a physical shoe and the
 count is however many times it beeps. A mistake is undone by writing the old value back through /birk-tracker-save (the client holds

@@ -2337,8 +2337,14 @@ export interface GoodsInBooking {
   ordernum: string | null;    // the claimed order line, null when nothing was on order
   incomingId: number;         // handles for goodsInCancel
   localstockId: string;
+  birk: GoodsInBirk | null;   // the Birk Tracker step — null when the toggle was off or the shoe is nothing to do with the book
 }
-export function goodsInBook(args: { scan: string; shelf: string }) {
+// What the optional Birk Tracker step did. A `marked: false` is a WARNING, not a failure: the unit was still booked onto its shelf.
+export type GoodsInBirk =
+  | { marked: true; ordernum: string; code: string; requested: number; invoiced: number; arrived: number; invoicenum: string | null }
+  | { marked: false; reason: 'NOT_ON_TRACKER' | 'ALL_ARRIVED' | 'ERROR'; message: string };
+
+export function goodsInBook(args: { scan: string; shelf: string; birkTracker?: boolean }) {
   return request<GoodsInBooking>(
     { url: '/goods-in-book', method: 'POST', data: args },
     (b) => ({
@@ -2346,16 +2352,24 @@ export function goodsInBook(args: { scan: string; shelf: string }) {
       amazon: Boolean(b.amazon), expected: Boolean(b.expected),
       supplier: b.supplier ?? null, ordernum: b.ordernum ?? null,
       incomingId: Number(b.incomingId), localstockId: String(b.localstockId),
+      birk: (b.birk as GoodsInBirk | null) ?? null,
     })
   );
 }
 
 // Undo one booked-in unit — deletes the shelf row and the arrival record, and puts the claimed order line back to not-arrived.
-// NOT_FOUND means it was already undone, which is what a double-tapped undo looks like.
-export function goodsInCancel(args: { incomingId: number; localstockId: string; ordernum: string | null; code: string }) {
-  return request<{ code: string; target: string; reopened: boolean }>(
+// NOT_FOUND means it was already undone, which is what a double-tapped undo looks like. `birk` names the Birk Tracker line the booking
+// ticked, so that comes back off too; a `birk.undone: false` in the answer is a warning — the unit itself was still undone.
+export function goodsInCancel(args: {
+  incomingId: number; localstockId: string; ordernum: string | null; code: string;
+  birk?: { ordernum: string; code: string } | null;
+}) {
+  return request<{ code: string; target: string; reopened: boolean; birk: { undone: boolean; message?: string } | null }>(
     { url: '/goods-in-cancel', method: 'POST', data: args },
-    (b) => ({ code: b.code, target: b.target, reopened: Boolean(b.reopened) })
+    (b) => ({
+      code: b.code, target: b.target, reopened: Boolean(b.reopened),
+      birk: (b.birk as { undone: boolean; message?: string } | null) ?? null,
+    })
   );
 }
 

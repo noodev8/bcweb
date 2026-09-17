@@ -22,17 +22,23 @@ returns NOT_FOUND, so a double-tapped undo cannot delete a second localstock row
 
 The cancel is logged in its own right, with the legacy phrasing ("Goods In Cancel <code> to <target>"). Both the book and the cancel
 stay in bclog — an undone scan is a thing that happened, and hiding it would make the log lie about a busy morning.
+
+IT TAKES THE BIRK TRACKER TICK BACK TOO, when the booking made one (`birk` — the exact line /goods-in-book returned, never re-resolved;
+utils/birkTracker.js). Same savepoint asymmetry as the booking: the unit coming off the shelf is the undo the operator asked for, so a
+tracker line that can no longer be decremented comes back as a message rather than refusing the undo.
 =======================================================================================================================================
 Request Payload:
 {
   "incomingId":   16376,                  // required — from the /goods-in-book response
   "localstockId": "WEB-8f2c…",            // required — the shelf row that call created
   "ordernum":     "AMZ-O-WS7-4515",       // optional — the claimed order line; omitted when nothing was on order
-  "code":         "FLE030-IVES-BLACKSOLE-06"
+  "code":         "FLE030-IVES-BLACKSOLE-06",
+  "birk": { "ordernum": "0001927328", "code": "0034703-MILANO-38" }   // optional — the Birk Tracker line the booking ticked
 }
 
 Success Response:
-{ "return_code": "SUCCESS", "code": "…", "target": "C3-Amazon", "reopened": true }
+{ "return_code": "SUCCESS", "code": "…", "target": "C3-Amazon", "reopened": true,
+  "birk": null }   // null = nothing to take back; else { "undone": true } or { "undone": false, "message": "…" }
   // reopened = an order line was put back to not-arrived
 =======================================================================================================================================
 Return Codes:
@@ -48,6 +54,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
+const { unmarkArrivedFromGoodsIn } = require('../utils/birkTracker');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -59,6 +66,8 @@ router.post('/', async (req, res) => {
     const localstockId = typeof body.localstockId === 'string' ? body.localstockId.trim() : '';
     const ordernum = typeof body.ordernum === 'string' ? body.ordernum.trim() : '';
     const code = typeof body.code === 'string' ? body.code.trim() : '';
+    const birkOrdernum = typeof body.birk?.ordernum === 'string' ? body.birk.ordernum.trim() : '';
+    const birkCode = typeof body.birk?.code === 'string' ? body.birk.code.trim() : '';
 
     if (!Number.isInteger(incomingId) || incomingId <= 0 || !localstockId) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'incomingId and localstockId are required' });
@@ -97,7 +106,21 @@ router.post('/', async (req, res) => {
                 to_char(now() AT TIME ZONE 'Europe/London','HH24:MI'), now())
       `, [operator, `Goods In Cancel ${incCode} to ${target}`]);
 
-      return { code: incCode, target, reopened };
+      // Take the Birk Tracker tick back, behind a savepoint — see the header.
+      let birk = null;
+      if (birkOrdernum && birkCode) {
+        await client.query('SAVEPOINT birk_tracker');
+        try {
+          birk = await unmarkArrivedFromGoodsIn(client, { ordernum: birkOrdernum, code: birkCode, who: operator });
+          await client.query('RELEASE SAVEPOINT birk_tracker');
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT birk_tracker');
+          logger.error('[goods-in-cancel] birk tracker step failed:', err.message);
+          birk = { undone: false, message: `Could not take ${birkCode} back off the Birk Tracker — fix it there by hand` };
+        }
+      }
+
+      return { code: incCode, target, reopened, birk };
     });
 
     if (outcome === null) {
