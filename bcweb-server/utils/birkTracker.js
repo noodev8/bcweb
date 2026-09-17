@@ -39,6 +39,21 @@ Purpose: The two facts about the Birkenstock order book that more than one route
      (yyyymmdd), never cast — a to_date on one junk value would throw and take the pair's tracker tick down with it.
      These run inside the Goods In transaction behind a SAVEPOINT (see the callers): a tracker problem must come back as a message on
      the Goods In screen, never as a shoe that could not be put on a shelf.
+
+  4. HOW LONG THE ARCHIVE IS KEPT (`ARCHIVE_RETENTION_DAYS` / `pruneArchive`). Ninety days (owner, 2026-09-17). The migration that
+     created `birktracker_archive` said outright that nothing would ever purge it; this is that decision reversed, and the migration's
+     header has been corrected to match. The table is not a disk problem — a few hundred rows a season — so the reason to prune is the
+     Archive panel: it is read newest-first and grouped into batches, and a season's worth of finished deliveries pushes the batch
+     someone actually wants off the bottom of it.
+     BY AGE, NEVER BY ROW COUNT. Age is what "can I still ask what happened to that line?" means. A row cap would silently eat a big
+     delivery's batch because a small one happened to be archived after it — the batch is the unit of meaning here, and a cap does not
+     respect it.
+     PRUNED ON THE ARCHIVE PRESS, NOT ON A CRON. Clearing arrived lines is the only thing that adds to this table, so it is the only
+     moment the table can have grown, and a scheduled job for something that happens a few times a season is machinery with nothing to
+     do. It runs inside the clearing transaction, after the copy — so a prune that fails takes the whole clear back rather than leaving
+     the book and the archive disagreeing.
+     The cutoff cannot reach the batch just written (it is seconds old against a 90-day line), so the undo the operator might want is
+     never the thing the press throws away.
 =======================================================================================================================================
 */
 
@@ -151,6 +166,23 @@ async function unmarkArrivedFromGoodsIn(client, { ordernum, code, who }) {
   return { undone: true };
 }
 
+// How long an archived line stays readable. See header point 4 — 90 days, the owner's call, by age and not by row count.
+const ARCHIVE_RETENTION_DAYS = 90;
+
+// Drop archived lines older than the retention window. Called from routes/birk-tracker-clear-arrived.js inside its transaction, which
+// is the only moment this table grows; there is no cron behind it.
+//
+// The window is a bound parameter rather than text spliced into the SQL, so the number stays a number all the way into Postgres.
+// Returns how many rows went, for the bclog line — pruning is not the operator's action and is deliberately kept off the response.
+async function pruneArchive(client) {
+  const out = await client.query(
+    `DELETE FROM birktracker_archive WHERE archived_at < now() - ($1::int * interval '1 day')`,
+    [ARCHIVE_RETENTION_DAYS]
+  );
+  return out.rowCount;
+}
+
 module.exports = {
   ARRIVED_SQL, isComplete, BOOK_COLUMNS, BOOK_COLUMNS_SQL, markArrivedFromGoodsIn, unmarkArrivedFromGoodsIn,
+  ARCHIVE_RETENTION_DAYS, pruneArchive,
 };

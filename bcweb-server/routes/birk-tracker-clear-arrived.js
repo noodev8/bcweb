@@ -37,6 +37,11 @@ GUARD 2 — SCOPE. `scope` limits the write to one order or one invoice; 'all' c
 whatever the operator has filtered to, so what gets archived is what they were looking at — the alternative is a button whose effect
 depends on a filter it silently ignores.
 
+IT ALSO PRUNES THE ARCHIVE (owner, 2026-09-17): archived lines older than 90 days go, in this same transaction. This press is the only
+thing that adds to that table, so it is the only moment it can have grown — which is why there is no cron behind it. The reasoning, and
+why the window is an age and not a row count, is in utils/birkTracker.js (header point 4). It cannot touch the batch just written, and
+it is deliberately absent from the response: it is not something the operator did.
+
 ONE PRESS IS ONE BATCH. Every row written by a single call carries the same `batch_id`, plus who pressed it, when, and the scope they
 were looking at. That is what makes "undo that clear" one act rather than a hunt through a list of lines, and it is why the response
 returns the id. EVERY RUN IS ALSO LOGGED to `bclog` inside the transaction.
@@ -78,7 +83,7 @@ const { randomUUID } = require('crypto');
 const { verifyToken } = require('../middleware/verifyToken');
 const { withTransaction } = require('../utils/transaction');
 const { writeBcLog } = require('../utils/bclog');
-const { ARRIVED_SQL, BOOK_COLUMNS_SQL } = require('../utils/birkTracker');
+const { ARRIVED_SQL, BOOK_COLUMNS_SQL, ARCHIVE_RETENTION_DAYS, pruneArchive } = require('../utils/birkTracker');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -134,10 +139,15 @@ router.post('/', async (req, res) => {
         throw new Error(`archive/delete mismatch: copied ${copied.rowCount}, deleted ${del.rowCount}`);
       }
 
+      // Housekeeping, last, once the archive is consistent with the book again. Inside the transaction on purpose: if this throws, the
+      // clear goes back too, rather than leaving rows removed from the book with the prune half done.
+      const pruned = await pruneArchive(client);
+
       await writeBcLog(client, {
         who: req.user.display_name,
         section: 'Birk Tracker',
-        log: `Archived ${del.rowCount} fully-arrived line(s) — ${scoped ? scopeLabel : 'whole book'}`,
+        log: `Archived ${del.rowCount} fully-arrived line(s) — ${scoped ? scopeLabel : 'whole book'}`
+           + (pruned ? `; pruned ${pruned} archived line(s) older than ${ARCHIVE_RETENTION_DAYS} days` : ''),
       });
 
       return { changed: false, deleted: del.rowCount };

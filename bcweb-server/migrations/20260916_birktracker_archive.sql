@@ -31,8 +31,12 @@
 --   That is also why restore cannot assume the pair is free — see routes/birk-tracker-restore.js, which skips a line
 --   whose pair is live again rather than overwriting it.
 --
--- RETENTION: none. Nothing purges this table. It grows by a few hundred rows a season, which is nothing, and the whole
---   value of the thing is that a line from two seasons ago is still there when someone asks what happened to it.
+-- RETENTION: 90 days (owner, 2026-09-17 — this file originally said "none. Nothing purges this table", which is no longer
+--   true; the line is corrected here rather than left to mislead the next reader, and no DDL changed with it).
+--   The prune is not a cron and not a column: routes/birk-tracker-clear-arrived.js deletes rows older than the window inside
+--   the same transaction that writes new ones, because that press is the only thing that adds to this table. The window is an
+--   AGE and never a row count — see utils/birkTracker.js header point 4 for why. Size was never the reason; the Archive panel
+--   reads newest-first and a season of finished deliveries buries the batch someone is actually looking for.
 --
 -- WHAT THIS DOES NOT COVER: the legacy PowerBuilder "Delete Green" button still DELETES OUTRIGHT. Anything cleared on
 --   that screen is still gone. This is the net under the bcweb screen only.
