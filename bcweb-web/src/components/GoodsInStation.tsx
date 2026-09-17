@@ -445,12 +445,12 @@ export default function GoodsInStation() {
         {/* --- BIRK TRACKER WARNING. Outside the verdict panel on purpose: the shoe DID book in and the panel says where it goes; this
             only says the tracker did not follow. Never blocks the line. --- */}
         {trackerNote && (
-          <div role="status" className="mt-2 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-800">
-            <span><span className="font-semibold">Birk Tracker not updated:</span> {trackerNote}</span>
+          <div role="status" className="mt-2 flex items-center justify-between gap-4 rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-lg text-red-800">
+            <span><span className="font-bold">Birk Tracker not updated:</span> {trackerNote}</span>
             <button
               type="button"
               onClick={() => { setTrackerNote(null); focusInput(); }}
-              className="shrink-0 text-xs text-red-600 underline-offset-2 hover:underline"
+              className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-100"
             >
               Dismiss
             </button>
