@@ -238,6 +238,7 @@ interface LogRow {
   text: string;
   undo?: () => Promise<boolean>;   // resolves true when the undo landed — only then is the row struck through
   undone?: boolean;
+  units?: number;                  // pairs this line put on, took off or moved — what the on-screen count adds up
 }
 
 // What a finished basket needs to be able to take back. A move goes back the way it came, with the ids the route handed us; an add is
@@ -386,13 +387,13 @@ export default function LocationsBoard() {
   }, [sound]);
 
   // Said once, in one place, so every outcome on this screen sounds and reads the same way.
-  const say = useCallback((tone: 'ok' | 'bad' | 'pending', text: string, extra?: { code?: string; undo?: () => Promise<boolean> }) => {
+  const say = useCallback((tone: 'ok' | 'bad' | 'pending', text: string, extra?: { code?: string; undo?: () => Promise<boolean>; units?: number }) => {
     logSeq.current += 1;
     setFlash({ tone, text, ...extra, logId: logSeq.current });
     // APPENDED, not prepended (owner): the log reads top to bottom like a delivery note, so the newest line is the one nearest the
     // scan box that produced it and the eye never travels back up the panel for what just happened. Capped at 200 from the front, so
     // a long stock check cannot grow an unbounded list under the operator.
-    setLog((prev) => [...prev, { id: logSeq.current, tone, text, code: extra?.code ?? null, undo: extra?.undo }].slice(-200));
+    setLog((prev) => [...prev, { id: logSeq.current, tone, text, code: extra?.code ?? null, undo: extra?.undo, units: extra?.units }].slice(-200));
     if (tone !== 'pending') beep(tone === 'ok');
   }, [beep]);
 
@@ -503,7 +504,7 @@ export default function LocationsBoard() {
         : () => undoWrite(
             () => restoreStock(location, touched),
             `Undone — ${line.code} is back on ${location}.`, `Could not put ${line.code} back on ${location}.`, line.code);
-      say('ok', delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`, { code: line.code, undo });
+      say('ok', delta > 0 ? `Put one ${line.code} on ${location}.` : `Took one ${line.code} off ${location}.`, { code: line.code, undo, units: 1 });
     } else {
       // NOT_FOUND here means the cluster is gone — someone else cleared the line while it was on screen. The re-read below is the fix,
       // so the message says that rather than reading as a failure of the button.
@@ -540,7 +541,7 @@ export default function LocationsBoard() {
       const undo = () => undoWrite(
         () => adjustStock({ code: sku.code, location, delta: -qty, ids: addedId ? [addedId] : [] }),
         `Undone — took the ${sku.code} back off ${location}.`, `Could not take ${sku.code} back off ${location}.`, sku.code);
-      say('ok', `Put ${qty} × ${sku.code} on ${location}.`, { code: sku.code, undo });
+      say('ok', `Put ${qty} × ${sku.code} on ${location}.`, { code: sku.code, undo, units: qty });
     } else say('bad', res.error || `Could not put ${sku.code} on ${location}.`);
     await reread();
     // Whatever was fired while that was in the air goes now, in the order it was fired.
@@ -697,8 +698,8 @@ export default function LocationsBoard() {
       const text = `Moved ${total} ${total === 1 ? 'pair' : 'pairs'} from ${from} to ${landed}.`;
       // Amber, not red, when some of it worked: naming what did not go is the whole value of the message, because those pairs are
       // still on the old shelf and somebody has to know which.
-      if (failed.length === 0) say('ok', text, { code, undo });
-      else say('pending', `${text} ${failed.join(', ')} did not go.`, { code, undo });
+      if (failed.length === 0) say('ok', text, { code, undo, units: total });
+      else say('pending', `${text} ${failed.join(', ')} did not go.`, { code, undo, units: total });
     } else {
       say('bad', `Nothing went to ${to} — ${failed.join(', ')}.`);
     }
@@ -880,7 +881,7 @@ export default function LocationsBoard() {
         `Undone — ${line.code} is back on ${location}.`, `Could not put ${line.code} back on ${location}.`, line.code);
       // Naming the state only when it is not FREE: on a free pair it is noise, and on the other two it is the thing the operator has
       // to know they have just done.
-      say('ok', `Took one ${line.code} off ${location}${line.state === 'FREE' ? '' : ` — it was ${STATE_WORD[line.state]}`}.`, { code: line.code, undo });
+      say('ok', `Took one ${line.code} off ${location}${line.state === 'FREE' ? '' : ` — it was ${STATE_WORD[line.state]}`}.`, { code: line.code, undo, units: 1 });
     } else {
       say('bad', res.error || `Could not take ${line.code} off ${location}.`);
     }
@@ -976,6 +977,10 @@ export default function LocationsBoard() {
 
   const verb = PANELS.find((a) => a.key === panel) ?? PANELS[0];
   const scanning = panel !== 'display';
+  // THE COUNT ON SCREEN (owner, 2026-09-17 — "so I can count and check"). Pairs the lines in the log actually moved: failures carry no
+  // units and an undone line drops out, so the number always matches the box in front of you. Clear screen and a tab change reset it
+  // with the log, which is the point — clear, scan the box, compare.
+  const screenUnits = log.reduce((n, r) => n + (r.undone ? 0 : r.units ?? 0), 0);
 
   // THE CARET LIVES IN THE SCAN BOX, and only scan mode gets that discipline. Every action here — picking a chip, finishing a
   // transfer, dismissing the answer — used to leave focus wherever it landed, so the next scan went nowhere and, from two metres,
@@ -1240,15 +1245,23 @@ export default function LocationsBoard() {
                 })}
                 {/* Empties the LIST ON SCREEN. Nothing is un-booked — same button, same wording and same promise as Goods In's, so an
                     operator who has used one never has to wonder whether this one is more dangerous. */}
-                {scanning && log.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={clearLog}
-                    title="Empties the list on screen. Nothing is un-booked."
-                    className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                  >
-                    Clear screen
-                  </button>
+                {scanning && (
+                  <span className="ml-auto flex items-center gap-2">
+                    <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm text-slate-600" aria-live="polite">
+                      <span className="text-base font-bold tabular-nums text-slate-900">{screenUnits}</span>
+                      {' '}{screenUnits === 1 ? 'pair' : 'pairs'}
+                    </span>
+                    {log.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearLog}
+                        title="Empties the list on screen and resets the count. Nothing is un-booked."
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      >
+                        Clear screen
+                      </button>
+                    )}
+                  </span>
                 )}
               </div>
 
