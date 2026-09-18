@@ -6,9 +6,11 @@ Method: POST
 Purpose: Override the shipping service on a customer order — `orderstatus.courier`, plus the `courierfixed` lock the legacy screen set
          alongside it (apply-status-change.txt lines 283-317).
 
-WHY AN OVERRIDE EXISTS: courier is normally DERIVED, not chosen. update_orders.py:531 sets it at insert time from what the customer
-paid at checkout — `courier = str(4 if shipping_cost == 5.95 else 5)` — so the default is right almost always. This route is for the
-exceptions: a heavy or bulky order that needs a different service, or one being collected rather than posted.
+WHY AN OVERRIDE EXISTS: courier is normally DERIVED, not chosen. The order sync sets it at insert time from what the customer paid at
+checkout — the next-day postage price gives '4', anything else '5' — so the default is right almost always. This route is for the
+exceptions: a heavy or bulky order that needs a different service, or one being collected rather than posted. The prices are NOT here:
+they live in NEXT_DAY_POSTAGE in utils/orderSync.js, mirrored in C:\scripts\orders\update_orders.py, and nothing else needs editing
+when postage is repriced.
 
 THE THREE CODES, and why not five. Across 3,177 archived customer rows only three values ever appear: '5' Royal Mail 48 (2,811),
 '4' Royal Mail 24 (356), '0' pack only (20). The legacy dropdown also offered '2' DHL and '3' DPD; neither has been used once, and

@@ -64,6 +64,35 @@ const ARCHIVE_COLS = [
 ].join(', ');
 
 // ---------------------------------------------------------------------------------------------------------------------------------
+// POSTAGE PRICES — the one place to edit when the shipping prices change. Twin: NEXT_DAY_POSTAGE in update_orders.py.
+// ---------------------------------------------------------------------------------------------------------------------------------
+/*
+ * A customer order's courier is DERIVED from what the customer paid for shipping at checkout, and only ever at INSERT (phase A, and
+ * see the "deliberately not refreshed" note there). Pay the NEXT-DAY price -> courier '4' (Royal Mail 24). Pay anything else — the
+ * standard price, free shipping, nothing at all -> '5' (Royal Mail 48). Only the next-day price is listed here because '5' is the
+ * catch-all: the standard price is never tested and never needs to be.
+ *
+ * WHEN THE PRICES CHANGE (once or twice a year):
+ *   1. If the STANDARD price changed, there is nothing to do — it is not tested.
+ *   2. If the NEXT-DAY price changed: put the new price first, move the old price second, delete whatever was second before.
+ *   3. Make the identical edit to NEXT_DAY_POSTAGE in C:\scripts\orders\update_orders.py. Both run live; changing one is the
+ *      failure mode described in the banner at the top of this file.
+ *
+ * KEEP EXACTLY TWO — current, and the one immediately before it. The previous price is carried only for the changeover, so an order
+ * paid at the old price shortly before the change still gets RM24 when it syncs after. A longer history is a liability: an old
+ * next-day price that happens to equal a later STANDARD price would silently upgrade standard customers to RM24.
+ *
+ * Exact-match comparison, as the Python does: the amount arrives from Shopify as a string like '6.45' and is parsed to the same
+ * double as the literal, so these are equal without rounding.
+ *
+ * Current prices for reference (2026-09-18): standard 4.45, next day 6.45. Both Royal Mail.
+ */
+const NEXT_DAY_POSTAGE = [
+  6.45,   // current   — from 2026-09-18
+  5.95,   // previous  — for orders paid just before the change; drop when the next change comes round
+];
+
+// ---------------------------------------------------------------------------------------------------------------------------------
 // Faithful ports of the Python's small helpers. These look trivial; they are not, and two of them encode real quirks.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -215,8 +244,9 @@ async function syncOrders(client, orders) {
     const shippingCostStr = order.total_shipping_price_set?.shop_money?.amount;
     const shippingCost = shippingCostStr ? Number(shippingCostStr) : null;
     const shippingNotes = safe(order.note);
-    // Courier is decided ONLY at insert, from an exact 5.95 shipping charge. 4 = the paid/tracked service, 5 = everything else.
-    const courier = String(shippingCost === 5.95 ? 4 : 5);
+    // Courier is decided ONLY at insert, from what was paid for shipping. 4 = next day (RM24), 5 = everything else (RM48).
+    // The prices live in NEXT_DAY_POSTAGE at the top of this file — change them there, not here.
+    const courier = String(NEXT_DAY_POSTAGE.includes(shippingCost) ? 4 : 5);
 
     const createdAt = wallClock(order.created_at);
     const updatedAt = wallClock(order.updated_at);

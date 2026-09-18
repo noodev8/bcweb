@@ -155,8 +155,9 @@ function rowState(row) {
 }
 
 /*
- * COURIERS — the codes update_orders.py:531 writes (`courier = str(4 if shipping_cost == 5.95 else 5)`) plus pack-only, which is
- * only ever set by hand.
+ * COURIERS — the codes the order sync writes at insert, derived from the shipping the customer paid for (next-day price -> '4',
+ * anything else -> '5'; the prices themselves live in NEXT_DAY_POSTAGE in utils/orderSync.js and its twin in update_orders.py, and
+ * are the only thing that changes when postage is repriced), plus pack-only, which is only ever set by hand.
  *
  * Only these three appear in 3,177 archived customer rows: '5' Royal Mail 48 (2,811), '4' Royal Mail 24 (356), '0' pack only (20).
  * The legacy screen also offered '2' DHL and '3' DPD; neither has ever been used, and both were dropped from this module (owner's
