@@ -3023,6 +3023,18 @@ export interface FinanceManual {
   car: number;
 }
 
+// The car mileage sheet, read for one month by /finance-car. A SUGGESTION for the Car box, never an authority: `configured` false
+// (no sheet set up) and an error are both ordinary outcomes the screen absorbs, because the month still has to close by hand.
+export interface FinanceCar {
+  month: string;
+  configured: boolean;
+  total: number;
+  journeys: number;
+  miles: number;
+  skipped: number;
+  rows: { date: string; miles: number; description: string; amount: number }[];
+}
+
 export interface FinanceMonth {
   month: string;
   rejected: FinanceRejectedFile[];
@@ -3083,6 +3095,23 @@ export function calculateFinanceMonth(args: {
       manual: b.manual as FinanceManual,
       stock: (b.stock as { units: number; value: number } | null) ?? null,
       checks: (b.checks as FinanceCheck[]) || [],
+    })
+  );
+}
+
+// Car mileage for the month, from the owner's Google Sheet — what the Car box is pre-filled with (route: finance-car).
+// SHEET_UNAVAILABLE comes back as a normal failed envelope; the page shows it as a note and leaves the box typeable.
+export function getFinanceCar(month: string) {
+  return request<FinanceCar>(
+    { url: '/finance-car', method: 'GET', params: { month } },
+    (b) => ({
+      month: b.month as string,
+      configured: !!b.configured,
+      total: Number(b.total) || 0,
+      journeys: Number(b.journeys) || 0,
+      miles: Number(b.miles) || 0,
+      skipped: Number(b.skipped) || 0,
+      rows: (b.rows as FinanceCar['rows']) || [],
     })
   );
 }

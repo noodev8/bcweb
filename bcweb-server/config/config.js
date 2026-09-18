@@ -99,5 +99,16 @@ module.exports = {
     supplementalDatasource: process.env.GOOGLE_SUPPLEMENTAL_DATASOURCE || '',
     contentLanguage: process.env.GOOGLE_CONTENT_LANGUAGE || 'en',
     feedLabel: process.env.GOOGLE_FEED_LABEL || 'GB'
+  },
+
+  // Google Sheets — the owner's car mileage log, read (never written) by /finance-car so the Finance screen can pre-fill the Car box
+  // instead of the owner opening the sheet and adding the month up by hand. Reuses the SAME service account as `google` above
+  // (GOOGLE_MERCHANT_CREDENTIALS_JSON), so there is no second credential to manage: only the sheet id and tab live here.
+  //
+  // Optional like shopify/onecom: not validated at boot. With sheetId unset the route answers NOT_CONFIGURED and the screen simply
+  // leaves the Car box empty and typeable — the module closed months by hand before this existed and must still be able to.
+  sheets: {
+    carSheetId: process.env.GOOGLE_CAR_SHEET_ID || '',
+    carTab: process.env.GOOGLE_CAR_SHEET_TAB || 'Car Expense'
   }
 };

@@ -12,25 +12,33 @@ How: the standard two-legged service-account flow (JWT bearer grant, RFC 7523 / 
      and exchange it at the token endpoint for an access token. No google-auth-library / googleapis dependency — the server has none and
      uses native fetch throughout (see utils/shopify.js), so this stays self-contained and matches that convention.
 
-Scope: https://www.googleapis.com/auth/content — the same scope the Python helper used; it carries over to the Merchant API unchanged.
+Scope: https://www.googleapis.com/auth/content by default — the same scope the Python helper used; it carries over to the Merchant API
+       unchanged. getAccessToken() takes a scope argument so the SAME service account can be used for a second Google API without a
+       second credential: utils/googleSheets.js asks for spreadsheets.readonly. A scope is part of the token, not of the account, so
+       this is a parameter and not a config value.
 
 Caching: the token (valid ~1h) is held in-module with its expiry; getAccessToken() returns the cached one until ~60s before expiry,
          then refreshes. Concurrent callers share ONE in-flight refresh (we cache the promise) so a burst of applies can't stampede the
          token endpoint. A process restart (PM2) just starts cold and re-mints on the first call.
+
+         THE CACHE IS PER SCOPE. A token minted for /auth/content is rejected by the Sheets endpoint, so one shared slot would have the
+         two callers evicting each other's token on every alternate call — and each eviction is a round trip to Google. Keyed by scope,
+         each API keeps its own hour-long token.
 =======================================================================================================================================
 */
 
 const crypto = require('crypto');
 const config = require('../config/config');
 
-const SCOPE = 'https://www.googleapis.com/auth/content';
+const DEFAULT_SCOPE = 'https://www.googleapis.com/auth/content';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 // Refresh this many seconds before the token actually expires, so an in-flight request never rides an about-to-die token.
 const EXPIRY_SKEW_SECONDS = 60;
 
-// In-module cache. token/expiresAt hold the current live token; inFlight holds a refresh promise so concurrent callers dedupe onto it.
-let cached = { token: null, expiresAt: 0 };
-let inFlight = null;
+// In-module cache, KEYED BY SCOPE (see the header). Each entry holds { token, expiresAt } for a live token; `inFlight` holds a refresh
+// promise per scope so concurrent callers for the same scope dedupe onto one round trip.
+const cached = new Map();
+const inFlight = new Map();
 
 // base64url without padding (JWT + signature encoding).
 function b64url(input) {
@@ -57,13 +65,13 @@ function loadServiceAccount() {
 }
 
 // Build + sign the assertion JWT and exchange it for an access token. Returns { token, expiresAt(ms) }.
-async function mintToken() {
+async function mintToken(scope) {
   const sa = loadServiceAccount();
   const tokenUri = sa.token_uri || DEFAULT_TOKEN_URI;
   const now = Math.floor(Date.now() / 1000);
 
   const header = { alg: 'RS256', typ: 'JWT' };
-  const claims = { iss: sa.client_email, scope: SCOPE, aud: tokenUri, iat: now, exp: now + 3600 };
+  const claims = { iss: sa.client_email, scope, aud: tokenUri, iat: now, exp: now + 3600 };
   const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
 
   // RS256 = RSA signature over SHA-256. crypto.sign with a PEM private key does exactly this.
@@ -94,23 +102,26 @@ async function mintToken() {
 }
 
 /*
- * getAccessToken()
- * Resolve with a valid access token string, reusing the cached one until ~60s before expiry. Concurrent callers share one refresh.
+ * getAccessToken(scope)
+ * Resolve with a valid access token string for `scope`, reusing the cached one until ~60s before expiry. Concurrent callers for the
+ * same scope share one refresh. `scope` defaults to the Merchant API scope, so the original one-argument-less callers are unchanged.
  * Rejects (throws to the caller) if the token can't be minted — googleMerchant catches this and reports GOOGLE_PUSH_FAILED.
  */
-async function getAccessToken() {
-  if (cached.token && Date.now() < cached.expiresAt - EXPIRY_SKEW_SECONDS * 1000) {
-    return cached.token;
+async function getAccessToken(scope = DEFAULT_SCOPE) {
+  const hit = cached.get(scope);
+  if (hit && Date.now() < hit.expiresAt - EXPIRY_SKEW_SECONDS * 1000) {
+    return hit.token;
   }
-  if (!inFlight) {
-    inFlight = mintToken()
-      .then((fresh) => { cached = fresh; return fresh.token; })
-      .finally(() => { inFlight = null; });
+  if (!inFlight.has(scope)) {
+    const pending = mintToken(scope)
+      .then((fresh) => { cached.set(scope, fresh); return fresh.token; })
+      .finally(() => { inFlight.delete(scope); });
+    inFlight.set(scope, pending);
   }
-  return inFlight;
+  return inFlight.get(scope);
 }
 
-// Test/diagnostic hook — drop the cached token so the next call re-mints (not used in normal flow).
-function _clearCache() { cached = { token: null, expiresAt: 0 }; inFlight = null; }
+// Test/diagnostic hook — drop every cached token so the next call re-mints (not used in normal flow).
+function _clearCache() { cached.clear(); inFlight.clear(); }
 
-module.exports = { getAccessToken, _clearCache };
+module.exports = { getAccessToken, _clearCache, DEFAULT_SCOPE };

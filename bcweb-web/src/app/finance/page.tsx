@@ -22,12 +22,22 @@ loop exits in silence). Three things follow from that:
      produced a month with no PayPal fee in it).
 
 STATE IS LOCAL AND DELIBERATELY UN-CACHED. Closing a month is an action, not a view; the module stores nothing server-side (owner,
-2026-09-11), so the screen IS the month's state until the files are downloaded. There is nothing to re-fetch on mount, hence no SWR
-here — which also keeps it clear of the no-fetching-in-effects rule (docs/maintenance-notes.md).
+2026-09-11), so the screen IS the month's state until the files are downloaded. Nothing calculated is re-fetched on mount. The ONE
+SWR query here is the car mileage sheet, which is a read keyed by month and nothing to do with the month's own state.
 
 THE TYPED FIGURES LIVE IN LOCAL STATE, not in the calculate response. SumUp, shop cash and car are typed here, so editing one after
 calculating must not force a re-upload of the Amazon file - or, worse, a second half-minute Shopify pull. They are sent with both
 calls so the server can check them, but what the screen shows and what the files are built from is this form.
+
+THE CAR FIGURE IS PRE-FILLED FROM THE MILEAGE SHEET, and is still typed. The owner logs every business journey in a Google Sheet for
+HMRC anyway, so /finance-car reads that sheet for the chosen month and the box arrives filled in - with the journeys behind it listed
+underneath, because a total you cannot see the parts of is a number you have to believe. Three rules hold it in place:
+  - IT IS A SUGGESTION. The moment the box is edited the sheet stops driving it (`carTouched`), and what Calculate sends is always what
+    is in the box. Changing the month clears that, because the operator's figure for August means nothing in July.
+  - IT NEVER BLOCKS. An unshared sheet, a renamed tab or a Google outage leaves an empty, typeable box and one quiet line of text.
+    This module closed months by hand before the sheet was wired in and must still be able to.
+  - IT IS A PRE-FILL, NOT A DEFAULT VALUE. The input stays a controlled string derived from (typed ?? sheet), so nothing has to be
+    copied into state on arrival - which is what keeps this clear of an effect (docs/maintenance-notes.md).
 
 SHOPIFY IS NOT TYPED AND NOT EDITABLE (Phase 2). The server pulls it live from the API for the chosen month. That is what makes the
 FIRST Calculate slow - about half a minute - so the button and the line beside it say so rather than appearing to have hung.
@@ -54,8 +64,9 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import {
-  calculateFinanceMonth, buildFinanceQuickFile, FinanceMonth, FinanceRejectedFile, FinanceFile, FinanceShopify,
+  calculateFinanceMonth, buildFinanceQuickFile, getFinanceCar, FinanceMonth, FinanceRejectedFile, FinanceFile, FinanceShopify,
 } from '@/lib/api';
+import { useApiQuery } from '@/lib/useApiQuery';
 
 const MAX_FILES = 2;
 
@@ -163,13 +174,28 @@ export default function FinancePage() {
   const [rejected, setRejected] = useState<FinanceRejectedFile[]>([]);
   const [generated, setGenerated] = useState<FinanceFile[] | null>(null);
   const [showRows, setShowRows] = useState(false);
+  const [showCarRows, setShowCarRows] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Typed figures. See the header note on why these are not taken from the calculate response.
   const [sumupSales, setSumupSales] = useState('');
   const [sumupFees, setSumupFees] = useState('');
   const [cashSales, setCashSales] = useState('');
-  const [car, setCar] = useState('');
+  // Car is the one typed figure with a source. `carTyped` is what the operator has entered, and null means "they haven't" — which is
+  // what lets the sheet fill the box without anything being copied into state. See the header note.
+  const [carTyped, setCarTyped] = useState<string | null>(null);
+
+  // The mileage sheet for this month. Keyed by month, so changing the month re-reads on its own. An error here is NOT surfaced as a
+  // page error: the Car box simply stays typeable and a line of text says why (the sheet must never be able to stop a month closing).
+  const { data: carSheet, error: carError, isLoading: carLoading } = useApiQuery(
+    ['finance-car', month],
+    () => getFinanceCar(month),
+  );
+
+  // What the box shows: the operator's figure once they have typed one, otherwise the sheet's total. A sheet total of 0 for a month
+  // with no journeys is shown as an explicit '0.00' rather than a blank, so "no journeys" is visibly different from "not read yet".
+  const car = carTyped ?? (carSheet?.configured && !carError ? carSheet.total.toFixed(2) : '');
+  const carFromSheet = carTyped === null && carSheet?.configured === true && !carError;
 
   const num = (s: string) => {
     const n = Number(String(s).replace(/[£,\s]/g, ''));
@@ -279,7 +305,9 @@ export default function FinancePage() {
             <select
               autoFocus
               value={month}
-              onChange={(e) => { setMonth(e.target.value); setChangingMonth(false); resetResult(); }}
+              // setCarTyped(null) hands the Car box back to the sheet: a figure typed for August is not a figure for July, and
+              // leaving it behind would carry one month's expense silently into another's books.
+              onChange={(e) => { setMonth(e.target.value); setChangingMonth(false); setCarTyped(null); resetResult(); }}
               onBlur={() => setChangingMonth(false)}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
             >
@@ -378,7 +406,64 @@ export default function FinancePage() {
           <MoneyInput label="SumUp sales" value={sumupSales} onChange={setSumupSales} />
           <MoneyInput label="SumUp fees" value={sumupFees} onChange={setSumupFees} />
           <MoneyInput label="Shop cash" value={cashSales} onChange={setCashSales} />
-          <MoneyInput label="Car" value={car} onChange={setCar} />
+          <MoneyInput label="Car" value={car} onChange={setCarTyped} />
+
+          {/* The evidence behind the Car figure. A total with its journeys under it can be checked against the sheet without
+              opening the sheet; a bare total can only be believed. Every state below is a sentence, never a silent blank. */}
+          <div className="pl-0 text-[11px] leading-relaxed text-slate-400">
+            {carLoading && <span>Reading the mileage sheet…</span>}
+
+            {carError && (
+              <span className="text-amber-700">
+                Mileage sheet unavailable — type the car figure by hand. ({carError.message})
+              </span>
+            )}
+
+            {!carLoading && !carError && carSheet?.configured && (
+              carSheet.journeys === 0 ? (
+                <span>No business journeys logged for {monthLabel(month)}.</span>
+              ) : (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCarRows((v) => !v)}
+                    className="underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+                  >
+                    {carSheet.journeys} journey{carSheet.journeys > 1 ? 's' : ''}, {carSheet.miles.toLocaleString('en-GB')} miles
+                    {carFromSheet ? ' from the mileage sheet' : ' on the mileage sheet'}
+                  </button>
+                  {!carFromSheet && carTyped !== null && (
+                    // Only offered once the two can differ — otherwise it is a button that does nothing to a box already showing it.
+                    <button
+                      type="button"
+                      onClick={() => setCarTyped(null)}
+                      className="ml-2 underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+                    >
+                      use {money(carSheet.total)}
+                    </button>
+                  )}
+                  {showCarRows && (
+                    <ul className="mt-1.5 space-y-1">
+                      {carSheet.rows.map((r, i) => (
+                        <li key={`${r.date}-${i}`} className="flex items-baseline justify-between gap-3">
+                          <span className="truncate">{r.date} · {r.description || '—'}</span>
+                          <span className="shrink-0 tabular-nums">{r.miles} mi · {money(r.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {carSheet.skipped > 0 && (
+                    // Unreadable rows are reported rather than dropped: a journey missing from the total is invisible otherwise.
+                    <div className="mt-1 text-amber-700">
+                      {carSheet.skipped} row{carSheet.skipped > 1 ? 's' : ''} in the sheet could not be read (check the date and
+                      expense cells) and {carSheet.skipped > 1 ? 'are' : 'is'} not in this total.
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+
           <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
             Shop and SumUp VAT is taken at a sixth of the gross, so children&apos;s footwear sold in the shop is over-declared. Agreed
             as acceptable at this volume.

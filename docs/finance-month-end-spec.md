@@ -53,7 +53,8 @@ PayPal file, types three numbers, and presses two buttons.
 | Download Amazon transactions, rename to `AMAZON-Sales.csv` | drop the file on the screen, any name |
 | Run `month-export.py` in another project | Shopify pulled live from the API |
 | Read 3 numbers off a console and retype them | gone |
-| SumUp sales + fees, shop cash, car | **unchanged — still typed in** (§3.5) |
+| SumUp sales + fees, shop cash | **unchanged — still typed in** (§3.5) |
+| Open the mileage sheet and add the month up | car pre-filled from the sheet, still editable (§3.5a) |
 | PB *Calculate Accounts* | one screen, every figure drillable |
 | PB *QuickFile Invoice* | one button |
 | Move 3 files to Accounts Income by hand | download the year-end pack (§4.3) |
@@ -72,7 +73,7 @@ PayPal file, types three numbers, and presses two buttons.
 | PayPal fees | PayPal *All transactions* CSV, uploaded | no — manual download |
 | SumUp sales + fees | typed | no |
 | Shop cash | typed | no |
-| Car / other expenses | typed | no |
+| Car / other expenses | Google Sheet (mileage log), read live | yes — pre-filled, still editable (§3.5a) |
 | Stock value | database | yes |
 
 **Both uploads are OPTIONAL.** Shopify comes from the API and the stock valuation from the
@@ -231,6 +232,39 @@ if that volume ever grows, but it does not earn its setup today.
 For the same reason, shop and SumUp VAT stays at **gross ÷ 6**, which assumes everything
 is standard-rated. Strictly this over-declares on any kids' shoes sold in the shop; at
 this volume the owner has accepted it. Revisit with the SumUp API, not before.
+
+### 3.5a Car — pre-filled from the mileage sheet
+
+**Added 2026-09-17 (owner).** The owner logs every business journey in a Google Sheet for HMRC
+anyway, so the Car figure existed in two places and was being re-keyed. `GET /finance-car?month=`
+reads that sheet and the screen pre-fills the box.
+
+The sheet is one row per journey, not one row per month:
+
+| Date | Business | Miles | Rate | Total Miles | Car | Description | Expense |
+|---|---|---|---|---|---|---|---|
+| 16/06/2026 | Brookfield | 154 | 0.45 | 154 | Andreas | ECCO Meeting | £69.30 |
+
+- **Filtered to `Business = Brookfield`** (owner's call). The column only earns its place by
+  excluding something, and a personal journey inside a single business total is invisible.
+- **`Expense` is read, not recomputed** from Miles × Rate. The sheet is the record: an overridden
+  line, or the HMRC rate dropping to 25p past 10,000 miles (what the running `Total Miles` column
+  tracks), is already in it, and arithmetic here would quietly disagree.
+- **Dates are parsed as UK `DD/MM/YYYY` by string**, never `new Date()` — which reads `14/08/2026`
+  as invalid and `06/07/2026` as the 6th of July. A row that is not that shape is counted as
+  skipped and reported on screen, never guessed at.
+- **Columns are found by header name**, so inserting a column in the sheet shifts nothing.
+- **No VAT**, which is what the QuickFile Car line already assumed (§5). Nothing downstream moved.
+
+It is a **suggestion, not an authority**: editing the box takes it over (changing the month hands
+it back), and the journeys are listed under the figure so the total can be checked without opening
+the sheet. An unshared sheet, a renamed tab or a Google outage leaves an empty typeable box and one
+line of text — closing the month by hand must always still work.
+
+**Access is granted in the sheet, not in the code.** The service account
+`merchant-api-access@merchant-feed-api-462809.iam.gserviceaccount.com` — the same one the Merchant
+API price push uses, no second credential — must be on the sheet's Share list as Viewer. Env:
+`GOOGLE_CAR_SHEET_ID`, `GOOGLE_CAR_SHEET_TAB`. Unset = the feature is simply off.
 
 ### 3.6 Stock value
 
@@ -465,7 +499,7 @@ and `shopify_fees.py`. Pulled live on every Calculate; the five figures are no l
      returns 403. Both verified against the live shop.
 
 **Phase 3 — if wanted.** Expenses as a repeating list with nominal codes rather than one
-hard-coded Car line. SumUp API. Zero-rating on shop sales. None of these are committed.
+hard-coded Car line (the Car line is now fed from the mileage sheet, §3.5a, but it is still one line). SumUp API. Zero-rating on shop sales. None of these are committed.
 
 **Before the PowerBuilder window is retired:** run both for two months and confirm the QuickFile
 imports land identically. That is the only outstanding gate.
