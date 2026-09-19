@@ -122,7 +122,7 @@ router.post('/', async (req, res) => {
       }
 
       // 4) skusummary — the product row, with legacy defaults. Price columns are placeholder strings ('0.00' / 'RRP') filled in later
-      //    by the price stage; shopify OFF; colourmap mirrors colour; google fields match the legacy new-row seed.
+      //    by the price stage; shopify OFF; colourmap mirrors colour; google fields seed the 'standard' Shopping campaign (was 'new' until 2026-09-19 — owner's call).
       // `created`/`updated` are the legacy TEXT stamps. `created_at` is our proper timestamptz (added going forward) — set explicitly
       // here (it also has a column DEFAULT now(), but we set it so intent is clear and it survives if the default is ever dropped).
       await client.query(`
@@ -133,7 +133,7 @@ router.post('/', async (req, res) => {
         ) VALUES (
           $1, $2, $3, $3, $4, $5, $6, '', $7,
           '0.00', '0.00', '0.00', 'RRP', '0.00',
-          1, 0, 1, 'new', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
+          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
         )
       `, [groupid, brand, colour, segment, season, supplier, handle]);
 
