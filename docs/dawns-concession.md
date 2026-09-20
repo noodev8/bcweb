@@ -1,5 +1,9 @@
 # DAWNS concession — decision note
 
+> **SUPERSEDED 2026-09-20 — not proceeding.** The owner dropped the concession and is instead running
+> his own shop (CM3) as a real channel: see `cm3-shop-plan.md`. The two were NOT run in parallel.
+> Kept for the channel economics in §2–§4, which still hold.
+
 Status: **pre-approach**, 2026-09-19. Owner's plan, with the numbers behind it.
 Nothing built. This is the reference sheet for the conversation with Dawn and for the BCWEB work that follows.
 
