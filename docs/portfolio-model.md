@@ -261,6 +261,24 @@ selling life are not eligible yet — they simply are not on it.
 trials to fund. Recompute them into this document when the buying plan is set; keep them out of the
 UI.
 
+**Second tab: CONTENDERS — spotting a winner at 30 days instead of 180.** Profit in a style's first
+30 days on sale predicts whether it becomes a winner, sharply:
+
+| Profit in first 30 days | Styles | **Conversion to winner** |
+|---|---|---|
+| £0 or less | 10 | **0%** |
+| £1–49 | 138 | 8% |
+| £50–99 | 43 | 28% |
+| **£100–199** | 18 | **72%** |
+| **£200+** | 3 | **100%** |
+
+Only 25% of a winner's 180-day profit lands in its first 30 days (45% by day 60), so **over half the
+value is still ahead when the signal fires.** At the time of writing there are 99 young styles in the
+building, ~20 of them future winners, and **14 already identifiable — three of which are out of
+stock.** The action is reorder and advertise, early.
+
+**Full build detail: `winners-screen-spec.md`.**
+
 ### 6.2 Throughput work
 
 Per §4.1, this outranks reporting. Anything that reduces the minutes between "found a product" and
