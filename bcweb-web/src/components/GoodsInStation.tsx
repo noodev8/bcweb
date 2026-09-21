@@ -37,11 +37,13 @@ guess and then hope the write agrees, it renders what came back. That is why the
 than decremented locally: the server is the only thing that knows, and two operators working the same delivery see each other's units
 disappear.
 
-BIRK TRACKER TOGGLE. On, a Birkenstock pair booked in here is also counted arrived on the Birk Tracker (oldest invoice first — the
-server decides, utils/birkTracker.js), so a delivery is scanned once instead of once per screen. It is remembered per browser like the
-sound, and it is visible in the standing line above the verdict because it changes what a scan WRITES. A tracker problem never stops
-the line — the shoe still has a shelf to go to — so it gets its own small strip under the verdict instead of the red stop: a message to
-read when you next look up, not a reason to put the gun down. Undo takes the tick back off the same line.
+BIRK TRACKER, ON EVERY SCAN (owner, 2026-09-21). A Birkenstock pair booked in here is always counted arrived on the Birk Tracker too
+(oldest invoice first — the server decides, utils/birkTracker.js), so a delivery is scanned once instead of once per screen. This used
+to be a remembered per-browser toggle sitting in the standing line above the verdict; it went when the Birk Tracker screen's own scan
+box did, because Goods In is now the only way a Birk delivery gets counted in and a toggle left off would silently under-count the
+season order. There is nothing to arm and nothing to forget. A tracker problem never stops the line — the shoe still has a shelf to go
+to — so it gets its own small strip under the verdict instead of the red stop: a message to read when you next look up, not a reason to
+put the gun down. Undo takes the tick back off the same line.
 
 THE RUN LIST IS THIS SESSION'S, THOUGH, and deliberately not persisted. It is the box in front of you, not an audit trail — bclog and
 incoming_stock are the audit trail. Undo works off the handles the book call returned, so it survives as long as the list does.
@@ -61,7 +63,6 @@ import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 const DEFAULT_SHELF = 'C3-Back-Stage';
 const SHELF_KEY = 'bc_goodsin_shelf';
 const SOUND_KEY = 'bc_goodsin_sound';
-const BIRK_KEY = 'bc_goodsin_birktracker';
 
 // Used only while /goods-in-shelves is unreachable — a shelf picker with nothing in it is a dead screen.
 const FALLBACK_SHELVES: GoodsInShelvesData['areas'] = [
@@ -118,7 +119,6 @@ function remembered(key: string, fallback: string): string {
 export default function GoodsInStation() {
   const [shelf, setShelf] = useState(() => remembered(SHELF_KEY, DEFAULT_SHELF));
   const [sound, setSound] = useState(() => remembered(SOUND_KEY, 'on') !== 'off');
-  const [birkOn, setBirkOn] = useState(() => remembered(BIRK_KEY, 'off') === 'on');
   // The last Birk Tracker warning, shown under the verdict until the next scan or undo replaces it. See the header.
   const [trackerNote, setTrackerNote] = useState<string | null>(null);
   const [value, setValue] = useState('');
@@ -261,7 +261,7 @@ export default function GoodsInStation() {
     // guessed client-side: which order line got claimed is the server's call, and it is what determines the destination.
     inFlight.current = true;
     setBusy(true);
-    const res = await goodsInBook({ scan, shelf, birkTracker: birkOn });
+    const res = await goodsInBook({ scan, shelf });
     setBusy(false);
     inFlight.current = false;
     // Every answer replaces the last tracker warning: it belongs to the scan before, and leaving it up would pin it on this shoe.
@@ -309,13 +309,12 @@ export default function GoodsInStation() {
     focusInput();
     // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
     void refreshNote();
-  }, [blocked, rows, shelf, birkOn, racks, chooseShelf, beep, reset, undo, refreshNote]);
+  }, [blocked, rows, shelf, racks, chooseShelf, beep, reset, undo, refreshNote]);
 
   const booked = rows.filter((r) => !r.cancelled);
   // `rows` is newest-first, so the first un-cancelled row IS the last scan — what both "Undo last" and the typed UNDO act on.
   const lastBooked = booked[0] || null;
   const toAmazon = booked.filter((r) => r.kind === 'amazon').length;
-  const unexpected = booked.filter((r) => !r.expected).length;
 
   return (
     <div className="pb-10">
@@ -350,22 +349,6 @@ export default function GoodsInStation() {
             ))}
           </select>
           <span className="text-slate-400">Scan a rack label to change it. Amazon lines override it and go to {AMAZON_SHELF}.</span>
-          <label
-            className="ml-auto flex cursor-pointer items-center gap-1.5 text-slate-600"
-            title="When on, each Birkenstock pair booked in is also marked arrived on the Birk Tracker — oldest invoice first"
-          >
-            <input
-              type="checkbox"
-              checked={birkOn}
-              onChange={(e) => {
-                setBirkOn(e.target.checked);
-                window.localStorage.setItem(BIRK_KEY, e.target.checked ? 'on' : 'off');
-                focusInput();
-              }}
-              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            Mark Birks arrived on Birk Tracker
-          </label>
         </div>
 
         {/* --- THE VERDICT --- */}
@@ -489,7 +472,6 @@ export default function GoodsInStation() {
           {booked.length === 0 ? 'Nothing scanned yet' : `${booked.length} scanned`}
         </span>
         {booked.length > 0 && <span>{toAmazon} to Amazon · {booked.length - toAmazon} to a shelf</span>}
-        {unexpected > 0 && <span className="text-amber-700">{unexpected} not on order</span>}
         {busy && <span className="text-slate-400">Working…</span>}
 
         {/* UNDO THE LAST SCAN — the cancel you actually reach for, since a mis-scan is noticed with the shoe still in your hand. The

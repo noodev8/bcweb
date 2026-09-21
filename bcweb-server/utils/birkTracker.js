@@ -27,14 +27,15 @@ Purpose: The two facts about the Birkenstock order book that more than one route
      `LIKE birktracker` (migrations/20260916_birktracker_archive.sql), so the two shapes match by construction and this list is the
      column ORDER the copy is written in, not a second definition of the table.
 
-  3. GOODS IN TICKING THE BOOK OFF (`markArrivedFromGoodsIn` / `unmarkArrivedFromGoodsIn`). When the Goods In screen's "Birk Tracker"
-     toggle is on, a Birkenstock pair booked onto a shelf also counts one pair arrived here, so the shoe is not scanned twice on two
-     screens. It lives here rather than in goods-in-book.js because it is a rule about this book, and the Birk Tracker's own scan
-     route is the other half of the same question. WHICH LINE (owner, 2026-09-17): the one invoiced LONGEST AGO first — a pair
+  3. GOODS IN TICKING THE BOOK OFF (`markArrivedFromGoodsIn` / `unmarkArrivedFromGoodsIn`). A Birkenstock pair booked onto a shelf at
+     Goods In also counts one pair arrived here, so the shoe is not scanned twice on two screens. This was the Goods In screen's
+     "Birk Tracker" toggle until 2026-09-21; it now runs on EVERY scan, because the Birk Tracker screen's own scan box was removed the
+     same day and this is the only path left — a toggle left off would silently under-count the season order. It lives here rather than
+     in goods-in-book.js because it is a rule about this book. WHICH LINE (owner, 2026-09-17): the one invoiced LONGEST AGO first — a pair
      Birkenstock billed three weeks ago is far likelier to be in the box than one billed yesterday — then lines not yet invoiced,
      oldest order first (goods routinely land before the invoice is keyed). Only lines still short (`arrived < requested`) are
-     candidates, the same outstanding test as routes/birk-tracker-scan.js. Unlike that route it NEVER ASKS: at the Goods In bench
-     there is no one to pick from a list, and "oldest invoice first" is the owner's answer to the ambiguity.
+     candidates. It NEVER ASKS, unlike the retired tracker-screen scan: at the Goods In bench there is no one to pick from a list, and
+     "oldest invoice first" is the owner's answer to the ambiguity.
      The dates are legacy display strings (`invoicedate` dd.MM.yyyy, `placedate` dd/MM/yyyy) and are ORDERED AS REARRANGED TEXT
      (yyyymmdd), never cast — a to_date on one junk value would throw and take the pair's tracker tick down with it.
      These run inside the Goods In transaction behind a SAVEPOINT (see the callers): a tracker problem must come back as a message on

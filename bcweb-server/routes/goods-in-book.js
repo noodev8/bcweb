@@ -41,10 +41,14 @@ dropdown, and an API that trusts the string would let a typo mint a phantom loca
 (owner, same call as inv-adjust.js), and the login name answers that where a workstation id no longer does. The log line keeps the
 legacy phrasing ("Goods In <code> to <target>") so web and PowerBuilder rows read identically in bclog.
 
-BIRK TRACKER (optional, `birkTracker: true` — the screen's toggle, owner 2026-09-17). Birkenstock is never in `orderstatus`, so a Birk
-pair books in here as free stock and, separately, used to need beeping in again on the Birk Tracker. With the toggle on, the same scan
-also counts the pair arrived on the season order book, on the line invoiced longest ago (utils/birkTracker.js, header point 3, owns
-that rule). It runs INSIDE this transaction but behind a SAVEPOINT, and that asymmetry is the point: the shoe is physically in the
+BIRK TRACKER (ALWAYS, owner 2026-09-21 — it was the screen's toggle from 2026-09-17 and is no longer optional). Birkenstock is never
+in `orderstatus`, so a Birk pair books in here as free stock and, separately, used to need beeping in again on the Birk Tracker. Goods
+In is now the ONLY way a Birk delivery is counted in — the tracker screen's own scan box was removed on 2026-09-21 — so this step can
+no longer be left off: a scan that skipped it would silently under-count the season order with nothing recording why. Every scan counts
+the pair arrived on the season order book, on the line invoiced longest ago (utils/birkTracker.js, header point 3, owns that rule).
+Running it unconditionally costs a non-Birkenstock scan one indexed lookup that returns nothing: `markArrivedFromGoodsIn` returns null
+for a shoe that was never going to be on the book, so the screen shows nothing and nothing is written.
+It runs INSIDE this transaction but behind a SAVEPOINT, and that asymmetry is the point: the shoe is physically in the
 operator's hand and must get a shelf whatever the tracker thinks, so a tracker problem — no open line, not on the book, a database
 error — rolls back only the tracker step and comes back in `birk` as a message for the screen. The reverse is not true: if the
 booking fails, the tick goes with it, because a pair the tracker counts but no shelf holds is exactly the double-count this avoids.
@@ -52,8 +56,7 @@ booking fails, the tick goes with it, because a pair the tracker counts but no s
 Request Payload:
 {
   "scan":  "5052149511232",     // required — a barcode or a SKU code, any case, trailing 'B' tolerated
-  "shelf": "C3-Back-Stage",     // required — where LOCAL stock goes. Ignored when an Amazon line is claimed.
-  "birkTracker": true           // optional — also count a Birkenstock pair arrived on the Birk Tracker (see header)
+  "shelf": "C3-Back-Stage"      // required — where LOCAL stock goes. Ignored when an Amazon line is claimed.
 }
 
 Success Response:
@@ -68,7 +71,7 @@ Success Response:
   "ordernum": "AMZ-O-WS7-4515",     // the claimed line, null when nothing was on order
   "incomingId": 16376,              // handles for /goods-in-cancel
   "localstockId": "WEB-8f2c…",
-  "birk": null                      // null = toggle off, or not a Birk and not on the book. Otherwise ONE of:
+  "birk": null                      // null = not a Birk and not on the book. Otherwise ONE of:
       // { "marked": true, "ordernum": "0001927328", "code": "…-38", "requested": 3, "invoiced": 3, "arrived": 2, "invoicenum": "5290103870" }
       // { "marked": false, "reason": "NOT_ON_TRACKER" | "ALL_ARRIVED" | "ERROR", "message": "…" }   -- the unit WAS still booked in
 }
@@ -103,7 +106,6 @@ router.post('/', async (req, res) => {
     const body = req.body || {};
     const rawScan = typeof body.scan === 'string' ? body.scan.trim() : '';
     const shelf = typeof body.shelf === 'string' ? body.shelf.trim() : '';
-    const birkTracker = body.birkTracker === true;
 
     if (!rawScan || !shelf) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'scan and shelf are required' });
@@ -196,23 +198,21 @@ router.post('/', async (req, res) => {
                 to_char(now() AT TIME ZONE 'Europe/London','HH24:MI'), now())
       `, [operator, `Goods In ${sku.code} to ${target}`]);
 
-      // --- 7. BIRK TRACKER, if asked. Behind a savepoint so a failure here undoes only this step — see the header.
+      // --- 7. BIRK TRACKER, always. Behind a savepoint so a failure here undoes only this step — see the header.
       let birk = null;
-      if (birkTracker) {
-        await client.query('SAVEPOINT birk_tracker');
-        try {
-          birk = await markArrivedFromGoodsIn(client, {
-            code: sku.code,
-            eans: [scan, String(sku.ean || '').trim().replace(/B$/i, '')],
-            isBirk: /^birkenstock$/i.test(String(sku.brand || '').trim()),
-            who: operator,
-          });
-          await client.query('RELEASE SAVEPOINT birk_tracker');
-        } catch (err) {
-          await client.query('ROLLBACK TO SAVEPOINT birk_tracker');
-          logger.error('[goods-in-book] birk tracker step failed:', err.message);
-          birk = { marked: false, reason: 'ERROR', message: 'Could not update the Birk Tracker — mark this pair there by hand' };
-        }
+      await client.query('SAVEPOINT birk_tracker');
+      try {
+        birk = await markArrivedFromGoodsIn(client, {
+          code: sku.code,
+          eans: [scan, String(sku.ean || '').trim().replace(/B$/i, '')],
+          isBirk: /^birkenstock$/i.test(String(sku.brand || '').trim()),
+          who: operator,
+        });
+        await client.query('RELEASE SAVEPOINT birk_tracker');
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT birk_tracker');
+        logger.error('[goods-in-book] birk tracker step failed:', err.message);
+        birk = { marked: false, reason: 'ERROR', message: 'Could not update the Birk Tracker — mark this pair there by hand' };
       }
 
       return {

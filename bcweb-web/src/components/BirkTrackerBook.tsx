@@ -85,31 +85,14 @@ no state where both are set. Status tabs and the search box are genuine co-filte
   read the screen, once per order. Colour alone would not do: an <option> can only be coloured through an inline style, which Chrome,
   Edge and Firefox on Windows honour but other browsers ignore entirely, so the words carry the meaning and the colour is the glance.
 
--- SCANNING A DELIVERY IN (owner, 2026-09-14) ------------------------------------------------------------------------------------------
-A REAL BOX, AND NO MODE. Two owner notes pull in opposite directions and both are right: "i wanna be able to just scan" (no switch to
-arm first) and "i would like an actual input rather than just assuming its on" (not an invisible listener you have to trust). So the
-scan box is permanently visible in the toolbar, autofocused on load and refocused after every beep — and any typing that lands on the
-PAGE rather than in a field is redirected into it, the first character appended by hand since it is consumed before the box can take
-focus, the rest arriving there on their own. You can therefore beep the moment the screen opens without clicking anything, and still
-watch the digits arrive and correct them. It is also the only way to book in the six lines that carry no EAN: type the barcode, or use
-the row's Arrived cell.
-  The earlier version detected the gun by keystroke SPEED and had no box at all. It worked, and it was the wrong shape: a scanner
-  that silently does nothing is indistinguishable from one that is not plugged in.
-  KEYS AIMED AT A FIELD ARE NEVER TOUCHED. Counts, search terms and invoice numbers are all typed on this screen; only keystrokes with
-  no field to land in are redirected.
-  IT WRITES IMMEDIATELY, one beep at a time (owner), which is the opposite of the typed edits above. A delivery is dozens of pairs
-  over a few minutes and a closed tab must not lose the lot. The safety net that immediate writing needs is the log: every beep is
-  listed and every one can be undone — and Undo goes back through /birk-tracker-save with the values the line held a moment ago
-  rather than through a decrement endpoint, because there should be one way to change this column, not two.
-  THE GUN STANDS DOWN WHILE THERE IS UNSAVED TYPING. Scans and edits write the same column on different schedules, so rather than
-  make the operator choose a mode, the box disables itself and its placeholder says why.
-  THE SCREEN'S FILTER IS THE SCAN'S SCOPE. A barcode does NOT identify an order line — the same EAN sits on up to four orders — so
-  picking the order or invoice you are unpacking first is what makes a repeated barcode unambiguous. When it still isn't, the server
-  returns the candidates and the operator taps one; see routes/birk-tracker-scan.js for why it asks rather than guesses.
-  IT TOUCHES NO STOCK (owner). It marks the order book, nothing else. This is not Goods In for Birkenstock — that supplier has never
-  been in `orderstatus` at all.
-Six lines in the live book carry no EAN and can never be scanned; they are keyed by hand, which is the other reason the typed columns
-stay exactly where they are.
+-- THERE IS NO SCANNING ON THIS SCREEN (owner, 2026-09-21) -----------------------------------------------------------------------------
+BIRK DELIVERIES ARE BEEPED IN AT GOODS IN NOW, so the scan box, the page-wide key listener that fed it and the "Scanned just now" log
+with its per-beep Undo are all gone from here. Goods In with its "Birk Tracker" toggle on shelves the pair AND ticks it arrived on this
+book in the same write (utils/birkTracker.js), which is strictly more than this screen could do — it moved stock as well — and it
+resolves an ambiguous barcode by rule instead of stopping to ask, because a bench operator with a box open has no one to ask.
+  WHAT STAYS: the Arrived column is still typed, and still batches with Invoiced through /birk-tracker-save. That was always the path
+  for the six lines in the live book that carry no EAN and could never be scanned; it is now the path for correcting any line.
+  The server's /birk-tracker-scan route is untouched and no longer called from here.
 
 LOAD ORDER and LOAD INVOICE open a real file dialog (owner, 2026-09-14), starting in Downloads on the browsers that allow it to be
 asked. Both are live and both are two-step — the server reads the file and returns a plan, a dialog reviews it, and only its own
@@ -125,15 +108,14 @@ is the minimum that still answers "where is this size, and what paid for it?".
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArchiveBoxIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, DocumentArrowUpIcon, MagnifyingGlassIcon, TrashIcon,
-  XMarkIcon, QrCodeIcon,
 } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, scanBirkTrackerArrival, previewBirkInvoice, previewBirkOrder,
-  type BirkTrackerLine, type BirkTrackerScanLine, type BirkInvoicePreview, type BirkOrderPreview,
+  getBirkTrackerLines, saveBirkTrackerLines, clearBirkTrackerArrived, previewBirkInvoice, previewBirkOrder,
+  type BirkTrackerLine, type BirkInvoicePreview, type BirkOrderPreview,
 } from '@/lib/api';
 import BirkInvoiceDialog from '@/components/BirkInvoiceDialog';
 import BirkOrderDialog from '@/components/BirkOrderDialog';
@@ -219,7 +201,7 @@ interface Edit { invoiced: number; arrived: number }
 interface Live { r: BirkTrackerLine; invoiced: number; arrived: number; state: State; over: boolean; dirty: boolean }
 
 export default function BirkTrackerBook() {
-  const { data, error, isLoading, busy, refresh, mutate } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
+  const { data, error, isLoading, busy, refresh } = useApiQuery('birk-tracker-lines', getBirkTrackerLines);
 
   const [state, setState] = useState<State | 'all'>('all');
   const [focus, setFocus] = useState<{ kind: 'order' | 'invoice'; value: string } | null>(null);
@@ -242,25 +224,6 @@ export default function BirkTrackerBook() {
   // The same, for Load order.
   const [orderPreview, setOrderPreview] = useState<BirkOrderPreview | null>(null);
   const [orderBusy, setOrderBusy] = useState(false);
-
-  // --- scanning a delivery in ----------------------------------------------------------------------------------------------------
-  // THERE IS NO SCAN MODE (owner, 2026-09-14: "i wanna be able to just scan"). The page listens for the gun the whole time it is
-  // open — no button to arm it, no box to aim at. Every beep is committed on its own so a closed tab mid-delivery loses nothing,
-  // which is the opposite of the typed edits above; the two are kept from colliding by pausing the listener while edits are pending
-  // rather than by making the operator choose a mode.
-  const [scanBusy, setScanBusy] = useState(false);
-  // The scan box is a real, permanently visible field (owner, 2026-09-14) — not an invisible listener you have to trust is running.
-  // It is also the page's default keyboard target, so nothing has to be clicked before beeping; see the listener below.
-  const [scanInput, setScanInput] = useState('');
-  const scanRef = useRef<HTMLInputElement>(null);
-  // Newest first. `candidates` carries the choices when a barcode could not be resolved; `undo` the values to write back.
-  const [scanLog, setScanLog] = useState<{
-    id: number;
-    tone: 'ok' | 'ask' | 'warn';
-    text: string;
-    candidates?: BirkTrackerScanLine[];
-    undo?: { ordernum: string; code: string; invoiced: number; arrived: number };
-  }[]>([]);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
 
@@ -470,99 +433,6 @@ export default function BirkTrackerBook() {
     });
   }
 
-  // Patch one line in the SWR cache after a scan instead of refetching the book. A delivery is dozens of beeps in a couple of
-  // minutes, and a full reload per beep would put that many round trips on the live DB for data we already have in hand.
-  function applyScanned(line: BirkTrackerScanLine) {
-    mutate(
-      (cur) => (cur ? {
-        ...cur,
-        rows: cur.rows.map((r) => (r.ordernum === line.ordernum && r.code === line.code
-          ? { ...r, invoiced: line.invoiced, arrived: line.arrived, complete: line.complete }
-          : r)),
-      } : cur),
-      false,
-    );
-  }
-
-  const logScan = (entry: Omit<(typeof scanLog)[number], 'id'>) =>
-    setScanLog((prev) => [{ id: Date.now() + Math.random(), ...entry }, ...prev].slice(0, 40));
-
-  async function sendScan(args: { barcode?: string; ordernum?: string; code?: string }) {
-    setScanBusy(true);
-    // The scope is whatever the screen is focused on — unpacking a known delivery is what makes an ambiguous barcode unambiguous.
-    const body = await scanBirkTrackerArrival({ ...args, scope: focus ? { kind: focus.kind, value: focus.value } : undefined });
-    setScanBusy(false);
-    scanRef.current?.focus(); // hand the gun its box back, so a delivery is one beep after another with nothing to click
-
-    if (body.return_code === 'SUCCESS' && body.line) {
-      const l = body.line;
-      // The undo target holds the values from BEFORE this scan, so undoing writes them back verbatim.
-      applyScanned(l);
-      logScan({
-        tone: 'ok',
-        text: `${l.code} — arrived ${l.arrived} of ${l.requested}${l.complete ? ', all in' : ''}`,
-        undo: { ordernum: l.ordernum, code: l.code, invoiced: l.invoiced, arrived: l.arrived - 1 },
-      });
-      return;
-    }
-    if (body.return_code === 'AMBIGUOUS') {
-      logScan({ tone: 'ask', text: body.message || 'That barcode is on more than one order', candidates: body.candidates });
-      return;
-    }
-    logScan({ tone: 'warn', text: body.message || 'That scan could not be recorded' });
-  }
-
-  // The scan box is submitted by the gun's own trailing Enter, or by hand for one of the six lines that carry no barcode.
-  function submitScan() {
-    const barcode = scanInput.trim();
-    setScanInput('');
-    if (!barcode) return;
-    // Typed edits batch and scans commit instantly; both write `arrived`. Rather than make the operator pick a mode, scanning stands
-    // down while there is unsaved typing, and says so.
-    if (dirtyRows.length > 0) {
-      logScan({ tone: 'warn', text: `${barcode} — save or discard your typed changes first` });
-      return;
-    }
-    if (scanBusy) return; // one beep at a time; the gun outruns the round trip otherwise
-    sendScan({ barcode });
-  }
-
-  // Keystrokes that land on the PAGE rather than in a field are pushed into the scan box, which is then focused so the rest of the
-  // burst arrives there on its own. That is what keeps "just scan" true without pretending the box isn't there: you can beep without
-  // clicking into it first, and you still see the digits arrive and can correct them.
-  //   The first character has already been consumed by the time we react, so it is appended by hand; everything after it types
-  //   straight into the now-focused input.
-  //   Keys aimed at a real field are never touched — counts, search terms and invoice numbers are all typed on this screen.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;
-      const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      e.preventDefault();
-      setScanInput((v) => v + e.key);
-      scanRef.current?.focus();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
-  // Undo writes the old values back through the ordinary save route rather than a decrement endpoint — the client knows exactly what
-  // the line held a moment ago, and reusing the tested write beats adding a second way to change the same column.
-  async function undoScan(entry: (typeof scanLog)[number]) {
-    if (!entry.undo) return;
-    const u = entry.undo;
-    setScanBusy(true);
-    const res = await saveBirkTrackerLines({ rows: [{ ordernum: u.ordernum, code: u.code, invoiced: u.invoiced, arrived: u.arrived }] });
-    setScanBusy(false);
-    if (!res.success) {
-      logScan({ tone: 'warn', text: `Could not undo ${u.code} — ${res.error}` });
-      return;
-    }
-    applyScanned({ ...u, size: '', requested: 0, complete: false });
-    await refresh(); // the patch above cannot know the line's `requested`, so take the real row back
-    setScanLog((prev) => prev.map((e) => (e.id === entry.id ? { ...e, tone: 'warn', text: `${u.code} — undone`, undo: undefined } : e)));
-  }
-
   // --- picking a file to load ------------------------------------------------------------------------------------------------------
   // Opens the operator's Downloads folder where the browser allows it (owner: "it should open my downloads"). Only Chrome and Edge
   // can be told WHERE to start — `showOpenFilePicker({ startIn: 'downloads' })`, and only on a secure origin, which localhost and
@@ -720,30 +590,6 @@ export default function BirkTrackerBook() {
           strip under the page title they read as a toolbar, which is what they are, and the filter row below is free to be only
           about filtering. Right-aligned so the eye still starts at the left edge, where the content does. */}
       <section className="flex flex-wrap items-center gap-2">
-        {/* THE SCAN BOX, always present and never a mode (owner: an actual input rather than assuming it is on). It is autofocused on
-            load and refocused after every beep, and any typing that lands on the page rather than in a field is redirected into it —
-            so you can beep the moment the screen opens without clicking anything, while still SEEING what the gun sent and being able
-            to fix it. It also takes a barcode typed by hand, which is the only way to book in the six lines that carry no EAN. */}
-        <form onSubmit={(e) => { e.preventDefault(); submitScan(); }} className="relative w-full sm:w-72">
-          <QrCodeIcon className={'pointer-events-none absolute left-3 top-2.5 h-4 w-4 ' + (dirtyRows.length > 0 ? 'text-slate-300' : 'text-emerald-600')} />
-          <input
-            ref={scanRef}
-            autoFocus
-            value={scanInput}
-            onChange={(e) => setScanInput(e.target.value)}
-            disabled={dirtyRows.length > 0}
-            placeholder={dirtyRows.length > 0 ? 'Save your changes to scan' : 'Scan a pair to book it in'}
-            aria-label="Scan a barcode to mark a pair arrived"
-            className={
-              'w-full rounded-md border py-2 pl-9 pr-3 font-mono text-sm tabular-nums placeholder:font-sans focus:outline-none focus:ring-1 ' +
-              (dirtyRows.length > 0
-                ? 'border-slate-200 bg-slate-50 text-slate-400 placeholder:text-slate-400'
-                : 'border-emerald-300 bg-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500')
-            }
-          />
-        </form>
-        {scanBusy && <span className="text-xs text-slate-400">working…</span>}
-
         <span className="ml-auto" />
 
         {/* THE TWO FILE LOADERS. Both open in Downloads where the browser allows it, and both review before they write.
@@ -813,7 +659,7 @@ export default function BirkTrackerBook() {
       {/* --- the book in three numbers -------------------------------------------------------------------------------------------
           THE SUMMARY IS ONE BLOCK, not three stacked ones (owner, 2026-09-14: "stuff is split awkwardly onto their own rows"). The
           three figures, the bar and the line that reads the bar are one statement about the book, so they sit tight together with no
-          gaps between them, and the scanner indicator takes the empty right-hand side rather than earning a row of its own.
+          gaps between them. (The right-hand side used to carry a scanner indicator; scanning left this screen on 2026-09-21.)
           The gloss no longer repeats "x of y arrived": with invoiced and arrived side by side an arm's length above it, saying it
           again in words was the screen talking to itself. It now carries only what the numbers above do not — the two parts of the
           order that have NOT landed. The per-order lines still spell out "x of y arrived", which is where that phrasing was asked for
@@ -880,7 +726,7 @@ export default function BirkTrackerBook() {
             one cause rn it looks awkward"). It is built the same way as the summary block above — one thing at the left edge, the rest
             hard right — so the two rows reach both margins and read as the same column of page rather than two different widths
             stacked. The search keeps a ~24rem ceiling (it holds a style code; a full-bleed box would be a lot of white for a short
-            string) and the pickers take the right, where the summary puts its scanner pill. */}
+            string) and the pickers take the right. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="relative w-full min-w-[14rem] sm:w-auto sm:flex-1 sm:max-w-sm">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -933,61 +779,6 @@ export default function BirkTrackerBook() {
           )}
         </div>
       </section>
-
-      {/* --- what the gun has just done -----------------------------------------------------------------------------------------
-          There is no scanning MODE any more (owner, 2026-09-14: "i wanna be able to just scan"), so there is no station to open and
-          no box to aim at — the page listens, and this appears only once something has been beeped. Each beep commits on its own, so
-          the undo on each line is the safety net that immediate writing needs. */}
-      {scanLog.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-3">
-          <div className="mb-2 flex items-center gap-3 text-xs text-slate-500">
-            <span className="font-medium text-slate-700">Scanned just now</span>
-            {focus
-              ? <span>into {focus.kind} <span className="font-mono">{focus.value}</span></span>
-              : <span>across the whole book — pick an order or invoice above to stop a repeated barcode being ambiguous</span>}
-            {scanBusy && <span className="text-slate-400">working…</span>}
-            <button type="button" onClick={() => setScanLog([])} className="ml-auto underline hover:text-slate-700">Clear list</button>
-          </div>
-
-          <ul className="space-y-1">
-              {scanLog.map((e) => (
-                <li
-                  key={e.id}
-                  className={
-                    'flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1.5 text-sm ' +
-                    (e.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : e.tone === 'ask' ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-600')
-                  }
-                >
-                  <span className="min-w-0 flex-1 font-mono text-xs">{e.text}</span>
-
-                  {/* The barcode could not be resolved to one line — the operator names it. See the route header for why this asks
-                      rather than guesses: a wrong guess puts two orders out, one over and one under. */}
-                  {e.candidates?.map((c) => (
-                    <button
-                      key={c.ordernum + c.code}
-                      type="button"
-                      onClick={() => { setScanLog((prev) => prev.filter((x) => x.id !== e.id)); sendScan({ ordernum: c.ordernum, code: c.code }); }}
-                      className="rounded border border-amber-300 bg-white px-2 py-0.5 font-mono text-xs hover:bg-amber-100"
-                    >
-                      {c.ordernum} · {c.arrived}/{c.requested}
-                    </button>
-                  ))}
-
-                  {e.undo && (
-                    <button
-                      type="button"
-                      onClick={() => undoScan(e)}
-                      disabled={scanBusy}
-                      className="inline-flex items-center gap-1 text-xs underline opacity-70 hover:opacity-100 disabled:opacity-30"
-                    >
-                      <XMarkIcon className="h-3.5 w-3.5" /> Undo
-                    </button>
-                  )}
-                </li>
-              ))}
-          </ul>
-        </section>
-      )}
 
       {notice && (
         <div className={'rounded-md px-3 py-2 text-sm ' + (notice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900')}>

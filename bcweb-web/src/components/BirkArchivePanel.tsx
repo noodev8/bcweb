@@ -7,9 +7,9 @@ Purpose: What "Archive arrived" has taken off the Birkenstock order book, and th
          /birk-tracker-archive and writes /birk-tracker-restore.
 
 WHY A PANEL AND NOT A FOURTH STATUS TAB (owner, 2026-09-16). The tab reads more naturally — "Still to come / On the way / Arrived /
-Archived" — and it was the wrong answer. BirkTrackerBook derives its headline totals, both filter rails, the picker roll-ups and the
-scan's scope from ONE array of live rows; an archived line belongs to none of those, so a tab would mean an exclusion added by hand to
-every one of them, silently wrong wherever it was missed. The archive is a different question — "what did we clear?" rather than "what
+Archived" — and it was the wrong answer. BirkTrackerBook derives its headline totals, both filter rails and the
+picker roll-ups from ONE array of live rows; an archived line belongs to none of those, so a tab would mean an exclusion added by hand
+to every one of them, silently wrong wherever it was missed. The archive is a different question — "what did we clear?" rather than "what
 is outstanding?" — and different questions get their own surface. The book's arithmetic is then untouched by this feature existing.
 It also means the archive is only fetched when someone opens it, rather than on every load of a screen that is worked every week.
 

@@ -2342,12 +2342,13 @@ export interface GoodsInBooking {
   localstockId: string;
   birk: GoodsInBirk | null;   // the Birk Tracker step — null when the toggle was off or the shoe is nothing to do with the book
 }
-// What the optional Birk Tracker step did. A `marked: false` is a WARNING, not a failure: the unit was still booked onto its shelf.
+// What the Birk Tracker step did — it runs on every scan. A `marked: false` is a WARNING, not a failure: the unit was still
+// booked onto its shelf.
 export type GoodsInBirk =
   | { marked: true; ordernum: string; code: string; requested: number; invoiced: number; arrived: number; invoicenum: string | null }
   | { marked: false; reason: 'NOT_ON_TRACKER' | 'ALL_ARRIVED' | 'ERROR'; message: string };
 
-export function goodsInBook(args: { scan: string; shelf: string; birkTracker?: boolean }) {
+export function goodsInBook(args: { scan: string; shelf: string }) {
   return request<GoodsInBooking>(
     { url: '/goods-in-book', method: 'POST', data: args },
     (b) => ({
@@ -3283,40 +3284,6 @@ export function restoreBirkTrackerLines(
     { url: '/birk-tracker-restore', method: 'POST', data: args },
     (b) => ({ restored: Number(b.restored) || 0, skipped: (b.skipped as BirkRestoreSkip[]) || [] })
   );
-}
-
-// ONE BEEP = ONE PAIR ARRIVED. Tracker only — it writes `arrived` on the order book and touches no stock (see the route header).
-//
-// Three of its return codes are NORMAL OUTCOMES the caller must handle rather than errors to toast:
-//   AMBIGUOUS         the barcode is on more than one open order line and the rule could not narrow it — `candidates` lists them and
-//                     the operator picks; call again with that line's ordernum + code to name it explicitly.
-//   ALREADY_COMPLETE  the pair is real but the book already says every matching line is fully arrived (a double-scan).
-//   NOT_FOUND         the barcode is not in this order book at all.
-// Because api.ts never throws on a return_code, all three arrive as `success: false` with the code — branch on `return_code`, not on
-// the message. The raw envelope is needed for `candidates`, so this one returns the body rather than a narrowed shape.
-export interface BirkTrackerScanLine {
-  ordernum: string; code: string; size: string;
-  requested: number; invoiced: number; arrived: number; complete: boolean;
-}
-export interface BirkTrackerScanBody {
-  return_code: string;
-  message?: string;
-  line?: BirkTrackerScanLine;
-  candidates?: BirkTrackerScanLine[];
-}
-
-export async function scanBirkTrackerArrival(args: {
-  barcode?: string;
-  scope?: { kind: 'order' | 'invoice'; value: string };
-  ordernum?: string;
-  code?: string;
-}): Promise<BirkTrackerScanBody> {
-  try {
-    const res = await api.request({ url: '/birk-tracker-scan', method: 'POST', data: args });
-    return (res.data || { return_code: 'UNKNOWN' }) as BirkTrackerScanBody;
-  } catch {
-    return { return_code: 'NETWORK_ERROR', message: 'Network error - please check your connection' };
-  }
 }
 
 // =============================================================================================================================
