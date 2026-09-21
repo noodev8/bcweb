@@ -252,9 +252,15 @@ residue, not failure, and discounting it now gives away stock that sells at full
 
 ## Open questions
 
-1. Install the Web/Embed tracking script, then confirm `lastCartUpdate` / `lastActive` populate.
-   Flows are blocked until they do.
-2. Did Campaign 3 actually send? Its design had no unsubscribe link or postal address.
-3. Export the Klaviyo campaign history before that account lapses — it is the only record.
+1. Confirm the pixel is collecting — `lastCartUpdate` / `lastActive` should populate once the
+   workspace has been live a day (created 2026-09-21 12:51, so zero on day one is expected, not
+   a fault). **Flows are blocked until they do**, and the flows are the part that earned money
+   last time.
+2. Send campaign 1 to band 1 (79 contacts), then work the ladder.
+3. Band 9 needs its own copy before we get there — those 2,104 have never purchased.
 4. Is the bcweb piece a full module (screen + routes) or just a place to generate audiences?
    Undecided. Do not start building until it is.
+
+**Klaviyo is closed** (owner, 2026-09-21). Not exporting the campaign history; Campaign 3's
+results are accepted as lost. Don't reopen it — the numbers that mattered are already recorded
+above.
