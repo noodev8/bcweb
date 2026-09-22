@@ -98,13 +98,6 @@ function WinnersPageInner() {
   const brands = s?.byBrand ?? [];
   const topBrandWinners = Math.max(1, ...brands.map((b) => b.winners));
 
-  // Units against what the SAME winners shifted a year ago. Like-for-like on the products, not on the winner set.
-  const unitsPrior = s?.totalUnitsPrior12m ?? 0;
-  const unitsDelta = (s?.totalUnits12m ?? 0) - unitsPrior;
-  const unitsNote = !s || unitsPrior === 0
-    ? 'packed and sent, last 12 months'
-    : `${unitsDelta >= 0 ? '+' : ''}${unitsDelta.toLocaleString('en-GB')} on last year (${unitsPrior.toLocaleString('en-GB')})`;
-
   const count = s?.winnerCount ?? 0;
   const prior = s?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
@@ -215,7 +208,7 @@ function WinnersPageInner() {
             loading={w.isLoading}
             value={(s?.totalUnits12m ?? 0).toLocaleString('en-GB')}
             label="units shifted"
-            note={unitsNote}
+            note="packed and sent, last 12 months"
           />
           <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same test, previous 12 months" />
           <Stat
