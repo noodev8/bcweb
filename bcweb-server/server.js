@@ -272,6 +272,9 @@ app.use('/analytics-stock-position', require('./routes/analytics-stock-position'
 app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
 app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
+// The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
+// skusummary.created_at), this year against last.
+app.use('/analytics-new-additions-trend', require('./routes/analytics-new-additions-trend'));
 // Activity Log: read-only view of `bclog`, the "who did what, when" ledger written by both bcweb and PowerBuilder. Search + filters.
 app.use('/analytics-activity-log', require('./routes/analytics-activity-log'));
 

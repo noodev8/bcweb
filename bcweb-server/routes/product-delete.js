@@ -58,6 +58,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { deleteImage } = require('../utils/sftp');
 const shopify = require('../utils/shopify');
 const logger = require('../utils/logger');
+const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
 
 router.use(verifyToken);
 
@@ -75,13 +76,21 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'CONFIRM_MISMATCH', message: 'The typed Group ID does not match' });
     }
 
-    // Load the product (existence + handle for the Shopify delete + image name for cleanup).
-    const prod = await query(`SELECT groupid, handle, imagename FROM skusummary WHERE groupid = $1`, [groupid]);
+    // Load the product (existence + handle for the Shopify delete + image name for cleanup). brand/title/created_at come back too:
+    // they are snapshotted into product_event_log below, because after this route runs there is nothing left to join to.
+    const prod = await query(`
+      SELECT ss.groupid, ss.handle, ss.imagename, ss.brand, ss.created_at, t.shopifytitle
+      FROM skusummary ss LEFT JOIN title t ON t.groupid = ss.groupid
+      WHERE ss.groupid = $1
+    `, [groupid]);
     if (prod.rows.length === 0) {
       return res.json({ return_code: 'NOT_FOUND', message: 'Product not found' });
     }
     const handle = prod.rows[0].handle || '';
     const imagename = prod.rows[0].imagename || '';
+    const brand = prod.rows[0].brand || '';
+    const title = prod.rows[0].shopifytitle || '';
+    const productCreatedAt = prod.rows[0].created_at || null;
 
     // STOCK GUARD (owner): never delete a product that still has sellable stock — the operator must clear it physically first. Sellable
     // stock = localstock rows with ordernum='#FREE', not deleted, qty>0 (the CLAUDE.md definition of current stock). Block on >0 units,
@@ -116,6 +125,15 @@ router.post('/', async (req, res) => {
       await client.query(`DELETE FROM attributes WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM title      WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM skusummary WHERE groupid = $1`, [groupid]);
+
+      // The product row is now gone for good, so the log row IS the only surviving record that it ever existed. Written in the same
+      // transaction as the deletes: no orphan "deleted" event if the delete rolls back, no silent hole if it commits.
+      // productCreatedAt carries the birth date forward — that is what makes lifespan (how long a line lasted before we killed it)
+      // readable without needing a matching CREATED row, which won't exist for anything born before this log did.
+      await logProductEvent(client, {
+        groupid, event: EVENT.DELETED, source: SOURCE.UI,
+        title, brand, actionedBy: req.user.display_name, productCreatedAt
+      });
     });
 
     // 3) IMAGE — best-effort cleanup (an orphaned file is harmless; never fail the delete over it).

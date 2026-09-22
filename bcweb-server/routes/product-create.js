@@ -58,6 +58,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
+const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
 
 router.use(verifyToken);
 
@@ -148,6 +149,15 @@ router.post('/', async (req, res) => {
         INSERT INTO attributes (groupid, gender, producttype, updated)
         VALUES ($1, $2, $3, ${UPDATED_EXPR})
       `, [groupid, gender, producttype]);
+
+      // 7) product_event_log — the permanent record that this piece of work happened, inside the same transaction so a rolled-back
+      //    create logs nothing and a committed one can't fail to log. Source NEW: built from scratch, which is a different unit of
+      //    work from a cloned colourway (product-copy logs COPY). title/brand are snapshotted here because the log has to still name
+      //    the product after it is deleted.
+      await logProductEvent(client, {
+        groupid, event: EVENT.CREATED, source: SOURCE.NEW,
+        title, brand, actionedBy: req.user.display_name
+      });
     });
 
     return res.json({ return_code: 'SUCCESS', groupid, handle });

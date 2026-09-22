@@ -63,6 +63,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { imageFilename } = require('../utils/imageName');
 const { getImage, putImage } = require('../utils/sftp');
 const logger = require('../utils/logger');
+const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
 
 router.use(verifyToken);
 
@@ -181,6 +182,14 @@ router.post('/', async (req, res) => {
           status, pricestatus, amzperformance, amz365, shp365, NULL
         FROM skumap WHERE groupid = $1 AND COALESCE(deleted, 0) = 0
       `, [sourceGroupid, newGroupid]);
+
+      // 7) product_event_log — the permanent record of the work, in the same transaction as the clone it describes. Source COPY, NOT
+      //    NEW: a cloned colourway is minutes of work where a from-scratch line is an afternoon, so a throughput report that blended
+      //    the two would overstate a month of copies. brand is the SOURCE product's brand, which the clone inherits verbatim.
+      await logProductEvent(client, {
+        groupid: newGroupid, event: EVENT.CREATED, source: SOURCE.COPY,
+        title: newTitle, brand, actionedBy: req.user.display_name
+      });
     });
 
     // 7) Clone the image OUT OF BAND (post-commit) and BEST-EFFORT. Download the source file, re-upload under a fresh name derived from

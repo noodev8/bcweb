@@ -964,6 +964,28 @@ export function getNewAdditions(days?: number) {
   );
 }
 
+// Production trend on the New screen — one month of the creation log. `created` is every product made that month; `new` vs `copy`
+// splits built-from-scratch from cloned colourway, and both read 0 for months before the log went live (backfilled rows can't know
+// which way a style was born). `deleted` is products removed that month.
+export interface AdditionsTrendMonth { month: number; created: number; new: number; copy: number; deleted: number; }
+export interface AdditionsTrendYear { year: number; total: number; months: AdditionsTrendMonth[]; }
+
+// `logLiveFrom` is the date product_event_log was installed and seeded. Months BEFORE it count survivors only (a product created and
+// deleted before that date left no trace), so they are a floor, not a true count — the chart is obliged to say so.
+export interface AdditionsTrendData {
+  logLiveFrom: string;
+  throughMonth: number;   // 1-12; the current year's line stops here rather than flatlining across months that haven't happened
+  years: AdditionsTrendYear[];
+}
+
+// Load the creations-per-month trend (default: this year and last).
+export function getNewAdditionsTrend(years?: number) {
+  return request<AdditionsTrendData>(
+    { url: '/analytics-new-additions-trend', method: 'GET', params: { years } },
+    (b) => ({ logLiveFrom: b.logLiveFrom || '', throughMonth: b.throughMonth ?? 12, years: b.years || [] })
+  );
+}
+
 // One bclog row (Reports -> Activity Log). `who` is the `workstation` column, which honestly holds BOTH a PowerBuilder machine name
 // (WS1…) and a bcweb login name (Summer) — see routes/analytics-activity-log.js. `date` is 'YYYY-MM-DD', `time` 'HH:MM', London-local.
 export interface ActivityLogRow {

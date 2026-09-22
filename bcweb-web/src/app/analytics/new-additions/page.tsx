@@ -10,13 +10,15 @@ Purpose: The catalogue-GROWTH pulse. How many Shopify styles were ADDED in the r
          HERO number = count of new styles in the window (the thing being monitored). A small window toggle (30 / 60 / 90 days) lets the
          lens widen. Below, a table of the additions themselves, newest-created first.
 
-Guarded by AppShell. Consumes GET /analytics-new-additions.
+Guarded by AppShell. Consumes GET /analytics-new-additions (the list) and, via AdditionsTrend, GET /analytics-new-additions-trend
+         (the production pace — a different question off a different table, see that component).
 =======================================================================================================================================
 */
 
 import { useMemo, useState } from 'react';
 import { ClipboardDocumentIcon, CheckIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import AdditionsTrend from '@/components/AdditionsTrend';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -206,6 +208,11 @@ export default function NewAdditionsPage() {
               </p>
             )}
           </div>
+
+          {/* PRODUCTION — the pace of making new product, this year against last. Sits between the hero (what the last 30 days
+              brought) and the list (what those additions are), because it is the same subject at a longer focal length. Loads its
+              own data, so it can't hold the list up. */}
+          <AdditionsTrend />
 
           {/* Table controls. The filter sits HERE, not in the hero — it changes the list below it and nothing above it, and being next
               to the row count makes that obvious at a glance. */}
