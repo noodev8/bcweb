@@ -3751,7 +3751,10 @@ export function updatePortfolioSnapshot() {
   );
 }
 
-export type ContenderBand = 'STRONG' | 'LIKELY' | 'POSSIBLE' | 'WEAK' | 'DEAD' | 'TOO_EARLY';
+// NO 'DEAD' BAND. It meant "lost money in its first 30 days" and only existed while the score was profit. The score is gross
+// revenue now, a style's first sale is by definition inside its own 30-day window, and returns are excluded rather than netted —
+// so the score is always > 0 and the band could never fire. WEAK is the catch-all. See BANDS in bcweb-server/utils/portfolio.js.
+export type ContenderBand = 'STRONG' | 'LIKELY' | 'POSSIBLE' | 'WEAK' | 'TOO_EARLY';
 
 export interface PortfolioContender {
   groupid: string;
@@ -3759,10 +3762,11 @@ export interface PortfolioContender {
   brand: string | null;
   firstSale: string;
   daysOnSale: number;
-  profitFirst30d: number | null;  // THE SCORE. null = TOO_EARLY, the window has not closed
+  revenueFirst30d: number | null; // THE SCORE: gross revenue, first 30 days. null = TOO_EARLY, the window has not closed
   band: ContenderBand;
   conversionPct: number | null;   // the fitted rate for the band; null on TOO_EARLY
-  profitSoFar: number;            // lifetime, context only — NOT what the band is based on
+  revenueSoFar: number;           // lifetime gross, context only — NOT what the band is based on
+  profitSoFar: number;            // lifetime contribution. CONTEXT ONLY — nothing on this screen is decided on profit
   unitsSoFar: number;
   stockUnits: number;
   outOfStock: boolean;            // on STRONG/LIKELY this is the one badge on the whole screen: there, stock IS the action
@@ -3773,7 +3777,9 @@ export interface PortfolioContender {
 // still the evidence behind these figures — it is simply not what this screen draws.
 export interface PortfolioContendersSummary {
   youngStyles: number;
-  expectedWinners: number;        // sum of band count x fitted conversion. TOO_EARLY excluded
+  // Sum of band count x fitted conversion, TOO_EARLY excluded. THE HORIZON IS A YEAR: the model predicts clearing the winner bar
+  // within the style's first 365 days, so this is "expected inside the next twelve months", not "next quarter".
+  expectedWinners: number;
   highConfidenceCount: number;    // STRONG + LIKELY
   highConfidenceOos: number;      // of those, how many have no stock — the fact that says whether the expected winners can arrive
   bandCounts: Record<ContenderBand, number>;   // every band, so the card needs no access to the rows
@@ -3796,10 +3802,12 @@ export function getPortfolioContenders() {
         brand: (c.brand as string | null) ?? null,
         firstSale: String(c.first_sale || ''),
         daysOnSale: Number(c.days_on_sale) || 0,
-        // Same null trap as profitPrior12m, and worse here: a `|| 0` would score an unscorable style as £0 and band it DEAD.
-        profitFirst30d: c.profit_first_30d === null || c.profit_first_30d === undefined ? null : Number(c.profit_first_30d),
+        // Same null trap as revenuePrior12m, and worse here: a `|| 0` would score an unscorable style as £0 and band it WEAK.
+        revenueFirst30d:
+          c.revenue_first_30d === null || c.revenue_first_30d === undefined ? null : Number(c.revenue_first_30d),
         band: (c.band as ContenderBand) || 'TOO_EARLY',
         conversionPct: c.conversion_pct === null || c.conversion_pct === undefined ? null : Number(c.conversion_pct),
+        revenueSoFar: Number(c.revenue_so_far) || 0,
         profitSoFar: Number(c.profit_so_far) || 0,
         unitsSoFar: Number(c.units_so_far) || 0,
         stockUnits: Number(c.stock_units) || 0,

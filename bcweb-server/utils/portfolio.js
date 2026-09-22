@@ -22,11 +22,16 @@ spec was deleted 2026-09-22 once it was costing more to maintain than it explain
   - WINNER = GROSS REVENUE > WINNER_BAR in the rolling 12 months. THERE IS NO AGE TEST — see the constant's comment for why the
     one the spec originally carried was removed (owner, 2026-09-22). The metric was PROFIT until 2026-09-22; the argument for the
     change is on WINNER_BAR and it is the screen's whole purpose, not a tuning choice — do not quietly put profit back.
-  - CONTENDER SCORE = profit in the style's first CONTENDER_WINDOW days on sale, banded against a FITTED model (see BANDS).
+  - CONTENDER SCORE = GROSS REVENUE in the style's first CONTENDER_WINDOW days on sale, banded against a FITTED model (see BANDS),
+    predicting whether the style clears WINNER_BAR inside its first 365 days. Same metric as the winner test, on purpose.
   - ALL CHANNELS count (Amazon lines are not filtered out — the style is one asset), there is NO `shopify = 1` test (eligibility is
-    "did it earn", not "is it still switched on"), profit is SUM(sales.profit) with NO qty multiplier (sales already carries one row
-    per physical unit), and returns are excluded by qty > 0 rather than netted.
-  - Every money figure is CONTRIBUTION — before advertising. The UI must say "earned", not "profit".
+    "did it sell", not "is it still switched on"), and returns are excluded by qty > 0 rather than netted.
+  - THE TWO MONEY COLUMNS MULTIPLY DIFFERENTLY, and getting it wrong is silent: REVENUE is SUM(soldprice * qty) because soldprice
+    is PER UNIT, while PROFIT is SUM(sales.profit) with NO qty multiplier because it is already a line total. Verified against the
+    live table 2026-09-22 (10,178 rows in the window, qty = 1 on 10,141 of them, so the two only diverge on ~0.4% of rows — which
+    is exactly why a mistake here would never show up in a spot check).
+  - Profit, where it still appears, is CONTRIBUTION — before advertising. The UI must say "earned", not "profit". It is CONTEXT
+    on this screen and decides nothing: the bar, the bands and the contender score are all revenue.
 =======================================================================================================================================
 */
 
@@ -116,45 +121,62 @@ const DIRECTION_FLAT_PCT = 15;
 // null, rather than a fake 0 that would render as infinite growth.
 const PRIOR_YEAR_MIN_DAYS = 730;
 
-// ⚠ THIS MODEL IS STILL CALIBRATED AGAINST THE OLD BAR, AND IT IS THE ONE LOOSE END OF THE 2026-09-22 REVENUE CHANGE.
-//   It was fitted when a winner meant "£200 PROFIT in 12 months". The winner test is now "£1,500 GROSS REVENUE" (see WINNER_BAR),
-//   so both halves of the fit are stale: the PREDICTOR should be revenue in the first 30 days, and the OUTCOME should be clearing
-//   the revenue bar. The percentages below therefore answer a question the screen no longer asks.
+// THE FITTED CONVERSION MODEL — REFITTED ON REVENUE 2026-09-22, the same day the winner bar became a revenue bar.
 //
-//   IT IS DELIBERATELY LEFT UNTOUCHED rather than re-scaled by hand. These numbers are an empirical fit over 212 styles; guessing
-//   revenue-era equivalents would produce a model that looks calibrated and is not, which is worse than one that is honestly out
-//   of date. The refit is a single query over `sales` (bucket revenue in [first_sale, +30d) against revenue in [first_sale, +180d)
-//   > WINNER_BAR, over styles at least 180 days old) — five minutes with a DB connection. Until then the Winners screen labels the
-//   contender figure as measured against the old profit bar, and it must keep saying so.
+// PREDICTOR: gross revenue in the style's first CONTENDER_WINDOW days on sale.
+// OUTCOME:   did it clear WINNER_BAR of gross revenue within its first 365 days?
 //
-// The fitted conversion model, measured 2026-09-22 across 212 mature styles (first sale 2023-09 to 2026-03), scoring profit in the
-// first 30 days against whether the style cleared the bar in its first 180:
-//     <= £0  ->   0% (n=10)      £50-99   -> 28% (n=43)      £200+ -> 100% (n=3)
-//     £1-49  ->   8% (n=138)     £100-199 -> 72% (n=18)
-// Units predict too, but far less sharply (11+ units in 30d gives 52%) — profit is the better signal and swapping back would blunt
-// the screen. RECALIBRATE ANNUALLY as cohorts mature; it is a five-minute query (spec section 8.2).
-// `min` is an inclusive floor; the null floor catches zero and negative. ORDER MATTERS — first match wins, so keep it high to low.
+// Measured over 163 styles with at least a full year on sale. Base rate 44%.
+//
+//     first 30 days       becomes a winner inside a year
+//     >= £750   (n=13)  ->  92%
+//     >= £300   (n=55)  ->  65%
+//     >= £100   (n=60)  ->  28%
+//     <  £100   (n=35)  ->  17%
+//
+// THE OUTCOME WINDOW MOVED FROM 180 TO 365 DAYS, and that is not a detail. The old model asked "did it clear £200 PROFIT in its
+// first 180 days" — a six-month proxy for a twelve-month test, carried over from the spec. Now that the bar is plainly "£1,500 in
+// 12 months", the outcome can simply BE the bar, measured over the window the bar names, so the model no longer predicts a proxy
+// for the thing we care about; it predicts the thing itself. It also fits better: on the 180-day outcome the revenue predictor is
+// NOT monotonic (the £200-299 bucket converts at 3% against 4% for £100-199, an artefact of a hurdle most styles cannot clear in
+// six months), while on the 365-day outcome it rises cleanly 17 -> 28 -> 65 -> 92.
+//
+// WHY THE EXPECTED-WINNERS FIGURE ROUGHLY DOUBLED (20 under the old model, 38 under this one). Both the metric and the horizon
+// changed, and the horizon is most of it: a 44% base rate against 18%. THE FORECAST IS SANITY-CHECKED AGAINST REALITY — 33 styles
+// actually joined the winner list this year, so a model predicting 38 from the current 99 young styles is in the right place. The
+// old model's 20 was answering "how many clear a profit bar within six months", which nothing on this screen asks.
+//
+// THERE IS NO 'DEAD' BAND ANY MORE. It meant "lost money in its first 30 days" and was reachable only because profit can be
+// negative. A style's FIRST SALE is by definition inside its own 30-day window, and returns are excluded by qty > 0 rather than
+// netted, so revenue in that window is ALWAYS > 0 — the band could never fire again. Confirmed in the data: zero styles in the
+// £0 bucket across all 212 mature styles. WEAK is now the catch-all (min: null), so bandFor() still cannot return undefined.
+//
+// RECALIBRATE ANNUALLY as cohorts mature; it is a five-minute query (bucket revenue in [first_sale, +30d) against revenue in
+// [first_sale, +365d) > WINNER_BAR, over styles at least 365 days old).
+//
+// `min` is an inclusive floor. ORDER MATTERS — first match wins, so keep it high to low.
 const BANDS = [
-  { name: 'STRONG',   min: 200,  conversion: 100 },
-  { name: 'LIKELY',   min: 100,  conversion: 72  },
-  { name: 'POSSIBLE', min: 50,   conversion: 28  },
-  { name: 'WEAK',     min: 1,    conversion: 8   },
-  { name: 'DEAD',     min: null, conversion: 0   },
+  { name: 'STRONG',   min: 750,  conversion: 92 },
+  { name: 'LIKELY',   min: 300,  conversion: 65 },
+  { name: 'POSSIBLE', min: 100,  conversion: 28 },
+  { name: 'WEAK',     min: null, conversion: 17 },
 ];
 
-// The bands that carry an action (reorder now, get it into the ad feed). Everything below is deliberately actionless: a trial costs
-// about £32 and 8% of the WEAK band still converts, so the action there is "do not reorder" — an absence of a task, not one.
+// The bands that carry an action (reorder now, get it into the ad feed). THE LINE IS "MORE LIKELY THAN NOT": STRONG and LIKELY
+// both convert well above half, POSSIBLE at 28% does not. Everything below the line is deliberately actionless — a trial costs
+// about £32 and 17% of even the WEAK band still gets there, so the action is "do not reorder", an absence of a task rather than
+// one. (Under the profit model this line sat at 72%/28%, which was the same "well above half vs well below" judgement.)
 const HIGH_CONFIDENCE_BANDS = ['STRONG', 'LIKELY'];
 
 // Sort rank, strongest first. TOO_EARLY sits at the bottom: it is not a weak signal, it is NO signal yet.
-const BAND_RANK = { STRONG: 0, LIKELY: 1, POSSIBLE: 2, WEAK: 3, DEAD: 4, TOO_EARLY: 5 };
+const BAND_RANK = { STRONG: 0, LIKELY: 1, POSSIBLE: 2, WEAK: 3, TOO_EARLY: 4 };
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 const round2 = (v) => Math.round(v * 100) / 100;
 
-// First matching band for a 30-day profit figure. `min: null` always matches, so this never returns undefined.
-function bandFor(profit30d) {
-  return BANDS.find((b) => b.min === null || profit30d >= b.min);
+// First matching band for a 30-day REVENUE figure. `min: null` always matches, so this never returns undefined.
+function bandFor(revenue30d) {
+  return BANDS.find((b) => b.min === null || revenue30d >= b.min);
 }
 
 // Current sellable stock per style, as a CTE body. Schema landmine: NEVER skusummary.stockvariants/variants (stale). Local #FREE
@@ -304,13 +326,20 @@ function summariseAt(styles, bar, totalStyles) {
 // MEASURED OVER STYLES THAT TRADED IN THE WINDOW, same set as `total_styles`. A style with no sales in the 12 months has a profit
 // of exactly 0 and would otherwise pile up in the loss-making band and make it look like a catastrophe.
 // ---------------------------------------------------------------------------------------------------------------------------------
-// The rungs, low to high: [null, 0], (0, 200], (200, 300], (300, 500], (500, 1000], (1000, null]. Derived from the bar ladder so
+// The rungs, low to high: [null, 1500], (1500, 2500], (2500, 5000], (5000, 10000], (10000, null]. Derived from the bar ladder so
 // the bands and the toggle can never drift apart, and shared by profitLadder() and bandMovement() so a style cannot be in one
 // rung for the table and a different one for the movement count.
+//
+// THERE IS NO SUB-ZERO RUNG ANY MORE. While the bar was PROFIT, the bottom edge was [null, 0] and it was the loss-making band —
+// 37 styles at -£1,198 on 2026-09-22, and a real part of the picture. Gross revenue CANNOT be negative (returns are excluded by
+// qty > 0 rather than netted, so the worst a style can do is sell nothing), so that rung became one that can never fire: a band
+// reporting 0 styles for ever, inviting the reader to think there are no weak products when there are 229 of them. The bottom
+// rung is now simply EVERYTHING BELOW THE BAR, which is the honest shape of the question on a revenue ladder.
+//
+// ⚠ If the metric ever goes back to something that can be negative, put the [null, 0] edge back — it is not clutter there.
 function ladderEdges() {
-  const uppers = [0, ...WINNER_BAR_LADDER];
-  const edges = uppers.map((to, i) => ({ from: i === 0 ? null : uppers[i - 1], to }));
-  edges.push({ from: uppers[uppers.length - 1], to: null });
+  const edges = WINNER_BAR_LADDER.map((to, i) => ({ from: i === 0 ? null : WINNER_BAR_LADDER[i - 1], to }));
+  edges.push({ from: WINNER_BAR_LADDER[WINNER_BAR_LADDER.length - 1], to: null });
   return edges;
 }
 
@@ -694,7 +723,11 @@ async function computeWinners() {
 }
 
 /**
- * The CONTENDERS side: young styles scored on their first CONTENDER_WINDOW days, banded.
+ * The CONTENDERS side: young styles scored on their first CONTENDER_WINDOW days of GROSS REVENUE, banded.
+ *
+ * SCORED ON REVENUE SINCE 2026-09-22, with the winner bar. The whole screen runs on one metric — "PRODUCT FIND > REVENUE >
+ * PROFIT > KEEP/DROP" (owner): this tab is the leading edge of the FIND step, so scoring it on profit would have the pipeline
+ * answering a different question from the count it feeds. Profit stays on every row as context, never as the score.
  *
  * `win30` joins back to sales for the young styles only and sums the window from each style's OWN first sale — the window is
  * per-style, which is why it cannot be a date literal in a WHERE clause. It runs [first_sale, first_sale + 30), i.e. 30 calendar
@@ -707,9 +740,12 @@ async function computeContenders() {
     `
     WITH born AS (
       SELECT groupid,
-             MIN(solddate)              AS first_sale,
-             COALESCE(SUM(profit), 0)   AS profit_so_far,
-             COALESCE(SUM(qty)::int, 0) AS units_so_far
+             MIN(solddate)                       AS first_sale,
+             -- Gross, like the bar: soldprice is PER UNIT (avg £48.87 over the window) so the qty multiplier is required here,
+             -- while profit is already a line total and must NOT be multiplied. Verified on 2026-09-22 against 10,178 rows.
+             COALESCE(SUM(soldprice * qty), 0)   AS revenue_so_far,
+             COALESCE(SUM(profit), 0)            AS profit_so_far,
+             COALESCE(SUM(qty)::int, 0)          AS units_so_far
       FROM sales
       WHERE qty > 0
         AND groupid IS NOT NULL
@@ -722,8 +758,9 @@ async function computeContenders() {
     ),
     win30 AS (
       SELECT y.groupid,
-             COALESCE(SUM(s.profit), 0)   AS profit_first_30d,
-             COALESCE(SUM(s.qty)::int, 0) AS units_first_30d
+             -- THE SCORE. Gross revenue over the style's own first CONTENDER_WINDOW days — see BANDS for the fit behind it.
+             COALESCE(SUM(s.soldprice * s.qty), 0) AS revenue_first_30d,
+             COALESCE(SUM(s.qty)::int, 0)          AS units_first_30d
       FROM young y
       JOIN sales s
         ON s.groupid = y.groupid
@@ -738,7 +775,8 @@ async function computeContenders() {
            COALESCE(NULLIF(ss.brand, ''), '')   AS brand,
            to_char(y.first_sale, 'YYYY-MM-DD')  AS first_sale,
            (CURRENT_DATE - y.first_sale)::int   AS days_on_sale,
-           COALESCE(w.profit_first_30d, 0)      AS profit_first_30d,
+           COALESCE(w.revenue_first_30d, 0)     AS revenue_first_30d,
+           y.revenue_so_far,
            y.profit_so_far,
            y.units_so_far,
            COALESCE(st.stock, 0)                AS stock_units
@@ -757,7 +795,7 @@ async function computeContenders() {
   // Count per band, so the screen can show the pipeline as a few NUMBERS without pulling the rows apart itself. The Winners screen
   // is a progress check, not a work queue (owner, 2026-09-22 — "Contenders is too long with too much data. I'm not here to act on
   // it, I'm here to check progress"), so the summary has to be able to stand alone.
-  const bandCounts = { STRONG: 0, LIKELY: 0, POSSIBLE: 0, WEAK: 0, DEAD: 0, TOO_EARLY: 0 };
+  const bandCounts = { STRONG: 0, LIKELY: 0, POSSIBLE: 0, WEAK: 0, TOO_EARLY: 0 };
 
   const contenders = result.rows.map((r) => {
     const days = Number(r.days_on_sale) || 0;
@@ -767,9 +805,9 @@ async function computeContenders() {
     // a censored cohort is precisely the mistake that produced a fictitious hit-rate collapse during the analysis session, so this
     // must never be "fixed" by pro-rating a partial window.
     const tooEarly = days < CONTENDER_WINDOW;
-    const profit30d = tooEarly ? null : Math.round((num(r.profit_first_30d) ?? 0) * 100) / 100;
+    const revenue30d = tooEarly ? null : round2(num(r.revenue_first_30d) ?? 0);
 
-    const band = tooEarly ? { name: 'TOO_EARLY', conversion: null } : bandFor(profit30d);
+    const band = tooEarly ? { name: 'TOO_EARLY', conversion: null } : bandFor(revenue30d);
 
     bandCounts[band.name] += 1;
     if (!tooEarly) {
@@ -790,10 +828,13 @@ async function computeContenders() {
       brand: r.brand || null,
       first_sale: r.first_sale,
       days_on_sale: days,
-      profit_first_30d: profit30d,
+      // THE SCORE, and what `band` was decided from. Null while TOO_EARLY — the window has not closed, so there is no score.
+      revenue_first_30d: revenue30d,
       band: band.name,
       conversion_pct: band.conversion,
-      profit_so_far: Math.round((num(r.profit_so_far) ?? 0) * 100) / 100,
+      revenue_so_far: round2(num(r.revenue_so_far) ?? 0),
+      // Context only. The winner bar and this score are both revenue; profit belongs to the keep-or-drop step downstream.
+      profit_so_far: round2(num(r.profit_so_far) ?? 0),
       units_so_far: Number(r.units_so_far) || 0,
       stock_units: stock,
       out_of_stock: stock <= 0,
@@ -810,8 +851,8 @@ async function computeContenders() {
     if (rank !== 0) return rank;
 
     // Within a band, biggest score first. TOO_EARLY rows have a null score — fall back to age so the nearly-scorable ones lead.
-    if (a.profit_first_30d === null && b.profit_first_30d === null) return b.days_on_sale - a.days_on_sale;
-    return (b.profit_first_30d ?? 0) - (a.profit_first_30d ?? 0);
+    if (a.revenue_first_30d === null && b.revenue_first_30d === null) return b.days_on_sale - a.days_on_sale;
+    return (b.revenue_first_30d ?? 0) - (a.revenue_first_30d ?? 0);
   });
 
   return {

@@ -358,19 +358,20 @@ function WinnersPageInner() {
             label="units shifted"
             note="packed and sent, last 12 months"
           />
-          {/* Does not move with the dial: the conversion model behind it was fitted on "did the style clear the bar in its
-              first 180 days", so re-reading it at another mark would need a refit, not a filter.
+          {/* Does not move with the dial, and the note says which bar it means. The conversion model behind it was fitted on
+              "did the style clear the TRACKED bar within its first 365 days" (BANDS in utils/portfolio.js), so re-reading it at
+              £10,000 would need a refit, not a filter. Naming the bar keeps it honest at £1,500 too.
 
-              ⚠ AND IT IS CURRENTLY FITTED AGAINST THE OLD BAR — £200 of PROFIT, not £1,500 of revenue (see the ⚠ on BANDS in
-              utils/portfolio.js). The note therefore names the PROFIT bar explicitly rather than `trackedBar`, which would
-              claim a calibration this figure does not have. When the model is refitted, put `money(trackedBar)` back. */}
+              THE NOTE SAYS "WITHIN A YEAR" because the horizon is not obvious and the figure is large next to the count — 38
+              against 74. That is real (33 styles actually joined this year, so the model is in the right place) but it reads as
+              implausible without the horizon, and an unexplained number on a progress screen gets distrusted and then ignored. */}
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
             label="more on the way"
             note={
               c.data
-                ? `expected to clear £200 profit (the old bar — not yet refitted to revenue), from ${c.data.summary.youngStyles} styles under 180 days old`
+                ? `expected to clear ${trackedBar === null ? 'the bar' : money(trackedBar)} within a year, from ${c.data.summary.youngStyles} styles under 180 days old`
                 : undefined
             }
           />
