@@ -86,6 +86,10 @@ const loginLimiter = rateLimit({
 app.use('/health', require('./routes/health'));
 app.use('/login', loginLimiter, require('./routes/login'));
 
+// Usage telemetry — one row per screen opened, written fire-and-forget by AppShell on every page. Registered up here beside the
+// shell-level routes rather than under a module, because it belongs to no module: every screen in the app calls it.
+app.use('/screen-view', require('./routes/screen-view'));
+
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));
 app.use('/segment', require('./routes/segment'));   // detail read: header stats + per-area clocks + recent work-log (lazy)

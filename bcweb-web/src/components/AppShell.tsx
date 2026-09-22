@@ -19,6 +19,7 @@ import { StarIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
+import { logScreenView } from '@/lib/api';
 import { findPinnable, pinnableForPath } from '@/lib/pinnable';
 import { usePins, MAX_PINS } from '@/lib/usePins';
 
@@ -116,6 +117,27 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
 
   const effectiveBackHref = from ? '/dashboard?g=' + encodeURIComponent(from) : backHref;
   const effectiveBackLabel = from ? 'Dashboard' : (backLabel || 'Back');
+
+  /*
+  USAGE TELEMETRY (owner, 2026-09-22) — one row per screen opened, so that "which screens are used and which are ignored" is
+  answerable when it eventually gets asked. It cannot be answered retrospectively, hence collecting now with no report built yet;
+  the server side and the caveats are in migrations/20260922e_screen_view.sql.
+
+  HERE, in AppShell, because this wraps every page — a call per dashboard tile would miss the header pins, deep links and bookmarks,
+  which are exactly the navigation habits worth knowing about.
+
+  FIRE AND FORGET, and it must stay that way. Nothing is awaited, no state is set, and the `.catch` is empty: a usage row is
+  bookkeeping, and it must never delay a render, surface an error, or make a page that loaded perfectly look broken. The path is sent
+  raw and NORMALISED SERVER-SIDE (utils/screenPath.js) — the client is not the right place to decide a route's canonical name, and
+  the query string is dropped there rather than here so search terms never leave the browser in this call at all.
+
+  Gated on `ready && isAuthenticated`: before that we may be about to bounce to /login, and a view logged for a page nobody got to
+  see is a false row. Keyed on pathname only — a filter change or a ?from= is the same screen, not a second visit.
+  */
+  useEffect(() => {
+    if (!ready || !isAuthenticated) return;
+    logScreenView(pathname);
+  }, [pathname, ready, isAuthenticated]);
 
   // Route guard — bounce unauthenticated users to /login once hydration is done.
   useEffect(() => {

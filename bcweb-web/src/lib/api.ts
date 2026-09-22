@@ -3934,4 +3934,20 @@ export function getPortfolioContenders() {
   );
 }
 
+/*
+Usage telemetry — record that the signed-in operator opened a screen. Written by AppShell on every page (see the note there).
+
+DELIBERATELY NOT AN ApiResult. Every other function here returns the envelope so a page can decide what to show; this one has no
+caller that could act on a failure and no UI to put one in, so it resolves void and swallows everything. The server is built the same
+way round — it returns SUCCESS even when it stored nothing — so there would be nothing to branch on even if a caller wanted to.
+The path is sent RAW: normalising it (and dropping the query string) is the server's job, in utils/screenPath.js.
+*/
+export async function logScreenView(path: string): Promise<void> {
+  try {
+    await api.post('/screen-view', { path });
+  } catch {
+    // Usage bookkeeping must never be able to make a working page look broken.
+  }
+}
+
 export default api;
