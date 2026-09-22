@@ -7,9 +7,11 @@ Purpose: How much new product we are making, and how the pace through this year 
          answers "what did we add lately and is it selling"; this answers the different question of OUTPUT — the rate at which new
          lines get built.
 
-Why cumulative lines and not monthly bars: the months are violently lumpy (2026 ran Feb 0, Mar 22, Jun 30, Aug 3), so bars read as
-noise and nothing about pace survives them. Running totals against the same point last year turn it into the question actually being
-asked — are we ahead or behind — and a flat stretch still shows a dead month plainly enough.
+Why monthly bars and not a cumulative line: the months are violently lumpy (2026 ran Feb 0, Mar 22, Jun 30, Aug 3) and in a business
+that buys a season at a time, THAT IS THE FINDING — it is the shape of when the work actually happens. A running total smooths the
+exact thing worth seeing. The pace question (are we ahead of last year) is answered in words by the headline above the chart, so the
+chart is free to show the shape instead of saying the same thing twice. Each month shows last year beside this year, so a heavy month
+can be read against its own counterpart rather than against the year's average.
 
 Counted from product_event_log, which keeps the event after the product is deleted — so a line that was built and later killed still
 counts as work done (skusummary.created_at only ever shows survivors). Months before the log was installed are backfilled from the
@@ -48,18 +50,25 @@ export default function AdditionsTrend() {
   const prevCum = prev ? cumulative(prev) : null;
   const through = Math.min(12, Math.max(1, data.throughMonth));
 
-  // Like-for-like: this year against last year at the SAME point, not against its full twelve months. Comparing a part-year with a
-  // whole one is the easiest way to look behind when you are ahead.
+  // Running totals are no longer plotted (the chart is monthly bars), but they still drive the headline: this year against last year at
+  // the SAME point, not against its full twelve months. Comparing a part-year with a whole one is the easiest way to look behind when
+  // you are ahead.
   const ytd = curCum[through - 1];
   const prevAtSamePoint = prevCum ? prevCum[through - 1] : null;
   const delta = prevAtSamePoint === null ? null : ytd - prevAtSamePoint;
   const deleted = years.reduce((s, y) => s + y.months.reduce((t, m) => t + m.deleted, 0), 0);
 
+  // Geometry: 12 equal month bands, each holding last year's bar then this year's. Bars are sized off the band so the chart keeps
+  // working if the month count ever changes.
   const W = 720, H = 200, padL = 32, padR = 14, padT = 14, padB = 26;
-  const maxY = Math.max(1, curCum[through - 1], ...(prevCum || [0]));
-  const x = (i: number) => padL + (i / 11) * (W - padL - padR);
-  const y = (v: number) => padT + (1 - v / maxY) * (H - padT - padB);
-  const pts = (vals: number[], upto = 12) => vals.slice(0, upto).map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const band = plotW / 12;
+  const barW = Math.min(16, (band - 6) / 2);
+  const maxY = Math.max(1, ...cur.months.map((m) => m.created), ...(prev ? prev.months.map((m) => m.created) : [0]));
+  const bandX = (i: number) => padL + i * band;           // left edge of month i's band
+  const centre = (i: number) => bandX(i) + band / 2;
+  const y = (v: number) => padT + (1 - v / maxY) * plotH; // top edge of a bar of height v
+  const barH = (v: number) => (v / maxY) * plotH;
 
   return (
     <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -100,7 +109,7 @@ export default function AdditionsTrend() {
           className="w-full"
           style={{ minWidth: 460 }}
           role="img"
-          aria-label={`New products made per month, running total, ${cur.year}${prev ? ` against ${prev.year}` : ''}`}
+          aria-label={`New products made each month, ${cur.year}${prev ? ` against ${prev.year}` : ''}`}
         >
           {[0, Math.round(maxY / 2), maxY].map((v) => (
             <g key={`g${v}`}>
@@ -109,16 +118,36 @@ export default function AdditionsTrend() {
             </g>
           ))}
           {MONTHS.map((m, i) => (
-            <text key={m} x={x(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">{m}</text>
+            <text key={m} x={centre(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">{m}</text>
           ))}
 
-          {prevCum && <polyline points={pts(prevCum)} fill="none" stroke={PREV_COLOR} strokeWidth={2} />}
-          <polyline points={pts(curCum, through)} fill="none" stroke={NOW_COLOR} strokeWidth={2} />
-          {curCum.slice(0, through).map((v, i) => (
-            <circle key={`c${i}`} cx={x(i)} cy={y(v)} r={3.5} fill={NOW_COLOR} stroke="#fff" strokeWidth={2}>
-              <title>{`${MONTHS[i]} ${cur.year}: ${cur.months[i].created} made (${v} by end of ${MONTHS[i]})`}</title>
-            </circle>
-          ))}
+          {MONTHS.map((mon, i) => {
+            const prevN = prev ? prev.months[i].created : 0;
+            const curN = cur.months[i].created;
+            // Months this year that haven't happened yet get NO bar (not a zero one) — a zero would claim we made nothing in a month
+            // that hasn't arrived. Last year's bar still draws there, which is the useful part: what the rest of the year looked like.
+            const future = i + 1 > through;
+            const pairL = centre(i) - (prev ? barW + 1 : barW / 2);
+            const curX = prev ? centre(i) + 1 : centre(i) - barW / 2;
+            return (
+              <g key={`b${mon}`}>
+                {prev && prevN > 0 && (
+                  <rect x={pairL} y={y(prevN)} width={barW} height={barH(prevN)} rx={2} fill={PREV_COLOR}>
+                    <title>{`${mon} ${prev.year}: ${prevN} made`}</title>
+                  </rect>
+                )}
+                {!future && curN > 0 && (
+                  <rect x={curX} y={y(curN)} width={barW} height={barH(curN)} rx={2} fill={NOW_COLOR}>
+                    <title>{`${mon} ${cur.year}: ${curN} made`}</title>
+                  </rect>
+                )}
+                {/* The count sits over this year's bar: these are small numbers, so printing them beats making the reader hover. */}
+                {!future && curN > 0 && (
+                  <text x={curX + barW / 2} y={y(curN) - 3} textAnchor="middle" fontSize="9" fill="#64748b">{curN}</text>
+                )}
+              </g>
+            );
+          })}
         </svg>
       </div>
 

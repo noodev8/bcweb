@@ -10,12 +10,18 @@ Purpose: The catalogue-GROWTH pulse. How many Shopify styles were ADDED in the r
          HERO number = count of new styles in the window (the thing being monitored). A small window toggle (30 / 60 / 90 days) lets the
          lens widen. Below, a table of the additions themselves, newest-created first.
 
+THE BACK LINK NAMES WHERE YOU CAME FROM. This screen is reachable from the Reports index AND from the "added this year" card on
+         Reports -> Winners, so the arrow reads `?from=` / `?back=` and falls back to Reports when they are absent (the same
+         convention the Winners screen itself uses). A hard-coded "Reports" arrow would strand anyone who arrived from Winners —
+         they would have to navigate back down two levels to return to the screen they were reading.
+
 Guarded by AppShell. Consumes GET /analytics-new-additions (the list) and, via AdditionsTrend, GET /analytics-new-additions-trend
          (the production pace — a different question off a different table, see that component).
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ClipboardDocumentIcon, CheckIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
@@ -48,6 +54,19 @@ const NO_ROWS: NewAdditionRow[] = [];
 const NO_NOTES: ScratchpadNote[] = [];
 
 export default function NewAdditionsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <NewAdditionsPageInner />
+    </Suspense>
+  );
+}
+
+function NewAdditionsPageInner() {
+  // Where the back arrow goes. Defaults to the Reports index, which is how this screen is reached from the module grid.
+  const searchParams = useSearchParams();
+  const backHref = searchParams.get('from') || '/analytics';
+  const backLabel = searchParams.get('back') || 'Reports';
+
   const { logout } = useAuth();
   const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
   const [sortBy, setSortBy] = useState<SortKey>('added');                    // which column the list is sorted by
@@ -154,8 +173,8 @@ export default function NewAdditionsPage() {
   return (
     <AppShell
       /* No page title — the card is called "New" and the back link already names the module; the screen keeps the vertical space. */
-      backHref="/analytics"
-      backLabel="Reports"
+      backHref={backHref}
+      backLabel={backLabel}
     >
       {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {loading && <p className="text-sm text-slate-400">Loading…</p>}

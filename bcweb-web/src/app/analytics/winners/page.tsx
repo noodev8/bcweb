@@ -70,6 +70,16 @@ what they showed is written up in utils/portfolio.js (the profitLadder and bandM
 climbed a rung this year against 41 that slipped. That work is DONE and recorded. If a screen ever needs it, it is a render
 away — but it is not this screen.
 
+THE ONE CARD THAT LEAVES THIS SCREEN: "added this year". Everything else here is a reading of the 80; this is the INPUT that
+produces it — the products made this year against the same months last year, off product_event_log. It is the only figure on the
+page the owner can move TODAY (the count itself answers six to twelve months later), which is why it earns a place and why it is
+the only card that is a link: it goes to Reports -> New, where the month-by-month pace and the additions themselves live.
+
+It reads the log, NOT skusummary.created_at, and the difference matters: product-delete hard-deletes the skusummary row, so a
+style built in March and killed in June would read as though the work never happened. Months before the log went live
+(2026-09-22) count survivors only and are a FLOOR — the New screen marks that boundary on its chart, which is another reason
+this card is a doorway rather than a destination.
+
 WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
 same window, same filter as the count, so the two are on identical footing. Three other denominators were measured and all landed
 at 25-27%, so the figure is robust and the choice is about which is easiest to say out loud, not which is right.
@@ -79,11 +89,19 @@ Guarded by AppShell. Consumes GET /portfolio-winners, GET /portfolio-contenders 
 */
 
 import { Suspense, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, MinusSmallIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
-import { getPortfolioWinners, getPortfolioContenders, updatePortfolioSnapshot, type PortfolioSnapshot } from '@/lib/api';
+import {
+  getPortfolioWinners,
+  getPortfolioContenders,
+  getNewAdditionsTrend,
+  updatePortfolioSnapshot,
+  type PortfolioSnapshot,
+  type AdditionsTrendYear,
+} from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // 'YYYY-MM-DD' -> '22 Sep'. Built from the string parts, never `new Date(...)` — these are pg DATEs cast to text precisely so that
@@ -120,6 +138,8 @@ function WinnersPageInner() {
   const w = useApiQuery('portfolio-winners', () => getPortfolioWinners());
   // Loaded only for the "more on the way" box — the 99 rows behind it are never rendered.
   const c = useApiQuery('portfolio-contenders', () => getPortfolioContenders());
+  // The production side: how much new product has been made. Default window is this year and last, which is all this card needs.
+  const t = useApiQuery('portfolio-additions', () => getNewAdditionsTrend());
 
   const s = w.data?.summary;
   const history = w.data?.history ?? [];
@@ -141,6 +161,17 @@ function WinnersPageInner() {
   const count = sel?.winnerCount ?? 0;
   const prior = sel?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
+
+  // LIKE FOR LIKE, OR IT IS NOT A COMPARISON. `throughMonth` is the last month with real elapsed time in it, so both years are
+  // summed over the SAME months — otherwise a September reading would put nine months against last year's twelve and invent a
+  // collapse. The route returns years ascending, so the current one is last; taken by position rather than by
+  // new Date().getFullYear() because this module's dates all key off the DB's idea of today, not this process's (CLAUDE.md).
+  const years = t.data?.years ?? [];
+  const through = t.data?.throughMonth ?? 12;
+  const ytd = (y: AdditionsTrendYear | undefined) =>
+    y ? y.months.reduce((a, m) => (m.month <= through ? a + m.created : a), 0) : 0;
+  const addedThisYear = ytd(years[years.length - 1]);
+  const addedLastYear = years.length > 1 ? ytd(years[years.length - 2]) : null;
 
   // NO SUCCESS BANNER (owner, 2026-09-22). A green "Recorded — 80 winners" bar was the first version and it was noise: the line
   // beside the button already changes to "N readings recorded, latest 22 Sep" the moment the refresh lands, and the trend gains a
@@ -265,7 +296,7 @@ function WinnersPageInner() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-rows-2">
+        <div className="grid grid-cols-2 gap-4 lg:grid-rows-3">
           {/* All four read off `sel`, so the whole headline moves with the dial rather than the count moving alone — a 29 sitting
               next to £367,545 of revenue earned by 80 styles would be a straightforwardly wrong screen. */}
           <Stat
@@ -291,6 +322,14 @@ function WinnersPageInner() {
               fitted on "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js) — re-reading it
               at £1,000 would need a refit, not a filter, so it states its own bar instead of silently answering a different
               question. Naming the bar unconditionally keeps it honest at £200 too. */}
+          {/* The two forward-looking figures sit together at the end: what has been MADE, and what that is expected to turn into. */}
+          <Stat
+            loading={t.isLoading}
+            value={addedThisYear.toLocaleString('en-GB')}
+            label="added this year"
+            note={addedLastYear === null ? undefined : `${addedLastYear.toLocaleString('en-GB')} in the same months last year`}
+            href="/analytics/new-additions?from=/analytics/winners&back=Winners"
+          />
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
@@ -335,19 +374,39 @@ function WinnersPageInner() {
 
 // A supporting figure. Small by construction — these exist to qualify the hero, and the moment one of them grows a table or a
 // colour of its own it starts competing with the number it is meant to support.
-function Stat({ loading, value, label, note }: { loading: boolean; value: string; label: string; note?: string }) {
+//
+// `href` makes one a doorway. The affordance is a border and a hover lift, NOT a colour or an arrow: a card that looked different
+// from its neighbours would be claiming importance over them, and the point is that it is the same size of thing that happens to
+// lead somewhere. The whole card is the target, so there is nothing small to aim at.
+function Stat({
+  loading,
+  value,
+  label,
+  note,
+  href,
+}: {
+  loading: boolean;
+  value: string;
+  label: string;
+  note?: string;
+  href?: string;
+}) {
+  const body = loading ? (
+    <div className="h-12 animate-pulse rounded bg-slate-100" />
+  ) : (
+    <>
+      <div className="text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
+      <div className="mt-1 text-sm text-slate-600">{label}</div>
+      {note && <div className="mt-1 text-xs leading-snug text-slate-400">{note}</div>}
+    </>
+  );
+
+  const shell = 'block rounded-lg border border-slate-200 bg-white p-4 shadow-sm';
+  if (!href) return <div className={shell}>{body}</div>;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      {loading ? (
-        <div className="h-12 animate-pulse rounded bg-slate-100" />
-      ) : (
-        <>
-          <div className="text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
-          <div className="mt-1 text-sm text-slate-600">{label}</div>
-          {note && <div className="mt-1 text-xs leading-snug text-slate-400">{note}</div>}
-        </>
-      )}
-    </div>
+    <Link href={href} className={`${shell} transition hover:border-slate-300 hover:shadow-md`}>
+      {body}
+    </Link>
   );
 }
 
