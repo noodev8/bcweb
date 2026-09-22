@@ -30,9 +30,15 @@ interface ModuleTileProps {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   live?: boolean;
   compact?: boolean;   // one-line menu row (dashboard) instead of the full card (Reports index)
+  // SUBTITLE (owner, 2026-09-22) — a compact-only second line, four or five words. It exists because the dashboard rebuild put the
+  // tiles behind a drill-down, and a tile you reach by opening a group is a tile you are LESS sure about than one you crossed by
+  // heart: half the names here are internal shorthand (Bclog, Birk Tracker, Birkenstock vs Birk Tracker) that read fine to the team
+  // and to nobody else. The full `description` stays on the hover tooltip; this is the part worth saying out loud. Omit it and the
+  // tile renders exactly as it always did, which is why the Reports index (full density, description already visible) never sets it.
+  subtitle?: string;
 }
 
-export default function ModuleTile({ title, description, href, icon: Icon, live, compact }: ModuleTileProps) {
+export default function ModuleTile({ title, description, href, icon: Icon, live, compact, subtitle }: ModuleTileProps) {
   // COMPACT — icon and title on one row, description demoted to the tooltip. Roughly a third the height of the full card.
   const compactBody = (
     <div
@@ -47,7 +53,10 @@ export default function ModuleTile({ title, description, href, icon: Icon, live,
       <span className={'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ' + (live ? 'bg-brand-50 text-brand-600' : 'bg-slate-200 text-slate-400')}>
         <Icon className="h-5 w-5" />
       </span>
-      <h3 className={'min-w-0 text-sm font-semibold leading-snug ' + (live ? 'text-slate-900' : 'text-slate-500')}>{title}</h3>
+      <div className="min-w-0">
+        <h3 className={'text-sm font-semibold leading-snug ' + (live ? 'text-slate-900' : 'text-slate-500')}>{title}</h3>
+        {subtitle && <p className="mt-0.5 text-xs leading-snug text-slate-500">{subtitle}</p>}
+      </div>
       {!live && (
         <span className="ml-auto shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500">Soon</span>
       )}

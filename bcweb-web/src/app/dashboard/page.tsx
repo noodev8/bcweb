@@ -5,108 +5,373 @@ Page: /dashboard
 =======================================================================================================================================
 Purpose: The platform module menu (CLAUDE.md). Guarded by AppShell.
 
-REBUILT 2026-08-27 (owner) around how the day actually runs, replacing a flat grid of twelve equal tiles in roughly build order.
-Three things were wrong with that grid and each is fixed here:
+REBUILT 2026-09-22 (owner) into SEARCH + FIVE INTENT GROUPS THAT EXPAND IN PLACE, replacing four always-open bands of tiles.
 
-  1. SEARCH IS THE FRONT DOOR. The day starts by looking a product up, and Inventory — the screen that answers it — sat seventh.
-     Worse, searching cost two moves before a single character was typed. So the page now OPENS on a search box that hands its term
-     straight to Inventory (see ProductSearchBox).
+WHAT WAS WRONG WITH THE BANDS. Not the tile count — the HEADINGS. "Daily" was a when, "Stock & products" a what, "Pricing" a
+function, "Reports & marketing" two unrelated things bolted together. Four different kinds of label means you cannot predict which
+band a screen is filed under, so you re-read all seventeen tiles every visit and pick the one you recognise. The owner's words for
+it: "it feels like a bunch of cards and I'm still sifting through them to get what I need."
 
-     THERE IS NO INVENTORY CARD (owner, 2026-08-27), and the reason matters, because the obvious one is wrong. It is NOT "it's in
-     the header bar" — Segments, Customer Orders and Reports are in the header too, and deleting every card that has a tab would gut
-     this page and leave it no longer a map of the platform. It is that the search box IS the Inventory tile on this screen: hero
-     sized, four inches above where the card sat, same route. Inventory is the only module duplicated on the SAME screen, which is
-     the line. The card's one unique job was the browse with no term typed, and the header tab does that in one click from anywhere.
+THE AXIS IS NOW THE MINDSET YOU ARRIVED IN (owner: "it will depend where my mindset is when coming to the app"), not the part of the
+system a screen belongs to. Every heading below finishes the sentence "I came here to...". That one change is what makes the rest of
+the page work, and it is the thing not to undo: if a new screen doesn't obviously finish that sentence under some heading, the answer
+is a new heading, not a "Misc" group or a sixth kind of label.
 
-  2. TILES ARE BANDED, NOT RANKED. Twelve peers in one grid make the operator re-read the whole thing to find one screen. Four small
-     labelled bands are scannable by heading alone. DAILY is only the screens a day is STARTED on — the moment it grew to include
-     everything touched daily it stopped meaning anything. A short band is a part-row of the same four tracks
-     everything else uses, not a resized one — see the `Band` note on why the two short bands no longer share a row.
+  A SCREEN MAY APPEAR UNDER MORE THAN ONE HEADING, deliberately (owner). Under the old bands a tile had one home and duplication was
+  a bug; with intent headings it is the entire point, because two mindsets genuinely look in two places for the same screen. Segments
+  is a pricing door AND a what-needs-attention read. Amazon Pricing is a price you set AND the thing the Seller Central upload
+  carries. Birk Tracker is a report AND the far end of the Birkenstock catalogue job. So DON'T "de-duplicate" this page — a repeat
+  here is load-bearing. (It is cheap, too: a repeat is one line in one array.)
 
-  3. PRICING SITS LAST. Shopify/Amazon Pricing are normally entered FROM Segments, not from here (owner) — they led the old grid on
-     build order alone. They keep tiles, for when you already know what you're repricing, but they're the bottom band: the tile you
-     reach for least often should not be the one nearest your eye.
+EXPANDED IN PLACE, ONE AT A TIME, rather than each heading being its own sub-page. The whole problem is not knowing where a screen
+lives, so a WRONG GUESS HAS TO BE FREE: opening the wrong group and opening another costs two clicks and no navigation, where
+sub-pages would put a back-press on every wrong guess and punish exactly the uncertainty this page exists to absorb. One at a time
+because all five open is the seventeen-tile wall again with extra headings.
+Nothing is remembered between visits: arriving at a bare /dashboard opens it closed every time. A remembered group would be right for
+one mindset and quietly wrong for the other four, and re-opening is one click.
 
-  BAND ORDER and the order WITHIN each band are the owner's, set against how the day runs, not against any tidier scheme — so don't
-  "fix" them into alphabetical or build order. Daily -> Stock & products -> Reports & marketing -> Pricing; and within Stock &
-  products, Order Status -> Amazon Order -> Goods In -> Add / Modify (Update Amazon left that band on 2026-09-03, and Pick left it
-  for DAILY).
+  THE ONE EXCEPTION IS COMING BACK (owner, 2026-09-22 — "I went to Winners and then went back to the full reports; I'd prefer to go
+  back where I came from"). Every tile here links with `?from=<group id>`, and the page reads `?g=<group id>` on arrival and opens
+  that group. AppShell turns the first into the second: a page opened from this menu gets a back link to /dashboard?g=… instead of
+  its own parent, so back retraces the step you took rather than climbing the route tree. Winners is the case that exposed it — you
+  reach it from this group in one hop, and its own parent is the reports index you never visited.
+  THIS IS NOT THE REMEMBERING THE PARAGRAPH ABOVE RULES OUT. It's explicit and it's in the URL: it lasts exactly one journey, is
+  visible, and is bookmarkable. Nothing is inferred about what you'd want NEXT time.
 
-  Pick joined DAILY and Goods In joined STOCK & PRODUCTS on 2026-09-03 (owner); the reasons are on the two tiles.
+SEARCH STAYS THE FRONT DOOR and is NOT one of the five. The day starts by looking a product up, the product hub answers it, and that
+path is already solved — so it sits above the groups, unboxed and hero-sized, and gets no heading of its own. THERE IS STILL NO
+INVENTORY TILE at top level for the reason the 2026-08-27 note gave: the search box IS that tile on this screen. (Inventory does
+appear inside "Look after the catalogue", where it is the browse-with-no-term case rather than the search.)
 
-  Also: Analytics/Brands/Amazon Order were three separate doors onto "read a number". Analytics and Brands are now one Reports tile
-  (owner) — see /analytics, which absorbed Brands as a view. Amazon Order came back out to STOCK & PRODUCTS on 2026-09-03 once it
-  stopped being a report and became a screen you work, and Update Amazon crossed the other way into REPORTS & MARKETING on the same
-  day; see both tiles below.
+SUBTITLES ON EVERY TILE (owner, 2026-09-22, with wording reserved — "I might push back on wording as we know what we mean with
+internal names at the moment"). The old compact tile was title-only with the description on hover, which is right for a menu you
+cross by heart; a tile you reach by OPENING A GROUP is one you were less sure about, and half these names are internal shorthand
+(Bclog; Birkenstock vs Birk Tracker; Location; Segments). The subtitle is four or five words, the full description stays on the
+tooltip. THE STRINGS ARE THE OWNER'S TO EDIT — they are all in the array below, one line each, and changing them is not a design
+decision.
 
-DENSITY, second pass (owner, 2026-08-27 — "too much of nothing"). The first cut of this page used the full ModuleTile card: a big
-icon, a title and a two-line description, about 200px per tile. Nine of those plus four band headings made the page TALLER than the
-flat twelve-tile grid it replaced, and a band of two tiles in a three-wide grid left a hole the size of a tile. Two changes fix it:
-  - COMPACT tiles (icon + title on one line, description moved to the hover tooltip). This is a menu crossed by someone who knows it
-    by heart, not a shelf of things being explained — the paragraphs were read past every single time.
-  - FOUR columns at lg instead of three, so the bands read as deliberate part-rows rather than gaps. (STOCK & PRODUCTS filled a row
-    of four exactly until the Inventory card came out; three of four still reads as a row.) The 2026-09-03 swap — Amazon Order in,
-    Update Amazon out to REPORTS & MARKETING — keeps it at four.
-Together the whole menu lands in about the height DAILY and STOCK & PRODUCTS used to take on their own.
-
-KEEP EVERY BAND ONE ROW OF TILES. That is the rule the 2026-09-03 tidy-up came down to (owner: the page was "looking a bit odd with
-all the different heights"), and with a four-wide grid it means a band of at most four. A fifth
-tile in any band wraps it, and a wrapped band is the thing that looked wrong — so a fifth tile is a prompt to move something out or
-split the band, not something to absorb.
-  THAT RULE IS CURRENTLY BROKEN IN ONE BAND, knowingly. STOCK & PRODUCTS is at six (Birkenstock took it to five, Locations to six on
-  2026-09-10), so it runs 4 + 2 while the bands overall are 3 / 6 / 6 / 2 (REPORTS & MARKETING took Finance on 2026-09-11 and Bclog on
-  2026-09-14, and now wraps 4 + 2 for the same reason). It was allowed rather than fixed because the alternative is moving
-  a tile into a band it doesn't belong in to keep a row tidy, and the six are one coherent chain — decide, place, receive, shelve,
-  season-buy, edit. If it is to be fixed, split the band (procurement vs the catalogue), don't evict a tile.
+THE HEADER BAR DELIBERATELY DOES NOT MIRROR THESE FIVE (owner, 2026-09-22 — it was the obvious "consistent" answer and it is the
+wrong one). It is pinned screens now, defaulting to the old fixed four; see lib/usePins.ts for the reasoning, which comes down to the
+two answering different questions. This page answers "where do I start?" and is allowed to make you think for a second; the bar
+answers "get me there, I'm mid-task", where the destination is already known and a mindset-pick would only add a click.
 =======================================================================================================================================
 */
 
+import { useState, useEffect, ComponentType, SVGProps } from 'react';
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon,
+  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, BoltIcon, ArchiveBoxIcon,
+  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  ChartPieIcon, CalculatorIcon,
 } from '@heroicons/react/24/outline';
 
-// One band of the menu. Kept as data so the headings stay visually identical and a tile moves band by moving one line.
-//
-// EVERY BAND IS FULL WIDTH (owner, 2026-09-03 — "looking a bit odd with all the different heights"). DAILY and REPORTS & MARKETING
-// used to share the top row as two `half` panels, and the 2026-09-03 tile moves broke that arrangement in three ways at once, all of
-// them visible: a half panel is only two tracks wide, so REPORTS & MARKETING at three tiles wrapped and left one tile alone on a
-// second row; the panels were stretched to a common height (`h-full`), so DAILY at one row of tiles grew a band of dead grey to match
-// its taller neighbour; and a half panel spends the same two lots of horizontal padding across two tiles that a full one spends
-// across four, so its tiles came out ~8px narrower and every column below sat slightly out of line.
-// Unpairing settles all three and costs almost nothing in height: the paired row was already two tile-rows tall, so splitting it
-// gives one row each and the page grows by a heading and a panel's padding, not by a row of tiles. Every tile on the page is now one
-// width on one set of four tracks, and a band is exactly as tall as the tiles in it.
-//
-// THE PANEL (owner, 2026-08-27). The last tile of STOCK & PRODUCTS sat in the third track with nothing to its right, directly under
-// Reports, and at a glance read as part of REPORTS & MARKETING — the grey heading alone was too quiet to stop the eye running a column
-// down through it. (The tile that exposed it was Update Amazon, which has since moved into that band for real — but the panels are
-// what stop ANY part-row band bleeding into the one above, so they stay.)
-// A hairline rule above each band was tried first and was too faint against a slate-100 page to register at all. So each band now sits
-// in its own soft panel: a container that encloses its tiles leaves nothing to infer.
-// The page background is slate-100 and the tiles are white, so the panel goes DARKER (slate-200) rather than lighter — going lighter
-// would put the panel between the two and flatten both edges at once. It started at slate-200/60 and that was barely a step off the
-// page; solid slate-200 plus a slate-300 ring gives the panel an actual edge as well as a fill, so it reads as a container rather than
-// a smudge.
-// ALIGNMENT is now free: one padding, one grid, one tile width. That was the "structural fix" the 2026-08-27 note here reserved for
-// if the half-panel stagger ever had to go — it did, so this is it. The two things NOT to undo: the panels stay (see above), and the
-// grid stays four-wide, so a short band reads as a deliberate part-row of a known width rather than as a gap.
-const BAND_PANEL = 'rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300';
+type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
-function Band({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className={BAND_PANEL + ' mb-6'}>
-      <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>
-    </section>
-  );
+interface Tile {
+  title: string;
+  subtitle: string;      // the four-or-five-word line under the title; owner's wording to edit
+  description: string;   // the full sentence, shown on hover
+  href: string;
+  icon: Icon;
 }
 
+interface Group {
+  id: string;
+  title: string;         // finishes "I came here to..."
+  blurb: string;         // one line under the heading, shown on the closed tile
+  icon: Icon;
+  tiles: Tile[];
+}
+
+/* =====================================================================================================================================
+   THE MENU. All five groups and every tile, as data — a screen moves group, or gains a second home, by moving or copying one entry.
+   ORDER IS THE OWNER'S, set against how often each mindset actually brings you here, not against any tidier scheme: the work you do
+   today first, the numbers you read next, then prices, then the channels, then the catalogue you maintain rarely and deliberately.
+   Don't sort these alphabetically or by build order.
+===================================================================================================================================== */
+const GROUPS: Group[] = [
+  {
+    id: 'work',
+    title: 'Do today’s work',
+    blurb: 'Orders, picks, deliveries — the jobs with a queue behind them',
+    icon: BoltIcon,
+    // The screens a day is actually SPENT on: something is waiting, and working the screen makes the queue shorter. That is the test
+    // for this group — not "touched daily" (which was what killed the old DAILY band the moment it grew), but "has a backlog".
+    tiles: [
+      {
+        title: 'Pick',
+        subtitle: 'What to take off the shelf',
+        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
+        href: '/pick',
+        icon: HandRaisedIcon,
+      },
+      {
+        title: 'Customer Orders',
+        subtitle: 'Fulfil what customers bought',
+        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
+        href: '/customer-orders',
+        icon: UserGroupIcon,
+      },
+      {
+        title: 'Order Status',
+        subtitle: 'Place and chase supplier orders',
+        description: "Place supplier orders and chase what's on its way.",
+        href: '/order-status',
+        icon: ShoppingCartIcon,
+      },
+      {
+        title: 'Goods In',
+        subtitle: 'Book in a delivery',
+        description: "Book in what's arrived from a supplier and put it on the shelf.",
+        href: '/goods-in',
+        icon: InboxArrowDownIcon,
+      },
+      {
+        title: 'Amazon Order',
+        subtitle: 'What to buy in, what to send',
+        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
+        href: '/amazon-order',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        title: 'Location',
+        subtitle: "What's on a rack",
+        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
+        href: '/locations',
+        icon: MapPinIcon,
+      },
+    ],
+  },
+  {
+    id: 'numbers',
+    title: 'See how we’re doing',
+    blurb: 'Go and read a number — sales, ads, stock, month end',
+    icon: ChartBarIcon,
+    /* THE REPORTS THEMSELVES, NOT A DOOR TO THEM (owner, 2026-09-22). This group first held a single "Reports" tile pointing at
+       /analytics, which meant reading a number cost three clicks — open the group, open Reports, pick the report — and the middle
+       one told you nothing you didn't already know when you opened a group called "see how we're doing". The reports index IS this
+       group; having both was the same mistake the old bands made, a category standing in front of the thing.
+       /analytics IS STILL LIVE and unchanged — deep links, bookmarks and the header pin all still land on it, and it remains the
+       right page when you want the full descriptions rather than these four-word ones. It simply no longer has a tile here.
+       ORDER IS THE REPORTS INDEX'S OWN, kept deliberately so the two screens don't disagree about which report comes first; Birk
+       Tracker and Finance are appended because they belong to this mindset but have never lived on that index.
+       SEGMENTS CAME OUT (owner, 2026-09-22): it was here as a "what needs attention next" read, but everything around it is now a
+       genuine report and Segments is a worklist you act on. It keeps its home under Set prices, which is how it's actually entered.
+       TWELVE TILES, three rows of four, and that is fine BECAUSE IT IS BEHIND A DRILL-DOWN — the old one-row-per-band rule existed
+       when every band was open at once and the page was a wall. Only one group is ever open now, so depth here costs nothing. */
+    tiles: [
+      {
+        title: 'Sales',
+        subtitle: 'Recent sales and profit',
+        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
+        href: '/analytics/sales',
+        icon: BanknotesIcon,
+      },
+      {
+        title: 'Birk Availability',
+        subtitle: 'Core sizes complete',
+        description: 'How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge.',
+        href: '/analytics/birk-availability',
+        icon: PresentationChartLineIcon,
+      },
+      {
+        title: 'Stock Position',
+        subtitle: 'What’s commercially alive',
+        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
+        href: '/analytics/stock-position',
+        icon: CubeIcon,
+      },
+      {
+        title: 'New',
+        subtitle: 'Added in the last 30 days',
+        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
+        href: '/analytics/new-additions',
+        icon: SparklesIcon,
+      },
+      {
+        title: 'Price Changes',
+        subtitle: 'Recent moves, and what shifted',
+        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
+        href: '/analytics/price-changes',
+        icon: ArrowsRightLeftIcon,
+      },
+      {
+        title: 'Ad Efficiency',
+        subtitle: 'What survives Google spend',
+        description: "How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept.",
+        href: '/analytics/ad-efficiency',
+        icon: ScaleIcon,
+      },
+      {
+        title: 'Ad Daily',
+        subtitle: 'Spend vs sales, day by day',
+        description: 'Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner’s read on whether a budget change is working.',
+        href: '/analytics/ad-daily',
+        icon: SunIcon,
+      },
+      {
+        title: 'Bclog',
+        subtitle: 'Who did what, and when',
+        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
+        href: '/analytics/activity-log',
+        icon: DocumentMagnifyingGlassIcon,
+      },
+      {
+        title: 'Winners',
+        subtitle: 'Products pulling their weight',
+        description: 'How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling.',
+        href: '/analytics/winners',
+        icon: TrophyIcon,
+      },
+      {
+        title: 'Brands',
+        subtitle: 'What each brand earned',
+        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
+        href: '/brands',
+        icon: ChartPieIcon,
+      },
+      {
+        title: 'Birk Tracker',
+        subtitle: 'Season order, placed to landed',
+        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
+        href: '/birk-tracker',
+        icon: TruckIcon,
+      },
+      {
+        title: 'Finance',
+        subtitle: 'Close the month',
+        description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.',
+        href: '/finance',
+        icon: CalculatorIcon,
+      },
+    ],
+  },
+  {
+    id: 'price',
+    title: 'Set prices',
+    blurb: 'Move a price up or down, here or on Amazon',
+    icon: CurrencyPoundIcon,
+    // Kept small on purpose. Pricing is normally entered FROM Segments (owner) rather than from a tile, so this group is the direct
+    // hit for when the style is already known — hence Segments repeated at the end as the way in that is actually used.
+    tiles: [
+      {
+        title: 'Shopify Pricing',
+        subtitle: 'Winners and losers, by style',
+        description: 'Review demand and set Shopify prices, segment by segment.',
+        href: '/pricing',
+        icon: CurrencyPoundIcon,
+      },
+      {
+        title: 'Amazon Pricing',
+        subtitle: 'Same job, size by size',
+        description: 'Review demand and set Amazon/FBA prices, segment by segment.',
+        href: '/amz',
+        icon: BuildingStorefrontIcon,
+      },
+      {
+        title: 'Segments',
+        subtitle: 'The usual way in',
+        description: 'See which segment needs attention next, and track who worked what.',
+        href: '/segments',
+        icon: Squares2X2Icon,
+      },
+    ],
+  },
+  {
+    id: 'channels',
+    title: 'Feed the channels',
+    blurb: 'Amazon, Google and Facebook — what goes out',
+    icon: MegaphoneIcon,
+    // Outward-facing, and mostly "kick it off and walk away". The common thread is that the work leaves the building: a Seller
+    // Central file, a Shopping campaign, a scheduled post. Amazon Pricing repeats here because the upload file is built from its log.
+    tiles: [
+      {
+        title: 'Update Amazon',
+        subtitle: 'Load Seller Central reports',
+        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
+        href: '/update-amazon',
+        icon: ArrowUpTrayIcon,
+      },
+      {
+        title: 'Google Ads',
+        subtitle: 'Shopping campaigns and spend',
+        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
+        href: '/google-ads',
+        icon: CursorArrowRaysIcon,
+      },
+      {
+        title: 'Marketing',
+        subtitle: 'The daily Facebook post',
+        description: 'Queue and publish the daily Facebook post — graphic, caption, link, scheduled.',
+        href: '/social',
+        icon: MegaphoneIcon,
+      },
+      {
+        title: 'Amazon Pricing',
+        subtitle: 'Feeds the upload file',
+        description: 'Review demand and set Amazon/FBA prices, segment by segment.',
+        href: '/amz',
+        icon: BuildingStorefrontIcon,
+      },
+    ],
+  },
+  {
+    id: 'catalogue',
+    title: 'Look after the catalogue',
+    blurb: 'What we hold, what it says, what we buy next season',
+    icon: TagIcon,
+    // The product record itself, and the once-a-season buying that fills it. Rarest of the five, so last — but it is where Inventory
+    // finally gets a tile, as the browse with no search term typed.
+    tiles: [
+      {
+        title: 'Add / Modify Product',
+        subtitle: 'Edit or create a product',
+        description: 'Find an existing product to edit, or create a new one.',
+        href: '/products',
+        icon: TagIcon,
+      },
+      {
+        title: 'Inventory',
+        subtitle: 'Browse without searching',
+        description: 'Browse and filter the whole catalogue when you have no term to search for.',
+        href: '/inventory',
+        icon: ArchiveBoxIcon,
+      },
+      {
+        title: 'Birkenstock',
+        subtitle: 'Next season’s order sheet',
+        description: 'Sold in 365 days against what we hold, size by size — what to put on the next order.',
+        href: '/birkenstock',
+        icon: CalendarDaysIcon,
+      },
+      {
+        title: 'Birk Tracker',
+        subtitle: 'Where that order got to',
+        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
+        href: '/birk-tracker',
+        icon: TruckIcon,
+      },
+    ],
+  },
+];
+
 export default function DashboardPage() {
+  // null = every group closed, which is how a bare /dashboard opens (see the header note on not remembering).
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
+  // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
+  // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
+  useEffect(() => {
+    const g = new URLSearchParams(window.location.search).get('g');
+    if (g && GROUPS.some((x) => x.id === g)) setOpenId(g);
+  }, []);
+  const open = GROUPS.find((g) => g.id === openId) ?? null;
+
   return (
     <AppShell>
       {/* The opener. No heading above it — a search box explains itself, and a "Modules" title here would push the one thing the
@@ -115,246 +380,65 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      {/* DAILY — where a day is STARTED. Three tiles, and three is the cap this band can take without a fourth pushing it to a
-          second row; see the header note on keeping every band to one row. */}
-      <Band title="Daily">
-        {/* Segments is the "what needs attention next" heatmap, and the way into both pricing screens. */}
-        <ModuleTile
-          title="Segments"
-          description="See which segment needs attention next, and track who worked what."
-          href="/segments"
-          icon={Squares2X2Icon}
-          live
-          compact
-        />
+      {/* THE FIVE HEADINGS. Five across at lg so the whole menu is one scan of five rather than seventeen; two across below that,
+          where five columns would make each heading too narrow to read its blurb. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {GROUPS.map((g) => {
+          const isOpen = g.id === openId;
+          return (
+            <button
+              key={g.id}
+              type="button"
+              // Clicking the open group closes it — so the same click that opened it puts the page back, with no close affordance
+              // to hunt for.
+              onClick={() => setOpenId(isOpen ? null : g.id)}
+              aria-expanded={isOpen}
+              aria-controls="group-panel"
+              className={
+                'flex h-full flex-col rounded-xl border p-4 text-left transition ' +
+                (isOpen
+                  ? 'border-brand-500 bg-white shadow-md ring-1 ring-brand-500'
+                  : 'border-slate-200 bg-white shadow-sm hover:border-brand-500 hover:shadow-md')
+              }
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className={'inline-flex h-9 w-9 items-center justify-center rounded-lg ' + (isOpen ? 'bg-brand-500 text-white' : 'bg-brand-50 text-brand-600')}>
+                  <g.icon className="h-5 w-5" />
+                </span>
+                <ChevronDownIcon className={'h-4 w-4 text-slate-400 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
+              </div>
+              <h2 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h2>
+              <p className="mt-1 text-xs leading-snug text-slate-500">{g.blurb}</p>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Customer Orders — FULFILMENT (ordertype=1), worked every day against a long grid. */}
-        <ModuleTile
-          title="Customer Orders"
-          description="Fulfil what customers have bought — what's picked, what's short, what's waiting."
-          href="/customer-orders"
-          icon={UserGroupIcon}
-          live
-          compact
-        />
-
-        {/* Pick — the physical shelf: what has to come off it, for a customer order or for the next FBA shipment. MOVED HERE from
-            STOCK & PRODUCTS (owner, 2026-09-03). The 2026-08-30 call kept it out of DAILY because picking mostly happens on the
-            mobile app and this screen was where you came when a pick needed a second look; in practice it is opened at the start of
-            the day like the other two, alongside the customer orders it picks against, so it now sits with them. Third, after
-            Customer Orders: the pick is what those orders turn into. */}
-        <ModuleTile
-          title="Pick"
-          description="What has to come off a shelf — customer picks, and stock to gather for Amazon."
-          href="/pick"
-          icon={HandRaisedIcon}
-          live
-          compact
-        />
-      </Band>
-
-      {/* REPORTS & MARKETING — the read-a-number screens, behind one door, plus the jobs you kick off and walk away from
-          (Marketing's scheduled post, and the Seller Central ingest that moved in on 2026-09-03). Second rather than beside DAILY as
-          it used to be: the owner is in it repeatedly through the day, so it stays high. */}
-      <Band title="Reports & marketing">
-        {/* One tile over six views (Sales, Birk Tracker, Stock Position, New Additions, Price Changes, Brands). Brands used to be a
-            top-level tile; folding it in is the owner's call (2026-08-27) — both were "go and read a number", and two doors onto
-            that made it a peer of screens worked every day. Amazon Order was folded in at the same time and came back out on
-            2026-09-03 once it stopped being a report. */}
-        <ModuleTile
-          title="Reports"
-          description="Sales, stock, margin and brand reporting — everything you go to read a number on."
-          href="/analytics"
-          icon={ChartBarIcon}
-          live
-          compact
-        />
-
-        {/* Bclog — the "who did what, when" ledger (bclog, written by bcweb and PowerBuilder). It also lives inside Reports; given
-            its own tile here as well (owner, 2026-09-14) because it is looked up often enough to earn a direct door. Takes this
-            band to SIX, so it now wraps 4 + 2 — see the header note on over-full bands. */}
-        <ModuleTile
-          title="Bclog"
-          description="Who did what, and when — search the activity log from here and PowerBuilder."
-          href="/analytics/activity-log"
-          icon={DocumentMagnifyingGlassIcon}
-          live
-          compact
-        />
-
-        {/* Marketing -> Social. Queue a graphic + caption; a sweep publishes it to the Facebook Page at the due minute. */}
-        <ModuleTile
-          title="Marketing"
-          description="Queue and publish the daily Facebook post — graphic, caption, link, scheduled."
-          href="/social"
-          icon={MegaphoneIcon}
-          live
-          compact
-        />
-
-        {/* Update Amazon — the daily Seller Central ingest that replaces the legacy PowerBuilder UPDATE AMAZON button. Moved here
-            from STOCK & PRODUCTS (owner, 2026-09-03) when Amazon Order took its place in that band. It sat there because it feeds
-            the catalogue, but what it IS is a job you kick off and walk away from — which is exactly what Marketing beside it is
-            too, so this band is read-a-number screens plus the run-and-leave jobs, and it belongs to the second half. It stays out
-            of DAILY for the reason it always did: a data job, not a screen you make decisions on. */}
-        <ModuleTile
-          title="Update Amazon"
-          description="Load the Seller Central reports — sales, returns, FBA stock and fees."
-          href="/update-amazon"
-          icon={ArrowUpTrayIcon}
-          live
-          compact
-        />
-
-        {/* Google Ads — decide which products sit in which Shopping campaign, against what each one earns after ad spend. Banded
-            here rather than under PRICING because it is not a per-product money decision: it is a marketing one, made over a
-            filtered set, and it sits beside Marketing and the Amazon ingest for the same reason they do — you come to it with a
-            session in mind, and part of the job is loading a report first. */}
-        <ModuleTile
-          title="Google Ads"
-          description="Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing."
-          href="/google-ads"
-          icon={CursorArrowRaysIcon}
-          live
-          compact
-        />
-
-        {/* Finance -> Month End. Banded here (owner, 2026-09-11) rather than given a band of its own, which is what it had for
-            half a day and which read as a lonely tile rather than a deliberate part-row.
-            It belongs with Update Amazon and Google Ads specifically: all three are "load a file, get a result and walk away"
-            jobs rather than screens worked continuously, and this band is already read-a-number screens plus run-and-leave jobs.
-            It is LAST because it is the rarest — once a month, in the first week, and never twice.
-            NOTE this takes the band to FIVE, so it wraps 4 + 1 against the four-wide grid. Knowingly, and for the same reason
-            STOCK & PRODUCTS is allowed to run 4 + 2: the alternative is evicting a tile into a band it does not belong in to keep
-            a row tidy. If it is ever to be fixed, split this band (reports vs the run-and-leave jobs) rather than moving one out. */}
-        <ModuleTile
-          title="Finance"
-          description="Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files."
-          href="/finance"
-          icon={BanknotesIcon}
-          live
-          compact
-        />
-      </Band>
-
-      {/* STOCK & PRODUCTS — the catalogue itself: what we hold, what it says, and what's coming in. */}
-      <Band title="Stock & products">
-        {/* Order Status — PROCUREMENT: place what's been chosen, then chase what's on its way. Banded with stock rather than beside
-            Customer Orders (owner, 2026-08-27): they read as a pair but they're opposite jobs — this is a sit-down session about
-            replenishing stock, that is a daily fulfilment grid. */}
-        <ModuleTile
-          title="Order Status"
-          description="Place supplier orders and chase what's on its way."
-          href="/order-status"
-          icon={ShoppingCartIcon}
-          live
-          compact
-        />
-
-        {/* Amazon Order — a dashboard tile again (owner, 2026-09-03), after a spell inside Reports. It went in there as the flat
-            profit report it was; it has since become a working screen — rate fills, an Order basket and a Pick basket, and two DB
-            writes on the button — so filing it under "go and read a number" put a job you DO behind a door marked reading. Third
-            in the band, straight after Order Status: the two are the same errand a step apart, deciding what to buy and then
-            placing it. */}
-        <ModuleTile
-          title="Amazon Order"
-          description="Work out what Amazon needs — what to buy in, and what to send from the local shelf."
-          href="/amazon-order"
-          icon={ClipboardDocumentListIcon}
-          live
-          compact
-        />
-
-        {/* Goods In — booking a supplier delivery onto the shelf: the far end of the Order Status errand, and the only step in the
-            band that ADDS stock. Placed straight after Amazon Order so the band reads as one chain — decide, place, receive — with
-            Add / Modify, the catalogue job, left at the end. */}
-        <ModuleTile
-          title="Goods In"
-          description="Book in what's arrived from a supplier and put it on the shelf."
-          href="/goods-in"
-          icon={InboxArrowDownIcon}
-          live
-          compact
-        />
-
-        {/* Birkenstock — the seasonal re-order sheet (365-day sales against stock, size by size, Live vs Full). In STOCK & PRODUCTS
-            rather than DAILY or REPORTS: it is a sit-down buying session, held a few times a year, and it is a decision screen, not a
-            number you go and read. Last in the replenishment chain the band already tells — decide, place, receive — because it is
-            the one brand where that chain runs on a season instead of a shelf: the order goes in ~6 months ahead and cannot be topped
-            up, so it is a different KIND of buying decision and sits apart from the three that share a rhythm.
-            A calendar rather than the clipboard this tile first carried: Amazon Order has since taken the clipboard, and two tiles in
-            one band wearing the same icon is worse than either choice of icon. The calendar is the truer one anyway — what makes this
-            screen hard is that it is months ahead of itself. */}
-        {/* Locations — the warehouse read from the shelf end instead of the product end: stand at a rack, see what is on it, add or
-            take off. Straight after Goods In because it is the same handling job one step on — Goods In puts a delivery on a shelf,
-            this is every other reason stock moves on or off one. NEW 2026-09-10 (owner); scaffold for now, logic to follow. */}
-        <ModuleTile
-          title="Location"
-          description="Work from the shelf, not the product — what's on a rack, and moving stock on and off it."
-          href="/locations"
-          icon={MapPinIcon}
-          live
-          compact
-        />
-
-        <ModuleTile
-          title="Birkenstock"
-          description="Sold in 365 days against what we hold, size by size — what to put on the next order."
-          href="/birkenstock"
-          icon={CalendarDaysIcon}
-          live
-          compact
-        />
-
-        {/* Birk Tracker — the season order, tracked from placed to landed: requested vs invoiced vs arrived, line by line. Directly
-            after Birkenstock because the two are the same errand at its two ends — that screen decides what goes ON the order, this
-            one is where that order then lives for the six months it takes to turn up. NEW 2026-09-14 (owner); the screen and the read
-            are live, the writes follow.
-            NOTE this takes STOCK & PRODUCTS to SEVEN, so it runs 4 + 3 against the four-wide grid. The band was already knowingly
-            over (see the page header) and the same reasoning holds: the alternative is filing a Birkenstock-buying screen somewhere
-            it doesn't belong to keep a row tidy. It does strengthen the case the header already makes — if this band is ever fixed,
-            split it (procurement vs the catalogue) rather than evicting a tile, and this one goes with Birkenstock either way. */}
-        <ModuleTile
-          title="Birk Tracker"
-          description="Track the Birkenstock order from placed to landed — requested, invoiced, arrived."
-          href="/birk-tracker"
-          icon={TruckIcon}
-          live
-          compact
-        />
-
-        <ModuleTile
-          title="Add / Modify Product"
-          description="Find an existing product to edit, or create a new one."
-          href="/products"
-          icon={TagIcon}
-          live
-          compact
-        />
-      </Band>
-
-      {/* PRICING — last band (owner, 2026-08-27). Normally entered from Segments; these tiles are for a direct hit when the style is
-          already known, which is the rarer case. */}
-      <Band title="Pricing">
-        <ModuleTile
-          title="Shopify Pricing"
-          description="Review demand and set Shopify prices, segment by segment."
-          href="/pricing"
-          icon={CurrencyPoundIcon}
-          live
-          compact
-        />
-
-        {/* SKU-grain mirror of the Shopify flow. Applies queue into a Seller Central upload file — no live push. */}
-        <ModuleTile
-          title="Amazon Pricing"
-          description="Review demand and set Amazon/FBA prices, segment by segment."
-          href="/amz"
-          icon={BuildingStorefrontIcon}
-          live
-          compact
-        />
-      </Band>
+      {/* THE PANEL — one, below the whole row rather than under the column that was clicked. Under the column it would be a narrow
+          strip that moves left and right as you change your mind; full width it is the same shape every time, and the tiles get the
+          four-wide grid the old bands used. The darker slate-200 fill is the old band panel, kept for the same reason: it encloses
+          the tiles so nothing has to be inferred about what belongs to what. */}
+      {open && (
+        <section id="group-panel" className="mt-3 rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {open.tiles.map((t) => (
+              // key includes the group id because a tile can appear in two groups — title alone is not unique across the menu.
+              // `?from=` is the return ticket AppShell reads to build the back link (see the header note). Appended rather than
+              // built into the data so the hrefs stay plain, and with a `?`/`&` check in case a tile ever carries its own query.
+              <ModuleTile
+                key={open.id + t.href + t.title}
+                title={t.title}
+                subtitle={t.subtitle}
+                description={t.description}
+                href={t.href + (t.href.includes('?') ? '&' : '?') + 'from=' + open.id}
+                icon={t.icon}
+                live
+                compact
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </AppShell>
   );
 }
