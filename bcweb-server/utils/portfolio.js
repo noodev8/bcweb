@@ -406,7 +406,19 @@ async function computeWinners() {
              -- Prior-year units, for the "units shifted" comparison. Computed LIVE from sales, exactly like profit_prior_12m —
              -- no snapshot column and no migration is needed for a year-on-year figure, only for putting one on the trend.
              COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
-                                         AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0)::int AS units_prior_12m
+                                         AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0)::int AS units_prior_12m,
+             -- THE BRAND AS THE SALE RECORDED IT, for styles skusummary no longer has. product-delete HARD-deletes the skusummary
+             -- row, so a style that traded all winter and was then deleted loses its brand join and lands in "Unbranded" — which
+             -- is how L7514-14 (Womens Rieker Fleece Lining Zip Boots Navy, 88 units and £518 earned) came to be its own bucket
+             -- on the brand list beside the one remaining Rieker. The sales table carries its own snapshot, which is the whole
+             -- reason it survives the delete; the same argument product_event_log is built on. (No backticks in here — the whole
+             -- query is a JS template literal and one would end it.)
+             --
+             -- MOST RECENT non-blank wins — what we last called it. Only 2 groupids in the table ever disagree with themselves
+             -- about brand and only 4 of 10,161 rows in the window are blank, so this is a tidy fallback rather than a guess.
+             -- The id tie-break makes it deterministic when a style sold twice on its last day.
+             (ARRAY_AGG(brand ORDER BY solddate DESC, id DESC)
+                FILTER (WHERE COALESCE(TRIM(brand), '') <> ''))[1] AS sales_brand
       FROM sales
       WHERE qty > 0                      -- returns live in the haircut, not the rows (owner, 2026-09-10)
         AND groupid IS NOT NULL
@@ -416,7 +428,9 @@ async function computeWinners() {
     stk AS (${STOCK_CTE})
     SELECT a.groupid,
            t.shopifytitle                       AS title,
-           COALESCE(NULLIF(ss.brand, ''), '')   AS brand,
+           -- skusummary first (the live catalogue is the authority while the product exists), the sale's own snapshot second.
+           COALESCE(NULLIF(TRIM(ss.brand), ''),
+                    NULLIF(TRIM(a.sales_brand), ''), '') AS brand,
            to_char(a.first_sale, 'YYYY-MM-DD')  AS first_sale,   -- cast in SQL: never hand a pg DATE to toISOString()
            (CURRENT_DATE - a.first_sale)::int   AS days_on_sale,
            a.profit_12m,
