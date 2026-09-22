@@ -46,17 +46,17 @@ const { query } = require('../database');
 //   If it ever moves, clear the snapshot history or add the bar to the stored row — do not just edit the number.
 const WINNER_PROFIT_BAR = 200;
 
-// THE SAME TEST, READ AT HIGHER BARS. Not a second definition — one ruler with extra marks on it. The screen offers these as a
-// TOGGLE so the owner can ask "and if a winner had to earn £500?" without anyone editing a constant, which is the only safe way to
-// answer that question: the bar above is welded to the trend table (see its warning) and must not move to satisfy curiosity.
+// THE RUNGS THE EARNINGS REPORT IS CUT INTO — profitLadder() and bandMovement() below. NOT a second definition of a winner and
+// NOT a setting: £200 is the bar, full stop. These are just where the report draws its lines.
 //
-// ⚠ THE FIRST ENTRY MUST BE WINNER_PROFIT_BAR. routes/portfolio-winners.js returns bars[0] spread into `summary`, so the payload's
-//   top-level figures stay exactly what they were before the toggle existed and every existing consumer — crucially the snapshot
-//   writer — keeps recording the TRACKED bar no matter what the screen is displaying. Reorder this and you silently change what
-//   gets stored in portfolio_snapshot.
+// ⚠ THIS WAS BRIEFLY A DIAL ON THE SCREEN (2026-09-22) — a toggle reading the headline count at each mark, 80 / 51 / 29 / 13.
+//   The owner had it built and then removed it the same day: "We've got too many competing numbers. Put it back to normal 200.
+//   The 80 is my number." The analysis it was built to answer is DONE and its findings are in profitLadder()'s header; what it
+//   left behind was three rival versions of the one figure the screen exists to grow. DO NOT PUT THE TOGGLE BACK. If the
+//   question "what if a winner had to earn £500" comes up again, it is a query, not a control.
 //
-// Why these four: 200 is the tracked bar; 300/500/1000 were measured 2026-09-22 and give 51 / 29 / 13 winners against 80, which is
-// a usable spread. A fifth mark at 2000 leaves 3 styles — too few to read anything from.
+// The first entry is WINNER_PROFIT_BAR so the rungs line up with the bar: the winner count is exactly the styles in the rungs
+// above it (29 + 22 + 16 + 13 = 80), which is what makes the report a breakdown of the hero rather than a separate measurement.
 const WINNER_BAR_LADDER = [WINNER_PROFIT_BAR, 300, 500, 1000];
 
 // Below this age a style is YOUNG and belongs on the CONTENDERS tab. One selling season.
@@ -138,14 +138,15 @@ const STOCK_CTE = `
 `;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// THE SUMMARY, TAKEN AT ONE BAR. Everything the headline shows, for a single mark on the ladder. Pure arithmetic over the rows the
-// one SQL read already returned — no query in here, which is the entire reason a four-bar toggle costs nothing.
+// THE SUMMARY. Everything the headline shows. Pure arithmetic over the rows the one SQL read already returned — no query in here.
+//
+// It still takes `bar` as an argument rather than closing over WINNER_PROFIT_BAR: it is the one place the bar is applied, and
+// naming it in the signature is what stops a second, differently-barred copy of this arithmetic growing somewhere else.
 //
 // `totalStyles` is passed in rather than counted here because the denominator is BAR-INDEPENDENT: "of everything that sold this
 // year" does not change when you raise the bar on what counts as earning its keep, and only the numerator should move.
 //
-// The prior-year figures use the SAME bar as the current year, so "a year ago" on the £500 toggle means "would have been a £500
-// winner then", not "was a £200 winner then". Anything else and the comparison is between two different tests.
+// The prior-year figure uses the SAME bar as the current year, so "a year ago" is the same test, not a different one.
 // ---------------------------------------------------------------------------------------------------------------------------------
 function summariseAt(styles, bar, totalStyles) {
   let winnerCount = 0;
@@ -190,8 +191,8 @@ function summariseAt(styles, bar, totalStyles) {
   }
 
   return {
-    // WHICH bar these figures were taken at. On screen it is what the toggle is lit against; in the payload it is what stops a
-    // reader having to know that bars[] is in ladder order.
+    // WHICH bar these figures were taken at. Nothing varies it any more, but a payload that states its own ruler is one nobody
+    // has to go and look up.
     bar,
     winner_count: winnerCount,
     winner_count_prior_year: winnerCountPriorYear,
@@ -382,9 +383,8 @@ function bandMovement(tradedStyles) {
  *
  * The prior window is the 12 months BEFORE the current one, [-24m, -12m), so the two never overlap and "joined this year" is exact.
  *
- * The summary is measured at EVERY mark on WINNER_BAR_LADDER (see `summary.bars`) and the tracked bar's figures are spread onto
- * `summary` itself, so the payload's top-level shape is unchanged and the snapshot writer keeps recording the tracked bar.
- * `summary.ladder` is the distribution report behind the count — see profitLadder().
+ * `summary.ladder` is the distribution report behind the count and `summary.movement` says whether the range already owned is
+ * climbing or sliding — see profitLadder() and bandMovement().
  *
  * @returns {Promise<{summary: object, winners: object[]}>} winners sorted profit_12m descending.
  */
@@ -498,11 +498,7 @@ async function computeWinners() {
   const tradedStyles = styles.filter((s) => s.units12m !== 0);
   const totalStyles = tradedStyles.length;
 
-  // The same summary, taken at each mark on the ladder.
-  const bars = WINNER_BAR_LADDER.map((bar) => summariseAt(styles, bar, totalStyles));
-
-  // The list is the TRACKED bar's set, always — the toggle is a reading of the count, not a filter on the rows. The screen does
-  // not draw this list at all today (see the page header); it is here for whatever working screen eventually wants it.
+  // The list. The screen does not draw it at all today (see the page header); it is here for whatever working screen wants it.
   const winners = styles
     .filter((s) => s.profit12m > WINNER_PROFIT_BAR)
     .map((s) => ({
@@ -521,12 +517,7 @@ async function computeWinners() {
 
   return {
     summary: {
-      // bars[0] IS the tracked bar (WINNER_BAR_LADDER's first entry is WINNER_PROFIT_BAR, enforced by the comment on the
-      // constant). Spreading it keeps this payload byte-identical in shape to the pre-toggle version, which is what lets the
-      // snapshot writer go on reading summary.winner_count and record the tracked figure whatever the screen is showing.
-      ...bars[0],
-      // Every mark on the ladder, so the toggle is instant and cannot disagree with the headline — same read, same arithmetic.
-      bars,
+      ...summariseAt(styles, WINNER_PROFIT_BAR, totalStyles),
       // The distribution behind the count. See profitLadder().
       ladder: profitLadder(tradedStyles),
       // Whether the range already owned is climbing or sliding. Bar-independent — it is a property of the rungs, not of the
