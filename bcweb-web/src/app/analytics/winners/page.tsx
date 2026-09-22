@@ -40,20 +40,24 @@ values. It is the amount before adverts?" Gross revenue has no such ambiguity, s
 returned and still snapshotted, just not drawn. Revenue is NOT snapshotted (that would need a migration), so it is a live figure
 only and deliberately absent from the trend line.
 
-THE BAR IS £200 AND THERE IS NO CONTROL FOR IT. A dial offering £300 / £500 / £1,000 was built here on 2026-09-22 and taken
-out the same day: "We've got too many competing numbers. Put it back to normal 200. The 80 is my number." It is the same rule
-as everything else that has been deleted from this screen — one tracked figure, and nothing allowed to grow into a peer of it.
-Three alternative readings of the hero count are the most direct breach of that available. Do not rebuild it.
+THE BAR IS A DIAL NOW, AND THE DIAL IS A READING ONLY (owner, 2026-09-22):
 
-WHAT THE DIAL WAS BUILT TO ANSWER, ANSWERED (owner, 2026-09-22):
+  "We have a number for winners based on making £200 profit in a year. I wonder, is it easy enough to give me a toggle so I can
+   see what the numbers are for £300, £500 or 1k profit. I can then decide whether I'm focussing on high volume low profit items
+   and what the sweet spot might be. Unless you can also give me a report here. ie. I shouldn't be focussing on the low 20 items
+   if they only yield another £2 for the year."
 
-  "I can then decide whether I'm focussing on high volume low profit items and what the sweet spot might be. Unless you can
-   also give me a report here. ie. I shouldn't be focussing on the low 20 items if they only yield another £2 for the year."
+The toggle re-reads the WHOLE headline — count, share, revenue, units, last year, the brand split — at £200, £300, £500 or
+£1,000. Every one of those readings arrives in the SAME payload (summary.bars), so switching is instant and the four can never
+disagree with each other. NOTHING THE TOGGLE DOES IS RECORDED: the trend line and the "Update now" button are welded to the
+tracked £200 bar, because a series measured with a ruler that moves when someone is curious is not a series. The screen says so
+in a line under the toggle whenever it is off the tracked bar — that line is not decoration, it is the guard-rail.
 
-That is "Where the earnings sit", under the trend, and it is a REPORT rather than a control — it states what each rung of the
-range is worth without offering a second version of the headline. Measured 2026-09-22: the 29 styles between £200 and £300 are
-worth £6,886 a year BETWEEN THEM (13% of what the winners earn, ~£237 each), while the 13 above £1,000 are worth £25,553 — half
-of everything, from a sixth of the winners. The bottom of the list is not where the year is won.
+AND THEN THE REPORT, because a toggle alone answers the wrong half. Raising the bar tells you HOW MANY styles clear it; it cannot
+tell you WHAT THE ONES IN BETWEEN ARE WORTH, which is the actual decision behind "I shouldn't be focussing on the low 20 items".
+So "Where the earnings sit" cuts the same styles into bands and states each band's contribution. Measured 2026-09-22 it says:
+the 29 styles between £200 and £300 are worth £6,886 a year BETWEEN THEM (13% of what the winners earn), while the 13 above
+£1,000 are worth £25,553 — half of everything, from a sixth of the winners. The bottom of the list is not where the year is won.
 
 AND THE COLUMN THAT ANSWERS "AM I CHASING HIGH VOLUME, LOW PROFIT": earned per unit, AS A MEDIAN. The first version of this
 table showed the band aggregate and it produced a wrong answer — £7.79 / £7.43 / £10.16 / £5.72 across the winner rungs, which
@@ -70,11 +74,8 @@ styles above £1,000 were already above £500 a year ago, and of 148 styles that
 year while the range it already owns quietly slides, and the headline count would not flinch. That is what "climbed a rung /
 slipped a rung" under the table is for, and it is the one number here that the count cannot see.
 
-IT IS ALSO WHY £200 IS THE BAR AND NOT £500: £200 is the only rung a new style can reach inside its first year, so it is the
-only bar at which this year's buying decisions show up in this year's number. A £500 bar would steer with a two-year lag.
-
 THE REPORT IS A TABLE AND THAT IS NOT A BREACH OF THE RULE ABOVE. "Nothing on it is a list" means no per-style rows and no work
-queue. Six rungs are a SHAPE OF THE HERO NUMBER — the count, cut up — and the owner asked for exactly this. Per-style detail
+queue. Six bands are a SHAPE OF THE HERO NUMBER — the count, cut up — and the owner asked for exactly this. Per-style detail
 still belongs elsewhere.
 
 WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
@@ -152,11 +153,22 @@ function WinnersPageInner() {
   const s = w.data?.summary;
   const history = w.data?.history ?? [];
 
-  const brands = s?.byBrand ?? [];
+  // WHICH BAR IS ON SCREEN. null means "whatever the server tracks", so the default is never hard-coded here and follows
+  // WINNER_PROFIT_BAR if it ever moves. It is view state and nothing more — no URL param, no storage, nothing sent anywhere.
+  const [bar, setBar] = useState<number | null>(null);
+
+  const bars = s?.bars ?? [];
+  // bars[0] IS the tracked bar by construction (utils/portfolio.js spreads it onto the summary). Everything recorded — the trend
+  // line, "Update now" — is measured there, whatever the toggle is showing.
+  const trackedBar = bars[0]?.bar ?? s?.bar ?? null;
+  // Fall back to the tracked bar, then to the summary itself, so a server that has not shipped `bars` still renders a headline.
+  const sel = bars.find((b) => b.bar === bar) ?? bars[0] ?? s;
+
+  const brands = sel?.byBrand ?? [];
   const topBrandWinners = Math.max(1, ...brands.map((b) => b.winners));
 
-  const count = s?.winnerCount ?? 0;
-  const prior = s?.winnerCountPriorYear ?? 0;
+  const count = sel?.winnerCount ?? 0;
+  const prior = sel?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
 
   const ladder = s?.ladder ?? [];
@@ -186,6 +198,39 @@ function WinnersPageInner() {
     <AppShell backHref={backHref} backLabel={backLabel}>
       {actionError && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
       {w.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{w.error.message}</div>}
+
+      {/* ---------------------------------------------------------------------------------------------------------------------
+          THE DIAL. Written as a SENTENCE with the marks inside it — "a winner earns more than [£200] in 12 months" — because the
+          toggle is not a filter, it is the definition being read aloud, and a bare row of amounts would be a filter. It sits
+          ABOVE the hero so the definition arrives before the number it produces.
+
+          ALL FOUR MARKS LOOK THE SAME. Two earlier versions singled £200 out — first with a line of explanatory text and a
+          "Back to £200" button, then with colour and a larger size — and the owner removed both: "I only meant make the 200 the
+          same as the other dials." £200 needs no flag because it is already where the dial sits when the page loads, which is
+          what he sees every day without touching anything. Selection is the only state the marks show.
+          --------------------------------------------------------------------------------------------------------------------- */}
+      {bars.length > 1 && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sm text-slate-500">A winner earns more than</span>
+          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+            {bars.map((b) => (
+              <button
+                key={b.bar}
+                onClick={() => setBar(b.bar)}
+                aria-pressed={sel?.bar === b.bar}
+                className={
+                  sel?.bar === b.bar
+                    ? 'rounded bg-slate-700 px-3 py-1.5 text-sm font-medium text-white tabular-nums'
+                    : 'rounded px-3 py-1.5 text-sm text-slate-600 tabular-nums transition hover:bg-slate-50'
+                }
+              >
+                {money(b.bar)}
+              </button>
+            ))}
+          </div>
+          <span className="text-sm text-slate-500">in 12 months</span>
+        </div>
+      )}
 
       {/* ---------------------------------------------------------------------------------------------------------------------
           THE BIG BOX, AND THE SMALL ONES BESIDE IT. The hero takes half the width on a large screen and the four supporting
@@ -252,30 +297,40 @@ function WinnersPageInner() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-rows-2">
+          {/* All four read off `sel`, so the whole headline moves with the dial rather than the count moving alone — a 29 sitting
+              next to £367,545 of revenue earned by 80 styles would be a straightforwardly wrong screen. */}
           <Stat
             loading={w.isLoading}
-            value={s?.winnerSharePct === null || s?.winnerSharePct === undefined ? '—' : `${s.winnerSharePct}%`}
+            value={sel?.winnerSharePct === null || sel?.winnerSharePct === undefined ? '—' : `${sel.winnerSharePct}%`}
             label="of the range"
-            note={s ? `${count} of ${s.totalStyles} that sold this year` : undefined}
+            note={sel ? `${count} of ${sel.totalStyles} that sold this year` : undefined}
           />
           <Stat
             loading={w.isLoading}
-            value={s ? money(s.totalRevenue12m) : '—'}
+            value={sel ? money(sel.totalRevenue12m) : '—'}
             label="revenue"
             note="gross, last 12 months, from these winners"
           />
           <Stat
             loading={w.isLoading}
-            value={(s?.totalUnits12m ?? 0).toLocaleString('en-GB')}
+            value={(sel?.totalUnits12m ?? 0).toLocaleString('en-GB')}
             label="units shifted"
             note="packed and sent, last 12 months"
           />
-          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same test, previous 12 months" />
+          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same bar, previous 12 months" />
+          {/* THIS ONE DOES NOT MOVE WITH THE DIAL, and the note says which bar it means. The conversion model behind it was
+              fitted on "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js) — re-reading it
+              at £1,000 would need a refit, not a filter, so it states its own bar instead of silently answering a different
+              question. Naming the bar unconditionally keeps it honest at £200 too. */}
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
             label="more on the way"
-            note={c.data ? `expected from ${c.data.summary.youngStyles} styles under 180 days old` : undefined}
+            note={
+              c.data
+                ? `expected to clear ${trackedBar === null ? 'the bar' : money(trackedBar)}, from ${c.data.summary.youngStyles} styles under 180 days old`
+                : undefined
+            }
           />
         </div>
       </div>
@@ -298,7 +353,7 @@ function WinnersPageInner() {
       </div>
 
       {history.length > 1 ? (
-        <WinnerTrendChart rows={history} />
+        <WinnerTrendChart rows={history} trackedBar={trackedBar} />
       ) : history.length === 1 ? (
         <p className="text-xs text-slate-400">
           One reading so far ({history[0].winnerCount} on {shortDate(history[0].date)}). The trend appears once there are two.
@@ -342,7 +397,7 @@ function Stat({ loading, value, label, note }: { loading: boolean; value: string
 // ---------------------------------------------------------------------------------------------------------------------------------
 const TREND_COLOR = '#2a78d6';
 
-function WinnerTrendChart({ rows }: { rows: PortfolioSnapshot[] }) {
+function WinnerTrendChart({ rows, trackedBar }: { rows: PortfolioSnapshot[]; trackedBar: number | null }) {
   const W = 720, H = 220, padL = 34, padR = 16, padT = 12, padB = 24;
   const n = rows.length;
 
@@ -359,7 +414,12 @@ function WinnerTrendChart({ rows }: { rows: PortfolioSnapshot[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <span className="font-medium text-slate-600">Winners over time</span>
+        {/* The bar is named ON the chart, always — not only when the dial is off it. Every stored point was taken at the
+            tracked bar and nothing in the table records that, so the label is the only thing standing between this line and
+            someone reading it as the count they happen to be looking at. */}
+        <span className="font-medium text-slate-600">
+          Winners over time{trackedBar === null ? '' : `, at the ${money(trackedBar)} bar`}
+        </span>
         <span>
           {change === 0 ? 'Level' : change > 0 ? `Up ${change}` : `Down ${Math.abs(change)}`} since {shortDate(first.date)}
         </span>

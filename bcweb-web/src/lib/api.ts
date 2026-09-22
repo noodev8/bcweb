@@ -3470,16 +3470,15 @@ export interface PortfolioWinner {
   stockUnits: number;             // see rule 2 above
 }
 
-// The headline. `bar` is stated rather than assumed, but nothing varies it — £200 is the bar. A screen control offering £300 /
-// £500 / £1,000 existed for a few hours on 2026-09-22 and the owner removed it: "We've got too many competing numbers. Put it
-// back to normal 200. The 80 is my number." Do not reintroduce it.
+// The headline, AT ONE BAR. The screen's toggle switches between four of these; the server measures all four from a single read
+// (see `bars` below) so the alternatives can never disagree with the one on display.
 export interface PortfolioBarSummary {
   bar: number;                    // the bar these figures were measured at, in GBP
   winnerCount: number;            // THE tracked number — the hero metric on the screen
-  winnerCountPriorYear: number;   // the same bar applied to the previous 12 months, so the comparison is like-for-like
+  winnerCountPriorYear: number;   // the SAME bar applied to the previous 12 months, so the comparison is like-for-like
   joinedThisYear: number;
   leftThisYear: number;
-  totalStyles: number;            // styles that traded at all in the window — the denominator for the share
+  totalStyles: number;            // styles that traded at all in the window — the denominator for the share. BAR-INDEPENDENT
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
   totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
@@ -3533,9 +3532,11 @@ export interface PortfolioBandMovement {
   topBandEstablished: number;
 }
 
-// What GET /portfolio-winners returns: the headline, plus the distribution behind it.
+// What GET /portfolio-winners returns: the TRACKED bar's figures at the top level (unchanged shape — the snapshot writer and the
+// trend chart depend on it), plus every bar and the distribution behind them.
 export interface PortfolioWinnersSummary extends PortfolioBarSummary {
-  ladder: PortfolioProfitBand[];  // low rung first
+  bars: PortfolioBarSummary[];    // ladder order, low bar first. bars[0] IS this object's own figures
+  ladder: PortfolioProfitBand[];  // low band first
   // Bar-independent — a property of the rungs, not of the toggle. null on a server that has not shipped it yet, and the screen
   // must then draw nothing rather than a confident row of zeroes.
   movement: PortfolioBandMovement | null;
@@ -3569,7 +3570,7 @@ export interface PortfolioSnapshot {
   winnerSharePct: number | null;  // derived server-side from the two stored facts. null on rows predating totalStyles
 }
 
-// pg returns numerics as STRINGS, and a field the API has not shipped yet arrives undefined and formats as "£NaN". The mappers
+// pg returns numerics as STRINGS, and a field the API has not shipped yet arrives undefined and formats as "£NaN". Both mappers
 // below coerce every figure rather than passing it through — the same rule the Ad Daily client follows. Shared between the GET and
 // the "Update now" POST because both carry the identical summary object, and two copies would drift.
 function mapBarSummary(b: Record<string, unknown> | undefined): PortfolioBarSummary {
@@ -3602,6 +3603,11 @@ const bandEdge = (v: unknown): number | null => (v === null || v === undefined ?
 function mapWinnersSummary(b: Record<string, unknown> | undefined): PortfolioWinnersSummary {
   return {
     ...mapBarSummary(b),
+    // Fall back to the top-level figures as a single-rung ladder rather than an empty array: a server that has not shipped `bars`
+    // yet should leave the screen showing its one tracked bar, not showing no bars at all.
+    bars: ((b?.bars as Record<string, unknown>[]) || []).length
+      ? (b!.bars as Record<string, unknown>[]).map(mapBarSummary)
+      : [mapBarSummary(b)],
     ladder: ((b?.ladder as Record<string, unknown>[]) || []).map((l) => ({
       from: bandEdge(l.from),
       to: bandEdge(l.to),
@@ -3682,6 +3688,7 @@ export function updatePortfolioSnapshot() {
       date: String(b.date || ''),
       // The POST echoes the SAME summary object the GET returns (both call computeWinners), so it goes through the same mapper —
       // the screen only reads winnerCount off it to confirm what was recorded, but a second hand-rolled copy would drift.
+      // REMEMBER WHICH BAR THIS IS: what gets stored is always the TRACKED bar, never whatever the screen's toggle is showing.
       summary: mapWinnersSummary(b.summary as Record<string, unknown> | undefined),
       contenders: {
         youngStyles: Number((b.contenders as Record<string, unknown>)?.young_styles) || 0,
