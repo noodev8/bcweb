@@ -25,6 +25,7 @@ import { useSearchParams } from 'next/navigation';
 import { ClipboardDocumentIcon, CheckIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
+import WinnersStrip from '@/components/WinnersStrip';
 import { useProductActions } from '@/components/ProductActions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -232,6 +233,10 @@ function NewAdditionsPageInner() {
               brought) and the list (what those additions are), because it is the same subject at a longer focal length. Loads its
               own data, so it can't hold the list up. */}
           <AdditionsTrend />
+
+          {/* What the making is FOR — the winner count, and the way through to that screen. Sits directly under production because
+              it is the outcome half of the same subject; the Winners screen owns everything else about it. */}
+          <WinnersStrip />
 
           {/* Table controls. The filter sits HERE, not in the hero — it changes the list below it and nothing above it, and being next
               to the row count makes that obvious at a glance. */}
