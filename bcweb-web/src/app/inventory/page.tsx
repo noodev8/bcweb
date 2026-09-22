@@ -61,6 +61,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import { prettyPathLabel } from '@/lib/nav';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
 import InvStyleCard from '@/components/InvStyleCard';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -284,6 +285,13 @@ function InventoryPageContent() {
     const q = (searchParams.get('q') || '').trim().toUpperCase();
     return q ? parseContains(q) : null;
   });
+
+  // WHERE "BACK" GOES, threaded via ?from=/&back= - the convention the pricing, Amazon, Add/Modify and Amazon Order screens already
+  // use. Added 2026-09-22 with the product hub: Inventory is one of its hand-off cards, and a screen you are sent INTO from a hub
+  // needs a way back out to the list you were working (owner - "when going to INVENTORY, need to come back easy"). Landing here from
+  // the header tab or a bare URL passes no params and is unchanged - no back arrow at all, as before.
+  const from = searchParams.get('from');
+  const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : undefined);
 
   // The two input boxes, and the ordered list of steps applied so far.
   const [contains, setContains] = useState('');
@@ -567,7 +575,7 @@ function InventoryPageContent() {
   }
 
   return (
-    <AppShell title="Inventory" subtitle="Find stock by title, groupid or segment">
+    <AppShell title="Inventory" subtitle="Find stock by title, groupid or segment" backHref={from || undefined} backLabel={backLabel}>
       {/* ---- Command bar ---------------------------------------------------------------------------------------------------
           NOT sticky (owner, 2026-07-27, on trial). It used to stay pinned so the filter was always to hand mid-browse, but once the
           keyboard cursor arrived the bar sat still while cards streamed under it — too much happening at once to read comfortably

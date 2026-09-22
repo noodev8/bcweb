@@ -13,11 +13,17 @@ Purpose: The PRODUCT-FIRST front door (owner, 2026-09-22). "We always start with
          bulk price bar, and both are deep-link targets from Analytics' "reprice this"); this route answers a different question — not
          "which SKU am I repricing" but "which product am I working on at all".
 
-WHY NOT JUST REUSE inv-styles. That route ships the WHOLE catalogue (~280 styles) unfiltered so Inventory can narrow it client-side,
-and it is built for the picture browse: two per-size JSON maps, the Birk pre-order book, the season tag, the created stamp. This one is
-term-filtered server-side and carries the Amazon PRICE spread, which inv-styles has no reason to know. Bolting the spread onto
-inv-styles would put it on 280 rows nobody asked for. They share the loc/feed CTE shapes on purpose — if you change what "local" or
-"at Amazon" means, change both.
+SHIPS THE WHOLE CATALOGUE, UNFILTERED — there is deliberately no `term` parameter (owner, 2026-09-22: make the hub search work
+"exactly the same as inventory search"). It had one until then, and one round-trip per search is exactly what makes stacked
+Contains / Does-not-contain steps and an instant Reset impossible. So it now follows inv-styles' pattern instead: ~288 styles go over
+the wire once and every narrowing happens in the browser with no round-trip. That is also why `codes` is on each row — the client's
+haystack has to be able to find a style by a pasted size code or Amazon SKU, which the server used to do with an EXISTS.
+
+WHY NOT JUST REUSE inv-styles, then, now that both ship everything. Because they carry different cargo for different screens:
+inv-styles is built for the picture browse (two per-size JSON maps, the Birk pre-order book, the season tag, the created stamp), and
+this one carries the Amazon PRICE spread, which the browse has no use for. Bolting the spread onto inv-styles would put a price
+aggregate on 288 rows nobody asked for, and folding the size maps in here would do the same in reverse. They share the loc/feed CTE
+shapes on purpose — if you change what "local" or "at Amazon" means, change both.
 
 STOCK IS ONE COLUMN: local + Amazon-held (owner, 2026-09-22 — "just add local + Amz at this stage"). Deliberately NOT inv-styles'
 `total`, which also folds in the Birkenstock pre-order book: that is stock ~6 months out, and this screen is about the product in front
@@ -36,21 +42,20 @@ equal. pricing-drill already returns the same pair (amazon_lowest / amazon_highe
 SOLD IS 30 DAYS, all channels, positive sales only (owner, 2026-09-22) — the same basis as inv-styles' sold30 and as the WINNERS bar in
 CLAUDE.md, so the number means one thing across the platform. Requires auth.
 =======================================================================================================================================
-Request Query Params:
-  term  (string, required) - free text. Matched with ILIKE %term% against groupid, the human title (title.shopifytitle - NOT the
-                             overloaded colour tag, CLAUDE.md), and - through skumap - the internal size code and the full Amazon
-                             Seller SKU. So a pasted '0151183-ARIZONA-38' or '17659-23-42-2607' finds its style.
-  limit (int, optional)    - row cap; default 100, clamped to [1, 500] (utils/listLimit.js). The COUNT is never capped.
+Request Payload: none (GET). See the note above on why there is no term.
 
 Success Response:
 {
   "return_code": "SUCCESS",
-  "term": "ARIZONA",
+  "count": 288,
   "rows": [
     {
       "groupid": "1005292-ARIZONA",
       "title": "Birkenstock Arizona Two-Strap Sandals Black",  // title.shopifytitle; null if none
       "segment": "ARIZONA-GENERAL",
+      "season": "Summer",                   // skusummary.season - 'Summer' | 'Winter' | 'Any'; '' if ever blank. Drives the hub's
+                                            // typed WINTER / SUMMER commands, exactly as it does Inventory's. 'Any' is year-round and
+                                            // the CLIENT folds it into BOTH seasons, so this ships raw.
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
       "stock": 38,                          // local + Amazon-held. THE column (owner) - see the note above
       "local": 27,                          // the two parts, for the hover
@@ -59,17 +64,16 @@ Success Response:
       "amz_live": true,                     // spread taken over in-stock FBA sizes; false = no FBA stock, spread is over all rows
       "amz_sizes": 4,                       // how many sizes the spread covers - "41.09" off one size is not the same fact as off six
       "price": 46.95,                       // live Shopify price (safeNumeric; null if the legacy varchar holds junk)
-      "sold30": 19                          // units sold in 30 days, all channels, returns excluded
+      "sold30": 19,                         // units sold in 30 days, all channels, returns excluded
+      "codes": "1005292-ARIZONA-36 … 17659-23-42-2607 …"  // every size code AND full Amazon Seller SKU under this style, space-joined,
+                                            // so the client's substring search finds a style by a pasted code or Amazon SKU that does
+                                            // not appear in the groupid or title. null when the style has no skumap rows.
     }
-  ],
-  "total": 12,        // TRUE number of matching styles, ignoring the cap
-  "count": 12,        // rows actually returned
-  "truncated": false  // total > count
+  ]
 }
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
-"MISSING_FIELDS"
 "UNAUTHORIZED"
 "SERVER_ERROR"
 =======================================================================================================================================
@@ -80,47 +84,22 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
-const { parseListLimit } = require('../utils/listLimit');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    const term = (req.query.term || '').trim();
-    if (!term) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'term is required' });
-    }
-    const limit = parseListLimit(req.query.limit);
-
-    // $1 = %term%. Built here and BOUND, never interpolated into the SQL, so it stays injection-safe (CLAUDE.md).
-    const like = `%${term}%`;
-
-    // One query, no N+1. Each number is pre-aggregated to style grain in its own CTE and LEFT JOINed on, so a style with no rows in a
-    // given source reads 0 rather than dropping out of the list.
-    //
-    // The MATCH is an EXISTS over skumap rather than a join, on purpose: a style has one row per size there, so joining would fan the
-    // result out and then need a DISTINCT to put it back. EXISTS keeps the outer query one-row-per-style throughout.
+    // One query, no N+1, no parameters — the whole catalogue goes back and the client narrows it (see the header). Each number is
+    // pre-aggregated to style grain in its own CTE and LEFT JOINed on, so a style with no rows in a given source reads 0 rather than
+    // dropping out of the list.
     // NB: no backticks anywhere in this string; it is a JS template literal and one would end the query mid-flight (CLAUDE.md).
     const sql = `
-      WITH matched AS (
-        SELECT s.groupid
-        FROM skusummary s
-        LEFT JOIN title t ON t.groupid = s.groupid
-        WHERE s.groupid ILIKE $1
-           OR t.shopifytitle ILIKE $1
-           OR EXISTS (
-                SELECT 1 FROM skumap m
-                WHERE m.groupid = s.groupid
-                  AND (m.code ILIKE $1 OR m.sku ILIKE $1)
-              )
-      ),
-      loc AS (
+      WITH loc AS (
         -- Local: SUM(qty), ALL states (free, picked, amz-allocated) - a picked unit is still physically in the building. Excludes
         -- soft-deleted rows only. SUM not COUNT: localstock.qty is NOT always 1 (see the inv-styles header - COUNT under-reports ~7%).
         SELECT ls.groupid, SUM(ls.qty) AS units
         FROM localstock ls
-        JOIN matched mt ON mt.groupid = ls.groupid
         WHERE COALESCE(ls.deleted, 0) = 0 AND ls.qty > 0
         GROUP BY ls.groupid
       ),
@@ -129,7 +108,6 @@ router.get('/', async (req, res) => {
         -- figure - do NOT add amzlive to it. amzfeed is FBA-only and READ ONLY (CLAUDE.md).
         SELECT f.groupid, SUM(COALESCE(f.amztotal, 0)) AS units
         FROM amzfeed f
-        JOIN matched mt ON mt.groupid = f.groupid
         GROUP BY f.groupid
       ),
       amz_live AS (
@@ -141,7 +119,6 @@ router.get('/', async (req, res) => {
                MAX(${safeNumeric('f.amzprice')}) AS hi,
                COUNT(${safeNumeric('f.amzprice')}) AS sizes
         FROM amzfeed f
-        JOIN matched mt ON mt.groupid = f.groupid
         WHERE COALESCE(f.amzlive, 0) > 0
         GROUP BY f.groupid
       ),
@@ -153,7 +130,6 @@ router.get('/', async (req, res) => {
                MAX(${safeNumeric('f.amzprice')}) AS hi,
                COUNT(${safeNumeric('f.amzprice')}) AS sizes
         FROM amzfeed f
-        JOIN matched mt ON mt.groupid = f.groupid
         GROUP BY f.groupid
       ),
       sold AS (
@@ -161,42 +137,52 @@ router.get('/', async (req, res) => {
         -- negative sale. sales.groupid is already style-grain, so no join.
         SELECT sa.groupid, SUM(sa.qty) AS units
         FROM sales sa
-        JOIN matched mt ON mt.groupid = sa.groupid
         WHERE sa.solddate >= CURRENT_DATE - INTERVAL '30 days' AND sa.qty > 0
         GROUP BY sa.groupid
+      ),
+      codes AS (
+        -- Every size code AND full Amazon Seller SKU under each style, space-joined into one string for the CLIENT's substring
+        -- search. This is what replaced the server-side EXISTS when the term parameter went (see the header): the browser cannot
+        -- find a style by a pasted '0151183-ARIZONA-38' or '17659-23-42-2607' from the groupid and title alone, because neither
+        -- carries the size or the supplier suffix. skumap is the full variant list and always carries code; sku can be null on a
+        -- style with no Amazon presence, so it is filtered out of the join rather than allowed to poison the string with 'null'.
+        SELECT groupid,
+               string_agg(code, ' ') || COALESCE(' ' || string_agg(sku, ' ') FILTER (WHERE sku IS NOT NULL), '') AS codes
+        FROM skumap
+        GROUP BY groupid
       )
       SELECT
         s.groupid,
         t.shopifytitle                          AS title,
         s.segment,
+        -- SEASON for the WINTER / SUMMER commands. A plain column - no join, no aggregation. Shipped rather than inferred from the
+        -- segment NAME because only RIEKER-WIN / RIEKER-SUM / REMONTE-WIN encode it (32 of ~300 styles), so name-matching silently
+        -- misses the rest; skusummary.season is the real tag and is fully populated. Same reasoning as inv-styles.js.
+        COALESCE(s.season, '')                  AS season,
         s.imagename,
         ${safeNumeric('s.shopifyprice')}         AS price,
         COALESCE(loc.units, 0)                  AS local_units,
         COALESCE(feed.units, 0)                 AS amazon_units,
         COALESCE(sold.units, 0)                 AS sold_units,
+        codes.codes                             AS codes,
         amz_live.lo                             AS live_lo,
         amz_live.hi                             AS live_hi,
         amz_live.sizes                          AS live_sizes,
         amz_any.lo                              AS any_lo,
         amz_any.hi                              AS any_hi,
-        amz_any.sizes                           AS any_sizes,
-        COUNT(*) OVER ()                        AS total_matches
+        amz_any.sizes                           AS any_sizes
       FROM skusummary s
-      JOIN matched mt ON mt.groupid = s.groupid
       LEFT JOIN title    t        ON t.groupid        = s.groupid
       LEFT JOIN loc               ON loc.groupid      = s.groupid
       LEFT JOIN feed              ON feed.groupid     = s.groupid
       LEFT JOIN sold              ON sold.groupid     = s.groupid
       LEFT JOIN amz_live          ON amz_live.groupid = s.groupid
       LEFT JOIN amz_any           ON amz_any.groupid  = s.groupid
+      LEFT JOIN codes             ON codes.groupid    = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
-      LIMIT $2
     `;
 
-    const result = await query(sql, [like, limit]);
-
-    // COUNT(*) OVER () rides along on every row, so the TRUE match count costs no second query. Zero rows means zero matches.
-    const total = result.rows.length ? Number(result.rows[0].total_matches) : 0;
+    const result = await query(sql);
 
     const rows = result.rows.map((r) => {
       // pg returns SUM()/COUNT() as strings (numeric/bigint) - coerce so the JSON carries real numbers the client never parses.
@@ -212,6 +198,8 @@ router.get('/', async (req, res) => {
         groupid: r.groupid,
         title: r.title || null,
         segment: r.segment || null,
+        // 'Summer' | 'Winter' | 'Any' | null. Shipped raw - the client folds 'Any' into both seasons, next to the filter that cares.
+        season: r.season || null,
         imagename: r.imagename || null,
         // THE stock column: local + Amazon-held, one number (owner). The parts ride along for the hover.
         stock: local + amazon,
@@ -223,17 +211,12 @@ router.get('/', async (req, res) => {
         amz_sizes: sizes,
         price: r.price === null ? null : Number(r.price),
         sold30: Number(r.sold_units) || 0,
+        // Space-joined size codes + Amazon Seller SKUs, for the client's haystack. See the codes CTE.
+        codes: r.codes || null,
       };
     });
 
-    return res.json({
-      return_code: 'SUCCESS',
-      term,
-      rows,
-      total,
-      count: rows.length,
-      truncated: total > rows.length,
-    });
+    return res.json({ return_code: 'SUCCESS', count: rows.length, rows });
   } catch (err) {
     logger.error('[product-overview] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Search failed' });

@@ -3,8 +3,8 @@
 Module: server.js
 =======================================================================================================================================
 Purpose: Express application entry point for the Brookfield Comfort internal platform API (Shopify Pricing module, v1).
-         Loads env, applies security middleware (helmet, CORS restricted to CLIENT_URL, rate-limit on login), wires the API logger,
-         mounts one router per endpoint (owner convention: one file per route in routes/), and starts listening on PORT.
+         Loads env, applies security middleware (helmet, CORS restricted to CLIENT_URL, rate-limit on login), gzips every response,
+         wires the API logger, mounts one router per endpoint (owner convention: one file per route in routes/), and listens on PORT.
 
 Run: `node server.js` (dev: `npm run dev` = nodemon; prod: pm2 — see docs/deploy.txt).
 =======================================================================================================================================
@@ -14,6 +14,7 @@ Run: `node server.js` (dev: `npm run dev` = nodemon; prod: pm2 — see docs/depl
 require('dotenv').config();
 
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -32,6 +33,23 @@ app.set('trust proxy', 1);
 // Security & parsing middleware
 // -------------------------------------------------------------------------------------------------------------------------------
 app.use(helmet());                 // sensible security headers
+
+// GZIP EVERY RESPONSE (2026-09-22). This API's payloads are large, repetitive JSON — the exact shape gzip is best at — and nothing
+// was compressing them: the list routes that ship a whole table in one call (product-overview 153kB, inv-styles, amazon-order-list,
+// birk-stock) were going over the wire raw. product-overview measured 152.8kB raw / 21.0kB gzipped, a 7x saving, and the others are
+// the same shape.
+//
+// WHY EXPRESS AND NOT NGINX, since nginx is already in front (docs/VPS-setup.txt). nginx CAN do this, but it was not: it reaches this
+// process through proxy_pass, and stock nginx defaults `gzip_proxied` to `off`, so a proxied response is left alone no matter what
+// gzip_types says — confirmed against the live API, whose /health comes back with no Content-Encoding. Fixing it there would mean the
+// compression living in a file that is not in this repo, is not deployed by docs/deploy.txt, and would be silently lost the next time
+// the VPS is rebuilt from that doc. Here it travels with the code.
+//
+// MUST SIT ABOVE THE ROUTES to see their responses, and it is placed before express.json so the ordering reads as "transport
+// concerns, then parsing, then the app". Requests without Accept-Encoding are unaffected, and compression skips small bodies on its
+// own (~1kB threshold), so the short envelopes most write routes return cost nothing.
+app.use(compression());
+
 app.use(express.json());           // parse JSON request bodies
 
 // CORS restricted to the web origin(s) in CLIENT_URL (CLAUDE.md). CLIENT_URL may be a comma-separated list (local + Vercel).

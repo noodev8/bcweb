@@ -11,25 +11,27 @@ Purpose: The second rung of the hub (owner, 2026-09-22): "Double click to drill 
          time you have opened the sizes you have usually stopped browsing and started deciding, and sending you back up a level to
          reach the card you now want would undo the trip.
 
-THE SHOPIFY PRICE IS IN THE HEADER, NOT A COLUMN — the one place this screen's shape differs from what was asked for, and the reason
-is worth keeping. skusummary.shopifyprice is STYLE grain; there is no per-size Shopify price in the schema. A Shopify column would
-print the same number down every row and quietly suggest the sizes could differ. Amazon's genuinely can — CLAUDE.md records that the
-retired match_amazon_price autopilot was killed precisely because one thin size could set a whole style's price — so amz_price stays a
-real per-row column, and the difference between the two channels is visible on the screen rather than flattened into a repeated cell.
+SHOPIFY PRICE IS BOTH A HEADER FIELD AND A COLUMN (owner, 2026-09-22 — "I was looking for it"). It shipped as a header field only,
+on the reasoning that skusummary.shopifyprice is STYLE grain, so a column would repeat one number down every row and imply the sizes
+could differ. The owner knew that and wanted the column anyway, which settles it: the eye reads across a row when it is comparing two
+channels, and sending it up to the header to fetch the other half of the comparison is a worse cost than a repeated cell. The column
+is drawn in muted text so it still reads as a constant rather than six independent figures.
+  The underlying asymmetry has NOT changed, and it is the thing to keep: Amazon's price genuinely varies by size and Shopify's cannot.
+  CLAUDE.md records that the retired match_amazon_price autopilot was killed precisely because one thin size could set a whole style's
+  price. So amz_price stays a real per-row value; the Shopify column is the same number by definition, not by coincidence.
 
 EVERY SIZE IS LISTED, INCLUDING SOLD-OUT ONES (0, not absent). localstock holds in-stock rows only, so the size range comes from skumap
 (CLAUDE.md landmine, same rule as inv-stock.js) — "we have none in a 39" is the answer the operator needs, and a missing row reads as
 "we don't stock a 39", which is a different fact and the wrong one.
 
-BARCODES ARE A PANEL, NOT A POPUP (owner wondered about "a new window or popup allowing barcode copy"). A panel because the rule for
-this whole feature is that navigation stays on one tab and comes back; a popup is one more window to dismiss, and all a barcode needs
-is to be readable and copyable next to the size it belongs to. Toggled from the Barcode card, drawn as an extra column on the same
-table rather than a second list — the size is the thing you are matching the barcode TO, so splitting them apart would mean reading
-two tables at once.
+BARCODES ARE JUST A COLUMN (owner, 2026-09-22 — "no point having barcode button, may as well just show the barcode"). It was a popup
+in the original sketch, then a panel behind a toggle, and it is now neither: a barcode is one short string per size, it costs a column,
+and a control whose only job is to reveal something that always fits is a control not worth pressing. The column sits on the size table
+rather than in a list of its own because the size is the thing you are matching the barcode TO.
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
+import { Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
@@ -62,8 +64,6 @@ function ProductDrillContent() {
   // deep link with no origin falls back to the bare hub.
   const backTo = searchParams.get('from') || '/product';
   const backLabel = backTo === '/product' ? 'Product' : prettyPathLabel(backTo);
-
-  const [showBarcodes, setShowBarcodes] = useState(false);
 
   const { data, error, isLoading } = useApiQuery(['product-variants', groupid], () => getProductVariants(groupid));
   const header = data?.header;
@@ -134,25 +134,25 @@ function ProductDrillContent() {
                 <tr>
                   <th className="px-3 py-2 font-medium">Code</th>
                   <th className="px-3 py-2 font-medium">Size</th>
-                  <th className="px-3 py-2 text-right font-medium" title="On our shelf plus held at Amazon">Stock</th>
+                  {/* Split rather than summed, same reasoning as the list - "on our shelf" and "at Amazon" are opposite
+                      situations and adding them hides which one you are in. */}
+                  <th className="px-3 py-2 text-right font-medium" title="Units of this size on our own shelf — pickable today">Local</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Units of this size held at Amazon (FBA live + inbound)">Amz</th>
                   <th className="px-3 py-2 text-right font-medium" title="This size's own Amazon price — they differ size to size">Amazon</th>
+                  <th className="px-3 py-2 text-right font-medium" title="One price for the whole style — Shopify does not price per size, so every row reads the same">Shopify</th>
                   <th className="px-3 py-2 text-right font-medium" title="Units sold in the last 30 days, all channels">Sold 30d</th>
-                  {showBarcodes && <th className="px-3 py-2 font-medium">Barcode</th>}
+                  <th className="px-3 py-2 font-medium">Barcode</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((r) => (
                   // A sold-out size is drawn quietly rather than dropped — it is still an answer ("none in a 39"), just not one to
                   // read as stock. See the header note on where the size range comes from.
-                  <tr key={r.code} className={r.stock === 0 ? 'text-slate-400' : ''}>
+                  <tr key={r.code} className={r.stock === 0 ? 'text-slate-400' : ''}>{/* stock = local + amz: dim only when there is none ANYWHERE */}
                     <td className="px-3 py-1.5 font-mono text-xs">{r.code}</td>
                     <td className="px-3 py-1.5">{r.size}</td>
-                    <td
-                      className="px-3 py-1.5 text-right tabular-nums"
-                      title={`${r.local} on our shelf + ${r.amazon} at Amazon`}
-                    >
-                      {r.stock}
-                    </td>
+                    <td className={'px-3 py-1.5 text-right tabular-nums ' + (r.local === 0 ? 'text-slate-300' : '')}>{r.local}</td>
+                    <td className={'px-3 py-1.5 text-right tabular-nums ' + (r.amazon === 0 ? 'text-slate-300' : '')}>{r.amazon}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">
                       {r.amz_price === null ? (
                         <span className="text-slate-300" title="This size has no Amazon (FBA) row">—</span>
@@ -167,19 +167,21 @@ function ProductDrillContent() {
                         </span>
                       )}
                     </td>
+                    {/* The same number on every row, by design (owner asked to see it here rather than only in the header): Shopify
+                        prices the STYLE, not the size. Drawn quietly so it reads as a constant running down the table rather than as
+                        six independent figures that happen to match. */}
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{money(header.price)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{r.sold30}</td>
-                    {showBarcodes && (
-                      <td className="px-3 py-1.5">
-                        {r.barcode ? (
-                          <span className="inline-flex items-center gap-1">
-                            <span className="font-mono text-xs text-slate-700">{r.barcode}</span>
-                            <CopyButton value={r.barcode} label={`barcode for ${r.size}`} />
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    )}
+                    <td className="px-3 py-1.5">
+                      {r.barcode ? (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="font-mono text-xs text-slate-700">{r.barcode}</span>
+                          <CopyButton value={r.barcode} label={`barcode for ${r.size}`} />
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -190,12 +192,7 @@ function ProductDrillContent() {
 
           {/* The hand-off row again, pointing at this same style — see the header on why it is repeated rather than left on the list. */}
           <div className="mt-4">
-            <ProductNavCards
-              groupid={groupid}
-              from={selfUrl}
-              onBarcode={() => setShowBarcodes((v) => !v)}
-              barcodeOpen={showBarcodes}
-            />
+            <ProductNavCards groupid={groupid} from={selfUrl} />
           </div>
         </>
       )}

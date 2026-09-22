@@ -25,6 +25,8 @@ retyping the groupid into five different search boxes:
   - /inventory?q=<groupid>    The picture browse. Deliberately kept on the row even though the hub list shows a thumbnail: the browse
                               answers "which rack is it on", which nothing else here does, and the dashboard search box no longer
                               lands on it, so without this card Inventory is reachable only from the header tab.
+                              It learned ?from=/?back= on 2026-09-22 (owner) - it had neither, because nothing used to send you into
+                              it, and arriving from here with no way out was a dead end.
 
 DISABLED UNTIL A ROW IS PICKED (owner: "we can either grey out the buttons until a groupid is selected or wait for a double click").
 Greying out was the choice: a card that navigates SOMEWHERE ELSE depending on which row is highlighted is the kind of control that is
@@ -35,7 +37,7 @@ there is nothing to middle-click or tab onto either.
 
 import Link from 'next/link';
 import {
-  ClipboardDocumentListIcon, BuildingStorefrontIcon, CurrencyPoundIcon, TagIcon, ArchiveBoxIcon, QrCodeIcon,
+  ClipboardDocumentListIcon, BuildingStorefrontIcon, CurrencyPoundIcon, TagIcon, ArchiveBoxIcon,
 } from '@heroicons/react/24/outline';
 
 // One destination. `build` gets the selected groupid and the encoded origin, so a card's whole deep-link convention sits on one line
@@ -76,7 +78,7 @@ const TARGETS: NavTarget[] = [
     label: 'Inventory',
     hint: 'The picture browse — sizes on the shelf, and which rack each one is on',
     icon: ArchiveBoxIcon,
-    build: (g) => `/inventory?q=${encodeURIComponent(g)}`,
+    build: (g, from) => `/inventory?q=${encodeURIComponent(g)}&from=${from}&back=Product`,
   },
 ];
 
@@ -85,14 +87,9 @@ interface Props {
   groupid: string | null;
   /** The hub URL to come back to. Passed through as ?from= on every card that supports it. */
   from: string;
-  /**
-   * Barcode is a PANEL, not a page (owner listed it alongside the others, wondering about "a new window or popup allowing barcode
-   * copy"). It stays on this screen for the same reason the rest are same-tab: a popup is a window to dismiss and a page is a trip,
-   * and all the barcode needs is to be readable and copyable next to the size it belongs to. Omit the prop to drop the card — the
-   * list page has no size rows to show barcodes against, so it does.
-   */
-  onBarcode?: () => void;
-  barcodeOpen?: boolean;
+  // NO BARCODE CARD. It had one, toggling a column on the drill; the owner cut it (2026-09-22 — "no point having barcode button, may
+  // as well just show the barcode"), and the drill now prints the column unconditionally. Nothing to reinstate here if it ever comes
+  // back — a barcode belongs beside its size, not behind a button on this row.
 }
 
 // Shared look. A card is white-on-slate with a real edge — the same "this is clickable" treatment the dashboard tiles use — and the
@@ -102,7 +99,7 @@ const BASE =
 const ENABLED = 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900';
 const DISABLED = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400';
 
-export default function ProductNavCards({ groupid, from, onBarcode, barcodeOpen }: Props) {
+export default function ProductNavCards({ groupid, from }: Props) {
   const encodedFrom = encodeURIComponent(from);
 
   return (
@@ -127,18 +124,6 @@ export default function ProductNavCards({ groupid, from, onBarcode, barcodeOpen 
         );
       })}
 
-      {onBarcode && (
-        <button
-          type="button"
-          onClick={onBarcode}
-          disabled={!groupid}
-          title={groupid ? 'Show the barcode for each size, ready to copy' : 'Pick a product first'}
-          className={`${BASE} ${groupid ? ENABLED : DISABLED} ${barcodeOpen && groupid ? 'ring-2 ring-brand-500/30' : ''}`}
-        >
-          <QrCodeIcon className={`h-4 w-4 ${groupid ? 'text-brand-600' : 'text-slate-300'}`} />
-          {barcodeOpen ? 'Hide barcodes' : 'Barcode'}
-        </button>
-      )}
     </div>
   );
 }

@@ -1428,6 +1428,9 @@ export interface ProductOverviewRow {
   groupid: string;
   title: string | null;          // title.shopifytitle — the human name. NOT skusummary.colour, which is an overloaded tag
   segment: string | null;
+  // skusummary.season — 'Summer' | 'Winter' | 'Any', or null if untagged. Drives the hub's typed WINTER / SUMMER commands. 'Any'
+  // means year-round and counts as BOTH seasons there; the folding happens on the client, so this stays the raw tag.
+  season: string | null;
   imagename: string | null;      // bare filename; the page builds https://images.brookfieldcomfort.com/<imagename>
   // THE stock column: local + Amazon-held, one number (owner — "just add local + Amz at this stage"). Deliberately NOT Inventory's
   // `total`, which also carries the Birkenstock pre-order book (~6 months out), so this can legitimately read LOWER than the
@@ -1446,19 +1449,20 @@ export interface ProductOverviewRow {
   amz_sizes: number;             // how many sizes the spread covers — £41.09 off one size is not the fact £41.09 off six sizes is
   price: number | null;          // live SHOPIFY price; null when the legacy varchar holds junk (safeNumeric)
   sold30: number;                // units in 30 days, all channels, returns excluded — same basis as Inventory's sold30
+  // Every size code AND full Amazon Seller SKU under this style, space-joined. Purely so the client's substring search can find a
+  // style by a pasted '0151183-ARIZONA-38' or '17659-23-42-2607' — neither the groupid nor the title carries the size or the
+  // supplier suffix. Never displayed.
+  codes: string | null;
 }
 
-// The hub list. Term-filtered SERVER-side (unlike Inventory, which ships the whole catalogue and narrows in the browser): the hub is
-// always entered with a term, and each row costs an Amazon price aggregate the browse has no use for.
-export function getProductOverview(term: string, limit?: number) {
-  return request<{ rows: ProductOverviewRow[]; total: number; count: number; truncated: boolean }>(
-    { url: '/product-overview', method: 'GET', params: { term, ...(limit ? { limit } : {}) } },
-    (b) => ({
-      rows: (b.rows as ProductOverviewRow[]) || [],
-      total: Number(b.total) || 0,
-      count: Number(b.count) || (b.rows || []).length,
-      truncated: !!b.truncated,
-    })
+// The WHOLE style list in one call — deliberately unfiltered, exactly like getInvStyles (owner, 2026-09-22: the hub search should work
+// "exactly the same as inventory search"). ~305 styles / ~150kB, fetched once on mount, and every Contains / Does-not-contain step and
+// Reset then happens in the browser with no round-trip. It used to take a `term` and filter server-side; one request per search is
+// precisely what makes stacked steps and an instant Reset impossible.
+export function getProductOverview() {
+  return request<{ count: number; rows: ProductOverviewRow[] }>(
+    { url: '/product-overview', method: 'GET' },
+    (b) => ({ count: Number(b.count) || (b.rows || []).length, rows: (b.rows as ProductOverviewRow[]) || [] })
   );
 }
 
