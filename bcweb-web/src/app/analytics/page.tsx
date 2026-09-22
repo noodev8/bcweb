@@ -61,7 +61,7 @@ export default function AnalyticsPage() {
 
         {/* Catalogue-growth pulse — what's been added lately and how the new lines are selling. */}
         <ModuleTile
-          title="New Additions"
+          title="New"
           description="Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit)."
           href="/analytics/new-additions"
           icon={SparklesIcon}
