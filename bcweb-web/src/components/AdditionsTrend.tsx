@@ -63,6 +63,9 @@ export default function AdditionsTrend() {
   const curCum = cumulative(cur);
   const prevCum = prev ? cumulative(prev) : null;
   const through = Math.min(12, Math.max(1, data.throughMonth));
+  // The rolling headline figures. Guarded rather than assumed: a server that has not shipped `pace` yet falls back to the old
+  // calendar headline below instead of rendering a blank hero.
+  const pace = data.pace && data.pace.rolling12 ? data.pace : null;
 
   // Running totals are no longer plotted (the chart is monthly bars), but they still drive the headline: this year against last year at
   // the SAME point, not against its full twelve months. Comparing a part-year with a whole one is the easiest way to look behind when
@@ -89,10 +92,34 @@ export default function AdditionsTrend() {
     <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Products made in {cur.year}</div>
+          {/* THE HEADLINE IS ROLLING; THE CHART BELOW IT IS CALENDAR. That is deliberate and they are not in conflict — they
+              answer different questions. The number answers "how much have we made lately", which must not reset to nothing every
+              January (owner: "We dont want calendar years. We said, we would use 12 month rolling?"), and it is the SAME figure as
+              the Winners screen's "added" tile because both read product_event_log with the same predicates. The bars answer "when
+              in the year does the work land", which only means anything month-against-month with last year behind it.
+
+              It used to read "Products made in 2026" off the calendar total: 122 here against 132 on Winners, both right, never
+              equal. One metric, two rulers — the same drift the winner-bar work removed on 2026-09-22. */}
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Products made</div>
           <div className="mt-1 flex items-baseline gap-3">
-            <span className="text-3xl font-bold leading-none tabular-nums text-slate-900">{ytd}</span>
-            {delta !== null && prev && (
+            <span className="text-3xl font-bold leading-none tabular-nums text-slate-900">
+              {pace ? pace.rolling12.toLocaleString('en-GB') : ytd}
+            </span>
+            {pace ? (
+              <span className="text-sm text-slate-500">
+                {pace.rolling12 === pace.rollingPrior12 ? (
+                  <>level with the 12 months before</>
+                ) : (
+                  <>
+                    <strong className="font-semibold text-slate-700">
+                      {pace.rolling12 > pace.rollingPrior12 ? '+' : ''}
+                      {(pace.rolling12 - pace.rollingPrior12).toLocaleString('en-GB')}
+                    </strong>
+                    {' '}vs the 12 months before ({pace.rollingPrior12.toLocaleString('en-GB')})
+                  </>
+                )}
+              </span>
+            ) : delta !== null && prev ? (
               <span className="text-sm text-slate-500">
                 {delta === 0 ? (
                   <>level with {prev.year} at this point</>
@@ -103,7 +130,7 @@ export default function AdditionsTrend() {
                   </>
                 )}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">

@@ -972,9 +972,23 @@ export interface AdditionsTrendYear { year: number; total: number; months: Addit
 
 // `logLiveFrom` is the date product_event_log was installed and seeded. Months BEFORE it count survivors only (a product created and
 // deleted before that date left no trace), so they are a floor, not a true count — the chart is obliged to say so.
+// THE HEADLINE FIGURES, and they are ROLLING — never the calendar year. The same metric read on a different ruler from the Winners
+// screen is the drift the 2026-09-22 work existed to remove: "PRODUCTS MADE IN 2026" was 122 while Winners' "added" tile said 132,
+// both correct and never equal. These come from product_event_log with the same predicates portfolio.js uses, so they match the
+// Winners tile by construction. The monthly CHART stays calendar — months only mean anything against the same months last year.
+export interface AdditionsTrendPace {
+  rolling12: number;            // created in the last 12 months
+  rollingPrior12: number;       // the 12 months before that — a like-for-like span, so the delta is honest
+  thisMonth: number;            // this calendar month so far (Europe/London)
+  monthlyAvg12: number;         // rolling12 / 12, rounded — what an ordinary month looks like
+  lastAdded: string | null;     // 'YYYY-MM-DD' of the most recent creation; null if nothing has ever been created
+  daysSinceLast: number | null; // THE PROMPT — it grows every quiet day. null when lastAdded is null
+}
+
 export interface AdditionsTrendData {
   logLiveFrom: string;
   throughMonth: number;   // 1-12; the current year's line stops here rather than flatlining across months that haven't happened
+  pace: AdditionsTrendPace;
   years: AdditionsTrendYear[];
 }
 
@@ -982,7 +996,24 @@ export interface AdditionsTrendData {
 export function getNewAdditionsTrend(years?: number) {
   return request<AdditionsTrendData>(
     { url: '/analytics-new-additions-trend', method: 'GET', params: { years } },
-    (b) => ({ logLiveFrom: b.logLiveFrom || '', throughMonth: b.throughMonth ?? 12, years: b.years || [] })
+    (b) => {
+      const p = (b.pace as Record<string, unknown>) || {};
+      return {
+        logLiveFrom: b.logLiveFrom || '',
+        throughMonth: b.throughMonth ?? 12,
+        pace: {
+          rolling12: Number(p.rolling12) || 0,
+          rollingPrior12: Number(p.rollingPrior12) || 0,
+          thisMonth: Number(p.thisMonth) || 0,
+          monthlyAvg12: Number(p.monthlyAvg12) || 0,
+          // Null-safe on purpose: a `|| 0` on daysSinceLast would read as "added today" on an empty log.
+          lastAdded: (p.lastAdded as string | null) ?? null,
+          daysSinceLast:
+            p.daysSinceLast === null || p.daysSinceLast === undefined ? null : Number(p.daysSinceLast),
+        },
+        years: b.years || [],
+      };
+    }
   );
 }
 

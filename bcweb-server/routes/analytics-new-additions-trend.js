@@ -17,6 +17,19 @@ Purpose: Analytics module — the PRODUCTION side of the New screen. Not "what i
          anything created and deleted before that date is unrecoverable. Months from that date on are true. The route returns the
          boundary so the chart can mark it rather than quietly presenting two different qualities of number as one series.
 
+THE RULING WINDOW IS ROLLING 12 MONTHS, NOT THE CALENDAR YEAR (owner, 2026-09-22). The headline used to read "PRODUCTS MADE IN
+2026" off the current year's total, which put the SAME METRIC on a different ruler from the Winners screen's "added" tile (rolling
+12 months, utils/portfolio.js) — 122 on one screen against 132 on the other, both correct, never equal. That is precisely the drift
+the winner-bar work of the same day existed to remove, and the owner had already settled the principle for Winners: "We dont want
+calendar years. We said, we would use 12 month rolling?" A number meant to drive the work cannot reset to nothing every January.
+
+         So `pace` is rolling and the HEADLINE renders from it. THE MONTHLY CHART STAYS CALENDAR — it is a pace-through-the-year
+         view with a prior-year overlay, and months only mean anything against the same months last year. The two coexist honestly
+         because they answer different questions; what must never happen again is the same QUESTION answered on two rulers.
+
+         `pace` reads product_event_log with the SAME predicates as utils/portfolio.js, so the rolling figure here and the Winners
+         screen's "added" tile are the same number by construction, not by coincidence. If you change one, change both.
+
          Grain: calendar month, bucketed on EUROPE/LONDON wall clock, not UTC. The pg session runs Etc/UTC while the box runs BST, so a
          product created at 00:30 BST on the 1st would otherwise fall into the previous month (see the same trap in CLAUDE.md's date
          landmines).
@@ -34,6 +47,14 @@ Success Response:
   "return_code": "SUCCESS",
   "logLiveFrom": "2026-09-22",          // months before this are a floor, not a true count
   "throughMonth": 9,                    // last month with real elapsed time in the current year (1-12)
+  "pace": {                             // THE HEADLINE FIGURES — rolling, never calendar. See THE RULING WINDOW below.
+    "rolling12": 132,                   // created in the last 12 months
+    "rollingPrior12": 45,               // the 12 months before that, so the delta is a like-for-like span
+    "thisMonth": 17,                    // this calendar month so far (Europe/London)
+    "monthlyAvg12": 11,                 // rolling12 / 12, rounded — what an ordinary month looks like
+    "lastAdded": "2026-09-19",          // the most recent CREATED event, null if the log is empty
+    "daysSinceLast": 3                  // CURRENT_DATE - lastAdded. THE PROMPT: it grows every quiet day
+  },
   "years": [
     { "year": 2025, "total": 40,
       "months": [ { "month": 1, "created": 10, "new": 0, "copy": 0, "deleted": 0 }, ... ] },   // always 12 entries, zero-filled
@@ -71,6 +92,28 @@ router.get('/', async (req, res) => {
     const raw = parseInt(req.query.years, 10);
     const years = Number.isInteger(raw) && raw >= 1 ? Math.min(raw, MAX_YEARS) : DEFAULT_YEARS;
 
+    // THE PACE FIGURES. A separate, tiny read rather than arithmetic over the monthly buckets above, because a ROLLING window does
+    // not line up with calendar months: "the last 12 months" on 22 September is 23 Sep -> 22 Sep, which no sum of month buckets can
+    // express. Same predicates as utils/portfolio.js (see the header) so this cannot drift from the Winners screen.
+    //
+    // Dates are cast to text IN SQL — never hand a pg DATE to toISOString(), which parses it as local midnight and shifts the day
+    // back one through BST (CLAUDE.md's date landmine).
+    const pacePromise = query(
+      `
+      SELECT COUNT(*) FILTER (WHERE event = 'CREATED'
+               AND event_at >= CURRENT_DATE - INTERVAL '12 months')::int AS rolling12,
+             COUNT(*) FILTER (WHERE event = 'CREATED'
+               AND event_at >= CURRENT_DATE - INTERVAL '24 months'
+               AND event_at <  CURRENT_DATE - INTERVAL '12 months')::int AS rolling_prior12,
+             COUNT(*) FILTER (WHERE event = 'CREATED'
+               AND (event_at AT TIME ZONE 'Europe/London')
+                   >= date_trunc('month', now() AT TIME ZONE 'Europe/London'))::int AS this_month,
+             to_char(MAX(event_at) FILTER (WHERE event = 'CREATED'), 'YYYY-MM-DD') AS last_added,
+             (CURRENT_DATE - MAX(event_at) FILTER (WHERE event = 'CREATED')::date)::int AS days_since_last
+        FROM product_event_log
+      `
+    );
+
     // One grouped pass over the log. AT TIME ZONE 'Europe/London' converts the stored timestamptz to UK wall clock BEFORE the year and
     // month are taken, so months bucket the way the operator experienced them.
     const result = await query(
@@ -88,6 +131,9 @@ router.get('/', async (req, res) => {
       `,
       [years]
     );
+
+    // Awaited here rather than at its declaration so the two reads overlap on the wire.
+    const paceRow = (await pacePromise).rows[0] || {};
 
     // Zero-fill to 12 months per year so the chart never has to reason about gaps — a month with no new product is a real 0 and must
     // plot as one, not as a missing point the line skips over.
@@ -118,6 +164,19 @@ router.get('/', async (req, res) => {
       // The current month counts as "through" — it is in progress, and the chart draws the current year's line only this far rather
       // than letting it flatline across the rest of a year that hasn't happened yet.
       throughMonth: new Date().getMonth() + 1,
+      pace: {
+        rolling12: Number(paceRow.rolling12) || 0,
+        rollingPrior12: Number(paceRow.rolling_prior12) || 0,
+        thisMonth: Number(paceRow.this_month) || 0,
+        // What an ordinary month looks like, so "17 this month" has something to be judged against. Derived from rolling12 rather
+        // than stored, so it can never disagree with the figure beside it.
+        monthlyAvg12: Math.round((Number(paceRow.rolling12) || 0) / 12),
+        // null, not a date, when nothing has ever been created — the screen shows a dash rather than inventing a day.
+        lastAdded: paceRow.last_added || null,
+        daysSinceLast: paceRow.days_since_last === null || paceRow.days_since_last === undefined
+          ? null
+          : Number(paceRow.days_since_last),
+      },
       years: Array.from(byYear.values())
     });
   } catch (err) {

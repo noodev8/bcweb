@@ -32,6 +32,7 @@ import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import {
   getNewAdditions,
+  getNewAdditionsTrend,
   NewAdditionRow,
   getScratchpad,
   addScratchpadNote,
@@ -88,6 +89,12 @@ function NewAdditionsPageInner() {
       return { success: false, error: res.error || 'Failed to load New Additions', return_code: res.return_code };
     },
   );
+  // THE PACE FIGURES beside the hero. Same SWR key as <AdditionsTrend> below, so this is the SAME request — SWR dedupes and the
+  // chart and these tiles can never show different numbers. Read from the trend route, NOT from `rows`: rows are survivors out of
+  // skusummary, while pace comes from product_event_log and therefore matches the Winners screen's "added" tile exactly.
+  const { data: trend } = useApiQuery(['new-additions-trend'], () => getNewAdditionsTrend());
+  const pace = trend?.pace ?? null;
+
   const rows: NewAdditionRow[] = data?.rows ?? NO_ROWS;
   const loadedAt = data?.loadedAt ?? null;
   const error = loadError?.message ?? null;
@@ -114,12 +121,6 @@ function NewAdditionsPageInner() {
     return rows.filter((r) => r.created !== null && new Date(r.created).getTime() <= cutoff);
   }, [rows, matureOnly, loadedAt]);
   const hiddenCount = rows.length - visibleRows.length;
-
-  // Totals across the additions — how much the month's new lines have contributed. Always the FULL window (see above): these are the
-  // 30-day stats, and the filter must not move them.
-  const totalUnits = rows.reduce((s, r) => s + r.units, 0);
-  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
-  const totalProfit = rows.reduce((s, r) => s + r.profit, 0);
 
   // All sorting is client-side on the already-loaded rows (no re-fetch). Compare on the active column, then flip for direction; ties
   // fall back to newest-added so the order is stable.
@@ -196,12 +197,33 @@ function NewAdditionsPageInner() {
                   added in the last <strong className="font-semibold text-slate-700">{DAYS} days</strong>
                 </div>
               </div>
-              {/* Sales are LIFETIME per style (≈ since it was added, as these are new lines) — NOT a 30/60-day sales window. Labelled
-                  "since added" so the figures can't be misread as a trailing month. */}
+              {/* PACE, NOT EARNINGS (owner, 2026-09-22): "My intention for new styles is to push/prompt to find new ones and check
+                  progress. Shouldnt be a reflection of revenue contribution."
+
+                  WHAT WAS HERE AND WHY IT HAD TO GO: units sold, revenue and profit for the 30-day cohort — which read 0 / £0.00 /
+                  £0.00 on the day this changed, and that was CORRECT, not a bug. Median time from creating a style to its first sale
+                  is 20 days (mean 32), so a 30-day window is mostly styles that have not had time to sell yet. Those tiles were
+                  guaranteed to read about zero however well the adding was going: a progress panel rigged to look like failure. The
+                  earnings question is real but it belongs to the Winners screen, which measures it over twelve months.
+
+                  SINCE LAST ONE is the push. It is the only figure here that gets WORSE on its own, every quiet day, which is what
+                  makes it a prompt rather than a report. */}
               <div className="flex gap-8 border-l border-slate-200 pl-8 text-sm">
-                <Stat label="Units sold" value={String(totalUnits)} sub="since added" />
-                <Stat label="Revenue" value={money(totalRevenue)} sub="since added" />
-                <Stat label="Profit" value={money(totalProfit)} sub="since added" />
+                <Stat
+                  label="This month"
+                  value={pace ? String(pace.thisMonth) : '—'}
+                  sub={pace ? `vs ${pace.monthlyAvg12} in an average month` : undefined}
+                />
+                <Stat
+                  label="Last 12 months"
+                  value={pace ? pace.rolling12.toLocaleString('en-GB') : '—'}
+                  sub={pace ? `${signed(pace.rolling12 - pace.rollingPrior12)} vs the 12 months before` : undefined}
+                />
+                <Stat
+                  label="Since last one"
+                  value={pace?.daysSinceLast === null || pace === null ? '—' : dayGap(pace.daysSinceLast)}
+                  sub={pace?.lastAdded ? `added ${shortDate(pace.lastAdded)}` : 'nothing added yet'}
+                />
               </div>
               {/* The blurb explains the screen once; after that it is just text in the way (owner 2026-07-27), so it lives behind this
                   toggle. The toggle sits in the hero's own corner rather than the page header: with no page title, a header-row button
@@ -549,6 +571,30 @@ function Scratchpad({ onUnauthorized }: { onUnauthorized: () => void }) {
       </div>
     </section>
   );
+}
+
+// +87 / -3 / 0 — the sign is carried explicitly because a bare number next to "vs the 12 months before" reads as the comparison
+// figure itself rather than the movement.
+function signed(n: number) {
+  return `${n > 0 ? '+' : ''}${n.toLocaleString('en-GB')}`;
+}
+
+// The gap since the last product was made, in the words someone would actually say. "0 days" is the wrong answer for something
+// added this morning, and it is the one the prompt most needs to get right — that is the day it should feel best, not broken.
+function dayGap(days: number) {
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return `${days} days`;
+}
+
+// '2026-09-19' -> '19 Sep'. Split on the hyphens rather than via Date: a 'YYYY-MM-DD' string handed to Date is parsed as UTC
+// midnight and renders as the previous day once BST shifts it back (CLAUDE.md's date landmine, the front-end half of it).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDate(iso: string) {
+  const [, m, d] = iso.split('-');
+  const mi = Number(m) - 1;
+  if (!d || mi < 0 || mi > 11) return iso;
+  return `${Number(d)} ${MONTHS[mi]}`;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
