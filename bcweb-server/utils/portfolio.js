@@ -228,22 +228,35 @@ function summariseAt(styles, bar, totalStyles) {
 // it contributed. Read down the `profit` column and the 29 styles between £200 and £300 are worth £6.9k a year between them, while
 // the 13 above £1,000 are worth £25.6k: half of everything the winners earn, from a sixth of the winners.
 //
-// EARNED PER UNIT IS THE COLUMN THAT ANSWERS THE "HIGH VOLUME, LOW PROFIT" HALF, and it is the one that surprises. Measured
-// 2026-09-22 the top band is the WORST per unit on the board (£5.72 against £10.16 in the £500-£1,000 band) because it is where
-// the high-turnover, thin-margin styles live — 344 units a style against 66. The biggest earners are big because they are busy,
-// not because they are good, and that is only visible next to a per-unit figure.
+// EARNED PER UNIT IS THE COLUMN THAT ANSWERS THE "HIGH VOLUME, LOW PROFIT" HALF — but it MUST be the median of the per-style
+// rates, not the band total divided by the band's units, and getting that wrong produced a wrong answer on the day this was
+// built. THE MISTAKE, recorded because it is an easy one to make again:
 //
-// AND THE CAUSE, MEASURED THE SAME DAY, because someone will reasonably ask whether the thin top band is an accounting artefact:
-// it is not, and it has a structural explanation. The £1,000+ band is 85% AMAZON by units, against 29-45% in every other band.
-// Amazon's referral fee is what makes the rate thin — the same price nets roughly twice as much on Shopify (CLAUDE.md). Guarding
-// against the known AMZ profit understatement (sales.profit for AMZ carries a divide-by-1.2 refund haircut that double-counts
-// returns already booked as negative rows, so it reads ~20% low): grossing Amazon profit back up by 1.2 moves the top band from
-// £5.72 to £6.47 per unit and the £500-£1,000 band from £10.16 to £10.50. THE GAP SURVIVES THE CORRECTION — it is a channel-mix
-// fact, not a bookkeeping one.
+//   Band aggregates said £7.79 / £7.43 / £10.16 / £5.72 across the four winner bands, which reads as a SWEET SPOT at £500-£1,000
+//   — nearly £3 a unit better than the bands below it. It is not. The lower bands each contain a couple of high-volume thin
+//   styles whose units dominate the band's denominator and drag the aggregate down. On the TYPICAL style the same four bands are
+//   £10.89 / £10.44 / £12.44 / £4.75: essentially FLAT from £200 to £1,000, with one cliff at the top.
 //
-// The channel split is deliberately NOT a column in the table. It would be a seventh column answering a question the screen does
-// not exist to ask, on a page whose whole design is subtraction, and it invites exactly the "is that really profit" conversation
-// the owner ruled out. If it is ever wanted, it is a `sales.channel` FILTER away in the SQL above — but build it as its own view.
+//   So `profit_per_unit` (the aggregate) is still returned — it is the honest "what did this rung earn per unit it shipped" —
+//   but `profit_per_unit_typical` (the median) is what the screen draws, because the question being asked is "what is a product
+//   in this rung LIKE", and that is a question about a typical style, not about a rung's weighted average.
+//
+// WHAT IS ACTUALLY TRUE, then, and it is a better finding than the one it replaced: there is NO sweet spot to aim at between
+// £200 and £1,000 — a winner earns £10-£12 a unit wherever it sits in that range. The only real break is the TOP band, at £4.75.
+// And that is not a band, it is a BRAND: the £1,000+ rung is 7 Lunar and 6 Birkenstock, and its three biggest are all St Ives
+// colourways at ~£4.50 a unit. It is also 85% AMAZON by units against 29-45% everywhere else, and Amazon's referral fee is what
+// thins it — the same price nets roughly twice as much on Shopify (CLAUDE.md). Guarding against the known AMZ understatement
+// (sales.profit for AMZ carries a divide-by-1.2 refund haircut that double-counts returns already booked as negative rows, so it
+// reads ~20% low): grossing Amazon profit back up by 1.2 still leaves the top rung thinnest. THE CLIFF SURVIVES THE CORRECTION —
+// it is a channel-and-brand fact, not a bookkeeping one, and it belongs to the pricing module, not to range planning.
+//
+// A per-unit rate is a FIXED PROPERTY OF A STYLE, which is why none of this is a target: across the 55 styles shifting 20+ units
+// in both years, last year's rate predicts this year's at r = 0.92. You cannot turn a thin style into a fat one by selling more
+// of it. You can reprice it or buy something else.
+//
+// The channel split is deliberately NOT a column in the table. It would answer a question the screen does not exist to ask, on a
+// page whose whole design is subtraction, and it invites exactly the "is that really profit" conversation the owner ruled out.
+// If it is ever wanted, it is a `sales.channel` FILTER away in the SQL above — but build it as its own view.
 //
 // BAND EDGES ARE THE LADDER, so the bands always tile the toggle exactly: the count at any mark is the sum of the bands above it
 // (29 + 22 + 16 + 13 = 80 at £200), and nothing can drift between the two views. Membership is `> from AND <= to`, matching the
@@ -252,16 +265,32 @@ function summariseAt(styles, bar, totalStyles) {
 // MEASURED OVER STYLES THAT TRADED IN THE WINDOW, same set as `total_styles`. A style with no sales in the 12 months has a profit
 // of exactly 0 and would otherwise pile up in the loss-making band and make it look like a catastrophe.
 // ---------------------------------------------------------------------------------------------------------------------------------
-function profitLadder(tradedStyles) {
-  // [null, 0], (0, 200], (200, 300], (300, 500], (500, 1000], (1000, null]
+// The rungs, low to high: [null, 0], (0, 200], (200, 300], (300, 500], (500, 1000], (1000, null]. Derived from the bar ladder so
+// the bands and the toggle can never drift apart, and shared by profitLadder() and bandMovement() so a style cannot be in one
+// rung for the table and a different one for the movement count.
+function ladderEdges() {
   const uppers = [0, ...WINNER_BAR_LADDER];
   const edges = uppers.map((to, i) => ({ from: i === 0 ? null : uppers[i - 1], to }));
   edges.push({ from: uppers[uppers.length - 1], to: null });
+  return edges;
+}
+
+const inBandTest = (profit, { from, to }) => (from === null || profit > from) && (to === null || profit <= to);
+const bandIndexOf = (profit) => ladderEdges().findIndex((e) => inBandTest(profit, e));
+
+// Middle value of a sorted-in-place copy. Even-length arrays take the UPPER of the two middles rather than averaging them: the
+// figure is a real style's rate either way, which is what "typical" is supposed to mean here.
+function median(values) {
+  if (values.length === 0) return null;
+  const v = [...values].sort((a, b) => a - b);
+  return v[Math.floor(v.length / 2)];
+}
+
+function profitLadder(tradedStyles) {
+  const edges = ladderEdges();
 
   return edges.map(({ from, to }) => {
-    const inBand = tradedStyles.filter(
-      (st) => (from === null || st.profit12m > from) && (to === null || st.profit12m <= to)
-    );
+    const inBand = tradedStyles.filter((st) => inBandTest(st.profit12m, { from, to }));
     const profit = inBand.reduce((a, st) => a + st.profit12m, 0);
     const revenue = inBand.reduce((a, st) => a + st.revenue12m, 0);
     const units = inBand.reduce((a, st) => a + st.units12m, 0);
@@ -279,10 +308,70 @@ function profitLadder(tradedStyles) {
       // Per-style and per-unit. Null rather than 0 on an empty band — a rate over nothing is not a rate, and a confident £0.00
       // reads as "these earn nothing" instead of "there are none of these".
       profit_per_style: inBand.length > 0 ? round2(profit / inBand.length) : null,
+      // The rung's weighted average — honest, but dominated by its busiest styles. Returned, not drawn. See the header.
       profit_per_unit: units > 0 ? round2(profit / units) : null,
+      // WHAT A STYLE IN THIS RUNG IS LIKE. The median of the per-style rates, immune to one 1,500-unit style setting the number
+      // for the other 15. THIS is the figure the screen draws — the aggregate above reads as a sweet spot that is not there.
+      profit_per_unit_typical: (() => {
+        const m = median(inBand.filter((st) => st.units12m > 0).map((st) => st.profit12m / st.units12m));
+        return m === null ? null : round2(m);
+      })(),
       units_per_style: inBand.length > 0 ? round2(units / inBand.length) : null,
     };
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// IS THE PORTFOLIO COMPOUNDING, OR JUST WIDENING? The count answers neither, and it is the question behind "I want a number I can
+// look at to grow" (owner, 2026-09-22).
+//
+// THE FACT THAT FORCED THIS: big earners are GROWN, NOT FOUND. Of the 13 styles above £1,000, twelve were already above £500 a
+// year ago. Of the 148 styles that first sold in the last 12 months, 114 landed at £0-£200, 15 lost money, 14 cleared £200, three
+// cleared £300, two cleared £500 and NONE cleared £1,000. A style climbs the ladder a rung at a time over years — so a portfolio
+// can add winners at the bottom every year while the styles it already owns quietly slide, and the headline count would not
+// flinch. `up` and `down` are the only figures on this screen that see that.
+//
+// (It is also the argument for leaving the TRACKED bar at £200: that is the only rung a new style can reach inside a year, so it
+// is the only bar at which this year's buying decisions show up in this year's number. A £500 bar would steer with a two-year
+// lag. See WINNER_PROFIT_BAR.)
+//
+// MEASURED OVER STYLES THAT TRADED IN BOTH WINDOWS. A style that sold last year and not this one has not "moved down a rung" —
+// it has stopped, or been discontinued on purpose, and counting that as a slide would make a deliberate range cull look like
+// decay. Same on the other side: a style with no prior year cannot have climbed. Both are the count's business, not this one's.
+// ---------------------------------------------------------------------------------------------------------------------------------
+function bandMovement(tradedStyles) {
+  const both = tradedStyles.filter((st) => st.unitsPrior12m !== 0);
+
+  let up = 0;
+  let same = 0;
+  let down = 0;
+  for (const st of both) {
+    const now = bandIndexOf(st.profit12m);
+    const then = bandIndexOf(st.profitPrior12m);
+    if (now > then) up += 1;
+    else if (now < then) down += 1;
+    else same += 1;
+  }
+
+  // The provenance of the top rung, which is what makes "grown, not found" a fact rather than an opinion. ESTABLISHED means the
+  // style was already in the rung below (or the top rung itself) a year ago — measured over EVERY style in the top rung, not
+  // just the ones that traded twice, so a brand-new arrival at £1,000+ would correctly show as un-established.
+  const edges = ladderEdges();
+  const topIdx = edges.length - 1;
+  const establishedFloor = edges[topIdx - 1].from;   // the floor of the rung below the top one
+  const topBand = tradedStyles.filter((st) => bandIndexOf(st.profit12m) === topIdx);
+
+  return {
+    styles: both.length,
+    up,
+    same,
+    down,
+    net: up - down,
+    top_band_floor: edges[topIdx].from,
+    top_band_styles: topBand.length,
+    established_floor: establishedFloor,
+    top_band_established: topBand.filter((st) => st.profitPrior12m > establishedFloor).length,
+  };
 }
 
 /**
@@ -440,6 +529,9 @@ async function computeWinners() {
       bars,
       // The distribution behind the count. See profitLadder().
       ladder: profitLadder(tradedStyles),
+      // Whether the range already owned is climbing or sliding. Bar-independent — it is a property of the rungs, not of the
+      // toggle — so it sits beside the ladder rather than inside each bar. See bandMovement().
+      movement: bandMovement(tradedStyles),
     },
     winners,
   };

@@ -3493,8 +3493,11 @@ export interface PortfolioBarSummary {
 // `from` is an EXCLUSIVE floor (null = open below: the styles that LOST money), `to` an INCLUSIVE ceiling (null = open above).
 // The rates are null, never 0, on an empty band: a rate over nothing is not a rate, and £0.00 reads as "these earn nothing".
 //
-// profitPerUnit IS THE POINT OF THIS TABLE. It is what distinguishes a band that earns because it is good from one that earns
-// because it is busy — on 2026-09-22 the £1,000+ band was the WORST per unit on the board (£5.72 against £10.16 at £500-£1,000).
+// TWO RATES, AND THE SCREEN DRAWS THE SECOND ONE. `profitPerUnit` is the rung's weighted average and is dominated by its busiest
+// styles; `profitPerUnitTypical` is the MEDIAN of the per-style rates. They disagree badly and the aggregate is the misleading
+// one: on 2026-09-22 the aggregates (£7.79 / £7.43 / £10.16 / £5.72 across the winner rungs) read as a sweet spot at £500-£1,000
+// that does not exist, while the medians (£10.89 / £10.44 / £12.44 / £4.75) show the truth — flat from £200 to £1,000, with one
+// cliff at the top. Render `profitPerUnitTypical`; the aggregate is kept for anyone who wants the rung total per unit shipped.
 export interface PortfolioProfitBand {
   from: number | null;
   to: number | null;
@@ -3504,8 +3507,29 @@ export interface PortfolioProfitBand {
   revenue: number;
   units: number;
   profitPerStyle: number | null;
-  profitPerUnit: number | null;
+  profitPerUnit: number | null;         // rung total / rung units — returned, NOT drawn
+  profitPerUnitTypical: number | null;  // median of the per-style rates — this is the one the screen shows
   unitsPerStyle: number | null;
+}
+
+// IS THE RANGE ALREADY OWNED CLIMBING OR SLIDING? The winner count cannot see this: a portfolio can add styles at the bottom
+// every year while the ones it already has quietly slip a rung, and the headline would not flinch.
+//
+// It matters because BIG EARNERS ARE GROWN, NOT FOUND — `topBandEstablished` of `topBandStyles` above the top rung's floor were
+// already above `establishedFloor` a year ago. Nothing arrives at the top; it climbs, a rung at a time, over years.
+//
+// Counted over styles that traded in BOTH 12-month windows only. A style that sold last year and not this one has stopped or
+// been culled, not slid, and counting a deliberate range cut as decay would make the figure useless.
+export interface PortfolioBandMovement {
+  styles: number;                 // the both-years population these counts are over
+  up: number;
+  same: number;
+  down: number;
+  net: number;                    // up - down. The compounding signal
+  topBandFloor: number;
+  topBandStyles: number;
+  establishedFloor: number;
+  topBandEstablished: number;
 }
 
 // What GET /portfolio-winners returns: the TRACKED bar's figures at the top level (unchanged shape — the snapshot writer and the
@@ -3513,6 +3537,9 @@ export interface PortfolioProfitBand {
 export interface PortfolioWinnersSummary extends PortfolioBarSummary {
   bars: PortfolioBarSummary[];    // ladder order, low bar first. bars[0] IS this object's own figures
   ladder: PortfolioProfitBand[];  // low band first
+  // Bar-independent — a property of the rungs, not of the toggle. null on a server that has not shipped it yet, and the screen
+  // must then draw nothing rather than a confident row of zeroes.
+  movement: PortfolioBandMovement | null;
 }
 
 // Winners per brand. Note winners and units can point opposite ways — Birkenstock carries the COUNT (59 winners, 2.5k units),
@@ -3592,8 +3619,27 @@ function mapWinnersSummary(b: Record<string, unknown> | undefined): PortfolioWin
       // Null is "no styles in this band", not zero. `|| 0` here would invent a rate for an empty rung.
       profitPerStyle: l.profit_per_style === null || l.profit_per_style === undefined ? null : Number(l.profit_per_style),
       profitPerUnit: l.profit_per_unit === null || l.profit_per_unit === undefined ? null : Number(l.profit_per_unit),
+      profitPerUnitTypical: l.profit_per_unit_typical === null || l.profit_per_unit_typical === undefined
+        ? null : Number(l.profit_per_unit_typical),
       unitsPerStyle: l.units_per_style === null || l.units_per_style === undefined ? null : Number(l.units_per_style),
     })),
+    // null, not a zeroed object: "the server does not send this" and "nothing moved" are different facts and the screen shows
+    // only the second one.
+    movement: b?.movement ? mapBandMovement(b.movement as Record<string, unknown>) : null,
+  };
+}
+
+function mapBandMovement(m: Record<string, unknown>): PortfolioBandMovement {
+  return {
+    styles: Number(m.styles) || 0,
+    up: Number(m.up) || 0,
+    same: Number(m.same) || 0,
+    down: Number(m.down) || 0,
+    net: Number(m.net) || 0,
+    topBandFloor: Number(m.top_band_floor) || 0,
+    topBandStyles: Number(m.top_band_styles) || 0,
+    establishedFloor: Number(m.established_floor) || 0,
+    topBandEstablished: Number(m.top_band_established) || 0,
   };
 }
 
