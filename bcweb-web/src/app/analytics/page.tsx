@@ -21,7 +21,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
-  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon,
+  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon, TrophyIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -114,6 +114,21 @@ export default function AnalyticsPage() {
           description="Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person."
           href="/analytics/activity-log"
           icon={DocumentMagnifyingGlassIcon}
+          live
+        />
+
+        {/* Winners — the portfolio view. One tracked number: how many products clear £200 in the rolling 12 months, what share of
+            the range that is, and whether it is growing. It sits with Brands as an owner-level read of the shape of the business
+            rather than a daily operational gauge.
+
+            THE DESCRIPTION DELIBERATELY PROMISES NO ACTION. An earlier version advertised the contenders list ("which young ones
+            are about to join them"), which the screen no longer shows — that job belongs on the per-brand working screens (owner,
+            2026-09-22). A tile that promises a to-do list is how the to-do list gets asked for back. */}
+        <ModuleTile
+          title="Winners"
+          description="How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling."
+          href="/analytics/winners"
+          icon={TrophyIcon}
           live
         />
 

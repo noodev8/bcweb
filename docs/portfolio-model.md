@@ -277,7 +277,8 @@ value is still ahead when the signal fires.** At the time of writing there are 9
 building, ~20 of them future winners, and **14 already identifiable — three of which are out of
 stock.** The action is reorder and advertise, early.
 
-**Full build detail: `winners-screen-spec.md`.**
+**Full build detail: the route headers in `bcweb-server/routes/portfolio-*.js` and `utils/portfolio.js`.**
+(The separate build spec was deleted 2026-09-22 — it had become double work for every small change.)
 
 ### 6.2 Throughput work
 

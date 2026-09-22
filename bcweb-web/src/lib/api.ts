@@ -3445,4 +3445,193 @@ export function commitBirkOrder(args: { lines: BirkOrderCommitLine[] }) {
   );
 }
 
+// ---- Reports: Winners screen (portfolio) -----------------------------------------------------------------------------------------
+// The business as a portfolio of earning assets. Two routes behind one screen: WINNERS is the scoreboard, CONTENDERS is the job.
+//
+// THREE THINGS THE UI MUST NOT UNDO (all owner calls, 2026-09-22 — the reasoning is in the route headers and the screen's own
+// header comment, but they are easy to "tidy" away from here):
+//   1. `profit` EXCLUDES ADVERTISING. It is contribution, not net profit. Label it "earned", never "profit after costs".
+//   2. `stockUnits` ON A WINNER IS FOR READING, NEVER FILTERING. No badge, no filter, no needs-attention tab on the WINNERS side.
+//   3. `TOO_EARLY` IS NOT A WEAK BAND. It means the 30-day window has not closed and the style CANNOT be scored yet. Render it as
+//      "not yet", never as a low score, and never pro-rate a partial window into a number.
+export type WinnerDirection = 'GROWING' | 'FLAT' | 'SHRINKING' | 'NEW';
+
+export interface PortfolioWinner {
+  groupid: string;
+  title: string | null;           // title.shopifytitle
+  brand: string | null;
+  profit12m: number;              // rolling 12 months, ALL channels, before ad spend
+  units12m: number;
+  profitPrior12m: number | null;  // null on a style under 2 years old — no real prior year, and a fake 0 renders as infinite growth
+  direction: WinnerDirection;     // FLAT is a +/-15% BAND, not equality, so noise does not read as a trend
+  firstSale: string;              // 'YYYY-MM-DD', = MIN(sales.solddate). NOT created_at
+  daysOnSale: number;
+  stockUnits: number;             // see rule 2 above
+}
+
+export interface PortfolioWinnersSummary {
+  winnerCount: number;            // THE tracked number — the hero metric on the screen
+  winnerCountPriorYear: number;
+  joinedThisYear: number;
+  leftThisYear: number;
+  totalStyles: number;            // styles that traded at all in the window — the denominator for the share
+  winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
+  totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
+}
+
+// One RECORDED trend point. These exist only where someone pressed "Update now" — the GET stores nothing, so the series is sparse
+// and irregular by design, and the chart must never assume evenly spaced days.
+//
+// A STORED POINT IS WHAT WE SAID ON THE DAY. The count for a past date could be recomputed from `sales` at any time, but that is
+// what the books say NOW about then, and the two drift as late sales and corrections land. Do not mix the two in one series.
+export interface PortfolioSnapshot {
+  date: string;                   // 'YYYY-MM-DD'
+  winnerCount: number;            // the tracked number, as recorded that day
+  winnerCountPriorYear: number;
+  joinedThisYear: number;
+  leftThisYear: number;
+  totalProfit12m: number;
+  youngStyles: number;
+  expectedWinners: number;
+  highConfidenceCount: number;    // the LEADING half — where this goes, the winner count follows in about six months
+  totalStyles: number;            // the denominator AS IT WAS THAT DAY — a share needs its own history, not today's total
+  winnerSharePct: number | null;  // derived server-side from the two stored facts. null on rows predating totalStyles
+}
+
+export function getPortfolioWinners(days?: number) {
+  return request<{ summary: PortfolioWinnersSummary; winners: PortfolioWinner[]; history: PortfolioSnapshot[] }>(
+    { url: '/portfolio-winners', method: 'GET', params: days ? { days } : undefined },
+    (b) => ({
+      // pg returns numerics as STRINGS, and a field the API has not shipped yet arrives undefined and formats as "£NaN". Coerce
+      // every figure rather than passing it through — the same rule the Ad Daily client follows.
+      summary: {
+        winnerCount: Number(b.summary?.winner_count) || 0,
+        winnerCountPriorYear: Number(b.summary?.winner_count_prior_year) || 0,
+        joinedThisYear: Number(b.summary?.joined_this_year) || 0,
+        leftThisYear: Number(b.summary?.left_this_year) || 0,
+        totalStyles: Number(b.summary?.total_styles) || 0,
+        // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
+        winnerSharePct: b.summary?.winner_share_pct === null || b.summary?.winner_share_pct === undefined
+          ? null : Number(b.summary.winner_share_pct),
+        totalProfit12m: Number(b.summary?.total_profit_12m) || 0,
+      },
+      winners: ((b.winners as Record<string, unknown>[]) || []).map((w) => ({
+        groupid: String(w.groupid),
+        title: (w.title as string | null) ?? null,
+        brand: (w.brand as string | null) ?? null,
+        profit12m: Number(w.profit_12m) || 0,
+        units12m: Number(w.units_12m) || 0,
+        // Careful: `|| 0` would turn a legitimate null into 0 and invent a prior year. Test for null explicitly.
+        profitPrior12m: w.profit_prior_12m === null || w.profit_prior_12m === undefined ? null : Number(w.profit_prior_12m),
+        direction: (w.direction as WinnerDirection) || 'NEW',
+        firstSale: String(w.first_sale || ''),
+        daysOnSale: Number(w.days_on_sale) || 0,
+        stockUnits: Number(w.stock_units) || 0,
+      })),
+      history: ((b.history as Record<string, unknown>[]) || []).map((h) => ({
+        date: String(h.date || ''),
+        winnerCount: Number(h.winner_count) || 0,
+        winnerCountPriorYear: Number(h.winner_count_prior_year) || 0,
+        joinedThisYear: Number(h.joined_this_year) || 0,
+        leftThisYear: Number(h.left_this_year) || 0,
+        totalProfit12m: Number(h.total_profit_12m) || 0,
+        youngStyles: Number(h.young_styles) || 0,
+        expectedWinners: Number(h.expected_winners) || 0,
+        highConfidenceCount: Number(h.high_confidence_count) || 0,
+        totalStyles: Number(h.total_styles) || 0,
+        winnerSharePct: h.winner_share_pct === null || h.winner_share_pct === undefined ? null : Number(h.winner_share_pct),
+      })),
+    })
+  );
+}
+
+// "Update now" — the deliberate act that records today's figures as a trend point. UPSERTs today's row (pressing twice in a day
+// overwrites, never appends) and prunes past 2 years. Writes ONLY our own snapshot table; nothing in the product tables moves.
+export function updatePortfolioSnapshot() {
+  return request<{ date: string; summary: PortfolioWinnersSummary; contenders: PortfolioContendersSummary; pruned: number }>(
+    { url: '/portfolio-snapshot-update', method: 'POST' },
+    (b) => ({
+      date: String(b.date || ''),
+      summary: {
+        winnerCount: Number((b.summary as Record<string, unknown>)?.winner_count) || 0,
+        winnerCountPriorYear: Number((b.summary as Record<string, unknown>)?.winner_count_prior_year) || 0,
+        joinedThisYear: Number((b.summary as Record<string, unknown>)?.joined_this_year) || 0,
+        leftThisYear: Number((b.summary as Record<string, unknown>)?.left_this_year) || 0,
+        totalStyles: Number((b.summary as Record<string, unknown>)?.total_styles) || 0,
+        winnerSharePct: (b.summary as Record<string, unknown>)?.winner_share_pct === null
+          || (b.summary as Record<string, unknown>)?.winner_share_pct === undefined
+          ? null : Number((b.summary as Record<string, unknown>).winner_share_pct),
+        totalProfit12m: Number((b.summary as Record<string, unknown>)?.total_profit_12m) || 0,
+      },
+      contenders: {
+        youngStyles: Number((b.contenders as Record<string, unknown>)?.young_styles) || 0,
+        expectedWinners: Number((b.contenders as Record<string, unknown>)?.expected_winners) || 0,
+        highConfidenceCount: Number((b.contenders as Record<string, unknown>)?.high_confidence_count) || 0,
+        highConfidenceOos: Number((b.contenders as Record<string, unknown>)?.high_confidence_oos) || 0,
+        bandCounts: ((b.contenders as Record<string, unknown>)?.band_counts as Record<ContenderBand, number>)
+          || ({} as Record<ContenderBand, number>),
+      },
+      pruned: Number(b.pruned) || 0,
+    })
+  );
+}
+
+export type ContenderBand = 'STRONG' | 'LIKELY' | 'POSSIBLE' | 'WEAK' | 'DEAD' | 'TOO_EARLY';
+
+export interface PortfolioContender {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  firstSale: string;
+  daysOnSale: number;
+  profitFirst30d: number | null;  // THE SCORE. null = TOO_EARLY, the window has not closed
+  band: ContenderBand;
+  conversionPct: number | null;   // the fitted rate for the band; null on TOO_EARLY
+  profitSoFar: number;            // lifetime, context only — NOT what the band is based on
+  unitsSoFar: number;
+  stockUnits: number;
+  outOfStock: boolean;            // on STRONG/LIKELY this is the one badge on the whole screen: there, stock IS the action
+}
+
+// The pipeline, as NUMBERS. The Winners screen renders only this summary and never the rows below it: it is a progress view, and
+// a list of products to act on turns it into a chore list (owner, 2026-09-22). The `contenders` array is still returned and is
+// still the evidence behind these figures — it is simply not what this screen draws.
+export interface PortfolioContendersSummary {
+  youngStyles: number;
+  expectedWinners: number;        // sum of band count x fitted conversion. TOO_EARLY excluded
+  highConfidenceCount: number;    // STRONG + LIKELY
+  highConfidenceOos: number;      // of those, how many have no stock — the fact that says whether the expected winners can arrive
+  bandCounts: Record<ContenderBand, number>;   // every band, so the card needs no access to the rows
+}
+
+export function getPortfolioContenders() {
+  return request<{ summary: PortfolioContendersSummary; contenders: PortfolioContender[] }>(
+    { url: '/portfolio-contenders', method: 'GET' },
+    (b) => ({
+      summary: {
+        youngStyles: Number(b.summary?.young_styles) || 0,
+        expectedWinners: Number(b.summary?.expected_winners) || 0,
+        highConfidenceCount: Number(b.summary?.high_confidence_count) || 0,
+        highConfidenceOos: Number(b.summary?.high_confidence_oos) || 0,
+        bandCounts: (b.summary?.band_counts as Record<ContenderBand, number>) || ({} as Record<ContenderBand, number>),
+      },
+      contenders: ((b.contenders as Record<string, unknown>[]) || []).map((c) => ({
+        groupid: String(c.groupid),
+        title: (c.title as string | null) ?? null,
+        brand: (c.brand as string | null) ?? null,
+        firstSale: String(c.first_sale || ''),
+        daysOnSale: Number(c.days_on_sale) || 0,
+        // Same null trap as profitPrior12m, and worse here: a `|| 0` would score an unscorable style as £0 and band it DEAD.
+        profitFirst30d: c.profit_first_30d === null || c.profit_first_30d === undefined ? null : Number(c.profit_first_30d),
+        band: (c.band as ContenderBand) || 'TOO_EARLY',
+        conversionPct: c.conversion_pct === null || c.conversion_pct === undefined ? null : Number(c.conversion_pct),
+        profitSoFar: Number(c.profit_so_far) || 0,
+        unitsSoFar: Number(c.units_so_far) || 0,
+        stockUnits: Number(c.stock_units) || 0,
+        outOfStock: Boolean(c.out_of_stock),
+      })),
+    })
+  );
+}
+
 export default api;

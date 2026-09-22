@@ -299,6 +299,18 @@ app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));     
 app.use('/analytics-scratchpad-add', require('./routes/analytics-scratchpad-add'));       // POST {body}: insert a note
 app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-delete')); // POST {id}: remove a note
 
+// Winners screen — the business as a portfolio of earning assets. Two read-only routes behind one screen (/analytics/winners).
+// WINNERS is the scoreboard: styles past 180 days that cleared the profit bar in the rolling 12 months, with the COUNT as the one
+// tracked number. CONTENDERS is the job: young styles scored on profit in their FIRST 30 DAYS, which predicts whether they become
+// winners (100% conversion over 200 pounds, 72% over 100, 8% under 50) while over half the value is still ahead. Both anchor age on
+// MIN(sales.solddate) and never skusummary.created_at — see the route headers, that one is a trap.
+app.use('/portfolio-winners', require('./routes/portfolio-winners'));       // GET: the winners list + the hero count & its prior year
+app.use('/portfolio-contenders', require('./routes/portfolio-contenders')); // GET: young styles banded by their first-30-day profit
+// "Update now" — the deliberate act that RECORDS the headline count as a trend point (upsert today + prune past 2 years). The GETs
+// above compute live and store nothing, so viewing the screen never appends a snapshot. Same split as Stock Position / Birk
+// Availability; the shared definition both sides use lives in utils/portfolio.js.
+app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: upsert today's row, prune, return it
+
 // --- Shopify order sync (the "Sync orders" button on Analytics -> Sales) ---
 // !! THE LOGIC BEHIND /order-sync ALSO LIVES IN C:\scripts\orders\update_orders.py, WHICH IS STILL IN CRON. Both are live and must
 // stay in step — see the banner at the top of utils/orderSync.js before changing either. !!
