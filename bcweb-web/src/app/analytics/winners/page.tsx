@@ -283,22 +283,18 @@ function WinnersPageInner() {
           }
         />
 
-        {/* THIS YEAR, WITH THIS MONTH BESIDE IT (owner, 2026-09-22: "Id like to see added this year/month"). A rolling 12-month
-            version was built first and barely moved day to day; the year and the month are what he can feel himself changing,
-            and the month is the one that answers to this week. The comparison is the SAME SPAN last year, ending a year ago
-            today — a September reading against last year's full twelve would invent a collapse.
-
-            The known cost of a calendar year is that it resets: in early January this box reads a handful. That is also why the
-            month sits beside it — in January the month is the live figure and the year is a fresh page.
+        {/* ROLLING 12 MONTHS, with this month as the note. A calendar-year version was briefly built and rejected: "We dont
+            want calendar years. We said, we would use 12 month rolling?" It must not reset every January, and the two boxes
+            beside it are rolling windows too. The month stays because it is the part that answers to this week.
 
             The only box that leads anywhere. Reports -> New has the month-by-month pace behind these numbers. */}
         <Headline
           loading={w.isLoading}
           value={(s?.addedYtd ?? 0).toLocaleString('en-GB')}
-          label="added this year"
+          label="added"
           delta={s ? s.addedYtd - s.addedYtdPrior : null}
-          deltaSuffix="on the same point last year"
-          note={s ? `${s.addedMtd.toLocaleString('en-GB')} this month` : undefined}
+          deltaSuffix="on the 12 months before"
+          note={s ? `last 12 months · ${s.addedMtd.toLocaleString('en-GB')} this month` : undefined}
           href="/analytics/new-additions?from=/analytics/winners&back=Winners"
         />
       </div>

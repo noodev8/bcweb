@@ -3567,8 +3567,8 @@ export interface PortfolioWinnersSummary extends PortfolioBarSummary {
   // `totalStylesPrior` IS AN ESTIMATE and the only one on the screen: deletions before 2026-09-22 were never logged, and
   // created_at is a record date. It reads 195 against 329 today, a gain of 134 on 131 made, which is consistent but not proof.
   totalStylesPrior: number;
-  addedYtd: number;               // products made this calendar year, from product_event_log
-  addedYtdPrior: number;          // the SAME SPAN last year, ending a year ago today — never last year's full twelve months
+  addedYtd: number;               // products made in the ROLLING last 12 months (never a calendar year — it must not reset)
+  addedYtdPrior: number;          // the 12 months before that
   addedMtd: number;               // products made this calendar month
 
   bars: PortfolioBarSummary[];    // ladder order, low bar first. bars[0] IS this object's own figures
