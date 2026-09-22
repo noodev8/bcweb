@@ -4,10 +4,18 @@ API Route: portfolio_winners
 =======================================================================================================================================
 Method: GET
 Purpose: Winners screen — the WINNERS tab. The bird's-eye view of the business as a portfolio of earning assets: every style that
-         earned more than the bar in the rolling 12 months. Plus the recorded TREND of that count over time.
+         TURNED OVER more than the bar in the rolling 12 months. Plus the recorded TREND of that count over time.
+
+         THE BAR IS GROSS REVENUE (£1,500), NOT PROFIT — changed 2026-09-22 by the owner, who named the route the screen sits on:
+         "PRODUCT FIND > REVENUE > PROFIT > KEEP/DROP. We have to keep loading and building our products with revenue. The rest
+         are for different departments to take care of." This tab is the FIND step. `sales.profit` is contribution before
+         advertising, so a profit bar was measuring revenue through an incomplete margin and hiding the ad cost that actually
+         decides keep-or-drop; it also dropped thin-margin styles that sell brilliantly, which are precisely the ones to load and
+         build. Profit is still in every payload — the band report states what each revenue rung earns — it just no longer decides
+         who is a winner. The whole argument, and where £1,500 came from, is on WINNER_BAR in utils/portfolio.js.
 
          THERE IS NO AGE TEST. The spec's section 2 carried one (age >= 180 days) but its own headline figures were measured
-         without it, and the owner settled the contradiction in favour of the window on 2026-09-22. £200 is already an annual bar,
+         without it, and the owner settled the contradiction in favour of the window on 2026-09-22. The bar is already an annual bar,
          so a style clearing it in four months is outperforming rather than unproven, and gating on age hid the newest earners from
          the very count the screen exists to grow. See MATURITY_DAYS in utils/portfolio.js for the full argument — it survives
          there as a CONTENDERS-only rule.
@@ -20,8 +28,8 @@ Purpose: Winners screen — the WINNERS tab. The bird's-eye view of the business
 
          THE DEFINITION LIVES IN utils/portfolio.js, not here — it is shared with the snapshot writer so the number on the chart can
          never be computed differently from the number in the headline. The three calls that are easiest to get wrong (age anchored
-         on MIN(sales.solddate) and never created_at; all channels counted; SUM(profit) with no qty multiplier) are argued out in
-         that file's header.
+         on MIN(sales.solddate) and never created_at; all channels counted; revenue as SUM(soldprice * qty) while profit is a line
+         total needing no qty multiplier) are argued out in that file's header.
 
          READ-ONLY, AND DELIBERATELY SO. This GET computes TODAY's figures live — so the headline is never stale — and stores
          NOTHING. Recording a trend point is a separate, deliberate act: POST /portfolio-snapshot-update, the "Update now" button.
@@ -36,7 +44,8 @@ THE BAR TOGGLE, AND THE REPORT UNDER IT (added 2026-09-22, owner):
 
          Both, because they answer different halves and neither is sufficient alone:
 
-           `summary.bars`   — the WHOLE summary re-measured at every mark on WINNER_BAR_LADDER (200/300/500/1000). Sent in ONE
+           `summary.bars`   — the WHOLE summary re-measured at every mark on WINNER_BAR_LADDER (£1,500/£2,500/£5,000/£10,000 of
+                              revenue since 2026-09-22; it was 200/300/500/1000 of profit when the quote above was written). ONE
                               payload, not fetched per bar, so the toggle is instant AND the four readings provably come from the
                               same rows. A `bar` query param was the obvious alternative and is worse: four round-trips over a
                               moving `sales` table, and four chances for the screen to show a count the headline never produced.
@@ -45,9 +54,10 @@ THE BAR TOGGLE, AND THE REPORT UNDER IT (added 2026-09-22, owner):
                               on the day and why "earned per unit" is the one that answers the high-volume/low-profit question.
 
          ⚠ THE TOGGLE IS A READING, NOT A SETTING. Nothing about it reaches the database. summary's own top-level fields are
-           bars[0] — the TRACKED £200 bar — spread in place, so POST /portfolio-snapshot-update records the tracked figure
+           bars[0] — the TRACKED £1,500 bar — spread in place, so POST /portfolio-snapshot-update records the tracked figure
            whatever the screen happens to be displaying, and the trend line never develops a step caused by someone browsing.
-           If the tracked bar itself is ever to move, that is the migration-and-clear-the-table job described on the constant.
+           When the tracked bar itself moves, the snapshot's `bar_metric`/`bar_value` stamp keeps the two series apart and this
+           route draws only the ruler in force (migrations/20260922d) — the history is kept, not cleared.
 
 Requires auth.
 =======================================================================================================================================
@@ -128,7 +138,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
-const { computeWinners } = require('../utils/portfolio');
+const { computeWinners, WINNER_METRIC, WINNER_BAR } = require('../utils/portfolio');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -153,9 +163,14 @@ router.get('/', async (req, res) => {
                 winner_count, winner_count_prior_year, joined_this_year, left_this_year,
                 total_profit_12m, young_styles, expected_winners, high_confidence_count, total_styles
            FROM portfolio_snapshot
+          -- ONLY THE ROWS TAKEN WITH TODAY'S RULER. The bar changed from £200 PROFIT to £1,500 GROSS REVENUE on 2026-09-22 and
+          -- migrations/20260922d stamps every row with the one it was measured against. Plotting both on one line would draw a
+          -- cliff that is an artefact of the definition, not of the business. The old rows stay in the table — they were true on
+          -- the day — they are simply not this chart's series any more, so the trend restarts from the change.
           WHERE snapshot_date >= CURRENT_DATE - ($1::int - 1)
+            AND bar_metric = $2 AND bar_value = $3
           ORDER BY snapshot_date ASC`,
-        [days]
+        [days, WINNER_METRIC, WINNER_BAR]
       ),
     ]);
 

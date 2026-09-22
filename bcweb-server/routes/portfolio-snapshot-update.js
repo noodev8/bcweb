@@ -19,9 +19,11 @@ WHAT A SNAPSHOT MEANS, AND WHY IT IS NOT JUST A CACHE
          reading the business was steering by, so it is built from the stored rows only. Do not backfill this table to make the
          chart look fuller — see the migration header (migrations/20260922_portfolio_snapshot.sql) for what to do instead.
 
-         ⚠ THE BAR IS NOT STORED WITH THE ROW. Every count is taken against WINNER_PROFIT_BAR / MATURITY_DAYS as they stood on the
-           day. Moving either makes the chart show a step that looks like the business moved when only the ruler did. If a bar ever
-           changes, clear the table or start storing the bar — the warning sits on the constant in utils/portfolio.js too.
+         ⚠ THE BAR TRAVELS WITH THE ROW (since migrations/20260922d). `bar_metric` / `bar_value` record the ruler each count was
+           taken with, and GET /portfolio-winners draws only the rows matching the ruler in force. This exists because the bar DID
+           change on 2026-09-22 — from £200 PROFIT to £1,500 GROSS REVENUE (see WINNER_BAR in utils/portfolio.js) — and without
+           the stamp the chart would have shown a step that looked like the business moved when only the definition did. Rows are
+           never rewritten or deleted when a bar changes: a snapshot is what we said on the day, and old rows stay true.
 
            THIS IS WHY THE SCREEN'S BAR TOGGLE CANNOT REACH THIS ROUTE. The Winners screen can read the count at £300, £500 or
            £1,000 (GET /portfolio-winners returns summary.bars), but what gets RECORDED is always summary.winner_count, which is
@@ -64,7 +66,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { computeWinners, computeContenders } = require('../utils/portfolio');
+const { computeWinners, computeContenders, WINNER_METRIC, WINNER_BAR } = require('../utils/portfolio');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -92,8 +94,9 @@ router.post('/', async (req, res) => {
       const ins = await client.query(
         `INSERT INTO portfolio_snapshot
            (snapshot_date, winner_count, winner_count_prior_year, joined_this_year, left_this_year,
-            total_profit_12m, young_styles, expected_winners, high_confidence_count, total_styles, created_at)
-         VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+            total_profit_12m, young_styles, expected_winners, high_confidence_count, total_styles,
+            bar_metric, bar_value, created_at)
+         VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
          ON CONFLICT (snapshot_date)
          DO UPDATE SET winner_count            = EXCLUDED.winner_count,
                        winner_count_prior_year = EXCLUDED.winner_count_prior_year,
@@ -104,6 +107,8 @@ router.post('/', async (req, res) => {
                        expected_winners        = EXCLUDED.expected_winners,
                        high_confidence_count   = EXCLUDED.high_confidence_count,
                        total_styles            = EXCLUDED.total_styles,
+                       bar_metric              = EXCLUDED.bar_metric,
+                       bar_value               = EXCLUDED.bar_value,
                        created_at              = now()
          -- Report back the date the DB actually stamped, cast to text in SQL — never toISOString() a pg DATE.
          RETURNING to_char(snapshot_date, 'YYYY-MM-DD') AS date`,
@@ -118,6 +123,9 @@ router.post('/', async (req, res) => {
           contenders.high_confidence_count,
           // The denominator for the share, stored as it stands TODAY — see migrations/20260922b. Never backfilled.
           summary.total_styles,
+          // THE RULER. Constants, not anything the request can influence — the screen's toggle must never reach this row.
+          WINNER_METRIC,
+          WINNER_BAR,
         ]
       );
 

@@ -3482,10 +3482,13 @@ export interface PortfolioWinner {
   groupid: string;
   title: string | null;           // title.shopifytitle
   brand: string | null;
-  profit12m: number;              // rolling 12 months, ALL channels, before ad spend
-  revenue12m: number;             // gross — soldprice * qty, before any cost
+  profit12m: number;              // rolling 12 months, ALL channels, before ad spend. CONTEXT — the bar is revenue, not this
+  revenue12m: number;             // gross — soldprice * qty, before any cost. THIS is what the winner bar tests
   units12m: number;
-  profitPrior12m: number | null;  // null on a style under 2 years old — no real prior year, and a fake 0 renders as infinite growth
+  profitPrior12m: number;         // contribution last year. Always a number — it is context, not the comparison
+  // LAST YEAR IN THE BAR'S METRIC, and what `direction` is computed from. Null on a style under 2 years old — no real prior
+  // year, and a fake 0 renders as infinite growth.
+  revenuePrior12m: number | null;
   direction: WinnerDirection;     // FLAT is a +/-15% BAND, not equality, so noise does not read as a trend
   firstSale: string;              // 'YYYY-MM-DD', = MIN(sales.solddate). NOT created_at
   daysOnSale: number;
@@ -3699,7 +3702,9 @@ export function getPortfolioWinners(days?: number) {
         revenue12m: Number(w.revenue_12m) || 0,
         units12m: Number(w.units_12m) || 0,
         // Careful: `|| 0` would turn a legitimate null into 0 and invent a prior year. Test for null explicitly.
-        profitPrior12m: w.profit_prior_12m === null || w.profit_prior_12m === undefined ? null : Number(w.profit_prior_12m),
+        profitPrior12m: Number(w.profit_prior_12m) || 0,
+        revenuePrior12m:
+          w.revenue_prior_12m === null || w.revenue_prior_12m === undefined ? null : Number(w.revenue_prior_12m),
         direction: (w.direction as WinnerDirection) || 'NEW',
         firstSale: String(w.first_sale || ''),
         daysOnSale: Number(w.days_on_sale) || 0,

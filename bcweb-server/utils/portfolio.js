@@ -19,8 +19,9 @@ THE DEFINITIONS (the full argument for each is in routes/portfolio-winners.js's 
 spec was deleted 2026-09-22 once it was costing more to maintain than it explained):
   - AGE is days since MIN(sales.solddate). NEVER skusummary.created_at, which is a RECORD date — the gap between the two averages
     261 days on the 2024 cohort. Using it produced a fictitious hit-rate collapse during the analysis session.
-  - WINNER = profit > WINNER_PROFIT_BAR in the rolling 12 months. THERE IS NO AGE TEST — see the constant's comment for why the
-    one the spec originally carried was removed (owner, 2026-09-22).
+  - WINNER = GROSS REVENUE > WINNER_BAR in the rolling 12 months. THERE IS NO AGE TEST — see the constant's comment for why the
+    one the spec originally carried was removed (owner, 2026-09-22). The metric was PROFIT until 2026-09-22; the argument for the
+    change is on WINNER_BAR and it is the screen's whole purpose, not a tuning choice — do not quietly put profit back.
   - CONTENDER SCORE = profit in the style's first CONTENDER_WINDOW days on sale, banded against a FITTED model (see BANDS).
   - ALL CHANNELS count (Amazon lines are not filtered out — the style is one asset), there is NO `shopify = 1` test (eligibility is
     "did it earn", not "is it still switched on"), profit is SUM(sales.profit) with NO qty multiplier (sales already carries one row
@@ -37,27 +38,50 @@ const { query } = require('../database');
 // bar that differed between the screen and the recorder would silently poison the trend.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
-// Profit (GBP) in the rolling 12 months that makes a style a winner. THIS BAR, OVER THAT WINDOW, IS THE WHOLE TEST — there is no
-// age condition (see MATURITY_DAYS below). Left at 200 for v1; may want to move as the portfolio grows — at 250 winners the bar
-// that defines the hero number matters more than it does at 80 (spec section 8.4).
+// THE METRIC THE BAR IS READ IN. Stamped onto every snapshot row (portfolio_snapshot.bar_metric) so the trend can never plot two
+// different rulers on one line — see the migration and the warning below.
+const WINNER_METRIC = 'REVENUE';
+
+// GROSS REVENUE (GBP) in the rolling 12 months that makes a style a winner. THIS BAR, OVER THAT WINDOW, IS THE WHOLE TEST — there
+// is no age condition (see MATURITY_DAYS below).
 //
-// ⚠ MOVING THIS BREAKS THE TREND. Every stored snapshot was taken against the bar in force on the day, and nothing in the table
-//   records what that bar was. Change it and the chart shows a step that looks like the business moved when only the ruler did.
-//   If it ever moves, clear the snapshot history or add the bar to the stored row — do not just edit the number.
-const WINNER_PROFIT_BAR = 200;
+// WHY REVENUE AND NOT PROFIT (owner, 2026-09-22, replacing the £200 profit bar this screen shipped with):
+//
+//   "This is the route PRODUCT FIND > REVENUE > PROFIT > KEEP/DROP. We have to keep loading and building our products with
+//    revenue. The rest are for different departments to take care of."
+//
+// The screen's job is FINDING STYLES WORTH HAVING, and revenue is the honest test for that. `sales.profit` is contribution BEFORE
+// ADVERTISING — Google Shopping spend is nowhere in it — so a profit bar was never measuring profit; it was measuring revenue
+// with a per-style margin rate applied, and then hiding the ad cost that actually decides whether the style keeps its place. The
+// margin question is real but it is the NEXT step in the route, on its own screen: find the revenue, then make it profitable or
+// drop it. A bar that mixes the two lets a thin-margin style that sells brilliantly fall out of the count when it is exactly the
+// kind of product we want to load and build.
+//
+// PROFIT DOES NOT LEAVE THE PAYLOAD. Every style still carries profit_12m, and the band report still states what each rung earned
+// and its typical earn-per-unit — that is the raw material for the profitability step. Profit is no longer what DEFINES a winner.
+//
+// WHERE £1,500 CAME FROM: the 80 winners under the old £200 profit bar turned over £367,545 on £52,130 of contribution, a ratio of
+// about 7.05x, which puts £200 of contribution at roughly £1,410 of revenue. Rounded to £1,500 — the ladder exists to be read as a
+// spread, not to reproduce the old counts exactly, and a round number reads better in the sentence on screen.
+//
+// ⚠ MOVING THIS BREAKS THE TREND, and so does changing WINNER_METRIC. Snapshots taken since 2026-09-22 stamp both onto the row, so
+//   the trend reader can filter to the ruler in force; rows written before that are PROFIT/200 and are filtered OUT rather than
+//   plotted alongside. If this number moves again, it is the same job: stamp it, do not silently edit it.
+const WINNER_BAR = 1500;
 
 // THE SAME TEST, READ AT HIGHER BARS. Not a second definition — one ruler with extra marks on it. The screen offers these as a
-// TOGGLE so the owner can ask "and if a winner had to earn £500?" without anyone editing a constant, which is the only safe way to
-// answer that question: the bar above is welded to the trend table (see its warning) and must not move to satisfy curiosity.
+// TOGGLE so the owner can ask "and if a winner had to turn over £5,000?" without anyone editing a constant, which is the only safe
+// way to answer that question: the bar above is welded to the trend table (see its warning) and must not move to satisfy curiosity.
 //
-// ⚠ THE FIRST ENTRY MUST BE WINNER_PROFIT_BAR. routes/portfolio-winners.js returns bars[0] spread into `summary`, so the payload's
+// ⚠ THE FIRST ENTRY MUST BE WINNER_BAR. routes/portfolio-winners.js returns bars[0] spread into `summary`, so the payload's
 //   top-level figures stay exactly what they were before the toggle existed and every existing consumer — crucially the snapshot
 //   writer — keeps recording the TRACKED bar no matter what the screen is displaying. Reorder this and you silently change what
 //   gets stored in portfolio_snapshot.
 //
-// Why these four: 200 is the tracked bar; 300/500/1000 were measured 2026-09-22 and give 51 / 29 / 13 winners against 80, which is
-// a usable spread. A fifth mark at 2000 leaves 3 styles — too few to read anything from.
-const WINNER_BAR_LADDER = [WINNER_PROFIT_BAR, 300, 500, 1000];
+// Why these four: 1500 is the tracked bar, and 2500/5000/10000 are the round marks above it. They are NOT the 7.05x conversions of
+// the old 300/500/1000 (which would be 2115/3525/7050) — the ladder is for reading the shape of the range at a glance, and round
+// amounts do that better than amounts that carry the fingerprint of a bar we no longer use. The owner chose the shape directly.
+const WINNER_BAR_LADDER = [WINNER_BAR, 2500, 5000, 10000];
 
 // Below this age a style is YOUNG and belongs on the CONTENDERS tab. One selling season.
 //
@@ -92,6 +116,17 @@ const DIRECTION_FLAT_PCT = 15;
 // null, rather than a fake 0 that would render as infinite growth.
 const PRIOR_YEAR_MIN_DAYS = 730;
 
+// ⚠ THIS MODEL IS STILL CALIBRATED AGAINST THE OLD BAR, AND IT IS THE ONE LOOSE END OF THE 2026-09-22 REVENUE CHANGE.
+//   It was fitted when a winner meant "£200 PROFIT in 12 months". The winner test is now "£1,500 GROSS REVENUE" (see WINNER_BAR),
+//   so both halves of the fit are stale: the PREDICTOR should be revenue in the first 30 days, and the OUTCOME should be clearing
+//   the revenue bar. The percentages below therefore answer a question the screen no longer asks.
+//
+//   IT IS DELIBERATELY LEFT UNTOUCHED rather than re-scaled by hand. These numbers are an empirical fit over 212 styles; guessing
+//   revenue-era equivalents would produce a model that looks calibrated and is not, which is worse than one that is honestly out
+//   of date. The refit is a single query over `sales` (bucket revenue in [first_sale, +30d) against revenue in [first_sale, +180d)
+//   > WINNER_BAR, over styles at least 180 days old) — five minutes with a DB connection. Until then the Winners screen labels the
+//   contender figure as measured against the old profit bar, and it must keep saying so.
+//
 // The fitted conversion model, measured 2026-09-22 across 212 mature styles (first sale 2023-09 to 2026-03), scoring profit in the
 // first 30 days against whether the style cleared the bar in its first 180:
 //     <= £0  ->   0% (n=10)      £50-99   -> 28% (n=43)      £200+ -> 100% (n=3)
@@ -168,8 +203,8 @@ function summariseAt(styles, bar, totalStyles) {
     // `wasWinnerThen` needs no "was it old enough then" clause for the same reason, and dropping it also removes an artefact the
     // age gate created: styles that merely crossed the age line during the year used to register as having JOINED, which made
     // joined/left partly a measure of the calendar rather than of the trade.
-    const isWinnerNow = st.profit12m > bar;
-    const wasWinnerThen = st.profitPrior12m > bar;
+    const isWinnerNow = st.revenue12m > bar;
+    const wasWinnerThen = st.revenuePrior12m > bar;
 
     if (wasWinnerThen) winnerCountPriorYear += 1;
     if (isWinnerNow && !wasWinnerThen) joined += 1;
@@ -279,8 +314,10 @@ function ladderEdges() {
   return edges;
 }
 
-const inBandTest = (profit, { from, to }) => (from === null || profit > from) && (to === null || profit <= to);
-const bandIndexOf = (profit) => ladderEdges().findIndex((e) => inBandTest(profit, e));
+// `value` is the BAR'S metric (revenue since 2026-09-22), not profit — the argument was renamed when the bar changed so the two
+// can never drift apart again.
+const inBandTest = (value, { from, to }) => (from === null || value > from) && (to === null || value <= to);
+const bandIndexOf = (value) => ladderEdges().findIndex((e) => inBandTest(value, e));
 
 // Middle value of a sorted-in-place copy. Even-length arrays take the UPPER of the two middles rather than averaging them: the
 // figure is a real style's rate either way, which is what "typical" is supposed to mean here.
@@ -294,7 +331,10 @@ function profitLadder(tradedStyles) {
   const edges = ladderEdges();
 
   return edges.map(({ from, to }) => {
-    const inBand = tradedStyles.filter((st) => inBandTest(st.profit12m, { from, to }));
+    // BANDED ON REVENUE, because the bands must tile the bar ladder exactly (see the header) and the ladder is a revenue ladder.
+    // The COLUMNS stay profit columns — what each revenue rung actually earns is the input to the profitability step that comes
+    // after this screen, and it is the only place on the platform that states it rung by rung.
+    const inBand = tradedStyles.filter((st) => inBandTest(st.revenue12m, { from, to }));
     const profit = inBand.reduce((a, st) => a + st.profit12m, 0);
     const revenue = inBand.reduce((a, st) => a + st.revenue12m, 0);
     const units = inBand.reduce((a, st) => a + st.units12m, 0);
@@ -304,7 +344,7 @@ function profitLadder(tradedStyles) {
       to,                         // inclusive ceiling; null = open above
       // Whether this band is above the TRACKED bar, i.e. whether its styles are winners today. The screen dims the rest — they
       // are context for the decision, not part of the count.
-      is_winner_band: from !== null && from >= WINNER_PROFIT_BAR,
+      is_winner_band: from !== null && from >= WINNER_BAR,
       styles: inBand.length,
       profit: round2(profit),
       revenue: round2(revenue),
@@ -329,15 +369,17 @@ function profitLadder(tradedStyles) {
 // IS THE PORTFOLIO COMPOUNDING, OR JUST WIDENING? The count answers neither, and it is the question behind "I want a number I can
 // look at to grow" (owner, 2026-09-22).
 //
-// THE FACT THAT FORCED THIS: big earners are GROWN, NOT FOUND. Of the 13 styles above £1,000, twelve were already above £500 a
-// year ago. Of the 148 styles that first sold in the last 12 months, 114 landed at £0-£200, 15 lost money, 14 cleared £200, three
-// cleared £300, two cleared £500 and NONE cleared £1,000. A style climbs the ladder a rung at a time over years — so a portfolio
-// can add winners at the bottom every year while the styles it already owns quietly slide, and the headline count would not
-// flinch. `up` and `down` are the only figures on this screen that see that.
+// THE FACT THAT FORCED THIS: big earners are GROWN, NOT FOUND. Measured on the £200 PROFIT ladder this screen used until
+// 2026-09-22: of the 13 styles above £1,000, twelve were already above £500 a year ago; and of the 148 styles that first sold in
+// the last 12 months, 114 landed at £0-£200, 14 cleared £200 and NONE cleared £1,000. A style climbs the ladder a rung at a time
+// over years — so a portfolio can add winners at the bottom every year while the styles it already owns quietly slide, and the
+// headline count would not flinch. `up` and `down` are the only figures on this screen that see that. The finding is about the
+// SHAPE of the climb and survives the change of ruler, but the counts above are profit-era and should be re-measured on the
+// revenue ladder before anyone quotes them again.
 //
-// (It is also the argument for leaving the TRACKED bar at £200: that is the only rung a new style can reach inside a year, so it
-// is the only bar at which this year's buying decisions show up in this year's number. A £500 bar would steer with a two-year
-// lag. See WINNER_PROFIT_BAR.)
+// (It is also the argument for keeping the TRACKED bar at the BOTTOM of the ladder: that is the only rung a new style can reach
+// inside a year, so it is the only bar at which this year's buying decisions show up in this year's number. Tracking at £5,000
+// would steer with a two-year lag. See WINNER_BAR.)
 //
 // MEASURED OVER STYLES THAT TRADED IN BOTH WINDOWS. A style that sold last year and not this one has not "moved down a rung" —
 // it has stopped, or been discontinued on purpose, and counting that as a slide would make a deliberate range cull look like
@@ -350,8 +392,8 @@ function bandMovement(tradedStyles) {
   let same = 0;
   let down = 0;
   for (const st of both) {
-    const now = bandIndexOf(st.profit12m);
-    const then = bandIndexOf(st.profitPrior12m);
+    const now = bandIndexOf(st.revenue12m);
+    const then = bandIndexOf(st.revenuePrior12m);
     if (now > then) up += 1;
     else if (now < then) down += 1;
     else same += 1;
@@ -363,7 +405,7 @@ function bandMovement(tradedStyles) {
   const edges = ladderEdges();
   const topIdx = edges.length - 1;
   const establishedFloor = edges[topIdx - 1].from;   // the floor of the rung below the top one
-  const topBand = tradedStyles.filter((st) => bandIndexOf(st.profit12m) === topIdx);
+  const topBand = tradedStyles.filter((st) => bandIndexOf(st.revenue12m) === topIdx);
 
   return {
     styles: both.length,
@@ -374,7 +416,7 @@ function bandMovement(tradedStyles) {
     top_band_floor: edges[topIdx].from,
     top_band_styles: topBand.length,
     established_floor: establishedFloor,
-    top_band_established: topBand.filter((st) => st.profitPrior12m > establishedFloor).length,
+    top_band_established: topBand.filter((st) => st.revenuePrior12m > establishedFloor).length,
   };
 }
 
@@ -407,6 +449,10 @@ async function computeWinners() {
              COALESCE(SUM(soldprice * qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0) AS revenue_12m,
              COALESCE(SUM(profit)   FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
                                               AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0) AS profit_prior_12m,
+             -- Prior-year GROSS revenue. This is the one the winner test reads on the "a year ago" side since the bar became a
+             -- revenue bar: both sides of the comparison must be measured with the same ruler or joined/left is nonsense.
+             COALESCE(SUM(soldprice * qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
+                                                     AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0) AS revenue_prior_12m,
              -- Prior-year units, for the "units shifted" comparison. Computed LIVE from sales, exactly like profit_prior_12m —
              -- no snapshot column and no migration is needed for a year-on-year figure, only for putting one on the trend.
              COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
@@ -512,6 +558,7 @@ async function computeWinners() {
            a.units_12m,
            a.revenue_12m,
            a.profit_prior_12m,
+           a.revenue_prior_12m,
            a.units_prior_12m,
            COALESCE(st.stock, 0)                AS stock_units
     FROM agg a
@@ -520,12 +567,12 @@ async function computeWinners() {
     LEFT JOIN skusummary ss ON ss.groupid = a.groupid
     LEFT JOIN title      t  ON t.groupid  = a.groupid
     LEFT JOIN stk        st ON st.groupid = a.groupid
-    ORDER BY a.profit_12m DESC, a.groupid
+    ORDER BY a.revenue_12m DESC, a.groupid
     `
   );
 
-  // Normalise once, then measure repeatedly. The rows come back ordered by profit_12m DESC and this map preserves that, so the
-  // winners list below needs no re-sort.
+  // Normalise once, then measure repeatedly. The rows come back ordered by revenue_12m DESC (the bar's metric) and this map
+  // preserves that, so the winners list below needs no re-sort.
   //
   // WHY A SEPARATE PASS AT ALL: the summary has to be computed at FOUR bars (WINNER_BAR_LADDER) and the ladder report needs every
   // style banded, so the one thing that must not happen is four SQL round-trips. One read, one normalise, then pure arithmetic.
@@ -533,6 +580,8 @@ async function computeWinners() {
     const days = Number(r.days_on_sale) || 0;
     const profit12m = num(r.profit_12m) ?? 0;
     const profitPrior = num(r.profit_prior_12m) ?? 0;
+    const revenue12m = num(r.revenue_12m) ?? 0;
+    const revenuePrior = num(r.revenue_prior_12m) ?? 0;
 
     // Direction. A style without a real prior year is NEW, not a 100% riser — see PRIOR_YEAR_MIN_DAYS.
     let direction;
@@ -541,13 +590,14 @@ async function computeWinners() {
       direction = 'NEW';
       priorOut = null;
     } else {
-      priorOut = profitPrior;
-      // Guard the divide: a winner whose prior year was zero (or negative) has no ratio to take. It earned nothing then and more
-      // than the bar now, which is unambiguously GROWING.
-      if (profitPrior <= 0) {
+      priorOut = revenuePrior;
+      // Guard the divide: a winner whose prior year was zero has no ratio to take. It turned over nothing then and more than the
+      // bar now, which is unambiguously GROWING. Measured on REVENUE, like the bar — an arrow drawn on a different metric from
+      // the count beside it is a trap.
+      if (revenuePrior <= 0) {
         direction = 'GROWING';
       } else {
-        const changePct = ((profit12m - profitPrior) / profitPrior) * 100;
+        const changePct = ((revenue12m - revenuePrior) / revenuePrior) * 100;
         if (changePct > DIRECTION_FLAT_PCT) direction = 'GROWING';
         else if (changePct < -DIRECTION_FLAT_PCT) direction = 'SHRINKING';
         else direction = 'FLAT';
@@ -564,7 +614,8 @@ async function computeWinners() {
       brand: r.brand || null,
       brandKey: (r.brand || '').trim() || 'Unbranded',
       profit12m,
-      revenue12m: num(r.revenue_12m) ?? 0,
+      revenue12m,
+      revenuePrior12m: revenuePrior,
       units12m: Number(r.units_12m) || 0,
       unitsPrior12m: Number(r.units_prior_12m) || 0,
       profitPrior12m: profitPrior,
@@ -599,7 +650,7 @@ async function computeWinners() {
   // The list is the TRACKED bar's set, always — the toggle is a reading of the count, not a filter on the rows. The screen does
   // not draw this list at all today (see the page header); it is here for whatever working screen eventually wants it.
   const winners = styles
-    .filter((s) => s.profit12m > WINNER_PROFIT_BAR)
+    .filter((s) => s.revenue12m > WINNER_BAR)
     .map((s) => ({
       groupid: s.groupid,
       title: s.title,
@@ -607,7 +658,10 @@ async function computeWinners() {
       profit_12m: round2(s.profit12m),
       revenue_12m: round2(s.revenue12m),
       units_12m: s.units12m,
-      profit_prior_12m: s.priorOut === null ? null : round2(s.priorOut),
+      profit_prior_12m: round2(s.profitPrior12m),
+      // The prior-year figure in the BAR'S metric, and the one `direction` is computed from. Null when the style is younger than
+      // PRIOR_YEAR_MIN_DAYS — a style with no real prior year has no comparison, not a zero.
+      revenue_prior_12m: s.priorOut === null ? null : round2(s.priorOut),
       direction: s.direction,
       first_sale: s.firstSale,
       days_on_sale: s.days,
@@ -616,7 +670,7 @@ async function computeWinners() {
 
   return {
     summary: {
-      // bars[0] IS the tracked bar (WINNER_BAR_LADDER's first entry is WINNER_PROFIT_BAR, enforced by the comment on the
+      // bars[0] IS the tracked bar (WINNER_BAR_LADDER's first entry is WINNER_BAR, enforced by the comment on the
       // constant). Spreading it keeps this payload byte-identical in shape to the pre-toggle version, which is what lets the
       // snapshot writer go on reading summary.winner_count and record the tracked figure whatever the screen is showing.
       ...bars[0],
@@ -775,7 +829,8 @@ async function computeContenders() {
 module.exports = {
   computeWinners,
   computeContenders,
-  WINNER_PROFIT_BAR,
+  WINNER_METRIC,
+  WINNER_BAR,
   WINNER_BAR_LADDER,
   MATURITY_DAYS,
   CONTENDER_WINDOW,

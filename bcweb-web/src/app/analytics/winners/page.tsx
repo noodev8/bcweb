@@ -34,6 +34,14 @@ So: a big box, four small boxes, and a trend line. THE PER-STYLE DETAIL ALL STIL
 returns every winner and GET /portfolio-contenders every banded contender. This screen simply does not draw them. If a working
 screen ever wants that detail, it is there; putting it back HERE is a regression, however useful it is in isolation.
 
+THE BAR IS GROSS REVENUE (£1,500 IN 12 MONTHS), NOT PROFIT — changed 2026-09-22, the owner naming the route this screen opens:
+"PRODUCT FIND > REVENUE > PROFIT > KEEP/DROP. We have to keep loading and building our products with revenue. The rest are for
+different departments to take care of." This screen is the FIND step and the count is its score. Profit here is contribution
+BEFORE ad spend, so a profit bar quietly dropped thin-margin styles that sell brilliantly — exactly the products to load and
+build — and pretended to a profitability answer it does not have. The margin question is the NEXT step, on its own screen. The
+full argument and where £1,500 came from are on WINNER_BAR in bcweb-server/utils/portfolio.js. The dial below and the trend both
+moved with it; the trend restarts from the change rather than plotting two rulers on one line (migrations/20260922d).
+
 GROSS REVENUE IS SHOWN; PROFIT IS NOT. The distinction is the owner's (2026-09-22): profit here is contribution BEFORE
 advertising, which invites exactly the "is that really profit?" conversation he does not want at a glance — "I don't care about
 values. It is the amount before adverts?" Gross revenue has no such ambiguity, so it earns a box. `total_profit_12m` is still
@@ -47,10 +55,13 @@ THE BAR IS A DIAL NOW, AND THE DIAL IS A READING ONLY (owner, 2026-09-22):
    and what the sweet spot might be. Unless you can also give me a report here. ie. I shouldn't be focussing on the low 20 items
    if they only yield another £2 for the year."
 
-The toggle re-reads the WHOLE headline — count, share, revenue, units, last year, the brand split — at £200, £300, £500 or
-£1,000. Every one of those readings arrives in the SAME payload (summary.bars), so switching is instant and the four can never
-disagree with each other. NOTHING THE TOGGLE DOES IS RECORDED: the trend line and the "Update now" button are welded to the
-tracked £200 bar, because a series measured with a ruler that moves when someone is curious is not a series. The screen says so
+(That quote is from the profit era — the marks it names were £200/£300/£500/£1,000 of PROFIT. The dial works exactly as it
+describes; only the metric underneath it changed.)
+
+The toggle re-reads the WHOLE headline — count, share, revenue, units, last year, the brand split — at £1,500, £2,500, £5,000 or
+£10,000 of revenue. Every one of those readings arrives in the SAME payload (summary.bars), so switching is instant and the four
+can never disagree with each other. NOTHING THE TOGGLE DOES IS RECORDED: the trend line and the "Update now" button are welded to
+the tracked £1,500 bar, because a series measured with a ruler that moves when someone is curious is not a series. The screen says so
 in a line under the toggle whenever it is off the tracked bar — that line is not decoration, it is the guard-rail.
 
 THE EARNINGS REPORT IS NOT ON THIS SCREEN. A "Where the earnings sit" table was built here on 2026-09-22 — the six rungs of the
@@ -196,18 +207,18 @@ function WinnersPageInner() {
       {w.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{w.error.message}</div>}
 
       {/* ---------------------------------------------------------------------------------------------------------------------
-          THE DIAL. Written as a SENTENCE with the marks inside it — "a winner earns more than [£200] in 12 months" — because the
+          THE DIAL. Written as a SENTENCE with the marks inside it — "a winner turns over more than [£1,500] in 12 months" — the
           toggle is not a filter, it is the definition being read aloud, and a bare row of amounts would be a filter. It sits
           ABOVE the hero so the definition arrives before the number it produces.
 
-          ALL FOUR MARKS LOOK THE SAME. Two earlier versions singled £200 out — first with a line of explanatory text and a
+          ALL FOUR MARKS LOOK THE SAME. Two earlier versions singled the tracked mark out — first with a line of explanatory text and a
           "Back to £200" button, then with colour and a larger size — and the owner removed both: "I only meant make the 200 the
-          same as the other dials." £200 needs no flag because it is already where the dial sits when the page loads, which is
+          same as the other dials." It needs no flag because it is already where the dial sits when the page loads, which is
           what he sees every day without touching anything. Selection is the only state the marks show.
           --------------------------------------------------------------------------------------------------------------------- */}
       {bars.length > 1 && (
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-sm text-slate-500">A winner earns more than</span>
+          <span className="text-sm text-slate-500">A winner turns over more than</span>
           <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
             {bars.map((b) => (
               <button
@@ -347,16 +358,19 @@ function WinnersPageInner() {
             label="units shifted"
             note="packed and sent, last 12 months"
           />
-          {/* Does not move with the dial, and the note says which bar it means. The conversion model behind it was fitted on
-              "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js), so re-reading it at
-              £1,000 would need a refit, not a filter. Naming the bar keeps it honest at £200 too. */}
+          {/* Does not move with the dial: the conversion model behind it was fitted on "did the style clear the bar in its
+              first 180 days", so re-reading it at another mark would need a refit, not a filter.
+
+              ⚠ AND IT IS CURRENTLY FITTED AGAINST THE OLD BAR — £200 of PROFIT, not £1,500 of revenue (see the ⚠ on BANDS in
+              utils/portfolio.js). The note therefore names the PROFIT bar explicitly rather than `trackedBar`, which would
+              claim a calibration this figure does not have. When the model is refitted, put `money(trackedBar)` back. */}
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
             label="more on the way"
             note={
               c.data
-                ? `expected to clear ${trackedBar === null ? 'the bar' : money(trackedBar)}, from ${c.data.summary.youngStyles} styles under 180 days old`
+                ? `expected to clear £200 profit (the old bar — not yet refitted to revenue), from ${c.data.summary.youngStyles} styles under 180 days old`
                 : undefined
             }
           />
