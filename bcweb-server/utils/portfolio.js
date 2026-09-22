@@ -445,16 +445,49 @@ async function computeWinners() {
     -- Both definitions happen to give 303 today, which is a coincidence and not a reason to keep the old one: they are DIFFERENT
     -- 303s (277 overlap), and only this one includes a style that has stopped selling.
     range_size AS (
-      SELECT COUNT(*)::int AS n FROM (
-        SELECT groupid FROM skusummary
-        UNION
-        SELECT groupid FROM sales
-         WHERE qty > 0 AND groupid IS NOT NULL AND groupid <> ''
-           AND solddate >= CURRENT_DATE - INTERVAL '12 months'
-      ) u
+      SELECT
+        (SELECT COUNT(*) FROM (
+           SELECT groupid FROM skusummary
+           UNION
+           SELECT groupid FROM sales
+            WHERE qty > 0 AND groupid IS NOT NULL AND groupid <> ''
+              AND solddate >= CURRENT_DATE - INTERVAL '12 months'
+         ) u)::int AS n,
+
+        -- THE RANGE A YEAR AGO, RECONSTRUCTED — and it is the one figure on this screen that is an estimate.
+        -- Two things bend it in opposite directions and neither can be fixed retrospectively:
+        --   1. Deletions before 2026-09-22 were never recorded, so a style that existed a year ago and has since been tidied
+        --      away is invisible here. That UNDERSTATES the old range and overstates the growth.
+        --   2. skusummary.created_at is a RECORD date, not a go-live date, so a style stamped two years ago may only have
+        --      started trading recently. That OVERSTATES the old range.
+        -- Reassurance rather than proof: it lands at 195 against 329 today, a gain of 134 on 131 products added, which is the
+        -- consistency you would expect. From 2026-09-22 forward product_event_log records CREATED and DELETED, so this becomes
+        -- exact — and portfolio_snapshot.total_styles will carry a true year of history by late 2027. Prefer that when it exists.
+        (SELECT COUNT(*) FROM (
+           SELECT groupid FROM skusummary WHERE created_at < CURRENT_DATE - INTERVAL '12 months'
+           UNION
+           SELECT groupid FROM sales
+            WHERE qty > 0 AND groupid IS NOT NULL AND groupid <> ''
+              AND solddate >= CURRENT_DATE - INTERVAL '24 months'
+              AND solddate <  CURRENT_DATE - INTERVAL '12 months'
+         ) u)::int AS n_prior,
+
+        -- PRODUCTS MADE, ROLLING 12 MONTHS, and the 12 months before it. Rolling, NOT calendar year to date: a headline meant to
+        -- drive the work cannot reset to nothing every January (a year-to-date box would have read 5 for the whole of last
+        -- January), and the other two figures beside it are both rolling 12-month windows, so a calendar one would be the odd
+        -- ruler out. Counted from product_event_log, which keeps the event after the product is deleted.
+        -- Reports -> New answers the different question of monthly PACE; see routes/analytics-new-additions-trend.js.
+        (SELECT COUNT(*) FROM product_event_log
+          WHERE event = 'CREATED' AND event_at >= CURRENT_DATE - INTERVAL '12 months')::int AS added_12m,
+        (SELECT COUNT(*) FROM product_event_log
+          WHERE event = 'CREATED' AND event_at >= CURRENT_DATE - INTERVAL '24 months'
+            AND event_at < CURRENT_DATE - INTERVAL '12 months')::int AS added_prior_12m
     ),
     stk AS (${STOCK_CTE})
-    SELECT rs.n AS range_size,
+    SELECT rs.n               AS range_size,
+           rs.n_prior         AS range_size_prior,
+           rs.added_12m       AS added_12m,
+           rs.added_prior_12m AS added_prior_12m,
            a.groupid,
            t.shopifytitle                       AS title,
            -- skusummary first (the live catalogue is the authority while the product exists), the sale's own snapshot second.
@@ -535,6 +568,11 @@ async function computeWinners() {
   //
   // It is BAR-INDEPENDENT, so it is read once here and handed to every bar rather than recounted inside the loop.
   const totalStyles = Number(result.rows[0]?.range_size) || 0;
+  // The other two headline figures and their year-ago counterparts. Every row carries the same values (CROSS JOIN), so row 0
+  // will do; read here rather than inside summariseAt because none of them depend on the bar.
+  const totalStylesPrior = Number(result.rows[0]?.range_size_prior) || 0;
+  const added12m = Number(result.rows[0]?.added_12m) || 0;
+  const addedPrior12m = Number(result.rows[0]?.added_prior_12m) || 0;
 
   // The ladder and the movement report keep the narrower "traded in the window" set. A style that sold NOTHING has a profit of
   // exactly 0 and would pile into the loss-making rung, which is a different claim from "it did not sell". They are not drawn on
@@ -568,6 +606,12 @@ async function computeWinners() {
       // constant). Spreading it keeps this payload byte-identical in shape to the pre-toggle version, which is what lets the
       // snapshot writer go on reading summary.winner_count and record the tracked figure whatever the screen is showing.
       ...bars[0],
+      // THE OTHER TWO HEADLINES. Bar-independent, so they sit beside the winner figures rather than inside each bar: raising
+      // the dial to £500 changes how many styles count as winners, not how many products exist or how many were made.
+      // Together the three are the goal (winners), what we hold (range) and the lever (added) — one story at three lags.
+      total_styles_prior: totalStylesPrior,   // reconstructed, and the only estimate on this screen — see the CTE
+      added_12m: added12m,
+      added_prior_12m: addedPrior12m,
       // Every mark on the ladder, so the toggle is instant and cannot disagree with the headline — same read, same arithmetic.
       bars,
       // The distribution behind the count. See profitLadder().

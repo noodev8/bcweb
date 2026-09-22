@@ -3501,7 +3501,16 @@ export interface PortfolioBarSummary {
   joinedThisYear: number;
   leftThisYear: number;
   totalStyles: number;            // THE RANGE: the catalogue now, plus anything that traded in the window and was since deleted
-  otherStyles: number;            // range minus winners — losers, not-yet-proven and never-sold together. The nurturing job. BAR-INDEPENDENT
+  otherStyles: number;            // range minus winners — losers, not-yet-proven and never-sold together. The nurturing job
+  // THE OTHER TWO HEADLINES, each with its year-ago counterpart. All three boxes on the screen are rolling 12-month windows
+  // compared with the 12 months before, so one ruler serves the lot.
+  //
+  // `totalStylesPrior` IS AN ESTIMATE and the only one on the screen: deletions before 2026-09-22 were never logged, and
+  // created_at is a record date. It reads 195 against 329 today, a gain of 134 on 131 products added, which is consistent but
+  // not proof. Treat it as approximate until portfolio_snapshot has a year of its own history.
+  totalStylesPrior: number;
+  added12m: number;               // products made in the last 12 months, from product_event_log. ROLLING, never year-to-date:
+  addedPrior12m: number;          // a headline that drives the work cannot reset to nothing every January. BAR-INDEPENDENT
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
   totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
@@ -3607,6 +3616,9 @@ function mapBarSummary(b: Record<string, unknown> | undefined): PortfolioBarSumm
     totalStyles: Number(b?.total_styles) || 0,
     // Derived server-side from the same two facts the snapshot stores, so it can never disagree with them.
     otherStyles: Number(b?.other_styles) || 0,
+    totalStylesPrior: Number(b?.total_styles_prior) || 0,
+    added12m: Number(b?.added_12m) || 0,
+    addedPrior12m: Number(b?.added_prior_12m) || 0,
     // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
     winnerSharePct: b?.winner_share_pct === null || b?.winner_share_pct === undefined
       ? null : Number(b.winner_share_pct),

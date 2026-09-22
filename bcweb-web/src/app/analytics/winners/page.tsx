@@ -106,14 +106,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, MinusSmallIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  getPortfolioWinners,
-  getPortfolioContenders,
-  getNewAdditionsTrend,
-  updatePortfolioSnapshot,
-  type PortfolioSnapshot,
-  type AdditionsTrendYear,
-} from '@/lib/api';
+import { getPortfolioWinners, getPortfolioContenders, updatePortfolioSnapshot, type PortfolioSnapshot } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // 'YYYY-MM-DD' -> '22 Sep'. Built from the string parts, never `new Date(...)` — these are pg DATEs cast to text precisely so that
@@ -150,8 +143,6 @@ function WinnersPageInner() {
   const w = useApiQuery('portfolio-winners', () => getPortfolioWinners());
   // Loaded only for the "more on the way" box — the 99 rows behind it are never rendered.
   const c = useApiQuery('portfolio-contenders', () => getPortfolioContenders());
-  // The production side: how much new product has been made. Default window is this year and last, which is all this card needs.
-  const t = useApiQuery('portfolio-additions', () => getNewAdditionsTrend());
 
   const s = w.data?.summary;
   const history = w.data?.history ?? [];
@@ -174,16 +165,9 @@ function WinnersPageInner() {
   const prior = sel?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
 
-  // LIKE FOR LIKE, OR IT IS NOT A COMPARISON. `throughMonth` is the last month with real elapsed time in it, so both years are
-  // summed over the SAME months — otherwise a September reading would put nine months against last year's twelve and invent a
-  // collapse. The route returns years ascending, so the current one is last; taken by position rather than by
-  // new Date().getFullYear() because this module's dates all key off the DB's idea of today, not this process's (CLAUDE.md).
-  const years = t.data?.years ?? [];
-  const through = t.data?.throughMonth ?? 12;
-  const ytd = (y: AdditionsTrendYear | undefined) =>
-    y ? y.months.reduce((a, m) => (m.month <= through ? a + m.created : a), 0) : 0;
-  const addedThisYear = ytd(years[years.length - 1]);
-  const addedLastYear = years.length > 1 ? ytd(years[years.length - 2]) : null;
+  // NOTE: "added" comes from GET /portfolio-winners, not from the New screen's trend route. It is a ROLLING 12 months there,
+  // measured on the same ruler as the two figures beside it, and reading it here would cost a second round trip to get a
+  // calendar-year answer to a rolling-window question. Reports -> New still owns the month-by-month pace.
 
   // NO SUCCESS BANNER (owner, 2026-09-22). A green "Recorded — 80 winners" bar was the first version and it was noise: the line
   // beside the button already changes to "N readings recorded, latest 22 Sep" the moment the refresh lands, and the trend gains a
@@ -245,81 +229,106 @@ function WinnersPageInner() {
       )}
 
       {/* ---------------------------------------------------------------------------------------------------------------------
-          THE BIG BOX, AND THE SMALL ONES BESIDE IT. The hero takes half the width on a large screen and the four supporting
-          figures sit in a 2x2 beside it, so the eye lands on the count first and everything else reads as qualification of it.
-          House rule on headline hierarchy: ONE tracked metric is the hero and nothing else may grow into a peer of it.
+          THREE HEADLINES: THE GOAL, WHAT WE HOLD, AND THE LEVER (owner, 2026-09-22 — "Intention is to drive us. We will be
+          pushing to improve those is the point. then we look at the details, but thats after.")
+
+            WINNERS  the goal.   Lags six to twelve months; you cannot push it directly.
+            RANGE    what we hold. Mostly the scoreboard of the other two.
+            ADDED    the lever.  The only one of the three that answers to what you do this week.
+
+          THEY ARE NOT EQUAL AND THE LAYOUT SAYS SO. WINNERS takes half the width and prints at twice the size; the other two are
+          headline-sized but visibly its siblings. The house rule still holds — one tracked metric is the hero — and the goal has
+          to read first or the screen stops being about it.
+
+          ⚠ THE SHARE IS A NOTE, NOT A BOX, AND MUST NEVER GROW AN ARROW. It was proposed as the middle headline and measured
+            first: 24% today against 30% a year ago, i.e. DOWN in the best year on record (winners +22, range +134). It has to
+            fall — 134 products arrived and a style takes one to two years to cross the bar (share by time on sale: 15% under 6m,
+            8% at 6-12m, 24% at 1-2 years, 60% at 2+). A target that goes red when you do the right thing is worse than no target,
+            and the only fast ways to lift it are to stop adding or to delete stock. It stays as small print under RANGE: shown,
+            never driven.
+
+            The honest quality guard is the MATURE share — winners among styles that have had a year or more on sale, 61 of 163 =
+            37% today. That one is immune to how fast you add. It needs a snapshot column and a year of history before its
+            direction means anything, so it is deliberately not here yet.
           --------------------------------------------------------------------------------------------------------------------- */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:col-span-2">
           {w.isLoading ? (
             <div className="h-28 animate-pulse rounded bg-slate-100" />
           ) : (
             <>
-              <span className="block text-8xl font-semibold tabular-nums leading-none text-slate-900 sm:text-[9rem]">
+              <span className="block text-7xl font-semibold tabular-nums leading-none text-slate-900 sm:text-8xl">
                 {count.toLocaleString('en-GB')}
               </span>
               <p className="mt-3 text-xl text-slate-600">winners</p>
-              <div className="mt-4 flex items-center gap-2 text-sm">
-                {delta === 0 ? (
-                  <MinusSmallIcon className="h-5 w-5 text-slate-400" />
-                ) : delta > 0 ? (
-                  <ArrowTrendingUpIcon className="h-5 w-5 text-emerald-600" />
-                ) : (
-                  <ArrowTrendingDownIcon className="h-5 w-5 text-red-600" />
-                )}
-                <span className={delta > 0 ? 'font-medium text-emerald-700' : delta < 0 ? 'font-medium text-red-700' : 'text-slate-500'}>
-                  {delta === 0 ? 'Level on last year' : `${delta > 0 ? '+' : ''}${delta} on last year`}
-                </span>
-              </div>
-
-              {/* WHICH NAMES CARRY THE COUNT. It fills the hero box (which was mostly white space) with the one breakdown that
-                  qualifies the headline rather than competing with it — this is still the same 80, just split.
-
-                  IT SHOWS WINNERS AND UNITS TOGETHER BECAUSE THEY DISAGREE, and that disagreement is the point: Birkenstock had
-                  59 winners on 2,504 units while Lunar had 15 winners on 4,768. Count and volume are different businesses, and a
-                  bar drawn on winners alone would say Birkenstock is four times the story when by units it is half of it.
-                  Bars are scaled to the biggest brand's winner count, matching what the number beside them says. */}
-              {brands.length > 0 && (
-                <div className="mt-6 border-t border-slate-100 pt-4">
-                  <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
-                    <span>by brand</span>
-                    <span>units shifted</span>
-                  </div>
-                  <ul className="space-y-1.5">
-                    {brands.map((b) => (
-                      <li key={b.brand} className="flex items-center gap-3 text-sm">
-                        <span className="w-24 flex-none truncate text-slate-600" title={b.brand}>{b.brand}</span>
-                        <span className="w-6 flex-none text-right font-medium tabular-nums text-slate-900">{b.winners}</span>
-                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                          <span
-                            className="block h-full rounded-full bg-slate-400"
-                            style={{ width: `${Math.max(2, (b.winners / topBrandWinners) * 100)}%` }}
-                          />
-                        </span>
-                        <span className="w-14 flex-none text-right tabular-nums text-slate-400">
-                          {b.units.toLocaleString('en-GB')}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <Delta value={delta} suffix="on last year" />
+              <p className="mt-1 text-xs text-slate-400">{prior.toLocaleString('en-GB')} a year ago, same bar</p>
             </>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-rows-3">
-          {/* All four read off `sel`, so the whole headline moves with the dial rather than the count moving alone — a 29 sitting
-              next to £367,545 of revenue earned by 80 styles would be a straightforwardly wrong screen. */}
-          {/* The note carries BOTH sides of the fraction, because the gap is the job. "249 others" is deliberately
-              undifferentiated — losers, the not-yet-proven and the never-sold are one pile here (owner: "Might be losers, or
-              might be new but I dont care"). Splitting them would be a different screen. */}
-          <Stat
-            loading={w.isLoading}
-            value={sel?.winnerSharePct === null || sel?.winnerSharePct === undefined ? '—' : `${sel.winnerSharePct}%`}
-            label="of the range"
-            note={sel ? `${count} winners, ${sel.otherStyles.toLocaleString('en-GB')} others` : undefined}
-          />
+        <Headline
+          loading={w.isLoading}
+          value={(sel?.totalStyles ?? 0).toLocaleString('en-GB')}
+          label="range"
+          delta={sel ? sel.totalStyles - sel.totalStylesPrior : null}
+          deltaSuffix="on last year"
+          deltaNeutral
+          note={
+            sel
+              ? `${sel.winnerSharePct === null ? '—' : `${sel.winnerSharePct}%`} are winners · ${sel.otherStyles.toLocaleString('en-GB')} others`
+              : undefined
+          }
+        />
+
+        {/* The only box that leads anywhere. Reports -> New has the month-by-month pace behind this number. */}
+        <Headline
+          loading={w.isLoading}
+          value={(sel?.added12m ?? 0).toLocaleString('en-GB')}
+          label="added"
+          delta={sel ? sel.added12m - sel.addedPrior12m : null}
+          deltaSuffix="on the year before"
+          note="products made, last 12 months"
+          href="/analytics/new-additions?from=/analytics/winners&back=Winners"
+        />
+      </div>
+
+      {/* ---------------------------------------------------------------------------------------------------------------------
+          AND THEN THE DETAIL — "then we look at the details, but thats after". Everything below qualifies the three above and is
+          drawn at a size that says so.
+          --------------------------------------------------------------------------------------------------------------------- */}
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* WHICH NAMES CARRY THE COUNT. It shows winners and units together BECAUSE THEY DISAGREE, and that disagreement is the
+            point: Birkenstock had 59 winners on 2,504 units while Lunar had 15 winners on 4,768. Count and volume are different
+            businesses, and a bar drawn on winners alone would say Birkenstock is four times the story when by units it is half
+            of it. Bars are scaled to the biggest brand's winner count, matching what the number beside them says. */}
+        {brands.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
+              <span>winners by brand</span>
+              <span>units shifted</span>
+            </div>
+            <ul className="space-y-1.5">
+              {brands.map((b) => (
+                <li key={b.brand} className="flex items-center gap-3 text-sm">
+                  <span className="w-24 flex-none truncate text-slate-600" title={b.brand}>{b.brand}</span>
+                  <span className="w-6 flex-none text-right font-medium tabular-nums text-slate-900">{b.winners}</span>
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <span
+                      className="block h-full rounded-full bg-slate-400"
+                      style={{ width: `${Math.max(2, (b.winners / topBrandWinners) * 100)}%` }}
+                    />
+                  </span>
+                  <span className="w-14 flex-none text-right tabular-nums text-slate-400">
+                    {b.units.toLocaleString('en-GB')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-1 lg:grid-rows-3">
           <Stat
             loading={w.isLoading}
             value={sel ? money(sel.totalRevenue12m) : '—'}
@@ -332,19 +341,9 @@ function WinnersPageInner() {
             label="units shifted"
             note="packed and sent, last 12 months"
           />
-          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same bar, previous 12 months" />
-          {/* THIS ONE DOES NOT MOVE WITH THE DIAL, and the note says which bar it means. The conversion model behind it was
-              fitted on "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js) — re-reading it
-              at £1,000 would need a refit, not a filter, so it states its own bar instead of silently answering a different
-              question. Naming the bar unconditionally keeps it honest at £200 too. */}
-          {/* The two forward-looking figures sit together at the end: what has been MADE, and what that is expected to turn into. */}
-          <Stat
-            loading={t.isLoading}
-            value={addedThisYear.toLocaleString('en-GB')}
-            label="added this year"
-            note={addedLastYear === null ? undefined : `${addedLastYear.toLocaleString('en-GB')} in the same months last year`}
-            href="/analytics/new-additions?from=/analytics/winners&back=Winners"
-          />
+          {/* Does not move with the dial, and the note says which bar it means. The conversion model behind it was fitted on
+              "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js), so re-reading it at
+              £1,000 would need a refit, not a filter. Naming the bar keeps it honest at £200 too. */}
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
@@ -384,6 +383,74 @@ function WinnersPageInner() {
       ) : null}
 
     </AppShell>
+  );
+}
+
+// The year-on-year movement under a headline. Shared by all three boxes so one ruler and one set of words serve the lot:
+// every figure on this screen is a rolling 12 months against the 12 months before it.
+//
+// GREEN AND RED ARE EARNED HERE and nowhere else on the page — WINNERS and ADDED are numbers the owner is pushing up, so
+// direction is the whole message. Zero is neither: a flat year is a fact, not a failure.
+//
+// ⚠ `neutral` EXISTS FOR THE RANGE, and it is not decoration. A shrinking range is not a loss: "Deletions happen, as I do clean
+//   the database and products. They are in the way and noise if I cant get any more" (owner, 2026-09-22). A style he can no
+//   longer buy is removed ON PURPOSE, and painting that red would be the same mistake as targeting the share — a signal that
+//   goes red when the right thing is done. The range reports its movement and passes no judgement on it.
+function Delta({ value, suffix, neutral = false }: { value: number | null; suffix: string; neutral?: boolean }) {
+  if (value === null) return null;
+  const Icon = value === 0 ? MinusSmallIcon : value > 0 ? ArrowTrendingUpIcon : ArrowTrendingDownIcon;
+  const tone = neutral ? 'text-slate-400' : value > 0 ? 'text-emerald-600' : value < 0 ? 'text-red-600' : 'text-slate-400';
+  const textTone = neutral
+    ? 'text-slate-500'
+    : value > 0 ? 'font-medium text-emerald-700' : value < 0 ? 'font-medium text-red-700' : 'text-slate-500';
+  return (
+    <div className="mt-4 flex items-center gap-2 text-sm">
+      <Icon className={`h-5 w-5 ${tone}`} />
+      <span className={textTone}>
+        {value === 0 ? `Level ${suffix}` : `${value > 0 ? '+' : ''}${value.toLocaleString('en-GB')} ${suffix}`}
+      </span>
+    </div>
+  );
+}
+
+// One of the two smaller headlines beside WINNERS. Headline-sized so it reads as part of the top row, deliberately about half
+// the hero's type size so it never becomes its peer. `href` makes the whole box a doorway — see Stat for why the affordance is
+// a hover lift rather than a colour.
+function Headline({
+  loading,
+  value,
+  label,
+  delta,
+  deltaSuffix,
+  deltaNeutral,
+  note,
+  href,
+}: {
+  loading: boolean;
+  value: string;
+  label: string;
+  delta: number | null;
+  deltaSuffix: string;
+  deltaNeutral?: boolean;
+  note?: string;
+  href?: string;
+}) {
+  const body = loading ? (
+    <div className="h-28 animate-pulse rounded bg-slate-100" />
+  ) : (
+    <>
+      <span className="block text-4xl font-semibold tabular-nums leading-none text-slate-900">{value}</span>
+      <p className="mt-2 text-base text-slate-600">{label}</p>
+      <Delta value={delta} suffix={deltaSuffix} neutral={deltaNeutral} />
+      {note && <p className="mt-1 text-xs leading-snug text-slate-400">{note}</p>}
+    </>
+  );
+  const shell = 'block rounded-lg border border-slate-200 bg-white p-6 shadow-sm';
+  if (!href) return <div className={shell}>{body}</div>;
+  return (
+    <Link href={href} className={`${shell} transition hover:border-slate-300 hover:shadow-md`}>
+      {body}
+    </Link>
   );
 }
 
