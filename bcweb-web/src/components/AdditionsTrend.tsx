@@ -17,18 +17,18 @@ Counted from product_event_log, which keeps the event after the product is delet
 counts as work done (skusummary.created_at only ever shows survivors). Months before the log was installed are backfilled from the
 catalogue and therefore survivors-only; the owner's call is that this does not need saying on screen.
 
-THE YEAR TARGET, AND WHY IT IS A YEAR AND NOT A MONTH. The owner asked for a target to "keep looking/adding" — "This is our
-business. Not finding customers (Amazon and Google do that). We find products and build our portfolio." A MONTH-ON-MONTH target
-was considered and rejected on the numbers: 2026 ran 5, 0, 22, 8, 15, 30, 22, 3, 16 — mean 15, sd 9, and three zero months in
-2025. July to August would read as "down 87%" when nothing was wrong, and a target that cries wolf every other month is one you
-stop reading. It is also partial for most of a month: on the 2nd you would be "behind" by construction. A year-to-date figure
-against a year number only ever goes up, so a quiet August does not dent it and a heavy month visibly moves it.
+NO TARGET, DELIBERATELY. A 200-a-year target was set by the owner and removed within the hour, by him: "Im scared about target
+now. We might rush to fill rubbish. I think it will be noise. We should rush to build a winning portfolio, not just crap."
 
-200 IS THE OWNER'S NUMBER, set 2026-09-22, not a computed one — a target nobody chose is a score, not a target. For context when
-it is next reviewed: 121 by late September against 40 in the whole of 2025, and the measured first-year hit rate is 10-13% (9 of
-94 for the 2024 cohort, 4 of 30 for 2025), rising to ~26% by year two as styles climb. So 200 additions is worth roughly 20-25
-winners in their first year and more later — which is the arithmetic that makes it a target for the Winners count rather than a
-production quota.
+THE ARGUMENT, so it is not relitigated: output went from 40 in 2025 to 121 by September 2026 WITH NO TARGET IN PLACE. The
+behaviour a target would be meant to drive was already happening at three times the rate, so it bought nothing and risked the
+one thing that would actually hurt — filling the number with product nobody wants. Measured cohort quality happens to lean the
+other way (products made in 2026 Q1 earned a mean of £146 in their first 180 days against £55 for 2025 Q3, with duds falling
+from 16% to 4%), but that is not why it went: past data cannot settle a question about what a target would CHANGE.
+
+The year-on-year line above is a fact rather than a quota, it already says the same encouraging thing, and it cannot be filled
+with rubbish to make a bar go green. A monthly target was rejected earlier the same day on separate grounds — the months are
+too lumpy (2026 ran 5, 0, 22, 8, 15, 30, 22, 3, 16; mean 15, sd 9) for month-on-month to be anything but noise.
 
 Loads independently (own useApiQuery) so a slow trend never holds up the list. Consumes GET /analytics-new-additions-trend.
 =======================================================================================================================================
@@ -44,9 +44,6 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const NOW_COLOR = '#2a78d6';
 const PREV_COLOR = '#cbd5e1';
 
-// New products to build this calendar year. THE OWNER'S NUMBER (2026-09-22), not a fitted one — see the header for the context to
-// review it against. It is a display target and touches nothing else: no alert, no colour change, no email when it slips.
-const YEAR_TARGET = 200;
 
 // Running total across a year's 12 months.
 function cumulative(y: AdditionsTrendYear): number[] {
@@ -75,13 +72,6 @@ export default function AdditionsTrend() {
   const delta = prevAtSamePoint === null ? null : ytd - prevAtSamePoint;
   const deleted = years.reduce((s, y) => s + y.months.reduce((t, m) => t + m.deleted, 0), 0);
 
-  // Progress against the year. `through` counts the current month as elapsed, so the months LEFT are the whole ones after it —
-  // which makes the required rate slightly demanding rather than slightly flattering, the right way round for a target. Guarded
-  // for December, where there is no "rest of the year" to divide by.
-  const toGo = Math.max(0, YEAR_TARGET - ytd);
-  const monthsLeft = Math.max(0, 12 - through);
-  const perMonth = monthsLeft > 0 ? Math.round(toGo / monthsLeft) : null;
-  const targetPct = Math.min(100, Math.round((ytd / YEAR_TARGET) * 100));
 
   // Geometry: 12 equal month bands, each holding last year's bar then this year's. Bars are sized off the band so the chart keeps
   // working if the month count ever changes.
@@ -128,25 +118,7 @@ export default function AdditionsTrend() {
         </div>
       </div>
 
-      {/* THE TARGET. A bar and one line, directly under the figure it measures — not a box of its own, which would make the
-          screen answer "how are we doing" twice. The bar carries this year's blue so it reads as the same subject as the chart. */}
-      <div className="mt-4">
-        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-          <span className="block h-full rounded-full" style={{ width: `${targetPct}%`, backgroundColor: NOW_COLOR }} />
-        </div>
-        <div className="mt-1.5 text-xs text-slate-500">
-          <strong className="font-semibold text-slate-700">{ytd} of {YEAR_TARGET}</strong> for the year
-          {toGo === 0 ? (
-            <> — target met.</>
-          ) : perMonth === null ? (
-            <> · {toGo} to go.</>
-          ) : (
-            <> · {toGo} to go over the {monthsLeft} month{monthsLeft === 1 ? '' : 's'} left, about {perMonth} a month.</>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-3 overflow-x-auto">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="w-full"
