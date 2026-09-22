@@ -197,10 +197,14 @@ function summariseAt(styles, bar, totalStyles) {
     winner_count_prior_year: winnerCountPriorYear,
     joined_this_year: joined,
     left_this_year: left,
-    // Styles that traded at all in the window, and the winners' share of them. Rounded to a whole percent: this is a
-    // shape-of-the-business figure read at a glance, and a decimal place on it would imply a precision it does not have.
+    // The whole range, and the winners' share of it. Rounded to a whole percent: this is a shape-of-the-business figure read at
+    // a glance, and a decimal place on it would imply a precision it does not have.
     total_styles: totalStyles,
     winner_share_pct: totalStyles > 0 ? Math.round((winnerCount / totalStyles) * 100) : null,
+    // EVERYTHING THAT IS NOT A WINNER — losers, the not-yet-proven, the never-sold, undifferentiated on purpose ("Might be
+    // losers, or might be new but I dont care", owner 2026-09-22). This is the nurturing job stated as one number. Derived, not
+    // stored: a snapshot keeps winner_count and total_styles, and a third column could only ever disagree with them.
+    other_styles: Math.max(0, totalStyles - winnerCount),
     // Kept in the payload but NOT shown on the Winners screen — the owner's call, 2026-09-22: "I'm not sure I care about
     // values. It is the amount before adverts? I don't care." It stays because it is already stored in every snapshot row.
     total_profit_12m: round2(totalProfit12m),
@@ -425,8 +429,33 @@ async function computeWinners() {
         AND groupid <> ''
       GROUP BY groupid
     ),
+    -- THE RANGE. Everything that was part of the business over the window: the catalogue we hold now, PLUS anything that traded
+    -- in the last 12 months and has since been deleted. The second half is the owner's call, 2026-09-22:
+    --
+    --   "A product can come in for a month, do its job and leave. I clean the database but we have success."
+    --
+    -- So a style that earned £518 over the winter and was then tidied out of skusummary still counts in both the numerator and
+    -- the denominator. UNION (not UNION ALL) because the overlap is most of it — 277 of the 329 are in both halves today.
+    --
+    -- WHAT THIS REPLACED, and why: the denominator used to be "styles that traded in the window", which silently excluded the 26
+    -- styles that sold NOTHING. That flatters the share by dropping exactly the products the owner most needs to see — "I want to
+    -- see how many Winners there are and how many (others)... What is the gap between winners and our range." The gap IS the
+    -- nurturing job, and a denominator that hides the worst of it cannot measure it.
+    --
+    -- Both definitions happen to give 303 today, which is a coincidence and not a reason to keep the old one: they are DIFFERENT
+    -- 303s (277 overlap), and only this one includes a style that has stopped selling.
+    range_size AS (
+      SELECT COUNT(*)::int AS n FROM (
+        SELECT groupid FROM skusummary
+        UNION
+        SELECT groupid FROM sales
+         WHERE qty > 0 AND groupid IS NOT NULL AND groupid <> ''
+           AND solddate >= CURRENT_DATE - INTERVAL '12 months'
+      ) u
+    ),
     stk AS (${STOCK_CTE})
-    SELECT a.groupid,
+    SELECT rs.n AS range_size,
+           a.groupid,
            t.shopifytitle                       AS title,
            -- skusummary first (the live catalogue is the authority while the product exists), the sale's own snapshot second.
            COALESCE(NULLIF(TRIM(ss.brand), ''),
@@ -440,6 +469,8 @@ async function computeWinners() {
            a.units_prior_12m,
            COALESCE(st.stock, 0)                AS stock_units
     FROM agg a
+    -- One row, joined to every row: the range size travels with the result rather than costing a second round trip.
+    CROSS JOIN range_size rs
     LEFT JOIN skusummary ss ON ss.groupid = a.groupid
     LEFT JOIN title      t  ON t.groupid  = a.groupid
     LEFT JOIN stk        st ON st.groupid = a.groupid
@@ -499,18 +530,16 @@ async function computeWinners() {
     };
   });
 
-  // The denominator for "what share of the range is earning its keep". STYLES THAT SOLD AT ALL IN THE WINDOW — the same table,
-  // the same 12 months and the same qty > 0 filter as the numerator, so the two are on identical footing and the percentage
-  // cannot be gamed by a definition mismatch. Measured 2026-09-22: 80 of 303 = 26%.
+  // THE DENOMINATOR: the whole range, counted in SQL (see the range_size CTE for what is in it and why). Every row carries the
+  // same figure, so any row will do; 0 only when there is nothing at all, which is a fresh install.
   //
-  // Three other denominators were measured and rejected for being no more informative and harder to explain: live Shopify styles
-  // (296 -> 27%), every style in skusummary (303 -> 26%), and stocked-or-sold (324 -> 25%). THE ANSWER IS ~26% WHICHEVER IS USED,
-  // so this is a labelling choice, not a numerical one — which is exactly why it should be the one that is easiest to say out
-  // loud: "of everything that sold this year, a quarter of it earns its keep".
-  //
-  // It is BAR-INDEPENDENT, so it is counted once here and handed to every bar rather than recounted inside the loop.
+  // It is BAR-INDEPENDENT, so it is read once here and handed to every bar rather than recounted inside the loop.
+  const totalStyles = Number(result.rows[0]?.range_size) || 0;
+
+  // The ladder and the movement report keep the narrower "traded in the window" set. A style that sold NOTHING has a profit of
+  // exactly 0 and would pile into the loss-making rung, which is a different claim from "it did not sell". They are not drawn on
+  // the screen today in any case — see the page header.
   const tradedStyles = styles.filter((s) => s.units12m !== 0);
-  const totalStyles = tradedStyles.length;
 
   // The same summary, taken at each mark on the ladder.
   const bars = WINNER_BAR_LADDER.map((bar) => summariseAt(styles, bar, totalStyles));

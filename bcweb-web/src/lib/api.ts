@@ -3500,7 +3500,8 @@ export interface PortfolioBarSummary {
   winnerCountPriorYear: number;   // the SAME bar applied to the previous 12 months, so the comparison is like-for-like
   joinedThisYear: number;
   leftThisYear: number;
-  totalStyles: number;            // styles that traded at all in the window — the denominator for the share. BAR-INDEPENDENT
+  totalStyles: number;            // THE RANGE: the catalogue now, plus anything that traded in the window and was since deleted
+  otherStyles: number;            // range minus winners — losers, not-yet-proven and never-sold together. The nurturing job. BAR-INDEPENDENT
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
   totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
@@ -3588,7 +3589,8 @@ export interface PortfolioSnapshot {
   youngStyles: number;
   expectedWinners: number;
   highConfidenceCount: number;    // the LEADING half — where this goes, the winner count follows in about six months
-  totalStyles: number;            // the denominator AS IT WAS THAT DAY — a share needs its own history, not today's total
+  totalStyles: number;            // the RANGE as it was that day — a share needs its own history, not today's total. The gap
+                                  // between this and winnerCount is what the trend chart shades
   winnerSharePct: number | null;  // derived server-side from the two stored facts. null on rows predating totalStyles
 }
 
@@ -3603,6 +3605,8 @@ function mapBarSummary(b: Record<string, unknown> | undefined): PortfolioBarSumm
     joinedThisYear: Number(b?.joined_this_year) || 0,
     leftThisYear: Number(b?.left_this_year) || 0,
     totalStyles: Number(b?.total_styles) || 0,
+    // Derived server-side from the same two facts the snapshot stores, so it can never disagree with them.
+    otherStyles: Number(b?.other_styles) || 0,
     // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
     winnerSharePct: b?.winner_share_pct === null || b?.winner_share_pct === undefined
       ? null : Number(b.winner_share_pct),

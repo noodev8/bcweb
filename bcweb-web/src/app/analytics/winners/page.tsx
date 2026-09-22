@@ -80,11 +80,23 @@ style built in March and killed in June would read as though the work never happ
 (2026-09-22) count survivors only and are a FLOOR — the New screen marks that boundary on its chart, which is another reason
 this card is a doorway rather than a destination.
 
-WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
-same window, same filter as the count, so the two are on identical footing. Three other denominators were measured and all landed
-at 25-27%, so the figure is robust and the choice is about which is easiest to say out loud, not which is right.
+WHAT THE SHARE MEANS, AND THE GAP UNDER IT. "24% of the range" is 80 winners over the 329 styles that were part of the business
+in the last 12 months — the catalogue as it stands, plus anything that traded and has since been deleted. The second half is the
+owner's call (2026-09-22): "A product can come in for a month, do its job and leave. I clean the database but we have success."
+A style that earned £518 over the winter and was then tidied away counts on both sides of the fraction.
 
-Guarded by AppShell. Consumes GET /portfolio-winners, GET /portfolio-contenders and POST /portfolio-snapshot-update.
+THE DENOMINATOR USED TO BE "STYLES THAT TRADED IN THE WINDOW" AND THAT WAS WRONG. It dropped the 26 styles that sold nothing —
+precisely the ones the owner needs in view: "I want to see how many Winners there are and how many (others) as such. Might be
+losers, or might be new but I dont care. What is the gap between winners and our range." THE GAP IS THE OTHER HALF OF THE JOB —
+"our other job apart from searching for new products is nurturing the existing ones" — so a denominator that hid the worst of it
+could not measure the thing it exists to measure. Both definitions happen to give 303 today; they are different 303s (277
+overlap), and the coincidence is not a reason to keep the flattering one.
+
+THE TREND SHOWS BOTH LINES NOW, with the gap between them shaded: the range climbing as product is added, the winners climbing as
+product matures, and whether the space between is opening or closing. That is the whole business in one picture, and it is why
+the chart broke its own one-line rule — the second line is not a competing metric, it is the FIRST ONE'S DENOMINATOR.
+
+Guarded by AppShell.Guarded by AppShell. Consumes GET /portfolio-winners, GET /portfolio-contenders and POST /portfolio-snapshot-update.
 =======================================================================================================================================
 */
 
@@ -299,11 +311,14 @@ function WinnersPageInner() {
         <div className="grid grid-cols-2 gap-4 lg:grid-rows-3">
           {/* All four read off `sel`, so the whole headline moves with the dial rather than the count moving alone — a 29 sitting
               next to £367,545 of revenue earned by 80 styles would be a straightforwardly wrong screen. */}
+          {/* The note carries BOTH sides of the fraction, because the gap is the job. "249 others" is deliberately
+              undifferentiated — losers, the not-yet-proven and the never-sold are one pile here (owner: "Might be losers, or
+              might be new but I dont care"). Splitting them would be a different screen. */}
           <Stat
             loading={w.isLoading}
             value={sel?.winnerSharePct === null || sel?.winnerSharePct === undefined ? '—' : `${sel.winnerSharePct}%`}
             label="of the range"
-            note={sel ? `${count} of ${sel.totalStyles} that sold this year` : undefined}
+            note={sel ? `${count} winners, ${sel.otherStyles.toLocaleString('en-GB')} others` : undefined}
           />
           <Stat
             loading={w.isLoading}
@@ -411,8 +426,15 @@ function Stat({
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// The trend. ONE LINE, and it is the count — the same restraint as the hero: this screen tracks one number, and a chart with four
-// series on it would quietly demote it. Lightweight inline SVG, no chart library, matching Stock Position and Birk Availability.
+// The trend. TWO LINES — the range, and the winners inside it, with the gap between them shaded.
+//
+// This is not a relaxation of the one-metric rule, and the distinction matters or the chart will grow a third line next. The
+// second line is not a competing measure: IT IS THE FIRST ONE'S DENOMINATOR. Winners alone cannot say whether a rising count
+// means the business is converting better or simply got bigger, and the gap between the two is the owner's other job — "our
+// other job apart from searching for new products is nurturing the existing ones" (2026-09-22). One picture: product going in
+// at the top, winners coming through at the bottom, and whether the space between is opening or closing.
+//
+// Lightweight inline SVG, no chart library, matching Stock Position and Birk Availability.
 //
 // THE X AXIS IS THE SEQUENCE OF READINGS, NOT TIME. Points are recorded by hand, so they are irregularly spaced — two presses a day
 // apart then a three-month gap is normal. Spacing them evenly makes the shape readable; each point carries its real date in the
@@ -422,37 +444,61 @@ function Stat({
 // THE Y AXIS IS ZEROED. For a count the owner is trying to grow, a floating baseline turns ordinary wobble into a cliff — the whole
 // point is to see the level, not a magnified slice of it.
 // ---------------------------------------------------------------------------------------------------------------------------------
+// Winners carry the blue — they are the tracked figure. The range is slate and recessive: a boundary for the shaded gap to sit
+// under, not a second subject competing for the eye.
 const TREND_COLOR = '#2a78d6';
+const RANGE_COLOR = '#94a3b8';
+const GAP_FILL = '#e2e8f0';
 
 function WinnerTrendChart({ rows, trackedBar }: { rows: PortfolioSnapshot[]; trackedBar: number | null }) {
-  const W = 720, H = 220, padL = 34, padR = 16, padT = 12, padB = 24;
+  const W = 720, H = 240, padL = 40, padR = 16, padT = 12, padB = 24;
   const n = rows.length;
 
-  // Headroom so the line never runs along the top edge, and a floor of 1 so a series of zeroes still has a scale to draw on.
-  const maxY = Math.max(1, ...rows.map((r) => r.winnerCount)) * 1.1;
+  // Scaled to the RANGE, not the winners, so the gap is drawn at its true size. A chart scaled to the winners would push the
+  // range line off the top and hide the very thing it is here to show.
+  const maxY = Math.max(1, ...rows.map((r) => Math.max(r.totalStyles, r.winnerCount))) * 1.1;
   const x = (i: number) => padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
   const y = (v: number) => padT + (1 - v / maxY) * (H - padT - padB);
-  const points = rows.map((r, i) => `${x(i)},${y(r.winnerCount)}`).join(' ');
+
+  const winnerPts = rows.map((r, i) => `${x(i)},${y(r.winnerCount)}`).join(' ');
+  const rangePts = rows.map((r, i) => `${x(i)},${y(r.totalStyles)}`).join(' ');
+  // The gap, as one closed shape: along the range, back along the winners. A row that predates the totalStyles column stores 0
+  // and would drag the band to the floor, so the shape is only drawn when every point has a real range.
+  const haveRange = rows.every((r) => r.totalStyles > 0);
+  const gapPath = haveRange
+    ? `${rangePts} ${rows.map((r, i) => `${x(n - 1 - i)},${y(rows[n - 1 - i].winnerCount)}`).join(' ')}`
+    : null;
 
   const first = rows[0];
   const last = rows[n - 1];
   const change = last.winnerCount - first.winnerCount;
+  const gapChange = haveRange ? (last.totalStyles - last.winnerCount) - (first.totalStyles - first.winnerCount) : null;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        {/* The bar is named ON the chart, always — not only when the dial is off it. Every stored point was taken at the
-            tracked bar and nothing in the table records that, so the label is the only thing standing between this line and
-            someone reading it as the count they happen to be looking at. */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <span className="font-medium text-slate-600">
           Winners over time{trackedBar === null ? '' : `, at the ${money(trackedBar)} bar`}
         </span>
         <span>
           {change === 0 ? 'Level' : change > 0 ? `Up ${change}` : `Down ${Math.abs(change)}`} since {shortDate(first.date)}
         </span>
+        {/* The gap's own direction, stated rather than left to be eyeballed off a shaded band. Widening is not automatically
+            bad — it is what adding product looks like — so this reports it and does not judge it. */}
+        {gapChange !== null && gapChange !== 0 && (
+          <span>gap {gapChange > 0 ? 'widened' : 'closed'} by {Math.abs(gapChange)}</span>
+        )}
+        <span className="ml-auto inline-flex items-center gap-3">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded" style={{ backgroundColor: TREND_COLOR }} /> winners
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded" style={{ backgroundColor: RANGE_COLOR }} /> range
+          </span>
+        </span>
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 460 }} role="img" aria-label="Number of winners over time">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 460 }} role="img" aria-label="Winners against the whole range over time">
         {[0, Math.round(maxY / 2), Math.round(maxY)].map((v) => (
           <g key={`g${v}`}>
             <line x1={padL} y1={y(v)} x2={W - padR} y2={y(v)} stroke="#f1f5f9" />
@@ -466,11 +512,14 @@ function WinnerTrendChart({ rows, trackedBar }: { rows: PortfolioSnapshot[]; tra
           return <text key={`x${r.date}`} x={x(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">{shortDate(r.date)}</text>;
         })}
 
-        <polyline points={points} fill="none" stroke={TREND_COLOR} strokeWidth={2} />
+        {gapPath && <polygon points={gapPath} fill={GAP_FILL} />}
+        {haveRange && <polyline points={rangePts} fill="none" stroke={RANGE_COLOR} strokeWidth={1.5} />}
+        <polyline points={winnerPts} fill="none" stroke={TREND_COLOR} strokeWidth={2} />
+
         {rows.map((r, i) => (
           <circle key={r.date} cx={x(i)} cy={y(r.winnerCount)} r={4} fill={TREND_COLOR} stroke="#fff" strokeWidth={2}>
             <title>
-              {`${r.date}: ${r.winnerCount} winners${r.winnerSharePct === null ? '' : ` — ${r.winnerSharePct}% of ${r.totalStyles}`}`}
+              {`${r.date}: ${r.winnerCount} winners${r.totalStyles > 0 ? ` of ${r.totalStyles} — ${r.totalStyles - r.winnerCount} others${r.winnerSharePct === null ? '' : `, ${r.winnerSharePct}%`}` : ''}`}
             </title>
           </circle>
         ))}
