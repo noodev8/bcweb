@@ -205,65 +205,44 @@ function WinnersPageInner() {
           toggle is not a filter, it is the definition being read aloud, and a bare row of amounts would be a filter. It sits
           ABOVE the hero so the definition arrives before the number it produces.
 
-          THE OFF-TRACKED LINE IS LEAD, NOT GOLD PLATING. The moment the screen shows 29 instead of 80, everything else on the
-          page — the trend, what "Update now" will record — is still the £200 reading, and nothing else says so.
+          THE TRACKED BAR IS MARKED WITH SIZE AND COLOUR, NOT WITH WORDS. It is the one read daily, so it is the only coloured,
+          full-size mark and the rest are visibly peeks. A previous version said all this in a line of text under the dial and
+          the owner deleted it — "all you have done is added EXTRA text and its confusing". Guide the click, do not explain it.
+          The single clause that survives is the off-bar one: the trend does not follow the dial, and nothing else says so.
           --------------------------------------------------------------------------------------------------------------------- */}
       {bars.length > 1 && (
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="text-sm text-slate-500">A winner earns more than</span>
-            <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
-              {bars.map((b) => {
-                const isSel = sel?.bar === b.bar;
-                const isHome = b.bar === trackedBar;
-                return (
-                  <button
-                    key={b.bar}
-                    onClick={() => setBar(b.bar)}
-                    aria-pressed={isSel}
-                    // HOME IS BIGGER, EVEN WHEN IT IS NOT SELECTED. £200 is the bar he reads every day, so it is the only mark
-                    // drawn at full size and full weight; the others are peeks and are sized like peeks. When you are off it,
-                    // home keeps a ring so the way back is visible without reading any words.
-                    className={[
-                      'rounded transition tabular-nums',
-                      isHome ? 'px-3.5 py-1.5 text-base font-semibold' : 'px-2.5 py-1 text-sm',
-                      isSel
-                        ? 'bg-slate-800 text-white'
-                        : isHome
-                          ? 'text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50'
-                          : 'text-slate-500 hover:bg-slate-50',
-                    ].join(' ')}
-                  >
-                    {money(b.bar)}
-                  </button>
-                );
-              })}
-            </div>
-            <span className="text-sm text-slate-500">in 12 months</span>
-            {/* The way back, as a control rather than a sentence. It appears only when there is somewhere to go back to. */}
-            {offTracked && (
-              <button
-                onClick={() => setBar(trackedBar)}
-                className="rounded-md px-2 py-1 text-sm font-medium text-slate-600 underline-offset-2 transition hover:bg-slate-50 hover:underline"
-              >
-                Back to {money(trackedBar as number)}
-              </button>
-            )}
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sm text-slate-500">A winner earns more than</span>
+          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+            {bars.map((b) => {
+              const isSel = sel?.bar === b.bar;
+              // HOME IS THE ONLY MARK WITH A COLOUR AND THE ONLY ONE AT FULL SIZE. The tracked bar is what gets read daily;
+              // the others are peeks. Guidance here is visual, not written — an earlier version explained the same thing in a
+              // line of text under the dial and the owner cut it: "all you have done is added EXTRA text and its confusing."
+              const isHome = b.bar === trackedBar;
+              return (
+                <button
+                  key={b.bar}
+                  onClick={() => setBar(b.bar)}
+                  aria-pressed={isSel}
+                  className={[
+                    'rounded transition tabular-nums',
+                    isHome ? 'px-4 py-1.5 text-lg font-semibold' : 'px-2.5 py-1 text-sm',
+                    isSel && isHome ? 'bg-brand-600 text-white' : '',
+                    isSel && !isHome ? 'bg-slate-700 text-white' : '',
+                    !isSel && isHome ? 'bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100 hover:bg-brand-100' : '',
+                    !isSel && !isHome ? 'text-slate-500 hover:bg-slate-50' : '',
+                  ].join(' ')}
+                >
+                  {money(b.bar)}
+                </button>
+              );
+            })}
           </div>
-          {offTracked ? (
-            <p className="mt-2 text-xs text-slate-400">
-              Peeking at the {money(sel?.bar ?? 0)} bar. The trend below, and anything &ldquo;Update now&rdquo; records, stay on{' '}
-              {money(trackedBar as number)}.
-            </p>
-          ) : (
-            // WHY £200 IS HOME, stated once and permanently. It is the only rung a new style can reach inside its first year
-            // (2 of 148 new styles cleared £500, none cleared £1,000), so it is the only bar at which this year's buying shows
-            // up in this year's number. Without this line the higher marks look like better versions of the same thing.
-            <p className="mt-2 text-xs text-slate-400">
-              {money(trackedBar as number)} is the bar this screen tracks — the only one a new style can reach in its first year.
-              The others are a peek.
-            </p>
-          )}
+          <span className="text-sm text-slate-500">in 12 months</span>
+          {/* The ONE thing text still has to do here: the trend and the recorder do not follow the dial, and nothing else on
+              the page says so. Only shown off-bar, and kept to a clause. */}
+          {offTracked && <span className="text-xs text-slate-400">trend stays on {money(trackedBar as number)}</span>}
         </div>
       )}
 
