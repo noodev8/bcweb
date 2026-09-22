@@ -121,7 +121,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   /*
   USAGE TELEMETRY (owner, 2026-09-22) — one row per screen opened, so that "which screens are used and which are ignored" is
   answerable when it eventually gets asked. It cannot be answered retrospectively, hence collecting now with no report built yet;
-  the server side and the caveats are in migrations/20260922e_screen_view.sql.
+  the server side, the table shape and the caveats are in the header of bcweb-server/routes/screen-view.js.
 
   HERE, in AppShell, because this wraps every page — a call per dashboard tile would miss the header pins, deep links and bookmarks,
   which are exactly the navigation habits worth knowing about.
