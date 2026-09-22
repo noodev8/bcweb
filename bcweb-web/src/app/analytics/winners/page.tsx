@@ -53,30 +53,22 @@ disagree with each other. NOTHING THE TOGGLE DOES IS RECORDED: the trend line an
 tracked £200 bar, because a series measured with a ruler that moves when someone is curious is not a series. The screen says so
 in a line under the toggle whenever it is off the tracked bar — that line is not decoration, it is the guard-rail.
 
-AND THEN THE REPORT, because a toggle alone answers the wrong half. Raising the bar tells you HOW MANY styles clear it; it cannot
-tell you WHAT THE ONES IN BETWEEN ARE WORTH, which is the actual decision behind "I shouldn't be focussing on the low 20 items".
-So "Where the earnings sit" cuts the same styles into bands and states each band's contribution. Measured 2026-09-22 it says:
-the 29 styles between £200 and £300 are worth £6,886 a year BETWEEN THEM (13% of what the winners earn), while the 13 above
-£1,000 are worth £25,553 — half of everything, from a sixth of the winners. The bottom of the list is not where the year is won.
+THE EARNINGS REPORT IS NOT ON THIS SCREEN. A "Where the earnings sit" table was built here on 2026-09-22 — the six rungs of the
+range, what each earned, the typical £/unit, and a climbed-a-rung / slipped-a-rung line under it — and the owner removed it the
+same day:
 
-AND THE COLUMN THAT ANSWERS "AM I CHASING HIGH VOLUME, LOW PROFIT": earned per unit, AS A MEDIAN. The first version of this
-table showed the band aggregate and it produced a wrong answer — £7.79 / £7.43 / £10.16 / £5.72 across the winner rungs, which
-reads as a sweet spot at £500-£1,000. There is no such spot. A couple of high-volume thin styles in each lower rung dominate its
-denominator; on the TYPICAL style the same rungs are £10.89 / £10.44 / £12.44 / £4.75 — flat from £200 to £1,000, with one cliff
-at the top. Draw the median. (utils/portfolio.js's profitLadder header has the full account; it is an easy mistake to repeat.)
+  "I dont want to show 'Where the earnings sit'. Its going to confuse my actions. Here, I want to see progress on product
+   winners. I will be looking at that 80 and trying to improve it."
 
-WHAT THE CLIFF ACTUALLY IS: not a band, a BRAND. The £1,000+ rung is 7 Lunar and 6 Birkenstock and its three biggest are St Ives
-colourways at ~£4.50 a unit, 85% of them on Amazon where the referral fee halves the take. It is a pricing fact, not a range one.
+IT IS THE SAME DELETION AS ALL THE OTHERS. The winners table went, the contenders tables went, the per-style arrows went, the
+money went — every time for the same reason, and every time the thing deleted was genuinely useful in isolation. This screen is
+where he checks whether the count is growing. Anything that answers a DIFFERENT question, however good, competes with that one.
 
-AND THE FINDING THAT REPLACED THE SWEET SPOT, which is the better one: BIG EARNERS ARE GROWN, NOT FOUND. Twelve of the thirteen
-styles above £1,000 were already above £500 a year ago, and of 148 styles that first sold in the last 12 months, NONE reached
-£1,000 and two reached £500. A style climbs a rung at a time over years — so the portfolio can add winners at the bottom every
-year while the range it already owns quietly slides, and the headline count would not flinch. That is what "climbed a rung /
-slipped a rung" under the table is for, and it is the one number here that the count cannot see.
-
-THE REPORT IS A TABLE AND THAT IS NOT A BREACH OF THE RULE ABOVE. "Nothing on it is a list" means no per-style rows and no work
-queue. Six bands are a SHAPE OF THE HERO NUMBER — the count, cut up — and the owner asked for exactly this. Per-style detail
-still belongs elsewhere.
+THE DATA IS STILL ON THE API, AND SO IS THE ANALYSIS. GET /portfolio-winners returns `summary.ladder` and `summary.movement`;
+what they showed is written up in utils/portfolio.js (the profitLadder and bandMovement headers): there is no sweet spot between
+£200 and £1,000, the £1,000+ cliff is a brand and a channel rather than a rung, big earners are grown not found, and 38 styles
+climbed a rung this year against 41 that slipped. That work is DONE and recorded. If a screen ever needs it, it is a render
+away — but it is not this screen.
 
 WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
 same window, same filter as the count, so the two are on identical footing. Three other denominators were measured and all landed
@@ -91,14 +83,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, MinusSmallIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  getPortfolioWinners,
-  getPortfolioContenders,
-  updatePortfolioSnapshot,
-  type PortfolioSnapshot,
-  type PortfolioProfitBand,
-  type PortfolioBandMovement,
-} from '@/lib/api';
+import { getPortfolioWinners, getPortfolioContenders, updatePortfolioSnapshot, type PortfolioSnapshot } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // 'YYYY-MM-DD' -> '22 Sep'. Built from the string parts, never `new Date(...)` — these are pg DATEs cast to text precisely so that
@@ -106,20 +91,6 @@ import { useApiQuery } from '@/lib/useApiQuery';
 // Whole pounds — this is a shape-of-the-business figure, and pence on £367,545 is noise.
 function money(v: number): string {
   return `£${Math.round(v).toLocaleString('en-GB')}`;
-}
-
-// Pence, for RATES only. A per-unit figure of £10.16 against £5.72 is the whole point of the ladder table and rounding it to
-// whole pounds would collapse the comparison to "£10 against £6" — same story, but it reads as a rounding artefact.
-function money2(v: number): string {
-  return `£${v.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-// A ladder band as words. `from` is an exclusive floor and `to` an inclusive ceiling, either of which may be null (open).
-// The open-below band is NOT "under £0" — it is the styles that LOST money, and saying so is clearer than an inequality.
-function bandLabel(from: number | null, to: number | null): string {
-  if (from === null) return 'Lost money';
-  if (to === null) return `${money(from)}+`;
-  return `${money(from)} – ${money(to)}`;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -170,8 +141,6 @@ function WinnersPageInner() {
   const count = sel?.winnerCount ?? 0;
   const prior = sel?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
-
-  const ladder = s?.ladder ?? [];
 
   // NO SUCCESS BANNER (owner, 2026-09-22). A green "Recorded — 80 winners" bar was the first version and it was noise: the line
   // beside the button already changes to "N readings recorded, latest 22 Sep" the moment the refresh lands, and the trend gains a
@@ -360,7 +329,6 @@ function WinnersPageInner() {
         </p>
       ) : null}
 
-      {ladder.length > 0 && <EarningsLadder bands={ladder} movement={s?.movement ?? null} />}
     </AppShell>
   );
 }
@@ -448,157 +416,6 @@ function WinnerTrendChart({ rows, trackedBar }: { rows: PortfolioSnapshot[]; tra
           </circle>
         ))}
       </svg>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------------------------------------------
-// WHERE THE EARNINGS SIT — the report half of the owner's question, and the reason the dial above is not enough on its own.
-//
-// A dial answers "how many clear £500". It cannot answer "is the bottom of my winners list worth working on", because that is a
-// question about MONEY and a count contains none. These bands are the same styles cut up so each rung states its own contribution,
-// and the arithmetic ties: the count at any mark on the dial is the sum of `styles` over the rungs above it.
-//
-// THREE COLUMNS, THREE DIFFERENT QUESTIONS, and the table is only worth drawing because they disagree:
-//   earned         — what the rung is worth in a year. Answers "should I care about the bottom 29 at all".
-//   typical £/unit — whether the rung earns because it is GOOD. THE MEDIAN, not the rung total over rung units: the aggregate is
-//                    dominated by each rung's busiest styles and invented a sweet spot at £500-£1,000 that does not exist.
-//   per style      — what one more product in that rung would be worth. The portfolio model's actual unit of decision.
-//
-// THE BELOW-THE-BAR RUNGS ARE DIMMED, NOT HIDDEN. 186 styles earning £14k between them is not a winner story, but it is the
-// context for every "should I bother" question on this page, and the 37 that LOSE money are the only place on the screen they
-// appear at all. They are greyed because they are not part of the count, not because they are unimportant.
-//
-// No colour, no accent, no badge. The emphasis is weight and dimming only — house rule, and a table of six rows that needed a
-// key to read would be a worse table.
-// ---------------------------------------------------------------------------------------------------------------------------------
-function EarningsLadder({ bands, movement }: { bands: PortfolioProfitBand[]; movement: PortfolioBandMovement | null }) {
-  const winnerBands = bands.filter((b) => b.isWinnerBand);
-  // Bars are scaled across ALL rungs, including the dimmed ones, so the £0-£200 tail is visibly comparable to the winner rungs —
-  // scaling to winners only would quietly hide that the tail out-earns the bottom two winner bands put together.
-  const maxProfit = Math.max(1, ...bands.map((b) => Math.abs(b.profit)));
-
-  // Everything said in words below is COMPUTED, never written down, so a caption cannot go stale the way a comment would.
-  const bottom = winnerBands[0];
-  const winnerProfit = winnerBands.reduce((a, b) => a + b.profit, 0);
-  const bottomShare = winnerProfit > 0 && bottom ? Math.round((bottom.profit / winnerProfit) * 100) : null;
-
-  // THE RATE READING, and it is deliberately NOT "which rung is best". An earlier version named the best rung and that framed a
-  // sweet spot as a target; the honest read is that the rungs below the top are all much the same and the TOP one is different.
-  // So: compare the top rung against the range of the ones beneath it, and only call it thin when it actually is.
-  const top = winnerBands[winnerBands.length - 1];
-  const lowerRates = winnerBands.slice(0, -1).map((b) => b.profitPerUnitTypical).filter((r): r is number => r !== null);
-  const lowerMin = lowerRates.length ? Math.min(...lowerRates) : null;
-  const lowerMax = lowerRates.length ? Math.max(...lowerRates) : null;
-  const topIsThin = top?.profitPerUnitTypical !== null && top !== undefined && lowerMin !== null
-    && (top.profitPerUnitTypical as number) < lowerMin;
-
-  return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
-        <span className="text-sm font-medium text-slate-600">Where the earnings sit</span>
-        <span className="text-xs text-slate-400">every style that sold in the last 12 months, by what it earned</span>
-      </div>
-
-      <table className="w-full min-w-[46rem] text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-xs font-normal text-slate-400">
-            <th className="py-2 text-left">earned in 12 months</th>
-            <th className="py-2 pl-4 text-right">styles</th>
-            <th className="py-2 pl-4 text-right">earned</th>
-            <th className="py-2 pl-3 text-left" />
-            <th className="py-2 pl-4 text-right">units</th>
-            {/* "typical" is doing real work in this header — it is what flags the figure as a median rather than the rung
-                total over its units, which is the number that misleads. */}
-            <th className="py-2 pl-4 text-right">typical £/unit</th>
-            <th className="py-2 pl-4 text-right">per style</th>
-          </tr>
-        </thead>
-        <tbody>
-          {bands.map((b, i) => {
-            // A single rule where the winners start, so the table SHOWS the bar rather than relying on the reader to hold it.
-            const firstWinner = b.isWinnerBand && !bands[i - 1]?.isWinnerBand;
-            const tone = b.isWinnerBand ? 'text-slate-900' : 'text-slate-400';
-            return (
-              <tr
-                key={`${b.from}-${b.to}`}
-                className={`border-b border-slate-100 last:border-0 ${firstWinner ? 'border-t-2 border-t-slate-300' : ''}`}
-              >
-                <td className={`py-2 ${b.isWinnerBand ? 'font-medium text-slate-700' : 'text-slate-400'}`}>
-                  {bandLabel(b.from, b.to)}
-                </td>
-                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{b.styles.toLocaleString('en-GB')}</td>
-                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{money(b.profit)}</td>
-                <td className="py-2 pl-3">
-                  {/* Width is on the ABSOLUTE value so the loss-making rung draws a bar at all; its minus sign in the column
-                      beside it is what says which way it points. A 24px track keeps a tiny rung visible without implying it
-                      is worth something. */}
-                  <span className="block h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
-                    <span
-                      className={`block h-full rounded-full ${b.isWinnerBand ? 'bg-slate-400' : 'bg-slate-200'}`}
-                      style={{ width: `${Math.max(2, (Math.abs(b.profit) / maxProfit) * 100)}%` }}
-                    />
-                  </span>
-                </td>
-                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{b.units.toLocaleString('en-GB')}</td>
-                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>
-                  {b.profitPerUnitTypical === null ? '—' : money2(b.profitPerUnitTypical)}
-                </td>
-                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>
-                  {b.profitPerStyle === null ? '—' : money(b.profitPerStyle)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      {/* THE SENTENCES THE TABLE IS FOR — the owner's own questions answered in his own terms, so the read does not depend on
-          anyone scanning six rows of numbers to find it. All three are computed from the rows above. */}
-      <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">
-        {bottom && bottomShare !== null && (
-          <p>
-            The {bottom.styles} styles at {bandLabel(bottom.from, bottom.to)} earn {money(bottom.profit)} between them —{' '}
-            {bottomShare}% of everything the winners earn, about {money(bottom.profitPerStyle ?? 0)} each for the year.
-          </p>
-        )}
-        {top && top.profitPerUnitTypical !== null && lowerMin !== null && lowerMax !== null && (
-          <p>
-            {/* `top.from` not bandLabel(top) here — the label of an open-topped rung is "£1,000+", and "below £1,000+" is not
-                a sentence. The floor is what "below" means. */}
-            A winner earns about {money2(lowerMin)}–{money2(lowerMax)} a unit wherever it sits below {money(top.from ?? 0)}
-            {topIsThin ? (
-              <>
-                {' '}— there is no rung that pays better. The break is at the top: {bandLabel(top.from, top.to)} earns{' '}
-                {money2(top.profitPerUnitTypical)} a unit on {Math.round(top.unitsPerStyle ?? 0).toLocaleString('en-GB')} units a
-                style. Those earn by volume, not margin.
-              </>
-            ) : (
-              <>
-                , and {bandLabel(top.from, top.to)} earns {money2(top.profitPerUnitTypical)}.
-              </>
-            )}
-          </p>
-        )}
-        {/* CLIMBED / SLIPPED — the one thing here the winner count cannot see. A portfolio can add styles at the bottom every
-            year while the range it already owns slides a rung, and 80 would not flinch. Net is stated because up and down alone
-            invite reading whichever one suits. */}
-        {movement && (
-          <p className="text-slate-600">
-            <span className="font-medium text-slate-900">
-              {movement.up} styles climbed a rung this year, {movement.down} slipped one
-            </span>{' '}
-            (net {movement.net > 0 ? '+' : ''}{movement.net}, of {movement.styles} trading both years).{' '}
-            {movement.topBandStyles > 0 && (
-              <>
-                {movement.topBandEstablished} of the {movement.topBandStyles} above {money(movement.topBandFloor)} were already
-                above {money(movement.establishedFloor)} a year ago — big earners are grown, not found.
-              </>
-            )}
-          </p>
-        )}
-        <p className="text-slate-400">Every figure here is before advertising.</p>
-      </div>
     </div>
   );
 }
