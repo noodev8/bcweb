@@ -7,10 +7,24 @@ Purpose: The dashboard's opening search box, because looking a product up is the
          2026-08-27).
 
          Before this, searching cost two moves — find the Inventory tile, land on the page, THEN type. The box removes the middle
-         step: whatever is typed here is handed to /inventory as ?q=, and Inventory opens already narrowed to it (see that page's
-         `seed` note). It is deliberately the SAME entry point as Inventory's own Contains box, not a second search with its own
-         rules — the term is parsed there by the one parser, so a pasted SKU (0151183-ARIZONA-38) splits its size off here exactly
-         as it would if typed on the page itself.
+         step: whatever is typed here goes straight to a product list, already narrowed.
+
+         IT LANDS ON /product, NOT /inventory (owner, 2026-09-22 — "we always start with PRODUCT"). It fed Inventory until then,
+         and the swap is the one thing on this component worth understanding before changing it back.
+           WHY IT MOVED. The box's job was never "open Inventory", it was "start from a product" — and Inventory answers only one of
+           the questions that follow (have we got it, in my size, on which rack). The others — what is it priced at here and on
+           Amazon, is it moving, does it need ordering, editing, a barcode — each meant going back to the dashboard and into another
+           module, retyping the same groupid. /product answers the identifying question and then hands the style to whichever screen
+           the answer turned out to need, with the groupid already filled in.
+           WHAT IT COST, stated plainly because it is a real loss and not a rounding error: the dashboard has no Inventory card — this
+           box WAS the Inventory tile, which is exactly why that card was deleted (see the /dashboard header) — so Inventory is now
+           one click further away than it was. It is the first hand-off card on /product, and the header tab is untouched. If that
+           proves to be the wrong trade, the fix is to put the Inventory CARD back on the dashboard, not to re-point this box: the box
+           has stopped being a module shortcut and become the front door to a screen of its own.
+
+         The term is still parsed at the far end, not here — /product hands it to the server, which matches it against groupid, the
+         human title, the internal size code and the full Amazon Seller SKU. So a pasted SKU (0151183-ARIZONA-38) or a pasted Amazon
+         SKU (17659-23-42-2607) finds its style without this box knowing anything about either shape.
 
          DASHBOARD ONLY (owner, 2026-08-27). A compact copy rode in the AppShell header for a while, so a hunt could start from any
          screen. It came out: the owner returns to the dashboard to search anyway, so the trip isn't a detour, and a search box on
@@ -45,8 +59,8 @@ Purpose: The dashboard's opening search box, because looking a product up is the
            - A heavier resting border (slate-300) and a wider box, so it holds its own line rather than melting into the background.
          Deliberately NOT given a band heading: it isn't a group of things, and a label above it would just be a word to read past.
 
-         Input is force-uppercased to match Inventory's Contains box, so the term reads the same in both places and a round-trip
-         (search here -> refine there) never changes case mid-hunt.
+         Input is force-uppercased to match the search boxes it hands off to (/product, Inventory's Contains box, both Find pages),
+         so the term reads the same in every one and a round-trip (search here -> refine there) never changes case mid-hunt.
 =======================================================================================================================================
 */
 
@@ -62,8 +76,8 @@ export default function ProductSearchBox() {
     e.preventDefault();
     const q = term.trim();
     if (!q) return;
-    // Push (not replace): Back from Inventory returns to the dashboard the search was run from.
-    router.push('/inventory?q=' + encodeURIComponent(q));
+    // Push (not replace): Back from the product hub returns to the dashboard the search was run from.
+    router.push('/product?q=' + encodeURIComponent(q));
   }
 
   return (

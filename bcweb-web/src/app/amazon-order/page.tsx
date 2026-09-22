@@ -134,13 +134,15 @@ RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE 
 =======================================================================================================================================
 */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
   FunnelIcon, TrashIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
+import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
+import { prettyPathLabel } from '@/lib/nav';
 import {
   getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
 } from '@/lib/api';
@@ -352,8 +354,35 @@ function renderColumnHeader(
   );
 }
 
+/*
+ * DEEP LINK IN (added 2026-09-22 for the product hub). This screen took no query params at all until then: the only way to reach one
+ * product's Amazon numbers was to open the page and retype its groupid into the Include box, which is exactly the hunting the hub
+ * exists to remove. It now reads three:
+ *   ?q=<term>   seeds ONE committed Include step, as though it had been typed and Entered. One step, not a special "filtered" mode -
+ *               so Reset clears it and the operator carries on with a normal, fully working screen rather than a locked-down view.
+ *   ?from=      where the back arrow goes (the hub list or drill it was opened from), so the trip returns instead of dead-ending.
+ *   ?back=      that link's label. Both default to the dashboard, which is what every arrival before this used.
+ * useSearchParams forces a Suspense boundary for Next's build (App Router), so the page body moved into AmazonOrderContent and this
+ * thin wrapper is all the default export does - the same split /product, /pricing/find and the drills already use.
+ */
 export default function AmazonOrderHome() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <AmazonOrderContent />
+    </Suspense>
+  );
+}
+
+function AmazonOrderContent() {
   const { logout } = useAuth();
+  const searchParams = useSearchParams();
+  // Read ONCE, into the initial state below - not watched. A later change to the URL must not yank the operator's own narrowing out
+  // from under them mid-session.
+  const seedTerm = (searchParams.get('q') || '').trim();
+  const from = searchParams.get('from');
+  const backHref = from || '/dashboard';
+  // An explicit ?back= wins; otherwise derive a readable name from the origin path, and fall back to the dashboard for a plain visit.
+  const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : 'Dashboard');
   const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
@@ -373,7 +402,9 @@ export default function AmazonOrderHome() {
   const error = loadError?.message ?? null;
 
   // Committed steps — each Enter/Add stacks another one; multiple of the same kind AND together.
-  const [includes, setIncludes] = useState<string[]>([]);
+  // A ?q= arrival starts with that one step already committed (see the deep-link note above); it behaves exactly like a typed one
+  // from here on, Reset included.
+  const [includes, setIncludes] = useState<string[]>(seedTerm ? [seedTerm] : []);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [includeInput, setIncludeInput] = useState('');
   const includeInputRef = useRef<HTMLInputElement>(null);
@@ -1207,7 +1238,7 @@ export default function AmazonOrderHome() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell title="Amazon Order" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell title="Amazon Order" backHref={backHref} backLabel={backLabel}>
       {/* OPEN AMAZON ORDERS BANNER — see the header block. */}
       {showOpenBanner && (
         <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

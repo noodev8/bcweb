@@ -1419,6 +1419,88 @@ export function getInvStyles() {
   );
 }
 
+// ---- Product hub (/product) — the product-FIRST front door -----------------------------------------------------------------------
+// "We always start with PRODUCT" (owner, 2026-09-22): find the style, read the four numbers that say which screen you actually want,
+// then jump there with the groupid in hand. Two calls, one per rung — the style list and one style's sizes.
+
+// One STYLE on the hub list. See routes/product-overview.js for where each number comes from and why.
+export interface ProductOverviewRow {
+  groupid: string;
+  title: string | null;          // title.shopifytitle — the human name. NOT skusummary.colour, which is an overloaded tag
+  segment: string | null;
+  imagename: string | null;      // bare filename; the page builds https://images.brookfieldcomfort.com/<imagename>
+  // THE stock column: local + Amazon-held, one number (owner — "just add local + Amz at this stage"). Deliberately NOT Inventory's
+  // `total`, which also carries the Birkenstock pre-order book (~6 months out), so this can legitimately read LOWER than the
+  // Inventory card for the same style — the gap is the Birk book. `local`/`amazon` ride along for the hover that explains it.
+  stock: number;
+  local: number;
+  amazon: number;
+  // The Amazon price SPREAD across sizes, not an average. Amazon prices per SIZE, and CLAUDE.md records that the retired
+  // match_amazon_price autopilot was killed precisely because one thin size could set a whole style's price — an average column would
+  // put that same error back on screen. Equal low/high = the style has one price; null = no amzfeed row at all.
+  amz_low: number | null;
+  amz_high: number | null;
+  // false = the style has no FBA stock, so the spread is over ALL its feed rows rather than the ones a customer can buy today. Drawn
+  // dimmed: "this is what it would sell at" is worth seeing, but it is not a live price.
+  amz_live: boolean;
+  amz_sizes: number;             // how many sizes the spread covers — £41.09 off one size is not the fact £41.09 off six sizes is
+  price: number | null;          // live SHOPIFY price; null when the legacy varchar holds junk (safeNumeric)
+  sold30: number;                // units in 30 days, all channels, returns excluded — same basis as Inventory's sold30
+}
+
+// The hub list. Term-filtered SERVER-side (unlike Inventory, which ships the whole catalogue and narrows in the browser): the hub is
+// always entered with a term, and each row costs an Amazon price aggregate the browse has no use for.
+export function getProductOverview(term: string, limit?: number) {
+  return request<{ rows: ProductOverviewRow[]; total: number; count: number; truncated: boolean }>(
+    { url: '/product-overview', method: 'GET', params: { term, ...(limit ? { limit } : {}) } },
+    (b) => ({
+      rows: (b.rows as ProductOverviewRow[]) || [],
+      total: Number(b.total) || 0,
+      count: Number(b.count) || (b.rows || []).length,
+      truncated: !!b.truncated,
+    })
+  );
+}
+
+// One SIZE of one style, on the hub's drill. No Shopify price here on purpose — see ProductVariantsHeader.
+export interface ProductVariantRow {
+  code: string;
+  eu: string | null;
+  size: string;                  // the operator's own label from Add/Modify ('5 UK', '36 EU / 3.5 UK'); falls back to the EU size
+  stock: number;                 // local + Amazon-held, same definition as the list — the rows sum back to the header
+  local: number;
+  amazon: number;
+  amz_price: number | null;      // THIS size's Amazon price; null when the size has no FBA row
+  amz_live: number;              // units a customer can buy today. 0 with a price = listed but out of stock
+  sold30: number;
+  barcode: string | null;        // skumap.ean, trailing legacy 'B' stripped (CLAUDE.md)
+  amz_sku: string | null;        // full Amazon Seller SKU
+}
+
+// The style-level frame for the drill. THE SHOPIFY PRICE LIVES HERE, not on the rows: skusummary.shopifyprice is style grain, so a
+// per-size Shopify column would repeat one number down the table and imply the sizes could differ. Amazon's genuinely can, and does,
+// so amz_price stays a real row column — the asymmetry between the two channels is the point, not a gap to paper over.
+export interface ProductVariantsHeader {
+  groupid: string;
+  title: string | null;
+  segment: string | null;
+  imagename: string | null;
+  price: number | null;          // live Shopify price
+  rrp: number | null;
+  cost: number | null;
+  stock: number;
+  local: number;
+  amazon: number;
+  sold30: number;
+}
+
+export function getProductVariants(groupid: string) {
+  return request<{ header: ProductVariantsHeader; rows: ProductVariantRow[] }>(
+    { url: '/product-variants', method: 'GET', params: { groupid } },
+    (b) => ({ header: b.header as ProductVariantsHeader, rows: (b.rows as ProductVariantRow[]) || [] })
+  );
+}
+
 // ---- Birkenstock module (the seasonal re-order screen) --------------------------------------------------------------------------
 // One Birkenstock style, with the two quantities that make the screen work kept SEPARATE per size: what is on the shelf, and what is
 // still to arrive on the pre-order book. The LIVE / FULL switch is a pure display choice over this one payload (live vs live+incoming),

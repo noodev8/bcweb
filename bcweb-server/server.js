@@ -102,6 +102,12 @@ app.use('/product-image', require('./routes/product-image'));     // edit: uploa
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
 app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
 
+// Product hub (/product) — the product-FIRST front door (owner, 2026-09-22). Read-only: find the style, read the four numbers that
+// decide which screen you actually want, then jump there with the groupid already in hand. Deliberately NOT a replacement for
+// pricing-find / amz-find, which answer "which SKU am I repricing"; these answer "which product am I working on at all".
+app.use('/product-overview', require('./routes/product-overview')); // style-grain list: stock, Amazon price SPREAD, Shopify price, 30d sold
+app.use('/product-variants', require('./routes/product-variants')); // one style opened out to its sizes + barcode (named for product-sizes, the WRITE)
+
 // Amazon Pricing module (SKU-grain; mirrors the Shopify Pricing flow — segment picker -> WINNERS|LOSERS lists -> per-SKU drill).
 // Read side + the one write. All routes require verifyToken, applied inside each router. Amazon has no park/review concept and no live
 // price push: a price change is logged to amz_price_log and reaches Amazon via the client-built one-file Seller Central upload.
