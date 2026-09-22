@@ -3461,6 +3461,7 @@ export interface PortfolioWinner {
   title: string | null;           // title.shopifytitle
   brand: string | null;
   profit12m: number;              // rolling 12 months, ALL channels, before ad spend
+  revenue12m: number;             // gross — soldprice * qty, before any cost
   units12m: number;
   profitPrior12m: number | null;  // null on a style under 2 years old — no real prior year, and a fake 0 renders as infinite growth
   direction: WinnerDirection;     // FLAT is a +/-15% BAND, not equality, so noise does not read as a trend
@@ -3477,6 +3478,19 @@ export interface PortfolioWinnersSummary {
   totalStyles: number;            // styles that traded at all in the window — the denominator for the share
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
+  totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
+  totalUnits12m: number;          // units PACKED AND SENT by the winners. Returns excluded, not netted
+  totalUnitsPrior12m: number;     // what THIS year's winners shifted LAST year — like-for-like, not last year's winner set
+  byBrand: PortfolioBrand[];      // most winners first
+}
+
+// Winners per brand. Note winners and units can point opposite ways — Birkenstock carries the COUNT (59 winners, 2.5k units),
+// Lunar carries the VOLUME (15 winners, 4.8k units) — which is the whole reason this breakdown is worth showing.
+export interface PortfolioBrand {
+  brand: string;
+  winners: number;
+  units: number;
+  revenue: number;
 }
 
 // One RECORDED trend point. These exist only where someone pressed "Update now" — the GET stores nothing, so the series is sparse
@@ -3514,12 +3528,22 @@ export function getPortfolioWinners(days?: number) {
         winnerSharePct: b.summary?.winner_share_pct === null || b.summary?.winner_share_pct === undefined
           ? null : Number(b.summary.winner_share_pct),
         totalProfit12m: Number(b.summary?.total_profit_12m) || 0,
+        totalRevenue12m: Number(b.summary?.total_revenue_12m) || 0,
+        totalUnits12m: Number(b.summary?.total_units_12m) || 0,
+        totalUnitsPrior12m: Number(b.summary?.total_units_prior_12m) || 0,
+        byBrand: ((b.summary?.by_brand as Record<string, unknown>[]) || []).map((x) => ({
+          brand: String(x.brand || ''),
+          winners: Number(x.winners) || 0,
+          units: Number(x.units) || 0,
+          revenue: Number(x.revenue) || 0,
+        })),
       },
       winners: ((b.winners as Record<string, unknown>[]) || []).map((w) => ({
         groupid: String(w.groupid),
         title: (w.title as string | null) ?? null,
         brand: (w.brand as string | null) ?? null,
         profit12m: Number(w.profit_12m) || 0,
+        revenue12m: Number(w.revenue_12m) || 0,
         units12m: Number(w.units_12m) || 0,
         // Careful: `|| 0` would turn a legitimate null into 0 and invent a prior year. Test for null explicitly.
         profitPrior12m: w.profit_prior_12m === null || w.profit_prior_12m === undefined ? null : Number(w.profit_prior_12m),
@@ -3562,6 +3586,10 @@ export function updatePortfolioSnapshot() {
           || (b.summary as Record<string, unknown>)?.winner_share_pct === undefined
           ? null : Number((b.summary as Record<string, unknown>).winner_share_pct),
         totalProfit12m: Number((b.summary as Record<string, unknown>)?.total_profit_12m) || 0,
+        totalRevenue12m: Number((b.summary as Record<string, unknown>)?.total_revenue_12m) || 0,
+        totalUnits12m: Number((b.summary as Record<string, unknown>)?.total_units_12m) || 0,
+        totalUnitsPrior12m: Number((b.summary as Record<string, unknown>)?.total_units_prior_12m) || 0,
+        byBrand: [],   // the snapshot response carries headline figures only; the screen reads brands from the GET
       },
       contenders: {
         youngStyles: Number((b.contenders as Record<string, unknown>)?.young_styles) || 0,

@@ -34,9 +34,11 @@ So: a big box, four small boxes, and a trend line. THE PER-STYLE DETAIL ALL STIL
 returns every winner and GET /portfolio-contenders every banded contender. This screen simply does not draw them. If a working
 screen ever wants that detail, it is there; putting it back HERE is a regression, however useful it is in isolation.
 
-NO MONEY ON THIS SCREEN (point 3 above). `total_profit_12m` is still returned and still stored in every snapshot, but it is not
-shown: it is contribution before advertising, which invites exactly the "is that profit?" conversation the owner does not want to
-have at a glance. The COUNT is the unit of progress here, not the pounds.
+GROSS REVENUE IS SHOWN; PROFIT IS NOT. The distinction is the owner's (2026-09-22): profit here is contribution BEFORE
+advertising, which invites exactly the "is that really profit?" conversation he does not want at a glance — "I don't care about
+values. It is the amount before adverts?" Gross revenue has no such ambiguity, so it earns a box. `total_profit_12m` is still
+returned and still snapshotted, just not drawn. Revenue is NOT snapshotted (that would need a migration), so it is a live figure
+only and deliberately absent from the trend line.
 
 WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
 same window, same filter as the count, so the two are on identical footing. Three other denominators were measured and all landed
@@ -56,6 +58,11 @@ import { useApiQuery } from '@/lib/useApiQuery';
 
 // 'YYYY-MM-DD' -> '22 Sep'. Built from the string parts, never `new Date(...)` — these are pg DATEs cast to text precisely so that
 // no timezone gets a chance to shift the day (CLAUDE.md). The DB session runs UTC and the box runs BST, so this matters.
+// Whole pounds — this is a shape-of-the-business figure, and pence on £367,545 is noise.
+function money(v: number): string {
+  return `£${Math.round(v).toLocaleString('en-GB')}`;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function shortDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
@@ -87,6 +94,16 @@ function WinnersPageInner() {
 
   const s = w.data?.summary;
   const history = w.data?.history ?? [];
+
+  const brands = s?.byBrand ?? [];
+  const topBrandWinners = Math.max(1, ...brands.map((b) => b.winners));
+
+  // Units against what the SAME winners shifted a year ago. Like-for-like on the products, not on the winner set.
+  const unitsPrior = s?.totalUnitsPrior12m ?? 0;
+  const unitsDelta = (s?.totalUnits12m ?? 0) - unitsPrior;
+  const unitsNote = !s || unitsPrior === 0
+    ? 'packed and sent, last 12 months'
+    : `${unitsDelta >= 0 ? '+' : ''}${unitsDelta.toLocaleString('en-GB')} on last year (${unitsPrior.toLocaleString('en-GB')})`;
 
   const count = s?.winnerCount ?? 0;
   const prior = s?.winnerCountPriorYear ?? 0;
@@ -128,10 +145,10 @@ function WinnersPageInner() {
             <div className="h-28 animate-pulse rounded bg-slate-100" />
           ) : (
             <>
-              <span className="text-7xl font-semibold tabular-nums leading-none text-slate-900 sm:text-8xl">
+              <span className="block text-8xl font-semibold tabular-nums leading-none text-slate-900 sm:text-[9rem]">
                 {count.toLocaleString('en-GB')}
               </span>
-              <p className="mt-3 text-lg text-slate-600">winners</p>
+              <p className="mt-3 text-xl text-slate-600">winners</p>
               <div className="mt-4 flex items-center gap-2 text-sm">
                 {delta === 0 ? (
                   <MinusSmallIcon className="h-5 w-5 text-slate-400" />
@@ -144,24 +161,63 @@ function WinnersPageInner() {
                   {delta === 0 ? 'Level on last year' : `${delta > 0 ? '+' : ''}${delta} on last year`}
                 </span>
               </div>
+
+              {/* WHICH NAMES CARRY THE COUNT. It fills the hero box (which was mostly white space) with the one breakdown that
+                  qualifies the headline rather than competing with it — this is still the same 80, just split.
+
+                  IT SHOWS WINNERS AND UNITS TOGETHER BECAUSE THEY DISAGREE, and that disagreement is the point: Birkenstock had
+                  59 winners on 2,504 units while Lunar had 15 winners on 4,768. Count and volume are different businesses, and a
+                  bar drawn on winners alone would say Birkenstock is four times the story when by units it is half of it.
+                  Bars are scaled to the biggest brand's winner count, matching what the number beside them says. */}
+              {brands.length > 0 && (
+                <div className="mt-6 border-t border-slate-100 pt-4">
+                  <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
+                    <span>by brand</span>
+                    <span>units shifted</span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {brands.map((b) => (
+                      <li key={b.brand} className="flex items-center gap-3 text-sm">
+                        <span className="w-24 flex-none truncate text-slate-600" title={b.brand}>{b.brand}</span>
+                        <span className="w-6 flex-none text-right font-medium tabular-nums text-slate-900">{b.winners}</span>
+                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          <span
+                            className="block h-full rounded-full bg-slate-400"
+                            style={{ width: `${Math.max(2, (b.winners / topBrandWinners) * 100)}%` }}
+                          />
+                        </span>
+                        <span className="w-14 flex-none text-right tabular-nums text-slate-400">
+                          {b.units.toLocaleString('en-GB')}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-rows-2">
           <Stat
             loading={w.isLoading}
             value={s?.winnerSharePct === null || s?.winnerSharePct === undefined ? '—' : `${s.winnerSharePct}%`}
             label="of the range"
             note={s ? `${count} of ${s.totalStyles} that sold this year` : undefined}
           />
-          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same test, previous 12 months" />
           <Stat
             loading={w.isLoading}
-            value={`${s?.joinedThisYear ?? 0} / ${s?.leftThisYear ?? 0}`}
-            label="joined / dropped out"
-            note="the movement behind the change"
+            value={s ? money(s.totalRevenue12m) : '—'}
+            label="revenue"
+            note="gross, last 12 months, from these winners"
           />
+          <Stat
+            loading={w.isLoading}
+            value={(s?.totalUnits12m ?? 0).toLocaleString('en-GB')}
+            label="units shifted"
+            note={unitsNote}
+          />
+          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same test, previous 12 months" />
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}

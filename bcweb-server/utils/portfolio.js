@@ -144,8 +144,14 @@ async function computeWinners() {
              -- directly, so SUM(qty)::int FILTER (...) is a parse error. (No backticks in this comment either — the whole query
              -- is a JS template literal and one would end it.)
              COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0)::int AS units_12m,
+             -- GROSS revenue: what came in, before cost, fees or ads. soldprice * qty, unlike profit which is already a line total.
+             COALESCE(SUM(soldprice * qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0) AS revenue_12m,
              COALESCE(SUM(profit)   FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
-                                              AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0) AS profit_prior_12m
+                                              AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0) AS profit_prior_12m,
+             -- Prior-year units, for the "units shifted" comparison. Computed LIVE from sales, exactly like profit_prior_12m —
+             -- no snapshot column and no migration is needed for a year-on-year figure, only for putting one on the trend.
+             COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '24 months'
+                                         AND solddate <  CURRENT_DATE - INTERVAL '12 months'), 0)::int AS units_prior_12m
       FROM sales
       WHERE qty > 0                      -- returns live in the haircut, not the rows (owner, 2026-09-10)
         AND groupid IS NOT NULL
@@ -160,7 +166,9 @@ async function computeWinners() {
            (CURRENT_DATE - a.first_sale)::int   AS days_on_sale,
            a.profit_12m,
            a.units_12m,
+           a.revenue_12m,
            a.profit_prior_12m,
+           a.units_prior_12m,
            COALESCE(st.stock, 0)                AS stock_units
     FROM agg a
     LEFT JOIN skusummary ss ON ss.groupid = a.groupid
@@ -191,6 +199,15 @@ async function computeWinners() {
   let joined = 0;
   let left = 0;
   let totalProfit12m = 0;
+  let totalRevenue12m = 0;   // across the WINNERS only, matching every other figure in this summary
+  // Units actually shipped by the winners. SUM(qty) with the qty > 0 filter already applied, so returns are EXCLUDED rather
+  // than netted off — this is "how many we packed and sent", which is what was asked for.
+  let totalUnits12m = 0;
+  // Last year's units from THIS year's winners — the like-for-like read. It deliberately does NOT re-run the winner test on last
+  // year: the question is "are the products I now rely on shifting more than they did", not "what did last year's set do".
+  let totalUnitsPrior12m = 0;
+  // Winners per brand, plus what each brand shifted. The hero's supporting detail: which names are actually carrying the count.
+  const byBrand = new Map();
 
   for (const r of result.rows) {
     const days = Number(r.days_on_sale) || 0;
@@ -212,6 +229,16 @@ async function computeWinners() {
     if (!isWinnerNow) continue;
 
     totalProfit12m += profit12m;
+    totalRevenue12m += num(r.revenue_12m) ?? 0;
+    totalUnits12m += Number(r.units_12m) || 0;
+    totalUnitsPrior12m += Number(r.units_prior_12m) || 0;
+
+    const brandKey = (r.brand || '').trim() || 'Unbranded';
+    const bAgg = byBrand.get(brandKey) || { brand: brandKey, winners: 0, units: 0, revenue: 0 };
+    bAgg.winners += 1;
+    bAgg.units += Number(r.units_12m) || 0;
+    bAgg.revenue += num(r.revenue_12m) ?? 0;
+    byBrand.set(brandKey, bAgg);
 
     // Direction. A style without a real prior year is NEW, not a 100% riser — see PRIOR_YEAR_MIN_DAYS.
     let direction;
@@ -238,6 +265,7 @@ async function computeWinners() {
       title: r.title || null,          // title.shopifytitle — skusummary.colour is an overloaded segmentation tag, never a name
       brand: r.brand || null,
       profit_12m: Math.round(profit12m * 100) / 100,
+      revenue_12m: Math.round((num(r.revenue_12m) ?? 0) * 100) / 100,
       units_12m: Number(r.units_12m) || 0,
       profit_prior_12m: priorOut === null ? null : Math.round(priorOut * 100) / 100,
       direction,
@@ -260,6 +288,16 @@ async function computeWinners() {
       // Kept in the payload but NOT shown on the Winners screen — the owner's call, 2026-09-22: "I'm not sure I care about
       // values. It is the amount before adverts? I don't care." It stays because it is already stored in every snapshot row.
       total_profit_12m: Math.round(totalProfit12m * 100) / 100,
+      // Gross revenue the winners brought in over the window. Shown on screen; profit is not (owner: it is before ads and
+      // invites a conversation he does not want at a glance). NOT stored in the snapshot — no migration, so it is a live
+      // figure only and does not appear on the trend.
+      total_revenue_12m: Math.round(totalRevenue12m * 100) / 100,
+      total_units_12m: totalUnits12m,
+      total_units_prior_12m: totalUnitsPrior12m,
+      // Most winners first. Returned WHOLE, not top-N — it is a handful of brands and the screen decides how many to draw.
+      by_brand: [...byBrand.values()]
+        .map((b) => ({ ...b, revenue: Math.round(b.revenue * 100) / 100 }))
+        .sort((a, b) => b.winners - a.winners || b.units - a.units),
     },
     winners,
   };
