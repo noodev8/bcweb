@@ -3502,15 +3502,6 @@ export interface PortfolioBarSummary {
   leftThisYear: number;
   totalStyles: number;            // THE RANGE: the catalogue now, plus anything that traded in the window and was since deleted
   otherStyles: number;            // range minus winners — losers, not-yet-proven and never-sold together. The nurturing job
-  // THE OTHER TWO HEADLINES, each with its year-ago counterpart. All three boxes on the screen are rolling 12-month windows
-  // compared with the 12 months before, so one ruler serves the lot.
-  //
-  // `totalStylesPrior` IS AN ESTIMATE and the only one on the screen: deletions before 2026-09-22 were never logged, and
-  // created_at is a record date. It reads 195 against 329 today, a gain of 134 on 131 products added, which is consistent but
-  // not proof. Treat it as approximate until portfolio_snapshot has a year of its own history.
-  totalStylesPrior: number;
-  added12m: number;               // products made in the last 12 months, from product_event_log. ROLLING, never year-to-date:
-  addedPrior12m: number;          // a headline that drives the work cannot reset to nothing every January. BAR-INDEPENDENT
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
   totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
@@ -3567,6 +3558,19 @@ export interface PortfolioBandMovement {
 // What GET /portfolio-winners returns: the TRACKED bar's figures at the top level (unchanged shape — the snapshot writer and the
 // trend chart depend on it), plus every bar and the distribution behind them.
 export interface PortfolioWinnersSummary extends PortfolioBarSummary {
+  // ⚠ BAR-INDEPENDENT, AND THAT IS WHY THEY LIVE HERE AND NOT ON PortfolioBarSummary. They were briefly declared on the per-bar
+  //   type, which compiled cleanly and then rendered 0: the server sends them once on the summary, so reading them off `bars[i]`
+  //   — which is what the screen does for everything that moves with the dial — found nothing. Raising the bar to £500 changes
+  //   how many styles count as winners, not how many products exist or how many were made. Read these from the summary object,
+  //   never from a bar.
+  //
+  // `totalStylesPrior` IS AN ESTIMATE and the only one on the screen: deletions before 2026-09-22 were never logged, and
+  // created_at is a record date. It reads 195 against 329 today, a gain of 134 on 131 made, which is consistent but not proof.
+  totalStylesPrior: number;
+  addedYtd: number;               // products made this calendar year, from product_event_log
+  addedYtdPrior: number;          // the SAME SPAN last year, ending a year ago today — never last year's full twelve months
+  addedMtd: number;               // products made this calendar month
+
   bars: PortfolioBarSummary[];    // ladder order, low bar first. bars[0] IS this object's own figures
   ladder: PortfolioProfitBand[];  // low band first
   // Bar-independent — a property of the rungs, not of the toggle. null on a server that has not shipped it yet, and the screen
@@ -3616,9 +3620,6 @@ function mapBarSummary(b: Record<string, unknown> | undefined): PortfolioBarSumm
     totalStyles: Number(b?.total_styles) || 0,
     // Derived server-side from the same two facts the snapshot stores, so it can never disagree with them.
     otherStyles: Number(b?.other_styles) || 0,
-    totalStylesPrior: Number(b?.total_styles_prior) || 0,
-    added12m: Number(b?.added_12m) || 0,
-    addedPrior12m: Number(b?.added_prior_12m) || 0,
     // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
     winnerSharePct: b?.winner_share_pct === null || b?.winner_share_pct === undefined
       ? null : Number(b.winner_share_pct),
@@ -3641,6 +3642,10 @@ const bandEdge = (v: unknown): number | null => (v === null || v === undefined ?
 function mapWinnersSummary(b: Record<string, unknown> | undefined): PortfolioWinnersSummary {
   return {
     ...mapBarSummary(b),
+    totalStylesPrior: Number(b?.total_styles_prior) || 0,
+    addedYtd: Number(b?.added_ytd) || 0,
+    addedYtdPrior: Number(b?.added_ytd_prior) || 0,
+    addedMtd: Number(b?.added_mtd) || 0,
     // Fall back to the top-level figures as a single-rung ladder rather than an empty array: a server that has not shipped `bars`
     // yet should leave the screen showing its one tracked bar, not showing no bars at all.
     bars: ((b?.bars as Record<string, unknown>[]) || []).length

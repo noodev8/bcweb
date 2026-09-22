@@ -267,11 +267,13 @@ function WinnersPageInner() {
           )}
         </div>
 
+        {/* `s`, not `sel`, for totalStylesPrior: it does not move with the dial. Declaring it on the per-bar type instead was a
+            silent bug — it compiled and rendered 0, because the server sends it once on the summary. */}
         <Headline
           loading={w.isLoading}
           value={(sel?.totalStyles ?? 0).toLocaleString('en-GB')}
           label="range"
-          delta={sel ? sel.totalStyles - sel.totalStylesPrior : null}
+          delta={s ? s.totalStyles - s.totalStylesPrior : null}
           deltaSuffix="on last year"
           deltaNeutral
           note={
@@ -281,14 +283,22 @@ function WinnersPageInner() {
           }
         />
 
-        {/* The only box that leads anywhere. Reports -> New has the month-by-month pace behind this number. */}
+        {/* THIS YEAR, WITH THIS MONTH BESIDE IT (owner, 2026-09-22: "Id like to see added this year/month"). A rolling 12-month
+            version was built first and barely moved day to day; the year and the month are what he can feel himself changing,
+            and the month is the one that answers to this week. The comparison is the SAME SPAN last year, ending a year ago
+            today — a September reading against last year's full twelve would invent a collapse.
+
+            The known cost of a calendar year is that it resets: in early January this box reads a handful. That is also why the
+            month sits beside it — in January the month is the live figure and the year is a fresh page.
+
+            The only box that leads anywhere. Reports -> New has the month-by-month pace behind these numbers. */}
         <Headline
           loading={w.isLoading}
-          value={(sel?.added12m ?? 0).toLocaleString('en-GB')}
-          label="added"
-          delta={sel ? sel.added12m - sel.addedPrior12m : null}
-          deltaSuffix="on the year before"
-          note="products made, last 12 months"
+          value={(s?.addedYtd ?? 0).toLocaleString('en-GB')}
+          label="added this year"
+          delta={s ? s.addedYtd - s.addedYtdPrior : null}
+          deltaSuffix="on the same point last year"
+          note={s ? `${s.addedMtd.toLocaleString('en-GB')} this month` : undefined}
           href="/analytics/new-additions?from=/analytics/winners&back=Winners"
         />
       </div>

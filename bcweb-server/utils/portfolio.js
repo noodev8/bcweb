@@ -472,22 +472,44 @@ async function computeWinners() {
               AND solddate <  CURRENT_DATE - INTERVAL '12 months'
          ) u)::int AS n_prior,
 
-        -- PRODUCTS MADE, ROLLING 12 MONTHS, and the 12 months before it. Rolling, NOT calendar year to date: a headline meant to
-        -- drive the work cannot reset to nothing every January (a year-to-date box would have read 5 for the whole of last
-        -- January), and the other two figures beside it are both rolling 12-month windows, so a calendar one would be the odd
-        -- ruler out. Counted from product_event_log, which keeps the event after the product is deleted.
-        -- Reports -> New answers the different question of monthly PACE; see routes/analytics-new-additions-trend.js.
+        -- PRODUCTS MADE: this calendar year, the same span last year, and this month. The owner's call (2026-09-22) after a
+        -- rolling 12-month version was built: "Id like to see added this year/month". A rolling window barely moves day to day;
+        -- the year and the month are what he can feel himself changing, and the month is the one that answers to this week.
+        --
+        -- KNOWN COST, accepted: a calendar year resets. On 2 January this box reads a handful, and last January it would have
+        -- read 5 for the whole month. That is why it carries no target and why the MONTH sits beside it — in January the month
+        -- figure is the live one and the year figure is a fresh page, which is the honest way round.
+        --
+        -- The prior figure is the SAME SPAN last year, ending exactly a year ago today, not last year's full twelve months: a
+        -- September reading against a whole year would invent a collapse.
+        --
+        -- Bucketed on EUROPE/LONDON wall clock, not UTC: the pg session runs Etc/UTC while the box runs BST, so a product made
+        -- at 00:30 BST on 1 January would otherwise fall into the previous year (the same trap as CLAUDE.md's date landmines,
+        -- and the same treatment routes/analytics-new-additions-trend.js gives its months).
+        --
+        -- Counted from product_event_log, which keeps the event after the product is deleted. Reports -> New answers the
+        -- different question of monthly PACE; see routes/analytics-new-additions-trend.js.
         (SELECT COUNT(*) FROM product_event_log
-          WHERE event = 'CREATED' AND event_at >= CURRENT_DATE - INTERVAL '12 months')::int AS added_12m,
+          WHERE event = 'CREATED'
+            AND (event_at AT TIME ZONE 'Europe/London') >= date_trunc('year', now() AT TIME ZONE 'Europe/London'))::int
+          AS added_ytd,
         (SELECT COUNT(*) FROM product_event_log
-          WHERE event = 'CREATED' AND event_at >= CURRENT_DATE - INTERVAL '24 months'
-            AND event_at < CURRENT_DATE - INTERVAL '12 months')::int AS added_prior_12m
+          WHERE event = 'CREATED'
+            AND (event_at AT TIME ZONE 'Europe/London') >= date_trunc('year', now() AT TIME ZONE 'Europe/London')
+                                                            - INTERVAL '1 year'
+            AND (event_at AT TIME ZONE 'Europe/London') <  (now() AT TIME ZONE 'Europe/London') - INTERVAL '1 year')::int
+          AS added_ytd_prior,
+        (SELECT COUNT(*) FROM product_event_log
+          WHERE event = 'CREATED'
+            AND (event_at AT TIME ZONE 'Europe/London') >= date_trunc('month', now() AT TIME ZONE 'Europe/London'))::int
+          AS added_mtd
     ),
     stk AS (${STOCK_CTE})
     SELECT rs.n               AS range_size,
            rs.n_prior         AS range_size_prior,
-           rs.added_12m       AS added_12m,
-           rs.added_prior_12m AS added_prior_12m,
+           rs.added_ytd       AS added_ytd,
+           rs.added_ytd_prior AS added_ytd_prior,
+           rs.added_mtd       AS added_mtd,
            a.groupid,
            t.shopifytitle                       AS title,
            -- skusummary first (the live catalogue is the authority while the product exists), the sale's own snapshot second.
@@ -571,8 +593,9 @@ async function computeWinners() {
   // The other two headline figures and their year-ago counterparts. Every row carries the same values (CROSS JOIN), so row 0
   // will do; read here rather than inside summariseAt because none of them depend on the bar.
   const totalStylesPrior = Number(result.rows[0]?.range_size_prior) || 0;
-  const added12m = Number(result.rows[0]?.added_12m) || 0;
-  const addedPrior12m = Number(result.rows[0]?.added_prior_12m) || 0;
+  const addedYtd = Number(result.rows[0]?.added_ytd) || 0;
+  const addedYtdPrior = Number(result.rows[0]?.added_ytd_prior) || 0;
+  const addedMtd = Number(result.rows[0]?.added_mtd) || 0;
 
   // The ladder and the movement report keep the narrower "traded in the window" set. A style that sold NOTHING has a profit of
   // exactly 0 and would pile into the loss-making rung, which is a different claim from "it did not sell". They are not drawn on
@@ -610,8 +633,9 @@ async function computeWinners() {
       // the dial to £500 changes how many styles count as winners, not how many products exist or how many were made.
       // Together the three are the goal (winners), what we hold (range) and the lever (added) — one story at three lags.
       total_styles_prior: totalStylesPrior,   // reconstructed, and the only estimate on this screen — see the CTE
-      added_12m: added12m,
-      added_prior_12m: addedPrior12m,
+      added_ytd: addedYtd,
+      added_ytd_prior: addedYtdPrior,         // the SAME SPAN last year, ending a year ago today
+      added_mtd: addedMtd,
       // Every mark on the ladder, so the toggle is instant and cannot disagree with the headline — same read, same arithmetic.
       bars,
       // The distribution behind the count. See profitLadder().
