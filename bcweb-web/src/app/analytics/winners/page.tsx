@@ -40,6 +40,34 @@ values. It is the amount before adverts?" Gross revenue has no such ambiguity, s
 returned and still snapshotted, just not drawn. Revenue is NOT snapshotted (that would need a migration), so it is a live figure
 only and deliberately absent from the trend line.
 
+THE BAR IS A DIAL NOW, AND THE DIAL IS A READING ONLY (owner, 2026-09-22):
+
+  "We have a number for winners based on making £200 profit in a year. I wonder, is it easy enough to give me a toggle so I can
+   see what the numbers are for £300, £500 or 1k profit. I can then decide whether I'm focussing on high volume low profit items
+   and what the sweet spot might be. Unless you can also give me a report here. ie. I shouldn't be focussing on the low 20 items
+   if they only yield another £2 for the year."
+
+The toggle re-reads the WHOLE headline — count, share, revenue, units, last year, the brand split — at £200, £300, £500 or
+£1,000. Every one of those readings arrives in the SAME payload (summary.bars), so switching is instant and the four can never
+disagree with each other. NOTHING THE TOGGLE DOES IS RECORDED: the trend line and the "Update now" button are welded to the
+tracked £200 bar, because a series measured with a ruler that moves when someone is curious is not a series. The screen says so
+in a line under the toggle whenever it is off the tracked bar — that line is not decoration, it is the guard-rail.
+
+AND THEN THE REPORT, because a toggle alone answers the wrong half. Raising the bar tells you HOW MANY styles clear it; it cannot
+tell you WHAT THE ONES IN BETWEEN ARE WORTH, which is the actual decision behind "I shouldn't be focussing on the low 20 items".
+So "Where the earnings sit" cuts the same styles into bands and states each band's contribution. Measured 2026-09-22 it says:
+the 29 styles between £200 and £300 are worth £6,886 a year BETWEEN THEM (13% of what the winners earn), while the 13 above
+£1,000 are worth £25,553 — half of everything, from a sixth of the winners. The bottom of the list is not where the year is won.
+
+AND THE COLUMN THAT ANSWERS "AM I CHASING HIGH VOLUME, LOW PROFIT": earned per unit. The £1,000+ band is the WORST per unit on
+the board (£5.72 against £10.16 in the £500-£1,000 band) on 344 units a style against 66. The biggest earners are big because
+they are BUSY, not because they are good — invisible in a count, invisible in a total, and obvious the moment the two sit next to
+each other. That is the whole reason this table exists rather than a fifth stat box.
+
+THE REPORT IS A TABLE AND THAT IS NOT A BREACH OF THE RULE ABOVE. "Nothing on it is a list" means no per-style rows and no work
+queue. Six bands are a SHAPE OF THE HERO NUMBER — the count, cut up — and the owner asked for exactly this. Per-style detail
+still belongs elsewhere.
+
 WHAT THE SHARE MEANS. "26% of the range" is 80 winners over the 303 styles that sold anything in the last 12 months — same table,
 same window, same filter as the count, so the two are on identical footing. Three other denominators were measured and all landed
 at 25-27%, so the figure is robust and the choice is about which is easiest to say out loud, not which is right.
@@ -53,7 +81,13 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, MinusSmallIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
-import { getPortfolioWinners, getPortfolioContenders, updatePortfolioSnapshot, type PortfolioSnapshot } from '@/lib/api';
+import {
+  getPortfolioWinners,
+  getPortfolioContenders,
+  updatePortfolioSnapshot,
+  type PortfolioSnapshot,
+  type PortfolioProfitBand,
+} from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // 'YYYY-MM-DD' -> '22 Sep'. Built from the string parts, never `new Date(...)` — these are pg DATEs cast to text precisely so that
@@ -61,6 +95,20 @@ import { useApiQuery } from '@/lib/useApiQuery';
 // Whole pounds — this is a shape-of-the-business figure, and pence on £367,545 is noise.
 function money(v: number): string {
   return `£${Math.round(v).toLocaleString('en-GB')}`;
+}
+
+// Pence, for RATES only. A per-unit figure of £10.16 against £5.72 is the whole point of the ladder table and rounding it to
+// whole pounds would collapse the comparison to "£10 against £6" — same story, but it reads as a rounding artefact.
+function money2(v: number): string {
+  return `£${v.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// A ladder band as words. `from` is an exclusive floor and `to` an inclusive ceiling, either of which may be null (open).
+// The open-below band is NOT "under £0" — it is the styles that LOST money, and saying so is clearer than an inequality.
+function bandLabel(from: number | null, to: number | null): string {
+  if (from === null) return 'Lost money';
+  if (to === null) return `${money(from)}+`;
+  return `${money(from)} – ${money(to)}`;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -84,7 +132,6 @@ function WinnersPageInner() {
 
   const { logout } = useAuth();
   const [updating, setUpdating] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   // Kept apart from the query's own error so a failed Update doesn't tear down a headline that loaded fine.
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -95,21 +142,37 @@ function WinnersPageInner() {
   const s = w.data?.summary;
   const history = w.data?.history ?? [];
 
-  const brands = s?.byBrand ?? [];
+  // WHICH BAR IS ON SCREEN. null means "whatever the server tracks", so the default is never hard-coded here and follows
+  // WINNER_PROFIT_BAR if it ever moves. It is view state and nothing more — no URL param, no storage, nothing sent anywhere.
+  const [bar, setBar] = useState<number | null>(null);
+
+  const bars = s?.bars ?? [];
+  // bars[0] IS the tracked bar by construction (utils/portfolio.js spreads it onto the summary). Everything recorded — the trend
+  // line, "Update now" — is measured there, whatever the toggle is showing.
+  const trackedBar = bars[0]?.bar ?? s?.bar ?? null;
+  // Fall back to the tracked bar, then to the summary itself, so a server that has not shipped `bars` still renders a headline.
+  const sel = bars.find((b) => b.bar === bar) ?? bars[0] ?? s;
+  const offTracked = trackedBar !== null && sel !== undefined && sel.bar !== trackedBar;
+
+  const brands = sel?.byBrand ?? [];
   const topBrandWinners = Math.max(1, ...brands.map((b) => b.winners));
 
-  const count = s?.winnerCount ?? 0;
-  const prior = s?.winnerCountPriorYear ?? 0;
+  const count = sel?.winnerCount ?? 0;
+  const prior = sel?.winnerCountPriorYear ?? 0;
   const delta = count - prior;
 
+  const ladder = s?.ladder ?? [];
+
+  // NO SUCCESS BANNER (owner, 2026-09-22). A green "Recorded — 80 winners" bar was the first version and it was noise: the line
+  // beside the button already changes to "N readings recorded, latest 22 Sep" the moment the refresh lands, and the trend gains a
+  // point — the screen shows the result, so a banner announcing it is a second copy of an answer already on the page. FAILURE
+  // still speaks, because that is the case with nothing to see.
   async function onUpdate() {
     setUpdating(true);
-    setNotice(null);
     setActionError(null);
     const res = await updatePortfolioSnapshot();
-    if (res.success && res.data) {
-      setNotice(`Recorded — ${res.data.summary.winnerCount} winners.`);
-      await w.refresh();   // pull the series back with this point in it
+    if (res.success) {
+      await w.refresh();   // pull the series back with this point in it — this IS the confirmation
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setActionError(res.error || 'Failed to record snapshot');
@@ -123,9 +186,47 @@ function WinnersPageInner() {
   // back link without a title, so the "← Reports" arrow is unaffected.
   return (
     <AppShell backHref={backHref} backLabel={backLabel}>
-      {notice && <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div>}
       {actionError && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
       {w.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{w.error.message}</div>}
+
+      {/* ---------------------------------------------------------------------------------------------------------------------
+          THE DIAL. Written as a SENTENCE with the marks inside it — "a winner earns more than [£200] in 12 months" — because the
+          toggle is not a filter, it is the definition being read aloud, and a bare row of amounts would be a filter. It sits
+          ABOVE the hero so the definition arrives before the number it produces.
+
+          THE OFF-TRACKED LINE IS LEAD, NOT GOLD PLATING. The moment the screen shows 29 instead of 80, everything else on the
+          page — the trend, what "Update now" will record — is still the £200 reading, and nothing else says so.
+          --------------------------------------------------------------------------------------------------------------------- */}
+      {bars.length > 1 && (
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-sm text-slate-500">A winner earns more than</span>
+            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+              {bars.map((b) => (
+                <button
+                  key={b.bar}
+                  onClick={() => setBar(b.bar)}
+                  aria-pressed={sel?.bar === b.bar}
+                  className={
+                    sel?.bar === b.bar
+                      ? 'rounded px-3 py-1.5 text-sm font-medium text-white bg-slate-800 tabular-nums'
+                      : 'rounded px-3 py-1.5 text-sm text-slate-600 tabular-nums transition hover:bg-slate-50'
+                  }
+                >
+                  {money(b.bar)}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-slate-500">in 12 months</span>
+          </div>
+          {offTracked && (
+            <p className="mt-2 text-xs text-slate-400">
+              Reading only — the trend below, and anything &ldquo;Update now&rdquo; records, stay on the tracked{' '}
+              {money(trackedBar as number)} bar.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ---------------------------------------------------------------------------------------------------------------------
           THE BIG BOX, AND THE SMALL ONES BESIDE IT. The hero takes half the width on a large screen and the four supporting
@@ -192,30 +293,40 @@ function WinnersPageInner() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-rows-2">
+          {/* All four read off `sel`, so the whole headline moves with the dial rather than the count moving alone — a 29 sitting
+              next to £367,545 of revenue earned by 80 styles would be a straightforwardly wrong screen. */}
           <Stat
             loading={w.isLoading}
-            value={s?.winnerSharePct === null || s?.winnerSharePct === undefined ? '—' : `${s.winnerSharePct}%`}
+            value={sel?.winnerSharePct === null || sel?.winnerSharePct === undefined ? '—' : `${sel.winnerSharePct}%`}
             label="of the range"
-            note={s ? `${count} of ${s.totalStyles} that sold this year` : undefined}
+            note={sel ? `${count} of ${sel.totalStyles} that sold this year` : undefined}
           />
           <Stat
             loading={w.isLoading}
-            value={s ? money(s.totalRevenue12m) : '—'}
+            value={sel ? money(sel.totalRevenue12m) : '—'}
             label="revenue"
             note="gross, last 12 months, from these winners"
           />
           <Stat
             loading={w.isLoading}
-            value={(s?.totalUnits12m ?? 0).toLocaleString('en-GB')}
+            value={(sel?.totalUnits12m ?? 0).toLocaleString('en-GB')}
             label="units shifted"
             note="packed and sent, last 12 months"
           />
-          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same test, previous 12 months" />
+          <Stat loading={w.isLoading} value={prior.toLocaleString('en-GB')} label="a year ago" note="same bar, previous 12 months" />
+          {/* THIS ONE DOES NOT MOVE WITH THE DIAL, and the note says which bar it means. The conversion model behind it was
+              fitted on "did the style clear the TRACKED bar in its first 180 days" (BANDS in utils/portfolio.js) — re-reading it
+              at £1,000 would need a refit, not a filter, so it states its own bar instead of silently answering a different
+              question. Naming the bar unconditionally keeps it honest at £200 too. */}
           <Stat
             loading={c.isLoading}
             value={(c.data?.summary.expectedWinners ?? 0).toLocaleString('en-GB')}
             label="more on the way"
-            note={c.data ? `expected from ${c.data.summary.youngStyles} styles under 180 days old` : undefined}
+            note={
+              c.data
+                ? `expected to clear ${trackedBar === null ? 'the bar' : money(trackedBar)}, from ${c.data.summary.youngStyles} styles under 180 days old`
+                : undefined
+            }
           />
         </div>
       </div>
@@ -238,12 +349,14 @@ function WinnersPageInner() {
       </div>
 
       {history.length > 1 ? (
-        <WinnerTrendChart rows={history} />
+        <WinnerTrendChart rows={history} trackedBar={trackedBar} />
       ) : history.length === 1 ? (
         <p className="text-xs text-slate-400">
           One reading so far ({history[0].winnerCount} on {shortDate(history[0].date)}). The trend appears once there are two.
         </p>
       ) : null}
+
+      {ladder.length > 0 && <EarningsLadder bands={ladder} />}
     </AppShell>
   );
 }
@@ -280,7 +393,7 @@ function Stat({ loading, value, label, note }: { loading: boolean; value: string
 // ---------------------------------------------------------------------------------------------------------------------------------
 const TREND_COLOR = '#2a78d6';
 
-function WinnerTrendChart({ rows }: { rows: PortfolioSnapshot[] }) {
+function WinnerTrendChart({ rows, trackedBar }: { rows: PortfolioSnapshot[]; trackedBar: number | null }) {
   const W = 720, H = 220, padL = 34, padR = 16, padT = 12, padB = 24;
   const n = rows.length;
 
@@ -297,7 +410,12 @@ function WinnerTrendChart({ rows }: { rows: PortfolioSnapshot[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <span className="font-medium text-slate-600">Winners over time</span>
+        {/* The bar is named ON the chart, always — not only when the dial is off it. Every stored point was taken at the
+            tracked bar and nothing in the table records that, so the label is the only thing standing between this line and
+            someone reading it as the count they happen to be looking at. */}
+        <span className="font-medium text-slate-600">
+          Winners over time{trackedBar === null ? '' : `, at the ${money(trackedBar)} bar`}
+        </span>
         <span>
           {change === 0 ? 'Level' : change > 0 ? `Up ${change}` : `Down ${Math.abs(change)}`} since {shortDate(first.date)}
         </span>
@@ -326,6 +444,120 @@ function WinnerTrendChart({ rows }: { rows: PortfolioSnapshot[] }) {
           </circle>
         ))}
       </svg>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// WHERE THE EARNINGS SIT — the report half of the owner's question, and the reason the dial above is not enough on its own.
+//
+// A dial answers "how many clear £500". It cannot answer "is the bottom of my winners list worth working on", because that is a
+// question about MONEY and a count contains none. These bands are the same styles cut up so each rung states its own contribution,
+// and the arithmetic ties: the count at any mark on the dial is the sum of `styles` over the rungs above it.
+//
+// THREE COLUMNS, THREE DIFFERENT QUESTIONS, and the table is only worth drawing because they disagree:
+//   earned        — what the rung is worth in a year. Answers "should I care about the bottom 29 at all".
+//   per unit      — whether the rung earns because it is GOOD. This is the high-volume/low-profit detector, and on 2026-09-22 it
+//                   said the £1,000+ band is the thinnest on the board.
+//   per style     — what one more product in that rung would be worth. The portfolio model's actual unit of decision.
+//
+// THE BELOW-THE-BAR RUNGS ARE DIMMED, NOT HIDDEN. 186 styles earning £14k between them is not a winner story, but it is the
+// context for every "should I bother" question on this page, and the 37 that LOSE money are the only place on the screen they
+// appear at all. They are greyed because they are not part of the count, not because they are unimportant.
+//
+// No colour, no accent, no badge. The emphasis is weight and dimming only — house rule, and a table of six rows that needed a
+// key to read would be a worse table.
+// ---------------------------------------------------------------------------------------------------------------------------------
+function EarningsLadder({ bands }: { bands: PortfolioProfitBand[] }) {
+  const winnerBands = bands.filter((b) => b.isWinnerBand);
+  // Bars are scaled across ALL rungs, including the dimmed ones, so the £0-£200 tail is visibly comparable to the winner rungs —
+  // scaling to winners only would quietly hide that the tail out-earns the bottom two winner bands put together.
+  const maxProfit = Math.max(1, ...bands.map((b) => Math.abs(b.profit)));
+
+  // The two readings worth stating in words, both computed — never written down, so they cannot go stale the way a comment would.
+  const bottom = winnerBands[0];
+  const winnerProfit = winnerBands.reduce((a, b) => a + b.profit, 0);
+  const bottomShare = winnerProfit > 0 && bottom ? Math.round((bottom.profit / winnerProfit) * 100) : null;
+  // Best margin per unit among the WINNER rungs. Rungs with no styles have a null rate and must not win by default.
+  const best = winnerBands.reduce<PortfolioProfitBand | null>(
+    (a, b) => (b.profitPerUnit === null ? a : a === null || b.profitPerUnit > (a.profitPerUnit ?? -Infinity) ? b : a),
+    null
+  );
+
+  return (
+    <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
+        <span className="text-sm font-medium text-slate-600">Where the earnings sit</span>
+        <span className="text-xs text-slate-400">every style that sold in the last 12 months, by what it earned</span>
+      </div>
+
+      <table className="w-full min-w-[46rem] text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs font-normal text-slate-400">
+            <th className="py-2 text-left">earned in 12 months</th>
+            <th className="py-2 pl-4 text-right">styles</th>
+            <th className="py-2 pl-4 text-right">earned</th>
+            <th className="py-2 pl-3 text-left" />
+            <th className="py-2 pl-4 text-right">units</th>
+            <th className="py-2 pl-4 text-right">per unit</th>
+            <th className="py-2 pl-4 text-right">per style</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bands.map((b, i) => {
+            // A single rule where the winners start, so the table SHOWS the bar rather than relying on the reader to hold it.
+            const firstWinner = b.isWinnerBand && !bands[i - 1]?.isWinnerBand;
+            const tone = b.isWinnerBand ? 'text-slate-900' : 'text-slate-400';
+            return (
+              <tr
+                key={`${b.from}-${b.to}`}
+                className={`border-b border-slate-100 last:border-0 ${firstWinner ? 'border-t-2 border-t-slate-300' : ''}`}
+              >
+                <td className={`py-2 ${b.isWinnerBand ? 'font-medium text-slate-700' : 'text-slate-400'}`}>
+                  {bandLabel(b.from, b.to)}
+                </td>
+                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{b.styles.toLocaleString('en-GB')}</td>
+                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{money(b.profit)}</td>
+                <td className="py-2 pl-3">
+                  {/* Width is on the ABSOLUTE value so the loss-making rung draws a bar at all; its minus sign in the column
+                      beside it is what says which way it points. A 24px track keeps a tiny rung visible without implying it
+                      is worth something. */}
+                  <span className="block h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                    <span
+                      className={`block h-full rounded-full ${b.isWinnerBand ? 'bg-slate-400' : 'bg-slate-200'}`}
+                      style={{ width: `${Math.max(2, (Math.abs(b.profit) / maxProfit) * 100)}%` }}
+                    />
+                  </span>
+                </td>
+                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>{b.units.toLocaleString('en-GB')}</td>
+                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>
+                  {b.profitPerUnit === null ? '—' : money2(b.profitPerUnit)}
+                </td>
+                <td className={`py-2 pl-4 text-right tabular-nums ${tone}`}>
+                  {b.profitPerStyle === null ? '—' : money(b.profitPerStyle)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* THE TWO SENTENCES THE TABLE IS FOR. Both are the owner's own questions answered in his own terms — what the bottom rung
+          is worth, and where a unit earns most — so the read does not depend on anyone scanning six rows of numbers to find it. */}
+      <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">
+        {bottom && bottomShare !== null && (
+          <p>
+            The {bottom.styles} styles at {bandLabel(bottom.from, bottom.to)} earn {money(bottom.profit)} between them —{' '}
+            {bottomShare}% of everything the winners earn, about {money(bottom.profitPerStyle ?? 0)} each for the year.
+          </p>
+        )}
+        {best && (
+          <p>
+            Best earned per unit: {bandLabel(best.from, best.to)} at {money2(best.profitPerUnit as number)} a unit on{' '}
+            {Math.round(best.unitsPerStyle ?? 0).toLocaleString('en-GB')} units a style. Before advertising, on every rung.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

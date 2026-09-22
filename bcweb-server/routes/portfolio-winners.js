@@ -28,6 +28,27 @@ Purpose: Winners screen — the WINNERS tab. The bird's-eye view of the business
          Mirrors the Stock Position and Birk Availability split, and for the same reason: a series that grew every time someone
          opened the page would measure browsing, not the business.
 
+THE BAR TOGGLE, AND THE REPORT UNDER IT (added 2026-09-22, owner):
+         "We have a number for winners based on making £200 profit in a year. I wonder, is it easy enough to give me a toggle so
+          I can see what the numbers are for £300, £500 or 1k profit. I can then decide whether I'm focussing on high volume low
+          profit items and what the sweet spot might be. Unless you can also give me a report here. ie. I shouldn't be focussing
+          on the low 20 items if they only yield another £2 for the year."
+
+         Both, because they answer different halves and neither is sufficient alone:
+
+           `summary.bars`   — the WHOLE summary re-measured at every mark on WINNER_BAR_LADDER (200/300/500/1000). Sent in ONE
+                              payload, not fetched per bar, so the toggle is instant AND the four readings provably come from the
+                              same rows. A `bar` query param was the obvious alternative and is worse: four round-trips over a
+                              moving `sales` table, and four chances for the screen to show a count the headline never produced.
+           `summary.ladder` — the DISTRIBUTION. A count at a higher bar cannot say what the gap between two bars is WORTH, and the
+                              worth is the actual decision. See profitLadder() in utils/portfolio.js for what the columns showed
+                              on the day and why "earned per unit" is the one that answers the high-volume/low-profit question.
+
+         ⚠ THE TOGGLE IS A READING, NOT A SETTING. Nothing about it reaches the database. summary's own top-level fields are
+           bars[0] — the TRACKED £200 bar — spread in place, so POST /portfolio-snapshot-update records the tracked figure
+           whatever the screen happens to be displaying, and the trend line never develops a step caused by someone browsing.
+           If the tracked bar itself is ever to move, that is the migration-and-clear-the-table job described on the constant.
+
 Requires auth.
 =======================================================================================================================================
 Request Payload: none (GET)
@@ -41,13 +62,43 @@ Success Response:
   "return_code": "SUCCESS",
   "days": 365,
   "summary": {                          // real figures, measured 2026-09-22 against the live DB
+    "bar": 200,                         // WHICH bar these top-level figures were taken at — always the TRACKED one
     "winner_count": 80,
     "winner_count_prior_year": 58,      // the same test applied to the 12 months before this one
     "joined_this_year": 38,             // winner now, not a winner a year ago
     "left_this_year": 16,               // winner a year ago, not a winner now
     "total_styles": 303,                // styles that traded at all in the window — the denominator for the share
     "winner_share_pct": 26,             // 80 of 303. Whole percent; null if the denominator is unknown
-    "total_profit_12m": 52196.25        // in the payload but NOT shown on screen (owner: "I don't care about values")
+    "total_profit_12m": 52129.60,       // in the payload but NOT shown on screen (owner: "I don't care about values")
+    "total_revenue_12m": 367544.55,     // gross, across the winners only. Shown; NOT snapshotted, so never on the trend
+    "total_units_12m": 7615,
+    "total_units_prior_12m": 5189,      // what THIS year's winners shifted LAST year — like-for-like, not last year's set
+    "by_brand": [ { "brand": "Birkenstock", "winners": 59, "units": 2504, "revenue": 167630.21 }, ... ],
+
+    // THE TOGGLE. Every field above, re-measured at each mark. bars[0] IS the object above (same bar, same numbers).
+    "bars": [
+      { "bar": 200,  "winner_count": 80, "winner_count_prior_year": 58, "winner_share_pct": 26, "total_units_12m": 7615, ... },
+      { "bar": 300,  "winner_count": 51, "winner_count_prior_year": 41, "winner_share_pct": 17, "total_units_12m": 6731, ... },
+      { "bar": 500,  "winner_count": 29, "winner_count_prior_year": 23, "winner_share_pct": 10, "total_units_12m": 5524, ... },
+      { "bar": 1000, "winner_count": 13, "winner_count_prior_year":  7, "winner_share_pct":  4, "total_units_12m": 4469, ... }
+    ],
+
+    // THE REPORT. Bands tile the ladder exactly, low to high, so the count at any mark is the sum of the bands above it.
+    // `from` is an EXCLUSIVE floor (null = open below), `to` an INCLUSIVE ceiling (null = open above).
+    "ladder": [
+      { "from": null, "to": 0,    "is_winner_band": false, "styles": 37,  "profit":  -1198.03, "units":  288,
+        "profit_per_style":  -32.38, "profit_per_unit": -4.16, "units_per_style":   7.78 },
+      { "from": 0,    "to": 200,  "is_winner_band": false, "styles": 186, "profit":  13962.03, "units": 2298,
+        "profit_per_style":   75.06, "profit_per_unit":  6.08, "units_per_style":  12.35 },
+      { "from": 200,  "to": 300,  "is_winner_band": true,  "styles": 29,  "profit":   6886.16, "units":  884,
+        "profit_per_style":  237.45, "profit_per_unit":  7.79, "units_per_style":  30.48 },
+      { "from": 300,  "to": 500,  "is_winner_band": true,  "styles": 22,  "profit":   8966.03, "units": 1207,
+        "profit_per_style":  407.55, "profit_per_unit":  7.43, "units_per_style":  54.86 },
+      { "from": 500,  "to": 1000, "is_winner_band": true,  "styles": 16,  "profit":  10723.94, "units": 1055,
+        "profit_per_style":  670.25, "profit_per_unit": 10.16, "units_per_style":  65.94 },
+      { "from": 1000, "to": null, "is_winner_band": true,  "styles": 13,  "profit":  25553.47, "units": 4469,
+        "profit_per_style": 1965.65, "profit_per_unit":  5.72, "units_per_style": 343.77 }
+    ]
   },
   "winners": [
     { "groupid": "0051753", "title": "Arizona Birko-Flor White", "brand": "Birkenstock",

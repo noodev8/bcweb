@@ -3470,18 +3470,49 @@ export interface PortfolioWinner {
   stockUnits: number;             // see rule 2 above
 }
 
-export interface PortfolioWinnersSummary {
+// The headline, AT ONE BAR. The screen's toggle switches between four of these; the server measures all four from a single read
+// (see `bars` below) so the alternatives can never disagree with the one on display.
+export interface PortfolioBarSummary {
+  bar: number;                    // the bar these figures were measured at, in GBP
   winnerCount: number;            // THE tracked number — the hero metric on the screen
-  winnerCountPriorYear: number;
+  winnerCountPriorYear: number;   // the SAME bar applied to the previous 12 months, so the comparison is like-for-like
   joinedThisYear: number;
   leftThisYear: number;
-  totalStyles: number;            // styles that traded at all in the window — the denominator for the share
+  totalStyles: number;            // styles that traded at all in the window — the denominator for the share. BAR-INDEPENDENT
   winnerSharePct: number | null;  // whole percent. null when the denominator is unknown; NEVER render a null as 0%
   totalProfit12m: number;         // across the winners only. RETURNED BUT NOT SHOWN — see the screen's header
   totalRevenue12m: number;        // GROSS revenue the winners brought in. Shown; not snapshotted, so not on the trend
   totalUnits12m: number;          // units PACKED AND SENT by the winners. Returns excluded, not netted
   totalUnitsPrior12m: number;     // what THIS year's winners shifted LAST year — like-for-like, not last year's winner set
   byBrand: PortfolioBrand[];      // most winners first
+}
+
+// One rung of the distribution report. The bands TILE the bar ladder, low to high, so the winner count at any bar is exactly the
+// sum of `styles` over the bands above it — the toggle and the report can never tell different stories.
+//
+// `from` is an EXCLUSIVE floor (null = open below: the styles that LOST money), `to` an INCLUSIVE ceiling (null = open above).
+// The rates are null, never 0, on an empty band: a rate over nothing is not a rate, and £0.00 reads as "these earn nothing".
+//
+// profitPerUnit IS THE POINT OF THIS TABLE. It is what distinguishes a band that earns because it is good from one that earns
+// because it is busy — on 2026-09-22 the £1,000+ band was the WORST per unit on the board (£5.72 against £10.16 at £500-£1,000).
+export interface PortfolioProfitBand {
+  from: number | null;
+  to: number | null;
+  isWinnerBand: boolean;          // above the TRACKED bar, i.e. these styles are winners today
+  styles: number;
+  profit: number;                 // contribution before ads — label it "earned"
+  revenue: number;
+  units: number;
+  profitPerStyle: number | null;
+  profitPerUnit: number | null;
+  unitsPerStyle: number | null;
+}
+
+// What GET /portfolio-winners returns: the TRACKED bar's figures at the top level (unchanged shape — the snapshot writer and the
+// trend chart depend on it), plus every bar and the distribution behind them.
+export interface PortfolioWinnersSummary extends PortfolioBarSummary {
+  bars: PortfolioBarSummary[];    // ladder order, low bar first. bars[0] IS this object's own figures
+  ladder: PortfolioProfitBand[];  // low band first
 }
 
 // Winners per brand. Note winners and units can point opposite ways — Birkenstock carries the COUNT (59 winners, 2.5k units),
@@ -3512,32 +3543,65 @@ export interface PortfolioSnapshot {
   winnerSharePct: number | null;  // derived server-side from the two stored facts. null on rows predating totalStyles
 }
 
+// pg returns numerics as STRINGS, and a field the API has not shipped yet arrives undefined and formats as "£NaN". Both mappers
+// below coerce every figure rather than passing it through — the same rule the Ad Daily client follows. Shared between the GET and
+// the "Update now" POST because both carry the identical summary object, and two copies would drift.
+function mapBarSummary(b: Record<string, unknown> | undefined): PortfolioBarSummary {
+  return {
+    bar: Number(b?.bar) || 0,
+    winnerCount: Number(b?.winner_count) || 0,
+    winnerCountPriorYear: Number(b?.winner_count_prior_year) || 0,
+    joinedThisYear: Number(b?.joined_this_year) || 0,
+    leftThisYear: Number(b?.left_this_year) || 0,
+    totalStyles: Number(b?.total_styles) || 0,
+    // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
+    winnerSharePct: b?.winner_share_pct === null || b?.winner_share_pct === undefined
+      ? null : Number(b.winner_share_pct),
+    totalProfit12m: Number(b?.total_profit_12m) || 0,
+    totalRevenue12m: Number(b?.total_revenue_12m) || 0,
+    totalUnits12m: Number(b?.total_units_12m) || 0,
+    totalUnitsPrior12m: Number(b?.total_units_prior_12m) || 0,
+    byBrand: ((b?.by_brand as Record<string, unknown>[]) || []).map((x) => ({
+      brand: String(x.brand || ''),
+      winners: Number(x.winners) || 0,
+      units: Number(x.units) || 0,
+      revenue: Number(x.revenue) || 0,
+    })),
+  };
+}
+
+// A band edge of `null` means "open" and is NOT a zero — coerce it explicitly or an open-below band renders as "£0 to £0".
+const bandEdge = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+function mapWinnersSummary(b: Record<string, unknown> | undefined): PortfolioWinnersSummary {
+  return {
+    ...mapBarSummary(b),
+    // Fall back to the top-level figures as a single-rung ladder rather than an empty array: a server that has not shipped `bars`
+    // yet should leave the screen showing its one tracked bar, not showing no bars at all.
+    bars: ((b?.bars as Record<string, unknown>[]) || []).length
+      ? (b!.bars as Record<string, unknown>[]).map(mapBarSummary)
+      : [mapBarSummary(b)],
+    ladder: ((b?.ladder as Record<string, unknown>[]) || []).map((l) => ({
+      from: bandEdge(l.from),
+      to: bandEdge(l.to),
+      isWinnerBand: Boolean(l.is_winner_band),
+      styles: Number(l.styles) || 0,
+      profit: Number(l.profit) || 0,
+      revenue: Number(l.revenue) || 0,
+      units: Number(l.units) || 0,
+      // Null is "no styles in this band", not zero. `|| 0` here would invent a rate for an empty rung.
+      profitPerStyle: l.profit_per_style === null || l.profit_per_style === undefined ? null : Number(l.profit_per_style),
+      profitPerUnit: l.profit_per_unit === null || l.profit_per_unit === undefined ? null : Number(l.profit_per_unit),
+      unitsPerStyle: l.units_per_style === null || l.units_per_style === undefined ? null : Number(l.units_per_style),
+    })),
+  };
+}
+
 export function getPortfolioWinners(days?: number) {
   return request<{ summary: PortfolioWinnersSummary; winners: PortfolioWinner[]; history: PortfolioSnapshot[] }>(
     { url: '/portfolio-winners', method: 'GET', params: days ? { days } : undefined },
     (b) => ({
-      // pg returns numerics as STRINGS, and a field the API has not shipped yet arrives undefined and formats as "£NaN". Coerce
-      // every figure rather than passing it through — the same rule the Ad Daily client follows.
-      summary: {
-        winnerCount: Number(b.summary?.winner_count) || 0,
-        winnerCountPriorYear: Number(b.summary?.winner_count_prior_year) || 0,
-        joinedThisYear: Number(b.summary?.joined_this_year) || 0,
-        leftThisYear: Number(b.summary?.left_this_year) || 0,
-        totalStyles: Number(b.summary?.total_styles) || 0,
-        // `|| 0` would turn "denominator unknown" into a confident 0%. Test for null explicitly.
-        winnerSharePct: b.summary?.winner_share_pct === null || b.summary?.winner_share_pct === undefined
-          ? null : Number(b.summary.winner_share_pct),
-        totalProfit12m: Number(b.summary?.total_profit_12m) || 0,
-        totalRevenue12m: Number(b.summary?.total_revenue_12m) || 0,
-        totalUnits12m: Number(b.summary?.total_units_12m) || 0,
-        totalUnitsPrior12m: Number(b.summary?.total_units_prior_12m) || 0,
-        byBrand: ((b.summary?.by_brand as Record<string, unknown>[]) || []).map((x) => ({
-          brand: String(x.brand || ''),
-          winners: Number(x.winners) || 0,
-          units: Number(x.units) || 0,
-          revenue: Number(x.revenue) || 0,
-        })),
-      },
+      summary: mapWinnersSummary(b.summary as Record<string, unknown> | undefined),
       winners: ((b.winners as Record<string, unknown>[]) || []).map((w) => ({
         groupid: String(w.groupid),
         title: (w.title as string | null) ?? null,
@@ -3576,21 +3640,10 @@ export function updatePortfolioSnapshot() {
     { url: '/portfolio-snapshot-update', method: 'POST' },
     (b) => ({
       date: String(b.date || ''),
-      summary: {
-        winnerCount: Number((b.summary as Record<string, unknown>)?.winner_count) || 0,
-        winnerCountPriorYear: Number((b.summary as Record<string, unknown>)?.winner_count_prior_year) || 0,
-        joinedThisYear: Number((b.summary as Record<string, unknown>)?.joined_this_year) || 0,
-        leftThisYear: Number((b.summary as Record<string, unknown>)?.left_this_year) || 0,
-        totalStyles: Number((b.summary as Record<string, unknown>)?.total_styles) || 0,
-        winnerSharePct: (b.summary as Record<string, unknown>)?.winner_share_pct === null
-          || (b.summary as Record<string, unknown>)?.winner_share_pct === undefined
-          ? null : Number((b.summary as Record<string, unknown>).winner_share_pct),
-        totalProfit12m: Number((b.summary as Record<string, unknown>)?.total_profit_12m) || 0,
-        totalRevenue12m: Number((b.summary as Record<string, unknown>)?.total_revenue_12m) || 0,
-        totalUnits12m: Number((b.summary as Record<string, unknown>)?.total_units_12m) || 0,
-        totalUnitsPrior12m: Number((b.summary as Record<string, unknown>)?.total_units_prior_12m) || 0,
-        byBrand: [],   // the snapshot response carries headline figures only; the screen reads brands from the GET
-      },
+      // The POST echoes the SAME summary object the GET returns (both call computeWinners), so it goes through the same mapper —
+      // the screen only reads winnerCount off it to confirm what was recorded, but a second hand-rolled copy would drift.
+      // REMEMBER WHICH BAR THIS IS: what gets stored is always the TRACKED bar, never whatever the screen's toggle is showing.
+      summary: mapWinnersSummary(b.summary as Record<string, unknown> | undefined),
       contenders: {
         youngStyles: Number((b.contenders as Record<string, unknown>)?.young_styles) || 0,
         expectedWinners: Number((b.contenders as Record<string, unknown>)?.expected_winners) || 0,

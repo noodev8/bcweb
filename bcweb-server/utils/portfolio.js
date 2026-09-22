@@ -46,6 +46,19 @@ const { query } = require('../database');
 //   If it ever moves, clear the snapshot history or add the bar to the stored row — do not just edit the number.
 const WINNER_PROFIT_BAR = 200;
 
+// THE SAME TEST, READ AT HIGHER BARS. Not a second definition — one ruler with extra marks on it. The screen offers these as a
+// TOGGLE so the owner can ask "and if a winner had to earn £500?" without anyone editing a constant, which is the only safe way to
+// answer that question: the bar above is welded to the trend table (see its warning) and must not move to satisfy curiosity.
+//
+// ⚠ THE FIRST ENTRY MUST BE WINNER_PROFIT_BAR. routes/portfolio-winners.js returns bars[0] spread into `summary`, so the payload's
+//   top-level figures stay exactly what they were before the toggle existed and every existing consumer — crucially the snapshot
+//   writer — keeps recording the TRACKED bar no matter what the screen is displaying. Reorder this and you silently change what
+//   gets stored in portfolio_snapshot.
+//
+// Why these four: 200 is the tracked bar; 300/500/1000 were measured 2026-09-22 and give 51 / 29 / 13 winners against 80, which is
+// a usable spread. A fifth mark at 2000 leaves 3 styles — too few to read anything from.
+const WINNER_BAR_LADDER = [WINNER_PROFIT_BAR, 300, 500, 1000];
+
 // Below this age a style is YOUNG and belongs on the CONTENDERS tab. One selling season.
 //
 // ⚠ THIS IS A CONTENDERS-ONLY RULE. IT IS NOT PART OF THE WINNER TEST, and putting it back there would be a regression, not a
@@ -102,6 +115,7 @@ const HIGH_CONFIDENCE_BANDS = ['STRONG', 'LIKELY'];
 const BAND_RANK = { STRONG: 0, LIKELY: 1, POSSIBLE: 2, WEAK: 3, DEAD: 4, TOO_EARLY: 5 };
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+const round2 = (v) => Math.round(v * 100) / 100;
 
 // First matching band for a 30-day profit figure. `min: null` always matches, so this never returns undefined.
 function bandFor(profit30d) {
@@ -123,6 +137,154 @@ const STOCK_CTE = `
   GROUP BY groupid
 `;
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// THE SUMMARY, TAKEN AT ONE BAR. Everything the headline shows, for a single mark on the ladder. Pure arithmetic over the rows the
+// one SQL read already returned — no query in here, which is the entire reason a four-bar toggle costs nothing.
+//
+// `totalStyles` is passed in rather than counted here because the denominator is BAR-INDEPENDENT: "of everything that sold this
+// year" does not change when you raise the bar on what counts as earning its keep, and only the numerator should move.
+//
+// The prior-year figures use the SAME bar as the current year, so "a year ago" on the £500 toggle means "would have been a £500
+// winner then", not "was a £200 winner then". Anything else and the comparison is between two different tests.
+// ---------------------------------------------------------------------------------------------------------------------------------
+function summariseAt(styles, bar, totalStyles) {
+  let winnerCount = 0;
+  let winnerCountPriorYear = 0;
+  let joined = 0;
+  let left = 0;
+  let totalProfit12m = 0;
+  let totalRevenue12m = 0;   // across the WINNERS only, matching every other figure in this summary
+  // Units actually shipped by the winners. SUM(qty) with the qty > 0 filter already applied, so returns are EXCLUDED rather
+  // than netted off — this is "how many we packed and sent", which is what was asked for.
+  let totalUnits12m = 0;
+  // Last year's units from THIS year's winners — the like-for-like read. It deliberately does NOT re-run the winner test on last
+  // year: the question is "are the products I now rely on shifting more than they did", not "what did last year's set do".
+  let totalUnitsPrior12m = 0;
+  // Winners per brand, plus what each brand shifted. The hero's supporting detail: which names are actually carrying the count.
+  const byBrand = new Map();
+
+  for (const st of styles) {
+    // The whole winner test, both years: did it clear the bar in that window? No age condition on either side — see MATURITY_DAYS.
+    // `wasWinnerThen` needs no "was it old enough then" clause for the same reason, and dropping it also removes an artefact the
+    // age gate created: styles that merely crossed the age line during the year used to register as having JOINED, which made
+    // joined/left partly a measure of the calendar rather than of the trade.
+    const isWinnerNow = st.profit12m > bar;
+    const wasWinnerThen = st.profitPrior12m > bar;
+
+    if (wasWinnerThen) winnerCountPriorYear += 1;
+    if (isWinnerNow && !wasWinnerThen) joined += 1;
+    if (!isWinnerNow && wasWinnerThen) left += 1;
+    if (!isWinnerNow) continue;
+
+    winnerCount += 1;
+    totalProfit12m += st.profit12m;
+    totalRevenue12m += st.revenue12m;
+    totalUnits12m += st.units12m;
+    totalUnitsPrior12m += st.unitsPrior12m;
+
+    const bAgg = byBrand.get(st.brandKey) || { brand: st.brandKey, winners: 0, units: 0, revenue: 0 };
+    bAgg.winners += 1;
+    bAgg.units += st.units12m;
+    bAgg.revenue += st.revenue12m;
+    byBrand.set(st.brandKey, bAgg);
+  }
+
+  return {
+    // WHICH bar these figures were taken at. On screen it is what the toggle is lit against; in the payload it is what stops a
+    // reader having to know that bars[] is in ladder order.
+    bar,
+    winner_count: winnerCount,
+    winner_count_prior_year: winnerCountPriorYear,
+    joined_this_year: joined,
+    left_this_year: left,
+    // Styles that traded at all in the window, and the winners' share of them. Rounded to a whole percent: this is a
+    // shape-of-the-business figure read at a glance, and a decimal place on it would imply a precision it does not have.
+    total_styles: totalStyles,
+    winner_share_pct: totalStyles > 0 ? Math.round((winnerCount / totalStyles) * 100) : null,
+    // Kept in the payload but NOT shown on the Winners screen — the owner's call, 2026-09-22: "I'm not sure I care about
+    // values. It is the amount before adverts? I don't care." It stays because it is already stored in every snapshot row.
+    total_profit_12m: round2(totalProfit12m),
+    // Gross revenue the winners brought in over the window. Shown on screen; profit is not (owner: it is before ads and
+    // invites a conversation he does not want at a glance). NOT stored in the snapshot — no migration, so it is a live
+    // figure only and does not appear on the trend.
+    total_revenue_12m: round2(totalRevenue12m),
+    total_units_12m: totalUnits12m,
+    total_units_prior_12m: totalUnitsPrior12m,
+    // Most winners first. Returned WHOLE, not top-N — it is a handful of brands and the screen decides how many to draw.
+    by_brand: [...byBrand.values()]
+      .map((b) => ({ ...b, revenue: round2(b.revenue) }))
+      .sort((a, b) => b.winners - a.winners || b.units - a.units),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// THE DISTRIBUTION BEHIND THE COUNT — the "report" half of the owner's 2026-09-22 question:
+//
+//   "I can then decide whether I'm focussing on high volume low profit items and what the sweet spot might be... I shouldn't be
+//    focussing on the low 20 items if they only yield another £2 for the year."
+//
+// A bar toggle answers HOW MANY clear a higher bar. It cannot answer WHAT THE GAP BETWEEN TWO BARS IS WORTH, because a count says
+// nothing about the money — and that gap is the actual decision. So the same styles are cut into bands, and each band states what
+// it contributed. Read down the `profit` column and the 29 styles between £200 and £300 are worth £6.9k a year between them, while
+// the 13 above £1,000 are worth £25.6k: half of everything the winners earn, from a sixth of the winners.
+//
+// EARNED PER UNIT IS THE COLUMN THAT ANSWERS THE "HIGH VOLUME, LOW PROFIT" HALF, and it is the one that surprises. Measured
+// 2026-09-22 the top band is the WORST per unit on the board (£5.72 against £10.16 in the £500-£1,000 band) because it is where
+// the high-turnover, thin-margin styles live — 344 units a style against 66. The biggest earners are big because they are busy,
+// not because they are good, and that is only visible next to a per-unit figure.
+//
+// AND THE CAUSE, MEASURED THE SAME DAY, because someone will reasonably ask whether the thin top band is an accounting artefact:
+// it is not, and it has a structural explanation. The £1,000+ band is 85% AMAZON by units, against 29-45% in every other band.
+// Amazon's referral fee is what makes the rate thin — the same price nets roughly twice as much on Shopify (CLAUDE.md). Guarding
+// against the known AMZ profit understatement (sales.profit for AMZ carries a divide-by-1.2 refund haircut that double-counts
+// returns already booked as negative rows, so it reads ~20% low): grossing Amazon profit back up by 1.2 moves the top band from
+// £5.72 to £6.47 per unit and the £500-£1,000 band from £10.16 to £10.50. THE GAP SURVIVES THE CORRECTION — it is a channel-mix
+// fact, not a bookkeeping one.
+//
+// The channel split is deliberately NOT a column in the table. It would be a seventh column answering a question the screen does
+// not exist to ask, on a page whose whole design is subtraction, and it invites exactly the "is that really profit" conversation
+// the owner ruled out. If it is ever wanted, it is a `sales.channel` FILTER away in the SQL above — but build it as its own view.
+//
+// BAND EDGES ARE THE LADDER, so the bands always tile the toggle exactly: the count at any mark is the sum of the bands above it
+// (29 + 22 + 16 + 13 = 80 at £200), and nothing can drift between the two views. Membership is `> from AND <= to`, matching the
+// winner test's strict `>`, with the bottom band open below (it catches the styles that LOST money) and the top band open above.
+//
+// MEASURED OVER STYLES THAT TRADED IN THE WINDOW, same set as `total_styles`. A style with no sales in the 12 months has a profit
+// of exactly 0 and would otherwise pile up in the loss-making band and make it look like a catastrophe.
+// ---------------------------------------------------------------------------------------------------------------------------------
+function profitLadder(tradedStyles) {
+  // [null, 0], (0, 200], (200, 300], (300, 500], (500, 1000], (1000, null]
+  const uppers = [0, ...WINNER_BAR_LADDER];
+  const edges = uppers.map((to, i) => ({ from: i === 0 ? null : uppers[i - 1], to }));
+  edges.push({ from: uppers[uppers.length - 1], to: null });
+
+  return edges.map(({ from, to }) => {
+    const inBand = tradedStyles.filter(
+      (st) => (from === null || st.profit12m > from) && (to === null || st.profit12m <= to)
+    );
+    const profit = inBand.reduce((a, st) => a + st.profit12m, 0);
+    const revenue = inBand.reduce((a, st) => a + st.revenue12m, 0);
+    const units = inBand.reduce((a, st) => a + st.units12m, 0);
+
+    return {
+      from,                       // exclusive floor; null = open below (the loss-makers)
+      to,                         // inclusive ceiling; null = open above
+      // Whether this band is above the TRACKED bar, i.e. whether its styles are winners today. The screen dims the rest — they
+      // are context for the decision, not part of the count.
+      is_winner_band: from !== null && from >= WINNER_PROFIT_BAR,
+      styles: inBand.length,
+      profit: round2(profit),
+      revenue: round2(revenue),
+      units,
+      // Per-style and per-unit. Null rather than 0 on an empty band — a rate over nothing is not a rate, and a confident £0.00
+      // reads as "these earn nothing" instead of "there are none of these".
+      profit_per_style: inBand.length > 0 ? round2(profit / inBand.length) : null,
+      profit_per_unit: units > 0 ? round2(profit / units) : null,
+      units_per_style: inBand.length > 0 ? round2(units / inBand.length) : null,
+    };
+  });
+}
+
 /**
  * The WINNERS side: the list, plus the summary that carries the hero count.
  *
@@ -130,6 +292,10 @@ const STOCK_CTE = `
  * doing the windowing so the table is scanned once rather than three times (the brand-overview pattern).
  *
  * The prior window is the 12 months BEFORE the current one, [-24m, -12m), so the two never overlap and "joined this year" is exact.
+ *
+ * The summary is measured at EVERY mark on WINNER_BAR_LADDER (see `summary.bars`) and the tracked bar's figures are spread onto
+ * `summary` itself, so the payload's top-level shape is unchanged and the snapshot writer keeps recording the tracked bar.
+ * `summary.ladder` is the distribution report behind the count — see profitLadder().
  *
  * @returns {Promise<{summary: object, winners: object[]}>} winners sorted profit_12m descending.
  */
@@ -178,67 +344,15 @@ async function computeWinners() {
     `
   );
 
-  // Apply the definition. The maturity and bar tests are done here rather than in SQL because the summary needs the LOSING side of
-  // them too — a style that cleared the bar last year and not this one is the `left_this_year` count, and by definition it is not
-  // in the list.
+  // Normalise once, then measure repeatedly. The rows come back ordered by profit_12m DESC and this map preserves that, so the
+  // winners list below needs no re-sort.
   //
-  // The prior-year test uses the age the style HAD A YEAR AGO, so a style that was 200 days old last September is judged then on
-  // the same maturity rule it is judged on now. Without that, every style that merely crossed 180 days during the year would count
-  // as having "joined", and joined/left would measure the calendar rather than the trade.
-  const winners = [];
-  // The denominator for "what share of the range is earning its keep". STYLES THAT SOLD AT ALL IN THE WINDOW — the same table,
-  // the same 12 months and the same qty > 0 filter as the numerator, so the two are on identical footing and the percentage
-  // cannot be gamed by a definition mismatch. Measured 2026-09-22: 80 of 303 = 26%.
-  //
-  // Three other denominators were measured and rejected for being no more informative and harder to explain: live Shopify styles
-  // (296 -> 27%), every style in skusummary (303 -> 26%), and stocked-or-sold (324 -> 25%). THE ANSWER IS ~26% WHICHEVER IS USED,
-  // so this is a labelling choice, not a numerical one — which is exactly why it should be the one that is easiest to say out
-  // loud: "of everything that sold this year, a quarter of it earns its keep".
-  let totalStyles = 0;
-  let winnerCountPriorYear = 0;
-  let joined = 0;
-  let left = 0;
-  let totalProfit12m = 0;
-  let totalRevenue12m = 0;   // across the WINNERS only, matching every other figure in this summary
-  // Units actually shipped by the winners. SUM(qty) with the qty > 0 filter already applied, so returns are EXCLUDED rather
-  // than netted off — this is "how many we packed and sent", which is what was asked for.
-  let totalUnits12m = 0;
-  // Last year's units from THIS year's winners — the like-for-like read. It deliberately does NOT re-run the winner test on last
-  // year: the question is "are the products I now rely on shifting more than they did", not "what did last year's set do".
-  let totalUnitsPrior12m = 0;
-  // Winners per brand, plus what each brand shifted. The hero's supporting detail: which names are actually carrying the count.
-  const byBrand = new Map();
-
-  for (const r of result.rows) {
+  // WHY A SEPARATE PASS AT ALL: the summary has to be computed at FOUR bars (WINNER_BAR_LADDER) and the ladder report needs every
+  // style banded, so the one thing that must not happen is four SQL round-trips. One read, one normalise, then pure arithmetic.
+  const styles = result.rows.map((r) => {
     const days = Number(r.days_on_sale) || 0;
     const profit12m = num(r.profit_12m) ?? 0;
     const profitPrior = num(r.profit_prior_12m) ?? 0;
-
-    // The whole winner test, both years: did it clear the bar in that window? No age condition on either side — see MATURITY_DAYS.
-    // `wasWinnerThen` needs no "was it old enough then" clause for the same reason, and dropping it also removes an artefact the
-    // age gate created: styles that merely crossed the age line during the year used to register as having JOINED, which made
-    // joined/left partly a measure of the calendar rather than of the trade.
-    if ((Number(r.units_12m) || 0) !== 0) totalStyles += 1;
-
-    const isWinnerNow = profit12m > WINNER_PROFIT_BAR;
-    const wasWinnerThen = profitPrior > WINNER_PROFIT_BAR;
-
-    if (wasWinnerThen) winnerCountPriorYear += 1;
-    if (isWinnerNow && !wasWinnerThen) joined += 1;
-    if (!isWinnerNow && wasWinnerThen) left += 1;
-    if (!isWinnerNow) continue;
-
-    totalProfit12m += profit12m;
-    totalRevenue12m += num(r.revenue_12m) ?? 0;
-    totalUnits12m += Number(r.units_12m) || 0;
-    totalUnitsPrior12m += Number(r.units_prior_12m) || 0;
-
-    const brandKey = (r.brand || '').trim() || 'Unbranded';
-    const bAgg = byBrand.get(brandKey) || { brand: brandKey, winners: 0, units: 0, revenue: 0 };
-    bAgg.winners += 1;
-    bAgg.units += Number(r.units_12m) || 0;
-    bAgg.revenue += num(r.revenue_12m) ?? 0;
-    byBrand.set(brandKey, bAgg);
 
     // Direction. A style without a real prior year is NEW, not a 100% riser — see PRIOR_YEAR_MIN_DAYS.
     let direction;
@@ -260,44 +374,72 @@ async function computeWinners() {
       }
     }
 
-    winners.push({
+    return {
       groupid: r.groupid,
       title: r.title || null,          // title.shopifytitle — skusummary.colour is an overloaded segmentation tag, never a name
+      // TWO brand fields on purpose. `brand` is the raw value and stays null when the style has none — that is what the list
+      // returns and what the UI renders. `brandKey` is the GROUPING key, where a missing brand has to become a real bucket so the
+      // by-brand breakdown does not quietly drop those styles. Collapsing the two would make a genuinely blank brand come back
+      // out of the list as the literal word "Unbranded".
       brand: r.brand || null,
-      profit_12m: Math.round(profit12m * 100) / 100,
-      revenue_12m: Math.round((num(r.revenue_12m) ?? 0) * 100) / 100,
-      units_12m: Number(r.units_12m) || 0,
-      profit_prior_12m: priorOut === null ? null : Math.round(priorOut * 100) / 100,
+      brandKey: (r.brand || '').trim() || 'Unbranded',
+      profit12m,
+      revenue12m: num(r.revenue_12m) ?? 0,
+      units12m: Number(r.units_12m) || 0,
+      unitsPrior12m: Number(r.units_prior_12m) || 0,
+      profitPrior12m: profitPrior,
+      priorOut,
       direction,
-      first_sale: r.first_sale,
-      days_on_sale: days,
-      stock_units: Number(r.stock_units) || 0,
-    });
-  }
+      firstSale: r.first_sale,
+      days,
+      stockUnits: Number(r.stock_units) || 0,
+    };
+  });
+
+  // The denominator for "what share of the range is earning its keep". STYLES THAT SOLD AT ALL IN THE WINDOW — the same table,
+  // the same 12 months and the same qty > 0 filter as the numerator, so the two are on identical footing and the percentage
+  // cannot be gamed by a definition mismatch. Measured 2026-09-22: 80 of 303 = 26%.
+  //
+  // Three other denominators were measured and rejected for being no more informative and harder to explain: live Shopify styles
+  // (296 -> 27%), every style in skusummary (303 -> 26%), and stocked-or-sold (324 -> 25%). THE ANSWER IS ~26% WHICHEVER IS USED,
+  // so this is a labelling choice, not a numerical one — which is exactly why it should be the one that is easiest to say out
+  // loud: "of everything that sold this year, a quarter of it earns its keep".
+  //
+  // It is BAR-INDEPENDENT, so it is counted once here and handed to every bar rather than recounted inside the loop.
+  const tradedStyles = styles.filter((s) => s.units12m !== 0);
+  const totalStyles = tradedStyles.length;
+
+  // The same summary, taken at each mark on the ladder.
+  const bars = WINNER_BAR_LADDER.map((bar) => summariseAt(styles, bar, totalStyles));
+
+  // The list is the TRACKED bar's set, always — the toggle is a reading of the count, not a filter on the rows. The screen does
+  // not draw this list at all today (see the page header); it is here for whatever working screen eventually wants it.
+  const winners = styles
+    .filter((s) => s.profit12m > WINNER_PROFIT_BAR)
+    .map((s) => ({
+      groupid: s.groupid,
+      title: s.title,
+      brand: s.brand,
+      profit_12m: round2(s.profit12m),
+      revenue_12m: round2(s.revenue12m),
+      units_12m: s.units12m,
+      profit_prior_12m: s.priorOut === null ? null : round2(s.priorOut),
+      direction: s.direction,
+      first_sale: s.firstSale,
+      days_on_sale: s.days,
+      stock_units: s.stockUnits,
+    }));
 
   return {
     summary: {
-      winner_count: winners.length,
-      winner_count_prior_year: winnerCountPriorYear,
-      joined_this_year: joined,
-      left_this_year: left,
-      // Styles that traded at all in the window, and the winners' share of them. Rounded to a whole percent: this is a
-      // shape-of-the-business figure read at a glance, and a decimal place on it would imply a precision it does not have.
-      total_styles: totalStyles,
-      winner_share_pct: totalStyles > 0 ? Math.round((winners.length / totalStyles) * 100) : null,
-      // Kept in the payload but NOT shown on the Winners screen — the owner's call, 2026-09-22: "I'm not sure I care about
-      // values. It is the amount before adverts? I don't care." It stays because it is already stored in every snapshot row.
-      total_profit_12m: Math.round(totalProfit12m * 100) / 100,
-      // Gross revenue the winners brought in over the window. Shown on screen; profit is not (owner: it is before ads and
-      // invites a conversation he does not want at a glance). NOT stored in the snapshot — no migration, so it is a live
-      // figure only and does not appear on the trend.
-      total_revenue_12m: Math.round(totalRevenue12m * 100) / 100,
-      total_units_12m: totalUnits12m,
-      total_units_prior_12m: totalUnitsPrior12m,
-      // Most winners first. Returned WHOLE, not top-N — it is a handful of brands and the screen decides how many to draw.
-      by_brand: [...byBrand.values()]
-        .map((b) => ({ ...b, revenue: Math.round(b.revenue * 100) / 100 }))
-        .sort((a, b) => b.winners - a.winners || b.units - a.units),
+      // bars[0] IS the tracked bar (WINNER_BAR_LADDER's first entry is WINNER_PROFIT_BAR, enforced by the comment on the
+      // constant). Spreading it keeps this payload byte-identical in shape to the pre-toggle version, which is what lets the
+      // snapshot writer go on reading summary.winner_count and record the tracked figure whatever the screen is showing.
+      ...bars[0],
+      // Every mark on the ladder, so the toggle is instant and cannot disagree with the headline — same read, same arithmetic.
+      bars,
+      // The distribution behind the count. See profitLadder().
+      ladder: profitLadder(tradedStyles),
     },
     winners,
   };
@@ -440,6 +582,7 @@ module.exports = {
   computeWinners,
   computeContenders,
   WINNER_PROFIT_BAR,
+  WINNER_BAR_LADDER,
   MATURITY_DAYS,
   CONTENDER_WINDOW,
   HIGH_CONFIDENCE_BANDS,

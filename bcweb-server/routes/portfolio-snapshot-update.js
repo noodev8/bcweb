@@ -23,6 +23,11 @@ WHAT A SNAPSHOT MEANS, AND WHY IT IS NOT JUST A CACHE
            day. Moving either makes the chart show a step that looks like the business moved when only the ruler did. If a bar ever
            changes, clear the table or start storing the bar — the warning sits on the constant in utils/portfolio.js too.
 
+           THIS IS WHY THE SCREEN'S BAR TOGGLE CANNOT REACH THIS ROUTE. The Winners screen can read the count at £300, £500 or
+           £1,000 (GET /portfolio-winners returns summary.bars), but what gets RECORDED is always summary.winner_count, which is
+           the tracked £200 bar — computeWinners() spreads bars[0] onto summary precisely so that this INSERT cannot accidentally
+           follow the display. Do not "helpfully" add a bar parameter to this POST: one series, one ruler, or the trend is a lie.
+
          Growth safeguard (why this is bounded):
            - snapshot_date is the PK and we UPSERT it, so repeated presses in one day OVERWRITE today's row, never append.
            - The prune removes rows older than 2 years in the same transaction. Max size ~730 rows, permanently.
