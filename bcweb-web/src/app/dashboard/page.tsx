@@ -57,8 +57,9 @@ answers "get me there, I'm mid-task", where the destination is already known and
 =======================================================================================================================================
 */
 
-import { useState, useEffect, ComponentType, SVGProps } from 'react';
+import { useState, ComponentType, SVGProps } from 'react';
 import AppShell from '@/components/AppShell';
+import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
@@ -360,16 +361,16 @@ const GROUPS: Group[] = [
 ];
 
 export default function DashboardPage() {
-  // null = every group closed, which is how a bare /dashboard opens (see the header note on not remembering).
-  const [openId, setOpenId] = useState<string | null>(null);
-
   // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
   // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
   // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
-  useEffect(() => {
-    const g = new URLSearchParams(window.location.search).get('g');
-    if (g && GROUPS.some((x) => x.id === g)) setOpenId(g);
-  }, []);
+  const g = useUrlParam('g');
+  const urlGroup = g && GROUPS.some((x) => x.id === g) ? g : null;
+
+  // The group the operator clicked open or shut. undefined = no click yet, so the ?g= group (or nothing) shows; null = every group
+  // closed, which is how a bare /dashboard opens (see the header note on not remembering).
+  const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
+  const openId = chosenId === undefined ? urlGroup : chosenId;
   const open = GROUPS.find((g) => g.id === openId) ?? null;
 
   return (

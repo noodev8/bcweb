@@ -11,7 +11,7 @@ Guard: if auth has hydrated (ready) and the user is NOT authenticated, redirect 
 =======================================================================================================================================
 */
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 import { logScreenView } from '@/lib/api';
 import { HEADER_TABS, tabForPath } from '@/lib/headerNav';
+import { useUrlParam } from '@/lib/useUrlParam';
 
 // The header bar is a FIXED four (lib/headerNav.ts). Pinning via a star beside the page title was tried on 2026-09-22 and removed on
 // 2026-09-23; the reasoning is in that file. Active state is by path prefix (longest match wins), and the active tab lifts to a
@@ -59,15 +60,16 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   `backHref` is still the fallback and still right for everything else — a drill page reached from its own list, a deep link, a
   bookmark. This only overrides when the dashboard actually sent you.
   Read from window.location rather than useSearchParams because AppShell wraps EVERY page: useSearchParams here would opt the whole
-  app out of static rendering. The effect means the first paint shows the fallback label for a frame, which is invisible in practice
-  and cheaper than that.
+  app out of static rendering (lib/useUrlParam.ts). The server render has no URL, so the first paint shows the fallback label for a
+  frame, which is invisible in practice and cheaper than that.
   It survives exactly one hop, by design. Go Winners -> some drill page and back is that page's own parent again, which is correct:
   by then the dashboard is two steps away, not one.
+  A `from` that is a PATH (starts with "/") is not a dashboard group: the pricing screens use ?from=<path>&back=<label> to thread
+  their own return target (Segments -> a segment's list -> a style's drill), and they pass it in as backHref themselves. Treating
+  that as a group id sent every one of those back links to a dashboard with nothing open (fixed 2026-09-23).
   */
-  const [from, setFrom] = useState<string | null>(null);
-  useEffect(() => {
-    setFrom(new URLSearchParams(window.location.search).get('from'));
-  }, [pathname]);
+  const fromParam = useUrlParam('from');
+  const from = fromParam && !fromParam.startsWith('/') ? fromParam : null;
 
   const effectiveBackHref = from ? '/dashboard?g=' + encodeURIComponent(from) : backHref;
   const effectiveBackLabel = from ? 'Dashboard' : (backLabel || 'Back');

@@ -341,7 +341,8 @@ export default function LocationsBoard() {
   // WHAT IS ON THE SHELF IS WHAT THE SERVER SAYS IS ON THE SHELF. There is no client-side overlay any more: every +/- is a real
   // inv-adjust write and the panel re-reads after it, so what you are looking at is the DB rather than a local guess that agreed with
   // it until someone else picked from the same rack.
-  const lines = stockData?.lines ?? [];
+  // Memoised so the `[]` fallback is one stable array, not a new one every render (which would re-run the shelf memo below).
+  const lines = useMemo(() => stockData?.lines ?? [], [stockData]);
 
   // The shelf as it looks: one row per style, its sizes along it. Grouped on groupid (the style), falling back to the code so a
   // localstock row with no groupid still appears as its own row rather than being swept into someone else's.

@@ -555,6 +555,18 @@ function AmazonOrderContent() {
   // the list mid-edit, since the filter re-evaluates on every keystroke (owner, 2026-08-11 — "won't let me backspace to clear").
   const [focusedOrderCode, setFocusedOrderCode] = useState<string | null>(null);
 
+  // Sort state is declared up here, before onReset, because onReset reads and resets it. Declaring it below the function that uses
+  // it made the React Compiler treat `sortKey` as possibly reassigned and bail out of memoizing `sorted`.
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(DEFAULT_DIR[DEFAULT_SORT]);
+
+  // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
+  // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
+  // afterward would otherwise reorder the table out from under the operator's cursor mid-edit (owner, 2026-08-13: "confusing what
+  // I'm working on"). Clicking any OTHER column header clears it — picking a different explicit sort overrides the snapshot on
+  // purpose. Clicking the Order header again (to flip direction) retakes the snapshot from the current values.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
+
   // Reset — clears every applied filter (and whatever's mid-typed in the box), restores every cut row, drops the selection, and
   // clears the sort/highlight the coverage fill applied. Deliberately does NOT touch the Order scratchpad itself (owner,
   // 2026-08-11) — that's a separately-saved draft (DRAFT_KEY) an operator can build up over several sittings, and Reset is a view
@@ -616,9 +628,6 @@ function AmazonOrderContent() {
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
-  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(DEFAULT_DIR[DEFAULT_SORT]);
-
   // Order box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
   // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
   // when a snapshot is being taken (onSort), never from inside `sorted` — see byNormalSort for why that distinction is the whole
@@ -631,12 +640,6 @@ function AmazonOrderContent() {
     return Number.isFinite(n) ? n : null;
   }, [qty]);
 
-  // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
-  // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
-  // afterward would otherwise reorder the table out from under the operator's cursor mid-edit (owner, 2026-08-13: "confusing what
-  // I'm working on"). Clicking any OTHER column header clears it — picking a different explicit sort overrides the snapshot on
-  // purpose. Clicking the Order header again (to flip direction) retakes the snapshot from the current values.
-  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
   const onSort = (key: SortKey) => {
     if (key === 'order_qty') {
       const newDir: 'asc' | 'desc' = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : DEFAULT_DIR[key];
