@@ -34,14 +34,14 @@ function isNeverWorked(cell: SegmentAreaCell): boolean {
 }
 
 // Compact label for a grid cell — colour carries most of the meaning; a tooltip (see cellTitle) gives the detail.
-// A derived Shopify cell shows its live style counts ("12 / 30") rather than a "Nd late" clock (spec §9.3).
+// A derived pricing cell (Shopify / Amazon / campaign) shows its live outstanding count rather than a "Nd late" clock (spec §9.3).
 export function dueCellLabel(cell: SegmentAreaCell): string {
   if (isDerived(cell)) {
     if (cell.dueState === 'off') return 'off';
     // Resting cells all read "ok" (green) — nothing to do now. That covers both "nothing actionable" (instock 0) and "all parked"
-    // (dueState 'ok'); the tooltip (cellTitle/dueText) carries which it is. Only a 'due' cell shows the done/total progress fraction
-    // (parked so far / actionable candidates): 0/6 = nothing done yet, ticks up as flagged styles are parked.
-    return cell.dueState === 'due' ? `${(cell.instock ?? 0) - (cell.outstanding ?? 0)} / ${cell.instock}` : 'ok';
+    // (dueState 'ok'); the tooltip (cellTitle/dueText) carries which it is. Only a 'due' cell shows a number: how many flagged
+    // styles/SKUs are still waiting — the job left, counting down as they're worked. The done/total split stays in the tooltip.
+    return cell.dueState === 'due' ? String(cell.outstanding ?? 0) : 'ok';
   }
   switch (cell.dueState) {
     case 'overdue': return isNeverWorked(cell) ? 'overdue' : `${cell.daysOverdue}d late`;
