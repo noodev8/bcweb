@@ -36,7 +36,7 @@ function FindContent() {
   // Origin we were handed in from (a cross-module jump) — used for the back breadcrumb so it returns there, not to the segment picker.
   const from = searchParams.get('from') || '';
   const backHref = from || '/pricing';
-  const backLabel = from ? prettyPathLabel(from) : 'Segments';
+  const backLabel = from ? prettyPathLabel(from) : 'Shopify Pricing';
   // Search field is forced UPPERCASE (owner) — groupids/codes are uppercase, and the server matches with ILIKE so a title term still
   // matches case-insensitively. Uppercasing the value (not just CSS) keeps the displayed and submitted term consistent.
   const [term, setTerm] = useState(initialQ.toUpperCase());

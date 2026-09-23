@@ -5,7 +5,8 @@ Component: ListViewControls
 =======================================================================================================================================
 Purpose: The two controls above a segment's pricing list, shared by Shopify (/pricing/[segment]) and Amazon (/amz/[segment]) so the
          two channels read the same way (owner, 2026-09-23):
-           - Winners | Losers | Both — WHICH list. "Both" = winners and losers together (URL value stays ?mode=all).
+           - Selling | Stuck | Both — WHICH list. "Both" = the two together (URL value stays ?mode=all). On screen these were
+             Winners | Losers until 2026-09-23 (owner renamed them); code, URL values and API names still say winners/losers.
            - Due (switch, on by default) — on = only items due now; off = also items whose review date is still in the future.
              Was "Show pending review" with a count beside it; the owner found the count confusing (2026-09-23), so it is a plain
              switch now and the tables always show a Review column instead.
@@ -38,9 +39,9 @@ export default function ListViewControls({ view, onViewChange, counts, dueOnly, 
 
 // Colour follows the job: emerald = price up, amber = cut, slate = both.
 const TABS: { key: ListView; label: string; hint: string; icon: typeof ArrowTrendingUpIcon; on: string; badge: string }[] = [
-  { key: 'winners', label: 'Winners', hint: 'Fast sellers to price up', icon: ArrowTrendingUpIcon, on: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700' },
-  { key: 'losers', label: 'Losers', hint: 'Stuck stock to cut', icon: ArrowTrendingDownIcon, on: 'text-amber-700', badge: 'bg-amber-100 text-amber-700' },
-  { key: 'all', label: 'Both', hint: 'Winners and losers together', icon: Squares2X2Icon, on: 'text-slate-800', badge: 'bg-slate-200 text-slate-700' },
+  { key: 'winners', label: 'Selling', hint: 'Fast sellers to price up', icon: ArrowTrendingUpIcon, on: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700' },
+  { key: 'losers', label: 'Stuck', hint: 'Stuck stock to cut', icon: ArrowTrendingDownIcon, on: 'text-amber-700', badge: 'bg-amber-100 text-amber-700' },
+  { key: 'all', label: 'Both', hint: 'Selling and stuck together', icon: Squares2X2Icon, on: 'text-slate-800', badge: 'bg-slate-200 text-slate-700' },
 ];
 
 function ViewTabs({ view, onChange, counts }: {

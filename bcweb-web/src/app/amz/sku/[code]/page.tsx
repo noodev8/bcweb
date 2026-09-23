@@ -52,14 +52,14 @@ function DrillContent() {
 
   // Readable back label from the `from` path: "SEGMENT · Winners/Losers/All", "Search", or "Segments" for a deep link.
   const backLabel = (() => {
-    if (!backTo || backTo === '/amz') return 'Segments';
+    if (!backTo || backTo === '/amz') return 'Amazon Pricing';
     if (backTo.startsWith('/amz/find')) return 'Search';
     // Reached from outside the Amazon segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
     if (!backTo.startsWith('/amz/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/amz/', ''));
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
-    const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
+    const modeLabel = m && m[1] === 'losers' ? 'Stuck' : m && m[1] === 'all' ? 'Both' : 'Selling';
     return `${seg} · ${modeLabel}`;
   })();
 

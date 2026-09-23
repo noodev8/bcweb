@@ -9,7 +9,8 @@ Purpose: The list view for a segment (see CLAUDE.md for the two bars).
   - LOSERS:  in-stock styles that sold NOTHING in the last 30 days — candidates to cut and get moving. Biggest stuck piles first.
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23):
-  - Winners | Losers | Both (?mode=all). "Both" means the two lists together (winners first, then losers), NOT the whole segment. The old "All styles"
+  - Selling | Stuck | Both (?mode=all) — on-screen names for WINNERS | LOSERS since 2026-09-23; code and URLs keep winners/losers.
+    "Both" means the two lists together (winners first, then losers), NOT the whole segment. The old "All styles"
     view (every style incl. out-of-stock, from /pricing-all) was dropped from this screen in the same change.
   - "Due" switch. On (default) = only styles due now — the classic lists. Off = also the PARKED styles (review date still in the
     future), dimmed. The Review column is always shown: a date for a parked style, "Due" otherwise.
@@ -180,7 +181,7 @@ function SegmentContent() {
     // Carry the view (mode + pending) and the back-context (from/back) into the return URL, so coming back from the drill lands on the
     // same view with the same "← back" target.
     const rawFrom = searchParams.get('from');
-    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
     const from = `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
@@ -264,7 +265,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {GROUP_NOUN[by]} right now.
+          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {GROUP_NOUN[by]} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}
@@ -374,7 +375,7 @@ function ListTable({ rows, showKind, showUnits, onOpen, selected, onToggle, onTo
                 {showKind && (
                   <td className="px-4 py-2">
                     <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                      {r.kind === 'winner' ? 'Winner' : 'Loser'}
+                      {r.kind === 'winner' ? 'Selling' : 'Stuck'}
                     </span>
                   </td>
                 )}

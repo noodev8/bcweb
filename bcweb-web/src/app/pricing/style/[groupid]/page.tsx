@@ -61,14 +61,14 @@ function DrillContent() {
   // Single back link to the exact list we came from (the list page itself carries its own "Segments" link, so we don't repeat it
   // here). Derive a readable label from the `from` path: segment + mode, "Search", or "Segments" for a deep-link with no origin.
   const backLabel = (() => {
-    if (!backTo || backTo === '/pricing') return 'Segments';
+    if (!backTo || backTo === '/pricing') return 'Shopify Pricing';
     if (backTo.startsWith('/pricing/find')) return 'Search';
     // Reached from outside the pricing segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
     if (!backTo.startsWith('/pricing/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/pricing/', ''));
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
-    const modeLabel = m && m[1] === 'losers' ? 'Losers' : m && m[1] === 'all' ? 'All' : 'Winners';
+    const modeLabel = m && m[1] === 'losers' ? 'Stuck' : m && m[1] === 'all' ? 'Both' : 'Selling';
     return `${seg} · ${modeLabel}`;
   })();
 

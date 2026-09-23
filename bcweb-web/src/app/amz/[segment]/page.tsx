@@ -14,7 +14,8 @@ of styles whose AMAZON revenue cleared the portfolio winner bar over 12 months (
 writes. `by` rides along in the drill round-trip. There is no campaign grouping on Amazon (campaigns are Shopify only).
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
-  - Winners | Losers | Both (?mode=all). "Both" means the two lists together (winners first, then losers), NOT every managed SKU. The old "All" view
+  - Selling | Stuck | Both (?mode=all) — on-screen names for WINNERS | LOSERS since 2026-09-23; code and URLs keep winners/losers.
+    "Both" means the two lists together (winners first, then losers), NOT every managed SKU. The old "All" view
     (every SKU incl. out of stock, from /amz-all) was dropped from this screen in the same change.
   - "Due" switch. On (default) = only SKUs due now. Off = also the PARKED SKUs (skumap.next_amz_price_review in the future), dimmed.
     The Review column is always shown: a date for a parked SKU, "Due" otherwise.
@@ -172,7 +173,7 @@ function SegmentContent() {
   function openSku(code: string) {
     // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
-    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
     const from = `/amz/${encodeURIComponent(segment)}?${isTop ? 'by=topearners&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
@@ -292,7 +293,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {isTop ? 'group' : 'segment'} right now.
+          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isTop ? 'group' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}
@@ -406,7 +407,7 @@ function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onTogg
                 {showKind && (
                   <td className="px-4 py-2">
                     <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                      {r.kind === 'winner' ? 'Winner' : 'Loser'}
+                      {r.kind === 'winner' ? 'Selling' : 'Stuck'}
                     </span>
                   </td>
                 )}

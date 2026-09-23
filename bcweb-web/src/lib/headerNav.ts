@@ -30,7 +30,7 @@ export interface HeaderTab {
 
 export const HEADER_TABS: HeaderTab[] = [
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
-  { label: 'Segments', href: '/segments', icon: Squares2X2Icon },
+  { label: 'Repricing', href: '/segments', icon: Squares2X2Icon },
   { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
   { label: 'Reports', href: '/analytics', icon: ChartBarIcon, also: ['/brands'] },
 ];

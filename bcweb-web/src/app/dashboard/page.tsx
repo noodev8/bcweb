@@ -261,7 +261,7 @@ const GROUPS: Group[] = [
     tiles: [
       {
         title: 'Shopify Pricing',
-        subtitle: 'Winners and losers, by style',
+        subtitle: 'Selling and stuck, by style',
         description: 'Review demand and set Shopify prices, segment by segment.',
         href: '/pricing',
         icon: CurrencyPoundIcon,
@@ -274,7 +274,7 @@ const GROUPS: Group[] = [
         icon: BuildingStorefrontIcon,
       },
       {
-        title: 'Segments',
+        title: 'Repricing',
         subtitle: 'The usual way in',
         description: 'See which segment needs attention next, and track who worked what.',
         href: '/segments',

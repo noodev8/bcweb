@@ -68,7 +68,7 @@ function AmzFindContent() {
   // "not on Amazon" jump returns to that origin, not the segment picker. Falls back to /amz for a plain visit.
   const from = searchParams.get('from') || '';
   const backHref = from || '/amz';
-  const backLabel = from ? prettyPathLabel(from) : 'Segments';
+  const backLabel = from ? prettyPathLabel(from) : 'Amazon Pricing';
   const { logout } = useAuth();
   const { add } = useAmzBasket();
   // Search boxes are forced UPPERCASE (owner) — group ids / SKU codes are uppercase, and the server matches case-insensitively so a title

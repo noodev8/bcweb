@@ -727,8 +727,9 @@ export function getCampaignsOverview(days?: number) {
   );
 }
 
-// The Segments screen's pinned Top earners row — same row shape as a segment/campaign. by 'campaign' = Shopify cell only with a
-// Shopify-only gutter (matching the campaign rows); otherwise Shopify + Amazon cells with an all-channel gutter.
+// The Repricing screen's Top earners tab (one row) — same row shape as a segment/campaign. by 'campaign' = Shopify cell only with a
+// Shopify-only gutter (unused since the row moved off the Campaign view to its own tab); otherwise Shopify + Amazon cells with an
+// all-channel gutter.
 export function getTopEarnersOverview(by: PricingGroupBy, days?: number) {
   return request<{ days: number; row: SegmentOverviewRow }>(
     { url: '/pricing-top-earners', method: 'GET', params: { days, by: by === 'campaign' ? 'campaign' : undefined } },
