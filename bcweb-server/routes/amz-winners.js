@@ -32,7 +32,10 @@ Schema landmines respected: amzfeed is FBA-only, READ ONLY. amzprice is a junk-p
 integer. Size = RIGHT(code,2). Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
 =======================================================================================================================================
 Request Query Params:
-  segment  (string, required)  - the segment to shortlist within
+  segment    (string)         - the segment to shortlist within — give exactly one of segment / topearners
+  topearners (string)         - any non-empty value: scope to TOP EARNERS instead — the SKUs of styles whose AMAZON revenue
+                                cleared the portfolio winner bar over 12 months (utils/portfolio.js). Added 2026-09-23 (owner);
+                                `segment` then carries "Top earners" and `by` says which. No campaign grouping on Amazon.
   days     (int, optional)     - lookback window in days for sales; default 30
   limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked     (string, optional) - 'include' = also return PARKED SKUs (future skumap.next_amz_price_review), each flagged
@@ -42,6 +45,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
+  "by": "segment",      // "segment" | "topearners"
   "segment": "IVES-WHITE",
   "days": 30,
   "total": 23,          // qualifying SKUs in the segment, BEFORE the cap
@@ -68,6 +72,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
+const { parseGroup } = require('../utils/pricingGroup');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -81,17 +86,19 @@ const MIN_PROFIT = 2;    // £ realised net profit per unit (AVG of sales.profit
 
 router.get('/', async (req, res) => {
   try {
-    const { segment } = req.query;
+    // The group this list is scoped to — a segment or (since 2026-09-23) Top earners. Amazon has no campaign grouping (campaigns are
+    // Shopify only), so parseGroup refuses one here. `sk` is this route's skusummary alias. See utils/pricingGroup.js.
+    const group = parseGroup(req.query, { alias: 'sk', channel: 'AMZ' });
     // 30-day window; `limit` is a safety cap, not a shortlist size (utils/listLimit.js). Parse defensively.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
     const limit = parseListLimit(req.query.limit);
 
-    if (!segment) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
+    if (!group) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment or topearners is required' });
     }
     const includeParked = req.query.parked === 'include';
 
-    // $1 segment, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked.
+    // $1 group name, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked.
     // win: units in the window + last-sold per SKU. s7: 7-day units (secondary signal + tiebreak). The INNER JOIN to `win` drops SKUs
     // with no sales in the window; the amzlive>0 filter drops out-of-stock SKUs; LIMIT tops the shortlist back up to N.
     const result = await query(`
@@ -127,12 +134,12 @@ router.get('/', async (req, res) => {
       JOIN win w ON w.code = a.code                       -- INNER JOIN: must have sold in the window
       LEFT JOIN s7 ON s7.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
-      WHERE sk.segment = $1
+      WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                     -- in FBA stock now
         AND ($6::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only unless ?parked=include (§10.4)
       ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
-    `, [segment, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
+    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -152,7 +159,7 @@ router.get('/', async (req, res) => {
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
+    return res.json({ return_code: 'SUCCESS', segment: group.name, by: group.by, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[amz-winners] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load winners list' });

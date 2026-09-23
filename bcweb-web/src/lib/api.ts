@@ -281,11 +281,21 @@ export function getSegments() {
   return request<Segment[]>({ url: '/pricing-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
-// Which group a Shopify WINNERS / LOSERS list is scoped to — a segment, or (2026-09-23) a Google campaign bucket
-// (skusummary.googlecampaign). Same lists either way; `by` becomes the query param name (?segment= / ?campaign=). Campaigns are
-// Shopify only — the Amazon list functions below still take a plain segment.
-export type PricingGroupBy = 'segment' | 'campaign';
+// Which group a WINNERS / LOSERS list is scoped to — a segment, a Google campaign bucket (skusummary.googlecampaign, 2026-09-23,
+// SHOPIFY ONLY), or Top earners (2026-09-23 — styles whose revenue on THAT channel cleared the portfolio winner bar over 12 months;
+// server utils/portfolio.js). Same lists either way; `by` becomes the query param name (?segment= / ?campaign= / ?topearners=).
+// The Amazon list functions take the same shape but the server refuses a campaign there.
+export type PricingGroupBy = 'segment' | 'campaign' | 'topearners';
 export interface PricingGroup { by: PricingGroupBy; name: string }
+
+// The one name every Top earner groups under — matches the server's TOP_EARNERS_NAME (utils/pricingGroup.js). Used as the URL path
+// segment for its lists and as the label on screen.
+export const TOP_EARNERS = 'Top earners';
+
+// Read a list page's grouping from its ?by= param. Unknown / absent = segment.
+export function parseGroupBy(v: string | null): PricingGroupBy {
+  return v === 'campaign' || v === 'topearners' ? v : 'segment';
+}
 
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
 // `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
@@ -312,17 +322,17 @@ export function getAmzSegments() {
 }
 
 // Amazon Pricing — Stage 1 WINNERS: in-stock SKUs that sold in `days` (default 30), best first. Mirrors getTriage(), incl. total/truncated.
-export function getAmzWinners(segment: string, days?: number, limit?: number, includeParked?: boolean) {
+export function getAmzWinners(group: PricingGroup, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzWinnerRow[] }>(
-    { url: '/amz-winners', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
+    { url: '/amz-winners', method: 'GET', params: { [group.by]: group.name, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // Amazon Pricing — Stage 1 LOSERS: FBA stock that sold nothing in `days` (server default 30). Mirrors getLosers(), coverWeeks dropped.
-export function getAmzLosers(segment: string, days?: number, limit?: number, includeParked?: boolean) {
+export function getAmzLosers(group: PricingGroup, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzLoserRow[] }>(
-    { url: '/amz-losers', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
+    { url: '/amz-losers', method: 'GET', params: { [group.by]: group.name, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -714,6 +724,15 @@ export function getCampaignsOverview(days?: number) {
   return request<{ days: number; campaigns: SegmentOverviewRow[] }>(
     { url: '/pricing-campaigns', method: 'GET', params: { days } },
     (b) => ({ days: b.days, campaigns: b.campaigns || [] })
+  );
+}
+
+// The Segments screen's pinned Top earners row — same row shape as a segment/campaign. by 'campaign' = Shopify cell only with a
+// Shopify-only gutter (matching the campaign rows); otherwise Shopify + Amazon cells with an all-channel gutter.
+export function getTopEarnersOverview(by: PricingGroupBy, days?: number) {
+  return request<{ days: number; row: SegmentOverviewRow }>(
+    { url: '/pricing-top-earners', method: 'GET', params: { days, by: by === 'campaign' ? 'campaign' : undefined } },
+    (b) => ({ days: b.days, row: b.row })
   );
 }
 

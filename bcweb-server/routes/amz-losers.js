@@ -35,7 +35,10 @@ Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeri
 name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
 Request Query Params:
-  segment    (string, required)
+  segment    (string)         - give exactly one of segment / topearners
+  topearners (string)         - any non-empty value: scope to TOP EARNERS instead — the SKUs of styles whose AMAZON revenue
+                                cleared the portfolio winner bar over 12 months (utils/portfolio.js). Added 2026-09-23 (owner);
+                                `segment` then carries "Top earners" and `by` says which. No campaign grouping on Amazon.
   days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked     (string, optional) - 'include' = also return PARKED SKUs (future skumap.next_amz_price_review), each flagged
@@ -45,6 +48,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
+  "by": "segment",      // "segment" | "topearners"
   "segment": "IVES-WHITE",
   "days": 30,
   "total": 5,           // qualifying SKUs in the segment, BEFORE the cap
@@ -73,6 +77,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
+const { parseGroup } = require('../utils/pricingGroup');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -81,19 +86,21 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
 
 router.get('/', async (req, res) => {
   try {
-    const { segment } = req.query;
+    // The group this list is scoped to — a segment or (since 2026-09-23) Top earners. Amazon has no campaign grouping (campaigns are
+    // Shopify only), so parseGroup refuses one here. `sk` is this route's skusummary alias. See utils/pricingGroup.js.
+    const group = parseGroup(req.query, { alias: 'sk', channel: 'AMZ' });
     // Default window is now 30d (was a 90d cover window + a 14d dead test). `limit` is a safety cap, not a list size
     // (utils/listLimit.js). `coverWeeks` is gone — nothing left for it to threshold. It is ignored rather than rejected if an old
     // client still sends it, so a stale browser tab degrades to the new behaviour instead of erroring.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
     const limit = parseListLimit(req.query.limit);
 
-    if (!segment) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
+    if (!group) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment or topearners is required' });
     }
     const includeParked = req.query.parked === 'include';
 
-    // $1 segment, $2 days, $3 limit, $4 includeParked.
+    // $1 group name, $2 days, $3 limit, $4 includeParked.
     // Membership is the LEFT JOIN + "no sales row in the window" test: a SKU with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
       WITH win AS (     -- units in the window (default 30d) — the ONLY sales measure this route needs now
@@ -132,14 +139,14 @@ router.get('/', async (req, res) => {
       LEFT JOIN s7       ON s7.code  = a.code
       LEFT JOIN ls       ON ls.code  = a.code
       LEFT JOIN title t  ON t.groupid = a.groupid
-      WHERE sk.segment = $1
+      WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
         AND ($4::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only unless ?parked=include (§10.4)
         AND COALESCE(w.u_win,0) = 0                                                      -- sold NOTHING in the window — the whole test
       ORDER BY fba DESC,       -- most stock at risk first
                a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [segment, days, limit, includeParked]);
+    `, [group.name, days, limit, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -160,7 +167,7 @@ router.get('/', async (req, res) => {
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
+    return res.json({ return_code: 'SUCCESS', segment: group.name, by: group.by, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[amz-losers] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load losers list' });

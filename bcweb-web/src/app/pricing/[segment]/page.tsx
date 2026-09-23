@@ -20,6 +20,8 @@ style's drill restores the same view.
 SEGMENT OR CAMPAIGN (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=campaign makes it a Google campaign bucket
 (skusummary.googlecampaign) instead of a segment. Same lists, same bars, same drill and writes — only the slice differs (the server
 switches ?segment= for ?campaign=, see utils/pricingGroup.js). `by` rides along in every URL this page builds so it survives the drill.
+?by=topearners (2026-09-23) is the third grouping: styles whose SHOPIFY revenue cleared the portfolio winner bar over 12 months
+(path name "Top earners"; server utils/portfolio.js).
 
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
@@ -32,7 +34,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
-import { getTriage, getLosers, applyPrice, parkStyleBulk, PricingGroup } from '@/lib/api';
+import { getTriage, getLosers, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -77,6 +79,14 @@ export default function SegmentPage() {
   );
 }
 
+// Header subtitle + empty-state noun per grouping. A segment needs no subtitle — it is the default.
+const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
+  segment: undefined,
+  campaign: 'Google campaign',
+  topearners: 'On Shopify sales, last 12 months',   // the bar itself lives server-side (utils/portfolio.js) — not repeated here
+};
+const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', topearners: 'group' };
+
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
@@ -86,8 +96,9 @@ function SegmentContent() {
   const params = useParams<{ segment: string }>();
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
-  const isCampaign = searchParams.get('by') === 'campaign';
-  const group: PricingGroup = { by: isCampaign ? 'campaign' : 'segment', name: segment };
+  const by = parseGroupBy(searchParams.get('by'));
+  const group: PricingGroup = { by, name: segment };
+  const byParam = by === 'segment' ? '' : `by=${by}&`;   // carried in every URL this page builds (see header)
   const { logout } = useAuth();
 
   const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
@@ -170,7 +181,7 @@ function SegmentContent() {
     // same view with the same "← back" target.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
-    const from = `/pricing/${encodeURIComponent(segment)}?${isCampaign ? 'by=campaign&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    const from = `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -239,7 +250,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell title={segment} subtitle={isCampaign ? 'Google campaign' : undefined} backHref={backHref} backLabel={backLabel}>
+    <AppShell title={segment} subtitle={GROUP_SUBTITLE[by]} backHref={backHref} backLabel={backLabel}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}
@@ -253,7 +264,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {isCampaign ? 'campaign' : 'segment'} right now.
+          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {GROUP_NOUN[by]} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}

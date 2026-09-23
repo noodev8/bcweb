@@ -9,6 +9,9 @@ Purpose: The DEFINITION of a winner and a contender, in one place, because THREE
            routes/portfolio-contenders.js       GET  — the young styles, banded
            routes/portfolio-snapshot-update.js  POST — "Update now", which RECORDS the count as a trend point
 
+         Since 2026-09-23 it also owns the PER-CHANNEL reading of the same bar — "Top earners" — which the pricing lists group by
+         (utils/pricingGroup.js). See topEarnerGroupidsSql at the bottom.
+
          The third one is why this file exists at all. A snapshot series is worthless if the number being stored is computed by
          slightly different SQL from the number on screen: the chart would drift away from the headline and there would be no way to
          tell which was right. Same shape as utils/stockPosition.js, and for the same reason.
@@ -867,9 +870,47 @@ async function computeContenders() {
   };
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// TOP EARNERS — the winner test read PER CHANNEL, for the pricing lists (owner, 2026-09-23).
+//
+// The Shopify and Amazon pricing lists can be scoped to "Top earners" (utils/pricingGroup.js) as well as to a segment or campaign.
+// The winner above is a STYLE across ALL channels, which is right for the portfolio count but wrong for a per-channel price list:
+// an Amazon-made style would turn up on the Shopify list for pricing where it earns ~3% of its money. So a TOP EARNER ON A CHANNEL
+// is a style whose revenue ON THAT CHANNEL alone clears WINNER_BAR over the same rolling 12 months, same predicates as
+// computeWinners (qty > 0, SUM(soldprice * qty), strictly greater than the bar).
+//
+// WHY THIS IS SAFE TO DIVERGE FROM THE WINNER COUNT: measured on the day, no winner was genuinely split between channels — every
+// Shopify-led winner had 0% of its revenue on Amazon and every Amazon-led one ≤ 5% on Shopify — so per-channel gave 51 + 24 against
+// ~75 winners, the same styles. The two can drift only for a style that clears the bar with BOTH channels added together and on
+// neither alone; that style is a winner on the portfolio screen and a top earner on no pricing list. Accepted (owner chose it).
+//
+// Same bar, same window: this reads WINNER_BAR rather than carrying its own number, so if the bar moves the lists move with it.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+// The only channels a pricing list exists for. The value is interpolated into SQL, so it must come from this map, never a request.
+const TOP_EARNER_CHANNELS = { SHP: 'SHP', AMZ: 'AMZ' };
+
+/*
+ * topEarnerGroupidsSql(channel) — an uncorrelated subquery body returning the groupids that are top earners on `channel`
+ * ('SHP' | 'AMZ'). Meant for `groupid IN (...)`; Postgres runs it once and hashes it. Throws on an unknown channel rather than
+ * interpolating it.
+ */
+function topEarnerGroupidsSql(channel) {
+  const ch = TOP_EARNER_CHANNELS[channel];
+  if (!ch) throw new Error(`topEarnerGroupidsSql: unknown channel ${channel}`);
+  return `
+    SELECT groupid FROM sales
+    WHERE channel = '${ch}' AND qty > 0
+      AND solddate >= CURRENT_DATE - INTERVAL '12 months'
+    GROUP BY groupid
+    HAVING SUM(soldprice * qty) > ${Number(WINNER_BAR)}
+  `;
+}
+
 module.exports = {
   computeWinners,
   computeContenders,
+  topEarnerGroupidsSql,
   WINNER_METRIC,
   WINNER_BAR,
   WINNER_BAR_LADDER,

@@ -9,6 +9,10 @@ Purpose: The list view for a segment — the Amazon mirror of /pricing/[segment]
   - LOSERS:  FBA stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Most FBA stock at risk first.
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
 
+SEGMENT OR TOP EARNERS (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=topearners makes it "Top earners" — the SKUs
+of styles whose AMAZON revenue cleared the portfolio winner bar over 12 months (server utils/portfolio.js). Same lists, bars, drill and
+writes. `by` rides along in the drill round-trip. There is no campaign grouping on Amazon (campaigns are Shopify only).
+
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
   - Winners | Losers | Both (?mode=all). "Both" means the two lists together (winners first, then losers), NOT every managed SKU. The old "All" view
     (every SKU incl. out of stock, from /amz-all) was dropped from this screen in the same change.
@@ -27,7 +31,7 @@ import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
-import { getAmzWinners, getAmzLosers, markAmzReviewed, applyAmzPrice } from '@/lib/api';
+import { getAmzWinners, getAmzLosers, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -83,6 +87,10 @@ function SegmentContent() {
   const params = useParams<{ segment: string }>();
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
+  // Only segment | topearners exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
+  const by = parseGroupBy(searchParams.get('by')) === 'topearners' ? 'topearners' : 'segment';
+  const isTop = by === 'topearners';
+  const group: PricingGroup = { by, name: segment };
   const { logout } = useAuth();
   const { items, add } = useAmzBasket();
 
@@ -100,11 +108,11 @@ function SegmentContent() {
   // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
   // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['amz-lists', segment],
+    ['amz-lists', by, segment],
     async () => {
       const [w, l] = await Promise.all([
-        getAmzWinners(segment, undefined, undefined, true),
-        getAmzLosers(segment, undefined, undefined, true),
+        getAmzWinners(group, undefined, undefined, true),
+        getAmzLosers(group, undefined, undefined, true),
       ]);
       if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED') {
         return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
@@ -151,18 +159,21 @@ function SegmentContent() {
 
   // Bulk selection + last-run feedback belong to ONE view of ONE segment, so they're scoped and discarded during render on a switch —
   // no reset effect, and no frame showing the previous view's ticks.
-  const scope = `${mode}|${showPending}|${segment}`;
+  const scope = `${mode}|${showPending}|${by}|${segment}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
 
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
+  // The basket item's segment is display-only and the server rebuild fills the real one (amz-basket: sk.segment). On Top earners the
+  // page name isn't a segment, so leave it blank rather than label a SKU "Top earners" until the next rebuild.
+  const basketSegment = isTop ? null : segment;
 
   function openSku(code: string) {
     // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
-    const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    const from = `/amz/${encodeURIComponent(segment)}?${isTop ? 'by=topearners&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -201,7 +212,7 @@ function SegmentContent() {
       if (res.success && res.data) {
         const d = res.data;
         // Queue into the upload basket for instant feedback (same shape the drill's apply uses; segment from the page).
-        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: basketSegment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
         // Over-RRP is allowed (a deliberate harvest move, not an error) but worth counting — a blanket bump can tip a size past RRP without
         // the operator noticing. Surface it in the summary; the write itself is unaffected. Mirrors the drill's "Above RRP — allowed" flag.
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
@@ -230,7 +241,7 @@ function SegmentContent() {
       const res = await applyAmzPrice(row.code, price, note, reviewDays);
       if (res.success && res.data) {
         const d = res.data;
-        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+        add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: basketSegment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
         applied++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
@@ -265,7 +276,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
+    <AppShell title={segment} subtitle={isTop ? 'On Amazon sales, last 12 months' : undefined} backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
 
       <ListViewControls
@@ -281,7 +292,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this segment right now.
+          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {isTop ? 'group' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}

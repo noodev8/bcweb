@@ -13,7 +13,12 @@ same styles. The switch regroups the table by campaign bucket (skusummary.google
 same row shape. Campaign view is SHOPIFY ONLY (Google Shopping sells the Shopify site), has no Housekeeping (a per-segment manual
 clock) and no detail page — a campaign's name and its Shopify cell both open its WINNERS / LOSERS list (/pricing/[name]?by=campaign).
 pause + blank buckets are hidden server-side. The switch lives in the URL (?by=campaign) so "← Segments" from a list lands back here.
-Guarded by AppShell. Consumes GET /segments or GET /pricing-campaigns.
+
+TOP EARNERS (owner, 2026-09-23): one extra row pinned above the ranked ones in BOTH views — styles over the Winners screen's bar on each
+channel's own 12-month sales (GET /pricing-top-earners). Its cells open /pricing|/amz/Top earners?by=topearners. It is one group, not a
+set, so it's a pinned row rather than a third switch option. Segment view: Shopify + Amazon cells, all-channel gutter; campaign view:
+Shopify cell and gutter only.
+Guarded by AppShell. Consumes GET /segments or GET /pricing-campaigns, plus GET /pricing-top-earners.
 =======================================================================================================================================
 */
 
@@ -21,7 +26,7 @@ import { Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSegmentsOverview, getCampaignsOverview, SegmentOverviewRow, SegmentAreaCell, PricingGroupBy } from '@/lib/api';
+import { getSegmentsOverview, getCampaignsOverview, getTopEarnersOverview, SegmentOverviewRow, SegmentAreaCell, PricingGroupBy, TOP_EARNERS } from '@/lib/api';
 import { dueTone, dueCellLabel, cellTitle, fmtMoney } from '@/lib/segmentUi';
 
 // Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
@@ -56,6 +61,11 @@ function SegmentsHeatmap() {
   const rows: SegmentOverviewRow[] = data?.segments ?? NO_ROWS;
   const error = loadError?.message ?? null;
 
+  // The pinned Top earners row (GET /pricing-top-earners) — its own fetch, keyed by view because the campaign view's row is Shopify-only
+  // with a Shopify gutter, to match the campaign rows beneath it. It is an extra: if it fails, the table still renders without it.
+  const { data: topData } = useApiQuery(['segments-top-earners', by], () => getTopEarnersOverview(by));
+  const topRow = topData?.row ?? null;
+
   // Column headers = the area list (same order on every row; derive from the first).
   const areaNames = rows[0]?.areas.map((a) => a.area) ?? [];
 
@@ -74,6 +84,12 @@ function SegmentsHeatmap() {
     // Campaign view; back = the back-link label.
     const detail = `/segments/${encodeURIComponent(name)}`;
     const ctx = `from=${encodeURIComponent(isCampaign ? '/segments?by=campaign' : '/segments')}&back=Segments`;
+    if (name === TOP_EARNERS) {
+      // Top earners is its own grouping on both channels — no detail page, no Housekeeping.
+      const base = a === 'amazon' ? '/amz' : '/pricing';
+      router.push(`${base}/${encodeURIComponent(name)}?by=topearners&${ctx}`);
+      return;
+    }
     if (a === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}?${isCampaign ? 'by=campaign&' : ''}${ctx}`);
     else if (isCampaign) return;   // a campaign carries only a Shopify cell; nothing else to open
     else if (a === 'amazon') router.push(`/amz/${encodeURIComponent(name)}?${ctx}`);
@@ -102,6 +118,39 @@ function SegmentsHeatmap() {
               </tr>
             </thead>
             <tbody>
+              {topRow && (
+                // Pinned above the ranked rows, whichever view is showing. One group, so it is a row rather than a third switch option.
+                // Cells line up by area NAME: the segment view has a Housekeeping column this row has no cell for.
+                <tr className="border-b-2 border-slate-200 bg-slate-50/60">
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => openCell(topRow.name, topRow.areas[0])}
+                      title="Styles over the Winners screen's bar on each channel's own sales, last 12 months"
+                      className="font-medium text-slate-800 hover:text-brand-600 hover:underline"
+                    >
+                      {topRow.name}
+                    </button>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{fmtMoney(topRow.revenue30)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{topRow.gpPct !== null ? `${topRow.gpPct}%` : '—'}</td>
+                  {areaNames.map((name) => {
+                    const cell = topRow.areas.find((c) => c.area.toLowerCase() === name.toLowerCase());
+                    return (
+                      <td key={name} className="px-2 py-2 text-center">
+                        {cell && (
+                          <button
+                            onClick={() => openCell(topRow.name, cell)}
+                            title={cellTitle(cell)}
+                            className={'inline-block w-full min-w-[68px] rounded-md border px-2 py-1.5 text-xs font-medium transition hover:brightness-95 ' + dueTone(cell.dueState)}
+                          >
+                            {dueCellLabel(cell)}
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              )}
               {visible.map((r) => (
                 <tr key={r.name} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                   <td className="px-4 py-2">
