@@ -296,6 +296,9 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
   { key: 'brand', label: 'Brand', title: 'skusummary.brand', align: 'left' },
 ];
 // Text columns default A-Z; every numeric column defaults high-to-low (the biggest number is usually the interesting end).
+// Where the table sits with nothing chosen — best performers first, the screen's whole premise (see the header).
+const DEFAULT_SORT: SortKey = 'profit_30d';
+
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
   unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', brand: 'asc', order_qty: 'desc',
@@ -565,6 +568,10 @@ function AmazonOrderContent() {
     setCut(new Set()); setSelected(new Set());
     setCoverageByView(NO_COVERAGE_BOTH);
     setManualOrder(null);
+    // Reset drops the snapshot outright rather than re-taking it (clearManualOrder) — it's tearing down the very view the
+    // snapshot describes. That leaves the Order column with nothing to sort by, so the sort goes home to the default column
+    // too; anything else is a header still lit over rows it isn't ordering.
+    if (sortKey === 'order_qty') { setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]); }
     setConfirmingOrder(false); setConfirmingClear(false); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
   }
@@ -609,13 +616,14 @@ function AmazonOrderContent() {
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
-  const [sortKey, setSortKey] = useState<SortKey>('profit_30d');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(DEFAULT_DIR[DEFAULT_SORT]);
 
-  // Order box value for a row, as a sortable number — empty/non-numeric reads as null (sorts last), same "unknown isn't small"
-  // rule as sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad.
-  // useCallback (not a bare function) so the memos below can name it as a dependency — an unmemoized closure here makes the
-  // React Compiler give up on `sorted`, and the bail-out then cascades into every memo derived from it (`visible`, `cursorKeys`).
+  // Order box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
+  // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
+  // when a snapshot is being taken (onSort), never from inside `sorted` — see byNormalSort for why that distinction is the whole
+  // fix. Left as a useCallback so a comparator built in a memo could still name it as a dependency without the React Compiler
+  // bailing out of that memo and everything derived from it.
   const qtyValue = useCallback((code: string): number | null => {
     const raw = qty[code];
     if (!raw) return null;
@@ -655,14 +663,12 @@ function AmazonOrderContent() {
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const byNormalSort = (a: AmazonOrderRow, b: AmazonOrderRow) => {
-      // order_qty treats an empty box as 0, not "sorts last" (see onSort's snapshot above for why) — everything else keeps the
-      // usual "an unknown value isn't small" rule.
-      if (sortKey === 'order_qty') {
-        const av = qtyValue(a.code) ?? 0;
-        const bv = qtyValue(b.code) ?? 0;
-        const d = av - bv;
-        return d === 0 ? a.code.localeCompare(b.code) : d * dir;
-      }
+      // order_qty NEVER sorts live off the basket, here or anywhere (owner, 2026-09-23 — boxes re-ordering the table as they were
+      // typed into). Every route into that sort takes a `manualOrder` snapshot instead (onSort, applyCoverage, switchMode,
+      // clearManualOrder), for the reason on `manualOrder` itself: reading `qty` from a comparator makes every keystroke a
+      // re-sort of the row being edited. So this branch is only ever reached for a row the snapshot doesn't name — one filtered
+      // in AFTER it was taken — and those append in a fixed, basket-independent order rather than joining the ranking.
+      if (sortKey === 'order_qty') return a.code.localeCompare(b.code);
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
       // Nulls always sort last, independent of direction.
@@ -685,7 +691,16 @@ function AmazonOrderContent() {
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
     });
-  }, [filtered, sortKey, sortDir, manualOrder, qtyValue]);
+  }, [filtered, sortKey, sortDir, manualOrder]);
+
+  // DROPPING THE SNAPSHOT while the Order column is the active sort would leave that sort with nothing to sort BY (it has no row
+  // field behind it — see byNormalSort above), so the bulk basket edits that clear it re-snapshot the order on screen instead of
+  // clearing it outright. Same gesture switchMode uses, and for the same reason: the rows stay exactly where the operator left
+  // them, and a box edited afterwards doesn't move its own row. On any other sort there's a real column to fall back to, so the
+  // snapshot just goes.
+  const clearManualOrder = () => {
+    setManualOrder(sortKey === 'order_qty' ? sorted.map((r) => r.code) : null);
+  };
 
   // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
   // DRAFT_KEY above) so a reload or an accidental tab close doesn't lose it. Kept as free text rather than <input type="number">
@@ -914,7 +929,7 @@ function AmazonOrderContent() {
       // A rate re-tap is a bulk basket edit, so Load basket's snapshot moves with it — the rows just emptied drop out rather than
       // sitting there with blank boxes.
       if (ordersOnly) setBasketSnapshot((prev) => new Set([...(prev ?? [])].filter((c) => !visibleCodes.has(c))));
-      setManualOrder(null);
+      clearManualOrder();
       return;
     }
     fillCoverage(months, pickKeep);
@@ -1039,7 +1054,7 @@ function AmazonOrderContent() {
     // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's and both modes',
     // since a fill lit both.
     setCoverageByView(NO_COVERAGE_BOTH);
-    setManualOrder(null);
+    clearManualOrder();
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
     setOrdersOnly(false);
