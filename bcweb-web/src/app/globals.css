@@ -6,6 +6,11 @@
 html, body {
   height: 100%;
 }
+/* Always reserve the vertical scrollbar's space. Without it, a list that grows past one screen (e.g. flipping "Due" on a segment's
+   price list) makes the scrollbar appear, the centred page narrows by its width, and everything jumps sideways — then jumps back. */
+html {
+  scrollbar-gutter: stable;
+}
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }

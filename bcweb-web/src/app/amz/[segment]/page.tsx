@@ -10,7 +10,7 @@ Purpose: The list view for a segment — the Amazon mirror of /pricing/[segment]
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
-  - Winners | Losers | All. "All" means BOTH lists together (winners first, then losers), NOT every managed SKU. The old "All" view
+  - Winners | Losers | Both (?mode=all). "Both" means the two lists together (winners first, then losers), NOT every managed SKU. The old "All" view
     (every SKU incl. out of stock, from /amz-all) was dropped from this screen in the same change.
   - "Due" switch. On (default) = only SKUs due now. Off = also the PARKED SKUs (skumap.next_amz_price_review in the future), dimmed.
     The Review column is always shown: a date for a parked SKU, "Due" otherwise.

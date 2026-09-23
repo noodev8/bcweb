@@ -9,7 +9,7 @@ Purpose: The list view for a segment (see CLAUDE.md for the two bars).
   - LOSERS:  in-stock styles that sold NOTHING in the last 30 days — candidates to cut and get moving. Biggest stuck piles first.
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23):
-  - Winners | Losers | All. "All" means BOTH lists together (winners first, then losers), NOT the whole segment. The old "All styles"
+  - Winners | Losers | Both (?mode=all). "Both" means the two lists together (winners first, then losers), NOT the whole segment. The old "All styles"
     view (every style incl. out-of-stock, from /pricing-all) was dropped from this screen in the same change.
   - "Due" switch. On (default) = only styles due now — the classic lists. Off = also the PARKED styles (review date still in the
     future), dimmed. The Review column is always shown: a date for a parked style, "Due" otherwise.
