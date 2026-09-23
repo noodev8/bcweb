@@ -281,20 +281,26 @@ export function getSegments() {
   return request<Segment[]>({ url: '/pricing-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
+// Which group a Shopify WINNERS / LOSERS list is scoped to — a segment, or (2026-09-23) a Google campaign bucket
+// (skusummary.googlecampaign). Same lists either way; `by` becomes the query param name (?segment= / ?campaign=). Campaigns are
+// Shopify only — the Amazon list functions below still take a plain segment.
+export type PricingGroupBy = 'segment' | 'campaign';
+export interface PricingGroup { by: PricingGroupBy; name: string }
+
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
 // `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
 // includeParked = also return styles whose review date is still in the future, flagged parked:true (server ?parked=include).
-export function getTriage(segment: string, days?: number, limit?: number, includeParked?: boolean) {
+export function getTriage(group: PricingGroup, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: TriageRow[] }>(
-    { url: '/pricing-triage', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
+    { url: '/pricing-triage', method: 'GET', params: { [group.by]: group.name, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // LOSERS = sold nothing in `days` (server default 30). `coverWeeks` is gone — there is no cover calculation left to threshold.
-export function getLosers(segment: string, days?: number, limit?: number, includeParked?: boolean) {
+export function getLosers(group: PricingGroup, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: LoserRow[] }>(
-    { url: '/pricing-losers', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
+    { url: '/pricing-losers', method: 'GET', params: { [group.by]: group.name, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -699,6 +705,15 @@ export function getSegmentsOverview(days?: number) {
   return request<{ days: number; segments: SegmentOverviewRow[] }>(
     { url: '/segments', method: 'GET', params: { days } },
     (b) => ({ days: b.days, segments: b.segments || [] })
+  );
+}
+
+// Campaign view of the same heatmap (Shopify only) — one row per Google campaign bucket in use, same row shape as a segment with a
+// single Shopify cell. revenue30 here is SHOPIFY revenue (a campaign drives nothing else). pause + blank buckets are left out server-side.
+export function getCampaignsOverview(days?: number) {
+  return request<{ days: number; campaigns: SegmentOverviewRow[] }>(
+    { url: '/pricing-campaigns', method: 'GET', params: { days } },
+    (b) => ({ days: b.days, campaigns: b.campaigns || [] })
   );
 }
 

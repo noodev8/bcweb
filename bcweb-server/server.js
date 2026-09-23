@@ -100,6 +100,7 @@ app.use('/segment-rename', require('./routes/segment-rename')); // W-seg-2: rewr
 app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
 app.use('/pricing-losers', require('./routes/pricing-losers'));
+app.use('/pricing-campaigns', require('./routes/pricing-campaigns'));  // Segments screen, campaign view (Shopify only)
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));

@@ -37,7 +37,10 @@ most-stock-first ordering is what keeps the few high-stock styles at the top whe
 Schema landmines respected: stock from localstock (#FREE, not deleted, qty>0), never stockvariants. Human name from title.shopifytitle.
 =======================================================================================================================================
 Request Query Params:
-  segment    (string, required)
+  segment    (string)         - the segment to list. Give EITHER segment OR campaign (exactly one).
+  campaign   (string)         - a Google campaign bucket (skusummary.googlecampaign) instead of a segment. Added 2026-09-23
+                                (owner): the same list sliced by campaign — same rule, same response shape (`segment` then carries
+                                the campaign name; `by` says which it is). See utils/pricingGroup.js.
   days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked     (string, optional) - 'include' = also return PARKED styles (future next_shopify_price_review), each flagged parked:true.
@@ -47,6 +50,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
+  "by": "segment",      // "segment" | "campaign" — which grouping was asked for
   "segment": "GIZEH-SEG",
   "days": 30,
   "total": 3,           // qualifying styles in the segment, BEFORE the cap
@@ -75,13 +79,15 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
+const { parseGroup } = require('../utils/pricingGroup');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    const { segment } = req.query;
+    // The group this list is scoped to — a segment or (since 2026-09-23) a Google campaign. See utils/pricingGroup.js.
+    const group = parseGroup(req.query);
     // Default window is now 30d (was 90d) — the membership test is "sold nothing in this window". `limit` is a safety cap, not a list
     // size (utils/listLimit.js). `coverWeeks` is gone: with no cover calculation left there is nothing for it to threshold. It is
     // ignored rather than rejected if an old client still sends it, so a stale browser tab degrades to the new behaviour, not an error.
@@ -89,8 +95,8 @@ router.get('/', async (req, res) => {
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
 
-    if (!segment) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
+    if (!group) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment or campaign is required (exactly one)' });
     }
 
     // $1 segment, $2 days, $3 limit, $4 includeParked.
@@ -121,13 +127,13 @@ router.get('/', async (req, res) => {
       JOIN stk st        ON st.groupid = ss.groupid            -- INNER JOIN: must have stock (nothing to act on otherwise)
       LEFT JOIN win w    ON w.groupid  = ss.groupid
       LEFT JOIN title t  ON t.groupid  = ss.groupid
-      WHERE ss.segment = $1
+      WHERE ${group.column} = $1
         AND ($4::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)  -- drop parked unless ?parked=include
         AND COALESCE(w.u_win,0) = 0                            -- sold NOTHING in the window — the whole membership test
       ORDER BY st.stock DESC,     -- most stock at risk first
                ss.groupid         -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [segment, days, limit, includeParked]);
+    `, [group.name, days, limit, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -143,7 +149,7 @@ router.get('/', async (req, res) => {
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
+    return res.json({ return_code: 'SUCCESS', segment: group.name, by: group.by, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[pricing-losers] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load losers list' });

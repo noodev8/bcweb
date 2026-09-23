@@ -17,6 +17,10 @@ Both lists are fetched ONCE with parked styles included (?parked=include) and ev
 show a live count and flipping them costs no request. Mode + pending are kept in the URL (?mode=, ?pending=1) so returning from a
 style's drill restores the same view.
 
+SEGMENT OR CAMPAIGN (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=campaign makes it a Google campaign bucket
+(skusummary.googlecampaign) instead of a segment. Same lists, same bars, same drill and writes — only the slice differs (the server
+switches ?segment= for ?campaign=, see utils/pricingGroup.js). `by` rides along in every URL this page builds so it survives the drill.
+
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
 browser; when that cap bites the page says so.
@@ -28,7 +32,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
-import { getTriage, getLosers, applyPrice, parkStyleBulk } from '@/lib/api';
+import { getTriage, getLosers, applyPrice, parkStyleBulk, PricingGroup } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -82,6 +86,8 @@ function SegmentContent() {
   const params = useParams<{ segment: string }>();
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
+  const isCampaign = searchParams.get('by') === 'campaign';
+  const group: PricingGroup = { by: isCampaign ? 'campaign' : 'segment', name: segment };
   const { logout } = useAuth();
 
   const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
@@ -100,11 +106,11 @@ function SegmentContent() {
   // Promise.all rather than two useApiQuery calls because PARTIAL TOLERANCE matters: if one list fails the other must still render,
   // under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['pricing-lists', segment],
+    ['pricing-lists', group.by, segment],
     async () => {
       const [w, l] = await Promise.all([
-        getTriage(segment, undefined, undefined, true),
-        getLosers(segment, undefined, undefined, true),
+        getTriage(group, undefined, undefined, true),
+        getLosers(group, undefined, undefined, true),
       ]);
       if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED') {
         return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
@@ -151,7 +157,7 @@ function SegmentContent() {
 
   // Bulk selection + the last run's feedback belong to ONE view of ONE segment. Scoping them means switching view or segment discards
   // them during render — no reset effect, and no frame where the previous view's ticks are still visible.
-  const scope = `${mode}|${showPending}|${segment}`;
+  const scope = `${mode}|${showPending}|${group.by}|${segment}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -164,7 +170,7 @@ function SegmentContent() {
     // same view with the same "← back" target.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
-    const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    const from = `/pricing/${encodeURIComponent(segment)}?${isCampaign ? 'by=campaign&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -233,7 +239,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
+    <AppShell title={segment} subtitle={isCampaign ? 'Google campaign' : undefined} backHref={backHref} backLabel={backLabel}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}
@@ -247,7 +253,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this segment right now.
+          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this {isCampaign ? 'campaign' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}

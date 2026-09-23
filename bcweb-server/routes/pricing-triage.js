@@ -34,7 +34,10 @@ Key domain rules baked into the SQL (S2, CLAUDE.md) — do not change without re
     them is "keep matching → set a review to snooze" or "turn matching off". Each row carries match_amazon so the UI can badge it.
 =======================================================================================================================================
 Request Query Params:
-  segment  (string, required)  - the segment to shortlist within
+  segment  (string)            - the segment to shortlist within. Give EITHER segment OR campaign (exactly one).
+  campaign (string)            - a Google campaign bucket (skusummary.googlecampaign) instead of a segment. Added 2026-09-23
+                                 (owner): the same list sliced by campaign — same bar, same response shape (`segment` then carries
+                                 the campaign name; `by` says which it is). See utils/pricingGroup.js.
   days     (int, optional)     - lookback window in days for sales; default 30 (CLAUDE.md Stage 1)
   limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked   (string, optional)  - 'include' = also return PARKED styles (future next_shopify_price_review), each flagged parked:true.
@@ -44,6 +47,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
+  "by": "segment",      // "segment" | "campaign" — which grouping was asked for
   "segment": "EVA-SEG",
   "days": 30,
   "total": 19,          // qualifying styles in the segment, BEFORE the cap
@@ -69,6 +73,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
+const { parseGroup } = require('../utils/pricingGroup');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -80,14 +85,15 @@ const MIN_PROFIT = 2;    // £ realised net profit per unit (AVG of sales.profit
 
 router.get('/', async (req, res) => {
   try {
-    const { segment } = req.query;
+    // The group this list is scoped to — a segment or (since 2026-09-23) a Google campaign. See utils/pricingGroup.js.
+    const group = parseGroup(req.query);
     // 30-day window per CLAUDE.md; `limit` is a safety cap, not a shortlist size (see utils/listLimit.js). Parse defensively.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
 
-    if (!segment) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
+    if (!group) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'segment or campaign is required (exactly one)' });
     }
 
     // S2 (CLAUDE.md). $1 segment, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked.
@@ -101,7 +107,7 @@ router.get('/', async (req, res) => {
                MAX(s.solddate::text || ' ' || LPAD(COALESCE(s.ordertime,'00:00'),5,'0')) AS last_ts
         FROM sales s
         JOIN skusummary ss ON ss.groupid = s.groupid
-        WHERE ss.segment = $1 AND s.channel='SHP'
+        WHERE ${group.column} = $1 AND s.channel='SHP'
           AND s.qty > 0 AND s.soldprice > 0
           AND s.solddate >= CURRENT_DATE - $2::int
           AND ($6::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
@@ -126,7 +132,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid = w.groupid
       ORDER BY w.units DESC, w.last_ts DESC
       LIMIT $3::int
-    `, [segment, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
+    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
 
     // Shape for the numbered list (CLAUDE.md): row number + units + groupid + title + stock + current price (for the bulk editor).
     // price is NULL when the legacy VARCHAR held junk/blank (safeNumeric) — the client shows "—" and skips that row's delta preview.
@@ -144,7 +150,7 @@ router.get('/', async (req, res) => {
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', segment, days, total, truncated: rows.length < total, rows });
+    return res.json({ return_code: 'SUCCESS', segment: group.name, by: group.by, days, total, truncated: rows.length < total, rows });
   } catch (err) {
     logger.error('[pricing-triage] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load triage list' });

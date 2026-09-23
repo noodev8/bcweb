@@ -32,7 +32,7 @@ Deployment: `docs/deploy.txt` (server → VPS/PM2 rsync; web → Vercel, behind 
 
 **Business context:** ~95% of Shopify sales are Birkenstock, which **cannot be re-ordered on demand** (ordered ~6 months ahead; stock in hand is all there is). There is no "sold out → restock" lever — **the job is to squeeze maximum margin from stock already held.** A fast-selling style with thin stock is a **price-up / harvest** candidate, NOT a restock flag.
 
-Work always starts from a **segment**, with a **WINNERS | LOSERS** switch:
+Work always starts from a **group** — a **segment**, or (Shopify only, 2026-09-23) a **Google campaign** bucket (`skusummary.googlecampaign`; the Segments screen's Segment | Campaign switch, `pause`/blank hidden; `utils/pricingGroup.js`). Same styles, bars, drill and writes — only the slice differs. Then a **WINNERS | LOSERS** switch:
 - **WINNERS** — in-stock, un-parked styles that sold **≥2 units in 30d AND averaged ≥£2 realised net profit per unit** (`AVG(sales.profit)`), best sellers first → price **up** / harvest. Drop 0-stock and "parked" styles.
 - **LOSERS** — in-stock, un-parked stock that sold **nothing in 30d**; most stock first → price **down**. That single test is the whole membership rule.
 - Both bars are **identical on Shopify and Amazon** (owner's call — one team-wide definition), differing only in grain. They are named constants in the route files, **not** query params yet. The old LOSERS machinery (90d window, `cover ≥ coverWeeks`, `cover_weeks`/`is_dead`/`u90`/`u14` fields) was removed in the 2026-07-29 simplification — the route headers record the accuracy trade-off that was knowingly accepted, read those before reinstating any of it.
