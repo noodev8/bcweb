@@ -29,9 +29,10 @@ the upload basket shows a "queued" badge.
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
-import AmzBasketBar from '@/components/AmzBasketBar';
+import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
+import PricingCrumb from '@/components/PricingCrumb';
 import { getAmzWinners, getAmzLosers, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -48,14 +49,16 @@ const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
 const NO_SELECTION: Set<string> = new Set();
+// Same look as Shopify's bulk bar (owner, 2026-09-24). The channel is still unmistakable once the bar opens: its banner carries the
+// Amazon logo and "Apply queues a Seller Central upload — no live change" (components/BulkActionBar CHANNEL_BANNER).
 const AMZ_TONE: BulkTone = {
-  chipOn: 'border-amber-600 bg-amber-600 text-white',
-  applyBtn: 'bg-amber-600 hover:bg-amber-700',
-  panel: 'border-amber-200',
+  chipOn: 'border-brand-600 bg-brand-600 text-white',
+  applyBtn: 'bg-emerald-600 hover:bg-emerald-700',
+  panel: 'border-slate-200',
 };
 
-// One row of either list, flattened so a single table can show both. units/u7 are null for a loser (always 0 by definition — see
-// amz-losers.js — so they render as a dash rather than columns of zeroes). amz_sku/size/title feed the upload basket.
+// One row of either list, flattened so a single table can show both. units/u7 are 0 for a loser (0 by definition — see amz-losers.js;
+// shown as 0 since the tabs share one layout, owner 2026-09-23). amz_sku/size/title feed the upload basket.
 interface ListRow {
   kind: 'winner' | 'loser';
   code: string;
@@ -126,7 +129,7 @@ function SegmentContent() {
         fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
-        kind: 'loser', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: null, u7: null,
+        kind: 'loser', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
         fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
@@ -277,7 +280,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell title={segment} subtitle={isTop ? 'On Amazon sales, last 12 months' : undefined} backHref={backHref} backLabel={backLabel}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" />} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <ListViewControls
@@ -327,8 +330,6 @@ function SegmentContent() {
           <ListTable
             rows={rows}
             queued={items}
-            showKind={mode === 'all'}
-            showUnits={mode !== 'losers'}
             onOpen={openSku}
             selected={selected}
             onToggle={toggle}
@@ -340,11 +341,11 @@ function SegmentContent() {
   );
 }
 
-// One table for every view — the Amazon twin of the Shopify ListTable. Columns appear only where they carry information: Type only in
-// All, Units 30d / 7d only where winners are present (a loser's are 0 by definition), Review only with pending shown. A SKU already in
-// the upload basket carries a "queued" pill so it isn't re-touched mid-sitting.
-function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onToggle, onToggleAll }: {
-  rows: ListRow[]; queued: Record<string, unknown>; showKind: boolean; showUnits: boolean;
+// One table for every view — the Amazon twin of the Shopify ListTable, with the SAME columns in all three: Selling, Stuck and Both use
+// the Selling layout so nothing moves when you flip tabs (owner, 2026-09-23). A Stuck SKU's Units 30d / 7d are 0 by definition, shown as 0 rather than hidden. A SKU already in the upload basket carries a
+// "queued" pill so it isn't re-touched mid-sitting.
+function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
+  rows: ListRow[]; queued: Record<string, unknown>;
   onOpen: (c: string) => void;
   selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
 }) {
@@ -355,10 +356,9 @@ function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onTogg
         <colgroup>
           <col className="w-12" />{/* checkbox */}
           <col className="w-12" />{/* # */}
-          {showKind && <col className="w-24" />}
-          {showUnits && <col className="w-24" />}
-          {showUnits && <col className="w-14" />}
-          <col className="w-52" />{/* SKU (size) */}
+          <col className="w-24" />{/* Units 30d */}
+          <col className="w-14" />{/* 7d */}
+          <col className="w-52" />{/* Code */}
           <col />{/* Product — takes the remaining width */}
           <col className="w-24" />{/* Price */}
           <col className="w-16" />{/* FBA */}
@@ -376,10 +376,9 @@ function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onTogg
               />
             </th>
             <th className="px-4 py-2 font-medium">#</th>
-            {showKind && <th className="px-4 py-2 font-medium">Type</th>}
-            {showUnits && <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>}
-            {showUnits && <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>}
-            <th className="px-4 py-2 font-medium">SKU (size)</th>
+            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units</th>
+            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
+            <th className="px-4 py-2 font-medium" title="Our code (skumap.code), not the Amazon SKU — size is the last two digits">Code</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
@@ -404,19 +403,8 @@ function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onTogg
                   />
                 </td>
                 <td className="px-4 py-2 text-slate-400">{i + 1}</td>
-                {showKind && (
-                  <td className="px-4 py-2">
-                    <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                      {r.kind === 'winner' ? 'Selling' : 'Stuck'}
-                    </span>
-                  </td>
-                )}
-                {showUnits && (
-                  <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
-                )}
-                {showUnits && (
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.u7 ?? '—'}</td>
-                )}
+                <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.u7 ?? '—'}</td>
                 <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
                   {r.code}
                   {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}

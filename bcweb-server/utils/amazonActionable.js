@@ -39,7 +39,8 @@ const AMZ_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.pro
  * amazonActionableByGroup(groupExpr)
  *   groupExpr: a SQL expression over the skusummary alias `sk` naming the group — ALWAYS from utils/pricingGroup.js groupColumn(…,
  *              { alias: 'sk', channel: 'AMZ' }), never request input (it is interpolated).
- * Returns Map<groupName, { instock, outstanding, nextWake }>. Groups with no actionable FBA-in-stock SKU are simply absent —
+ * Returns Map<groupName, { instock, outstanding, selling, stuck, nextWake }> — selling + stuck = outstanding, split by which list
+ * (Selling = WINNERS, Stuck = LOSERS) each un-parked SKU sits on. Only the Top earners cards read the split so far. Groups with no actionable FBA-in-stock SKU are simply absent —
  * deriveShopify() treats a missing entry as zero ('ok').
  */
 async function amazonActionableByGroup(groupExpr) {
@@ -53,27 +54,36 @@ async function amazonActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              m.next_amz_price_review AS review,
-             ( ( COALESCE(w30.u30, 0) >= $1::int
-                 AND w30.avg_profit >= $2::numeric )   -- WINNER (NULL avg_profit fails, as in amz-winners)
-               OR COALESCE(w30.u30, 0) = 0 ) AS actionable   -- LOSER
+             ( COALESCE(w30.u30, 0) >= $1::int
+               AND w30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in amz-winners
+             COALESCE(w30.u30, 0) = 0 AS loser
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code             -- 1:1 (code unique in skumap; every in-stock amzfeed SKU has a skumap row)
       LEFT JOIN w30 ON w30.code = a.code
       WHERE COALESCE(a.amzlive, 0) > 0             -- in FBA stock now (nothing to price on an out-of-stock SKU)
+    ),
+    act AS (
+      SELECT name, review, COALESCE(winner, false) AS winner, loser,
+             (COALESCE(winner, false) OR loser) AS actionable,
+             (review IS NULL OR review <= CURRENT_DATE) AS due
+      FROM cand
     )
     SELECT name,
            COUNT(*) FILTER (WHERE actionable)::int AS instock,
-           COUNT(*) FILTER (WHERE actionable
-                              AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
+           COUNT(*) FILTER (WHERE actionable AND due)::int AS outstanding,
+           COUNT(*) FILTER (WHERE winner AND due)::int AS selling,   -- outstanding, split by list (a SKU is one or the other)
+           COUNT(*) FILTER (WHERE loser AND due)::int AS stuck,
            MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
-    FROM cand
+    FROM act
     GROUP BY name
   `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT]);
 
   const byName = new Map();
   for (const row of r.rows) {
-    byName.set(row.name, { instock: row.instock, outstanding: row.outstanding, nextWake: row.next_wake });
+    byName.set(row.name, {
+      instock: row.instock, outstanding: row.outstanding, selling: row.selling, stuck: row.stuck, nextWake: row.next_wake,
+    });
   }
   return byName;
 }

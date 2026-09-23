@@ -14,7 +14,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MagnifyingGlassIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import AmzBasketBar from '@/components/AmzBasketBar';
+import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import { getAmzSegments, AmzSegment } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
@@ -34,7 +34,7 @@ export default function AmzHome() {
   const error = loadError?.message ?? null;
 
   return (
-    <AppShell title="Amazon Pricing" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell title="Amazon Pricing" backHref="/dashboard" backLabel="Dashboard" headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       {/* Direct SKU search entry. */}

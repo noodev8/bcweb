@@ -3,10 +3,10 @@
 API Route: pricing_top_earners
 =======================================================================================================================================
 Method: GET
-Purpose: The Segments screen's pinned "Top earners" row (owner, 2026-09-23). ONE row, in exactly the shape GET /segments and GET
-         /pricing-campaigns return, so the page renders it with the same table above whichever view is showing. Its cells open the
-         ordinary WINNERS / LOSERS lists scoped by ?topearners= (pricing-triage / pricing-losers on Shopify, amz-winners / amz-losers
-         on Amazon). Requires auth. Read-only.
+Purpose: The Repricing screen's Top earners tab (owner, 2026-09-23 — first a row pinned above the segments, then its own tab, then
+         two channel CARDS). ONE row in the shape GET /segments returns, plus per-cell extras the cards need: the due count split
+         Selling / Stuck, and that channel's own revenue + GP. Its cells open the ordinary WINNERS / LOSERS lists scoped by
+         ?topearners= (pricing-triage / pricing-losers on Shopify, amz-winners / amz-losers on Amazon). Requires auth. Read-only.
 
 WHAT A TOP EARNER IS: a style whose revenue ON THAT CHANNEL cleared the portfolio winner bar over the rolling 12 months — the Winners
 screen's test, read per channel (utils/portfolio.js → topEarnerGroupidsSql, which has the argument). So the Shopify cell counts
@@ -38,6 +38,8 @@ Success Response:
     "heat": null,
     "areas": [
       { "area": "Shopify", "cadenceDays": 0, "dueState": "due", "daysOverdue": 0, "outstanding": 19, "instock": 30,
+        "selling": 12, "stuck": 7,                 // outstanding split by list (Selling = WINNERS, Stuck = LOSERS)
+        "revenue30": 14210.55, "gpPct": 58,        // THIS channel's sales of THIS channel's top earners, over the window
         "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null },
       { "area": "Amazon", ... }    // segment view only
     ]
@@ -65,11 +67,22 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-// One derived cell in the SegmentAreaCell shape. No `off` for this group (see header).
-function cell(area, counts) {
+// Revenue / GP% from summed revenue + COGS (COGS null when every cost was junk).
+function gutter(revenue, cogs) {
+  const rev = Number(revenue) || 0;
+  const c = cogs === null || cogs === undefined ? null : Number(cogs);
+  return { revenue30: Math.round(rev * 100) / 100, gpPct: rev > 0 && c !== null ? Math.round(((rev - c) / rev) * 100) : null };
+}
+
+// One derived cell in the SegmentAreaCell shape, plus the cards' extras. No `off` for this group (see header).
+function cell(area, counts, money) {
   const d = deriveShopify(counts, false);
   return {
     area,
+    selling: d.dueState === 'due' ? Number(counts && counts.selling) || 0 : 0,
+    stuck: d.dueState === 'due' ? Number(counts && counts.stuck) || 0 : 0,
+    revenue30: money.revenue30,
+    gpPct: money.gpPct,
     cadenceDays: 0,              // derived clocks have no cadence
     dueState: d.dueState,
     daysOverdue: 0,
@@ -101,9 +114,26 @@ router.get('/', async (req, res) => {
         AND s.solddate >= CURRENT_DATE - $1::int
         ${isCampaign ? "AND s.channel = 'SHP'" : ''}
     `, [days]);
-    const revenue = Number(rev.rows[0] && rev.rows[0].revenue) || 0;
-    const cogs = rev.rows[0] && rev.rows[0].cogs !== null ? Number(rev.rows[0].cogs) : null;
-    const gpPct = revenue > 0 && cogs !== null ? Math.round(((revenue - cogs) / revenue) * 100) : null;
+    const { revenue30, gpPct } = gutter(rev.rows[0] && rev.rows[0].revenue, rev.rows[0] && rev.rows[0].cogs);
+
+    // 1b) Per-channel money for the cards: each channel's OWN sales of its OWN top earners (a Shopify card shouldn't carry Amazon
+    //     revenue of the same style). Same predicates as the row gutter above.
+    const byCh = await query(`
+      SELECT s.channel,
+             SUM(s.qty * s.soldprice)                AS revenue,
+             SUM(s.qty * ${safeNumeric('ss.cost')})  AS cogs
+      FROM sales s
+      JOIN skusummary ss ON ss.groupid = s.groupid
+      WHERE ( (s.channel = 'SHP' AND s.groupid IN (${topEarnerGroupidsSql('SHP')}))
+           OR (s.channel = 'AMZ' AND s.groupid IN (${topEarnerGroupidsSql('AMZ')})) )
+        AND s.qty > 0 AND s.soldprice > 0
+        AND s.solddate >= CURRENT_DATE - $1::int
+      GROUP BY s.channel
+    `, [days]);
+    const money = (ch) => {
+      const r = byCh.rows.find((x) => x.channel === ch);
+      return gutter(r && r.revenue, r && r.cogs);
+    };
 
     // 2) The derived cells — the SAME counts the segment heatmap uses, grouped by the Top-earners column instead. Everything that
     //    isn't a top earner lands in the NULL group, which is simply not read.
@@ -112,13 +142,13 @@ router.get('/', async (req, res) => {
       isCampaign ? null : amazonActionableByGroup(groupColumn('topearners', { alias: 'sk', channel: 'AMZ' })),
     ]);
 
-    const areas = [cell('Shopify', shp.get(TOP_EARNERS_NAME))];
-    if (amz) areas.push(cell('Amazon', amz.get(TOP_EARNERS_NAME)));
+    const areas = [cell('Shopify', shp.get(TOP_EARNERS_NAME), money('SHP'))];
+    if (amz) areas.push(cell('Amazon', amz.get(TOP_EARNERS_NAME), money('AMZ')));
 
     return res.json({
       return_code: 'SUCCESS',
       days,
-      row: { name: TOP_EARNERS_NAME, revenue30: Math.round(revenue * 100) / 100, gpPct, heat: null, areas },
+      row: { name: TOP_EARNERS_NAME, revenue30, gpPct, heat: null, areas },
     });
   } catch (err) {
     logger.error('[pricing-top-earners] error:', err.message);

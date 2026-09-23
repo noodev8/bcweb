@@ -42,10 +42,13 @@ interface AppShellProps {
   backHref?: string;
   backLabel?: string;
   headerRight?: ReactNode; // optional node rendered flush-right of the title (e.g. a product thumbnail) — uses the title row's
-                           // otherwise-empty right side so it costs no vertical space in the page body
+                           // otherwise-empty right side so it costs no vertical space in the page body. With no title it moves up
+                           // to the back-link row, for the same reason.
+  crumb?: ReactNode;       // optional "where you are" rendered after the back link as `← Repricing / GIZEH-SEG` — for pages whose
+                           // name is context you picked one click ago, not a heading worth a row (owner, 2026-09-24: the pricing lists)
 }
 
-export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight }: AppShellProps) {
+export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, crumb }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -73,6 +76,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
 
   const effectiveBackHref = from ? '/dashboard?g=' + encodeURIComponent(from) : backHref;
   const effectiveBackLabel = from ? 'Dashboard' : (backLabel || 'Back');
+  const hasTitleRow = !!(title || subtitle || subtitleNode);   // else headerRight moves up to the back-link row (no empty row for it)
 
   /*
   USAGE TELEMETRY (owner, 2026-09-22) — one row per screen opened, so that "which screens are used and which are ignored" is
@@ -164,14 +168,26 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
         </div>
       </header>
 
-      {/* Optional page sub-header (back link + title). */}
+      {/* Optional page sub-header (back link [+ crumb] + title). */}
       {(title || effectiveBackHref) && (
         <div className={container + ' pt-6'}>
           {effectiveBackHref && (
-            <Link href={effectiveBackHref} className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-              <ArrowLeftIcon className="h-4 w-4" /> {effectiveBackLabel}
-            </Link>
+            <div className="mb-2 flex items-center justify-between gap-4">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <Link href={effectiveBackHref} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700">
+                  <ArrowLeftIcon className="h-4 w-4" /> {effectiveBackLabel}
+                </Link>
+                {crumb && (
+                  <>
+                    <span className="text-slate-300">/</span>
+                    {crumb}
+                  </>
+                )}
+              </div>
+              {!hasTitleRow && headerRight && <div className="shrink-0">{headerRight}</div>}
+            </div>
           )}
+          {hasTitleRow && (
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               {title && (
@@ -195,6 +211,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
             </div>
             {headerRight && <div className="shrink-0">{headerRight}</div>}
           </div>
+          )}
         </div>
       )}
 

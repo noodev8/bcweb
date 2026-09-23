@@ -35,6 +35,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
+import PricingCrumb from '@/components/PricingCrumb';
 import { getTriage, getLosers, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -57,8 +58,8 @@ const SHP_TONE: BulkTone = {
   panel: 'border-slate-200',
 };
 
-// One row of either list, flattened so a single table can show both. units is null for a loser (always 0 by definition — see
-// pricing-losers.js — so it renders as a dash rather than a column of zeroes).
+// One row of either list, flattened so a single table can show both. units is 0 for a loser (0 by definition — see pricing-losers.js;
+// shown as 0 since the tabs share one layout, owner 2026-09-23).
 interface ListRow {
   kind: 'winner' | 'loser';
   groupid: string;
@@ -80,11 +81,12 @@ export default function SegmentPage() {
   );
 }
 
-// Header subtitle + empty-state noun per grouping. A segment needs no subtitle — it is the default.
+// Crumb note (after the name — components/PricingCrumb) + empty-state noun per grouping. A segment needs no subtitle — it is the default; nor does Top earners (its
+// "on Shopify sales, last 12 months" line came out, owner 2026-09-24 — the title says which group it is).
 const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   segment: undefined,
   campaign: 'Google campaign',
-  topearners: 'On Shopify sales, last 12 months',   // the bar itself lives server-side (utils/portfolio.js) — not repeated here
+  topearners: undefined,
 };
 const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', topearners: 'group' };
 
@@ -135,7 +137,7 @@ function SegmentContent() {
         match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
-        kind: 'loser', groupid: r.groupid, title: r.title, units: null, stock: r.stock, price: r.price,
+        kind: 'loser', groupid: r.groupid, title: r.title, units: 0, stock: r.stock, price: r.price,   // units 0: sold nothing in 30d — the Stuck rule
         match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
@@ -251,7 +253,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell title={segment} subtitle={GROUP_SUBTITLE[by]} backHref={backHref} backLabel={backLabel}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="shopify" note={GROUP_SUBTITLE[by]} />}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}
@@ -297,8 +299,6 @@ function SegmentContent() {
           </p>
           <ListTable
             rows={rows}
-            showKind={mode === 'all'}
-            showUnits={mode !== 'losers'}
             onOpen={openStyle}
             selected={selected}
             onToggle={toggle}
@@ -310,11 +310,11 @@ function SegmentContent() {
   );
 }
 
-// One table for every view. Columns appear only where they carry information: Type only in All (the other views are one kind),
-// Units only where winners are present (a loser's is 0 by definition), Review only with pending shown (a due style's date is past or
-// absent). table-fixed + a colgroup keeps shared columns in the same place as views switch.
-function ListTable({ rows, showKind, showUnits, onOpen, selected, onToggle, onToggleAll }: {
-  rows: ListRow[]; showKind: boolean; showUnits: boolean;
+// One table for every view with the SAME columns in all three — Selling, Stuck and Both use the Selling layout so nothing moves when
+// you flip tabs (owner, 2026-09-23). A Stuck style's Units 30d is 0 by definition, shown as 0 rather than hidden. table-fixed + a
+// colgroup pins the widths.
+function ListTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
+  rows: ListRow[];
   onOpen: (g: string) => void;
   selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
 }) {
@@ -325,9 +325,8 @@ function ListTable({ rows, showKind, showUnits, onOpen, selected, onToggle, onTo
         <colgroup>
           <col className="w-12" />{/* checkbox */}
           <col className="w-12" />{/* # */}
-          {showKind && <col className="w-24" />}
-          {showUnits && <col className="w-24" />}
-          <col className="w-40" />{/* Code */}
+          <col className="w-24" />{/* Units 30d */}
+          <col className="w-40" />{/* Groupid */}
           <col />{/* Product — takes the remaining width */}
           <col className="w-24" />{/* Price */}
           <col className="w-20" />{/* Stock */}
@@ -345,9 +344,8 @@ function ListTable({ rows, showKind, showUnits, onOpen, selected, onToggle, onTo
               />
             </th>
             <th className="px-4 py-2 font-medium">#</th>
-            {showKind && <th className="px-4 py-2 font-medium">Type</th>}
-            {showUnits && <th className="px-4 py-2 font-medium">Units 30d</th>}
-            <th className="px-4 py-2 font-medium">Code</th>
+            <th className="px-4 py-2 font-medium" title="Units sold, last 30 days">Units</th>
+            <th className="px-4 py-2 font-medium">Groupid</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium">Stock</th>
@@ -372,16 +370,7 @@ function ListTable({ rows, showKind, showUnits, onOpen, selected, onToggle, onTo
                   />
                 </td>
                 <td className="px-4 py-2 text-slate-400">{i + 1}</td>
-                {showKind && (
-                  <td className="px-4 py-2">
-                    <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                      {r.kind === 'winner' ? 'Selling' : 'Stuck'}
-                    </span>
-                  </td>
-                )}
-                {showUnits && (
-                  <td className={'px-4 py-2 tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
-                )}
+                <td className={'px-4 py-2 tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
                 <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">{r.groupid}</td>
                 <td className={'truncate px-4 py-2 ' + tone}>
                   {r.title || <span className="text-slate-400">—</span>}

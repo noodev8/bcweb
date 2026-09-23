@@ -17,8 +17,8 @@ pause + blank buckets are hidden server-side. The switch lives in the URL (?by=c
 TOP EARNERS (owner, 2026-09-23): styles over the Winners screen's bar on each channel's own 12-month sales (GET /pricing-top-earners).
 Its cells open /pricing|/amz/Top earners?by=topearners. It started as a row pinned above the ranked ones in both views; the same evening
 the owner made it their priority and moved it to its own tab — FIRST and the DEFAULT, so bare /segments opens it and the segment view
-is /segments?by=segment. A one-row table (Shopify + Amazon cells, all-channel gutter), which is fine: the tab is a way in, the row is
-the whole job. It no longer appears in the Segment or Campaign views.
+is /segments?by=segment. It renders as two channel cards (components/TopEarnersCards), not a one-row table — see that file.
+It no longer appears in the Segment or Campaign views.
 Guarded by AppShell. Consumes GET /segments, GET /pricing-campaigns or GET /pricing-top-earners — one per tab.
 =======================================================================================================================================
 */
@@ -27,7 +27,8 @@ import { Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSegmentsOverview, getCampaignsOverview, getTopEarnersOverview, SegmentOverviewRow, SegmentAreaCell, PricingGroupBy, TOP_EARNERS } from '@/lib/api';
+import TopEarnersCards from '@/components/TopEarnersCards';
+import { getSegmentsOverview, getCampaignsOverview, SegmentOverviewRow, SegmentAreaCell, PricingGroupBy } from '@/lib/api';
 import { dueTone, dueCellLabel, cellTitle, fmtMoney } from '@/lib/segmentUi';
 
 // Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
@@ -54,15 +55,11 @@ function SegmentsHeatmap() {
   const viewPath = by === 'topearners' ? '/segments' : `/segments?by=${by}`;   // this tab's own URL — the lists' back target
 
   // One fetch per view, keyed by it. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
-  // the caller decides, and for this whole module the decision is the same one). Campaign rows and the Top earners row come back in
-  // the segment row shape; they're repacked into the same { segments } so the table below has one input.
+  // the caller decides, and for this whole module the decision is the same one). Campaign rows come back in the segment row shape.
+  // The Top earners tab fetches inside its own cards component, so the table's query holds off (null key) there.
   const { data, error: loadError, isLoading: loading } = useApiQuery(
-    ['segments-overview', by],
+    isTop ? null : ['segments-overview', by],
     async () => {
-      if (isTop) {
-        const r = await getTopEarnersOverview('segment');   // Shopify + Amazon cells, all-channel gutter
-        return { ...r, data: r.data ? { days: r.data.days, segments: [r.data.row] } : undefined };
-      }
       if (!isCampaign) return getSegmentsOverview();
       const r = await getCampaignsOverview();
       return { ...r, data: r.data ? { days: r.data.days, segments: r.data.campaigns } : undefined };
@@ -89,33 +86,31 @@ function SegmentsHeatmap() {
     // back-link label.
     const detail = `/segments/${encodeURIComponent(name)}`;
     const ctx = `from=${encodeURIComponent(viewPath)}&back=Repricing`;
-    if (name === TOP_EARNERS) {
-      // Top earners is its own grouping on both channels — no detail page, no Housekeeping.
-      const base = a === 'amazon' ? '/amz' : '/pricing';
-      router.push(`${base}/${encodeURIComponent(name)}?by=topearners&${ctx}`);
-      return;
-    }
     if (a === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}?${isCampaign ? 'by=campaign&' : ''}${ctx}`);
     else if (isCampaign) return;   // a campaign carries only a Shopify cell; nothing else to open
     else if (a === 'amazon') router.push(`/amz/${encodeURIComponent(name)}?${ctx}`);
     else router.push(detail);
   }
 
+  // No page title and no "← Dashboard": the highlighted nav tab already says Repricing, and it's a top-level screen (owner, 2026-09-24).
   return (
-    <AppShell title="Repricing" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <GroupSwitch by={by} onChange={setBy} />
 
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {isTop && <TopEarnersCards />}
 
-      {!loading && !error && (
+      {!isTop && loading && <p className="text-sm text-slate-400">Loading…</p>}
+      {!isTop && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      {!isTop && !loading && !error && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2.5 font-medium">{isCampaign ? 'Campaign' : isTop ? 'Group' : 'Segment'}</th>
-                {/* Campaign revenue is Shopify-only (a campaign drives nothing else); segment revenue is all channels. */}
-                <th className="px-3 py-2.5 text-right font-medium">{isCampaign ? 'Shopify rev 30d' : 'Rev 30d'}</th>
+                <th className="px-4 py-2.5 font-medium">{isCampaign ? 'Campaign' : 'Segment'}</th>
+                {/* Sales = revenue, last 30 days. Campaign sales are Shopify-only (a campaign drives nothing else); segment sales are all
+                    channels. */}
+                <th className="px-3 py-2.5 text-right font-medium">{isCampaign ? 'Shopify sales' : 'Sales'}</th>
                 <th className="px-3 py-2.5 text-right font-medium">GP</th>
                 {areaNames.map((a) => (
                   <th key={a} className="px-3 py-2.5 text-center font-medium">{a}</th>
@@ -127,9 +122,8 @@ function SegmentsHeatmap() {
                 <tr key={r.name} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                   <td className="px-4 py-2">
                     <button
-                      // A campaign / Top earners has no detail page — its name opens its Shopify list, same as its first cell.
-                      onClick={() => (isCampaign || isTop ? openCell(r.name, r.areas[0]) : router.push(`/segments/${encodeURIComponent(r.name)}`))}
-                      title={isTop ? "Styles over the Winners screen's bar on each channel's own sales, last 12 months" : undefined}
+                      // A campaign has no detail page — its name opens its Shopify list, same as its one cell.
+                      onClick={() => (isCampaign ? openCell(r.name, r.areas[0]) : router.push(`/segments/${encodeURIComponent(r.name)}`))}
                       className="font-medium text-slate-800 hover:text-brand-600 hover:underline"
                     >
                       {r.name}
@@ -141,7 +135,9 @@ function SegmentsHeatmap() {
                     <td key={cell.area} className="px-2 py-2 text-center">
                       <button
                         onClick={() => openCell(r.name, cell)}
-                        title={cellTitle(cell)}
+                        // Pricing cells (Shopify / Amazon) carry no tooltip — the count says it (owner, 2026-09-24). Housekeeping keeps
+                        // its "last worked by" line, which isn't on screen anywhere else.
+                        title={cell.area.toLowerCase() === 'housekeeping' ? cellTitle(cell) : undefined}
                         className={'inline-block w-full min-w-[68px] rounded-md border px-2 py-1.5 text-xs font-medium transition hover:brightness-95 ' + dueTone(cell.dueState)}
                       >
                         {dueCellLabel(cell)}
@@ -153,7 +149,7 @@ function SegmentsHeatmap() {
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={3 + areaNames.length} className="px-4 py-8 text-center text-sm text-slate-400">
-                    {isCampaign ? 'No campaigns with live styles.' : isTop ? 'No top earners.' : 'No segments found.'}
+                    {isCampaign ? 'No campaigns with live styles.' : 'No segments found.'}
                   </td>
                 </tr>
               )}
@@ -168,10 +164,10 @@ function SegmentsHeatmap() {
 // Top earners | Segment | Campaign — which grouping the table (and the lists it opens) is sliced by. Same pill style as the list pages'
 // Selling | Stuck | Both tabs, without counts (owner: no counts beside toggles).
 function GroupSwitch({ by, onChange }: { by: PricingGroupBy; onChange: (v: PricingGroupBy) => void }) {
-  const opts: { key: PricingGroupBy; label: string; hint: string }[] = [
-    { key: 'topearners', label: 'Top earners', hint: "Styles over the Winners screen's bar on each channel's own sales, last 12 months" },
-    { key: 'segment', label: 'Segment', hint: 'Group by segment — Shopify, Amazon and Housekeeping' },
-    { key: 'campaign', label: 'Campaign', hint: 'Group by Google campaign — Shopify only' },
+  const opts: { key: PricingGroupBy; label: string }[] = [
+    { key: 'topearners', label: 'Top earners' },
+    { key: 'segment', label: 'Segment' },
+    { key: 'campaign', label: 'Campaign' },
   ];
   return (
     <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-slate-100/70 p-1">
@@ -182,7 +178,6 @@ function GroupSwitch({ by, onChange }: { by: PricingGroupBy; onChange: (v: Prici
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            title={o.hint}
             aria-pressed={active}
             className={
               'rounded-lg px-4 py-2 text-sm font-medium transition ' +

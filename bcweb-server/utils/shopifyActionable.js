@@ -34,7 +34,8 @@ const SHP_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.pro
  * shopifyActionableByGroup(groupExpr)
  *   groupExpr: a SQL expression over the skusummary alias `ss` naming the group — ALWAYS one of utils/pricingGroup.js GROUP_COLUMNS,
  *              never request input (it is interpolated).
- * Returns Map<groupName, { instock, outstanding, nextWake }>. Groups with no actionable in-stock live style are simply absent —
+ * Returns Map<groupName, { instock, outstanding, selling, stuck, nextWake }> — selling + stuck = outstanding, split by which list
+ * (Selling = WINNERS, Stuck = LOSERS) each un-parked style sits on. Only the Top earners cards read the split so far. Groups with no actionable in-stock live style are simply absent —
  * deriveShopify() treats a missing entry as zero ('ok').
  */
 async function shopifyActionableByGroup(groupExpr) {
@@ -52,26 +53,35 @@ async function shopifyActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              ss.next_shopify_price_review AS review,
-             ( ( COALESCE(s30.u30, 0) >= $1::int
-                 AND s30.avg_profit >= $2::numeric )   -- WINNER (NULL avg_profit fails, as in pricing-triage)
-               OR COALESCE(s30.u30, 0) = 0 ) AS actionable   -- LOSER
+             ( COALESCE(s30.u30, 0) >= $1::int
+               AND s30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in pricing-triage
+             COALESCE(s30.u30, 0) = 0 AS loser
       FROM skusummary ss
       JOIN stk ON stk.groupid = ss.groupid          -- INNER JOIN drops 0-stock styles (nothing to price)
       LEFT JOIN s30 ON s30.groupid = ss.groupid
       WHERE ss.shopify = 1                           -- live on Shopify only
+    ),
+    act AS (
+      SELECT name, review, COALESCE(winner, false) AS winner, loser,
+             (COALESCE(winner, false) OR loser) AS actionable,
+             (review IS NULL OR review <= CURRENT_DATE) AS due
+      FROM cand
     )
     SELECT name,
            COUNT(*) FILTER (WHERE actionable)::int AS instock,
-           COUNT(*) FILTER (WHERE actionable
-                              AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
+           COUNT(*) FILTER (WHERE actionable AND due)::int AS outstanding,
+           COUNT(*) FILTER (WHERE winner AND due)::int AS selling,   -- outstanding, split by list (a style is one or the other)
+           COUNT(*) FILTER (WHERE loser AND due)::int AS stuck,
            MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
-    FROM cand
+    FROM act
     GROUP BY name
   `, [SHP_MIN_UNITS, SHP_MIN_PROFIT]);
 
   const byName = new Map();
   for (const row of r.rows) {
-    byName.set(row.name, { instock: row.instock, outstanding: row.outstanding, nextWake: row.next_wake });
+    byName.set(row.name, {
+      instock: row.instock, outstanding: row.outstanding, selling: row.selling, stuck: row.stuck, nextWake: row.next_wake,
+    });
   }
   return byName;
 }

@@ -19,7 +19,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
-import AmzBasketBar from '@/components/AmzBasketBar';
+import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
 import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
@@ -175,7 +175,7 @@ function DrillContent() {
   );
 
   return (
-    <AppShell title={title} subtitleNode={identity} backHref={backTo} backLabel={backLabel} headerRight={thumb}>
+    <AppShell title={title} subtitleNode={identity} backHref={backTo} backLabel={backLabel} headerRight={<div className="flex items-start gap-3"><AmzUploadButton />{thumb}</div>}>
       {/* Read-only heads-up: this style's Shopify price auto-follows Amazon's lowest in-stock size. Reminds the operator that an Amazon
           price change here will pull Shopify down at the next amz-match sync (Amazon itself is priced normally below). Only when on. */}
       {data && data.header.match_amazon && (

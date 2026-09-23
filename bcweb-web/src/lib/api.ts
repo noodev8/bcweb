@@ -727,11 +727,19 @@ export function getCampaignsOverview(days?: number) {
   );
 }
 
-// The Repricing screen's Top earners tab (one row) — same row shape as a segment/campaign. by 'campaign' = Shopify cell only with a
-// Shopify-only gutter (unused since the row moved off the Campaign view to its own tab); otherwise Shopify + Amazon cells with an
-// all-channel gutter.
+// A Top earners channel cell — the heatmap cell plus what the Repricing screen's cards show: the due count split by list, and that
+// channel's own revenue / GP (its sales of its own top earners), not the row's all-channel gutter.
+export interface TopEarnerCell extends SegmentAreaCell {
+  selling: number;                // due AND on the Selling (WINNERS) list
+  stuck: number;                  // due AND on the Stuck (LOSERS) list — selling + stuck = outstanding
+  revenue30: number;
+  gpPct: number | null;
+}
+
+// The Repricing screen's Top earners tab — one row, Shopify + Amazon cells with an all-channel gutter. by 'campaign' = Shopify cell
+// only with a Shopify-only gutter (unused since the row moved off the Campaign view to its own tab).
 export function getTopEarnersOverview(by: PricingGroupBy, days?: number) {
-  return request<{ days: number; row: SegmentOverviewRow }>(
+  return request<{ days: number; row: Omit<SegmentOverviewRow, 'areas'> & { areas: TopEarnerCell[] } }>(
     { url: '/pricing-top-earners', method: 'GET', params: { days, by: by === 'campaign' ? 'campaign' : undefined } },
     (b) => ({ days: b.days, row: b.row })
   );

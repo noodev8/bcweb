@@ -1,18 +1,22 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: AmzBasketBar  (the Amazon upload basket, shown on every /amz page)
+Component: AmzBasketBar + AmzUploadButton  (the Amazon upload basket, on every /amz page)
 =======================================================================================================================================
-Purpose: The persistent strip that surfaces the Amazon upload basket (AmzBasketContext). Amazon prices don't push live — they're recorded
-         as you apply them, downloaded as ONE Seller Central file, then confirmed as uploaded.
+Purpose: Surfaces the Amazon upload basket (AmzBasketContext). Amazon prices don't push live — they're recorded as you apply them,
+         downloaded as ONE Seller Central file, then confirmed as uploaded.
 
-         Three states, because "did anyone actually upload this?" was the real pain:
-           1. READY — pending changes exist, no download in flight: "N ready" + Download. A reassurance line shows the team's last upload.
-           2. CONFIRM — a file was just downloaded and awaits confirmation: a warning (the legacy "you MUST upload or the changes are lost"
-              message) + "I've uploaded — clear these N" (stamps them done, team-wide) + re-download + not-yet. The confirm is the explicit
-              "Done" — one extra click, but it's what lets a colleague / tomorrow-you see the work is finished.
-           3. IDLE — nothing pending: normally renders nothing, but if the team uploaded recently it shows a muted "✓ last uploaded …" so an
-              empty basket reads as "done", not "did anyone check?".
+         Three states:
+           1. READY — pending changes, no download in flight: AmzUploadButton, a compact "Upload file · N" button that pages put in the
+              AppShell title row (headerRight), so it costs no height above the list.
+           2. CONFIRM — a file was just downloaded and awaits confirmation: AmzBasketBar's banner — a warning (the legacy "you MUST upload
+              or the changes are lost" message) + "I've uploaded — clear these N" (stamps them done, team-wide) + re-download + not-yet.
+              The confirm is the explicit "Done" — one extra click, but it's what lets a colleague / tomorrow-you see the work is finished.
+              This one stays a full-width banner: it's transient and it guards against lost work.
+           3. IDLE — nothing pending: nothing at all.
+         OWNER, 2026-09-24: READY used to be a full-width strip (count, download, how-to text, the team's last upload) and IDLE a green
+         "All uploaded — last uploaded 22:23 yesterday · Andreas · 4 SKUs" line. Both sat above every list and read as in the way; the
+         last-upload stamp went with them (the context still loads it, nothing shows it).
 
          The basket is DURABLE + TEAM-WIDE: a view of the whole team's pending changes (rebuilt from the audit log on load), so it survives a
          browser close / machine restart and whoever is at the desk can upload — and confirm — a colleague's pending change.
@@ -23,21 +27,25 @@ import { useState } from 'react';
 import { ArrowDownTrayIcon, ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
-// Format the last-upload stamp as "20:14 today · Andreas · 27 SKUs" (or "yesterday" / a date for older). Local time; the server sends UTC.
-function describeLastUpload(at: string, by: string | null, count: number): string {
-  const d = new Date(at);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  const isYesterday = d.toDateString() === yesterday.toDateString();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const when = sameDay ? `${time} today` : isYesterday ? `${time} yesterday` : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const who = by ? ` · ${by}` : '';
-  return `last uploaded ${when}${who} · ${count} SKU${count === 1 ? '' : 's'}`;
+// STATE 1 — the compact download button for the page's title row. Nothing when the basket is empty, or while a downloaded file awaits
+// confirmation (the banner below owns that moment, with its own re-download).
+export function AmzUploadButton() {
+  const { count, pending, download } = useAmzBasket();
+  if (count === 0 || pending) return null;
+  return (
+    <button
+      type="button"
+      onClick={download}
+      className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+    >
+      <ArrowDownTrayIcon className="h-4 w-4" /> Upload file · {count}
+    </button>
+  );
 }
 
+// STATE 2 only — the confirm banner. Renders nothing otherwise.
 export default function AmzBasketBar() {
-  const { count, lastUpload, pending, download, redownload, confirmUploaded, cancelPending } = useAmzBasket();
+  const { pending, redownload, confirmUploaded, cancelPending } = useAmzBasket();
   const [busy, setBusy] = useState(false);
 
   const doConfirm = async () => {
@@ -84,38 +92,6 @@ export default function AmzBasketBar() {
             Not yet
           </button>
         </div>
-      </div>
-    );
-  }
-
-  // STATE 1 — pending changes, ready to download.
-  if (count > 0) {
-    return (
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm">
-        <span className="font-medium text-brand-900">
-          {count} price change{count === 1 ? '' : 's'} ready to upload
-        </span>
-        <button
-          type="button"
-          onClick={download}
-          className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
-        >
-          <ArrowDownTrayIcon className="h-4 w-4" /> Download upload file
-        </button>
-        <span className="text-xs text-brand-700/80">one file for Seller Central · confirm once it&apos;s uploaded</span>
-        {lastUpload && (
-          <span className="ml-auto text-xs text-brand-700/70">{describeLastUpload(lastUpload.at, lastUpload.by, lastUpload.count)}</span>
-        )}
-      </div>
-    );
-  }
-
-  // STATE 3 — nothing pending. Show the "done" reassurance if there's been a recent upload; otherwise render nothing.
-  if (lastUpload) {
-    return (
-      <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-1.5 text-xs text-emerald-800">
-        <CheckCircleIcon className="h-4 w-4 text-emerald-600" />
-        <span>All uploaded — {describeLastUpload(lastUpload.at, lastUpload.by, lastUpload.count)}</span>
       </div>
     );
   }

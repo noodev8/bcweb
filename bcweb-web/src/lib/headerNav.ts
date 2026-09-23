@@ -30,7 +30,8 @@ export interface HeaderTab {
 
 export const HEADER_TABS: HeaderTab[] = [
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
-  { label: 'Repricing', href: '/segments', icon: Squares2X2Icon },
+  // Also lit on the Shopify / Amazon pricing screens (lists, drills, find) — they're where Repricing takes you (owner, 2026-09-24).
+  { label: 'Repricing', href: '/segments', icon: Squares2X2Icon, also: ['/pricing', '/amz'] },
   { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
   { label: 'Reports', href: '/analytics', icon: ChartBarIcon, also: ['/brands'] },
 ];

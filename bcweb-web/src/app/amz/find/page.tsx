@@ -25,7 +25,7 @@ import { Suspense, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import AmzBasketBar from '@/components/AmzBasketBar';
+import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { findAmzSkus, applyAmzPrice, markAmzReviewed, AmzFindRow, AmzFindStep } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
@@ -41,10 +41,12 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+// Same look as Shopify's bulk bar (owner, 2026-09-24). The channel is still unmistakable once the bar opens: its banner carries the
+// Amazon logo and "Apply queues a Seller Central upload — no live change" (components/BulkActionBar CHANNEL_BANNER).
 const AMZ_TONE: BulkTone = {
-  chipOn: 'border-amber-600 bg-amber-600 text-white',
-  applyBtn: 'bg-amber-600 hover:bg-amber-700',
-  panel: 'border-amber-200',
+  chipOn: 'border-brand-600 bg-brand-600 text-white',
+  applyBtn: 'bg-emerald-600 hover:bg-emerald-700',
+  panel: 'border-slate-200',
 };
 
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
@@ -249,7 +251,7 @@ function AmzFindContent() {
   }, [steps, from]);
 
   return (
-    <AppShell title="Find a SKU" backHref={backHref} backLabel={backLabel}>
+    <AppShell title="Find a SKU" backHref={backHref} backLabel={backLabel} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <form onSubmit={onFind} className="mb-5 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
