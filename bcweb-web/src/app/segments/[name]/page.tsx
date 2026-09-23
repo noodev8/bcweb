@@ -3,20 +3,22 @@
 =======================================================================================================================================
 Page: /segments/[name]  (Segments module — segment detail)
 =======================================================================================================================================
-Purpose: The screen behind clicking a segment (docs/segments-spec.md §3). Header stats + the per-area review clocks with a
-         "Mark worked" action (log the work + optionally set the next review), the recent work-log history, and a rename control.
-         Consumes GET /segment; writes via POST /segment-work and POST /segment-rename.
+Purpose: The screen behind clicking a segment. Header stats, then the only two edits a segment needs (owner, 2026-09-23):
+           - RENAME, inline on the heading (pencil -> input -> Save). Rewrites the tag on every product (POST /segment-rename).
+           - APPLIES / NOT APPLICABLE per work area, as a switch on each area row (POST /segment-work with off=true|false).
+         Everything else was cut in the same pass: the per-area "Update" form (note, review chips, "Log work"), the Open pricing /
+         Open Amazon links, and the recent-activity log. Segment work is no longer logged at all (routes/segment-work.js).
+         Consumes GET /segment.
 =======================================================================================================================================
 */
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { ClockIcon } from '@heroicons/react/24/outline';
+import { PencilSquareIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSegmentDetail, logSegmentWork, renameSegment, SegmentAreaCell } from '@/lib/api';
-import { SEGMENT_REVIEW_CHIPS, dueTone, dueText, fmtMoney, fmtDate, fmtDateTime } from '@/lib/segmentUi';
+import { getSegmentDetail, setSegmentAreaOff, renameSegment, SegmentAreaCell } from '@/lib/api';
+import { dueTone, dueText, fmtMoney } from '@/lib/segmentUi';
 
 export default function SegmentDetailPage() {
   const router = useRouter();
@@ -29,67 +31,41 @@ export default function SegmentDetailPage() {
   );
   const error = loadError?.message ?? null;
 
+  // No AppShell title: the heading is rendered here because it carries the rename control, and AppShell's title is a plain string.
   return (
-    <AppShell title={name} subtitle="Segment" backHref="/segments" backLabel="All segments">
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+    <AppShell backHref="/segments" backLabel="All segments">
+      <div className="space-y-6">
+        <SegmentName current={name} onRenamed={(newName) => router.replace(`/segments/${encodeURIComponent(newName)}`)} />
 
-      {detail && (
-        <div className="space-y-6">
-          {!detail.active && (
-            <div className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-500">
-              This segment is inactive — no products currently carry this tag. Its history is kept for reference.
-            </div>
-          )}
+        {loading && <p className="text-sm text-slate-400">Loading…</p>}
+        {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-          {/* Header stats */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Revenue 30d" value={fmtMoney(detail.stats.revenue30)} />
-            <Stat label="Gross profit" value={detail.stats.gpPct !== null ? `${detail.stats.gpPct}%` : '—'} />
-            <Stat label="In stock" value={detail.stats.stock.toLocaleString('en-GB')} />
-            <Stat label="Styles" value={String(detail.stats.styles)} />
-          </div>
-
-          {/* Area clocks */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Work areas</h2>
-            <div className="space-y-3">
-              {detail.areas.map((cell) => (
-                <AreaCard key={cell.area} segment={name} cell={cell} onWorked={reload} />
-              ))}
-            </div>
-          </div>
-
-          {/* Work-log history */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Recent activity</h2>
-            {detail.worklog.length === 0 ? (
-              <p className="text-sm text-slate-400">No work logged yet.</p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <table className="w-full text-sm">
-                  <tbody>
-                    {detail.worklog.map((w, i) => (
-                      <tr key={i} className="border-b border-slate-100 last:border-0">
-                        <td className="whitespace-nowrap px-4 py-2 text-slate-400">{fmtDateTime(w.workedAt)}</td>
-                        <td className="px-3 py-2"><span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{w.area}</span></td>
-                        <td className="px-3 py-2 font-medium text-slate-700">{w.workedBy || '—'}</td>
-                        <td className="px-4 py-2 text-slate-500">{w.note || <span className="text-slate-300">—</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {detail.truncated && (
-                  <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">Showing the last {detail.limit} events.</div>
-                )}
+        {detail && (
+          <>
+            {!detail.active && (
+              <div className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-500">
+                This segment is inactive — no products currently carry this tag.
               </div>
             )}
-          </div>
 
-          {/* Rename */}
-          <RenameCard current={name} onRenamed={(newName) => router.replace(`/segments/${encodeURIComponent(newName)}`)} />
-        </div>
-      )}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="Revenue 30d" value={fmtMoney(detail.stats.revenue30)} />
+              <Stat label="Gross profit" value={detail.stats.gpPct !== null ? `${detail.stats.gpPct}%` : '—'} />
+              <Stat label="In stock" value={detail.stats.stock.toLocaleString('en-GB')} />
+              <Stat label="Styles" value={String(detail.stats.styles)} />
+            </div>
+
+            <div>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Work areas</h2>
+              <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white shadow-sm">
+                {detail.areas.map((cell) => (
+                  <AreaRow key={cell.area} segment={name} cell={cell} onChanged={reload} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </AppShell>
   );
 }
@@ -103,177 +79,116 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// One work area: its clock summary + a collapsible "Mark worked" form (log the work, optionally set the next review).
-function AreaCard({ segment, cell, onWorked }: { segment: string; cell: SegmentAreaCell; onWorked: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [reviewDays, setReviewDays] = useState<number | null>(null);
-  const [note, setNote] = useState('');
-  const [off, setOff] = useState(cell.dueState === 'off');
-  const [saving, setSaving] = useState(false);
+// The page heading, editable in place. Renames the tag on every product in the segment and carries its clocks across (spec §2.2);
+// the server enforces the 20-character cap and uniqueness, the input just mirrors the cap.
+function SegmentName({ current, onRenamed }: { current: string; onRenamed: (newName: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(current);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const isShopify = cell.area.toLowerCase() === 'shopify';
-  const isAmazon = cell.area.toLowerCase() === 'amazon';
-  // Shopify AND Amazon are DERIVED clocks (spec §9/§10): no segment-level review date to set, so their "Mark worked" hides the review
-  // pills and cadence — the operator parks styles/SKUs in the work screen instead. A note + the "off" (N/A) flag still apply.
-  // Detected via the live counts (instock is non-null only for a derived cell).
-  const derived = cell.instock !== null;
+
+  const trimmed = value.trim();
+  const canSave = !busy && !!trimmed && trimmed !== current;
+
+  function cancel() {
+    setEditing(false); setValue(current); setErr(null);
+  }
 
   async function save() {
-    setSaving(true); setErr(null);
-    // Never send a review date for a derived clock (there's nothing to set) or when marking the area off.
-    const rd = derived || off ? null : reviewDays;
-    const res = await logSegmentWork(segment, cell.area, rd, note.trim() || undefined, off);
-    setSaving(false);
-    if (res.success) { setOpen(false); setReviewDays(null); setNote(''); onWorked(); }
-    else setErr(res.error || 'Failed to save');
+    if (!canSave) return;
+    setBusy(true); setErr(null);
+    const res = await renameSegment(current, trimmed);
+    setBusy(false);
+    if (res.success) { setEditing(false); onRenamed(trimmed); }
+    else setErr(res.error || 'Rename failed');
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{current}</h1>
+        <button
+          type="button"
+          onClick={() => { setValue(current); setEditing(true); }}
+          title="Rename segment"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          <PencilSquareIcon className="h-5 w-5" />
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="text-base font-semibold text-slate-800">{cell.area}</span>
-        <span className={'rounded-full border px-2.5 py-0.5 text-xs font-medium ' + dueTone(cell.dueState)}>{dueText(cell)}</span>
-        {!derived && (
-          <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-            <ClockIcon className="h-3.5 w-3.5" /> every {cell.cadenceDays}d
-          </span>
-        )}
-        {!derived && (
-          <span className="text-xs text-slate-400">
-            {cell.lastWorkedAt ? <>Last: {cell.lastWorkedBy || '—'} · {fmtDate(cell.lastWorkedAt)}</> : 'Never worked'}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-3">
-          {/* Deep-links carry from=/&back= so the pricing screen's "← <segment>" returns here, not to the pricing home. */}
-          {isShopify && (
-            <Link href={`/pricing/${encodeURIComponent(segment)}?from=${encodeURIComponent(`/segments/${encodeURIComponent(segment)}`)}&back=${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
-              Open pricing →
-            </Link>
-          )}
-          {isAmazon && (
-            <Link href={`/amz/${encodeURIComponent(segment)}?from=${encodeURIComponent(`/segments/${encodeURIComponent(segment)}`)}&back=${encodeURIComponent(segment)}`} className="text-sm font-medium text-brand-600 hover:underline">
-              Open Amazon →
-            </Link>
-          )}
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {open ? 'Cancel' : 'Update'}
-          </button>
-        </div>
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+          maxLength={20}
+          className="w-72 rounded-md border border-slate-300 px-3 py-1.5 text-xl font-semibold tracking-tight text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        />
+        <button
+          onClick={save}
+          disabled={!canSave}
+          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button onClick={cancel} disabled={busy} className="rounded-md px-3 py-2 text-sm text-slate-500 hover:text-slate-700">
+          Cancel
+        </button>
       </div>
-
-      {open && (
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          {derived && !off && (
-            <p className="mb-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              This area tracks itself from your pricing work — a style drops off once you set its review in triage. No segment date to
-              set here; just log a note if useful.
-            </p>
-          )}
-          <div className="mb-1 text-sm font-medium text-slate-700">
-            Note <span className="font-normal text-slate-400">(optional)</span>
-          </div>
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            maxLength={500}
-            placeholder="What did you do / decide?"
-            className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          />
-
-          <label className="mb-4 flex items-start gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={off}
-              onChange={(e) => setOff(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300"
-            />
-            <span>
-              Not applicable to this segment <span className="font-normal text-slate-400">(e.g. not sold on {cell.area} — hides this area from review)</span>
-            </span>
-          </label>
-
-          {!off && !derived && (
-            <>
-              <div className="mb-1 text-sm font-medium text-slate-700">
-                Next review <span className="font-normal text-slate-400">(optional — when this area is due again)</span>
-              </div>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setReviewDays(null)}
-                  className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === null ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-                >
-                  None
-                </button>
-                {SEGMENT_REVIEW_CHIPS.map((c) => (
-                  <button
-                    key={c.days}
-                    onClick={() => setReviewDays(c.days)}
-                    className={'rounded-full border px-3.5 py-1.5 text-sm ' + (reviewDays === c.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {err && <div className="mb-3 text-xs text-red-600">{err}</div>}
-
-          <button
-            onClick={save}
-            disabled={saving}
-            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : off ? 'Mark not applicable' : reviewDays === null ? 'Log work' : 'Log work + set review'}
-          </button>
-        </div>
-      )}
+      <p className="mt-1.5 text-xs text-slate-400">Renames the tag on every product in this segment. Max 20 characters.</p>
+      {err && <div className="mt-1.5 text-xs text-red-600">{err}</div>}
     </div>
   );
 }
 
-// Rename a segment. Rewrites product membership + registry name; the tool owns rename so cadence/log carry across (spec §2.2).
-function RenameCard({ current, onRenamed }: { current: string; onRenamed: (newName: string) => void }) {
-  const [value, setValue] = useState('');
-  const [busy, setBusy] = useState(false);
+// One work area: its name, its status, and a switch for whether it applies to this segment at all. Off = "not applicable" (e.g. a
+// segment not sold on Amazon); the server hides it from review and keeps its clock underneath, so switching back on resumes it.
+function AreaRow({ segment, cell, onChanged }: { segment: string; cell: SegmentAreaCell; onChanged: () => void }) {
+  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const applies = cell.dueState !== 'off';
 
-  async function submit() {
-    const newName = value.trim();
-    if (!newName || newName === current) return;
-    setBusy(true); setErr(null);
-    const res = await renameSegment(current, newName);
-    setBusy(false);
-    if (res.success) onRenamed(newName);
-    else setErr(res.error || 'Rename failed');
+  async function toggle() {
+    setSaving(true); setErr(null);
+    const res = await setSegmentAreaOff(segment, cell.area, applies);
+    setSaving(false);
+    if (res.success) onChanged();
+    else setErr(res.error || 'Failed to save');
   }
 
   return (
-    <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <summary className="cursor-pointer text-sm font-medium text-slate-600">Rename segment</summary>
-      <p className="mt-2 text-xs text-slate-400">
-        Renames the tag on every product in this segment and keeps its clocks and history. Max 20 characters.
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          maxLength={20}
-          placeholder={current}
-          className="w-56 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-        />
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+      <span className={'w-28 text-base font-semibold ' + (applies ? 'text-slate-800' : 'text-slate-400')}>{cell.area}</span>
+      {applies ? (
+        <span className={'rounded-full border px-2.5 py-0.5 text-xs font-medium ' + dueTone(cell.dueState)}>{dueText(cell)}</span>
+      ) : (
+        <span className="text-sm text-slate-400">Not applicable</span>
+      )}
+      {err && <span className="text-xs text-red-600">{err}</span>}
+
+      <label className="ml-auto inline-flex cursor-pointer items-center gap-2 text-sm text-slate-500">
+        Applies
         <button
-          onClick={submit}
-          disabled={busy || !value.trim() || value.trim() === current}
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          type="button"
+          role="switch"
+          aria-checked={applies}
+          aria-label={`${cell.area} applies to this segment`}
+          onClick={toggle}
+          disabled={saving}
+          className={
+            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50 ' +
+            (applies ? 'bg-brand-600' : 'bg-slate-300')
+          }
         >
-          {busy ? 'Renaming…' : 'Rename'}
+          <span className={'inline-block h-5 w-5 rounded-full bg-white shadow transition ' + (applies ? 'translate-x-5' : 'translate-x-0.5')} />
         </button>
-      </div>
-      {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
-    </details>
+      </label>
+    </div>
   );
 }

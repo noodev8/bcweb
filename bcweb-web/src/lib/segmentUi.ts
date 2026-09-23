@@ -8,18 +8,7 @@ Purpose: Shared presentation helpers for the Segments heatmap + detail screens �
 =======================================================================================================================================
 */
 
-import { DueState, SegmentAreaCell, SegmentOverviewRow } from '@/lib/api';
-
-// Review-period pills for "Mark worked + set review". Longer spans than the per-product pricing chips because segments are reviewed
-// on a weekly→6-monthly rhythm (owner: IVES-WHITE weekly, Accessories 6-monthly). Value = days; label = the human cadence.
-export const SEGMENT_REVIEW_CHIPS: { days: number; label: string }[] = [
-  { days: 7, label: '1w' },
-  { days: 14, label: '2w' },
-  { days: 30, label: '1m' },
-  { days: 60, label: '2m' },
-  { days: 90, label: '3m' },
-  { days: 182, label: '6m' },
-];
+import { DueState, SegmentAreaCell } from '@/lib/api';
 
 // Tailwind classes per due state. Palette matches the rest of the app (green/amber/red/slate, cf. PriceSetter's core gauge).
 // 'off' gets its own dashed-border slate tone so it reads as a deliberate operator decision, not just "grey = never worked".
@@ -95,23 +84,6 @@ export function cellTitle(cell: SegmentAreaCell): string {
   return `${cell.area}: ${dueText(cell)}${worked}`;
 }
 
-// "Worst-overdue" sort score for a segment row = the most-urgent of its areas. Never-worked ranks highest (nothing's ever been done —
-// it arrives as overdue with daysOverdue 0), then overdue by how late, then due-soon, then ok. 'off' ranks below even 'ok' — it's
-// explicitly not this segment's job, so it should never make a row look urgent. Callers sort desc, tiebreak on revenue.
-export function worstDueScore(row: SegmentOverviewRow): number {
-  const NEVER = 1e6;
-  let worst = -2;
-  for (const a of row.areas) {
-    const s = a.dueState === 'off' ? -2
-      : a.dueState === 'due' ? Math.max(a.outstanding ?? 0, 1)      // derived Shopify: rank by how many styles are waiting (>=1)
-        : a.dueState === 'overdue' ? (a.daysOverdue > 0 ? a.daysOverdue : NEVER)
-          : a.dueState === 'due-soon' ? 0.5
-            : -1;
-    if (s > worst) worst = s;
-  }
-  return worst;
-}
-
 // Money: £ with thousands separators, no pence (gutter is about scale, not precision).
 export function fmtMoney(n: number): string {
   return '£' + Math.round(n).toLocaleString('en-GB');
@@ -125,10 +97,3 @@ export function fmtDate(iso: string | null): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// ISO timestamp -> local date + time (for the work-log). null-safe.
-export function fmtDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}

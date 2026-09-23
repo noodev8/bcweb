@@ -700,16 +700,12 @@ export interface SegmentOverviewRow {
   heat: number | null;            // deferred fast-follow — null for now
   areas: SegmentAreaCell[];       // ordered by area sort
 }
-export interface SegmentWorklogEntry { area: string; workedBy: string | null; workedAt: string | null; note: string; }
 export interface SegmentDetail {
   name: string;
   active: boolean;
   days: number;
   stats: { revenue30: number; gpPct: number | null; stock: number; styles: number; heat: number | null };
   areas: SegmentAreaCell[];
-  worklog: SegmentWorklogEntry[];
-  limit: number;
-  truncated: boolean;
 }
 
 // Overview heatmap — one row per active segment (importance gutter + per-area due state). Sorted by revenue server-side.
@@ -720,31 +716,24 @@ export function getSegmentsOverview(days?: number) {
   );
 }
 
-// Detail for one segment — header stats + clocks + recent work-log (lazy/truncated).
-export function getSegmentDetail(name: string, opts?: { days?: number; limit?: number }) {
+// Detail for one segment — header stats + clocks.
+export function getSegmentDetail(name: string, opts?: { days?: number }) {
   return request<SegmentDetail>(
-    { url: '/segment', method: 'GET', params: { name, days: opts?.days, limit: opts?.limit } },
-    (b) => ({
-      name: b.name, active: b.active, days: b.days,
-      stats: b.stats, areas: b.areas || [], worklog: b.worklog || [],
-      limit: b.limit, truncated: !!b.truncated,
-    })
+    { url: '/segment', method: 'GET', params: { name, days: opts?.days } },
+    (b) => ({ name: b.name, active: b.active, days: b.days, stats: b.stats, areas: b.areas || [] })
   );
 }
 
-// W-seg-1: log a work event against one area, optionally setting that clock's review date and/or its "off" (N/A) flag.
-// reviewDays null = "None" (leave the clock untouched). off undefined = leave the flag untouched.
-export function logSegmentWork(name: string, area: string, reviewDays: number | null, note?: string, off?: boolean) {
-  return request<{ name: string; area: string; workedBy: string; workedAt: string | null; nextReview: string | null; off: boolean }>(
-    {
-      url: '/segment-work', method: 'POST',
-      data: { name, area, ...(reviewDays != null ? { reviewDays } : {}), ...(note ? { note } : {}), ...(off !== undefined ? { off } : {}) },
-    },
-    (b) => ({ name: b.name, area: b.area, workedBy: b.workedBy, workedAt: b.workedAt, nextReview: b.nextReview, off: !!b.off })
+// W-seg-1: mark one area of a segment as not applicable (off=true) or applicable again (off=false). Same route can also set a review
+// date (reviewDays), but nothing in the UI uses that any more. Nothing is logged (2026-09-23).
+export function setSegmentAreaOff(name: string, area: string, off: boolean) {
+  return request<{ name: string; area: string; nextReview: string | null; off: boolean }>(
+    { url: '/segment-work', method: 'POST', data: { name, area, off } },
+    (b) => ({ name: b.name, area: b.area, nextReview: b.nextReview, off: !!b.off })
   );
 }
 
-// W-seg-2: rename a segment (rewrites product membership + registry name atomically; clocks/log carry across).
+// W-seg-2: rename a segment (rewrites product membership + registry name atomically; clocks carry across).
 export function renameSegment(oldName: string, newName: string) {
   return request<{ oldName: string; newName: string; productsMoved: number }>(
     { url: '/segment-rename', method: 'POST', data: { oldName, newName } },

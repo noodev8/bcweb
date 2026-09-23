@@ -4,15 +4,13 @@ API Route: segment
 =======================================================================================================================================
 Method: GET
 Purpose: Step 4 of the Segments module (docs/segments-spec.md §3, §5) — the DETAIL read behind clicking a segment name on the
-         overview heatmap. Returns the segment's header stats, its per-area review clocks, and its recent work-log history
-         (who / when / note) — the attention history made visible, so an operator (or a delegate) can see what's been done.
+         overview heatmap. Returns the segment's header stats and its per-area review clocks. (The recent work-log list was dropped
+         2026-09-23 — nothing writes segment_worklog any more; see routes/segment-work.js.)
 
 Shape mirrors GET /segments for the header + clocks (same live all-channel revenue/GP, same due-state classification via
 utils/segmentDue), then adds:
   - stats.stock  : current SELLABLE stock across the segment (localstock #FREE, not deleted, qty>0 — never skusummary.stockvariants).
   - stats.styles : number of styles (skusummary rows) in the segment.
-  - worklog[]    : recent work events across all areas, newest first, MOST-RECENT-N (lazy, like pricing-history) — sparse data, so a
-                   fixed cap always shows something where a date window could come back empty.
 
 A segment reached from the overview is always active, but this endpoint also serves a segment that has since gone inactive (e.g. a
 rename/emptied out) so its history stays reachable — `active` is returned so the UI can flag it. Unknown name → NOT_FOUND.
@@ -20,7 +18,6 @@ rename/emptied out) so its history stays reachable — `active` is returned so t
 Request Query Params:
   name  (string, required) - the segment name (= skusummary.segment / segment.name).
   days  (int, optional)    - revenue/GP lookback window; default 30.
-  limit (int, optional)    - max work-log rows; default 20, clamped to [1, 100].
 
 Success Response:
 {
@@ -31,9 +28,6 @@ Success Response:
   "stats": { "revenue30": 9314.74, "gpPct": 44, "stock": 812, "styles": 37, "heat": null },
   "areas": [ { "area": "Shopify", "cadenceDays": 30, "dueState": "due", "daysOverdue": 0, "outstanding": 12, "instock": 30,
                "nextReview": null, "lastWorkedBy": null, "lastWorkedAt": null }, ... ],   // Shopify DERIVED (§9); others manual, ordered by area.sort
-  "worklog": [ { "area": "Shopify", "workedBy": "Andreas", "workedAt": "2026-07-09T10:11:12.000Z", "note": "harvest" }, ... ],
-  "limit": 20,
-  "truncated": false
 }
 =======================================================================================================================================
 Return Codes:
@@ -63,9 +57,6 @@ router.get('/', async (req, res) => {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'name is required' });
     }
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
-    let limit = Number.parseInt(req.query.limit, 10);
-    if (!(limit > 0)) limit = 20;
-    if (limit > 100) limit = 100;
 
     // Resolve the segment in the registry (any active state). Unknown → NOT_FOUND rather than an empty-but-valid detail.
     const seg = await query('SELECT id, name, active FROM segment WHERE name = $1', [name]);
@@ -75,7 +66,7 @@ router.get('/', async (req, res) => {
     const segmentId = seg.rows[0].id;
 
     // Header stats — live revenue/COGS (all channels), current sellable stock, and style count. Run in parallel; independent reads.
-    const [rev, stockStyles, clocks, work, shp, amz] = await Promise.all([
+    const [rev, stockStyles, clocks, shp, amz] = await Promise.all([
       query(`
         SELECT SUM(s.qty * s.soldprice)               AS revenue,
                SUM(s.qty * ${safeNumeric('ss.cost')}) AS cogs
@@ -109,16 +100,6 @@ router.get('/', async (req, res) => {
         WHERE st.segment_id = $1
         ORDER BY a.sort
       `, [segmentId]),
-
-      // Recent work-log across all areas, newest first. limit+1 to detect truncation without a COUNT.
-      query(`
-        SELECT a.name AS area, w.worked_by, w.worked_at, w.note
-        FROM segment_worklog w
-        JOIN area a ON a.id = w.area_id
-        WHERE w.segment_id = $1
-        ORDER BY w.worked_at DESC, w.id DESC
-        LIMIT $2::int
-      `, [segmentId, limit + 1]),
 
       // Derived Shopify clock (spec §9.3) — the pricing-ACTIONABLE styles in this segment, and how many are still un-parked. MUST match
       // the overview's block 2b in routes/segments.js exactly (else the heatmap cell and this detail card disagree): the candidate pool
@@ -209,14 +190,6 @@ router.get('/', async (req, res) => {
       };
     });
 
-    const truncated = work.rows.length > limit;
-    const worklog = work.rows.slice(0, limit).map((w) => ({
-      area: w.area,
-      workedBy: w.worked_by || null,
-      workedAt: w.worked_at ? w.worked_at.toISOString() : null,
-      note: w.note || '',
-    }));
-
     return res.json({
       return_code: 'SUCCESS',
       name: seg.rows[0].name,
@@ -230,9 +203,6 @@ router.get('/', async (req, res) => {
         heat: null,
       },
       areas,
-      worklog,
-      limit,
-      truncated,
     });
   } catch (err) {
     logger.error('[segment] error:', err.message);

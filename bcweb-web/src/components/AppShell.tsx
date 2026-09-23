@@ -15,24 +15,14 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
-import { StarIcon } from '@heroicons/react/24/outline';
-import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 import { logScreenView } from '@/lib/api';
-import { findPinnable, pinnableForPath } from '@/lib/pinnable';
-import { usePins, MAX_PINS } from '@/lib/usePins';
+import { HEADER_TABS, tabForPath } from '@/lib/headerNav';
 
-// THE HEADER BAR IS NOW PINNED, NOT FIXED (owner, 2026-09-22). It used to be a hard-coded four — Inventory, Segments, Customer
-// Orders, Reports — chosen in 2026-08-27 as "the ones genuinely hopped between with a task half-done", after a cut from seven on the
-// grounds that a row you have to READ is slower than the menu it saves you a trip to. Both of those judgements still hold; what
-// changed is that they are now the DEFAULT rather than the law, so the cap on the row is a cap on what fits, not a standing argument
-// about whose four are right.
-// The list, the storage and the reasoning live in lib/usePins.ts; the screens that can go in it are lib/pinnable.ts. Crucially this
-// bar does NOT mirror the dashboard's five intent groups, and shouldn't be "made consistent" with them later — see the note in
-// usePins.ts for why a hop with a known destination is the wrong thing to put a mindset-pick in front of.
-// Active state is still by path prefix (longest match wins, so Bclog inside /analytics doesn't light up Reports), and the active tab
-// still lifts to a white raised pill inside the recessed track.
+// The header bar is a FIXED four (lib/headerNav.ts). Pinning via a star beside the page title was tried on 2026-09-22 and removed on
+// 2026-09-23; the reasoning is in that file. Active state is by path prefix (longest match wins), and the active tab lifts to a
+// white raised pill inside the recessed track.
 
 interface AppShellProps {
   children: ReactNode;
@@ -54,48 +44,12 @@ interface AppShellProps {
                            // otherwise-empty right side so it costs no vertical space in the page body
 }
 
-// The star itself. Its own component only because it renders in two places — beside a title, and alone on the one pinnable page
-// that has no title.
-function PinStar({ here, herePinned, full, toggle }: { here: { label: string; href: string }; herePinned: boolean; full: boolean; toggle: (href: string) => void }) {
-  const blocked = full && !herePinned;
-  return (
-    <button
-      type="button"
-      onClick={() => !blocked && toggle(here.href)}
-      aria-pressed={herePinned}
-      title={
-        herePinned
-          ? `Remove ${here.label} from the header bar`
-          : blocked
-            ? `The header bar is full (${MAX_PINS}) — unpin one first`
-            : `Pin ${here.label} to the header bar`
-      }
-      className={
-        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition ' +
-        (herePinned
-          ? 'text-amber-500 hover:bg-amber-50'
-          : blocked
-            ? 'cursor-not-allowed text-slate-200'
-            : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500')
-      }
-    >
-      {herePinned ? <StarSolidIcon className="h-5 w-5" /> : <StarIcon className="h-5 w-5" />}
-    </button>
-  );
-}
-
 export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
-  // Called here, above the auth early-return, because hooks can't run conditionally — the splash branch below returns before the
-  // header exists but React still has to see the same hook order on every render.
-  const { pins, toggle, full } = usePins();
-
-  // The registry entry for wherever we are, or undefined on a screen that isn't pinnable (the dashboard, a login page). Drives both
-  // the active tab and the pin control beside the page title.
-  const here = pinnableForPath(pathname);
-  const herePinned = !!here && pins.includes(here.href);
+  // The header tab for wherever we are (drives the active highlight), or undefined on a screen that has none.
+  const here = tabForPath(pathname);
 
   /*
   BACK GOES WHERE YOU CAME FROM, NOT UP THE ROUTE TREE (owner, 2026-09-22 — "I went to Winners and then went back to the full
@@ -123,7 +77,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   answerable when it eventually gets asked. It cannot be answered retrospectively, hence collecting now with no report built yet;
   the server side, the table shape and the caveats are in the header of bcweb-server/routes/screen-view.js.
 
-  HERE, in AppShell, because this wraps every page — a call per dashboard tile would miss the header pins, deep links and bookmarks,
+  HERE, in AppShell, because this wraps every page — a call per dashboard tile would miss the header tabs, deep links and bookmarks,
   which are exactly the navigation habits worth knowing about.
 
   FIRE AND FORGET, and it must stay that way. Nothing is awaited, no state is set, and the `.catch` is empty: a usage row is
@@ -172,9 +126,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
             {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour).
                 The active tab lifts to a white "raised" pill inside the recessed track. */}
             <nav className="inline-flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/70 p-1">
-              {/* Resolved from href to registry entry at render. A pin whose screen has since left PINNABLE simply doesn't
-                  render — dropping a stale tab quietly is better than a tab that leads nowhere. */}
-              {pins.map((href) => findPinnable(href)).filter((m): m is NonNullable<typeof m> => !!m).map((m) => {
+              {HEADER_TABS.map((m) => {
                 const active = here?.href === m.href;
                 const Icon = m.icon;
                 return (
@@ -194,13 +146,6 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
                   </Link>
                 );
               })}
-              {/* An empty bar is a possible state (unpin everything) and an empty recessed track reads as something broken rather
-                  than as something you emptied, so it says so and names the fix. */}
-              {pins.length === 0 && (
-                <span className="whitespace-nowrap px-3 py-1.5 text-sm text-slate-400">
-                  No pinned screens — star a page to add it
-                </span>
-              )}
             </nav>
           </div>
 
@@ -218,10 +163,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
       </header>
 
       {/* Optional page sub-header (back link + title). */}
-      {/* Optional page sub-header (back link + title + the pin control).
-          `here` is in the condition so a pinnable page with NO title still gets this row — /update-amazon is the only one, and it
-          would otherwise be the single screen in the app you cannot pin from. */}
-      {(title || effectiveBackHref || here) && (
+      {(title || effectiveBackHref) && (
         <div className={container + ' pt-6'}>
           {effectiveBackHref && (
             <Link href={effectiveBackHref} className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
@@ -230,26 +172,16 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
           )}
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {/* THE PIN CONTROL SITS BESIDE THE PAGE'S NAME (owner's call, 2026-09-22), not on the bar it fills and not on a
-                  settings screen. You know you want a screen pinned while you are standing ON it and finding yourself back for the
-                  third time — putting the control at that moment means pinning never needs a trip anywhere. The star is quiet
-                  (slate, no fill) until it's on, so it doesn't compete with the heading it sits next to.
-                  Guarded by `here` because not every page is in the registry, and by nothing else: at the cap the star stays
-                  visible but goes inert and says why, since a control that vanishes when you need it reads as a bug. */}
               {title && (
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                    {titleHref ? (
-                      // Underline only on hover: at rest the heading must still read as the page's name, not as a piece of UI.
-                      <Link href={titleHref} title={titleTitle} className="hover:text-brand-700 hover:underline hover:decoration-slate-300 hover:underline-offset-4">
-                        {title}
-                      </Link>
-                    ) : title}
-                  </h1>
-                  {here && <PinStar {...{ here, herePinned, full, toggle }} />}
-                </div>
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                  {titleHref ? (
+                    // Underline only on hover: at rest the heading must still read as the page's name, not as a piece of UI.
+                    <Link href={titleHref} title={titleTitle} className="hover:text-brand-700 hover:underline hover:decoration-slate-300 hover:underline-offset-4">
+                      {title}
+                    </Link>
+                  ) : title}
+                </h1>
               )}
-              {!title && here && <PinStar {...{ here, herePinned, full, toggle }} />}
               {subtitleNode ? (
                 <div className="mt-0.5">{subtitleNode}</div>
               ) : subtitle && (

@@ -51,8 +51,8 @@ tooltip. THE STRINGS ARE THE OWNER'S TO EDIT — they are all in the array below
 decision.
 
 THE HEADER BAR DELIBERATELY DOES NOT MIRROR THESE FIVE (owner, 2026-09-22 — it was the obvious "consistent" answer and it is the
-wrong one). It is pinned screens now, defaulting to the old fixed four; see lib/usePins.ts for the reasoning, which comes down to the
-two answering different questions. This page answers "where do I start?" and is allowed to make you think for a second; the bar
+wrong one). It is a fixed four (lib/headerNav.ts), because the two answer different
+questions. This page answers "where do I start?" and is allowed to make you think for a second; the bar
 answers "get me there, I'm mid-task", where the destination is already known and a mindset-pick would only add a click.
 =======================================================================================================================================
 */
@@ -155,7 +155,7 @@ const GROUPS: Group[] = [
        /analytics, which meant reading a number cost three clicks — open the group, open Reports, pick the report — and the middle
        one told you nothing you didn't already know when you opened a group called "see how we're doing". The reports index IS this
        group; having both was the same mistake the old bands made, a category standing in front of the thing.
-       /analytics IS STILL LIVE and unchanged — deep links, bookmarks and the header pin all still land on it, and it remains the
+       /analytics IS STILL LIVE and unchanged — deep links, bookmarks and the header tab all still land on it, and it remains the
        right page when you want the full descriptions rather than these four-word ones. It simply no longer has a tile here.
        ORDER IS THE REPORTS INDEX'S OWN, kept deliberately so the two screens don't disagree about which report comes first; Birk
        Tracker and Finance are appended because they belong to this mindset but have never lived on that index.
