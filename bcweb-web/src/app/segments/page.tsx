@@ -42,10 +42,10 @@ export default function SegmentsHeatmap() {
   // segment detail, where it can be marked worked.
   function openCell(name: string, cell: SegmentAreaCell) {
     const a = cell.area.toLowerCase();
-    // Deep-link into the pricing screens, but remember this segment's detail as the back target so "← <segment>" returns here (into the
-    // Segments module) rather than to the pricing home. from = the detail path; back = the segment name (used as the back-link label).
+    // Deep-link into the pricing screens with THIS screen as the back target, so "← Segments" returns to the heatmap rather than to
+    // the pricing home (owner, 2026-09-23 — it used to return to the segment's detail page). from = path; back = the back-link label.
     const detail = `/segments/${encodeURIComponent(name)}`;
-    const ctx = `?from=${encodeURIComponent(detail)}&back=${encodeURIComponent(name)}`;
+    const ctx = `?from=${encodeURIComponent('/segments')}&back=Segments`;
     if (a === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}${ctx}`);
     else if (a === 'amazon') router.push(`/amz/${encodeURIComponent(name)}${ctx}`);
     else router.push(detail);

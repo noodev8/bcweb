@@ -35,6 +35,9 @@ Request Query Params:
   segment  (string, required)  - the segment to shortlist within
   days     (int, optional)     - lookback window in days for sales; default 30
   limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
+  parked     (string, optional) - 'include' = also return PARKED SKUs (future skumap.next_amz_price_review), each flagged
+                                  parked:true. Omitted = the classic list: parked SKUs hidden. Added 2026-09-23 so the
+                                  segment page can offer a "show pending review" toggle; the WINNERS bar itself is unchanged.
 
 Success Response:
 {
@@ -45,7 +48,8 @@ Success Response:
   "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "code": "FLE030-IVES-WHITE-38", "amz_sku": "AD-0XF8D-48L", "groupid": "FLE030-IVES-WHITE",
-      "size": "38", "title": "...", "price": 37.99, "fba": 96, "u7": 4, "units": 19, "last_sold": "2026-07-08" },
+      "size": "38", "title": "...", "price": 37.99, "fba": 96, "u7": 4, "units": 19, "last_sold": "2026-07-08",
+      "next_review": null, "parked": false },   // next_review YYYY-MM-DD or null; parked = next_review is in the future
     ...   // ordered by units (in window) desc; rank is the 1-based row number
   ]
 }
@@ -85,8 +89,9 @@ router.get('/', async (req, res) => {
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
     }
+    const includeParked = req.query.parked === 'include';
 
-    // $1 segment, $2 days, $3 limit.
+    // $1 segment, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked.
     // win: units in the window + last-sold per SKU. s7: 7-day units (secondary signal + tiebreak). The INNER JOIN to `win` drops SKUs
     // with no sales in the window; the amzlive>0 filter drops out-of-stock SKUs; LIMIT tops the shortlist back up to N.
     const result = await query(`
@@ -112,6 +117,8 @@ router.get('/', async (req, res) => {
              w.units,
              COALESCE(s7.u7,0) AS u7,
              to_char(w.last_sold,'YYYY-MM-DD') AS last_sold,
+             m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
+             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows              -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
                                                          -- pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -122,10 +129,10 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid = a.groupid
       WHERE sk.segment = $1
         AND COALESCE(a.amzlive,0) > 0                     -- in FBA stock now
-        AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only (drops reviewed SKUs; §10.4)
+        AND ($6::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only unless ?parked=include (§10.4)
       ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
-    `, [segment, days, limit, MIN_UNITS, MIN_PROFIT]);
+    `, [segment, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -139,6 +146,8 @@ router.get('/', async (req, res) => {
       u7: Number(r.u7),
       units: Number(r.units),
       last_sold: r.last_sold || null,
+      next_review: r.next_review || null,
+      parked: r.parked === true,   // only ever true with ?parked=include
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

@@ -100,7 +100,6 @@ app.use('/segment-rename', require('./routes/segment-rename')); // W-seg-2: rewr
 app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
 app.use('/pricing-losers', require('./routes/pricing-losers'));
-app.use('/pricing-all', require('./routes/pricing-all'));           // ALL: the whole segment (unfiltered), recently-changed first
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
@@ -136,7 +135,6 @@ app.use('/product-variants', require('./routes/product-variants')); // one style
 app.use('/amz-segments', require('./routes/amz-segments'));  // Stage 0: segment picker (managed segments + SKU count)
 app.use('/amz-winners', require('./routes/amz-winners'));    // Stage 1: WINNERS — top in-stock SKUs by units sold (price up / harvest)
 app.use('/amz-losers', require('./routes/amz-losers'));      // Stage 1: LOSERS — dead/slow FBA stock at risk (price down / cut)
-app.use('/amz-all', require('./routes/amz-all'));            // Stage 1: ALL — every managed SKU in the segment (browse/lookup)
 app.use('/amz-drill', require('./routes/amz-drill'));        // Stage 2: one SKU's header + 6-week velocity + 60d price bands
 app.use('/amz-history', require('./routes/amz-history'));    // drill report (lazy): recent amz_price_log changes for the SKU
 app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (lazy): recent raw Amazon sales (incl. returns) for the SKU

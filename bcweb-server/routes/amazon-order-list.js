@@ -49,7 +49,7 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          cost = skusummary.cost (CLAUDE.md: order cost is ALWAYS skusummary.cost via safeNumeric, never skumap.cost — blank/
          placeholder on many rows). Used by the web page to total up what the on-screen proposed Order would cost to buy in.
 
-         last_sold = MAX(sales.solddate) WHERE channel='AMZ' AND qty>0, same shape as routes/amz-all.js's own `ls` CTE. Exists
+         last_sold = MAX(sales.solddate) WHERE channel='AMZ' AND qty>0, same shape as routes/amz-losers.js's own `ls` CTE. Exists
          because unit_profit (skumap.amzprofit) is STICKY — it can be a year+ old and still pass the Potential Winners £3 test — so
          the web page's optional "Sold in 6mo" toggle uses this to tell a genuinely recent sale apart from a stale one. Null when
          the SKU has never sold on Amazon.
@@ -71,7 +71,7 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          not persisted. What IS persisted is what the operator CONFIRMS: an Order becomes orderstatus rows (visible here through
          `ord`), a Pick becomes flagged shelf rows (visible here through pick_pending).
 
-         NO server-side search/limit (unlike amz-all's listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
+         NO server-side search/limit (unlike the pricing lists' listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
          no round-trip. A safety cap would only get in the way of "search everything".
 
@@ -158,7 +158,7 @@ router.get('/', async (req, res) => {
         GROUP BY o.shopifysku
       ),
       lastsold AS (
-        -- Most recent Amazon sale date per code, same shape as routes/amz-all.js's own 'ls' CTE — lets the web page tell a genuinely
+        -- Most recent Amazon sale date per code, same shape as routes/amz-losers.js's own 'ls' CTE — lets the web page tell a genuinely
         -- recent sale apart from unit_profit's STICKY last-seen figure (which can be a year+ stale and still pass a >£3 test).
         SELECT code, MAX(solddate) AS last_sold FROM sales WHERE channel='AMZ' AND qty>0 GROUP BY code
       )

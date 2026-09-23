@@ -40,6 +40,9 @@ Request Query Params:
   segment    (string, required)
   days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
+  parked     (string, optional) - 'include' = also return PARKED styles (future next_shopify_price_review), each flagged parked:true.
+                                Omitted = the classic list: parked styles hidden. Added 2026-09-23 so the segment page can offer a
+                                "show pending review" toggle without a second route; the LOSERS rule itself is unchanged.
 
 Success Response:
 {
@@ -49,7 +52,8 @@ Success Response:
   "total": 3,           // qualifying styles in the segment, BEFORE the cap
   "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
-    { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 0, "match_amazon": false },
+    { "rank": 1, "groupid": "...", "title": "...", "price": 42.00, "stock": 48, "u30": 0, "match_amazon": false,
+      "next_review": null, "parked": false },   // next_review YYYY-MM-DD or null; parked = next_review is in the future
     { "rank": 2, "groupid": "...", "title": "...", "price": 29.95, "stock": 14, "u30": 0, "match_amazon": false },
     ...  // most stock first
   ]
@@ -83,12 +87,13 @@ router.get('/', async (req, res) => {
     // ignored rather than rejected if an old client still sends it, so a stale browser tab degrades to the new behaviour, not an error.
     const days = Number.parseInt(req.query.days, 10) > 0 ? Number.parseInt(req.query.days, 10) : 30;
     const limit = parseListLimit(req.query.limit);
+    const includeParked = req.query.parked === 'include';
 
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
     }
 
-    // $1 segment, $2 days, $3 limit.
+    // $1 segment, $2 days, $3 limit, $4 includeParked.
     // Membership is the LEFT JOIN + "no sales row in the window" test: a style with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
       WITH stk AS (
@@ -108,6 +113,8 @@ router.get('/', async (req, res) => {
              ss.match_amazon_price AS match_amazon,   -- kept IN the list: a slow/dead matched style is where the operator decides the
                                                       -- Amazon-matched price is costing us and switches matching OFF (owner). Badged in UI.
              t.shopifytitle,
+             ss.next_shopify_price_review::text AS next_review,               -- text, never a pg DATE (CLAUDE.md: BST day-shift)
+             COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows            -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
                                                        -- pre-cap total (free — no second round-trip to count)
       FROM skusummary ss
@@ -115,12 +122,12 @@ router.get('/', async (req, res) => {
       LEFT JOIN win w    ON w.groupid  = ss.groupid
       LEFT JOIN title t  ON t.groupid  = ss.groupid
       WHERE ss.segment = $1
-        AND (ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)  -- drop parked
+        AND ($4::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)  -- drop parked unless ?parked=include
         AND COALESCE(w.u_win,0) = 0                            -- sold NOTHING in the window — the whole membership test
       ORDER BY st.stock DESC,     -- most stock at risk first
                ss.groupid         -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [segment, days, limit]);
+    `, [segment, days, limit, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -129,7 +136,9 @@ router.get('/', async (req, res) => {
       price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
       stock: Number(r.stock),
       u30: Number(r.u30),                       // always 0 — see the header note
-      match_amazon: r.match_amazon === true   // auto-matched styles stay in the list so a margin-hurting match can be spotted + switched off
+      match_amazon: r.match_amazon === true,  // auto-matched styles stay in the list so a margin-hurting match can be spotted + switched off
+      next_review: r.next_review || null,
+      parked: r.parked === true,              // only ever true with ?parked=include
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

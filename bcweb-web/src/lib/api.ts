@@ -85,7 +85,11 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 // =============================================================================================================================
 export interface Segment { segment: string; styles: number; }
 // WINNERS: styles that sold >= 2 units in the window AND averaged >= £2 realised net profit per unit. Same bar on Amazon.
-export interface TriageRow { rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean; }
+export interface TriageRow {
+  rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean;
+  next_review: string | null;   // YYYY-MM-DD or null
+  parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
+}
 // LOSERS: styles that sold NOTHING in the window (default 30d), most stock first. u90/cover_weeks/is_dead were dropped when the rule
 // was simplified to that single test — every row is "dead" by definition, so they carried no information. u30 is always 0 and is kept
 // only because the LOSERS table shares its column layout with WINNERS and renders it into the shared "Units (30d)" cell.
@@ -93,11 +97,8 @@ export interface LoserRow {
   rank: number; groupid: string; title: string | null; price: number | null;
   stock: number; u30: number;
   match_amazon: boolean;        // auto-matched to Amazon — badged; review-only (switch matching off to price/cut manually)
-}
-// ALL: the whole segment, unfiltered, most-recently-changed first. last_change/next_review are YYYY-MM-DD or null.
-export interface AllRow {
-  groupid: string; title: string | null; price: number | null; stock: number;
-  last_change: string | null; next_review: string | null;
+  next_review: string | null;   // YYYY-MM-DD or null
+  parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
 // --- Amazon Pricing module (SKU-grain; mirrors the Shopify flow — segment picker -> WINNERS|LOSERS -> per-SKU drill) -----------
 // Stage 0: one managed segment (has live amzfeed SKUs) + its SKU count.
@@ -107,6 +108,8 @@ export interface AmzSegment { segment: string; skus: number; }
 export interface AmzWinnerRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
+  next_review: string | null;   // YYYY-MM-DD or null
+  parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
 // Stage 1 LOSERS: FBA stock that sold NOTHING in the window (default 30d), most stock first. Same simplification as the Shopify
 // LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /
@@ -115,11 +118,8 @@ export interface AmzLoserRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; u7: number; u30: number;
   last_sold: string | null; days_since_sale: number | null;
-}
-// Stage 1 ALL: every managed SKU in the segment, most-recently-changed first (browse/lookup view).
-export interface AmzAllRow {
-  code: string; groupid: string; size: string; title: string | null;
-  price: number | null; fba: number; last_change: string | null; last_sold: string | null;
+  next_review: string | null;   // YYYY-MM-DD or null
+  parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
 // --- Amazon Order module (landing list only, so far) — flat "every product" view of Amazon profit, read from columns already
 // maintained by the Update Amazon import rather than recomputed: unit_profit = skumap.amzprofit (per-unit profit of the SKU's LAST
@@ -283,55 +283,41 @@ export function getSegments() {
 
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
 // `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
-export function getTriage(segment: string, days?: number, limit?: number) {
+// includeParked = also return styles whose review date is still in the future, flagged parked:true (server ?parked=include).
+export function getTriage(segment: string, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: TriageRow[] }>(
-    { url: '/pricing-triage', method: 'GET', params: { segment, days, limit } },
+    { url: '/pricing-triage', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // LOSERS = sold nothing in `days` (server default 30). `coverWeeks` is gone — there is no cover calculation left to threshold.
-export function getLosers(segment: string, days?: number, limit?: number) {
+export function getLosers(segment: string, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: LoserRow[] }>(
-    { url: '/pricing-losers', method: 'GET', params: { segment, days, limit } },
+    { url: '/pricing-losers', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // ALL list for a segment — every style, unfiltered, most-recently-changed first (browse/lookup view).
-export function getAll(segment: string) {
-  return request<{ segment: string; rows: AllRow[] }>(
-    { url: '/pricing-all', method: 'GET', params: { segment } },
-    (b) => ({ segment: b.segment, rows: b.rows || [] })
-  );
-}
-
 // Amazon Pricing — Stage 0: the segment picker (managed segments + SKU count). Mirrors getSegments().
 export function getAmzSegments() {
   return request<AmzSegment[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.segments || []);
 }
 
 // Amazon Pricing — Stage 1 WINNERS: in-stock SKUs that sold in `days` (default 30), best first. Mirrors getTriage(), incl. total/truncated.
-export function getAmzWinners(segment: string, days?: number, limit?: number) {
+export function getAmzWinners(segment: string, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzWinnerRow[] }>(
-    { url: '/amz-winners', method: 'GET', params: { segment, days, limit } },
+    { url: '/amz-winners', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
 
 // Amazon Pricing — Stage 1 LOSERS: FBA stock that sold nothing in `days` (server default 30). Mirrors getLosers(), coverWeeks dropped.
-export function getAmzLosers(segment: string, days?: number, limit?: number) {
+export function getAmzLosers(segment: string, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzLoserRow[] }>(
-    { url: '/amz-losers', method: 'GET', params: { segment, days, limit } },
+    { url: '/amz-losers', method: 'GET', params: { segment, days, limit, parked: includeParked ? 'include' : undefined } },
     (b) => ({ segment: b.segment, days: b.days, total: b.total ?? (b.rows || []).length, truncated: !!b.truncated, rows: b.rows || [] })
-  );
-}
-
-// Amazon Pricing — Stage 1 ALL: every managed SKU in the segment, most-recently-changed first. Mirrors getAll().
-export function getAmzAll(segment: string) {
-  return request<{ segment: string; rows: AmzAllRow[] }>(
-    { url: '/amz-all', method: 'GET', params: { segment } },
-    (b) => ({ segment: b.segment, rows: b.rows || [] })
   );
 }
 

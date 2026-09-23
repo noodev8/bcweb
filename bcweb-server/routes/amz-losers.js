@@ -38,6 +38,9 @@ Request Query Params:
   segment    (string, required)
   days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
+  parked     (string, optional) - 'include' = also return PARKED SKUs (future skumap.next_amz_price_review), each flagged
+                                  parked:true. Omitted = the classic list: parked SKUs hidden. Added 2026-09-23 so the
+                                  segment page can offer a "show pending review" toggle; the LOSERS rule itself is unchanged.
 
 Success Response:
 {
@@ -48,7 +51,8 @@ Success Response:
   "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "code": "...-52", "amz_sku": "...", "groupid": "...", "size": "52", "title": "...", "price": 38.49,
-      "fba": 22, "u7": 0, "u30": 0, "last_sold": "2026-05-20", "days_since_sale": 51 },
+      "fba": 22, "u7": 0, "u30": 0, "last_sold": "2026-05-20", "days_since_sale": 51,
+      "next_review": null, "parked": false },   // next_review YYYY-MM-DD or null; parked = next_review is in the future
     ...  // most FBA stock first
   ]
 }
@@ -87,8 +91,9 @@ router.get('/', async (req, res) => {
     if (!segment) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'segment is required' });
     }
+    const includeParked = req.query.parked === 'include';
 
-    // $1 segment, $2 days, $3 limit.
+    // $1 segment, $2 days, $3 limit, $4 includeParked.
     // Membership is the LEFT JOIN + "no sales row in the window" test: a SKU with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
       WITH win AS (     -- units in the window (default 30d) — the ONLY sales measure this route needs now
@@ -116,6 +121,8 @@ router.get('/', async (req, res) => {
              COALESCE(s7.u7,0)     AS u7,    -- likewise always 0
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              (CURRENT_DATE - ls.last_sold)::int AS days_since_sale,
+             m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
+             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows                 -- full qualifying count: window functions run BEFORE the LIMIT, so this is
                                                             -- the pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -127,12 +134,12 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t  ON t.groupid = a.groupid
       WHERE sk.segment = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
-        AND (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only (drops reviewed SKUs; §10.4)
+        AND ($4::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only unless ?parked=include (§10.4)
         AND COALESCE(w.u_win,0) = 0                                                      -- sold NOTHING in the window — the whole test
       ORDER BY fba DESC,       -- most stock at risk first
                a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [segment, days, limit]);
+    `, [segment, days, limit, includeParked]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -147,6 +154,8 @@ router.get('/', async (req, res) => {
       u7: Number(r.u7),                                        // likewise
       last_sold: r.last_sold || null,
       days_since_sale: r.days_since_sale === null ? null : Number(r.days_since_sale),
+      next_review: r.next_review || null,
+      parked: r.parked === true,   // only ever true with ?parked=include
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

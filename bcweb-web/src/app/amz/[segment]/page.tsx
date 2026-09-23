@@ -3,28 +3,31 @@
 =======================================================================================================================================
 Page: /amz/[segment]  (Stage 1 — the segment's SKU lists)
 =======================================================================================================================================
-Purpose: The list view for a segment, with the same prominent WINNERS | LOSERS switch as Shopify — but SKU-grain (Amazon prices per size).
+Purpose: The list view for a segment — the Amazon mirror of /pricing/[segment], but SKU-grain (Amazon prices per size).
   - WINNERS: in-stock SKUs that sold >= 2 units in the last 30 days AND averaged >= £2 net profit per unit — candidates to price UP /
              harvest. Best sellers first.
   - LOSERS:  FBA stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Most FBA stock at risk first.
-  - ALL:     every managed SKU in the segment, most-recently-changed first (browse/lookup).
-WINNERS/LOSERS are the WHOLE qualifying lists, not a top-10 shortlist (a fixed 10 told the operator nothing — it silently refilled as it
-was cleared). The count on each tab is therefore the actual work in front of you and shrinks as you clear it; the server keeps a safety
-cap (utils/listLimit.js, default 100) so a pathological segment can't flood the browser, and the caption says when it bit.
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
-All three lists are fetched up front (so each tab shows a live count) and cached; rows link to the per-SKU drill. The active mode is kept
-in the URL (?mode=) so returning after an apply restores the same tab. A queued SKU (in the upload basket) shows a "queued" badge.
+
+TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
+  - Winners | Losers | All. "All" means BOTH lists together (winners first, then losers), NOT every managed SKU. The old "All" view
+    (every SKU incl. out of stock, from /amz-all) was dropped from this screen in the same change.
+  - "Show pending review". Off (default) = only SKUs due now. On = also the PARKED SKUs (skumap.next_amz_price_review in the
+    future), dimmed and with their review date shown.
+Both lists are fetched ONCE with parked SKUs included (?parked=include) and filtered client-side, so every control shows a live count
+and flipping them costs no request. View + pending are kept in the URL (?mode=, ?pending=1) so returning from a SKU's drill restores
+them. The lists are the WHOLE qualifying sets; the server's safety cap (utils/listLimit.js) is flagged when it bites. A SKU already in
+the upload basket shows a "queued" badge.
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar from '@/components/AmzBasketBar';
-import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
-import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
-import { getAmzWinners, getAmzLosers, getAmzAll, markAmzReviewed, applyAmzPrice, AmzWinnerRow, AmzLoserRow, AmzAllRow } from '@/lib/api';
+import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
+import { getAmzWinners, getAmzLosers, markAmzReviewed, applyAmzPrice } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -46,6 +49,22 @@ const AMZ_TONE: BulkTone = {
   panel: 'border-amber-200',
 };
 
+// One row of either list, flattened so a single table can show both. units/u7 are null for a loser (always 0 by definition — see
+// amz-losers.js — so they render as a dash rather than columns of zeroes). amz_sku/size/title feed the upload basket.
+interface ListRow {
+  kind: 'winner' | 'loser';
+  code: string;
+  amz_sku: string;
+  size: string;
+  title: string | null;
+  units: number | null;
+  u7: number | null;
+  fba: number;
+  price: number | null;
+  next_review: string | null;
+  parked: boolean;
+}
+
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function AmzSegmentPage() {
   return (
@@ -55,12 +74,6 @@ export default function AmzSegmentPage() {
   );
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]} ${y}`;
-}
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
 }
@@ -73,57 +86,72 @@ function SegmentContent() {
   const { logout } = useAuth();
   const { items, add } = useAmzBasket();
 
-  const modeParam = searchParams.get('mode');
-  const initialMode: ListMode = modeParam === 'losers' ? 'losers' : modeParam === 'all' ? 'all' : 'winners';
-  const [mode, setMode] = useState<ListMode>(initialMode);
+  const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
-  // Back target — threaded via ?from=/&back= so arriving from the Segments module returns you to that segment's detail rather than to
-  // /amz (the Amazon Pricing home). Absent params fall back to that home, labelled "Segments". Mirrors the Shopify segment page.
+  // Back target — threaded via ?from=/&back= so arriving from the Segments heatmap returns you there rather than to /amz (the Amazon
+  // Pricing home). Absent params fall back to that home. Mirrors the Shopify segment page.
   const backHref = searchParams.get('from') || '/amz';
-  const backLabel = searchParams.get('back') || 'Segments';
+  const backLabel = searchParams.get('back') || 'Amazon Pricing';
 
   const [marking, setMarking] = useState(false);                         // a bulk write is in flight (disables the bar)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-SKU apply progress
 
-  // All three lists in ONE query so each tab can show a count. Kept as a single Promise.all inside the fetcher (rather than three
-  // useApiQuery calls) to preserve the PARTIAL TOLERANCE exactly: one list failing must still render the other two, under one shared
-  // error line. Mirrors /pricing/[segment].
+  // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
+  // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
     ['amz-lists', segment],
     async () => {
-      const [w, l, a] = await Promise.all([getAmzWinners(segment), getAmzLosers(segment), getAmzAll(segment)]);
-      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') {
+      const [w, l] = await Promise.all([
+        getAmzWinners(segment, undefined, undefined, true),
+        getAmzLosers(segment, undefined, undefined, true),
+      ]);
+      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED') {
         return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
       }
       let err: string | null = null;
       if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
-      if (!(a.success && a.data)) err = err || a.error || 'Failed to load all SKUs';
+      const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
+        kind: 'winner', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+        fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+      })) : [];
+      const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
+        kind: 'loser', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: null, u7: null,
+        fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+      })) : [];
       return {
         success: true,
         return_code: 'SUCCESS',
         data: {
-          // Pre-cap qualifying counts from the server. Normally these equal rows.length, but if the safety cap ever trims a list the
-          // tab count and the caption must show the REAL size — a capped list must never look like the whole job.
-          winners: w.success && w.data ? w.data.rows : null,
-          winnersTotal: w.success && w.data ? w.data.total : null,
-          losers: l.success && l.data ? l.data.rows : null,
-          losersTotal: l.success && l.data ? l.data.total : null,
-          all: a.success && a.data ? a.data.rows : null,
+          winners,
+          losers,
+          // The safety cap trimmed a list — the page must never let a capped list pass for the whole job.
+          capped: !!(w.data?.truncated || l.data?.truncated),
           partialError: err,
         },
       };
     },
   );
-  const winners: AmzWinnerRow[] | null = data?.winners ?? null;
-  const losers: AmzLoserRow[] | null = data?.losers ?? null;
-  const all: AmzAllRow[] | null = data?.all ?? null;
-  const winnersTotal = data?.winnersTotal ?? null;
-  const losersTotal = data?.losersTotal ?? null;
 
-  // Bulk selection + last-run feedback belong to ONE tab of ONE segment, so they're scoped and discarded during render on a switch —
-  // no reset effect, and no frame showing the previous segment's ticks.
-  const scope = `${mode}|${segment}`;
+  // Counts for the controls, and the rows for the table. Everything is derived from the one fetch.
+  const view = useMemo(() => {
+    const winners = data?.winners ?? [];
+    const losers = data?.losers ?? [];
+    const keep = (r: ListRow) => showPending || !r.parked;
+    const w = winners.filter(keep);
+    const l = losers.filter(keep);
+    const inMode = mode === 'winners' ? winners : mode === 'losers' ? losers : [...winners, ...losers];
+    return {
+      rows: mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l],
+      counts: { winners: w.length, losers: l.length, all: w.length + l.length },
+      pendingCount: inMode.filter((r) => r.parked).length,
+    };
+  }, [data, mode, showPending]);
+
+  // Bulk selection + last-run feedback belong to ONE view of ONE segment, so they're scoped and discarded during render on a switch —
+  // no reset effect, and no frame showing the previous view's ticks.
+  const scope = `${mode}|${showPending}|${segment}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -131,10 +159,10 @@ function SegmentContent() {
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
 
   function openSku(code: string) {
-    // Carry the back-context (from/back) through the drill round-trip so returning keeps the right "back" target.
+    // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
-    const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}${ctx}`;
+    const from = `/amz/${encodeURIComponent(segment)}?mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -153,14 +181,7 @@ function SegmentContent() {
     });
   }
 
-  const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
-
-  // Lookup of the ticked rows (from the active list) — the bulk price loop needs each SKU's current price + the basket fields (amz_sku,
-  // size, title) that the upload file is built from. Winners and Losers rows both carry these (amz-winners/amz-losers).
-  const selectedRows = (): (AmzWinnerRow | AmzLoserRow)[] => {
-    const list = (mode === 'winners' ? winners : mode === 'losers' ? losers : null) || [];
-    return list.filter((r) => selected.has(r.code));
-  };
+  const selectedRows = () => view.rows.filter((r) => selected.has(r.code));
 
   // BULK PRICE MOVE — loop POST /amz-apply per ticked SKU (newPrice = its current price + delta), exactly like applying one at a time,
   // so each write hits the same server bounds and queues the upload basket. reviewDays rides along as an optional park (mirrors the drill).
@@ -223,7 +244,7 @@ function SegmentContent() {
   }
 
   // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). On success clear the selection and refetch so
-  // parked SKUs drop off and the queue refills.
+  // parked SKUs move to "pending review" (hidden unless that toggle is on).
   async function bulkSetReview(days: number) {
     if (selected.size === 0) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
@@ -239,38 +260,36 @@ function SegmentContent() {
     else setMarkError(res.error || 'Failed to set review');
   }
 
-  const isEmpty = !loading && !error && rows !== null && rows.length === 0;
-  const selectable = mode === 'winners' || mode === 'losers';
+  const rows = view.rows;
+  const ready = !loading && !error && !!data;
+  const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
       <AmzBasketBar />
 
-      <ListModeSwitcher
-        mode={mode}
-        onChange={setMode}
-        winnersCount={winnersTotal}
-        losersCount={losersTotal}
-        allCount={all ? all.length : null}
-        allDescription="every managed SKU in the segment — incl. out of stock, most-recently-changed first"
+      <ListViewControls
+        view={mode}
+        onViewChange={setMode}
+        counts={data ? view.counts : null}
+        showPending={showPending}
+        onShowPendingChange={setShowPending}
+        pendingCount={data ? view.pendingCount : null}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {isEmpty && (
+      {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners'
-            ? 'No SKUs to harvest here right now (nothing in FBA stock with sales in the last 30 days).'
-            : mode === 'losers'
-              ? 'No losers here right now — nothing dead or overstocked in this segment.'
-              : 'No managed Amazon SKUs in this segment.'}
+          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this segment right now.
+          {!showPending && view.pendingCount > 0 && <> {view.pendingCount} pending review — switch on &ldquo;Show pending review&rdquo; to see them.</>}
         </div>
       )}
 
-      {/* Bulk edit control (WINNERS/LOSERS): apply a relative price move and/or set a review across the ticked SKUs. Same denominations
-          and review chips as the drill; a price move loops POST /amz-apply per SKU (queuing the basket), review-only uses POST /amz-review. */}
-      {!loading && !error && selectable && rows && rows.length > 0 && (
+      {/* Bulk edit control: apply a relative price move and/or set a review across the ticked SKUs. Same denominations and review chips
+          as the drill; a price move loops POST /amz-apply per SKU (queuing the basket), review-only uses POST /amz-review. */}
+      {ready && rows.length > 0 && (
         <BulkActionBar
           channel="amazon"
           count={selected.size}
@@ -287,166 +306,124 @@ function SegmentContent() {
         />
       )}
 
-      {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
+      {ready && rows.length > 0 && (
         <>
-          <ListNote shown={winners.length} total={winnersTotal} noun="SKU" />
-          <WinnersTable rows={winners} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+          <p className="mb-2 text-xs text-slate-400">
+            {dueCount} SKU{dueCount === 1 ? '' : 's'} due for review
+            {showPending && <> · {rows.length - dueCount} pending</>}
+            {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
+          </p>
+          <ListTable
+            rows={rows}
+            queued={items}
+            showKind={mode === 'all'}
+            showUnits={mode !== 'losers'}
+            showReview={showPending}
+            onOpen={openSku}
+            selected={selected}
+            onToggle={toggle}
+            onToggleAll={toggleAll}
+          />
         </>
-      )}
-      {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
-        <>
-          <ListNote shown={losers.length} total={losersTotal} noun="SKU" />
-          <LosersTable rows={losers} queued={items} onOpen={openSku} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
-        </>
-      )}
-      {!loading && !error && mode === 'all' && all && all.length > 0 && (
-        <AllTable rows={all} queued={items} onOpen={openSku} />
       )}
     </AppShell>
   );
 }
 
-// A small "queued" pill for a SKU already in the upload basket (so you don't re-touch it mid-sitting).
-function QueuedPill() {
-  return <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>;
-}
-
-type Queued = Record<string, unknown>;
-
-function WinnersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
-  rows: AmzWinnerRow[]; queued: Queued; onOpen: (c: string) => void;
+// One table for every view — the Amazon twin of the Shopify ListTable. Columns appear only where they carry information: Type only in
+// All, Units 30d / 7d only where winners are present (a loser's are 0 by definition), Review only with pending shown. A SKU already in
+// the upload basket carries a "queued" pill so it isn't re-touched mid-sitting.
+function ListTable({ rows, queued, showKind, showUnits, showReview, onOpen, selected, onToggle, onToggleAll }: {
+  rows: ListRow[]; queued: Record<string, unknown>; showKind: boolean; showUnits: boolean; showReview: boolean;
+  onOpen: (c: string) => void;
   selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
 }) {
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-12" />{/* checkbox */}
+          <col className="w-12" />{/* # */}
+          {showKind && <col className="w-24" />}
+          {showUnits && <col className="w-24" />}
+          {showUnits && <col className="w-14" />}
+          <col className="w-52" />{/* SKU (size) */}
+          <col />{/* Product — takes the remaining width */}
+          <col className="w-24" />{/* Price */}
+          <col className="w-16" />{/* FBA */}
+          {showReview && <col className="w-24" />}
+        </colgroup>
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
+            <th className="px-4 py-2">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(e) => onToggleAll(rows.map((r) => r.code), e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+                aria-label="Select all SKUs"
+              />
+            </th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
+            {showKind && <th className="px-4 py-2 font-medium">Type</th>}
+            {showUnits && <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units 30d</th>}
+            {showUnits && <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>}
             <th className="px-4 py-2 font-medium">SKU (size)</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
+            {showReview && <th className="px-4 py-2 font-medium">Review</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
-              <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
-              <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="px-4 py-2 text-right font-semibold text-slate-800">{r.units}</td>
-              <td className="px-4 py-2 text-right text-slate-600">{r.u7 || <span className="text-slate-300">0</span>}</td>
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
-                {r.code}{!!queued[r.code] && <QueuedPill />}
-              </td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className="px-4 py-2 text-right text-slate-700">{r.fba}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// Row checkbox — stops the click bubbling to the row (which would open the drill instead of toggling selection).
-function RowBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
-  return (
-    <input
-      type="checkbox"
-      checked={checked}
-      onClick={(e) => e.stopPropagation()}
-      onChange={onToggle}
-      className="h-4 w-4 rounded border-slate-300"
-      aria-label="Select SKU for mark-reviewed"
-    />
-  );
-}
-function SelectAllBox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <input
-      type="checkbox"
-      checked={checked}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.checked)}
-      className="h-4 w-4 rounded border-slate-300"
-      aria-label="Select all SKUs"
-    />
-  );
-}
-
-function LosersTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
-  rows: AmzLoserRow[]; queued: Queued; onOpen: (c: string) => void;
-  selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
-}) {
-  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
-  return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      {/* No "Units 30d" / "7d" columns here, unlike WinnersTable: a loser is a SKU that sold nothing in 30d, so both cells were 0 on
-          every row (7d being a subset of the window that must be empty). Two columns of zeroes told the operator nothing. Matches the
-          same removal on the Shopify LOSERS table — the owner wants the two channels reading the same way. */}
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.code), c)} /></th>
-            <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium">SKU (size)</th>
-            <th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.code) ? 'bg-brand-50' : '')}>
-              <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => onToggle(r.code)} /></td>
-              <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
-                {r.code}{!!queued[r.code] && <QueuedPill />}
-              </td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className="px-4 py-2 text-right text-slate-700">{r.fba}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function AllTable({ rows, queued, onOpen }: { rows: AmzAllRow[]; queued: Queued; onOpen: (c: string) => void }) {
-  return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-4 py-2 font-medium">SKU (size)</th>
-            <th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
-            <th className="px-4 py-2 font-medium">Changed</th>
-            <th className="px-4 py-2 font-medium">Last sold</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.code} onClick={() => onOpen(r.code)} className="cursor-pointer hover:bg-slate-50">
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
-                {r.code}{!!queued[r.code] && <QueuedPill />}
-              </td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className={'px-4 py-2 text-right ' + (r.fba === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba}</td>
-              <td className="whitespace-nowrap px-4 py-2 text-slate-600">{fmtDate(r.last_change)}</td>
-              <td className="whitespace-nowrap px-4 py-2 text-slate-500">{fmtDate(r.last_sold)}</td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const isSel = selected.has(r.code);
+            // A pending row is dimmed — it's listed for context, not because it needs doing today — but stays fully clickable.
+            const tone = r.parked ? 'text-slate-400' : 'text-slate-700';
+            return (
+              <tr key={r.code} onClick={() => onOpen(r.code)} className={'cursor-pointer hover:bg-slate-50 ' + (isSel ? 'bg-brand-50' : '')}>
+                <td className="px-4 py-2">
+                  <input
+                    type="checkbox"
+                    checked={isSel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggle(r.code)}
+                    className="h-4 w-4 rounded border-slate-300"
+                    aria-label="Select SKU for bulk edit"
+                  />
+                </td>
+                <td className="px-4 py-2 text-slate-400">{i + 1}</td>
+                {showKind && (
+                  <td className="px-4 py-2">
+                    <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+                      {r.kind === 'winner' ? 'Winner' : 'Loser'}
+                    </span>
+                  </td>
+                )}
+                {showUnits && (
+                  <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
+                )}
+                {showUnits && (
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.u7 ?? '—'}</td>
+                )}
+                <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
+                  {r.code}
+                  {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
+                </td>
+                <td className={'truncate px-4 py-2 ' + tone}>{r.title || <span className="text-slate-400">—</span>}</td>
+                <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
+                <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}</td>
+                {showReview && (
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {r.parked
+                      ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
+                      : <span className="text-xs text-slate-400">Due</span>}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -3,27 +3,32 @@
 =======================================================================================================================================
 Page: /pricing/[segment]  (Stage 1 — the segment's lists)
 =======================================================================================================================================
-Purpose: The list view for a segment, with a prominent WINNERS | LOSERS switch (see CLAUDE.md).
-  - WINNERS: styles that sold >= 2 units in the last 30 days AND averaged >= £2 net profit per unit (in stock, not parked), best
-             first — candidates to price UP / harvest.
-  - LOSERS:  stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Biggest stuck piles first.
-Both lists are fetched up front (so each tab shows a live count) and cached; rows link to the same drill page. The active mode is kept
-in the URL (?mode=) so returning after a write restores the same tab.
+Purpose: The list view for a segment (see CLAUDE.md for the two bars).
+  - WINNERS: styles that sold >= 2 units in the last 30 days AND averaged >= £2 net profit per unit (in stock), best first — candidates
+             to price UP / harvest.
+  - LOSERS:  in-stock styles that sold NOTHING in the last 30 days — candidates to cut and get moving. Biggest stuck piles first.
 
-List size: these are the WHOLE qualifying lists, not a top-10 shortlist. A fixed 10 was meaningless to the operator (clear it and it
-silently refilled, so the number said nothing about how much work the segment held), and a session "actioned" counter didn't fix that
-either. Now the count on each tab IS the work in front of you, and it goes down as you clear it. The server still caps the response
-(utils/listLimit.js, default 100) purely so a pathological segment can't flood the browser; when that cap bites the list says so.
+TWO CONTROLS, ONE TABLE (owner, 2026-09-23):
+  - Winners | Losers | All. "All" means BOTH lists together (winners first, then losers), NOT the whole segment. The old "All styles"
+    view (every style incl. out-of-stock, from /pricing-all) was dropped from this screen in the same change.
+  - "Show pending review". Off (default) = only styles due now — the classic lists. On = also the PARKED styles (review date still in
+    the future), dimmed and with their review date shown, so you can see what is waiting as well as what is due.
+Both lists are fetched ONCE with parked styles included (?parked=include) and every filter is applied client-side, so each control can
+show a live count and flipping them costs no request. Mode + pending are kept in the URL (?mode=, ?pending=1) so returning from a
+style's drill restores the same view.
+
+List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
+clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
+browser; when that cap bites the page says so.
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
-import ListModeSwitcher, { ListMode } from '@/components/ListModeSwitcher';
-import ListNote from '@/components/ListNote';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
-import { getTriage, getLosers, getAll, applyPrice, parkStyleBulk, TriageRow, LoserRow, AllRow } from '@/lib/api';
+import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
+import { getTriage, getLosers, applyPrice, parkStyleBulk } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -45,6 +50,20 @@ const SHP_TONE: BulkTone = {
   panel: 'border-slate-200',
 };
 
+// One row of either list, flattened so a single table can show both. units is null for a loser (always 0 by definition — see
+// pricing-losers.js — so it renders as a dash rather than a column of zeroes).
+interface ListRow {
+  kind: 'winner' | 'loser';
+  groupid: string;
+  title: string | null;
+  units: number | null;
+  stock: number;
+  price: number | null;
+  match_amazon: boolean;
+  next_review: string | null;
+  parked: boolean;
+}
+
 // useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function SegmentPage() {
   return (
@@ -54,22 +73,8 @@ export default function SegmentPage() {
   );
 }
 
-// Compact date for the ALL table (YYYY-MM-DD -> "8 Jul 2026"). null-safe.
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const [y, m, d] = iso.split('-').map(Number);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${d} ${months[m - 1]} ${y}`;
-}
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
-}
-// A YYYY-MM-DD is a future (still-parked) review when it sorts after today's YYYY-MM-DD (lexicographic works for this format).
-function isFutureIso(iso: string | null): boolean {
-  if (!iso) return false;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return iso > today;
 }
 
 function SegmentContent() {
@@ -79,60 +84,74 @@ function SegmentContent() {
   const segment = decodeURIComponent(params.segment);
   const { logout } = useAuth();
 
-  const modeParam = searchParams.get('mode');
-  const initialMode: ListMode = modeParam === 'losers' ? 'losers' : modeParam === 'all' ? 'all' : 'winners';
-  const [mode, setMode] = useState<ListMode>(initialMode);
+  const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
-  // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments module returns you to that segment's detail —
-  // not to /pricing (the Shopify Pricing home), which is a *different* list of segments and was the source of the "it took me to
-  // Shopify Pricing" confusion. Absent params (i.e. you came from /pricing itself) fall back to that home, labelled "Segments".
+  // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments heatmap returns you there — not to /pricing
+  // (the Shopify Pricing home), which is a different list of segments. Absent params (you came from /pricing itself) fall back to
+  // that home.
   const backHref = searchParams.get('from') || '/pricing';
-  const backLabel = searchParams.get('back') || 'Segments';
+  const backLabel = searchParams.get('back') || 'Shopify Pricing';
 
   const [marking, setMarking] = useState(false);                        // a bulk write is in flight (disables the bar)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);  // live per-style apply progress
 
-  // All three lists in ONE query so each tab can show a count. The three calls stay a single Promise.all inside the fetcher rather
-  // than three useApiQuery calls, because the PARTIAL-TOLERANCE behaviour matters and has to be preserved exactly: if one list fails
-  // the other two must still render, under one shared error line. Three separate queries would give three independent error states.
+  // Both lists in ONE query, parked styles included, so every count on the page comes from one fetch. The two calls stay a single
+  // Promise.all rather than two useApiQuery calls because PARTIAL TOLERANCE matters: if one list fails the other must still render,
+  // under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
     ['pricing-lists', segment],
     async () => {
-      const [w, l, a] = await Promise.all([getTriage(segment), getLosers(segment), getAll(segment)]);
-      // Any one of the three coming back UNAUTHORIZED means the JWT is gone — surface it as such so the hook logs out once.
-      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED' || a.return_code === 'UNAUTHORIZED') {
+      const [w, l] = await Promise.all([
+        getTriage(segment, undefined, undefined, true),
+        getLosers(segment, undefined, undefined, true),
+      ]);
+      if (w.return_code === 'UNAUTHORIZED' || l.return_code === 'UNAUTHORIZED') {
         return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
       }
       let err: string | null = null;
       if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
-      if (!(a.success && a.data)) err = err || a.error || 'Failed to load all styles';
+      const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
+        kind: 'winner', groupid: r.groupid, title: r.title, units: r.units, stock: r.stock, price: r.price,
+        match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+      })) : [];
+      const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
+        kind: 'loser', groupid: r.groupid, title: r.title, units: null, stock: r.stock, price: r.price,
+        match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+      })) : [];
       return {
         success: true,
         return_code: 'SUCCESS',
         data: {
-          // Pre-cap qualifying counts from the server. Normally these equal rows.length (today's biggest segment is well under the
-          // cap), but if the safety cap ever trims a list the tab count and the note must show the REAL size — the operator must
-          // never think a capped list is the whole job.
-          winners: w.success && w.data ? w.data.rows : null,
-          winnersTotal: w.success && w.data ? w.data.total : null,
-          losers: l.success && l.data ? l.data.rows : null,
-          losersTotal: l.success && l.data ? l.data.total : null,
-          all: a.success && a.data ? a.data.rows : null,
+          winners,
+          losers,
+          // The safety cap trimmed a list — the page must never let a capped list pass for the whole job.
+          capped: !!(w.data?.truncated || l.data?.truncated),
           partialError: err,
         },
       };
     },
   );
-  const winners: TriageRow[] | null = data?.winners ?? null;
-  const losers: LoserRow[] | null = data?.losers ?? null;
-  const all: AllRow[] | null = data?.all ?? null;
-  const winnersTotal = data?.winnersTotal ?? null;
-  const losersTotal = data?.losersTotal ?? null;
 
-  // Bulk selection + the last run's feedback belong to ONE tab of ONE segment. Scoping them means switching tab or segment discards
-  // them during render — no reset effect, and no frame where the previous segment's ticks are still visible.
-  const scope = `${mode}|${segment}`;
+  // Counts for the controls, and the rows for the table. Everything is derived from the one fetch.
+  const view = useMemo(() => {
+    const winners = data?.winners ?? [];
+    const losers = data?.losers ?? [];
+    const keep = (r: ListRow) => showPending || !r.parked;
+    const w = winners.filter(keep);
+    const l = losers.filter(keep);
+    const inMode = mode === 'winners' ? winners : mode === 'losers' ? losers : [...winners, ...losers];
+    return {
+      rows: mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l],
+      counts: { winners: w.length, losers: l.length, all: w.length + l.length },
+      pendingCount: inMode.filter((r) => r.parked).length,
+    };
+  }, [data, mode, showPending]);
+
+  // Bulk selection + the last run's feedback belong to ONE view of ONE segment. Scoping them means switching view or segment discards
+  // them during render — no reset effect, and no frame where the previous view's ticks are still visible.
+  const scope = `${mode}|${showPending}|${segment}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -141,11 +160,11 @@ function SegmentContent() {
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
 
   function openStyle(groupid: string) {
-    // Carry the back-context (from/back) into the return URL so it survives the drill round-trip (returning from a price apply keeps
-    // pointing at the right "back" target rather than reverting to /pricing).
+    // Carry the view (mode + pending) and the back-context (from/back) into the return URL, so coming back from the drill lands on the
+    // same view with the same "← back" target.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Segments')}` : '';
-    const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}${ctx}`;
+    const from = `/pricing/${encodeURIComponent(segment)}?mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -164,18 +183,12 @@ function SegmentContent() {
     });
   }
 
-  // The ticked rows from the active list — the bulk price loop needs each style's current price to compute its per-row delta.
-  const selectedRows = (): (TriageRow | LoserRow)[] => {
-    const list = (mode === 'winners' ? winners : mode === 'losers' ? losers : null) || [];
-    return list.filter((r) => selected.has(r.groupid));
-  };
-
   // BULK PRICE MOVE — loop POST /pricing-apply (W1) per ticked style (newPrice = its current price + delta), exactly like applying one at
-  // a time, so each write runs the same server bounds AND the live Shopify + Google pushes. reviewDays rides along as an optional park
-  // (mirrors the drill). Styles with an unknown current price (junk VARCHAR -> null) are skipped; the server may also block one below cost
-  // — both are reported in the summary, not surfaced as hard errors (owner: "ignore blocked/below-min for now").
+  // a time, so each write runs the same server bounds AND the live Shopify push. reviewDays rides along as an optional park (mirrors the
+  // drill). Styles with an unknown current price (junk VARCHAR -> null) are skipped; the server may also block one below cost — both are
+  // reported in the summary, not surfaced as hard errors (owner: "ignore blocked/below-min for now").
   async function bulkApplyPrice(delta: number, reviewDays: number | null, note: string) {
-    const targets = selectedRows();
+    const targets = view.rows.filter((r) => selected.has(r.groupid));
     if (targets.length === 0 || Math.abs(delta) < 0.005) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
@@ -187,7 +200,6 @@ function SegmentContent() {
       const res = await applyPrice(row.groupid, newPrice, reviewDays, note);
       if (res.success && res.data) {
         applied++;
-        // The DB price is saved either way; a failed live push (Shopify hard, Google soft) is noted so the operator can re-check those.
         if (res.data.shopify && res.data.shopify.pushed === false) pushIssues++;   // Google is decoupled (server sweep) — only Shopify can fail here
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
@@ -199,8 +211,8 @@ function SegmentContent() {
     await loadLists();
   }
 
-  // BULK REVIEW ONLY — park the ticked styles with no price change (batch POST /pricing-park-bulk, W2). On success clear + refetch so the
-  // parked styles drop off the triage and it refills.
+  // BULK REVIEW ONLY — park the ticked styles with no price change (batch POST /pricing-park-bulk, W2). On success clear + refetch so
+  // parked styles move to "pending review" (hidden unless that toggle is on).
   async function bulkSetReview(days: number) {
     if (selected.size === 0) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
@@ -216,36 +228,34 @@ function SegmentContent() {
     else setMarkError(res.error || 'Failed to set review');
   }
 
-  const rows = mode === 'winners' ? winners : mode === 'losers' ? losers : all;
-  const isEmpty = !loading && !error && rows !== null && rows.length === 0;
-  const selectable = mode === 'winners' || mode === 'losers';
+  const rows = view.rows;
+  const ready = !loading && !error && !!data;
+  const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
     <AppShell title={segment} backHref={backHref} backLabel={backLabel}>
-      <ListModeSwitcher
-        mode={mode}
-        onChange={setMode}
-        winnersCount={winnersTotal}
-        losersCount={losersTotal}
-        allCount={all ? all.length : null}
+      <ListViewControls
+        view={mode}
+        onViewChange={setMode}
+        counts={data ? view.counts : null}
+        showPending={showPending}
+        onShowPendingChange={setShowPending}
+        pendingCount={data ? view.pendingCount : null}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {isEmpty && (
+      {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners'
-            ? 'No styles to review here right now (nothing in stock with recent sales, or all parked).'
-            : mode === 'losers'
-              ? 'No losers here right now — nothing stuck in this segment (or all parked).'
-              : 'No styles in this segment.'}
+          {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this segment right now.
+          {!showPending && view.pendingCount > 0 && <> {view.pendingCount} pending review — switch on &ldquo;Show pending review&rdquo; to see them.</>}
         </div>
       )}
 
-      {/* Bulk edit control (WINNERS/LOSERS): apply a relative price move and/or set a review across the ticked styles. Same denominations
-          and review chips as the drill; a price move loops POST /pricing-apply (W1, live push per style), review-only uses /pricing-park-bulk. */}
-      {!loading && !error && selectable && rows && rows.length > 0 && (
+      {/* Bulk edit control: apply a relative price move and/or set a review across the ticked styles. Same denominations and review chips
+          as the drill; a price move loops POST /pricing-apply (W1, live push per style), review-only uses /pricing-park-bulk. */}
+      {ready && rows.length > 0 && (
         <BulkActionBar
           channel="shopify"
           count={selected.size}
@@ -261,194 +271,123 @@ function SegmentContent() {
         />
       )}
 
-      {!loading && !error && mode === 'winners' && winners && winners.length > 0 && (
+      {ready && rows.length > 0 && (
         <>
-          <ListNote shown={winners.length} total={winnersTotal} noun="style" />
-          <WinnersTable rows={winners} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
+          <p className="mb-2 text-xs text-slate-400">
+            {dueCount} style{dueCount === 1 ? '' : 's'} due for review
+            {showPending && <> · {rows.length - dueCount} pending</>}
+            {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
+          </p>
+          <ListTable
+            rows={rows}
+            showKind={mode === 'all'}
+            showUnits={mode !== 'losers'}
+            showReview={showPending}
+            onOpen={openStyle}
+            selected={selected}
+            onToggle={toggle}
+            onToggleAll={toggleAll}
+          />
         </>
-      )}
-      {!loading && !error && mode === 'losers' && losers && losers.length > 0 && (
-        <>
-          <ListNote shown={losers.length} total={losersTotal} noun="style" />
-          <LosersTable rows={losers} onOpen={openStyle} selected={selected} onToggle={toggle} onToggleAll={toggleAll} />
-        </>
-      )}
-      {!loading && !error && mode === 'all' && all && all.length > 0 && (
-        <AllTable rows={all} onOpen={openStyle} />
       )}
     </AppShell>
   );
 }
 
-// Shared, FIXED column geometry for the WINNERS and LOSERS tables (owner: they must line up when you switch tabs). Without table-fixed
-// each table auto-sizes its columns to its own content — two-digit unit counts vs one-digit made the headers/Code wrap differently and
-// the columns drift between tabs. A fixed colgroup + matching widths pins both tables to the same layout regardless of the data.
-// `units` drops the "Units (30d)" column for LOSERS, where the figure is 0 on every row by definition (membership IS "sold nothing in
-// 30d") — a column of zeroes told the operator nothing. Every other width is unchanged, so the tabs still align on the shared columns.
-const ListCols = ({ units = true }: { units?: boolean }) => (
-  <colgroup>
-    <col className="w-12" />{/* checkbox */}
-    <col className="w-12" />{/* # */}
-    {units && <col className="w-24" />}{/* Units (30d) — WINNERS only */}
-    <col className="w-40" />{/* Code */}
-    <col />{/* Product — takes the remaining width */}
-    <col className="w-28" />{/* Price */}
-    <col className="w-20" />{/* Stock */}
-  </colgroup>
-);
-
-function WinnersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
-  rows: TriageRow[]; onOpen: (g: string) => void;
+// One table for every view. Columns appear only where they carry information: Type only in All (the other views are one kind),
+// Units only where winners are present (a loser's is 0 by definition), Review only with pending shown (a due style's date is past or
+// absent). table-fixed + a colgroup keeps shared columns in the same place as views switch.
+function ListTable({ rows, showKind, showUnits, showReview, onOpen, selected, onToggle, onToggleAll }: {
+  rows: ListRow[]; showKind: boolean; showUnits: boolean; showReview: boolean;
+  onOpen: (g: string) => void;
   selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
 }) {
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full table-fixed text-sm">
-        <ListCols />
+        <colgroup>
+          <col className="w-12" />{/* checkbox */}
+          <col className="w-12" />{/* # */}
+          {showKind && <col className="w-24" />}
+          {showUnits && <col className="w-24" />}
+          <col className="w-40" />{/* Code */}
+          <col />{/* Product — takes the remaining width */}
+          <col className="w-24" />{/* Price */}
+          <col className="w-20" />{/* Stock */}
+          {showReview && <col className="w-24" />}
+        </colgroup>
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
+            <th className="px-4 py-2">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(e) => onToggleAll(rows.map((r) => r.groupid), e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+                aria-label="Select all styles"
+              />
+            </th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium">Units (30d)</th>
+            {showKind && <th className="px-4 py-2 font-medium">Type</th>}
+            {showUnits && <th className="px-4 py-2 font-medium">Units 30d</th>}
             <th className="px-4 py-2 font-medium">Code</th>
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium">Stock</th>
+            {showReview && <th className="px-4 py-2 font-medium">Review</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
-              <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
-              <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="px-4 py-2 font-semibold text-slate-800">{r.units}</td>
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="truncate px-4 py-2 text-slate-700">
-                {r.title || <span className="text-slate-400">—</span>}
-                {/* Auto-matched styles stay in the list for a "keep matching?" review, but their price is on autopilot — badge them so the
-                    operator knows a manual/bulk price move won't apply (it's review-only for these). */}
-                {r.match_amazon && (
-                  <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (manual price locked)">
-                    Amazon-matched
-                  </span>
+          {rows.map((r, i) => {
+            const isSel = selected.has(r.groupid);
+            // A pending row is dimmed — it's listed for context, not because it needs doing today — but stays fully clickable.
+            const tone = r.parked ? 'text-slate-400' : 'text-slate-700';
+            return (
+              <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (isSel ? 'bg-brand-50' : '')}>
+                <td className="px-4 py-2">
+                  <input
+                    type="checkbox"
+                    checked={isSel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggle(r.groupid)}
+                    className="h-4 w-4 rounded border-slate-300"
+                    aria-label="Select style for bulk edit"
+                  />
+                </td>
+                <td className="px-4 py-2 text-slate-400">{i + 1}</td>
+                {showKind && (
+                  <td className="px-4 py-2">
+                    <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (r.kind === 'winner' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+                      {r.kind === 'winner' ? 'Winner' : 'Loser'}
+                    </span>
+                  </td>
                 )}
-              </td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// Row checkbox — stops the click bubbling to the row (which would open the drill instead of toggling selection).
-function RowBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
-  return (
-    <input
-      type="checkbox"
-      checked={checked}
-      onClick={(e) => e.stopPropagation()}
-      onChange={onToggle}
-      className="h-4 w-4 rounded border-slate-300"
-      aria-label="Select style for bulk edit"
-    />
-  );
-}
-function SelectAllBox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <input
-      type="checkbox"
-      checked={checked}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.checked)}
-      className="h-4 w-4 rounded border-slate-300"
-      aria-label="Select all styles"
-    />
-  );
-}
-
-function AllTable({ rows, onOpen }: { rows: AllRow[]; onOpen: (g: string) => void }) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-4 py-2 font-medium">Code</th>
-            <th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium">Stock</th>
-            <th className="px-4 py-2 font-medium">Changed</th>
-            <th className="px-4 py-2 font-medium">Review</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className="cursor-pointer hover:bg-slate-50">
-              <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className={'px-4 py-2 text-right ' + (r.stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.stock}</td>
-              <td className="whitespace-nowrap px-4 py-2 text-slate-600">{fmtDate(r.last_change)}</td>
-              {/* Review date only (no jargon). A future date (review still active → held out of the Winners/Losers lists) is amber
-                  so it stands out; a past/absent one is muted. */}
-              <td className="whitespace-nowrap px-4 py-2">
-                {r.next_review
-                  ? <span className={isFutureIso(r.next_review) ? 'font-medium text-amber-700' : 'text-slate-400'}>{fmtDate(r.next_review)}</span>
-                  : <span className="text-slate-400">—</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function LosersTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
-  rows: LoserRow[]; onOpen: (g: string) => void;
-  selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
-}) {
-  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
-  return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      {/* Columns still mirror WinnersTable (owner: "use the Winners columns for LOSERS" + they must line up when switching tabs) with
-          ONE deliberate exception: no "Units (30d)". Under the current rule a loser is a style that sold nothing in 30d, so that cell
-          was 0 on every row — the column carried no information and cost width the Product name wanted. Removed on the owner's
-          instruction when the rule changed. LoserRow.u30 is still in the payload; nothing renders it. */}
-      <table className="w-full table-fixed text-sm">
-        <ListCols units={false} />
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-4 py-2"><SelectAllBox checked={allChecked} onChange={(c) => onToggleAll(rows.map((r) => r.groupid), c)} /></th>
-            <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium">Code</th>
-            <th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium">Stock</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={r.groupid} onClick={() => onOpen(r.groupid)} className={'cursor-pointer hover:bg-slate-50 ' + (selected.has(r.groupid) ? 'bg-brand-50' : '')}>
-              <td className="px-4 py-2"><RowBox checked={selected.has(r.groupid)} onToggle={() => onToggle(r.groupid)} /></td>
-              <td className="px-4 py-2 text-slate-400">{r.rank}</td>
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-              <td className="truncate px-4 py-2 text-slate-700">
-                {r.title || <span className="text-slate-400">—</span>}
-                {/* Same badge as Winners: a matched style here is a candidate to switch OFF if the Amazon-matched price is hurting margin. */}
-                {r.match_amazon && (
-                  <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (turn matching off to cut manually)">
-                    Amazon-matched
-                  </span>
+                {showUnits && (
+                  <td className={'px-4 py-2 tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
                 )}
-              </td>
-              <td className="px-4 py-2 text-right font-medium text-slate-800">{money(r.price)}</td>
-              <td className="px-4 py-2 text-right text-slate-700">{r.stock}</td>
-            </tr>
-          ))}
+                <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">{r.groupid}</td>
+                <td className={'truncate px-4 py-2 ' + tone}>
+                  {r.title || <span className="text-slate-400">—</span>}
+                  {/* Amazon-match badge: the autopilot is retired (CLAUDE.md) but the badge stays for when it is revived. */}
+                  {r.match_amazon && (
+                    <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (manual price locked)">
+                      Amazon-matched
+                    </span>
+                  )}
+                </td>
+                <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
+                <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.stock}</td>
+                {showReview && (
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {r.parked
+                      ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
+                      : <span className="text-xs text-slate-400">Due</span>}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
