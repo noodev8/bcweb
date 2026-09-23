@@ -6,7 +6,9 @@ Component: ListViewControls
 Purpose: The two controls above a segment's pricing list, shared by Shopify (/pricing/[segment]) and Amazon (/amz/[segment]) so the
          two channels read the same way (owner, 2026-09-23):
            - Winners | Losers | All — WHICH list. "All" = winners and losers together, not the whole segment.
-           - Show pending review    — WHETHER to include items whose review date is still in the future.
+           - Due (switch, on by default) — on = only items due now; off = also items whose review date is still in the future.
+             Was "Show pending review" with a count beside it; the owner found the count confusing (2026-09-23), so it is a plain
+             switch now and the tables always show a Review column instead.
          Replaced ListModeSwitcher (two big panels + a separate "All styles" bar), which had no room for the second control.
 =======================================================================================================================================
 */
@@ -19,18 +21,17 @@ export function parseListView(v: string | null): ListView {
   return v === 'losers' ? 'losers' : v === 'all' ? 'all' : 'winners';
 }
 
-export default function ListViewControls({ view, onViewChange, counts, showPending, onShowPendingChange, pendingCount }: {
+export default function ListViewControls({ view, onViewChange, counts, dueOnly, onDueOnlyChange }: {
   view: ListView;
   onViewChange: (v: ListView) => void;
   counts: { winners: number; losers: number; all: number } | null;   // null while loading
-  showPending: boolean;
-  onShowPendingChange: (v: boolean) => void;
-  pendingCount: number | null;                                        // pending items in the current view; null while loading
+  dueOnly: boolean;
+  onDueOnlyChange: (v: boolean) => void;
 }) {
   return (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <ViewTabs view={view} onChange={onViewChange} counts={counts} />
-      <PendingSwitch on={showPending} onChange={onShowPendingChange} count={pendingCount} />
+      <DueSwitch on={dueOnly} onChange={onDueOnlyChange} />
     </div>
   );
 }
@@ -65,7 +66,8 @@ function ViewTabs({ view, onChange, counts }: {
             <Icon className="h-4 w-4" />
             {t.label}
             {counts && (
-              <span className={'rounded-full px-2 py-0.5 text-xs tabular-nums ' + (active ? t.badge : 'bg-slate-200/70 text-slate-500')}>
+              // Fixed badge width (fits 3 digits) so a count changing from 1 to 20 to 300 doesn't shift the tabs sideways.
+              <span className={'inline-block min-w-[2.5rem] rounded-full px-2 py-0.5 text-center text-xs tabular-nums ' + (active ? t.badge : 'bg-slate-200/70 text-slate-500')}>
                 {counts[t.key]}
               </span>
             )}
@@ -76,21 +78,21 @@ function ViewTabs({ view, onChange, counts }: {
   );
 }
 
-// The count is how many pending items the current view holds, so the switch says what it would add before you flip it.
-function PendingSwitch({ on, onChange, count }: { on: boolean; onChange: (v: boolean) => void; count: number | null }) {
+// "Due" — on (the default) lists only items due for review now; off adds the ones still waiting on a future review date.
+function DueSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
+      title={on ? 'Showing only items due for review — switch off to include ones not due yet' : 'Showing everything — switch on for only items due for review'}
       className="inline-flex items-center gap-2.5 text-sm text-slate-600 hover:text-slate-800"
     >
       <span className={'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ' + (on ? 'bg-brand-600' : 'bg-slate-300')}>
         <span className={'inline-block h-4 w-4 rounded-full bg-white shadow transition ' + (on ? 'translate-x-[18px]' : 'translate-x-0.5')} />
       </span>
-      Show pending review
-      {count !== null && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs tabular-nums text-slate-500">{count}</span>}
+      Due
     </button>
   );
 }

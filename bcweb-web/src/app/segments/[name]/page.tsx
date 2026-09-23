@@ -33,7 +33,7 @@ export default function SegmentDetailPage() {
 
   // No AppShell title: the heading is rendered here because it carries the rename control, and AppShell's title is a plain string.
   return (
-    <AppShell backHref="/segments" backLabel="All segments">
+    <AppShell backHref="/segments" backLabel="Segments">
       <div className="space-y-6">
         <SegmentName current={name} onRenamed={(newName) => router.replace(`/segments/${encodeURIComponent(newName)}`)} />
 

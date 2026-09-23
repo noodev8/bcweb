@@ -12,8 +12,8 @@ Because a groupid's sizes each have their own price, one colour can have fast si
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
   - Winners | Losers | All. "All" means BOTH lists together (winners first, then losers), NOT every managed SKU. The old "All" view
     (every SKU incl. out of stock, from /amz-all) was dropped from this screen in the same change.
-  - "Show pending review". Off (default) = only SKUs due now. On = also the PARKED SKUs (skumap.next_amz_price_review in the
-    future), dimmed and with their review date shown.
+  - "Due" switch. On (default) = only SKUs due now. Off = also the PARKED SKUs (skumap.next_amz_price_review in the future), dimmed.
+    The Review column is always shown: a date for a parked SKU, "Due" otherwise.
 Both lists are fetched ONCE with parked SKUs included (?parked=include) and filtered client-side, so every control shows a live count
 and flipping them costs no request. View + pending are kept in the URL (?mode=, ?pending=1) so returning from a SKU's drill restores
 them. The lists are the WHOLE qualifying sets; the server's safety cap (utils/listLimit.js) is flagged when it bites. A SKU already in
@@ -272,9 +272,8 @@ function SegmentContent() {
         view={mode}
         onViewChange={setMode}
         counts={data ? view.counts : null}
-        showPending={showPending}
-        onShowPendingChange={setShowPending}
-        pendingCount={data ? view.pendingCount : null}
+        dueOnly={!showPending}
+        onDueOnlyChange={(due) => setShowPending(!due)}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -283,7 +282,7 @@ function SegmentContent() {
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
           {mode === 'winners' ? 'No winners' : mode === 'losers' ? 'No losers' : 'Nothing'} due for review in this segment right now.
-          {!showPending && view.pendingCount > 0 && <> {view.pendingCount} pending review — switch on &ldquo;Show pending review&rdquo; to see them.</>}
+          {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}
 
@@ -318,7 +317,6 @@ function SegmentContent() {
             queued={items}
             showKind={mode === 'all'}
             showUnits={mode !== 'losers'}
-            showReview={showPending}
             onOpen={openSku}
             selected={selected}
             onToggle={toggle}
@@ -333,8 +331,8 @@ function SegmentContent() {
 // One table for every view — the Amazon twin of the Shopify ListTable. Columns appear only where they carry information: Type only in
 // All, Units 30d / 7d only where winners are present (a loser's are 0 by definition), Review only with pending shown. A SKU already in
 // the upload basket carries a "queued" pill so it isn't re-touched mid-sitting.
-function ListTable({ rows, queued, showKind, showUnits, showReview, onOpen, selected, onToggle, onToggleAll }: {
-  rows: ListRow[]; queued: Record<string, unknown>; showKind: boolean; showUnits: boolean; showReview: boolean;
+function ListTable({ rows, queued, showKind, showUnits, onOpen, selected, onToggle, onToggleAll }: {
+  rows: ListRow[]; queued: Record<string, unknown>; showKind: boolean; showUnits: boolean;
   onOpen: (c: string) => void;
   selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
 }) {
@@ -352,7 +350,7 @@ function ListTable({ rows, queued, showKind, showUnits, showReview, onOpen, sele
           <col />{/* Product — takes the remaining width */}
           <col className="w-24" />{/* Price */}
           <col className="w-16" />{/* FBA */}
-          {showReview && <col className="w-24" />}
+          <col className="w-24" />{/* Review */}
         </colgroup>
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -373,7 +371,7 @@ function ListTable({ rows, queued, showKind, showUnits, showReview, onOpen, sele
             <th className="px-4 py-2 font-medium">Product</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
-            {showReview && <th className="px-4 py-2 font-medium">Review</th>}
+            <th className="px-4 py-2 font-medium">Review</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -414,13 +412,11 @@ function ListTable({ rows, queued, showKind, showUnits, showReview, onOpen, sele
                 <td className={'truncate px-4 py-2 ' + tone}>{r.title || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}</td>
-                {showReview && (
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {r.parked
-                      ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
-                      : <span className="text-xs text-slate-400">Due</span>}
-                  </td>
-                )}
+                <td className="whitespace-nowrap px-4 py-2">
+                  {r.parked
+                    ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
+                    : <span className="text-xs text-slate-400">Due</span>}
+                </td>
               </tr>
             );
           })}
