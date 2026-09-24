@@ -76,7 +76,7 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          no round-trip. A safety cap would only get in the way of "search everything".
 
 Schema landmines respected: skumap.amzprofit is a junk-prone VARCHAR (2dp string) -> safeNumeric. amzfeed.amzsold is a real integer.
-amzfeed is FBA-only, READ ONLY. Size = RIGHT(code,2). Human name from title.shopifytitle. Requires auth.
+amzfeed is FBA-only, READ ONLY. Size = the code's suffix after the last '-' (not RIGHT(code,2), which reads '.5' on a half size). Human name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
 Request Query Params: none (GET)
 
@@ -162,7 +162,7 @@ router.get('/', async (req, res) => {
         -- recent sale apart from unit_profit's STICKY last-seen figure (which can be a year+ stale and still pass a >£3 test).
         SELECT code, MAX(solddate) AS last_sold FROM sales WHERE channel='AMZ' AND qty>0 GROUP BY code
       )
-      SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
+      SELECT a.code, a.groupid, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,

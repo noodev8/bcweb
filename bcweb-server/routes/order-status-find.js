@@ -67,7 +67,7 @@ router.get('/', async (req, res) => {
 
     const result = await query(`
       SELECT sm.code, sm.groupid, t.shopifytitle AS title,
-             RIGHT(sm.code, 2) AS size, sm.uksize,
+             SUBSTRING(sm.code FROM '[^-]*$') AS size, sm.uksize,
              regexp_replace(COALESCE(sm.ean, ''), 'B$', '') AS barcode,
              ${safeNumeric('ss.cost')} AS cost,
              COALESCE(q.already, 0) AS already

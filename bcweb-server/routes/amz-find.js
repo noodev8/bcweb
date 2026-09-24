@@ -160,7 +160,7 @@ router.get('/', async (req, res) => {
     const total = countResult.rows[0] ? Number(countResult.rows[0].total) : 0;
 
     const result = await query(`
-      SELECT a.code, a.sku AS amz_sku, a.groupid, NULLIF(sk.segment,'') AS segment, RIGHT(a.code,2) AS size,
+      SELECT a.code, a.sku AS amz_sku, a.groupid, NULLIF(sk.segment,'') AS segment, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              COALESCE(a.amzlive,0) AS fba

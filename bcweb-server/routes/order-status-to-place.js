@@ -67,13 +67,13 @@ router.get('/', async (req, res) => {
     }
 
     // Grouping by the skumap/skusummary columns as well as the SKU is safe (they're functionally dependent on shopifysku) and lets
-    // cost/barcode/title be selected without wrapping each in an aggregate. Size = RIGHT(code,2) per CLAUDE.md.
+    // cost/barcode/title be selected without wrapping each in an aggregate. Size = the code's suffix after the last '-' (RIGHT(code,2) reads '.5' on a half size).
     // regexp_replace(...,'B$','') strips ONLY a trailing B, so a legitimate EAN ending in a digit is untouched.
     const result = await query(`
       SELECT o.shopifysku AS code,
              sm.groupid,
              t.shopifytitle AS title,
-             RIGHT(o.shopifysku, 2) AS size,
+             SUBSTRING(o.shopifysku FROM '[^-]*$') AS size,
              sm.uksize,
              regexp_replace(COALESCE(sm.ean, ''), 'B$', '') AS barcode,
              COUNT(*) AS qty,

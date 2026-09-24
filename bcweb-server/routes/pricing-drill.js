@@ -10,7 +10,7 @@ Purpose: Stage 2 — drill-down for one style. Returns everything the decision s
                        this week?"), ported from amz-drill so both drills share one Velocity view (drill-evidence-spec §4, block 2).
            - bands   : units sold at each distinct price over 60 days, ascending price, with NET profit-per-unit — the resistance / "how high
                        can I go" guardrail (drill-evidence-spec §3/§4, ported from amz-drill so both drills share one Units-by-price view).
-           - sizes   : remaining stock by EU size (RIGHT(code,2)), each with Amazon's price and stock for that size — a guardrail
+           - sizes   : remaining stock by size (code suffix after the last '-'; see S5), each with Amazon's price and stock for that size — a guardrail
                        before a CUT (CLAUDE.md) and, since 2026-09-15, the Amazon reference the retired match-Amazon autopilot used to
                        act on. Shopify is priced independently of Amazon; Amazon is shown, never obeyed (advisory — nothing blocks).
 
@@ -22,7 +22,7 @@ The cleaner signal for going higher is a price step where pace HELD (a rise with
 user can read that; we do not editorialise here.
 
 Schema landmines respected: prices are VARCHAR (can hold junk) -> read via safeNumeric() (S3). Stock from localstock, never stockvariants.
-Size = RIGHT(code,2). Human name from title.shopifytitle, not the overloaded colour tag (CLAUDE.md).
+Size = the code's suffix after the last '-' (S5 says why not RIGHT(code,2)). Human name from title.shopifytitle, not the overloaded colour tag (CLAUDE.md).
 =======================================================================================================================================
 Request Query Params:
   groupid (string, required)
@@ -249,7 +249,11 @@ router.get('/', async (req, res) => {
       };
     });
 
-    // ---- S5: size curve (CLAUDE.md) — size = RIGHT(code,2). ----
+    // ---- S5: size curve — size = everything after the LAST '-' of the code, NOT RIGHT(code,2). ----
+    // RIGHT(code,2) (the CLAUDE.md rule) is only right for two-digit EU sizes. Half sizes break it: 25511-41-022-37.5, -38.5 and
+    // -40.5 all came out as '.5' and were summed into ONE size (found 2026-09-24 when the price card's size run showed ".5  3");
+    // UK-sized codes like 233103-BBK-8 came out as '-8'. ~10% of live skumap codes are half sizes. The suffix after the last '-' is
+    // the size as the code spells it, for every format.
     // Show EVERY size the style comes in, with 0 for sold-out sizes: a sold-out core (e.g. 38/39 gone) is exactly the guardrail
     // signal we want to SEE before a cut (CLAUDE.md). localstock holds in-stock rows only (a size that sells out has no row — there are no
     // qty<=0/deleted rows), so the size universe comes from skumap (the per-groupid size map). We take every non-deleted size in
@@ -264,20 +268,20 @@ router.get('/', async (req, res) => {
     const sizesResult = await query(`
       SELECT sizes.size, COALESCE(st.qty, 0) AS qty, af.amz_price, COALESCE(af.amz_live, 0) AS amz_live
       FROM (
-        SELECT DISTINCT RIGHT(code,2) AS size
+        SELECT DISTINCT SUBSTRING(code FROM '[^-]*$') AS size
         FROM skumap WHERE groupid=$1 AND COALESCE(deleted,0)=0
       ) sizes
       LEFT JOIN (
-        SELECT RIGHT(code,2) AS size, SUM(qty) AS qty FROM localstock
+        SELECT SUBSTRING(code FROM '[^-]*$') AS size, SUM(qty) AS qty FROM localstock
         WHERE groupid=$1 AND ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0
-        GROUP BY RIGHT(code,2)
+        GROUP BY SUBSTRING(code FROM '[^-]*$')
       ) st ON st.size = sizes.size
       LEFT JOIN (
-        SELECT RIGHT(code,2) AS size,
+        SELECT SUBSTRING(code FROM '[^-]*$') AS size,
                MAX(${safeNumeric('amzprice')})     AS amz_price,
                SUM(COALESCE(amzlive,0))            AS amz_live
         FROM amzfeed WHERE groupid=$1
-        GROUP BY RIGHT(code,2)
+        GROUP BY SUBSTRING(code FROM '[^-]*$')
       ) af ON af.size = sizes.size
       ORDER BY sizes.size
     `, [groupid]);

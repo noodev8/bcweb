@@ -60,7 +60,7 @@ revenue / 1.2, at BOTH grains (summary and per line). REVENUE ITSELF IS STILL RE
 Shopify, Seller Central and the bank — with `netRevenue` alongside it so the margin can be checked by hand. Same rule, same constant and
 same reasoning as routes/brand-overview.js (rule 3 in its header); the two screens are read side by side and must not disagree.
 `sales.collectedvat` exists but is populated on CM3 rows only (and is exactly 1/6 there), so the /6 convention the two profit utils
-already use is the one source of truth — do not switch to the column until it is backfilled on SHP and AMZ. Size = RIGHT(code,2). Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
+already use is the one source of truth — do not switch to the column until it is backfilled on SHP and AMZ. Size = the code's suffix after the last '-'. Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
 Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -317,7 +317,7 @@ router.get('/', async (req, res) => {
       ? { rows: [] }
       : await query(
           `${filterCte}
-           SELECT solddate, ordertime, channel, code, RIGHT(code, 2) AS size, groupid, productname, brand, ordernum,
+           SELECT solddate, ordertime, channel, code, SUBSTRING(code FROM '[^-]*$') AS size, groupid, productname, brand, ordernum,
                   qty, soldprice, profit
            FROM f
            ORDER BY ${orderBy}

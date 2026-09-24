@@ -31,7 +31,7 @@ is what keeps the SKUs that actually matter at the top.
 On parking: the spec text (docs/amz-pricing-spec.md §4) says Amazon has no park/review concept, but the SQL below DOES honour
 skumap.next_amz_price_review (§10.4 added it later, and /amz-review writes it). The code is the truth here — parked SKUs are hidden.
 
-Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeric; amzlive a real integer. Size = RIGHT(code,2). Human
+Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeric; amzlive a real integer. Size = the code's suffix after the last '-'. Human
 name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -120,7 +120,7 @@ router.get('/', async (req, res) => {
         WHERE channel='AMZ' AND qty>0
         GROUP BY code
       )
-      SELECT a.code, a.groupid, a.sku AS amz_sku, RIGHT(a.code,2) AS size,
+      SELECT a.code, a.groupid, a.sku AS amz_sku, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              COALESCE(a.amzlive,0) AS fba,

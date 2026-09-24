@@ -29,7 +29,7 @@ Key domain rules baked into the SQL:
   - Window `days` defaults to 30 (docs/amz-pricing-spec.md — Amazon-native windows). 7d units are carried as a secondary signal/tiebreak.
 
 Schema landmines respected: amzfeed is FBA-only, READ ONLY. amzprice is a junk-prone VARCHAR -> read via safeNumeric. amzlive is a real
-integer. Size = RIGHT(code,2). Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
+integer. Size = the code's suffix after the last '-'. Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
 =======================================================================================================================================
 Request Query Params:
   segment    (string)         - the segment to shortlist within — give exactly one of segment / topearners
@@ -117,7 +117,7 @@ router.get('/', async (req, res) => {
         WHERE channel='AMZ' AND qty>0 AND soldprice>0 AND solddate >= CURRENT_DATE - 7
         GROUP BY code
       )
-      SELECT a.code, a.groupid, a.sku AS amz_sku, RIGHT(a.code,2) AS size,
+      SELECT a.code, a.groupid, a.sku AS amz_sku, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              COALESCE(a.amzlive,0) AS fba,

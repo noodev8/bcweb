@@ -84,7 +84,7 @@ instant for newer rows; older rows fall back to the bare DATE (`change_date` / `
 `days_since` is computed in SQL as (CURRENT_DATE - change_date) so we never round-trip a DATE through JS date parsing. The change DAY is
 derived from the instant in Europe/London, never read from the stored change_date/log_date column — the DB session is UTC, so those columns
 hold the UTC day and an after-11pm apply is stamped a day early (see the comment on the detail query). Amazon size =
-RIGHT(code,2). Human name from title.shopifytitle (via the resolved groupid). Requires auth.
+the code's suffix after the last '-'. Human name from title.shopifytitle (via the resolved groupid). Requires auth.
 =======================================================================================================================================
 Request Query Params:
   channel (string, optional)  - 'all' (default) | 'shp' | 'amz'. Case-insensitive.
@@ -331,7 +331,7 @@ router.get('/', async (req, res) => {
              pk.channel,
              pk.groupid,
              pk.amz_code,
-             CASE WHEN pk.amz_code IS NOT NULL THEN RIGHT(pk.amz_code, 2) END AS size,
+             CASE WHEN pk.amz_code IS NOT NULL THEN SUBSTRING(pk.amz_code FROM '[^-]*$') END AS size,
              t.shopifytitle          AS title,
              pk.old_price,
              pk.new_price,

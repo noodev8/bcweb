@@ -65,13 +65,13 @@ router.post('/', async (req, res) => {
     const location = typeof req.body?.location === 'string' ? req.body.location.trim() : '';
     if (!location) return res.json({ return_code: 'MISSING_FIELDS', message: 'location is required' });
 
-    // Ordered by size within a style so a rack reads like the shelf itself. Numeric-aware: RIGHT(code,2) is text, so a plain sort
+    // Ordered by size within a style so a rack reads like the shelf itself. Numeric-aware (half sizes too): the size is text, so a plain sort
     // would put '40' before '5' — the same cast inv-stock.js uses, with non-numeric sizes pushed to the end rather than dropped.
     const result = await query(`
       SELECT l.id,
              l.code,
              l.groupid,
-             RIGHT(l.code, 2)  AS size,
+             SUBSTRING(l.code FROM '[^-]*$')  AS size,
              m.uksize,
              t.shopifytitle    AS title,
              l.qty,
@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
         AND COALESCE(l.deleted, 0) = 0
         AND l.qty > 0
       ORDER BY COALESCE(t.shopifytitle, l.groupid, l.code) ASC,
-               (CASE WHEN RIGHT(l.code, 2) ~ '^[0-9]+$' THEN RIGHT(l.code, 2)::int ELSE 999 END) ASC,
+               (CASE WHEN SUBSTRING(l.code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$' THEN SUBSTRING(l.code FROM '[^-]*$')::numeric ELSE 999 END) ASC,
                l.id ASC
     `, [location]);
 

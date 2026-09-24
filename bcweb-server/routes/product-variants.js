@@ -48,7 +48,7 @@ Success Response:
     {
       "code": "1005292-ARIZONA-36",
       "size": "36 EU / 3.5 UK",           // skumap.optionsize with its '<seq>--' ordering prefix stripped; falls back to the EU size
-      "eu": "36",                         // RIGHT(code,2) - drives the ordering
+      "eu": "36",                         // SUBSTRING(code FROM '[^-]*$') - drives the ordering
       "stock": 12, "local": 10, "amazon": 2,
       "amz_price": 37.30,                 // amzfeed.amzprice for THIS size (safeNumeric); null when the size has no FBA row
       "amz_live": 2,                      // amzfeed.amzlive - units a customer can buy today. 0 with a price = listed, out of stock
@@ -121,7 +121,7 @@ router.get('/', async (req, res) => {
       )
       SELECT
         m.code,
-        RIGHT(m.code, 2) AS eu,
+        SUBSTRING(m.code FROM '[^-]*$') AS eu,
         -- The size label the operator themselves chose on the Add/Modify sizes screen, so a UK-sized brand reads "5 UK" rather than a
         -- bogus "05 EU". It lives in optionsize behind an '<seq>--' ordering prefix (e.g. '101--35 EU / 2.5 UK'), stripped here.
         -- Same treatment as inv-stock.js; NULLIF gives the client a clean fallback for a blank one.

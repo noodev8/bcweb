@@ -20,7 +20,7 @@ AGE is likewise days since PLACED, not days since chosen — that's the number y
 and ordered on the 5th is 3 days late today, not 7.
 
 `orderstatus` has one row PER UNIT (qty is always 1, duplicated lines — CLAUDE.md landmine), so batch totals are COUNT(*), and
-"arrived"/"waiting" are COUNT(*) filtered on the arrived flag. Style/size breakdown joins skumap (code -> groupid, size = RIGHT(code,2)
+"arrived"/"waiting" are COUNT(*) filtered on the arrived flag. Style/size breakdown joins skumap (code -> groupid, size = the code's suffix after the last '-'
 per CLAUDE.md) and title (human name) so the operator can see WHAT was ordered, not just a SKU code.
 
 Scope: only rows with arrived=0, OR arrived=1 within the last 30 days (createddate) — i.e. everything that could plausibly still be
@@ -89,7 +89,7 @@ router.get('/', async (req, res) => {
              ${placedDate()}::text AS placeddate,
              NULLIF(substring(o.orderdate from 10 for 5), '') AS placedtime,
              CURRENT_DATE - ${placedDate()} AS days,
-             sm.groupid, t.shopifytitle AS title, RIGHT(o.shopifysku, 2) AS size
+             sm.groupid, t.shopifytitle AS title, SUBSTRING(o.shopifysku FROM '[^-]*$') AS size
       FROM orderstatus o
       LEFT JOIN skumap sm ON sm.code = o.shopifysku
       LEFT JOIN title t   ON t.groupid = sm.groupid

@@ -47,12 +47,12 @@ router.get('/', async (req, res) => {
     // The %..% is built here (not interpolated into SQL) and passed as a bound parameter, so it stays injection-safe (CLAUDE.md).
     const like = `%${term}%`;
 
-    // SKU-code paste helper: a full SKU code is `groupid-XX` where XX is the 2-digit EU size (size = RIGHT(code,2)
-    // everywhere in the app). The Shopify flow is style-grain (groupid only), so a pasted SKU code like
+    // SKU-code paste helper: a full SKU code is `groupid-<size>`, the size being the suffix after the last '-' (38, 37.5, UK 8).
+    // The Shopify flow is style-grain (groupid only), so a pasted SKU code like
     // `FLE030-IVES-WHITE-38` would never match the groupid `FLE030-IVES-WHITE` under a plain %term% ILIKE. If the term
-    // ends in `-XX`, ALSO try the stripped groupid ($2). We OR it in (never replace $1) so a legitimate groupid that
-    // happens to end in `-<2 digits>` still matches on its own. Null when there is no trailing size to strip.
-    const sizeMatch = term.match(/^(.*)-\d{2}$/);
+    // ends in `-<size>`, ALSO try the stripped groupid ($2). We OR it in (never replace $1) so a legitimate groupid that
+    // happens to end in `-<digits>` still matches on its own. Null when there is no trailing size to strip.
+    const sizeMatch = term.match(/^(.*)-\d{1,2}(?:\.\d)?$/);
     const baseLike = sizeMatch ? `%${sizeMatch[1]}%` : null;
 
     const result = await query(`

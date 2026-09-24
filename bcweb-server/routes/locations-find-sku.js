@@ -57,7 +57,7 @@ router.post('/', async (req, res) => {
     if (!scan) return res.json({ return_code: 'MISSING_FIELDS', message: 'scan is required' });
 
     const result = await query(`
-      SELECT m.code, m.groupid, RIGHT(m.code, 2) AS size, t.shopifytitle AS title
+      SELECT m.code, m.groupid, SUBSTRING(m.code FROM '[^-]*$') AS size, t.shopifytitle AS title
       FROM skumap m
       LEFT JOIN title t ON t.groupid = m.groupid
       WHERE UPPER(m.code) = $1

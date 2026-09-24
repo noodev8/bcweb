@@ -83,7 +83,7 @@ router.get('/', async (req, res) => {
     // ORDER BY location, code is the legacy sort and it is not cosmetic — it is the order you walk the racks in.
     const rows = await query(`
       SELECT ls.id, ls.code, ls.groupid, ls.qty, ls.ordernum, ls.brand, ls.location, ls.allocated,
-             RIGHT(ls.code, 2) AS size,
+             SUBSTRING(ls.code FROM '[^-]*$') AS size,
              ss.colour,
              t.shopifytitle AS title,
              CASE WHEN sm.ean LIKE '%B' THEN LEFT(sm.ean, LENGTH(sm.ean) - 1) ELSE sm.ean END AS barcode,

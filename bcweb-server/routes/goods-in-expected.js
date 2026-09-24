@@ -63,7 +63,7 @@ router.get('/', async (req, res) => {
              MIN(o.supplier) AS supplier,
              MIN(sm.groupid) AS groupid,
              MIN(t.shopifytitle) AS title,
-             RIGHT(o.shopifysku, 2) AS size,
+             SUBSTRING(o.shopifysku FROM '[^-]*$') AS size,
              MIN(regexp_replace(COALESCE(sm.ean, ''), 'B$', '')) AS barcode,
              COUNT(*) AS units,
              MAX(CURRENT_DATE - ${placedDate()}) AS days

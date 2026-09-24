@@ -16,7 +16,7 @@ Purpose: A reference report for the drill-down decision screen — the RAW Shopi
          "showing last N". Newest first. Shopify channel only ('SHP'), positive lines only (qty>0, soldprice>0) — matching the drill
          timeline (this excludes returns / zero-price lines).
 
-         Schema notes (CLAUDE.md): size = RIGHT(code,2) (EU size). `solddate` is a DATE, `ordertime` a 'HH:MM' VARCHAR — we order by
+         Schema notes (CLAUDE.md): size = the code's suffix after the last '-'. `solddate` is a DATE, `ordertime` a 'HH:MM' VARCHAR — we order by
          solddate then ordertime then id for a stable newest-first sequence. `soldprice` is NUMERIC (per unit). Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
     // `profit` is read straight from the sales table: it's now computed downstream (by the owner's own P&L pipeline) and
     // populated per sale line, so we no longer re-derive it app-side — this row just surfaces what the table already holds.
     const result = await query(`
-      SELECT solddate, ordertime, RIGHT(code, 2) AS size, qty, soldprice, profit
+      SELECT solddate, ordertime, SUBSTRING(code FROM '[^-]*$') AS size, qty, soldprice, profit
       FROM sales
       WHERE groupid = $1 AND channel = 'SHP' AND qty > 0 AND soldprice > 0
       ORDER BY solddate DESC, ordertime DESC NULLS LAST, id DESC

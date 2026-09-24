@@ -37,7 +37,7 @@ Read-only. Never writes; amzfeed is untouched (FBA-only, refreshed nightly). Eac
 
 Schema landmines respected: sk.rrp is a junk-prone VARCHAR -> safeNumeric (NULL on non-numeric). amz_price_log.old_price/new_price are
 NUMERIC (no cast). amz_sku = amzfeed.sku (LEFT JOIN — a SKU that vanished from amzfeed since the change keeps its log row but yields a
-null amz_sku; the client drops null-sku rows from the file). Size = RIGHT(code,2). Requires auth.
+null amz_sku; the client drops null-sku rows from the file). Size = the code's suffix after the last '-' (not RIGHT(code,2), which reads '.5' on a half size). Requires auth.
 =======================================================================================================================================
 Request Query Params: (none — the operator is resolved from the token)
 
@@ -84,7 +84,7 @@ router.get('/', async (req, res) => {
              l.id,
              l.code,
              a.sku                        AS amz_sku,
-             RIGHT(l.code, 2)             AS size,
+             SUBSTRING(l.code FROM '[^-]*$')             AS size,
              t.shopifytitle               AS title,
              sk.segment                   AS segment,
              l.old_price                  AS old_price,

@@ -13,7 +13,7 @@ Purpose: A reference report for the Amazon drill screen — the RAW Amazon sales
          Newest first. Amazon channel only ('AMZ'), positive sold lines only (qty>0, soldprice>0).
 
          Returns (qty<0) are deliberately EXCLUDED — noise for pricing intent (owner decision), matching the Shopify sales report. Size =
-         RIGHT(code,2). `solddate` is a DATE — ordered by solddate then the ascending surrogate `id` for a stable newest-first sequence.
+         the code's suffix after the last '-'. `solddate` is a DATE — ordered by solddate then the ascending surrogate `id` for a stable newest-first sequence.
          Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
     // `profit` is read straight from the sales table: it's now computed downstream (the owner's own P&L pipeline) and populated per
     // sale line, so we no longer re-derive it app-side (no need for cost/fbafee here) — this just surfaces what the table already holds.
     const result = await query(`
-      SELECT to_char(solddate, 'YYYY-MM-DD') AS solddate, RIGHT(code, 2) AS size, qty, soldprice, profit
+      SELECT to_char(solddate, 'YYYY-MM-DD') AS solddate, SUBSTRING(code FROM '[^-]*$') AS size, qty, soldprice, profit
       FROM sales
       WHERE channel='AMZ' AND code = $1 AND qty > 0 AND soldprice > 0
       ORDER BY solddate DESC, id DESC

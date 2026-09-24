@@ -247,8 +247,9 @@ type UndoOp =
   | { kind: 'move'; code: string; ids: string[]; units: number }
   | { kind: 'add'; code: string; units: number };
 
-// Sizes are text (RIGHT(code,2)), so they sort numerically or a 40 lands before a 5. Non-numeric sizes go last rather than nowhere.
-const sizeRank = (s: string) => (/^\d+$/.test(s) ? Number(s) : 999);
+// Sizes are text (the code's suffix after the last '-'), so they sort numerically or a 40 lands before a 5. Half sizes (37.5) are
+// numbers too and rank between their neighbours. Non-numeric sizes go last rather than nowhere.
+const sizeRank = (s: string) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : 999);
 
 export default function LocationsBoard() {
   const [area, setArea] = useState<string | null>(null);

@@ -124,7 +124,7 @@ router.get('/', async (req, res) => {
          -- It lives in optionsize behind an "<seq>--" ordering prefix (e.g. '101--35 EU / 2.5 UK'), which is stripped here; same
          -- transformation as product-get.js. 100% populated across all 2046 variants, but it is free text, so the client keeps a
          -- fallback for a blank one. eu/uksize are still selected: eu drives the numeric size ordering below.
-         SELECT m.code, RIGHT(m.code, 2) AS eu, m.uksize,
+         SELECT m.code, SUBSTRING(m.code FROM '[^-]*$') AS eu, m.uksize,
                 NULLIF(btrim(regexp_replace(m.optionsize, '^[0-9]+--', '')), '') AS sizedisplay
          FROM skumap m
          WHERE m.groupid = $1
@@ -231,7 +231,7 @@ router.get('/', async (req, res) => {
        LEFT JOIN birk    ON birk.code    = sz.code
        -- Numeric size order (35, 36, ... 42), not text order. Sizes are EU by design and normally 2 digits, but the regex guard keeps
        -- a non-numeric code (accessories, one-size items) from throwing on the ::int cast — those sort last.
-       ORDER BY (CASE WHEN sz.eu ~ '^[0-9]+$' THEN sz.eu::int ELSE 999 END), sz.code`,
+       ORDER BY (CASE WHEN sz.eu ~ '^[0-9]+([.][0-9]+)?$' THEN sz.eu::numeric ELSE 999 END), sz.code`,
       [groupid]
     );
 
@@ -315,7 +315,7 @@ router.get('/', async (req, res) => {
       `SELECT
          l.id,
          l.code,
-         RIGHT(l.code, 2) AS eu,
+         SUBSTRING(l.code FROM '[^-]*$') AS eu,
          m.uksize,
          l.location,
          l.qty,
@@ -328,7 +328,7 @@ router.get('/', async (req, res) => {
        FROM localstock l
        LEFT JOIN skumap m ON m.code = l.code
        WHERE l.groupid = $1 AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0
-       ORDER BY (CASE WHEN RIGHT(l.code, 2) ~ '^[0-9]+$' THEN RIGHT(l.code, 2)::int ELSE 999 END), l.location`,
+       ORDER BY (CASE WHEN SUBSTRING(l.code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$' THEN SUBSTRING(l.code FROM '[^-]*$')::numeric ELSE 999 END), l.location`,
       [groupid]
     );
 

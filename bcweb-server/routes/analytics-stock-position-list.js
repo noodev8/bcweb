@@ -17,7 +17,7 @@ Purpose: Analytics module — Stock Position DRILL. The panels show four bucket 
          then most-recently-sold — so within dormant (all zero stock) the freshly-quiet float above the long-dead.
 
 Schema landmines respected: stock from localstock #FREE (never stockvariants); price via safeNumeric; human name from title.shopifytitle;
-size = RIGHT(code,2). Requires auth.
+size = the code's suffix after the last '-'. Requires auth.
 =======================================================================================================================================
 Request Query Params:
   channel (string, required)  - 'SHP' | 'AMZ'
@@ -134,7 +134,7 @@ router.get('/', async (req, res) => {
           SELECT code, MAX(solddate) AS last_sold FROM sales WHERE channel='AMZ' AND qty>0 GROUP BY code
         ),
         base AS (
-          SELECT a.code, a.groupid, RIGHT(a.code,2) AS size,
+          SELECT a.code, a.groupid, SUBSTRING(a.code FROM '[^-]*$') AS size,
                  t.shopifytitle AS title,
                  ${safeNumeric('a.amzprice')} AS price,
                  COALESCE(a.amzlive,0) AS stock,

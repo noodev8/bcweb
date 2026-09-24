@@ -20,7 +20,7 @@ Never writes; amzfeed is untouched (FBA-only, refreshed nightly from Amazon). Sa
 is the NET Amazon contribution (price - cost - FBA fee), since the FBA fee is a real per-unit cost on this channel.
 
 Schema landmines respected: amzprice/cost/rrp/fbafee are junk-prone VARCHARs -> safeNumeric (NULL on non-numeric). amzlive/amztotal are
-real integers; inbound = amztotal - amzlive. Size = RIGHT(code,2). Requires auth.
+real integers; inbound = amztotal - amzlive. Size = the code's suffix after the last '-' (not RIGHT(code,2), which reads '.5' on a half size). Requires auth.
 =======================================================================================================================================
 Request Query Params:
   code (string, required)  - our SKU (amzfeed.code / sales.code), e.g. 'FLE030-IVES-WHITE-38'
@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
 
     // ---- Header: economics for this SKU. amzfeed is the Amazon/FBA truth (price, fee, stock); cost/rrp live on skusummary. ----
     const headerResult = await query(`
-      SELECT a.code, a.groupid, sk.segment, RIGHT(a.code,2) AS size, a.sku AS amz_sku,
+      SELECT a.code, a.groupid, sk.segment, SUBSTRING(a.code FROM '[^-]*$') AS size, a.sku AS amz_sku,
              t.shopifytitle AS title,
              sk.imagename,
              sk.match_amazon_price AS match_amazon,

@@ -104,7 +104,7 @@ router.get('/', async (req, res) => {
     if (cap > 20000) cap = 20000;
 
     // One trip for the rows. cost/rrp go through safeNumeric so a junk value degrades to NULL instead of 500-ing the screen.
-    // Sort: ordernum then code. Code carries the size as its suffix and sizes are two digits (CLAUDE.md: size = RIGHT(code,2)), so a
+    // Sort: ordernum then code. Code carries the size as its suffix and Birkenstock sizes are two digits (no half sizes in the Birk range), so a
     // plain text sort on code puts each style's sizes in size order for free.
     const rowsQ = query(
       `SELECT ordernum, code, placedate, bksize, requested, invoiced, arrived,
