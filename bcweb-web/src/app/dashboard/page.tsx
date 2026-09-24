@@ -338,7 +338,7 @@ const GROUPS: Group[] = [
    BUSINESS FLOW — a strip, not a card (owner, 2026-09-24). It's a SEQUENCE (product in → stock bought → advertised → priced), so it is
    drawn as steps with arrows in a full-width strip below the cards (closed until clicked) rather than a card of its own. What it is FOR is still open — a daily
    route, or a reminder of what to work on next ("I might use it daily. Don't know yet but let's put something") — so it is kept
-   light: four links, nothing else. Every step also lives in a card below; this is a second door, not the only one.
+   light: a handful of links, nothing else. Every step also lives in a card below; this is a second door, not the only one.
 ===================================================================================================================================== */
 const FLOW: Tile[] = [
       {
@@ -347,6 +347,14 @@ const FLOW: Tile[] = [
         description: 'Find an existing product to edit, or create a new one.',
         href: '/products',
         icon: TagIcon,
+      },
+      {
+        // Added after Product (owner, 2026-09-24) — same screen as Back Office → Sales.
+        title: 'Sales',
+        subtitle: 'Recent sales and profit',
+        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
+        href: '/analytics/sales',
+        icon: BanknotesIcon,
       },
       {
         title: 'Amazon Order',
