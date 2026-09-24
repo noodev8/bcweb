@@ -165,7 +165,6 @@ app.use('/amz-delete-file', require('./routes/amz-delete-file')); // build the S
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
 app.use('/inv-styles', require('./routes/inv-styles'));  // full style list + headline Local / Order / Total per style
 app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size grid (Order / Total / Local per size) + image
-app.use('/inv-sales', require('./routes/inv-sales'));    // one style's recent sales, ALL channels merged, w/ profit (lazy)
 app.use('/inv-adjust', require('./routes/inv-adjust'));  // phase 2: +/- local stock at one location, audited to bclog (WRITES)
 app.use('/inv-locations', require('./routes/inv-locations')); // phase 2: the real shelf locations, for the "add to a location" picker
 

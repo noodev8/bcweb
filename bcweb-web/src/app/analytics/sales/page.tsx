@@ -46,8 +46,8 @@ Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order
 =======================================================================================================================================
 */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
@@ -94,8 +94,31 @@ const CHANNEL_CHIP: Record<string, { label: string; cls: string }> = {
 // Stable identity for "no rows yet" — a fresh [] each render would defeat the memos that derive from it.
 const NO_ROWS: SalesReportRow[] = [];
 
+// useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that — same as /inventory.
 export default function SalesPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <SalesPageContent />
+    </Suspense>
+  );
+}
+
+function SalesPageContent() {
   const pathname = usePathname();
+
+  // ARRIVING FOR ONE PRODUCT (owner, 2026-09-24). Inventory's Detail has a Sales button (it replaced the inline recent-sales panel
+  // there) that lands here as ?q=<groupid>&from=/inventory&back=Inventory. The term is committed as the opening Contains step — read
+  // ONCE into initial state, not in an effect, so the screen never paints today's ledger and then snaps to the product — which puts
+  // the screen straight into product mode (12 months). from/back thread the "← Back" the same way the pricing screens do; only a
+  // same-site path is honoured. Arriving from the nav passes neither, and nothing changes.
+  const searchParams = useSearchParams();
+  const [seedSteps] = useState<SalesFilterStep[]>(() => {
+    const q = (searchParams.get('q') || '').trim().toUpperCase();
+    return q ? [{ op: 'has', term: q }] : [];
+  });
+  const fromParam = searchParams.get('from');
+  const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : '/analytics';
+  const backLabel = backHref === '/analytics' ? 'Reports' : searchParams.get('back') || 'Back';
 
   // Direct, column-aware click behaviour (replaces the shared reprice/copy chooser on this page). The operator told us: don't ask —
   //   • click the Product cell  -> copy the groupid
@@ -139,11 +162,11 @@ export default function SalesPage() {
   // The two boxes, and the ordered steps committed so far (same model as Inventory). Steps are display-only here too: to drop one, Reset.
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
-  const [steps, setSteps] = useState<SalesFilterStep[]>([]);
+  const [steps, setSteps] = useState<SalesFilterStep[]>(seedSteps);
   // The terms committed by the MOST RECENT Find, kept apart from the merged list because the start-fresh rule below has to be able to
   // re-run them on their own. Inventory doesn't need this — it rebuilds the criteria inside its own handler — but here the retry happens
   // in the fetcher, which only ever sees the merged `steps`.
-  const [lastFind, setLastFind] = useState<SalesFilterStep[]>([]);
+  const [lastFind, setLastFind] = useState<SalesFilterStep[]>(seedSteps);
   const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
   const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
 
@@ -341,7 +364,7 @@ export default function SalesPage() {
   }, [range, searchActive]);
 
   return (
-    <AppShell backHref="/analytics" backLabel="Reports">
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* SEARCH SITS FIRST, directly under the title (owner, 2026-07-25: "I just want to search for sales"). It used to sit below the
           explainer paragraph AND the headline tiles, which pushed the boxes to the fold — on a screen whose primary action is "find this
           product". The paragraph went entirely: two labelled boxes and a Find need no instructions, and the one genuinely non-obvious

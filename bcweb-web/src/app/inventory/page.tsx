@@ -262,6 +262,57 @@ function parseContains(raw: string): { term: string; size: string; qty: QtyFilte
   return { term, size, qty, season: null };
 }
 
+// ---- RETURN TO YOUR PLACE (owner, 2026-09-24) ----------------------------------------------------------------------------------
+// Detail's Sales and Send to Social buttons leave in the SAME tab — the owner allowed that only if coming back puts you exactly where
+// you were, with the Detail still open. Everything on this screen is component state, so a same-tab trip would otherwise return to the
+// default catalogue at the top. So just before leaving we write the whole view to sessionStorage — filters, sort, cuts, which Details
+// are open, how far the window is painted, and the card you left from plus where it sat on screen — and the next mount reads it back.
+//
+// sessionStorage, not the URL: it is this tab's private breadcrumb, not something to share or bookmark. It is used ONCE (cleared after
+// the restore) and goes stale after RETURN_TTL_MS, so a trip that never comes back can't hijack the screen hours later. A ?q= seed from
+// the dashboard wins over it — that is a new question, not a return. Every access is wrapped: storage can be blocked, and then the
+// screen simply opens fresh.
+const RETURN_KEY = 'inv-return';
+const RETURN_TTL_MS = 60 * 60 * 1000;
+interface ReturnSnapshot {
+  at: number;
+  steps: FilterStep[];
+  sizeFilter: string | null;
+  sizeStrict: boolean;
+  seasonFilter: Season | null;
+  qtyFilters: Partial<Record<QtyMetric, QtyFilter>>;
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  cut: string[];
+  detailOpen: string[];
+  shown: number;
+  anchor: string;        // the card the operator left from
+  anchorTop: number;     // its distance from the top of the viewport at that moment, so it comes back to the same spot
+}
+function readReturn(): ReturnSnapshot | null {
+  try {
+    const raw = window.sessionStorage.getItem(RETURN_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw) as ReturnSnapshot;
+    return Date.now() - snap.at < RETURN_TTL_MS ? snap : null;
+  } catch {
+    return null;
+  }
+}
+function clearReturn() {
+  try { window.sessionStorage.removeItem(RETURN_KEY); } catch { /* storage blocked: nothing to clear */ }
+}
+
+// The painted window's criteria stamp (see the window note in the page). A function so the restore can stamp the window it builds
+// before the first render with exactly the key the page will compute.
+function windowKey(
+  steps: FilterStep[], sizeFilter: string | null, sizeStrict: boolean, activeQty: QtyFilter[], season: Season | null,
+  sortKey: SortKey, sortDir: 'asc' | 'desc',
+): string {
+  return JSON.stringify([steps, sizeFilter, sizeStrict, activeQty, season, sortKey, sortDir]);
+}
+const activeQtyOf = (q: Partial<Record<QtyMetric, QtyFilter>>) => Object.values(q).filter(Boolean) as QtyFilter[];
+
 // useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function InventoryPage() {
   return (
@@ -285,6 +336,9 @@ function InventoryPageContent() {
     const q = (searchParams.get('q') || '').trim().toUpperCase();
     return q ? parseContains(q) : null;
   });
+  // Coming back from a same-tab jump? (See RETURN TO YOUR PLACE.) Read, not removed, here — the removal waits for the restore effect,
+  // because StrictMode runs this initialiser twice and a take-on-read would hand the second run nothing.
+  const [back] = useState<ReturnSnapshot | null>(() => (searchParams.get('q') ? null : readReturn()));
 
   // WHERE "BACK" GOES, threaded via ?from=/&back= - the convention the pricing, Amazon, Add/Modify and Amazon Order screens already
   // use. Added 2026-09-22 with the product hub: Inventory is one of its hand-off cards, and a screen you are sent INTO from a hub
@@ -296,28 +350,28 @@ function InventoryPageContent() {
   // The two input boxes, and the ordered list of steps applied so far.
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
-  const [steps, setSteps] = useState<FilterStep[]>(seed?.term ? [{ op: 'has', term: seed.term }] : []);
+  const [steps, setSteps] = useState<FilterStep[]>(back?.steps ?? (seed?.term ? [{ op: 'has', term: seed.term }] : []));
 
   // SIZE filter — a SINGLE value kept apart from the text steps so it can be swapped or cleared on its own (41 -> 40 as the customer
   // asks) without re-typing the text hunt. Filters to styles holding that size locally; each card then leads with that size's count.
   const [sizeInput, setSizeInput] = useState('');
-  const [sizeFilter, setSizeFilter] = useState<string | null>(seed?.size || null);
+  const [sizeFilter, setSizeFilter] = useState<string | null>(back ? back.sizeFilter : seed?.size || null);
   const sizeTarget = useMemo(() => (sizeFilter ? normSize(sizeFilter) : null), [sizeFilter]);
   // Does the size filter EXCLUDE styles that are sold out in that size? True for the standalone Size box (a "who's got a 41?" browse —
   // a style with none is noise). FALSE when the size was inferred from a pasted SKU like 0151183-ARIZONA-38: that is a targeted lookup
   // of ONE style, so we must still show its card (leading with 38, greyed at 0) rather than "No styles match" (owner, 2026-07-23).
   // A SEEDED size can only have come off a pasted SKU (the dashboard search box has no size box of its own), i.e. a targeted lookup of
   // ONE style — so it starts NON-strict, or the card would be hidden exactly when that size happens to be out.
-  const [sizeStrict, setSizeStrict] = useState(!seed?.size);
+  const [sizeStrict, setSizeStrict] = useState(back ? back.sizeStrict : !seed?.size);
 
   // SEASON filter (WINTER / SUMMER), a standing mode like the size box rather than one of the ordered text steps — so it survives a
   // fresh Contains hunt and is cleared by its own ✕. Seeded from ?q= so the dashboard box can hand one straight over.
-  const [seasonFilter, setSeasonFilter] = useState<Season | null>(seed?.season || null);
+  const [seasonFilter, setSeasonFilter] = useState<Season | null>(back ? back.seasonFilter : seed?.season || null);
 
   // STOCK / SOLD worded filters — one active per metric, keyed by metric so a STOCK command and a SOLD command can both be on at once
   // (e.g. "loads of stock, barely selling" = STOCK MORE 20 + SOLD LESS 3). Each ✕ clears just its own.
   const [qtyFilters, setQtyFilters] = useState<Partial<Record<QtyMetric, QtyFilter>>>(
-    seed?.qty ? { [seed.qty.metric]: seed.qty } : {},
+    back?.qtyFilters ?? (seed?.qty ? { [seed.qty.metric]: seed.qty } : {}),
   );
   const setQtyFilter = useCallback((f: QtyFilter) => setQtyFilters((prev) => ({ ...prev, [f.metric]: f })), []);
   const clearQtyFilter = useCallback((metric: QtyMetric) => setQtyFilters((prev) => {
@@ -333,8 +387,8 @@ function InventoryPageContent() {
   // Sort mode — default NEWEST ADDED FIRST (owner, 2026-07-28). Now that the screen opens on the whole catalogue rather than a blank
   // box, the opening order is a real editorial choice: what has just come in is what the operator most often has a question about,
   // and it puts the styles nobody has looked at yet in front of them without anyone searching for something they don't know is there.
-  const [sortKey, setSortKey] = useState<SortKey>('created');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortKey, setSortKey] = useState<SortKey>(back?.sortKey ?? 'created');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(back?.sortDir ?? 'desc');
   // Pick a key: re-clicking the active one reverses; a new key adopts its default direction. Written as two plain setState calls off the
   // CURRENT sortKey (not nested inside a setSortKey updater) — nesting made the reverse toggle twice under React StrictMode's double-invoke
   // and appear to do nothing.
@@ -345,7 +399,7 @@ function InventoryPageContent() {
 
   // CUT: groupids the operator has hidden by hand — the manual trim for a straggler a text step can't drop without over-matching.
   // Purely view state: nothing is written, Restore or Reset brings them back.
-  const [cut, setCut] = useState<Set<string>>(new Set());
+  const [cut, setCut] = useState<Set<string>>(() => new Set(back?.cut ?? []));
 
   // Reset hands focus straight back to Contains so the next hunt starts by typing.
   const containsRef = useRef<HTMLInputElement>(null);
@@ -367,7 +421,7 @@ function InventoryPageContent() {
   // pictures nobody asked for was noise. That is reversed: the catalogue newest-first IS a useful thing to land on, and the blank box
   // made the screen feel switched off. So filters now narrow a list that is always there, and Reset returns to the whole catalogue
   // rather than to nothing. (Which is affordable because of the rendered window below — only a chunk is ever painted.)
-  const activeQty = useMemo(() => Object.values(qtyFilters).filter(Boolean) as QtyFilter[], [qtyFilters]);
+  const activeQty = useMemo(() => activeQtyOf(qtyFilters), [qtyFilters]);
   // Is anything narrowing the list? No longer gates the display — it only decides whether to show the "of N" total and the ✕ chips.
   const filtering = steps.length > 0 || sizeFilter !== null || activeQty.length > 0 || seasonFilter !== null;
 
@@ -403,10 +457,16 @@ function InventoryPageContent() {
   // `visible`/`sortedVisible`: cutting one straggler must not throw away everything already scrolled, which is the opposite of what a
   // cut is for.
   const criteriaKey = useMemo(
-    () => JSON.stringify([steps, sizeFilter, sizeStrict, activeQty, seasonFilter, sortKey, sortDir]),
+    () => windowKey(steps, sizeFilter, sizeStrict, activeQty, seasonFilter, sortKey, sortDir),
     [steps, sizeFilter, sizeStrict, activeQty, seasonFilter, sortKey, sortDir],
   );
-  const [win, setWin] = useState<{ key: string; n: number }>({ key: '', n: CARD_CHUNK });
+  // A return re-paints as far down as the operator had got, stamped with the restored criteria so it counts as the current window.
+  const [win, setWin] = useState<{ key: string; n: number }>(() => (back
+    ? {
+      key: windowKey(back.steps, back.sizeFilter, back.sizeStrict, activeQtyOf(back.qtyFilters), back.seasonFilter, back.sortKey, back.sortDir),
+      n: Math.max(back.shown, CARD_CHUNK),
+    }
+    : { key: '', n: CARD_CHUNK }));
   const shown = win.key === criteriaKey ? win.n : CARD_CHUNK;
   const rendered = useMemo(() => sortedVisible.slice(0, shown), [sortedVisible, shown]);
   const moreCount = sortedVisible.length - rendered.length;
@@ -425,7 +485,7 @@ function InventoryPageContent() {
 
   // Detail open/closed now lives HERE rather than inside each card, so Enter can drive it (InvStyleCard takes it as a prop). A set,
   // not a single id, because cards open independently — one card's Detail must never collapse another's.
-  const [detailOpen, setDetailOpen] = useState<Set<string>>(new Set());
+  const [detailOpen, setDetailOpen] = useState<Set<string>>(() => new Set(back?.detailOpen ?? []));
   const toggleDetail = useCallback((groupid: string) => {
     setDetailOpen((prev) => {
       const next = new Set(prev);
@@ -439,8 +499,15 @@ function InventoryPageContent() {
   // effect — the growth is caused by the keypress, and doing it in the handler avoids a cascading render. Extending only ADDS keys,
   // so the cursor keeps its place.
   const lastRenderedKey = rendered.length > 0 ? rendered[rendered.length - 1].groupid : null;
+  // THE RING SHOWS ONLY FOR THE KEYBOARD (owner, 2026-09-24). A click still moves the cursor to the card clicked, so the arrows carry
+  // on from wherever the mouse left off, but it does so silently: the mouse never draws a selection. The ring comes on with the first
+  // arrow press and goes off again with the next click.
+  const [ringOn, setRingOn] = useState(false);
   const onCursorMove = useCallback(
-    (key: string) => { if (moreCount > 0 && key === lastRenderedKey) extend(); },
+    (key: string) => {
+      setRingOn(true);
+      if (moreCount > 0 && key === lastRenderedKey) extend();
+    },
     [moreCount, lastRenderedKey, extend],
   );
 
@@ -454,6 +521,83 @@ function InventoryPageContent() {
     // cards are tall, which is what makes the difference noticeable here.
     scrollBlock: 'center',
   });
+
+  // CLICKING A CARD (owner, 2026-09-24). A click on EMPTY space opens or closes the card's Detail, the same as the arrow: the
+  // whole card is the target, not just the chevron. A click on a control inside it (a size chip, the arrow, a button or link, the
+  // picture) just does that control's job. A drag that selected some text (copying a code) is not a click and changes nothing. The
+  // zoomed picture sits inside the card's DOM, so its overlay (data-list-cursor="off") counts as a control too; closing the zoom
+  // must not also close the Detail behind it.
+  //
+  // THE MOUSE NEVER SHOWS A SELECTION (same date, owner: "not sure there is a need for a selection"). But it DOES move the keyboard
+  // cursor here, quietly (see ringOn), so up/down carry on from the card just clicked rather than jumping back to the top of the
+  // list, which is the place-keeping the keyboard cursor exists for.
+  const onCardClick = useCallback((e: React.MouseEvent, groupid: string) => {
+    cursor.setCursor(groupid);
+    setRingOn(false);
+    const target = e.target as Element;
+    if (target.closest('button, a, input, select, textarea, label, [role="button"], [data-list-cursor="off"]')) return;
+    if (window.getSelection()?.toString()) return;
+    toggleDetail(groupid);
+  }, [cursor, toggleDetail]);
+
+  // Save the view just before a same-tab jump out of a card's Detail (see RETURN TO YOUR PLACE). Called from the click, so it records
+  // exactly what is on screen at that moment.
+  const saveReturn = useCallback((groupid: string) => {
+    const el = document.querySelector(`[data-inv-card="${CSS.escape(groupid)}"]`);
+    const snap: ReturnSnapshot = {
+      at: Date.now(),
+      steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir,
+      cut: [...cut],
+      detailOpen: [...detailOpen],
+      shown,
+      anchor: groupid,
+      anchorTop: el ? el.getBoundingClientRect().top : 0,
+    };
+    try { window.sessionStorage.setItem(RETURN_KEY, JSON.stringify(snap)); } catch { /* storage blocked: they just come back fresh */ }
+  }, [steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir, cut, detailOpen, shown]);
+
+  // ...and put the operator back: scroll the card they left from to the same height on screen, with the keyboard cursor on it.
+  //
+  // ONE scroll is not enough (found in Chrome, 2026-09-24). On a same-tab return the list is not on the page yet when this first runs
+  // (the app shell paints its loading state first), and Next's own navigation scroll-to-top can land after us. Either one left the
+  // operator at the top of the list. So it keeps placing the card every frame for RESTORE_MS, which covers the shell, the list and the
+  // open Detail settling its height. It stops at once if the operator scrolls, taps or presses a key, so it never fights a real hand
+  // on the page. Runs once per return; the snapshot is cleared so a later visit opens fresh.
+  // (Not data fetching: everything here is already in memory. This only moves the scroll position.)
+  const restoredRef = useRef(false);
+  const { setCursor } = cursor;
+  useEffect(() => {
+    if (!back || restoredRef.current || loading || error) return;
+    restoredRef.current = true;
+    clearReturn();
+    // Cursor back on the card left from, quietly (no ring), so the arrows carry on from there.
+    setCursor(back.anchor);
+    const RESTORE_MS = 1500;
+    const until = performance.now() + RESTORE_MS;
+    let raf = 0;
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      window.removeEventListener('mousedown', stop);
+    };
+    const place = () => {
+      const el = document.querySelector(`[data-inv-card="${CSS.escape(back.anchor)}"]`);
+      if (el) {
+        const off = el.getBoundingClientRect().top - back.anchorTop;
+        if (Math.abs(off) > 1) window.scrollTo({ top: window.scrollY + off, behavior: 'instant' });
+      }
+      if (performance.now() < until) raf = requestAnimationFrame(place);
+      else stop();
+    };
+    window.addEventListener('wheel', stop, { passive: true });
+    window.addEventListener('touchstart', stop, { passive: true });
+    window.addEventListener('keydown', stop);
+    window.addEventListener('mousedown', stop);
+    place();
+    // No cleanup that cancels the loop: restoredRef makes a StrictMode re-run a no-op, so cancelling here would kill the only loop.
+  }, [back, loading, error, setCursor]);
 
   // Auto-extend on scroll: a sentinel below the last card, watched with an IntersectionObserver. Re-armed on each `shown` change
   // because the sentinel moves down the page as the window grows. (No data fetching here — everything is already in memory; this only
@@ -815,20 +959,20 @@ function InventoryPageContent() {
           {rendered.map((r) => (
             <div
               key={r.groupid}
+              data-inv-card={r.groupid}
               ref={cursor.itemRef(r.groupid)}
-              // Clicking anywhere on a card takes the cursor with it, so the keyboard picks up from wherever the mouse left off.
-              onClick={() => cursor.setCursor(r.groupid)}
+              onClick={(e) => onCardClick(e, r.groupid)}
               // scroll-mt is the clearance for a STICKY command bar (a card scrolled to the viewport top would otherwise sit under
               // it). The bar is unstuck at the moment and 'center' scrolling barely uses this — kept so pinning the bar again is a
               // one-line change that doesn't quietly start hiding the current card.
               className={
-                'group relative scroll-mt-36 rounded-lg ' +
-                (cursor.isCursor(r.groupid) ? 'ring-2 ring-brand-500' : '')
+                'group relative scroll-mt-36 cursor-pointer rounded-lg ' +
+                (ringOn && cursor.isCursor(r.groupid) ? 'ring-2 ring-brand-500' : '')
               }
             >
               {/* The "you are here" bar. The ring alone reads as focus; this reads across a room, which is the actual job — the
                   operator comes back from the racks and has to re-find their place at a glance. */}
-              {cursor.isCursor(r.groupid) && (
+              {ringOn && cursor.isCursor(r.groupid) && (
                 <div className="absolute left-0 top-0 z-10 h-full w-1 rounded-l-lg bg-brand-500" />
               )}
               <InvStyleCard
@@ -836,19 +980,9 @@ function InventoryPageContent() {
                 sizeFilter={sizeFilter}
                 detailOpen={detailOpen.has(r.groupid)}
                 onToggleDetail={() => toggleDetail(r.groupid)}
+                onLeave={() => saveReturn(r.groupid)}
+                onCut={() => onCut(r.groupid)}
               />
-              {/* Cut — muted until the card is hovered, then reddens. Sits top-right, out of the way of the picture and sizes. */}
-              <button
-                type="button"
-                onClick={() => onCut(r.groupid)}
-                title="Cut from list (Restore or Reset brings it back)"
-                // Always faintly visible (owner, 2026-07-23) — a muted grey cross so the cut is discoverable without hovering, then
-                // reddens on hover to confirm it's the remove control. The old opacity-0/group-hover made it invisible until the cursor
-                // was over the card, so it read as missing.
-                className="absolute right-2 top-2 rounded p-1 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
             </div>
           ))}
 

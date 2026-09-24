@@ -22,14 +22,19 @@ most of the time. Reorder DETAIL_GROUPS to change the layout; nothing else needs
 */
 
 import { useRouter } from 'next/navigation';
-import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, MegaphoneIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowDownTrayIcon, ArrowUpRightIcon, ChartBarIcon, CurrencyPoundIcon, GlobeAltIcon, MegaphoneIcon, PencilSquareIcon,
+} from '@heroicons/react/24/outline';
 import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
-import InvSales from '@/components/InvSales';
 import CopyButton from '@/components/CopyButton';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 // The public storefront product URL is handle-based (skusummary.handle is the slug). Used to email a customer a link to the live page.
 const STORE_PRODUCT_BASE = 'https://brookfieldcomfort.com/products/';
+
+// The one style every action in the jump-off bar shares — see the bar's comment.
+const BTN =
+  'inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-100';
 
 type DetailCol = {
   key: string;
@@ -49,9 +54,11 @@ const bucket = (key: keyof InvBuckets, label: string, title: string): DetailCol 
   getTotal: (t) => t.buckets[key],
 });
 
-const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
+// `always`: the group shows even when every size reads 0 — see the column filter in the component.
+const DETAIL_GROUPS: { group: string; cols: DetailCol[]; always?: boolean }[] = [
   {
     group: 'AMZ',
+    always: true,
     cols: [
       // 'Res' (amzAlloc — here but earmarked for Amazon, the C3-Amazon bay) and 'Transit' (collected by DPD in the last 2 days)
       // deliberately NOT shown (owner, 2026-07-27): both are small, rarely acted on directly, and made the AMZ group read as four
@@ -79,6 +86,7 @@ const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
   },
   {
     group: 'Incoming',
+    always: true,
     cols: [
       bucket('onOrderLocal', 'SHP', 'Ordered for us (orderstatus type 2), not yet arrived'),
       bucket('onOrderAmz', 'AMZ', 'Ordered for Amazon (orderstatus type 3), not yet arrived — counted in the AMZ Total'),
@@ -86,16 +94,29 @@ const DETAIL_GROUPS: { group: string; cols: DetailCol[] }[] = [
   },
 ];
 
-const DETAIL_COL_COUNT = DETAIL_GROUPS.reduce((n, g) => n + g.cols.length, 0);
-
 // Print the human-entered size label (skumap.optionsize: "38 EU / 5 UK", or just "5 UK" on a UK-sized brand) — do not derive it. The
 // fallback only fires if it is blank (none are today) and deliberately does not reconstruct the EU/UK pair.
 function sizeLabel(s: { sizeDisplay: string | null; eu: string; uksize: string | null }): string {
   return s.sizeDisplay || s.uksize || s.eu;
 }
 
-export default function InvBreakdown({ data }: { data: InvStockData }) {
+export default function InvBreakdown({ data, onLeave }: {
+  data: InvStockData;
+  // Called just before a SAME-TAB jump away (Sales, Send to Social), so /inventory can save the operator's place and put them back on
+  // this card, Detail open, when they return. See lib/invReturn.ts.
+  onLeave?: () => void;
+}) {
   const router = useRouter();
+
+  // Only the bucket columns that hold something for THIS style (owner, 2026-09-24). Most styles have nothing at Amazon, on the Birk
+  // book or incoming, and three groups of greyed zeros buried the two numbers that matter (Local, Total). A group with no live columns
+  // drops out entirely; its header goes with it. EXCEPT AMZ and Incoming, which always show (owner, 2026-09-24): "none at Amazon" and
+  // "nothing on the way" are answers the operator wants to read off the grid, so their zeros are shown rather than left to be inferred
+  // from a gap. Only Birk PO still hides when empty — it is Birkenstock-only, so on most styles it could never hold anything.
+  const groups = DETAIL_GROUPS
+    .map((g) => ({ ...g, cols: g.always ? g.cols : g.cols.filter((c) => c.getTotal(data.totals) > 0) }))
+    .filter((g) => g.cols.length > 0);
+  const colCount = groups.reduce((n, g) => n + g.cols.length, 0);
   const src = data.imagename ? IMAGE_BASE + data.imagename : null;
   const productUrl = data.handle ? STORE_PRODUCT_BASE + data.handle : null;
 
@@ -106,96 +127,108 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
     const params = new URLSearchParams();
     if (productUrl) params.set('link', productUrl);
     if (src) params.set('image', src);
+    onLeave?.();
     router.push(`/social?${params.toString()}`);
+  };
+
+  // SALES replaced the inline recent-sales panel (owner, 2026-09-24): the panel was a pricing question squatting on a stock screen, and
+  // Analytics → Sales answers it properly (12 months, every channel, returns netted). SAME TAB, not new — on the owner's condition that
+  // coming back lands on this card with Detail still open; onLeave saves that, and the Sales screen's Back (from=/inventory) or the
+  // browser's Back both return to it. The groupid seeds Sales' Contains box, which matches groupid as a substring.
+  const openSales = () => {
+    onLeave?.();
+    const params = new URLSearchParams({ q: data.groupid, from: '/inventory', back: 'Inventory' });
+    router.push(`/analytics/sales?${params.toString()}`);
   };
 
   return (
     <div className="border-t border-slate-200 bg-slate-50/40">
-      {/* ---- Jump-off actions. Reprice this style, open its live page, or grab the image. NEW TAB throughout, so a mid-lookup jump
-              never costs the operator the browse they were scrolling. Shopify is groupid-grain (straight to the drill); Amazon is
+      {/* ---- Jump-off actions. Reprice this style, see its sales, open its live page, or grab the image. The outbound ones open a NEW
+              TAB, so a mid-lookup jump never costs the operator the browse they were scrolling; Sales and Social stay in this tab and
+              save the operator's place first (onLeave). Shopify is groupid-grain (straight to the drill); Amazon is
               per-size, so it opens the Find screen pre-filled. ---- */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2.5 text-xs">
-        <span className="text-slate-400">Reprice</span>
+      {/* ONE button style for every action (owner, 2026-09-24): the old bar mixed green/amber/brand tints, pipe separators and
+          emoji ↗ glyphs, and read as six unrelated widgets. Now they are one row of equal neutral buttons; a new-tab jump carries the
+          same small outbound icon on the right. */}
+      <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 text-xs">
         <a
           href={`/pricing/style/${encodeURIComponent(data.groupid)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+          title="Reprice this style on Shopify (new tab)"
+          className={BTN}
         >
-          Shopify ↗
+          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Reprice Shopify
+          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
         </a>
         <a
           href={`/amz/find?q=${encodeURIComponent(data.groupid)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-100"
+          title="Reprice this style's sizes on Amazon (new tab)"
+          className={BTN}
         >
-          Amazon ↗
+          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Reprice Amazon
+          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
         </a>
+        <button type="button" onClick={openSales} title="This style's sales, last 12 months, all channels" className={BTN}>
+          <ChartBarIcon className="h-3.5 w-3.5 text-slate-400" /> Sales
+        </button>
         {/* Edit the product itself — title, attributes, sizes, images — one hop from the shelf, same new-tab rule as the reprice
             jumps. groupid-grain, so /products opens straight on this style's edit panel (it searches and selects on arrival). */}
-        <span className="mx-1 text-slate-200">|</span>
         <a
           href={`/products?groupid=${encodeURIComponent(data.groupid)}`}
           target="_blank"
           rel="noopener noreferrer"
-          title="Open this product in Add / Modify"
-          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+          title="Open this product in Add / Modify (new tab)"
+          className={BTN}
         >
-          <PencilSquareIcon className="h-3.5 w-3.5" /> Add / Modify ↗
+          <PencilSquareIcon className="h-3.5 w-3.5 text-slate-400" /> Edit product
+          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
         </a>
         {productUrl && (
-          <>
-            <span className="mx-1 text-slate-200">|</span>
+          // The copy-link icon sits INSIDE the same bordered group as its button, so it reads as part of "Product page" rather than
+          // a stray glyph floating between two buttons.
+          <span className="inline-flex items-center rounded border border-slate-200 bg-white">
             <a
               href={productUrl}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open the live product page in a new tab"
-              className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+              title="Open the live product page (new tab)"
+              className="inline-flex items-center gap-1 rounded-l px-2 py-1 font-medium text-slate-600 hover:bg-slate-100"
             >
-              <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" /> Product page
+              <GlobeAltIcon className="h-3.5 w-3.5 text-slate-400" /> Product page
+              <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
             </a>
-            <CopyButton value={productUrl} label="product page link" />
-          </>
+            <CopyButton value={productUrl} label="product page link" className="self-stretch rounded-l-none border-l border-slate-200 px-1.5" />
+          </span>
         )}
         {src && (
-          <>
-            <span className="mx-1 text-slate-200">|</span>
-            <a
-              href={src}
-              download={data.imagename || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Download this image"
-              className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
-            >
-              <ArrowDownTrayIcon className="h-3.5 w-3.5" /> Image
-            </a>
-          </>
+          <a
+            href={src}
+            download={data.imagename || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download this image"
+            className={BTN}
+          >
+            <ArrowDownTrayIcon className="h-3.5 w-3.5 text-slate-400" /> Image
+          </a>
         )}
         {(productUrl || src) && (
-          <>
-            <span className="mx-1 text-slate-200">|</span>
-            <button
-              type="button"
-              onClick={sendToSocial}
-              title="Load this product's link and photo into a new Social post — nothing posts or queues until you do"
-              className="inline-flex items-center gap-1 rounded border border-brand-200 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
-            >
-              <MegaphoneIcon className="h-3.5 w-3.5" /> Send to Social
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={sendToSocial}
+            title="Load this product's link and photo into a new Social post — nothing posts or queues until you do"
+            className={BTN}
+          >
+            <MegaphoneIcon className="h-3.5 w-3.5 text-slate-400" /> Send to Social
+          </button>
         )}
       </div>
 
-      {/* Is it actually selling — collapsed, lazily fetched (see InvSales). Sits ABOVE the grid (owner, 2026-07-27): the grid is tall,
-          and a sales question parked under it was a scroll away from the size chips that prompt it. */}
-      <InvSales groupid={data.groupid} />
-
       {/* ---- Full size grid: EVERY size from skumap, sold-out ones reading 0 (the face chips show only in-stock sizes). Show detail
               expands the same grid to the twelve buckets, scrolling inside its own box so the card never scrolls sideways. ---- */}
-      {/* border-t: InvSales brings its own top rule, so with it moved above the grid this is what now separates the two. */}
       <div className="border-t border-slate-200 px-4 pb-3 pt-3">
         {/* Always scrolls inside its own box — the bucket grid is wide, but the card/page never scrolls sideways. */}
         <div className="overflow-x-auto">
@@ -204,11 +237,11 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
               <tr className="text-[10px] text-slate-400">
                 <th className="py-1 pr-3" />
-                <th className="border-r-2 border-slate-200 py-1 px-3" colSpan={2} />
+                <th className={`py-1 px-3 ${colCount ? 'border-r-2 border-slate-200' : ''}`} colSpan={2} />
                 {/* Group label alignment follows the group's width: a ONE-column group right-aligns, so the group word, its column
                     label and the numbers below all sit on the same right edge (centring it left the word visibly adrift of its own
                     data). Two or more columns still centre, spanning them. Padding matches the column cells either way. */}
-                {DETAIL_GROUPS.map((g) => (
+                {groups.map((g) => (
                   <th
                     key={g.group}
                     colSpan={g.cols.length}
@@ -225,8 +258,8 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
                     the chip sit on ONE line — at w-16 the chip wrapped and made that size's row double-height, which read as an
                     error in the grid rather than a note on the number (owner, 2026-08-18). */}
                 <th className="w-28 py-1.5 px-3 text-right font-semibold text-slate-700">Local</th>
-                <th className="w-16 border-r-2 border-slate-200 py-1.5 pl-3 pr-4 text-right font-semibold text-slate-700">Total</th>
-                {DETAIL_GROUPS.map((g) =>
+                <th className={`w-16 py-1.5 pl-3 pr-4 text-right font-semibold text-slate-700 ${colCount ? 'border-r-2 border-slate-200' : ''}`}>Total</th>
+                {groups.map((g) =>
                   g.cols.map((c, i) => (
                     <th
                       key={c.key}
@@ -263,8 +296,8 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
                     )}
                     {s.local}
                   </td>
-                  <td className={`border-r-2 border-slate-200 py-1.5 pl-3 pr-4 text-right font-semibold tabular-nums ${s.total ? 'text-slate-900' : 'text-slate-300'}`}>{s.total}</td>
-                  {DETAIL_GROUPS.map((g) =>
+                  <td className={`py-1.5 pl-3 pr-4 text-right font-semibold tabular-nums ${s.total ? 'text-slate-900' : 'text-slate-300'} ${colCount ? 'border-r-2 border-slate-200' : ''}`}>{s.total}</td>
+                  {groups.map((g) =>
                     g.cols.map((c, i) => {
                       const v = c.get(s);
                       return (
@@ -281,7 +314,7 @@ export default function InvBreakdown({ data }: { data: InvStockData }) {
               ))}
               {data.sizes.length === 0 && (
                 <tr>
-                  <td colSpan={3 + DETAIL_COL_COUNT} className="py-4 text-center text-sm text-slate-400">No sizes set up for this style.</td>
+                  <td colSpan={3 + colCount} className="py-4 text-center text-sm text-slate-400">No sizes set up for this style.</td>
                 </tr>
               )}
             </tbody>

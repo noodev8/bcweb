@@ -1742,39 +1742,6 @@ export function getInvLocations() {
   );
 }
 
-// One sale line on the Inventory panel's recent-sales list. ALL channels merged (SHP / AMZ / CM3) — see routes/inv-sales.js for why
-// there is no channel filter. Returns are included and flagged rather than hidden; their `profit` is normally negative.
-export interface InvSaleRow {
-  solddate: string | null;
-  ordertime: string | null;
-  channel: string | null;
-  sizeDisplay: string | null;
-  qty: number;
-  soldprice: number | null;
-  profit: number | null;
-  isReturn: boolean;
-}
-
-export interface InvSalesData {
-  groupid: string;
-  rows: InvSaleRow[];
-  limit: number;
-  truncated: boolean;     // more sales exist than were returned; UI says "showing last N"
-}
-
-// Recent sales for one style. Lazily fetched — only when the operator opens the panel, so the initial stock load stays fast.
-export function getInvSales(groupid: string, limit?: number) {
-  return request<InvSalesData>(
-    { url: '/inv-sales', method: 'GET', params: { groupid, ...(limit ? { limit } : {}) } },
-    (b) => ({
-      groupid: b.groupid,
-      rows: (b.rows as InvSaleRow[]) || [],
-      limit: Number(b.limit) || 0,
-      truncated: !!b.truncated,
-    })
-  );
-}
-
 // =============================================================================================================================
 // Order Status module — supplier orders in orderstatus (local=2, amazon=3). See docs/order-status-lifecycle.docx.
 //

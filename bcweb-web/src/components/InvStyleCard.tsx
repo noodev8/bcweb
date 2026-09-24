@@ -46,7 +46,7 @@ still one tap away; we do not auto-fetch 40 styles' worth of detail just because
 
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getInvStock, adjustStock, InvStyleRow, InvStockData, InvLocationRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -78,6 +78,8 @@ export default function InvStyleCard({
   sizeFilter,
   detailOpen,
   onToggleDetail,
+  onLeave,
+  onCut,
 }: {
   row: InvStyleRow;
   sizeFilter: string | null;
@@ -86,6 +88,10 @@ export default function InvStyleCard({
   // card's Detail never collapses another's (owner, 2026-07-23).
   detailOpen: boolean;
   onToggleDetail: () => void;
+  // Passed through to Detail's same-tab jumps (Sales, Social) so the list can save the operator's place first.
+  onLeave?: () => void;
+  // Remove this card from the list (view state only — the list owns the cut set).
+  onCut?: () => void;
 }) {
   const { logout } = useAuth();
 
@@ -177,7 +183,7 @@ export default function InvStyleCard({
   // It is deliberately DERIVED from what is open rather than fired imperatively from the tap handler. The imperative version had a
   // hole: Enter on the keyboard cursor sets `detailOpen` from the LIST, which never ran the card's fetch call — so the chevron
   // flipped open onto an empty panel, and only worked if a size tap had already loaded the data (owner, 2026-07-27). Derived, there
-  // is no call for a new way of opening the card to forget. Same pattern as InvSales.
+  // is no call for a new way of opening the card to forget.
   const needDetail = openSize !== null || detailOpen;
   const {
     data: detailData,
@@ -264,7 +270,7 @@ export default function InvStyleCard({
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex gap-3 p-3">
+      <div className="relative flex gap-3 p-3">
         {/* ---- Image: furniture, always drawn — the box is there from the first paint whether or not the picture has loaded, so the
                 list never reflows under a scroll. Square, and it SETS THE CARD'S HEIGHT — the face's text is shorter than the picture,
                 so the picture is the only real lever on how many cards fit on a screen. Trimmed from w-28/32 to w-24/28 (owner,
@@ -309,64 +315,51 @@ export default function InvStyleCard({
 
         {/* ---- Face content ---- */}
         <div className="min-w-0 flex-1">
-          {/* pr-7 reserves the top-right corner for the list's cut cross (page.tsx overlays one there) so the price never sits under it. */}
-          <div className="flex items-start justify-between gap-3 pr-7">
-            <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            {/* flex-1 so the title takes the slack and the price block always sits against the arrow — without it justify-between
+                parked the prices mid-row wherever the title happened to end, so they wandered from card to card. */}
+            <div className="min-w-0 flex-1">
               <div className="truncate font-medium text-slate-800" title={row.title || row.groupid}>
                 {row.title || <span className="text-slate-400">Untitled product</span>}
               </div>
-              {/* The groupid line doubles as the Detail toggle's home. Detail used to own a whole row below the size chips for one
-                  word; the code line is short and the space beside it was dead, so the card loses a row for nothing (owner,
-                  2026-07-27). Kept off the chips row on purpose — a control that wraps in among the sizes reads as another size. */}
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-slate-500">{row.groupid}</span>
-                <span className="text-slate-200">|</span>
-                <button
-                  type="button"
-                  // blur(): a mouse click leaves focus sitting on this button, and the operator's next keystroke is almost always an
-                  // arrow meant for the list cursor — after opening and closing Detail with the mouse, up/down were scrolling the page
-                  // instead of moving to the next card (owner, 2026-07-27). Handing focus back to the page removes the question.
-                  onClick={(e) => { onToggleDetail(); e.currentTarget.blur(); }}
-                  className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-500 hover:text-slate-700"
-                >
-                  <ChevronRightIcon className={`h-3 w-3 transition-transform ${showBreakdown ? 'rotate-90' : ''}`} />
-                  Detail
-                </button>
-              </div>
+              <div className="font-mono text-xs text-slate-500">{row.groupid}</div>
             </div>
+            {/* Price block: RRP and the current Shopify price, both always shown and both labelled (owner, 2026-09-24) — a customer
+                question is usually "what's it normally / what is it now", and the old face only showed RRP (struck through) when the
+                price was below it, so a full-price style gave no sign whether £77 was RRP or a cut. The stock + sold-30d pills that
+                used to sit here are gone (same date): the size chips already carry stock, and sold-30d is a pricing question the
+                Repricing screens answer. The sort still uses sold30 (page.tsx), so the field stays on the row. */}
+            {/* Fixed-width, right-aligned columns so RRP and Price line up down the list whatever the amounts (£59.99 vs £130.00). */}
             <div className="shrink-0 text-right">
-              {row.price !== null && (
-                <div className="flex items-baseline justify-end gap-1.5">
-                  {row.rrp !== null && row.rrp > row.price && (
-                    <span className="text-xs text-slate-400 line-through">£{row.rrp.toFixed(2)}</span>
-                  )}
-                  <span className="text-base font-semibold tabular-nums text-slate-900">£{row.price.toFixed(2)}</span>
+              <div className="flex items-baseline justify-end gap-3">
+                <div className="w-[4.5rem]">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">RRP</div>
+                  <div className="text-sm tabular-nums text-slate-500">
+                    {row.rrp !== null ? `£${row.rrp.toFixed(2)}` : '—'}
+                  </div>
                 </div>
-              )}
-              {/* Stock + sales indicators — the two numbers a drop call weighs against each other, tucked under the price so they cost no
-                  vertical row of their own. Sales = units sold in the last 30 days, all channels.
-
-                  STOCK IS row.total — local + Amazon-held + the Birkenstock pre-order book — so the card face agrees with the Total
-                  column in the drill (owner, 2026-09-02: the browse figure and the opened figure reading differently was the confusion).
-                  Note this is NOT what the Local sort and the STOCK LESS/MORE filter compare (page.tsx: row.local only — "what is on
-                  our shelf", the pickable figure). Deliberate: the face answers "how much of this exists anywhere", the filter answers
-                  "how much is HERE", and they are different questions. So a STOCK LESS 5 list can show a card reading 12; the hover
-                  splits the pill into local / Amazon / Birk so that gap is legible rather than mysterious. */}
-              <div className="mt-1 flex flex-wrap justify-end gap-1">
-                <span
-                  title={`${row.local} local + ${row.amazon} at Amazon${row.total - row.local - row.amazon > 0 ? ` + ${row.total - row.local - row.amazon} on Birk order` : ''}`}
-                  className="inline-flex items-baseline gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
-                >
-                  <span className="font-semibold tabular-nums text-slate-800">{row.total}</span> in stock
-                </span>
-                <span
-                  title="Units sold in the last 30 days (all channels)"
-                  className="inline-flex items-baseline gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
-                >
-                  <span className="font-semibold tabular-nums text-slate-800">{row.sold30}</span> sold 30d
-                </span>
+                <div className="w-20">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Price</div>
+                  <div className="text-base font-semibold tabular-nums text-slate-900">
+                    {row.price !== null ? `£${row.price.toFixed(2)}` : '—'}
+                  </div>
+                </div>
               </div>
             </div>
+            {/* EXPAND lives top-right (owner, 2026-09-24) — where an expand control is expected, and it took the corner from the cut
+                cross, which moved to the bottom-right (below). It replaced a small "› Detail" link beside the code. Points down when
+                closed, flips up when open. Clicking empty space on the card does the same (page.tsx).
+                blur(): a mouse click leaves focus on the button, and the operator's next keystroke is almost always an arrow meant for
+                the list cursor — without it up/down scrolled the page instead of moving to the next card (owner, 2026-07-27). */}
+            <button
+              type="button"
+              onClick={(e) => { onToggleDetail(); e.currentTarget.blur(); }}
+              title={showBreakdown ? 'Close detail' : 'Open detail (or press Enter)'}
+              aria-expanded={showBreakdown}
+              className="-mr-1 -mt-0.5 shrink-0 rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <ChevronDownIcon className={`h-5 w-5 transition-transform ${showBreakdown ? 'rotate-180' : ''}`} />
+            </button>
           </div>
 
           {/* Size-filter lead — the answer to "have you got my size" for THIS card, free from memory, no fetch. */}
@@ -444,6 +437,21 @@ export default function InvStyleCard({
           </div>
 
         </div>
+
+        {/* CUT lives bottom-right of the face (owner, 2026-09-24), giving the top-right corner to the expand arrow. Anchored to the
+            face row, not the whole card, so it stays beside the product it cuts rather than dropping to the foot of an open Detail.
+            Always faintly visible — a muted cross, discoverable without hovering — and reddens on hover to confirm it removes
+            (owner, 2026-07-23). */}
+        {onCut && (
+          <button
+            type="button"
+            onClick={onCut}
+            title="Cut from list (Restore or Reset brings it back)"
+            className="absolute bottom-2 right-2 rounded p-1 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
+          >
+            <XMarkIcon className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* ---- Where the open size is. Only rendered once a chip is tapped, so the fetch is genuinely on demand. ---- */}
@@ -469,7 +477,7 @@ export default function InvStyleCard({
         ) : detailError ? (
           <div className="border-t border-slate-200 px-4 py-3 text-center text-sm text-red-600">{detailError}</div>
         ) : detail ? (
-          <InvBreakdown data={detail} />
+          <InvBreakdown data={detail} onLeave={onLeave} />
         ) : null
       )}
 
