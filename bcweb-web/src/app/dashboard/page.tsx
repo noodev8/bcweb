@@ -18,9 +18,9 @@ the page work, and it is the thing not to undo: if a new screen doesn't obviousl
 is a new heading, not a "Misc" group or a sixth kind of label.
 
   A SCREEN MAY APPEAR UNDER MORE THAN ONE HEADING, deliberately (owner). Under the old bands a tile had one home and duplication was
-  a bug; with intent headings it is the entire point, because two mindsets genuinely look in two places for the same screen. Segments
-  is a pricing door AND a what-needs-attention read. Amazon Pricing is a price you set AND the thing the Seller Central upload
-  carries. Birk Tracker is a report AND the far end of the Birkenstock catalogue job. So DON'T "de-duplicate" this page — a repeat
+  a bug; with intent headings it is the entire point, because two mindsets genuinely look in two places for the same screen. Repricing
+  is part of the business flow AND a daily operations job; Amazon Order likewise; Google Ads is a step in the flow AND the head of
+  the Google card. So DON'T "de-duplicate" this page — a repeat
   here is load-bearing. (It is cheap, too: a repeat is one line in one array.)
 
 EXPANDED IN PLACE, ONE AT A TIME, rather than each heading being its own sub-page. The whole problem is not knowing where a screen
@@ -41,7 +41,7 @@ one mindset and quietly wrong for the other four, and re-opening is one click.
 SEARCH STAYS THE FRONT DOOR and is NOT one of the five. The day starts by looking a product up, the product hub answers it, and that
 path is already solved — so it sits above the groups, unboxed and hero-sized, and gets no heading of its own. THERE IS STILL NO
 INVENTORY TILE at top level for the reason the 2026-08-27 note gave: the search box IS that tile on this screen. (Inventory does
-appear inside "Look after the catalogue", where it is the browse-with-no-term case rather than the search.)
+appear inside Operations, where it is the browse-with-no-term case rather than the search.)
 
 SUBTITLES ON EVERY TILE (owner, 2026-09-22, with wording reserved — "I might push back on wording as we know what we mean with
 internal names at the moment"). The old compact tile was title-only with the description on hover, which is right for a menu you
@@ -58,16 +58,17 @@ answers "get me there, I'm mid-task", where the destination is already known and
 */
 
 import { useState, ComponentType, SVGProps } from 'react';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
-  CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
+  ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, BoltIcon, ArchiveBoxIcon,
-  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
+  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon,
 } from '@heroicons/react/24/outline';
 
@@ -90,329 +91,33 @@ interface Group {
   title: string;         // finishes "I came here to..."
   blurb: string;         // one line under the heading, shown on the closed tile
   icon: Icon;
+  // 'main' = a double-width card that also lists what's inside it (owner, 2026-09-24: Operations and Back Office are the two most
+  // used). The extra width is spent on the contents, not on white space — naming what's in a group is the whole cure for the
+  // "where does that screen live?" problem this page exists to solve.
+  size?: 'main';
   tiles: Tile[];
 }
 
 /* =====================================================================================================================================
-   THE MENU. All five groups and every tile, as data — a screen moves group, or gains a second home, by moving or copying one entry.
-   ORDER IS THE OWNER'S, set against how often each mindset actually brings you here, not against any tidier scheme: the work you do
-   today first, the numbers you read next, then prices, then the channels, then the catalogue you maintain rarely and deliberately.
-   Don't sort these alphabetically or by build order.
+   THE MENU. All four groups and every tile, as data (Business Flow is the strip above them — see FLOW) — a screen moves group, or gains a second home, by moving or copying one entry.
+   RE-ALIGNED 2026-09-24 (owner). Built first as a "provisional new menu" rendered UNDER the old one so the team's menu didn't move
+   while the shape was worked out, then promoted to be the only menu. The old five (Do today's work / See how we're doing / Set
+   prices / Feed the channels / Look after the catalogue) are in git history. What changed, on purpose:
+     - Shopify Pricing and Amazon Pricing have NO tile. Their homes (/pricing, /amz) are only a segment picker + a Find link, both
+       covered by Repricing and the product search; the lists and drills under them are still reached from Repricing.
+     - Birkenstock and Google each get a card of their own, pulled out of the reports.
+     - Back Office is a deliberate holding pen (reports + Finance + Facebook). If Email arrives, Facebook + Email become a Marketing
+       card.
+     - Update Shopify is the one tile that RUNS something rather than opening a screen (UpdateShopifyTile).
+   ORDER IS THE OWNER'S. Don't sort these alphabetically or by build order.
 ===================================================================================================================================== */
 const GROUPS: Group[] = [
-  {
-    id: 'work',
-    title: 'Do today’s work',
-    blurb: 'Orders, picks, deliveries — the jobs with a queue behind them',
-    icon: BoltIcon,
-    // The screens a day is actually SPENT on: something is waiting, and working the screen makes the queue shorter. That is the test
-    // for this group — not "touched daily" (which was what killed the old DAILY band the moment it grew), but "has a backlog".
-    tiles: [
-      {
-        title: 'Pick',
-        subtitle: 'What to take off the shelf',
-        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
-        href: '/pick',
-        icon: HandRaisedIcon,
-      },
-      {
-        title: 'Customer Orders',
-        subtitle: 'Fulfil what customers bought',
-        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
-        href: '/customer-orders',
-        icon: UserGroupIcon,
-      },
-      {
-        title: 'Order Status',
-        subtitle: 'Place and chase supplier orders',
-        description: "Place supplier orders and chase what's on its way.",
-        href: '/order-status',
-        icon: ShoppingCartIcon,
-      },
-      {
-        title: 'Goods In',
-        subtitle: 'Book in a delivery',
-        description: "Book in what's arrived from a supplier and put it on the shelf.",
-        href: '/goods-in',
-        icon: InboxArrowDownIcon,
-      },
-      {
-        title: 'Amazon Order',
-        subtitle: 'What to buy in, what to send',
-        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
-        href: '/amazon-order',
-        icon: ClipboardDocumentListIcon,
-      },
-      {
-        title: 'Location',
-        subtitle: "What's on a rack",
-        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
-        href: '/locations',
-        icon: MapPinIcon,
-      },
-    ],
-  },
-  {
-    id: 'numbers',
-    title: 'See how we’re doing',
-    blurb: 'Go and read a number — sales, ads, stock, month end',
-    icon: ChartBarIcon,
-    /* THE REPORTS THEMSELVES, NOT A DOOR TO THEM (owner, 2026-09-22). This group first held a single "Reports" tile pointing at
-       /analytics, which meant reading a number cost three clicks — open the group, open Reports, pick the report — and the middle
-       one told you nothing you didn't already know when you opened a group called "see how we're doing". The reports index IS this
-       group; having both was the same mistake the old bands made, a category standing in front of the thing.
-       /analytics IS STILL LIVE and unchanged — deep links, bookmarks and the header tab all still land on it, and it remains the
-       right page when you want the full descriptions rather than these four-word ones. It simply no longer has a tile here.
-       ORDER IS THE REPORTS INDEX'S OWN, kept deliberately so the two screens don't disagree about which report comes first; Birk
-       Tracker and Finance are appended because they belong to this mindset but have never lived on that index.
-       SEGMENTS CAME OUT (owner, 2026-09-22): it was here as a "what needs attention next" read, but everything around it is now a
-       genuine report and Segments is a worklist you act on. It keeps its home under Set prices, which is how it's actually entered.
-       TWELVE TILES, three rows of four, and that is fine BECAUSE IT IS BEHIND A DRILL-DOWN — the old one-row-per-band rule existed
-       when every band was open at once and the page was a wall. Only one group is ever open now, so depth here costs nothing. */
-    tiles: [
-      {
-        title: 'Sales',
-        subtitle: 'Recent sales and profit',
-        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
-        href: '/analytics/sales',
-        icon: BanknotesIcon,
-      },
-      {
-        title: 'Birk Availability',
-        subtitle: 'Core sizes complete',
-        description: 'How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge.',
-        href: '/analytics/birk-availability',
-        icon: PresentationChartLineIcon,
-      },
-      {
-        title: 'Stock Position',
-        subtitle: 'What’s commercially alive',
-        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
-        href: '/analytics/stock-position',
-        icon: CubeIcon,
-      },
-      {
-        title: 'New',
-        subtitle: 'Added in the last 30 days',
-        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
-        href: '/analytics/new-additions',
-        icon: SparklesIcon,
-      },
-      {
-        title: 'Price Changes',
-        subtitle: 'Recent moves, and what shifted',
-        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
-        href: '/analytics/price-changes',
-        icon: ArrowsRightLeftIcon,
-      },
-      {
-        title: 'Ad Efficiency',
-        subtitle: 'What survives Google spend',
-        description: "How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept.",
-        href: '/analytics/ad-efficiency',
-        icon: ScaleIcon,
-      },
-      {
-        title: 'Ad Daily',
-        subtitle: 'Spend vs sales, day by day',
-        description: 'Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner’s read on whether a budget change is working.',
-        href: '/analytics/ad-daily',
-        icon: SunIcon,
-      },
-      {
-        title: 'Bclog',
-        subtitle: 'Who did what, and when',
-        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
-        href: '/analytics/activity-log',
-        icon: DocumentMagnifyingGlassIcon,
-      },
-      {
-        title: 'Winners',
-        subtitle: 'Products pulling their weight',
-        description: 'How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling.',
-        href: '/analytics/winners',
-        icon: TrophyIcon,
-      },
-      {
-        title: 'Brands',
-        subtitle: 'What each brand earned',
-        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
-        href: '/brands',
-        icon: ChartPieIcon,
-      },
-      {
-        title: 'Birk Tracker',
-        subtitle: 'Season order, placed to landed',
-        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
-        href: '/birk-tracker',
-        icon: TruckIcon,
-      },
-      {
-        title: 'Finance',
-        subtitle: 'Close the month',
-        description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.',
-        href: '/finance',
-        icon: CalculatorIcon,
-      },
-    ],
-  },
-  {
-    id: 'price',
-    title: 'Set prices',
-    blurb: 'Move a price up or down, here or on Amazon',
-    icon: CurrencyPoundIcon,
-    // Kept small on purpose. Pricing is normally entered FROM Segments (owner) rather than from a tile, so this group is the direct
-    // hit for when the style is already known — hence Segments repeated at the end as the way in that is actually used.
-    tiles: [
-      {
-        title: 'Shopify Pricing',
-        subtitle: 'Selling and stuck, by style',
-        description: 'Review demand and set Shopify prices, segment by segment.',
-        href: '/pricing',
-        icon: CurrencyPoundIcon,
-      },
-      {
-        title: 'Amazon Pricing',
-        subtitle: 'Same job, size by size',
-        description: 'Review demand and set Amazon/FBA prices, segment by segment.',
-        href: '/amz',
-        icon: BuildingStorefrontIcon,
-      },
-      {
-        title: 'Repricing',
-        subtitle: 'The usual way in',
-        description: 'See which segment needs attention next, and track who worked what.',
-        href: '/segments',
-        icon: Squares2X2Icon,
-      },
-    ],
-  },
-  {
-    id: 'channels',
-    title: 'Feed the channels',
-    blurb: 'Amazon, Google and Facebook — what goes out',
-    icon: MegaphoneIcon,
-    // Outward-facing, and mostly "kick it off and walk away". The common thread is that the work leaves the building: a Seller
-    // Central file, a Shopping campaign, a scheduled post. Amazon Pricing repeats here because the upload file is built from its log.
-    tiles: [
-      {
-        title: 'Update Amazon',
-        subtitle: 'Load Seller Central reports',
-        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
-        href: '/update-amazon',
-        icon: ArrowUpTrayIcon,
-      },
-      {
-        title: 'Google Ads',
-        subtitle: 'Shopping campaigns and spend',
-        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
-        href: '/google-ads',
-        icon: CursorArrowRaysIcon,
-      },
-      {
-        title: 'Marketing',
-        subtitle: 'The daily Facebook post',
-        description: 'Queue and publish the daily Facebook post — graphic, caption, link, scheduled.',
-        href: '/social',
-        icon: MegaphoneIcon,
-      },
-      {
-        title: 'Amazon Pricing',
-        subtitle: 'Feeds the upload file',
-        description: 'Review demand and set Amazon/FBA prices, segment by segment.',
-        href: '/amz',
-        icon: BuildingStorefrontIcon,
-      },
-    ],
-  },
-  {
-    id: 'catalogue',
-    title: 'Look after the catalogue',
-    blurb: 'What we hold, what it says, what we buy next season',
-    icon: TagIcon,
-    // The product record itself, and the once-a-season buying that fills it. Rarest of the five, so last — but it is where Inventory
-    // finally gets a tile, as the browse with no search term typed.
-    tiles: [
-      {
-        title: 'Add / Modify Product',
-        subtitle: 'Edit or create a product',
-        description: 'Find an existing product to edit, or create a new one.',
-        href: '/products',
-        icon: TagIcon,
-      },
-      {
-        title: 'Inventory',
-        subtitle: 'Browse without searching',
-        description: 'Browse and filter the whole catalogue when you have no term to search for.',
-        href: '/inventory',
-        icon: ArchiveBoxIcon,
-      },
-      {
-        title: 'Birkenstock',
-        subtitle: 'Next season’s order sheet',
-        description: 'Sold in 365 days against what we hold, size by size — what to put on the next order.',
-        href: '/birkenstock',
-        icon: CalendarDaysIcon,
-      },
-      {
-        title: 'Birk Tracker',
-        subtitle: 'Where that order got to',
-        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
-        href: '/birk-tracker',
-        icon: TruckIcon,
-      },
-    ],
-  },
-];
-
-/* =====================================================================================================================================
-   TEMP MENU, shown as "Provisional new menu" (owner, 2026-09-24) — a trial re-alignment of the menu, built BESIDE the live one rather than in place of it so
-   the rest of the team's menu doesn't move while the owner works out the new shape. Same Group/Tile data, same tiles, same panel;
-   it just renders as a second row under its own label. When the new shape is settled it replaces GROUPS and this array (and the
-   labelled section in the page) goes. Group ids must not collide with GROUPS — ?g= and ?from= resolve against both arrays.
-===================================================================================================================================== */
-const TEMP_GROUPS: Group[] = [
-  {
-    id: 'flow',
-    title: 'Business Flow',
-    blurb: 'Product in, stock bought, price set',
-    icon: ArrowsRightLeftIcon,
-    tiles: [
-      {
-        title: 'Add / Modify Product',
-        subtitle: 'Edit or create a product',
-        description: 'Find an existing product to edit, or create a new one.',
-        href: '/products',
-        icon: TagIcon,
-      },
-      {
-        title: 'Amazon Order',
-        subtitle: 'What to buy in, what to send',
-        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
-        href: '/amazon-order',
-        icon: ClipboardDocumentListIcon,
-      },
-      {
-        title: 'Google Ads',
-        subtitle: 'Shopping campaigns and spend',
-        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
-        href: '/google-ads',
-        icon: CursorArrowRaysIcon,
-      },
-      {
-        title: 'Repricing',
-        subtitle: 'Selling and stuck lists',
-        description: 'See which segment needs attention next, and track who worked what.',
-        href: '/segments',
-        icon: Squares2X2Icon,
-      },
-    ],
-  },
   {
     id: 'ops',
     title: 'Operations',
     blurb: 'Stock in, orders out, supplier orders',
     icon: TruckIcon,
+    size: 'main',
     tiles: [
       {
         title: 'Goods In',
@@ -459,6 +164,13 @@ const TEMP_GROUPS: Group[] = [
         icon: MapPinIcon,
       },
       {
+        title: 'Inventory',
+        subtitle: 'Browse without searching',
+        description: 'Browse and filter the whole catalogue when you have no term to search for.',
+        href: '/inventory',
+        icon: ArchiveBoxIcon,
+      },
+      {
         title: 'Repricing',
         subtitle: 'Selling and stuck lists',
         description: 'See which segment needs attention next, and track who worked what.',
@@ -484,10 +196,13 @@ const TEMP_GROUPS: Group[] = [
   },
   {
     id: 'reports',
-    title: 'Reports',
-    blurb: 'Sales, ads, stock, month end',
+    title: 'Back Office',
+    blurb: 'The numbers, month end, the daily post',
     icon: ChartBarIcon,
-    // Starts as a copy of the live menu's "See how we're doing" tiles, so it stands on its own when GROUPS is retired.
+    size: 'main',
+    // Started as a copy of the live menu's "See how we're doing" tiles (so it stands on its own when GROUPS is retired); renamed
+    // from Reports to Back Office when Facebook (the /social screen) joined Finance here (owner, 2026-09-24) — a holding pen: if
+    // Email arrives, Facebook + Email become their own Marketing card. The id stays 'reports' so ?from=/?g= links keep working.
     tiles: [
       {
         title: 'Sales',
@@ -544,6 +259,13 @@ const TEMP_GROUPS: Group[] = [
         description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.',
         href: '/finance',
         icon: CalculatorIcon,
+      },
+      {
+        title: 'Facebook',
+        subtitle: 'Social post',
+        description: 'Queue and publish the daily Facebook post — graphic, caption, link, scheduled.',
+        href: '/social',
+        icon: MegaphoneIcon,
       },
     ],
   },
@@ -611,14 +333,49 @@ const TEMP_GROUPS: Group[] = [
   },
 ];
 
-const ALL_GROUPS = [...GROUPS, ...TEMP_GROUPS];
+/* =====================================================================================================================================
+   BUSINESS FLOW — a strip, not a card (owner, 2026-09-24). It's a SEQUENCE (product in → stock bought → advertised → priced), so it is
+   drawn as steps with arrows in a full-width strip below the cards (closed until clicked) rather than a card of its own. What it is FOR is still open — a daily
+   route, or a reminder of what to work on next ("I might use it daily. Don't know yet but let's put something") — so it is kept
+   light: four links, nothing else. Every step also lives in a card below; this is a second door, not the only one.
+===================================================================================================================================== */
+const FLOW: Tile[] = [
+      {
+        title: 'Add / Modify Product',
+        subtitle: 'Edit or create a product',
+        description: 'Find an existing product to edit, or create a new one.',
+        href: '/products',
+        icon: TagIcon,
+      },
+      {
+        title: 'Amazon Order',
+        subtitle: 'What to buy in, what to send',
+        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
+        href: '/amazon-order',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        title: 'Google Ads',
+        subtitle: 'Shopping campaigns and spend',
+        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
+        href: '/google-ads',
+        icon: CursorArrowRaysIcon,
+      },
+      {
+        title: 'Repricing',
+        subtitle: 'Selling and stuck lists',
+        description: 'See which segment needs attention next, and track who worked what.',
+        href: '/segments',
+        icon: Squares2X2Icon,
+      },
+];
 
 export default function DashboardPage() {
   // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
   // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
   // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
   const g = useUrlParam('g');
-  const urlGroup = g && ALL_GROUPS.some((x) => x.id === g) ? g : null;
+  const urlGroup = g && GROUPS.some((x) => x.id === g) ? g : null;
 
   // The group the operator clicked open or shut. undefined = no click yet, so the ?g= group (or nothing) shows; null = every group
   // closed, which is how a bare /dashboard opens (see the header note on not remembering).
@@ -633,26 +390,22 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      {/* THE FIVE HEADINGS + their panel. One openId across BOTH menus, so opening a temp group closes a live one — still one
-          panel on screen at a time. */}
       <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
 
-      {/* TEMP MENU — see TEMP_GROUPS. Labelled so nobody mistakes it for part of the real menu. */}
-      <h2 className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wide text-slate-500">Provisional new menu</h2>
-      <GroupRow groups={TEMP_GROUPS} openId={openId} onToggle={setOpenId} />
+      <FlowStrip />
     </AppShell>
   );
 }
 
-// One row of group headings with its expand-in-place panel below. Rendered once for the live menu and once for the temp menu; the
-// open group is lifted to the page so only one panel shows across both.
+// The row of group headings with its expand-in-place panel below. (A separate component because the menu was briefly rendered twice
+// — old and provisional — during the 2026-09-24 re-alignment; kept, it's a clean split of state from layout.)
 function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void }) {
   const open = groups.find((g) => g.id === openId) ?? null;
   return (
     <>
-      {/* THE HEADINGS. Five across at lg so the whole menu is one scan of five rather than seventeen; two across below that,
-          where five columns would make each heading too narrow to read its blurb. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* THE HEADINGS. Six columns at lg: the two 'main' cards take two each, the rest one — so Operations and Back Office read
+          first and biggest, Birkenstock and Google trail. Below lg, main cards go full width and the small ones pair up. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {groups.map((g) => {
           const isOpen = g.id === openId;
           return (
@@ -666,6 +419,7 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
               aria-controls={'group-panel-' + g.id}
               className={
                 'flex h-full flex-col rounded-xl border p-4 text-left transition ' +
+                (g.size === 'main' ? 'sm:col-span-2 ' : '') +
                 (isOpen
                   ? 'border-brand-500 bg-white shadow-md ring-1 ring-brand-500'
                   : 'border-slate-200 bg-white shadow-sm hover:border-brand-500 hover:shadow-md')
@@ -677,8 +431,11 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
                 </span>
                 <ChevronDownIcon className={'h-4 w-4 text-slate-400 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
               </div>
-              <h2 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h2>
+              <h2 className={'font-semibold leading-snug text-slate-900 ' + (g.size === 'main' ? 'text-base' : 'text-sm')}>{g.title}</h2>
               <p className="mt-1 text-xs leading-snug text-slate-500">{g.blurb}</p>
+              {g.size === 'main' && (
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">{g.tiles.map((t) => t.title).join(' · ')}</p>
+              )}
             </button>
           );
         })}
@@ -712,5 +469,48 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
         </section>
       )}
     </>
+  );
+}
+
+// The Business Flow strip — see FLOW. BELOW the cards and CLOSED by default (owner, 2026-09-24): open and above them it competed with
+// the header bar for "the menu". Full width even when closed, so it still reads as a line of its own rather than a sixth card. Its
+// open state is its own, not the cards' one-at-a-time slot — it's a different kind of thing, and opening it shouldn't shut a group.
+// Links carry ?from=flow like the cards do, so the landing page's back link says Dashboard; there is no 'flow' group to re-open, so
+// it returns to the dashboard with nothing open.
+function FlowStrip() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls="flow-steps"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+      >
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+          <ArrowsRightLeftIcon className="h-4 w-4" />
+        </span>
+        <span className="text-sm font-semibold text-slate-900">Business Flow</span>
+        <span className="text-xs text-slate-500">Product in, stock bought, price set</span>
+        <ChevronDownIcon className={'ml-auto h-4 w-4 text-slate-400 transition-transform ' + (open ? 'rotate-180' : '')} />
+      </button>
+      {open && (
+        <nav id="flow-steps" aria-label="Business flow" className="flex flex-wrap items-center gap-x-1 gap-y-2 border-t border-slate-100 px-4 py-2.5">
+          {FLOW.map((t, i) => (
+            <span key={t.href} className="flex items-center gap-1">
+              {i > 0 && <ChevronRightIcon className="h-4 w-4 text-slate-300" />}
+              <Link
+                href={t.href + (t.href.includes('?') ? '&' : '?') + 'from=flow'}
+                className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-brand-50 hover:text-brand-700"
+              >
+                <t.icon className="h-4 w-4 text-brand-600" />
+                {t.title}
+              </Link>
+            </span>
+          ))}
+        </nav>
+      )}
+    </div>
   );
 }
