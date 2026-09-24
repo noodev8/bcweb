@@ -10,29 +10,24 @@ Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set pric
            2. Recent sales — OPEN BY DEFAULT. The single most-consulted report; the eye goes straight here, so it is up top and
               already expanded rather than a dropdown to hunt for.
            3. Price history — the other main report, high but collapsed (one click).
-           4. "Supporting detail" — the evidence blocks the operator was skipping past (pricing timeline, velocity, units-by-price)
-              plus the rarely-opened size curve, demoted below a divider so they are present but out of the main path.
+           4. (Supporting detail — timeline, velocity, units-by-price, size curve — REMOVED 2026-09-24, owner: not used.)
            5. Match Amazon (enable card) — last, when matching is OFF: it is toggled sparingly, so it lives at the bottom as a
               settings-style control. When matching is ON it is NOT here — it is the prominent card at step 1.
 
-         On Apply -> POST /pricing-apply (W1); on "No change — just set review" -> POST /pricing-park (W2). On success we show the
-         new price + review date and return to the segment's triage list (the style is now hidden there until the review date).
+         On Apply -> POST /pricing-apply (W1); on "No change — just set review" -> POST /pricing-park (W2). On success the card
+         refreshes in place (new current price, "Parked until") with no banner; only a failure or a server flag (above RRP) is said.
 =======================================================================================================================================
 */
 
 import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import AppShell from '@/components/AppShell';
-import Timeline from '@/components/Timeline';
-import SizeCurve from '@/components/SizeCurve';
+import ZoomableThumb from '@/components/ZoomableThumb';
 import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import MatchAmazonPanel from '@/components/MatchAmazonPanel';
 import { AMZ_MATCH_UI } from '@/lib/features';
-import PriceBands from '@/components/PriceBands';
-import VelocityBars from '@/components/VelocityBars';
 import { getDrill, applyPrice, parkStyle } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
@@ -73,7 +68,9 @@ function DrillContent() {
   })();
 
   const [applying, setApplying] = useState(false);
-  const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Only things that need SAYING: a failure (err), or a save the server flagged, e.g. above RRP (warn). A plain successful save says
+  // nothing (owner, 2026-09-24) — the card remounts showing the new current price and "Parked until", which IS the confirmation.
+  const [notice, setNotice] = useState<{ kind: 'warn' | 'err'; text: string } | null>(null);
   // Product image is purely for eyeballing what's being priced (same picture the stock/analytics screens show). Track a load failure
   // so a missing/dead filename falls back to a placeholder rather than a broken-image icon. SCOPED to the style, so changing style
   // clears it during render instead of via a reset effect.
@@ -90,11 +87,6 @@ function DrillContent() {
     () => getDrill(groupid),
   );
   const error = loadError?.message ?? null;
-
-  // Return after a successful write to the list we came from (style now hidden there until its review date).
-  function goBackToList() {
-    router.push(backTo);
-  }
 
   async function handleApply(newPrice: number, reviewDays: number | null, note: string) {
     setApplying(true);
@@ -114,7 +106,7 @@ function DrillContent() {
       }
       // Google is decoupled — a periodic server sweep (scripts/google-price-sweep.js) pushes this change to Google Merchant later, so
       // there's nothing to report here (and no per-Google failure to surface). The plain "Saved" covers the DB + live Shopify push.
-      setNotice({ kind: 'ok', text: `Saved £${res.data.new_price}.${reviewMsg}${warn}` });
+      setNotice(warn ? { kind: 'warn', text: `Saved £${res.data.new_price}${warn}.` } : null);
       await refresh();
       setReloadKey((k) => k + 1);
     } else {
@@ -129,7 +121,6 @@ function DrillContent() {
     const res = await parkStyle(groupid, reviewDays);
     setApplying(false);
     if (res.success && res.data) {
-      setNotice({ kind: 'ok', text: `Review set for ${res.data.next_review} (price unchanged).` });
       await refresh();
       setReloadKey((k) => k + 1);
     } else {
@@ -140,17 +131,15 @@ function DrillContent() {
 
   // Product thumbnail rendered flush-right of the page title (AppShell headerRight slot) — a small "what am I pricing?" anchor that
   // uses the title row's empty right side, so it never pushes the price setter down. Same image the stock/analytics screens use.
+  // 56px, NO TALLER THAN THE TITLE + GROUPID (owner, 2026-09-24 — "too much going on at the top with wasted space"): at 96px it set
+  // the header's height on its own and left a band of nothing under the groupid.
   const thumb = data && (data.header.imagename && !imgFailed ? (
-    <div className="relative h-20 w-20 overflow-hidden rounded-md border border-slate-200 bg-white sm:h-24 sm:w-24">
-      <Image
-        src={`https://images.brookfieldcomfort.com/${data.header.imagename}`}
-        alt={data.header.title || groupid}
-        fill
-        sizes="96px"
-        onError={() => setImgFailed(true)}
-        className="object-contain"
-      />
-    </div>
+    // Click to see it large (owner, 2026-09-24) — see ZoomableThumb.
+    <ZoomableThumb
+      src={`https://images.brookfieldcomfort.com/${data.header.imagename}`}
+      alt={data.header.title || groupid}
+      onError={() => setImgFailed(true)}
+    />
   ) : null);
 
   // THE IDENTITY LINE, WITH THE WAY INTO ADD / MODIFY ON IT (owner, 2026-09-16). The jump belongs beside the groupid rather than on
@@ -186,23 +175,12 @@ function DrillContent() {
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       {data && (
-        <div className="space-y-6">
-          {data.header.next_review && (
-            <div className="text-xs text-slate-400">Parked until {data.header.next_review}</div>
-          )}
+        <div className="space-y-5">
+          {/* "Parked until" moved INTO the price card's green band (PriceSetter) — it was a row of its own for one date. */}
 
-          {/* Notice — on success it carries a prominent "Back to list" button so the user returns when ready (no auto-nav). */}
           {notice && (
-            <div className={'flex flex-wrap items-center justify-between gap-3 rounded-md px-3 py-2 text-sm ' + (notice.kind === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
-              <span>{notice.text}</span>
-              {notice.kind === 'ok' && (
-                <button
-                  onClick={goBackToList}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  ← Back to {backLabel}
-                </button>
-              )}
+            <div className={'rounded-md px-3 py-1.5 text-sm ' + (notice.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700')}>
+              {notice.text}
             </div>
           )}
 
@@ -239,30 +217,14 @@ function DrillContent() {
           {/* 3. Price history — the other main report, high but collapsed. */}
           <PriceHistory key={`hist-${reloadKey}`} groupid={groupid} />
 
-          {/* 4. Supporting detail — the evidence blocks that were being skipped, demoted below a divider but still to hand. */}
-          <div className="flex items-center gap-3 pt-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Supporting detail</span>
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
-
-          {/* Timeline */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Pricing timeline</h2>
-            <Timeline rows={data.timeline} />
-          </section>
-
-          {/* Evidence — velocity trend + units-by-price resistance, shared with the Amazon drill (drill-evidence-spec §3, blocks 2-3). */}
-          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <VelocityBars weeks={data.weeks} />
-            <PriceBands bands={data.bands} currentPrice={data.header.now} />
-          </section>
-
-          {/* Size curve (collapsible, rarely opened) */}
-          <SizeCurve sizes={data.sizes} />
+          {/* SUPPORTING DETAIL REMOVED (owner, 2026-09-24 — "I don't use it"): the pricing timeline, velocity bars, units-by-price
+              bands and the size curve. The drill route still returns timeline/weeks/bands/sizes (the Amazon drill shares those
+              components), so reinstating any of them is a render change here only — see git history. The core 38/39/40 gauge on the
+              price card is the size guardrail that remains. */}
 
           {/* 5. Match Amazon enable card — RETIRED 2026-09-15, hidden behind AMZ_MATCH_UI (lib/features.ts). Kept, not deleted:
-                 flipping that flag back on restores the whole autopilot control. Amazon's per-size prices now live in the size curve
-                 above, as reference for a Shopify decision rather than a rule that drives it. */}
+                 flipping that flag back on restores the whole autopilot control. Amazon's spread is on the price card's reference line,
+                 as reference for a Shopify decision rather than a rule that drives it. */}
           {AMZ_MATCH_UI && !data.header.match_amazon && (
             <MatchAmazonPanel
               groupid={groupid}

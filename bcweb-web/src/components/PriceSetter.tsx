@@ -5,14 +5,16 @@ Component: PriceSetter  (the set-price control — CLAUDE.md)
 =======================================================================================================================================
 Purpose: The reduced-typing price control. Layout mirrors the owner's desktop app:
 
-   Current: 36.95  Stock: 8  Core 3/3 [38][39][40]  Margin ex VAT: 9.96 (32%)  cost 20.83  RRP 50.00  Amazon: 37.30-41.09   <- Core = gauge
-   New price:  [-£1][-50p]  [ 37.95 ]  [+50p][+£1][+£2]        <- big editable field; margin recalculates live
+   [COST 20.83]  [RRP 50.00]  |36 37 37.5 38 39 40 41|  Amazon: 37.30-41.09   <- size run: every size + our count
+                               | 0  1   1   3  2  1  0|
+   New price  current £36.95                                    <- current is a quiet note on the label line
+               [-£1][-50p]  [ 37.95 ]  [+50p][+£1][+£2]        <- big editable field
    Note:       [ optional — why the price is changing (saved to the price log) ]
    Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days            <- single-select; None (default) = no review. No auto-suggested pick.
    [ Apply price ]   [ No change — just set review ]   [ Cancel ]
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
-  - Nudge buttons step the editable price; margin updates live.
+  - Nudge buttons step the editable price.
   - Disable Apply if price < cost. Warn (but allow) if price > rrp. (min/max shopify-price bounds removed per owner.)
   - Amazon's live price spread is shown on the reference line, and going under its lowest raises a note. Both ADVISORY, neither blocks:
     Shopify is priced independently of Amazon (2026-09-15, replacing the autopilot that pinned it to Amazon's cheapest in-stock size).
@@ -40,33 +42,22 @@ const NOTE_MAX = 80;
 
 interface PriceSetterProps {
   header: DrillHeader;
-  sizes: SizeRow[];                                             // remaining stock by size (from the drill) — feeds the core-size gauge
+  sizes: SizeRow[];                                             // stock by size, full range (from the drill) — the size run
   applying: boolean;                                            // disables buttons while a write is in flight
   onApply: (newPrice: number, reviewDays: number | null, note: string) => void;
   onPark: (reviewDays: number) => void;
   onCancel: () => void;
 }
 
-// UK VAT at 20% on a VAT-inclusive price: gross / 1.2 = the ex-VAT amount. Mirrors VAT_MULTIPLIER in the drill route that feeds
-// this component, so the header figure and the live one can never disagree as the operator nudges.
-const VAT_MULTIPLIER = 1.2;
 
 export default function PriceSetter({ header, sizes, applying, onApply, onPark, onCancel }: PriceSetterProps) {
   const now = header.now;
 
-  // Core-size gauge: of 38/39/40, how many are offered and how many still have stock. `offered` lets us hide the gauge for styles
-  // that don't come in the core run (kids/odd ranges) rather than show a misleading all-red 0/3. Colour grades the fullness.
-  const core = CORE_SIZES.map((s) => {
-    const row = sizes.find((x) => x.size === s);
-    return { size: s, offered: !!row, inStock: !!row && row.qty > 0 };
-  });
-  const coreOffered = core.some((c) => c.offered);
-  const coreCount = core.filter((c) => c.inStock).length;
-  const coreTone =
-    coreCount >= 3 ? 'bg-green-100 text-green-700'
-      : coreCount === 2 ? 'bg-lime-100 text-lime-700'
-        : coreCount === 1 ? 'bg-amber-100 text-amber-700'
-          : 'bg-red-100 text-red-700';
+  // Every size the style comes in (skumap's full range — sold-out sizes are rows with qty 0), in size order.
+  const run = useMemo(
+    () => [...sizes].sort((a, b) => (Number(a.size) - Number(b.size)) || a.size.localeCompare(b.size)),
+    [sizes],
+  );
   // Editable price starts at the current price (or blank if unknown). Kept as a string so the user can type freely.
   const [priceStr, setPriceStr] = useState<string>(now !== null ? now.toFixed(2) : '');
   // Review period: null = None (the default — no auto-suggested pick; the user chooses). An optional note rides the audit row.
@@ -78,19 +69,14 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
     return Number.isFinite(p) ? p : NaN;
   }, [priceStr]);
 
-  // Live margin, EX-VAT (2026-08-31) — see the drill route for the full reasoning. The price in the box is VAT-inclusive, so the ~1/6
-  // that goes to HMRC comes off before this reads as margin. Still a high-level dial: no postage, packing, payment fee or returns
-  // haircut. Two things this fixes as you nudge — zero on the dial is now actual breakeven (it used to sit ~17% too low, so a cut into
-  // single digits was already underwater), and a +£1 press now moves margin by the 83p you keep rather than a pound you don't.
-  const netPrice = Number.isFinite(price) ? price / VAT_MULTIPLIER : NaN;
-  const margin = Number.isFinite(netPrice) && header.cost !== null ? Math.round((netPrice - header.cost) * 100) / 100 : null;
-  const marginPct = margin !== null && netPrice ? Math.round((margin / netPrice) * 100) : null;
+  // The live margin dial that sat on the reference line was REMOVED (owner, 2026-09-24 — not used). Its ex-VAT reasoning (2026-08-31)
+  // is in git history and the drill route; cost and RRP, now boxed, are the reference instead.
 
   // Bounds. (min/max removed per owner — unused; only the below-cost block and above-RRP warning remain.)
   const belowCost = header.cost !== null && Number.isFinite(price) && price < header.cost;
   const aboveRrp = header.rrp !== null && Number.isFinite(price) && price > header.rrp;
   // Ad floor — recomputed against the price IN THE BOX, not header.below_ad_floor (which describes the price already saved), so the
-  // warning tracks the nudge buttons live the way the margin does. Advisory only: it never gates Apply.
+  // warning tracks the nudge buttons live. Advisory only: it never gates Apply.
   const belowAdFloor = header.ad_floor !== null && Number.isFinite(price) && price < header.ad_floor;
   // Undercutting our own Amazon listing. ADVISORY ONLY (owner, 2026-09-15) — deliberately NOT a bound like below-cost: Amazon prices
   // per size, this compares against the cheapest of them, and there are good reasons to sit under it (funding a Google click, moving
@@ -121,36 +107,46 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
       <div className="-mx-5 -mt-5 mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-emerald-200 bg-emerald-50 px-5 py-2.5">
         <ChannelBadge channel="shopify" label="Shopify price" />
         <span className="text-xs text-emerald-700/80">Apply updates the live store immediately</span>
+        {/* The review cooldown, here rather than as its own line above the card (owner, 2026-09-24): the band had room to spare. */}
+        {header.next_review && <span className="ml-auto text-xs text-emerald-700/80">Parked until {header.next_review}</span>}
       </div>
 
-      {/* Reference line: current / margin / bounds */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-        <span className="text-slate-500">Current: <span className="font-semibold text-slate-800">{now !== null ? `£${now.toFixed(2)}` : '—'}</span></span>
-        <span className="text-slate-500">Stock: <span className="font-semibold text-slate-800">{header.stock}</span></span>
-        {coreOffered && (
-          <span className="inline-flex items-center gap-1.5" title="Core sizes 38/39/40 still in stock — full core sells through (safe to raise); a gappy core can look dead when it's just sold-out cores">
-            <span className={'rounded px-1.5 py-0.5 text-xs font-semibold ' + coreTone}>Core {coreCount}/3</span>
-            <span className="flex gap-1">
-              {core.map((c) => (
-                <span
-                  key={c.size}
-                  className={
-                    'rounded px-1 py-0.5 font-mono text-[11px] ' +
-                    (c.inStock ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-400 line-through')
-                  }
-                >
-                  {c.size}
-                </span>
-              ))}
+      {/* Reference line: bounds / stock / Amazon */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        {/* COST AND RRP ARE THE TWO BOUNDS, SO THEY LEAD (owner, 2026-09-24 — "far more emphasised"). They were faint grey text at the
+            end of the line, read last, when they are what every price here is judged against: Apply is BLOCKED under cost and FLAGGED
+            over RRP. So: first on the line, boxed, with the figure as big as anything on the line. Neutral slate on purpose —
+            a colour would read as a status (good/bad), and they are neither; they are the frame. */}
+        <span className="inline-flex items-baseline gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Cost</span>
+          <span className="text-base font-semibold text-slate-900">{header.cost !== null ? `£${header.cost.toFixed(2)}` : '—'}</span>
+        </span>
+        <span className="inline-flex items-baseline gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">RRP</span>
+          <span className="text-base font-semibold text-slate-900">{header.rrp !== null ? `£${header.rrp.toFixed(2)}` : '—'}</span>
+        </span>
+        {/* THE SIZE RUN (owner, 2026-09-24): every size with our count, replacing "Stock: N" and the three core chips. A total hides
+            the shape — 10 pairs all in 36 and 41 is not 10 pairs you can sell — and the full run (sold-out sizes shown as a faint 0,
+            not hidden) is the guardrail the old size curve gave before a cut, in one glance-sized strip. Core 38/39/40 keep their
+            a shaded cell; the graded "Core 3/3" badge went (owner, 2026-09-24) — the shaded cells say the same thing. */}
+        {run.length > 0 && (
+          <span className="inline-flex items-center gap-2" title="Our sellable stock by size. Core sizes 38/39/40 are shaded — a full core sells through (safe to raise); a gappy core can look dead when it's just sold-out cores.">
+            <span className="inline-flex overflow-hidden rounded-md ring-1 ring-slate-200">
+              {run.map((r, i) => {
+                const isCore = CORE_SIZES.includes(r.size);
+                return (
+                  <span
+                    key={r.size}
+                    className={'flex min-w-8 flex-col items-center px-1 py-0.5 leading-tight ' + (isCore ? 'bg-slate-100' : 'bg-white') + (i > 0 ? ' border-l border-slate-200' : '')}
+                  >
+                    <span className={'font-mono text-[10px] ' + (isCore ? 'font-semibold text-slate-600' : 'text-slate-400')}>{r.size}</span>
+                    <span className={'text-xs font-semibold ' + (r.qty > 0 ? 'text-slate-800' : 'text-slate-300')}>{r.qty}</span>
+                  </span>
+                );
+              })}
             </span>
           </span>
         )}
-        <span className="text-slate-500" title="Ex-VAT: the VAT-inclusive price less the 1/6 that goes to HMRC, less cost. A high-level dial for how far to move — it does not carry postage, packing or the payment fee.">
-          Margin <span className="text-slate-400">ex VAT</span>: <span className="font-semibold text-slate-800">{margin !== null ? `£${margin.toFixed(2)}` : '—'}</span>
-          {marginPct !== null && <span className="text-slate-400"> ({marginPct}%)</span>}
-        </span>
-        <span className="text-slate-400">cost {header.cost !== null ? header.cost.toFixed(2) : '—'}</span>
-        <span className="text-slate-400">RRP {header.rrp !== null ? header.rrp.toFixed(2) : '—'}</span>
         {/* What Amazon is charging for the same style, as a SPREAD — Amazon prices per size, so a single figure would be a fiction.
             Shown only when a size is actually live there. Reference for the decision, not a bound on it; the per-size detail is in the
             size curve below. Collapses to one figure when every live size happens to sit at the same price. */}
@@ -193,7 +189,12 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
       </div>
 
       {/* New price row: nudge down | editable | nudge up */}
-      <div className="mb-1 text-sm font-medium text-slate-700">New price</div>
+      {/* CURRENT lives here now, quietly, on the label line (owner, 2026-09-24): it was first on the reference line, competing with
+          the bounds — but it is only the starting point of the box below, so it sits beside it as a small grey note. */}
+      <div className="mb-1 flex items-baseline gap-2">
+        <span className="text-sm font-medium text-slate-700">New price</span>
+        <span className="text-xs text-slate-400">current {now !== null ? `£${now.toFixed(2)}` : '—'}</span>
+      </div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <button onClick={() => nudge(-1)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">−£1</button>
         <button onClick={() => nudge(-0.5)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">−50p</button>
