@@ -28,7 +28,8 @@ of stock arriving rather than left at an old clearance price (owner). The list's
 tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status
 tab or from a card on the Winners screen (back link = wherever it came from). From Winners it opens with Due OFF (?pending=1) so the
 list is the card's whole number, and WINNERS carries the dial's ?bar= (e.g. 2500 -> only the winners over £2,500, on the revenue
-stamped at the last Update), shown in the crumb and kept through the drill round-trip.
+stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
+both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the

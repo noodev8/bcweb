@@ -32,6 +32,19 @@ interface ChannelBadgeProps {
   className?: string;  // extra classes on the wrapper (spacing, etc.)
 }
 
+// Just the logo tile, no name — for tight spots where the logo IS the label (the Winners screen's channel chips and switch).
+// `size` sm = 20px tile for inline chips; md = the badge's own 28px.
+export function ChannelLogo({ channel, size = 'sm' }: { channel: Channel; size?: 'sm' | 'md' }) {
+  const c = CHANNELS[channel];
+  const tile = size === 'sm' ? 'h-5 w-5 rounded' : 'h-7 w-7 rounded-md';
+  const img = size === 'sm' ? 'h-3.5 w-3.5' : c.imgClass;
+  return (
+    <span className={'flex shrink-0 items-center justify-center bg-white shadow-sm ring-1 ' + tile + ' ' + c.ring}>
+      <Image src={c.src} alt={c.alt} width={c.dims} height={c.dims} className={img + ' object-contain'} />
+    </span>
+  );
+}
+
 export default function ChannelBadge({ channel, label, className = '' }: ChannelBadgeProps) {
   const c = CHANNELS[channel];
   return (

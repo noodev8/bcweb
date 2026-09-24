@@ -17,6 +17,10 @@ Purpose: Repricing — the Shopify list behind one PORTFOLIO STATUS (WINNERS | S
          arrival... Don't want to leave them at old clearance price"). stock = 0 for those; the other pricing lists still require stock.
          So the list's length equals the Winners screen's card. `out_of_stock` counts how many of the rows have none, for the screen.
 
+         SHOPIFY'S STYLES ONLY (owner, 2026-09-25): styles whose lead channel (skusummary.portfolio_channel, stamped at Update) is SHP
+         or BOTH. An Amazon-led winner earns ~nothing here — 23 of the 73 winners on the day — so it is on the Amazon list instead.
+         The predicate is utils/portfolioStatus.js → channelFilterSql, shared with the overview's counts.
+
          Order: units sold in 30 days (Shopify) descending, then stock descending — the sellers first, then the biggest piles, then the
          empty ones. Parked styles (review date in the future) are dropped unless ?parked=include, where they come back flagged — the
          Due switch.
@@ -59,6 +63,7 @@ const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { parseGroup } = require('../utils/pricingGroup');
 const { WINNER_BAR_LADDER } = require('../utils/portfolio');
+const { channelFilterSql } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -110,6 +115,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid  = ss.groupid
       WHERE ${group.column} = $1
         AND ($4::numeric IS NULL OR ss.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue (see header)
+        AND ${channelFilterSql('ss', 'SHP')}                                   -- Shopify-led or BOTH (see header)
         AND ($3::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
       ORDER BY COALESCE(w.u30, 0) DESC, COALESCE(st.stock, 0) DESC, ss.groupid
       LIMIT $2::int

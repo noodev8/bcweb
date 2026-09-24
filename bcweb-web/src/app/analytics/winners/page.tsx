@@ -18,9 +18,21 @@ THE RULES, first match wins (bcweb-server/utils/portfolioStatus.js): WINNERS > �
 the last 3 months → NEW created under 90 days ago → HARVEST out of season (Summer Apr–Aug, Winter Sep–Mar; 'Any' never) → LOSERS.
 
 THE DIAL STAYS, "JUST FOR SCREEN REPORTING" (owner, 2026-09-24). It filters the TAGGED winners on the revenue stamped beside the tag
-at the last Update: at £1,500 it is exactly the tag count, at £2,500+ a subset. It moves the WINNERS box and the brand list and
-nothing else — the other four statuses have no bar, and the graph records the tag. It lives in the URL (?bar=2500) so a list opened
+at the last Update: at £1,500 it is exactly the tag count, at £2,500+ a subset. It moves the WINNERS box, its chips and the brand
+list and nothing else — the other four statuses have no bar, and the graph records the tag. It lives in the URL (?bar=2500) so a list opened
 at £2,500 returns here still at £2,500; it never re-tags and nothing is written.
+
+ALL | SHOPIFY | AMAZON (owner, 2026-09-25). The status is ONE all-channel tag, but pricing is per channel, and 23 of the 73 winners
+were Amazon winners earning ~2.5% on Shopify ("I'm working on Shopify when I have nothing to gain from it"). Each style carries a
+stamped LEAD CHANNEL (SHP | AMZ | BOTH — utils/portfolioStatus.js), and a switch beside the dial reads the screen per channel:
+  All      the totals, and under each number two logo chips — the count on the Shopify list and on the Amazon list. The chips are
+           the links. They can add up to more than the total: a BOTH style (mixed seller, or unsold but listed on Amazon) needs
+           pricing on both, so it is on both lists. No explanation on screen — the logos ARE the legend (owner: "not just a limp of
+           text explanations... something brief and maybe visual").
+  Shopify / Amazon   every figure (boxes, percentages of that channel's styles, brands, graph, "since" deltas) is that channel's; its
+           logo sits beside each number; the whole card opens that channel's list.
+The owner considered splitting the screen into two and kept one: the count of winners is one business number, and a second tag per
+channel would give a style two answers. The channel graph starts from the first Update after 2026-09-25 (no earlier channel data).
 
 THE BRANDS STAY TOO ("now or later I want to see the brands"). Winners and units side by side because they disagree — a brand with
 many modest winners and a brand with few huge ones are different businesses.
@@ -54,9 +66,12 @@ import {
   type PortfolioStatusName,
   type PortfolioStatusPoint,
   type PortfolioStatusCount,
+  type PortfolioChannel,
+  type PortfolioChannelKey,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import Link from 'next/link';
+import { ChannelLogo } from '@/components/ChannelBadge';
 import { STATUS_COLOR, STATUS_RULE, statusListHref } from '@/lib/portfolioStatusUi';
 
 // Whole pounds — the dial marks are round amounts and pence would be noise.
@@ -71,6 +86,9 @@ function shortDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : iso || '—';
 }
+
+// Is a style with this lead channel on that channel's lists? Its own channel, or BOTH (mirrors the server's channelFilterSql).
+const onChannel = (c: PortfolioChannel, key: PortfolioChannelKey) => c === key || c === 'BOTH';
 
 const pct1 = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : null);
 
@@ -96,39 +114,52 @@ function WinnersPageInner() {
   const q = useApiQuery('portfolio-status', () => getPortfolioStatus());
   const status = q.data?.status;
   const winners = useMemo(() => q.data?.winners ?? [], [q.data]);
-  const history = q.data?.history ?? [];
+  const history = useMemo(() => q.data?.history ?? [], [q.data]);
   const bars = q.data?.bars ?? [];
   const trackedBar = bars[0] ?? null;
 
-  // WHICH BAR IS ON SCREEN — in the URL (?bar=2500), not component state, so "← Winners" from a list opened at £2,500 lands back
-  // on £2,500 (owner, 2026-09-25). Absent, or not a mark the server offers = the tag's own bar. Nothing is sent anywhere; it is a
-  // reading. replace, not push: flipping the dial is not a navigation Back should step through.
+  // THE VIEW LIVES IN THE URL — ?bar=2500 and ?ch=shopify|amazon — so "← Winners" from a list lands back on exactly the view it was
+  // opened from (owner, 2026-09-25). Absent / unknown = the tag's own bar and All. Nothing is sent anywhere; both are readings.
+  // replace, not push: flipping a control is not a navigation Back should step through.
   const urlBar = Number(searchParams.get('bar'));
   const selBar = bars.includes(urlBar) ? urlBar : trackedBar;
-  function setBar(b: number) {
+  const offTracked = selBar !== null && trackedBar !== null && selBar !== trackedBar;
+  const rawCh = searchParams.get('ch');
+  const view: ChannelView = rawCh === 'shopify' || rawCh === 'amazon' ? rawCh : 'all';
+  const viewKey: PortfolioChannelKey | null = view === 'shopify' ? 'SHP' : view === 'amazon' ? 'AMZ' : null;
+
+  function setParam(key: 'bar' | 'ch', value: string | null) {
     const next = new URLSearchParams(searchParams.toString());
-    if (b === trackedBar) next.delete('bar'); else next.set('bar', String(b));
+    if (value === null) next.delete(key); else next.set(key, value);
     const qs = next.toString();
     router.replace(`/analytics/winners${qs ? `?${qs}` : ''}`, { scroll: false });
   }
-  // This exact view (dial + our own back context), as the lists' "← Winners" target.
-  const selfHref = `/analytics/winners${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
-  // A card opens its status's list on Repricing — the one unsplit list — with Due OFF, so the list is the card's whole number and not
-  // just what is due (owner, 2026-09-25: "I would want to see which ones they are"). WINNERS carries the dial's bar, so at £2,500
-  // it opens exactly the winners behind that card's count. The four greyed boxes don't depend on the bar and open their whole status.
-  const cardHref = (s: PortfolioStatusName) =>
-    statusListHref(s, selfHref, 'Winners', 'shopify', { showAll: true, bar: s === 'WINNERS' && offTracked ? selBar : null });
-  const offTracked = selBar !== null && trackedBar !== null && selBar !== trackedBar;
+  const setBar = (b: number) => setParam('bar', b === trackedBar ? null : String(b));
+  const setView = (v: ChannelView) => setParam('ch', v === 'all' ? null : v);
 
-  // The tagged winners at the selected bar — a filter on the STAMPED revenue. At the tracked bar this is every tagged winner.
+  // This exact view (dial + channel + our own back context), as the lists' "← Winners" target.
+  const selfHref = `/analytics/winners${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+  // A status's list on one channel — with Due OFF, so the list is the number it was opened from, not just what is due (owner,
+  // 2026-09-25: "I would want to see which ones they are"). WINNERS carries the dial's bar, so at £2,500 it opens exactly the
+  // winners behind that figure. The four greyed boxes don't depend on the bar and open their whole status.
+  const listHref = (s: PortfolioStatusName, ch: PortfolioChannelKey) =>
+    statusListHref(s, selfHref, 'Winners', ch === 'AMZ' ? 'amazon' : 'shopify', {
+      showAll: true, bar: s === 'WINNERS' && offTracked ? selBar : null,
+    });
+
+  // The tagged winners behind the WINNERS box: at the dial's bar (on the STAMPED revenue), on the channel in view (own + BOTH).
   const winnersAtBar = useMemo(
     () => (offTracked && selBar !== null ? winners.filter((w) => w.revenue12m > selBar) : winners),
     [winners, offTracked, selBar]
   );
+  const winnersInView = useMemo(
+    () => (viewKey ? winnersAtBar.filter((w) => onChannel(w.channel, viewKey)) : winnersAtBar),
+    [winnersAtBar, viewKey]
+  );
 
   const brands = useMemo(() => {
     const m = new Map<string, { brand: string; winners: number; units: number }>();
-    for (const w of winnersAtBar) {
+    for (const w of winnersInView) {
       const key = (w.brand || '').trim() || 'Unbranded';
       const b = m.get(key) || { brand: key, winners: 0, units: 0 };
       b.winners += 1;
@@ -136,19 +167,30 @@ function WinnersPageInner() {
       m.set(key, b);
     }
     return [...m.values()].sort((a, b) => b.winners - a.winners || b.units - a.units);
-  }, [winnersAtBar]);
+  }, [winnersInView]);
   const topBrandWinners = Math.max(1, ...brands.map((b) => b.winners));
 
-  const total = status?.total ?? 0;
   const neverRun = !q.isLoading && status !== undefined && status.updatedAt === null;
   const byStatus = new Map((status?.statuses ?? []).map((s) => [s.status, s]));
-  const countOf = (s: PortfolioStatusName) => byStatus.get(s)?.count ?? 0;
-  const winnerCount = offTracked ? winnersAtBar.length : countOf('WINNERS');
+  // Everything below reads through these two, so All and a channel view can never be computed differently.
+  const countIn = (s: PortfolioStatusName, key: PortfolioChannelKey | null) => {
+    if (s === 'WINNERS') return key ? winnersAtBar.filter((w) => onChannel(w.channel, key)).length : winnersAtBar.length;
+    const row = byStatus.get(s);
+    return row ? (key ? row.channels[key] : row.count) : 0;
+  };
+  // The denominator for the percentages: the whole catalogue in All, the styles on that channel's lists in a channel view.
+  const totalInView = viewKey ? status?.channelTotals[viewKey] ?? 0 : status?.total ?? 0;
 
-  // Movement since the previous recorded Update. The last history point IS the current tagging (same press), so compare it with
-  // the one before. Neutral ink for every status: "more HARVEST" is the calendar, not a verdict.
-  const prevPoint = history.length > 1 ? history[history.length - 2] : null;
-  const since = (s: PortfolioStatusName): number | null => (prevPoint ? countOf(s) - prevPoint[s] : null);
+  // The graph and the "since" deltas, per view. A channel view reads each reading's channel counts and skips readings taken before
+  // they were recorded (2026-09-25), so a channel's line starts where its data does.
+  const historyInView = useMemo<PortfolioStatusPoint[]>(
+    () => (viewKey
+      ? history.filter((h) => h.channels).map((h) => ({ ...h, ...h.channels![viewKey], total: h.total }))
+      : history),
+    [history, viewKey]
+  );
+  const prevPoint = historyInView.length > 1 ? historyInView[historyInView.length - 2] : null;
+  const since = (s: PortfolioStatusName): number | null => (prevPoint ? countIn(s, viewKey) - prevPoint[s] : null);
 
   const when = status?.updatedAt ? `${shortDate(status.updatedAt)}, ${status.updatedAt.slice(11, 16)}` : null;
 
@@ -166,45 +208,52 @@ function WinnersPageInner() {
     setUpdating(false);
   }
 
+  const winnerCount = countIn('WINNERS', viewKey);
+  const winnerPct = pct1(winnerCount, totalInView);
+
   // No `title` on AppShell — the screen names itself through the WINNERS box, the one word that matters most.
   return (
     <AppShell backHref={backHref} backLabel={backLabel}>
       {actionError && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
 
-      {/* THE DIAL — written as a sentence, the definition read aloud. Moves the WINNERS box and the brands only. */}
-      {bars.length > 1 && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-sm text-slate-500">A winner turns over more than</span>
-          <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
-            {bars.map((b) => (
-              <button
-                key={b}
-                onClick={() => setBar(b)}
-                aria-pressed={selBar === b}
-                className={
-                  selBar === b
-                    ? 'rounded bg-slate-700 px-3 py-1.5 text-sm font-medium text-white tabular-nums'
-                    : 'rounded px-3 py-1.5 text-sm text-slate-600 tabular-nums transition hover:bg-slate-50'
-                }
-              >
-                {money(b)}
-              </button>
-            ))}
+      {/* THE TWO READINGS — which channel, and which bar. The channel switch is logos, not words: the same two marks recur on every
+          chip below, so after one look the screen reads without a legend. */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <ChannelSwitch view={view} onChange={setView} />
+        {bars.length > 1 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-sm text-slate-500">A winner turns over more than</span>
+            <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+              {bars.map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBar(b)}
+                  aria-pressed={selBar === b}
+                  className={
+                    selBar === b
+                      ? 'rounded bg-slate-700 px-3 py-1.5 text-sm font-medium text-white tabular-nums'
+                      : 'rounded px-3 py-1.5 text-sm text-slate-600 tabular-nums transition hover:bg-slate-50'
+                  }
+                >
+                  {money(b)}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-slate-500">in 12 months</span>
           </div>
-          <span className="text-sm text-slate-500">in 12 months</span>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* THE TOTAL AND THE BUTTON, above the boxes they describe. The total is the whole catalogue; the five boxes sum to it. */}
+      {/* THE TOTAL AND THE BUTTON, above the boxes they describe. */}
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="text-sm text-slate-600">
+        <p className="flex items-center gap-2 text-sm text-slate-600">
           {q.isLoading || !status ? (
             ' '
           ) : (
             <>
-              <span className="text-lg font-semibold tabular-nums text-slate-900">{total.toLocaleString('en-GB')}</span> styles
-              in total
+              {viewKey && <ChannelLogo channel={viewKey === 'AMZ' ? 'amazon' : 'shopify'} />}
+              <span className="text-lg font-semibold tabular-nums text-slate-900">{totalInView.toLocaleString('en-GB')}</span> styles
               <span className="text-xs text-slate-400">
                 {when && ` · tagged ${when}`}
                 {status.addedSince > 0 && ` · ${status.addedSince} added since`}
@@ -227,59 +276,48 @@ function WinnersPageInner() {
           No styles tagged yet — press <span className="font-medium">Update now</span> to set them.
         </p>
       ) : (
-        /* WINNERS IS THE HERO — half the width, two rows tall, twice the type. The other four are its siblings in a 2×2. */
+        /* WINNERS IS THE HERO — half the width, two rows tall, twice the type. The other four are its siblings in a 2×2.
+           In ALL, a card is not a link — its two channel chips are (a card can't open "both lists"). In a channel view the card
+           itself opens that channel's list. */
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 lg:grid-rows-2">
-          {/* Every card opens its status's list on Repricing — the card's whole number (Due off). At £2,500 the WINNERS card opens
-              only the winners over £2,500 (cardHref carries the bar), so the list is the styles behind the figure on the card. */}
-          <Link
-            href={cardHref('WINNERS')}
-            className="group col-span-2 flex flex-col rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:border-slate-300 sm:p-8 lg:row-span-2"
-          >
-            {q.isLoading ? (
-              <div className="h-36 animate-pulse rounded bg-slate-100" />
-            ) : (
-              <>
-                <div className="flex items-baseline gap-4">
-                  <span className="text-7xl font-semibold tabular-nums leading-none text-slate-900 sm:text-8xl">
-                    {winnerCount.toLocaleString('en-GB')}
-                  </span>
-                  <span className="text-2xl tabular-nums text-slate-500">
-                    {pct1(winnerCount, total) === null ? '—' : `${pct1(winnerCount, total)}%`}
-                  </span>
-                </div>
-                <p className="mt-3 flex items-center gap-2 text-xl text-slate-600">
-                  <Dot status="WINNERS" /> winners
-                </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  {offTracked && selBar !== null
-                    ? `over ${money(selBar)} in 12 months — ${countOf('WINNERS')} tagged at ${money(trackedBar ?? 0)}`
-                    : STATUS_RULE.WINNERS}
-                </p>
-                {!offTracked && <Since value={since('WINNERS')} date={prevPoint?.date} />}
-                <RepriceHint />
-              </>
-            )}
-          </Link>
+          <StatusCard
+            hero
+            status="WINNERS"
+            loading={q.isLoading}
+            count={winnerCount}
+            pct={winnerPct}
+            viewKey={viewKey}
+            chips={{ SHP: countIn('WINNERS', 'SHP'), AMZ: countIn('WINNERS', 'AMZ') }}
+            listHref={listHref}
+            rule={offTracked && selBar !== null
+              ? `over ${money(selBar)} in 12 months — ${viewKey ? countTagged(byStatus, viewKey) : byStatus.get('WINNERS')?.count ?? 0} tagged at ${money(trackedBar ?? 0)}`
+              : STATUS_RULE.WINNERS}
+            since={offTracked ? null : since('WINNERS')}
+            sinceDate={prevPoint?.date}
+          />
 
-          {/* GREYED WHEN THE DIAL IS OFF £1,500 (owner, 2026-09-24: "we shouldn't show the other stats or we should grey them to
-              make it clear"). These four have no bar — they are the tag, which is always the £1,500 test — so beside a £2,500
-              winner count they would read as if they belonged to it. Greyed rather than hidden so the layout does not jump. */}
+          {/* GREYED WHEN THE DIAL IS OFF £1,500 (owner, 2026-09-24): these four are the tag, always the £1,500 test, so beside a
+              £2,500 winner count they would read as if they belonged to it. Greyed rather than hidden so the layout does not jump. */}
           {(['STEADY', 'NEW', 'HARVEST', 'LOSERS'] as const).map((s) => (
-            <StatusBox
+            <StatusCard
               key={s}
               status={s}
-              row={byStatus.get(s)}
               loading={q.isLoading}
+              count={countIn(s, viewKey)}
+              pct={pct1(countIn(s, viewKey), totalInView)}
+              viewKey={viewKey}
+              chips={{ SHP: countIn(s, 'SHP'), AMZ: countIn(s, 'AMZ') }}
+              listHref={listHref}
+              rule={STATUS_RULE[s]}
               since={since(s)}
               sinceDate={prevPoint?.date}
               dimmed={offTracked}
-              href={cardHref(s)}
             />
           ))}
         </div>
       )}
 
-      {/* WINNERS BY BRAND, at the dial's bar. Winners and units together BECAUSE they disagree. */}
+      {/* WINNERS BY BRAND, at the dial's bar and in the channel view. Winners and units together BECAUSE they disagree. */}
       {brands.length > 0 && (
         <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
@@ -304,22 +342,57 @@ function WinnersPageInner() {
         </div>
       )}
 
-      {/* PROGRESS — all five statuses across recorded Updates. */}
-      {/* Greyed off £1,500 for the same reason as the four boxes: it records the tag, not the dial. */}
-      {history.length > 1 ? (
+      {/* PROGRESS — all five statuses across recorded Updates, for the view. Greyed off £1,500: it records the tag, not the dial. */}
+      {historyInView.length > 1 ? (
         <div
           className={offTracked ? 'pointer-events-none opacity-40 grayscale transition' : 'transition'}
           aria-disabled={offTracked}
           title={offTracked ? 'Tagged at £1,500 — not affected by the dial' : undefined}
         >
-          <StatusTrendChart rows={history} />
+          <StatusTrendChart rows={historyInView} />
         </div>
-      ) : history.length === 1 ? (
+      ) : historyInView.length === 1 ? (
         <p className="text-xs text-slate-400">
-          One reading so far ({shortDate(history[0].date)}). The graph appears once there are two — press Update now on another day.
+          One reading so far ({shortDate(historyInView[0].date)}). The graph appears once there are two — press Update now on another day.
         </p>
+      ) : viewKey && history.length > 0 ? (
+        <p className="text-xs text-slate-400">The channel graph starts from the next Update.</p>
       ) : null}
     </AppShell>
+  );
+}
+
+// How many tagged winners are on a channel's lists at the tracked bar — the "N tagged at £1,500" figure in a channel view.
+function countTagged(byStatus: Map<PortfolioStatusName, PortfolioStatusCount>, key: PortfolioChannelKey): number {
+  return byStatus.get('WINNERS')?.channels[key] ?? 0;
+}
+
+type ChannelView = 'all' | 'shopify' | 'amazon';
+
+// All | Shopify | Amazon. Logos carry the channels (no words beside them); "All" is the one word, because it has no logo.
+function ChannelSwitch({ view, onChange }: { view: ChannelView; onChange: (v: ChannelView) => void }) {
+  const opts: { key: ChannelView; label: string }[] = [
+    { key: 'all', label: 'All channels' },
+    { key: 'shopify', label: 'Shopify' },
+    { key: 'amazon', label: 'Amazon' },
+  ];
+  return (
+    <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Channel">
+      {opts.map((o) => {
+        const on = view === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            aria-pressed={on}
+            title={o.label}
+            className={'flex h-8 items-center rounded px-2.5 text-sm transition ' + (on ? 'bg-slate-700 font-medium text-white' : 'text-slate-600 hover:bg-slate-50')}
+          >
+            {o.key === 'all' ? 'All' : <ChannelLogo channel={o.key} />}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -337,54 +410,97 @@ function Since({ value, date }: { value: number | null; date: string | undefined
   );
 }
 
-function StatusBox({
-  status,
-  row,
-  loading,
-  since,
-  sinceDate,
-  dimmed = false,
-  href,
+// One status box — the WINNERS hero or one of the four. The only difference between views is WHERE the link is:
+//   All       the card is plain; its two logo chips are the links (Shopify list / Amazon list), each with that channel's count.
+//             The chips can add up to more than the total — a style selling on both needs pricing on both, so it is on both lists.
+//   channel   the card IS the link (that channel's list), and the channel's logo sits beside the number instead of the chips.
+function StatusCard({
+  status, loading, count, pct, viewKey, chips, listHref, rule, since, sinceDate, dimmed = false, hero = false,
 }: {
   status: PortfolioStatusName;
-  row: PortfolioStatusCount | undefined;
   loading: boolean;
+  count: number;
+  pct: number | null;
+  viewKey: PortfolioChannelKey | null;
+  chips: Record<PortfolioChannelKey, number>;
+  listHref: (s: PortfolioStatusName, ch: PortfolioChannelKey) => string;
+  rule: string;
   since: number | null;
   sinceDate: string | undefined;
   dimmed?: boolean;               // the dial is off £1,500 — this count is the tag, not the dial's reading
-  href: string;                   // its Repricing list (built by the page, which knows the dial and its own URL)
+  hero?: boolean;
 }) {
-  // A link to the status's Repricing list. Still a link when dimmed — the dim says "not what the dial is reading", not "unavailable".
-  return (
-    <Link
-      href={href}
-      className={`group flex flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${dimmed ? 'opacity-40 grayscale' : ''}`}
-      title={dimmed ? 'Tagged at £1,500 — not affected by the dial' : undefined}
-    >
-      <p className="flex items-center gap-2 text-xs font-semibold tracking-wide text-slate-500">
-        <Dot status={status} /> {status}
-      </p>
-      {loading ? (
-        <div className="mt-2 h-9 animate-pulse rounded bg-slate-100" />
+  const shell = hero
+    ? 'col-span-2 flex flex-col rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:row-span-2'
+    : 'flex flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm';
+  const dim = dimmed ? ' opacity-40 grayscale' : '';
+  const title = dimmed ? 'Tagged at £1,500 — not affected by the dial' : undefined;
+
+  const body = loading ? (
+    <div className={hero ? 'h-36 animate-pulse rounded bg-slate-100' : 'mt-2 h-9 animate-pulse rounded bg-slate-100'} />
+  ) : (
+    <>
+      {!hero && (
+        <p className="flex items-center gap-2 text-xs font-semibold tracking-wide text-slate-500">
+          <Dot status={status} /> {status}
+        </p>
+      )}
+      <div className={hero ? 'flex items-baseline gap-4' : 'mt-1 flex items-baseline gap-2'}>
+        {viewKey && <span className="self-center"><ChannelLogo channel={viewKey === 'AMZ' ? 'amazon' : 'shopify'} size={hero ? 'md' : 'sm'} /></span>}
+        <span className={hero
+          ? 'text-7xl font-semibold tabular-nums leading-none text-slate-900 sm:text-8xl'
+          : 'text-4xl font-semibold tabular-nums text-slate-900'}>
+          {count.toLocaleString('en-GB')}
+        </span>
+        <span className={hero ? 'text-2xl tabular-nums text-slate-500' : 'text-sm tabular-nums text-slate-500'}>
+          {pct === null ? '—' : `${pct}%`}
+        </span>
+      </div>
+      {hero && (
+        <p className="mt-3 flex items-center gap-2 text-xl text-slate-600">
+          <Dot status="WINNERS" /> winners
+        </p>
+      )}
+      <p className={hero ? 'mt-2 text-sm text-slate-500' : 'mt-1 text-xs text-slate-400'}>{rule}</p>
+      <Since value={since} date={sinceDate} />
+      {viewKey ? (
+        <span className="mt-auto pt-2 text-right text-xs text-slate-300 transition group-hover:text-slate-600">Reprice →</span>
       ) : (
-        <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-4xl font-semibold tabular-nums text-slate-900">{(row?.count ?? 0).toLocaleString('en-GB')}</span>
-          <span className="text-sm tabular-nums text-slate-500">{row?.pct == null ? '—' : `${row.pct}%`}</span>
+        <div className="mt-auto flex flex-wrap gap-2 pt-3">
+          {(['SHP', 'AMZ'] as const).map((ch) => chips[ch] === 0 ? (
+            // Nothing on that channel's list — a quiet chip, not a link to an empty page.
+            <span
+              key={ch}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-100 py-0.5 pl-0.5 pr-2 text-sm tabular-nums text-slate-300 opacity-60"
+            >
+              <ChannelLogo channel={ch === 'AMZ' ? 'amazon' : 'shopify'} />
+              0
+            </span>
+          ) : (
+            <Link
+              key={ch}
+              href={listHref(status, ch)}
+              title={`Reprice on ${ch === 'AMZ' ? 'Amazon' : 'Shopify'}`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white py-0.5 pl-0.5 pr-2 text-sm font-medium tabular-nums text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            >
+              <ChannelLogo channel={ch === 'AMZ' ? 'amazon' : 'shopify'} />
+              {chips[ch].toLocaleString('en-GB')}
+            </Link>
+          ))}
         </div>
       )}
-      <p className="mt-1 text-xs text-slate-400">{STATUS_RULE[status]}</p>
-      <Since value={since} date={sinceDate} />
-      <RepriceHint />
-    </Link>
+    </>
   );
-}
 
-// The quiet cue that a card opens somewhere. Pinned to the card's foot (mt-auto) and brightened on hover, so the cards still read
-// as figures first — the same restraint as the rest of the page.
-function RepriceHint() {
-  return (
-    <span className="mt-auto pt-2 text-right text-xs text-slate-300 transition group-hover:text-slate-600">Reprice →</span>
-  );
+  // A channel view makes the whole card the link; All keeps it plain (its chips are the links — links can't nest).
+  if (viewKey) {
+    return (
+      <Link href={listHref(status, viewKey)} className={'group ' + shell + ' transition hover:border-slate-300' + dim} title={title}>
+        {body}
+      </Link>
+    );
+  }
+  return <div className={shell + dim} title={title}>{body}</div>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------

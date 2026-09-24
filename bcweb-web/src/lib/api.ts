@@ -356,9 +356,10 @@ export function getStatusList(status: string, bar?: number | null) {
 }
 
 // The Amazon twin — every amzfeed SKU whose style carries the status, 0 FBA included, same row shape as getAmzWinners (units = 30d).
-export function getAmzStatusList(status: string) {
+// `bar` works as on getStatusList (WINNERS only, a dial mark, on the stamped revenue).
+export function getAmzStatusList(status: string, bar?: number | null) {
   return request<{ status: string; total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
-    { url: '/amz-status-list', method: 'GET', params: { status, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    { url: '/amz-status-list', method: 'GET', params: { status, bar: bar ?? undefined, limit: STATUS_LIST_LIMIT, parked: 'include' } },
     (b) => ({
       status: String(b.status || status),
       total: Number(b.total) || 0,
@@ -3851,10 +3852,17 @@ function mapBandMovement(m: Record<string, unknown>): PortfolioBandMovement {
 export const PORTFOLIO_STATUSES = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'] as const;
 export type PortfolioStatusName = (typeof PORTFOLIO_STATUSES)[number];
 
+// A style's LEAD CHANNEL (2026-09-25, stamped at Update beside its status): which channel's pricing lists it sits on. BOTH = mixed
+// seller, or unsold but listed on Amazon — it is on both. See bcweb-server/utils/portfolioStatus.js (LEAD_SHARE).
+export type PortfolioChannel = 'SHP' | 'AMZ' | 'BOTH';
+// The two channels a Winners-screen view can be narrowed to. Counts per channel = its own styles + BOTH, so they can overlap.
+export type PortfolioChannelKey = 'SHP' | 'AMZ';
+
 export interface PortfolioStatusCount {
   status: PortfolioStatusName;
   count: number;
   pct: number | null;             // of `total`, one decimal. null only on an empty catalogue
+  channels: Record<PortfolioChannelKey, number>;   // on each channel's lists — may sum to more than count (BOTH styles)
 }
 
 export interface PortfolioStatusSummary {
@@ -3863,6 +3871,7 @@ export interface PortfolioStatusSummary {
   addedSince: number;             // created since that Update — tagged NEW, not yet assessed
   untagged: number;               // no tag at all (pre-column rows no Update has reached)
   statuses: PortfolioStatusCount[]; // always all five, in rule order
+  channelTotals: Record<PortfolioChannelKey, number>; // styles on each channel's lists — a channel view's denominator
 }
 
 function mapStatusSummary(s: Record<string, unknown> | undefined): PortfolioStatusSummary {
@@ -3879,8 +3888,16 @@ function mapStatusSummary(s: Record<string, unknown> | undefined): PortfolioStat
         status,
         count: Number(r?.count) || 0,
         pct: r?.pct === null || r?.pct === undefined ? null : Number(r.pct),
+        channels: {
+          SHP: Number((r?.channels as Record<string, unknown> | undefined)?.SHP) || 0,
+          AMZ: Number((r?.channels as Record<string, unknown> | undefined)?.AMZ) || 0,
+        },
       };
     }),
+    channelTotals: {
+      SHP: Number((s?.channel_totals as Record<string, unknown> | undefined)?.SHP) || 0,
+      AMZ: Number((s?.channel_totals as Record<string, unknown> | undefined)?.AMZ) || 0,
+    },
   };
 }
 
@@ -3892,15 +3909,27 @@ export interface TaggedWinner {
   brand: string | null;
   revenue12m: number;
   units12m: number;
+  channel: PortfolioChannel;
 }
 
 // One recorded Update: how many styles held each status that day.
 export interface PortfolioStatusPoint extends Record<PortfolioStatusName, number> {
   date: string;                   // 'YYYY-MM-DD'
   total: number;
+  // The same day's counts per channel (own + BOTH). null on readings taken before 2026-09-25, which a channel view skips.
+  channels: Record<PortfolioChannelKey, Record<PortfolioStatusName, number>> | null;
 }
 
 // GET /portfolio-status — the Winners screen's source since 2026-09-24. Stored data only, nothing live.
+// A snapshot's channel_counts, coerced — every status present on both channels, or null when the reading predates it.
+function mapChannelHistory(c: unknown): Record<PortfolioChannelKey, Record<PortfolioStatusName, number>> | null {
+  if (!c || typeof c !== 'object') return null;
+  const src = c as Record<string, Record<string, unknown> | undefined>;
+  const one = (ch: PortfolioChannelKey) =>
+    Object.fromEntries(PORTFOLIO_STATUSES.map((st) => [st, Number(src[ch]?.[st]) || 0])) as Record<PortfolioStatusName, number>;
+  return { SHP: one('SHP'), AMZ: one('AMZ') };
+}
+
 export function getPortfolioStatus(days?: number) {
   return request<{
     status: PortfolioStatusSummary;
@@ -3918,6 +3947,7 @@ export function getPortfolioStatus(days?: number) {
         brand: (w.brand as string | null) ?? null,
         revenue12m: Number(w.revenue_12m) || 0,
         units12m: Number(w.units_12m) || 0,
+        channel: (w.channel === 'SHP' || w.channel === 'AMZ' ? w.channel : 'BOTH') as PortfolioChannel,
       })),
       history: ((b.history as Record<string, unknown>[]) || []).map((h) => ({
         date: String(h.date || ''),
@@ -3927,6 +3957,7 @@ export function getPortfolioStatus(days?: number) {
         HARVEST: Number(h.HARVEST) || 0,
         LOSERS: Number(h.LOSERS) || 0,
         total: Number(h.total) || 0,
+        channels: mapChannelHistory(h.channels),
       })),
     })
   );

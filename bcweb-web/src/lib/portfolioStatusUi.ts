@@ -25,7 +25,7 @@ export const STATUS_COLOR: Record<PortfolioStatusName, string> = {
 
 // The Repricing list behind a status, on one channel (/pricing = Shopify styles, /amz = Amazon SKUs). `from`/`back` set where its
 // "← back" link returns to.
-//   bar     WINNERS on Shopify only — a Winners-screen dial mark; the list keeps the winners over it (so it matches the card).
+//   bar     WINNERS only — a Winners-screen dial mark; the list keeps the winners over it (so it matches the card). Both channels.
 //   showAll open with the Due switch OFF (?pending=1), parked rows included — so the list is the card's whole number, not just
 //           what is due. The Winners screen uses it ("which ones are they?"); Repricing's tiles don't (that screen is for working
 //           through what's due).
@@ -34,7 +34,7 @@ export function statusListHref(
   opts: { bar?: number | null; showAll?: boolean } = {},
 ): string {
   const base = channel === 'amazon' ? '/amz' : '/pricing';
-  const bar = opts.bar && status === 'WINNERS' && channel === 'shopify' ? `&bar=${opts.bar}` : '';
+  const bar = opts.bar && status === 'WINNERS' ? `&bar=${opts.bar}` : '';
   const all = opts.showAll ? '&pending=1' : '';
   return `${base}/${encodeURIComponent(status)}?by=status${bar}${all}&from=${encodeURIComponent(from)}&back=${encodeURIComponent(back)}`;
 }

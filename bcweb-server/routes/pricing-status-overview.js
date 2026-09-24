@@ -15,6 +15,9 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
            parked         review date in the future — what switching Due off adds
            out_of_stock   of `total`, how many have no stock (Shopify: #FREE localstock; Amazon: FBA amzlive). Listed, just flagged.
 
+         EACH CHANNEL COUNTS ONLY ITS OWN STYLES (2026-09-25): lead channel (skusummary.portfolio_channel) SHP|BOTH for Shopify,
+         AMZ|BOTH for Amazon — the same predicate the lists use (utils/portfolioStatus.js → channelFilterSql).
+
          Always five statuses in rule order, zeros included, so the screen draws a stable set of tiles. Read-only.
 
 Requires auth.
@@ -41,7 +44,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
-const { STATUSES } = require('../utils/portfolioStatus');
+const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -68,6 +71,7 @@ router.get('/', async (req, res) => {
         FROM skusummary ss
         LEFT JOIN stk st ON st.groupid = ss.groupid
         WHERE ss.portfolio_status IS NOT NULL
+          AND ${channelFilterSql('ss', 'SHP')}
         GROUP BY ss.portfolio_status
       `),
       query(`
@@ -81,6 +85,7 @@ router.get('/', async (req, res) => {
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code
         WHERE sk.portfolio_status IS NOT NULL
+          AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY sk.portfolio_status
       `),
     ]);

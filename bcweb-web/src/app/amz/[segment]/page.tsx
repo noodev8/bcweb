@@ -13,7 +13,8 @@ SEGMENT OR STATUS: the [segment] path param is the GROUP name; ?by=status (2026-
 it a portfolio status (WINNERS / STEADY / NEW / HARVEST / LOSERS) — the Amazon SKUs of every style carrying it. A status is ONE UNSPLIT
 LIST from GET /amz-status-list, not the Selling/Stuck pair, and OUT-OF-STOCK SKUs (0 FBA) ARE LISTED so their price can be set ahead of
 stock arriving (owner). The view tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill, bulk bar and upload basket
-are unchanged. `by` rides along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
+are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (server, 2026-09-25) — a Shopify-led winner is on the
+Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb. `by` (and bar) ride along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
 campaign grouping on Amazon (campaigns are Shopify only).
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
@@ -41,6 +42,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
+import { barLabel } from '@/lib/portfolioStatusUi';
 
 // Bulk price + review controls — kept identical to the Amazon drill's price-setter (owner: "exactly the same as the individual item").
 // Nudge denominations = the engine's typical £0.30 / £0.50 / £1.00 steps; review chips = the drill's day set. Amber tone throughout.
@@ -97,6 +99,9 @@ function SegmentContent() {
   // Only segment | status exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
   const by = parseGroupBy(searchParams.get('by')) === 'status' ? 'status' : 'segment';
   const isStatus = by === 'status';
+  // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
+  const barRaw = Number(searchParams.get('bar'));
+  const bar = isStatus && barRaw > 0 ? barRaw : null;
   const group: PricingGroup = { by, name: segment };
   const { logout } = useAuth();
   const { items, add } = useAmzBasket();
@@ -117,12 +122,12 @@ function SegmentContent() {
   // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
   // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['amz-lists', by, segment],
+    ['amz-lists', by, segment, bar],
     async () => {
       // A STATUS is one unsplit list (GET /amz-status-list — every SKU of the status's styles, 0 FBA included). Its rows go in
       // `winners` with `losers` empty, and the view is pinned to 'all' above, so the rest of the page works unchanged.
       if (isStatus) {
-        const s = await getAmzStatusList(segment);
+        const s = await getAmzStatusList(segment, bar);
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
@@ -185,7 +190,7 @@ function SegmentContent() {
 
   // Bulk selection + last-run feedback belong to ONE view of ONE segment, so they're scoped and discarded during render on a switch —
   // no reset effect, and no frame showing the previous view's ticks.
-  const scope = `${mode}|${showPending}|${by}|${segment}`;
+  const scope = `${mode}|${showPending}|${by}|${segment}|${bar ?? ''}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -199,7 +204,7 @@ function SegmentContent() {
     // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
-    const from = `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    const from = `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -302,7 +307,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" note={isStatus ? 'status' : undefined} />} headerRight={<AmzUploadButton />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" note={isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <ListViewControls

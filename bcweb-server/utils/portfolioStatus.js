@@ -62,6 +62,23 @@ const NEW_DAYS = 90;
 const SUMMER_FIRST_MONTH = 4;
 const SUMMER_LAST_MONTH = 8;
 
+// THE LEAD CHANNEL (owner, 2026-09-25) — stamped beside the status, so each channel's pricing lists show only the styles that channel
+// earns from. The status stays ONE all-channel tag and ONE count; the channel only decides which list a style appears on:
+//   SHP / AMZ  >= LEAD_SHARE of the style's 12m gross revenue came from that channel
+//   BOTH       mixed, OR no 12m sales but listed on Amazon (amzfeed) — it needs pricing on both
+//   SHP        no 12m sales and not on Amazon
+// NULL (created since the last Update) is read as BOTH everywhere, so a new product is never hidden from a list.
+// Why 80%: on the day, every winner was >= 80% one channel (50 Shopify / 23 Amazon / 0 mixed); STEADY had 10 mixed, LOSERS 3.
+const LEAD_SHARE = 0.8;
+const CHANNELS = ['SHP', 'AMZ'];
+
+// "Is this style on <channel>'s lists?" as SQL over a skusummary alias — THE one predicate every status list, count and filter uses,
+// so no two places can disagree about which list a style belongs on. Channel comes from the fixed CHANNELS list, never a request.
+function channelFilterSql(alias, channel) {
+  if (!CHANNELS.includes(channel)) throw new Error(`channelFilterSql: unknown channel ${channel}`);
+  return `COALESCE(${alias}.portfolio_channel, 'BOTH') IN ('${channel}', 'BOTH')`;
+}
+
 // The classification, as one SELECT returning (groupid, status) for every row in skusummary. ONE pass over sales with FILTER for
 // both windows — the computeWinners pattern — then a CASE in rule order.
 //
@@ -74,6 +91,8 @@ const CLASSIFY_SQL = `
     SELECT groupid,
            COALESCE(SUM(soldprice * qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0) AS revenue_12m,
            COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0)::int        AS units_12m,
+           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'SHP'), 0)                               AS shp_rev,
+           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'AMZ'), 0)                               AS amz_rev,
            COUNT(*) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '${Number(STEADY_MONTHS)} months')    AS lines_recent
     FROM sales
     WHERE qty > 0                      -- returns excluded, not netted — the portfolio rule
@@ -81,6 +100,7 @@ const CLASSIFY_SQL = `
       AND solddate >= CURRENT_DATE - INTERVAL '12 months'
     GROUP BY groupid
   ),
+  on_amz AS (SELECT DISTINCT groupid FROM amzfeed),
   season_now AS (
     SELECT CASE WHEN EXTRACT(MONTH FROM now() AT TIME ZONE 'Europe/London')
                      BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}
@@ -98,10 +118,20 @@ const CLASSIFY_SQL = `
          -- Stamped beside the tag so the screen's bar dial and the winners list read the figures the tag was decided on,
          -- never a live figure that has moved since (migrations/20260924b).
          ROUND(COALESCE(so.revenue_12m, 0), 2) AS revenue_12m,
-         COALESCE(so.units_12m, 0)             AS units_12m
+         COALESCE(so.units_12m, 0)             AS units_12m,
+         -- The lead channel (see LEAD_SHARE above). The share is taken of the two channels that have pricing lists.
+         CASE
+           WHEN COALESCE(so.shp_rev, 0) + COALESCE(so.amz_rev, 0) > 0 THEN
+             CASE WHEN so.shp_rev >= ${Number(LEAD_SHARE)} * (so.shp_rev + so.amz_rev) THEN 'SHP'
+                  WHEN so.amz_rev >= ${Number(LEAD_SHARE)} * (so.shp_rev + so.amz_rev) THEN 'AMZ'
+                  ELSE 'BOTH' END
+           WHEN oa.groupid IS NOT NULL THEN 'BOTH'
+           ELSE 'SHP'
+         END AS channel
   FROM skusummary ss
   CROSS JOIN season_now sn
-  LEFT JOIN sold so ON so.groupid = ss.groupid
+  LEFT JOIN sold so   ON so.groupid = ss.groupid
+  LEFT JOIN on_amz oa ON oa.groupid = ss.groupid
 `;
 
 /**
@@ -110,7 +140,8 @@ const CLASSIFY_SQL = `
  * Every row is written, not only the ones that changed, so portfolio_status_at on every row is the time of this run — that is
  * what makes MAX(portfolio_status_at) mean "last updated" and a NULL mean "created since the last update".
  *
- * @returns {Promise<{counts: Record<string, number>, total: number}>}
+ * @returns {Promise<{counts: Record<string, number>, total: number, channelCounts: Record<'SHP'|'AMZ', Record<string, number>>}>}
+ *          channelCounts = per channel, the styles ON that channel's lists (its own + BOTH) — what the snapshot stores.
  */
 async function applyPortfolioStatus(client) {
   const r = await client.query(`
@@ -118,14 +149,20 @@ async function applyPortfolioStatus(client) {
        SET portfolio_status = c.status,
            portfolio_status_at = now(),
            portfolio_revenue_12m = c.revenue_12m,
-           portfolio_units_12m = c.units_12m
+           portfolio_units_12m = c.units_12m,
+           portfolio_channel = c.channel
       FROM (${CLASSIFY_SQL}) c
      WHERE c.groupid = ss.groupid
-    RETURNING ss.portfolio_status AS status
+    RETURNING ss.portfolio_status AS status, ss.portfolio_channel AS channel
   `);
-  const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
-  for (const row of r.rows) counts[row.status] += 1;
-  return { counts, total: r.rows.length };
+  const zero = () => Object.fromEntries(STATUSES.map((s) => [s, 0]));
+  const counts = zero();
+  const channelCounts = { SHP: zero(), AMZ: zero() };
+  for (const row of r.rows) {
+    counts[row.status] += 1;
+    for (const ch of CHANNELS) if (row.channel === ch || row.channel === 'BOTH') channelCounts[ch][row.status] += 1;
+  }
+  return { counts, total: r.rows.length, channelCounts };
 }
 
 /**
@@ -138,6 +175,9 @@ async function readPortfolioStatus() {
   const r = await query(`
     SELECT portfolio_status AS status,
            COUNT(*)::int AS n,
+           -- on each channel's lists (its own + BOTH; NULL reads as BOTH) — the split chips on the Winners screen
+           COUNT(*) FILTER (WHERE ${channelFilterSql('skusummary', 'SHP')})::int AS n_shp,
+           COUNT(*) FILTER (WHERE ${channelFilterSql('skusummary', 'AMZ')})::int AS n_amz,
            -- created since the last Update: tagged NEW by the column default / product-create, never assessed yet
            COUNT(*) FILTER (WHERE portfolio_status_at IS NULL)::int AS unassessed,
            -- London wall-clock, as text — never hand a timestamptz to the client to re-zone
@@ -151,22 +191,35 @@ async function readPortfolioStatus() {
   let addedSince = 0;
   let updatedAt = null;
   const byStatus = new Map();
+  const channelTotals = { SHP: 0, AMZ: 0 };
   for (const row of r.rows) {
     total += row.n;
+    channelTotals.SHP += row.n_shp;
+    channelTotals.AMZ += row.n_amz;
     if (row.status === null) { untagged += row.n; continue; }
-    byStatus.set(row.status, row.n);
+    byStatus.set(row.status, row);
     addedSince += row.unassessed;
     if (row.last_at && (updatedAt === null || row.last_at > updatedAt)) updatedAt = row.last_at;
   }
 
   // Share of ALL styles in the catalogue, so the five cards (plus any untagged) sum to the total shown beside them. One decimal
   // place: the small statuses sit around 5-7%, where a whole percent would round two different-sized cards to the same figure.
+  //
+  // `channels` = how many of this status are on each channel's lists. They can sum to MORE than `count`: a BOTH style (mixed
+  // seller, or unsold but listed on Amazon) is on both lists, and that is the truth about where it needs pricing.
+  // `channel_totals` is the per-channel denominator for a channel view's percentages.
   const statuses = STATUSES.map((status) => {
-    const count = byStatus.get(status) || 0;
-    return { status, count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : null };
+    const row = byStatus.get(status);
+    const count = row ? row.n : 0;
+    return {
+      status,
+      count,
+      pct: total > 0 ? Math.round((count / total) * 1000) / 10 : null,
+      channels: { SHP: row ? row.n_shp : 0, AMZ: row ? row.n_amz : 0 },
+    };
   });
 
-  return { total, updated_at: updatedAt, added_since: addedSince, untagged, statuses };
+  return { total, updated_at: updatedAt, added_since: addedSince, untagged, statuses, channel_totals: channelTotals };
 }
 
 /**
@@ -176,11 +229,11 @@ async function readPortfolioStatus() {
  * UPSERT on the date (a second press in a day overwrites) + prune past 2 years, the portfolio_snapshot rules. CURRENT_DATE is the
  * authority for the date, never a JS "today" — the DB and the box disagree for an hour a night through BST.
  */
-async function recordStatusSnapshot(client, { counts, total }) {
+async function recordStatusSnapshot(client, { counts, total, channelCounts }) {
   await client.query(
     `INSERT INTO portfolio_status_snapshot
-       (snapshot_date, winners_count, steady_count, new_count, harvest_count, losers_count, total_count, created_at)
-     VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, now())
+       (snapshot_date, winners_count, steady_count, new_count, harvest_count, losers_count, total_count, channel_counts, created_at)
+     VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7::jsonb, now())
      ON CONFLICT (snapshot_date)
      DO UPDATE SET winners_count = EXCLUDED.winners_count,
                    steady_count  = EXCLUDED.steady_count,
@@ -188,8 +241,9 @@ async function recordStatusSnapshot(client, { counts, total }) {
                    harvest_count = EXCLUDED.harvest_count,
                    losers_count  = EXCLUDED.losers_count,
                    total_count   = EXCLUDED.total_count,
+                   channel_counts = EXCLUDED.channel_counts,
                    created_at    = now()`,
-    [counts.WINNERS, counts.STEADY, counts.NEW, counts.HARVEST, counts.LOSERS, total]
+    [counts.WINNERS, counts.STEADY, counts.NEW, counts.HARVEST, counts.LOSERS, total, JSON.stringify(channelCounts || null)]
   );
   await client.query(`DELETE FROM portfolio_status_snapshot WHERE snapshot_date < CURRENT_DATE - INTERVAL '2 years'`);
 }
@@ -207,7 +261,8 @@ async function readTaggedWinners() {
            t.shopifytitle                       AS title,
            NULLIF(TRIM(ss.brand), '')           AS brand,
            COALESCE(ss.portfolio_revenue_12m, 0) AS revenue_12m,
-           COALESCE(ss.portfolio_units_12m, 0)   AS units_12m
+           COALESCE(ss.portfolio_units_12m, 0)   AS units_12m,
+           COALESCE(ss.portfolio_channel, 'BOTH') AS channel
     FROM skusummary ss
     LEFT JOIN title t ON t.groupid = ss.groupid
     WHERE ss.portfolio_status = 'WINNERS'
@@ -219,6 +274,7 @@ async function readTaggedWinners() {
     brand: w.brand || null,
     revenue_12m: Number(w.revenue_12m) || 0,     // pg NUMERIC arrives as a string
     units_12m: Number(w.units_12m) || 0,
+    channel: w.channel,                          // SHP | AMZ | BOTH — which channel's list it sits on (both, for BOTH)
   }));
 }
 
@@ -226,7 +282,7 @@ async function readTaggedWinners() {
 async function readStatusHistory(days) {
   const r = await query(
     `SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS date,
-            winners_count, steady_count, new_count, harvest_count, losers_count, total_count
+            winners_count, steady_count, new_count, harvest_count, losers_count, total_count, channel_counts
        FROM portfolio_status_snapshot
       WHERE snapshot_date >= CURRENT_DATE - ($1::int - 1)
       ORDER BY snapshot_date ASC`,
@@ -240,11 +296,16 @@ async function readStatusHistory(days) {
     HARVEST: h.harvest_count,
     LOSERS: h.losers_count,
     total: h.total_count,
+    // { SHP: {WINNERS: n, ...}, AMZ: {...} } — null on rows written before 2026-09-25 (the channel graph starts after that)
+    channels: h.channel_counts || null,
   }));
 }
 
 module.exports = {
   STATUSES,
+  CHANNELS,
+  LEAD_SHARE,
+  channelFilterSql,
   STEADY_MONTHS,
   NEW_DAYS,
   SUMMER_FIRST_MONTH,
