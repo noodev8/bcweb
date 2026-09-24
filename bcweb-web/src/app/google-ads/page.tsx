@@ -886,7 +886,7 @@ function GoogleAdsScreen() {
     `/analytics/ad-daily?${win === 'd365' ? '' : `days=${days}&`}from=${GOOGLE_ADS_BACK}&back=Google%20Ads`;
 
   return (
-    <AppShell title="Google Ads">
+    <AppShell>
       {/* ---- Window switch + import ------------------------------------------------------------------------------------ */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* The period, and beside it the way back to a clean screen. */}

@@ -383,9 +383,10 @@ function AmazonOrderContent() {
   // from under them mid-session.
   const seedTerm = (searchParams.get('q') || '').trim();
   const from = searchParams.get('from');
-  const backHref = from || '/dashboard';
-  // An explicit ?back= wins; otherwise derive a readable name from the origin path, and fall back to the dashboard for a plain visit.
-  const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : 'Dashboard');
+  // No back link on a plain visit (owner, 2026-09-24): the header logo is the way to the dashboard.
+  const backHref = from || undefined;
+  // An explicit ?back= wins; otherwise derive a readable name from the origin path.
+  const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : 'Back');
   const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
@@ -1256,7 +1257,7 @@ function AmazonOrderContent() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell title="Amazon Order" backHref={backHref} backLabel={backLabel}>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* OPEN AMAZON ORDERS BANNER — see the header block. */}
       {showOpenBanner && (
         <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

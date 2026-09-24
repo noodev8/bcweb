@@ -26,7 +26,7 @@ import {
 
 export default function AnalyticsPage() {
   return (
-    <AppShell title="Reports" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <div className="mb-6">
         <p className="text-sm text-slate-500">Sales, stock, margin and brand reporting. More views will appear here over time.</p>
       </div>

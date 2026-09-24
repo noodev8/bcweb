@@ -32,8 +32,9 @@ one mindset and quietly wrong for the other four, and re-opening is one click.
 
   THE ONE EXCEPTION IS COMING BACK (owner, 2026-09-22 — "I went to Winners and then went back to the full reports; I'd prefer to go
   back where I came from"). Every tile here links with `?from=<group id>`, and the page reads `?g=<group id>` on arrival and opens
-  that group. AppShell turns the first into the second: a page opened from this menu gets a back link to /dashboard?g=… instead of
-  its own parent, so back retraces the step you took rather than climbing the route tree. Winners is the case that exposed it — you
+  that group. AppShell turns the first into the second: on a page opened from this menu the header LOGO points at /dashboard?g=…
+  (since 2026-09-24 there is no "← Dashboard" back link — the logo is the way home), and no back link to its own parent is shown,
+  so home retraces the step you took rather than climbing the route tree. Winners is the case that exposed it — you
   reach it from this group in one hop, and its own parent is the reports index you never visited.
   THIS IS NOT THE REMEMBERING THE PARAGRAPH ABOVE RULES OUT. It's explicit and it's in the URL: it lasts exactly one journey, is
   visible, and is bookmarkable. Nothing is inferred about what you'd want NEXT time.

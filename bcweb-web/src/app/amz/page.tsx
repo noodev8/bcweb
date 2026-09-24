@@ -34,7 +34,7 @@ export default function AmzHome() {
   const error = loadError?.message ?? null;
 
   return (
-    <AppShell title="Amazon Pricing" backHref="/dashboard" backLabel="Dashboard" headerRight={<AmzUploadButton />}>
+    <AppShell headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       {/* Direct SKU search entry. */}

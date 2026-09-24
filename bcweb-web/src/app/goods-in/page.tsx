@@ -22,7 +22,7 @@ import GoodsInStation from '@/components/GoodsInStation';
 
 export default function GoodsInPage() {
   return (
-    <AppShell title="Goods In" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <GoodsInStation />
     </AppShell>
   );

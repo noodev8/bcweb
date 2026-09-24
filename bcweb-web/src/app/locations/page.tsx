@@ -37,7 +37,7 @@ import LocationsBoard from '@/components/LocationsBoard';
 
 export default function LocationsPage() {
   return (
-    <AppShell title="Location"backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <LocationsBoard />
     </AppShell>
   );

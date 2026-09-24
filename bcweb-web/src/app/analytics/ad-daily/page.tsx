@@ -172,7 +172,7 @@ const backLabel = searchParams.get('back') || 'Reports';
   const breakEven = t && t.units > 0 ? (t.kept + t.spend) / t.units : null;
 
   return (
-    <AppShell title="Ad Daily" backHref={backHref} backLabel={backLabel}>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* ---- The window ------------------------------------------------------------------------------------------------------
           The summary card that used to sit here is gone (owner, 2026-09-10). It carried the same five figures the table's total row
           now carries, one card-width above them and in a different order — so the eye had to travel to compare a day against the

@@ -73,7 +73,7 @@ const backLabel = searchParams.get('back') || 'Reports';
   const scale = Math.max(...rows.filter((r) => !r.partial).map((r) => r.pctKept ?? 0), 1);
 
   return (
-    <AppShell title="Ad Efficiency" backHref={backHref} backLabel={backLabel}>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       <div className="mb-4">
         <p className="text-sm text-slate-500">
           How much of each month&rsquo;s Shopify profit survived Google ad spend. Watch the share, not the spend — spend should rise

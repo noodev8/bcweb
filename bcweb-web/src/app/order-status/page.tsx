@@ -88,7 +88,7 @@ function OrderStatusHomeContent() {
   }
 
   return (
-    <AppShell title="Order Status" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <OrderStageSwitch
         stage={stage}
         onChange={pick}

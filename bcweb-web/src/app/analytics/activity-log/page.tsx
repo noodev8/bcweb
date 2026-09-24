@@ -61,7 +61,7 @@ export default function ActivityLogPage() {
     'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400';
 
   return (
-    <AppShell title="Bclog" backHref="/analytics" backLabel="Reports">
+    <AppShell backHref="/analytics" backLabel="Reports">
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative">

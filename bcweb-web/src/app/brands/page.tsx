@@ -99,7 +99,7 @@ export default function BrandsPage() {
   const maxRevenue = rows.reduce((n, r) => Math.max(n, r.revenue), 0);
 
   return (
-    <AppShell title="Brands" backHref="/analytics" backLabel="Reports">
+    <AppShell backHref="/analytics" backLabel="Reports">
       <details className="group mb-5 max-w-2xl">
         <summary className="cursor-pointer list-none text-sm text-slate-400 transition hover:text-slate-600">
           <span className="inline-flex items-center gap-1">

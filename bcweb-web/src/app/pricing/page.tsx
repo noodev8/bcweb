@@ -31,7 +31,7 @@ export default function PricingHome() {
   const error = loadError?.message ?? null;
 
   return (
-    <AppShell title="Shopify Pricing" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       {/* Direct product search entry. */}
       <Link
         href="/pricing/find"

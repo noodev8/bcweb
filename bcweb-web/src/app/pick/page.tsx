@@ -30,7 +30,7 @@ import PickList from '@/components/PickList';
 
 export default function PickPage() {
   return (
-    <AppShell title="Pick" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <PickList />
     </AppShell>
   );

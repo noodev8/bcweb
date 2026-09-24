@@ -575,7 +575,7 @@ function InventoryPageContent() {
   }
 
   return (
-    <AppShell title="Inventory" subtitle="Find stock by title, groupid or segment" backHref={from || undefined} backLabel={backLabel}>
+    <AppShell backHref={from || undefined} backLabel={backLabel}>
       {/* ---- Command bar ---------------------------------------------------------------------------------------------------
           NOT sticky (owner, 2026-07-27, on trial). It used to stay pinned so the filter was always to hand mid-browse, but once the
           keyboard cursor arrived the bar sat still while cards streamed under it — too much happening at once to read comfortably

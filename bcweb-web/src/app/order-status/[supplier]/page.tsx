@@ -213,7 +213,7 @@ function SupplierContent() {
   const isEmpty = !loading && !error && batches !== null && batches.length === 0;
 
   return (
-    <AppShell title={supplier} backHref={`/order-status?stage=${stage}`} backLabel="Suppliers">
+    <AppShell backHref={`/order-status?stage=${stage}`} backLabel="Suppliers" crumb={<span className="font-medium text-slate-800">{supplier}</span>}>
       <OrderStageSwitch
         stage={stage}
         onChange={pickStage}

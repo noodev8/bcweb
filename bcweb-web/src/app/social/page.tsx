@@ -74,7 +74,7 @@ function SocialPageContent() {
   ];
 
   return (
-    <AppShell title="Social" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           Queue a post for the Brookfield Comfort Facebook Page. It goes out on its own at the time you set.

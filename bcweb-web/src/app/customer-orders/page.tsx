@@ -48,9 +48,6 @@ export default function CustomerOrdersPage() {
 
   return (
     <AppShell
-      title="Customer Orders"
-      backHref="/dashboard"
-      backLabel="Dashboard"
       /* PickLink first, Update Orders second: the pick count is a READING you glance at on the way past, Update Orders is an ACTION
          that reloads the grid under you — the quiet one shouldn't sit where the mouse is already heading. */
       headerRight={(

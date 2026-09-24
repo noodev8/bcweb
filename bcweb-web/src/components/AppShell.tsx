@@ -14,7 +14,7 @@ Guard: if auth has hydrated (ready) and the user is NOT authenticated, redirect 
 import { ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeftIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ArrowRightOnRectangleIcon, HomeIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 import { logScreenView } from '@/lib/api';
@@ -74,12 +74,19 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   A `from` that is a PATH (starts with "/") is not a dashboard group: the pricing screens use ?from=<path>&back=<label> to thread
   their own return target (Segments -> a segment's list -> a style's drill), and they pass it in as backHref themselves. Treating
   that as a group id sent every one of those back links to a dashboard with nothing open (fixed 2026-09-23).
+
+  NO "← DASHBOARD" ROW ANY MORE (owner, 2026-09-24 — "saves a row in those screens"). Arriving from a dashboard group now gives NO back
+  link at all — not the Dashboard one, and deliberately not the page's own parent either (that is the Winners -> "← Reports" detour
+  the paragraph above fixed). The way home is the logo, which carries the same `?g=` return ticket, so it still re-opens the group
+  you left from. Pages no longer pass backHref="/dashboard" either. A back link now only ever means "up to the list/screen this
+  came from", never "home".
   */
   const fromParam = useUrlParam('from');
   const from = fromParam && !fromParam.startsWith('/') ? fromParam : null;
 
-  const effectiveBackHref = from ? '/dashboard?g=' + encodeURIComponent(from) : backHref;
-  const effectiveBackLabel = from ? 'Dashboard' : (backLabel || 'Back');
+  const homeHref = from ? '/dashboard?g=' + encodeURIComponent(from) : '/dashboard';
+  const effectiveBackHref = from ? undefined : backHref;
+  const effectiveBackLabel = backLabel || 'Back';
   const hasTitleRow = !!(title || subtitle || subtitleNode);   // else headerRight moves up to the back-link row (no empty row for it)
 
   /*
@@ -130,7 +137,9 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
           {/* Brand + switcher. The switcher scrolls on its own (min-w-0 + overflow-x-auto) so a narrow window shortens the tabs
               rather than pushing Logout off the edge. */}
           <div className="flex min-w-0 items-center gap-4">
-            <Link href="/dashboard" className="shrink-0 text-lg font-semibold tracking-tight text-slate-900 hover:text-brand-700">
+            {/* The way home — there is no "← Dashboard" link on any page (see the `from` note above). The house icon says so. */}
+            <Link href={homeHref} className="inline-flex shrink-0 items-center gap-2 text-lg font-semibold tracking-tight text-slate-900 hover:text-brand-700">
+              <HomeIcon className="h-5 w-5 text-slate-400" />
               Brookfield Comfort
             </Link>
             {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour).
@@ -173,14 +182,18 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
       </header>
 
       {/* Optional page sub-header (back link [+ crumb] + title). */}
-      {!bare && (title || effectiveBackHref) && (
+      {!bare && (hasTitleRow || effectiveBackHref || headerRight) && (
         <div className={container + ' pt-6'}>
-          {effectiveBackHref && (
+          {/* The back-link row. Also carries headerRight on a page with no title row — which, since the page titles went (owner,
+              2026-09-24), can mean a row holding ONLY headerRight (Customer Orders' pick count + Update orders). */}
+          {(effectiveBackHref || (!hasTitleRow && headerRight)) && (
             <div className="mb-2 flex items-center justify-between gap-4">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <Link href={effectiveBackHref} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700">
-                  <ArrowLeftIcon className="h-4 w-4" /> {effectiveBackLabel}
-                </Link>
+                {effectiveBackHref && (
+                  <Link href={effectiveBackHref} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700">
+                    <ArrowLeftIcon className="h-4 w-4" /> {effectiveBackLabel}
+                  </Link>
+                )}
                 {crumb && (
                   <>
                     <span className="text-slate-300">/</span>

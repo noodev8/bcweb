@@ -379,7 +379,7 @@ function ProductHubContent() {
   }
 
   return (
-    <AppShell title="Product" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell>
       {/* TWO BOXES, THEN STEPS - /inventory's filter, not a second search with its own rules (owner, 2026-09-22: "exactly same
           functionality as inventory search"). Either box or both may be filled; Enter or Find commits them as steps and clears them,
           and each Find narrows what is ALREADY on screen. Steps are display-only; to undo one use its x, to undo the lot use Reset. */}
