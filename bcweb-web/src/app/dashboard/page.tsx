@@ -61,13 +61,14 @@ import { useState, ComponentType, SVGProps } from 'react';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
+import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
   CurrencyPoundIcon, ShoppingCartIcon, ChartBarIcon, BuildingStorefrontIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, BoltIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
-  ChartPieIcon, CalculatorIcon,
+  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -75,9 +76,13 @@ type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface Tile {
   title: string;
   subtitle: string;      // the four-or-five-word line under the title; owner's wording to edit
-  description: string;   // the full sentence, shown on hover
-  href: string;
+  description: string;   // the full sentence — not shown on the dashboard since the tooltip went (owner, 2026-09-24); kept as the
+                         // tile's reference wording
+  href: string;          // ignored when `action` is set
   icon: Icon;
+  // A card that DOES something instead of opening a screen. Only one so far — the provisional menu's Update Shopify (owner,
+  // 2026-09-24); see components/UpdateShopifyTile.tsx.
+  action?: 'update-shopify';
 }
 
 interface Group {
@@ -360,18 +365,265 @@ const GROUPS: Group[] = [
   },
 ];
 
+/* =====================================================================================================================================
+   TEMP MENU, shown as "Provisional new menu" (owner, 2026-09-24) — a trial re-alignment of the menu, built BESIDE the live one rather than in place of it so
+   the rest of the team's menu doesn't move while the owner works out the new shape. Same Group/Tile data, same tiles, same panel;
+   it just renders as a second row under its own label. When the new shape is settled it replaces GROUPS and this array (and the
+   labelled section in the page) goes. Group ids must not collide with GROUPS — ?g= and ?from= resolve against both arrays.
+===================================================================================================================================== */
+const TEMP_GROUPS: Group[] = [
+  {
+    id: 'flow',
+    title: 'Business Flow',
+    blurb: 'Product in, stock bought, price set',
+    icon: ArrowsRightLeftIcon,
+    tiles: [
+      {
+        title: 'Add / Modify Product',
+        subtitle: 'Edit or create a product',
+        description: 'Find an existing product to edit, or create a new one.',
+        href: '/products',
+        icon: TagIcon,
+      },
+      {
+        title: 'Amazon Order',
+        subtitle: 'What to buy in, what to send',
+        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
+        href: '/amazon-order',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        title: 'Google Ads',
+        subtitle: 'Shopping campaigns and spend',
+        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
+        href: '/google-ads',
+        icon: CursorArrowRaysIcon,
+      },
+      {
+        title: 'Repricing',
+        subtitle: 'Selling and stuck lists',
+        description: 'See which segment needs attention next, and track who worked what.',
+        href: '/segments',
+        icon: Squares2X2Icon,
+      },
+    ],
+  },
+  {
+    id: 'ops',
+    title: 'Operations',
+    blurb: 'Stock in, orders out, supplier orders',
+    icon: TruckIcon,
+    tiles: [
+      {
+        title: 'Goods In',
+        subtitle: 'Book in a delivery',
+        description: "Book in what's arrived from a supplier and put it on the shelf.",
+        href: '/goods-in',
+        icon: InboxArrowDownIcon,
+      },
+      {
+        title: 'Customer Orders',
+        subtitle: 'Fulfil what customers bought',
+        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
+        href: '/customer-orders',
+        icon: UserGroupIcon,
+      },
+      {
+        title: 'Pick',
+        subtitle: 'What to take off the shelf',
+        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
+        href: '/pick',
+        icon: HandRaisedIcon,
+      },
+      {
+        title: 'Amazon Order',
+        subtitle: 'What to buy in, what to send',
+        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
+        href: '/amazon-order',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        // Renamed from "Order Status" here only (owner, 2026-09-24) — beside Customer Orders and Amazon Order, "Order Status" no
+        // longer said WHOSE order. Same screen; the live menu and the screen's own title still say Order Status.
+        title: 'Supplier Orders',
+        subtitle: 'What’s placed, what’s coming',
+        description: "Place supplier orders and chase what's on its way.",
+        href: '/order-status',
+        icon: ShoppingCartIcon,
+      },
+      {
+        title: 'Location',
+        subtitle: "What's on a rack",
+        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
+        href: '/locations',
+        icon: MapPinIcon,
+      },
+      {
+        title: 'Repricing',
+        subtitle: 'Selling and stuck lists',
+        description: 'See which segment needs attention next, and track who worked what.',
+        href: '/segments',
+        icon: Squares2X2Icon,
+      },
+      {
+        title: 'Update Shopify',
+        subtitle: 'Pull in new orders now',
+        description: 'Run the Shopify order update now rather than waiting for the scheduled run — the same as the Update orders button on Sales and Customer Orders.',
+        href: '/customer-orders',
+        icon: CloudArrowDownIcon,
+        action: 'update-shopify',
+      },
+      {
+        title: 'Update Amazon',
+        subtitle: 'Load Seller Central reports',
+        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
+        href: '/update-amazon',
+        icon: ArrowUpTrayIcon,
+      },
+    ],
+  },
+  {
+    id: 'reports',
+    title: 'Reports',
+    blurb: 'Sales, ads, stock, month end',
+    icon: ChartBarIcon,
+    // Starts as a copy of the live menu's "See how we're doing" tiles, so it stands on its own when GROUPS is retired.
+    tiles: [
+      {
+        title: 'Sales',
+        subtitle: 'Recent sales and profit',
+        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
+        href: '/analytics/sales',
+        icon: BanknotesIcon,
+      },
+      {
+        title: 'Stock Position',
+        subtitle: 'What’s commercially alive',
+        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
+        href: '/analytics/stock-position',
+        icon: CubeIcon,
+      },
+      {
+        title: 'New Products',
+        subtitle: 'Added in the last 30 days',
+        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
+        href: '/analytics/new-additions',
+        icon: SparklesIcon,
+      },
+      {
+        title: 'Price Changes',
+        subtitle: 'Recent moves, and what shifted',
+        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
+        href: '/analytics/price-changes',
+        icon: ArrowsRightLeftIcon,
+      },
+      {
+        title: 'Log',
+        subtitle: 'Who did what, and when',
+        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
+        href: '/analytics/activity-log',
+        icon: DocumentMagnifyingGlassIcon,
+      },
+      {
+        title: 'Winners',
+        subtitle: 'Products pulling their weight',
+        description: 'How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling.',
+        href: '/analytics/winners',
+        icon: TrophyIcon,
+      },
+      {
+        title: 'Brands',
+        subtitle: 'What each brand earned',
+        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
+        href: '/brands',
+        icon: ChartPieIcon,
+      },
+      {
+        title: 'Finance',
+        subtitle: 'Close the month',
+        description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.',
+        href: '/finance',
+        icon: CalculatorIcon,
+      },
+    ],
+  },
+  {
+    id: 'birk',
+    title: 'Birkenstock',
+    blurb: 'Order it, track it, keep sizes on the shelf',
+    icon: CalendarDaysIcon,
+    // Moved out of Reports (owner, 2026-09-24): the Birk screens are one job — next season's order, where it's got to, and
+    // whether the core sizes are in — so they sit together rather than scattered across reports and catalogue.
+    tiles: [
+      {
+        title: 'Birk Order Book',
+        subtitle: 'Next season’s order sheet',
+        description: 'Sold in 365 days against what we hold, size by size — what to put on the next order.',
+        href: '/birkenstock',
+        icon: CalendarDaysIcon,
+      },
+      {
+        title: 'Birk Tracker',
+        subtitle: 'Placed to delivered',
+        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
+        href: '/birk-tracker',
+        icon: TruckIcon,
+      },
+      {
+        title: 'Birk Availability',
+        subtitle: 'Size range',
+        description: 'How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge.',
+        href: '/analytics/birk-availability',
+        icon: PresentationChartLineIcon,
+      },
+    ],
+  },
+  {
+    id: 'google',
+    title: 'Google',
+    blurb: 'Campaigns, and what the spend is earning',
+    icon: CursorArrowRaysIcon,
+    // Google Ads plus the two ad reports moved out of Reports (owner, 2026-09-24) — the campaigns and the read on whether the
+    // spend is paying sit together. Google Ads also stays in Business Flow.
+    tiles: [
+      {
+        title: 'Google Ads',
+        subtitle: 'Shopping campaigns and spend',
+        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
+        href: '/google-ads',
+        icon: CursorArrowRaysIcon,
+      },
+      {
+        title: 'Ad Efficiency',
+        subtitle: 'What survives Google spend',
+        description: "How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept.",
+        href: '/analytics/ad-efficiency',
+        icon: ScaleIcon,
+      },
+      {
+        title: 'Ad Daily',
+        subtitle: 'Spend vs sales, day by day',
+        description: 'Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner’s read on whether a budget change is working.',
+        href: '/analytics/ad-daily',
+        icon: SunIcon,
+      },
+    ],
+  },
+];
+
+const ALL_GROUPS = [...GROUPS, ...TEMP_GROUPS];
+
 export default function DashboardPage() {
   // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
   // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
   // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
   const g = useUrlParam('g');
-  const urlGroup = g && GROUPS.some((x) => x.id === g) ? g : null;
+  const urlGroup = g && ALL_GROUPS.some((x) => x.id === g) ? g : null;
 
   // The group the operator clicked open or shut. undefined = no click yet, so the ?g= group (or nothing) shows; null = every group
   // closed, which is how a bare /dashboard opens (see the header note on not remembering).
   const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const openId = chosenId === undefined ? urlGroup : chosenId;
-  const open = GROUPS.find((g) => g.id === openId) ?? null;
 
   return (
     <AppShell>
@@ -381,10 +633,27 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      {/* THE FIVE HEADINGS. Five across at lg so the whole menu is one scan of five rather than seventeen; two across below that,
+      {/* THE FIVE HEADINGS + their panel. One openId across BOTH menus, so opening a temp group closes a live one — still one
+          panel on screen at a time. */}
+      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
+
+      {/* TEMP MENU — see TEMP_GROUPS. Labelled so nobody mistakes it for part of the real menu. */}
+      <h2 className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wide text-slate-500">Provisional new menu</h2>
+      <GroupRow groups={TEMP_GROUPS} openId={openId} onToggle={setOpenId} />
+    </AppShell>
+  );
+}
+
+// One row of group headings with its expand-in-place panel below. Rendered once for the live menu and once for the temp menu; the
+// open group is lifted to the page so only one panel shows across both.
+function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void }) {
+  const open = groups.find((g) => g.id === openId) ?? null;
+  return (
+    <>
+      {/* THE HEADINGS. Five across at lg so the whole menu is one scan of five rather than seventeen; two across below that,
           where five columns would make each heading too narrow to read its blurb. */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {GROUPS.map((g) => {
+        {groups.map((g) => {
           const isOpen = g.id === openId;
           return (
             <button
@@ -392,9 +661,9 @@ export default function DashboardPage() {
               type="button"
               // Clicking the open group closes it — so the same click that opened it puts the page back, with no close affordance
               // to hunt for.
-              onClick={() => setOpenId(isOpen ? null : g.id)}
+              onClick={() => onToggle(isOpen ? null : g.id)}
               aria-expanded={isOpen}
-              aria-controls="group-panel"
+              aria-controls={'group-panel-' + g.id}
               className={
                 'flex h-full flex-col rounded-xl border p-4 text-left transition ' +
                 (isOpen
@@ -420,9 +689,11 @@ export default function DashboardPage() {
           four-wide grid the old bands used. The darker slate-200 fill is the old band panel, kept for the same reason: it encloses
           the tiles so nothing has to be inferred about what belongs to what. */}
       {open && (
-        <section id="group-panel" className="mt-3 rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300">
+        <section id={'group-panel-' + open.id} className="mt-3 rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {open.tiles.map((t) => (
+            {open.tiles.map((t) => t.action === 'update-shopify' ? (
+              <UpdateShopifyTile key={open.id + t.title} title={t.title} subtitle={t.subtitle} />
+            ) : (
               // key includes the group id because a tile can appear in two groups — title alone is not unique across the menu.
               // `?from=` is the return ticket AppShell reads to build the back link (see the header note). Appended rather than
               // built into the data so the hrefs stay plain, and with a `?`/`&` check in case a tile ever carries its own query.
@@ -440,6 +711,6 @@ export default function DashboardPage() {
           </div>
         </section>
       )}
-    </AppShell>
+    </>
   );
 }

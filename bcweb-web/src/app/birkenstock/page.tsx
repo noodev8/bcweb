@@ -649,7 +649,7 @@ export default function BirkenstockPage() {
   }
 
   return (
-    <AppShell title="Birkenstock">
+    <AppShell bare>
       {/* ---- Command bar ------------------------------------------------------------------------------------------------------
           Everything the screen can do sits in one card, in TWO ROWS THAT MEAN DIFFERENT THINGS (2026-09-05):
 

@@ -60,12 +60,17 @@ interface Props {
   className?: string;
 }
 
-export default function UpdateOrdersButton({ onDone, onError, className }: Props) {
+/*
+The run handling, as a hook, so a caller that isn't a button can share it (owner, 2026-09-24: the provisional dashboard menu's
+"Update Shopify" card runs the update straight from the menu). Same reason this file exists at all — the handling is the part that
+rots when copied — so the card uses THIS, not a second copy of it.
+*/
+export function useUpdateOrders({ onDone, onError }: { onDone?: () => void | Promise<void>; onError: (message: string | null) => void }) {
   const { logout } = useAuth();
   const [running, setRunning] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  const onRun = useCallback(async () => {
+  const run = useCallback(async () => {
     setRunning(true);
     setNote(null);
     onError(null);
@@ -89,6 +94,12 @@ export default function UpdateOrdersButton({ onDone, onError, className }: Props
 
     setRunning(false);
   }, [onDone, onError, logout]);
+
+  return { running, note, run };
+}
+
+export default function UpdateOrdersButton({ onDone, onError, className }: Props) {
+  const { running, note, run: onRun } = useUpdateOrders({ onDone, onError });
 
   return (
     <div className={'flex items-center gap-2 ' + (className ?? '')}>

@@ -32,7 +32,7 @@ import BirkTrackerBook from '@/components/BirkTrackerBook';
 
 export default function BirkTrackerPage() {
   return (
-    <AppShell title="Birk Tracker" backHref="/dashboard" backLabel="Dashboard">
+    <AppShell bare>
       <BirkTrackerBook />
     </AppShell>
   );

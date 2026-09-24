@@ -69,24 +69,7 @@ export default function BirkAvailabilityPage() {
   const tableRows = useMemo(() => [...rows].reverse(), [rows]);
 
   return (
-    <AppShell title="Birk Availability" backHref="/analytics" backLabel="Reports">
-      <details className="group mb-5 max-w-2xl">
-        <summary className="cursor-pointer list-none text-sm text-slate-400 transition hover:text-slate-600">
-          <span className="inline-flex items-center gap-1">
-            What is this? <span className="transition group-open:rotate-180">▾</span>
-          </span>
-        </summary>
-        <p className="mt-2 text-sm text-slate-500">
-          How much of the Birkenstock core-size range is buyable right now. <strong>Full</strong> — styles holding all three women&apos;s
-          core sizes (38 / 39 / 40) in free stock — is the number to push ad spend against; <strong>Styles</strong> is the in-range
-          ceiling. Read Full as a level and a direction. The amber line overlays <strong>trailing 7-day Birk units sold</strong>
-          (all-channel) so you can eyeball whether availability tracks demand — though both tend to rise together in season, so
-          co-movement isn&apos;t proof one drives the other. <strong>Stock</strong> is total Birk free units on hand (the whole tank) and
-          <strong> Cover</strong> is weeks of that stock at the current sales burn — the forward &ldquo;are we draining?&rdquo; gauge for
-          pushing or easing ad spend. Hit <em>Update now</em> to take a fresh reading (one snapshot per day).
-        </p>
-      </details>
-
+    <AppShell bare>
       {/* Headline + Update */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         {latest ? (

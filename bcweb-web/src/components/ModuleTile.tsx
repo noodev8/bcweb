@@ -10,8 +10,8 @@ Purpose: A single tile on the platform dashboard and on the Reports index. Live 
          description paragraph. The dashboard is compact and the Reports index is not, because they answer different questions: the
          dashboard is a menu you know by heart and want to cross in one glance, so a paragraph per tile is nine paragraphs you read
          past every time and a page twice as tall as it needs to be. The Reports index is a shelf of things you DON'T know by heart —
-         "what does Stock Position actually show me?" — and there the description is the point. A compact tile keeps its description
-         as a hover tooltip, so nothing is lost, it just isn't shouted.
+         "what does Stock Position actually show me?" — and there the description is the point. A compact tile shows NO description at
+         all — the hover tooltip it used to carry was removed (owner, 2026-09-24); the subtitle is the only explanation it gives.
          A live tile carries NO badge of its own (owner, 2026-08-27 — the old green "Live" / amber "In progress" pills went): every
          tile on the grid that isn't greyed out is live, so the pill repeated what the tile's own styling already said and put a
          row of colour above titles that then had to compete with it. "Coming soon" stays — that one carries real information.
@@ -33,7 +33,7 @@ interface ModuleTileProps {
   // SUBTITLE (owner, 2026-09-22) — a compact-only second line, four or five words. It exists because the dashboard rebuild put the
   // tiles behind a drill-down, and a tile you reach by opening a group is a tile you are LESS sure about than one you crossed by
   // heart: half the names here are internal shorthand (Bclog, Birk Tracker, Birkenstock vs Birk Tracker) that read fine to the team
-  // and to nobody else. The full `description` stays on the hover tooltip; this is the part worth saying out loud. Omit it and the
+  // and to nobody else. Since 2026-09-24 (owner) it is the ONLY explanation on a compact tile — no hover tooltip. Omit it and the
   // tile renders exactly as it always did, which is why the Reports index (full density, description already visible) never sets it.
   subtitle?: string;
 }
@@ -42,7 +42,6 @@ export default function ModuleTile({ title, description, href, icon: Icon, live,
   // COMPACT — icon and title on one row, description demoted to the tooltip. Roughly a third the height of the full card.
   const compactBody = (
     <div
-      title={description}
       className={
         'flex h-full items-center gap-3 rounded-xl border p-3.5 transition ' +
         (live

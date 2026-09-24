@@ -46,9 +46,13 @@ interface AppShellProps {
                            // to the back-link row, for the same reason.
   crumb?: ReactNode;       // optional "where you are" rendered after the back link as `← Repricing / GIZEH-SEG` — for pages whose
                            // name is context you picked one click ago, not a heading worth a row (owner, 2026-09-24: the pricing lists)
+  // BARE — no sub-header at all: no back link (not even the ?from= one the dashboard adds) and no title. For full-width working
+  // screens where the top rows are worth more as data than as a "← Dashboard / Title" line (owner, 2026-09-24: the three Birk
+  // screens). The header bar above still names where you are and gets you out.
+  bare?: boolean;
 }
 
-export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, crumb }: AppShellProps) {
+export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, crumb, bare }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -169,7 +173,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
       </header>
 
       {/* Optional page sub-header (back link [+ crumb] + title). */}
-      {(title || effectiveBackHref) && (
+      {!bare && (title || effectiveBackHref) && (
         <div className={container + ' pt-6'}>
           {effectiveBackHref && (
             <div className="mb-2 flex items-center justify-between gap-4">
