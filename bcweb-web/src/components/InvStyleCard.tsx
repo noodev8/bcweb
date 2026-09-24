@@ -328,7 +328,7 @@ export default function InvStyleCard({
                 question is usually "what's it normally / what is it now", and the old face only showed RRP (struck through) when the
                 price was below it, so a full-price style gave no sign whether £77 was RRP or a cut. The stock + sold-30d pills that
                 used to sit here are gone (same date): the size chips already carry stock, and sold-30d is a pricing question the
-                Repricing screens answer. The sort still uses sold30 (page.tsx), so the field stays on the row. */}
+                Repricing screens answer. The SOLD worded filter still uses sold30 (page.tsx), so the field stays on the row. */}
             {/* Fixed-width, right-aligned columns so RRP and Price line up down the list whatever the amounts (£59.99 vs £130.00). */}
             <div className="shrink-0 text-right">
               <div className="flex items-baseline justify-end gap-3">

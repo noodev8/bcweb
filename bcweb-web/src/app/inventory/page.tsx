@@ -98,29 +98,23 @@ function metricValue(r: InvStyleRow, metric: QtyMetric): number {
 // SORTING (owner). A visible, click-to-reverse control rather than a worded command: sorting is a MODE you sit in and flip, not a
 // one-shot action like the STOCK/SOLD filters, so it needs a standing affordance that shows the current key + direction. Client-side —
 // the whole list is already in memory, same as the filters. Each key clicks in at a sensible default direction (see DEFAULT_DIR);
-// clicking the active key again reverses it. Keys deliberately limited to Title / Stock / Sold (owner) — the raw numbers, no derived metric.
-type SortKey = 'created' | 'title' | 'stock' | 'sold';
+// clicking the active key again reverses it. Added and Title only: the Local and Sold sorts were removed (owner, 2026-09-24) along
+// with the stock / sold-30d figures on the card face, which were what they ranked by. The STOCK / SOLD worded filters stay.
+type SortKey = 'created' | 'title';
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'created', label: 'Added' },
   { key: 'title', label: 'Title' },
-  { key: 'stock', label: 'Local' },
-  { key: 'sold', label: 'Sold' },
 ];
-// The direction a key adopts when first picked: Title A→Z, but Added/Stock/Sold high→low (newest first; and the drop review wants the
-// big piles and the dead sellers at the top). Re-clicking the active key toggles from here.
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { created: 'desc', title: 'asc', stock: 'desc', sold: 'desc' };
+// The direction a key adopts when first picked: Added newest first, Title A→Z. Re-clicking the active key toggles from here.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { created: 'desc', title: 'asc' };
 
 // The value a row sorts on for a given key. Title falls back to groupid so an untitled style still lands somewhere sensible.
-function sortValue(r: InvStyleRow, key: SortKey): number | string {
+function sortValue(r: InvStyleRow, key: SortKey): string {
   // `created` is skusummary.created_at, already rendered server-side as 'YYYYMMDD HH24:MI:SS' — that shape sorts correctly as plain
   // text, so no Date parsing here and no BST day-shift. An unstamped style reads as '' and lands at the bottom of newest-first, which
   // is where an unknown date belongs.
   if (key === 'created') return r.created || '';
-  if (key === 'title') return (r.title || r.groupid).toLowerCase();
-  // Same rule as metricValue: the Stock sort ranks by what is HERE (row.local), not the card's Total. Sorting and filtering must
-  // agree, or 'STOCK LESS 5, most stock first' would order the list by a number it did not filter on.
-  if (key === 'stock') return r.local;
-  return r.sold30;
+  return (r.title || r.groupid).toLowerCase();
 }
 
 // How many cards are painted at a time (see the window note in the header). Every match is shown eventually; this is only how far the
@@ -387,7 +381,8 @@ function InventoryPageContent() {
   // Sort mode — default NEWEST ADDED FIRST (owner, 2026-07-28). Now that the screen opens on the whole catalogue rather than a blank
   // box, the opening order is a real editorial choice: what has just come in is what the operator most often has a question about,
   // and it puts the styles nobody has looked at yet in front of them without anyone searching for something they don't know is there.
-  const [sortKey, setSortKey] = useState<SortKey>(back?.sortKey ?? 'created');
+  // A return snapshot saved before Local/Sold were removed could still name one; anything not on the menu falls back to Added.
+  const [sortKey, setSortKey] = useState<SortKey>(back && back.sortKey in DEFAULT_DIR ? back.sortKey : 'created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(back?.sortDir ?? 'desc');
   // Pick a key: re-clicking the active one reverses; a new key adopts its default direction. Written as two plain setState calls off the
   // CURRENT sortKey (not nested inside a setSortKey updater) — nesting made the reverse toggle twice under React StrictMode's double-invoke
@@ -434,14 +429,12 @@ function InventoryPageContent() {
   const visible = useMemo(() => filtered.filter((r) => !cut.has(r.groupid)), [filtered, cut]);
   const cutInView = filtered.length - visible.length;
 
-  // Apply the sort mode to what's on screen. groupid is the stable tie-break (always ascending) so equal stock/sold rows keep a fixed
+  // Apply the sort mode to what's on screen. groupid is the stable tie-break (always ascending) so equal rows keep a fixed
   // order rather than jittering between renders.
   const sortedVisible = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...visible].sort((a, b) => {
-      const av = sortValue(a, sortKey);
-      const bv = sortValue(b, sortKey);
-      const d = typeof av === 'string' ? av.localeCompare(bv as string) : av - (bv as number);
+      const d = sortValue(a, sortKey).localeCompare(sortValue(b, sortKey));
       if (d === 0) return a.groupid.localeCompare(b.groupid);
       return d * dir;
     });

@@ -102,8 +102,8 @@ function sizeLabel(s: { sizeDisplay: string | null; eu: string; uksize: string |
 
 export default function InvBreakdown({ data, onLeave }: {
   data: InvStockData;
-  // Called just before a SAME-TAB jump away (Sales, Send to Social), so /inventory can save the operator's place and put them back on
-  // this card, Detail open, when they return. See lib/invReturn.ts.
+  // Called just before a SAME-TAB jump away (Shopify, Amazon, Sales, Send to Social), so /inventory can save the operator's place and
+  // put them back on this card, Detail open, when they return. See RETURN TO YOUR PLACE in app/inventory/page.tsx.
   onLeave?: () => void;
 }) {
   const router = useRouter();
@@ -135,47 +135,36 @@ export default function InvBreakdown({ data, onLeave }: {
   // Analytics → Sales answers it properly (12 months, every channel, returns netted). SAME TAB, not new — on the owner's condition that
   // coming back lands on this card with Detail still open; onLeave saves that, and the Sales screen's Back (from=/inventory) or the
   // browser's Back both return to it. The groupid seeds Sales' Contains box, which matches groupid as a substring.
-  const openSales = () => {
+  // SHOPIFY / AMAZON pricing moved to the same tab too (owner, 2026-09-24), on the same terms. Both screens already honour ?from= for
+  // their Back link, so passing /inventory is all it takes; Amazon's Find threads it on through to the SKU drill and back.
+  const leaveTo = (path: string, params: Record<string, string>) => {
     onLeave?.();
-    const params = new URLSearchParams({ q: data.groupid, from: '/inventory', back: 'Inventory' });
-    router.push(`/analytics/sales?${params.toString()}`);
+    router.push(`${path}?${new URLSearchParams({ ...params, from: '/inventory' }).toString()}`);
   };
+  const openSales = () => leaveTo('/analytics/sales', { q: data.groupid, back: 'Inventory' });
+  const openShopify = () => leaveTo(`/pricing/style/${encodeURIComponent(data.groupid)}`, {});
+  const openAmazon = () => leaveTo('/amz/find', { q: data.groupid });
 
   return (
     <div className="border-t border-slate-200 bg-slate-50/40">
-      {/* ---- Jump-off actions. Reprice this style, see its sales, open its live page, or grab the image. The outbound ones open a NEW
-              TAB, so a mid-lookup jump never costs the operator the browse they were scrolling; Sales and Social stay in this tab and
-              save the operator's place first (onLeave). Shopify is groupid-grain (straight to the drill); Amazon is
-              per-size, so it opens the Find screen pre-filled. ---- */}
+      {/* ---- Jump-off actions. Price this style, see its sales, open its live page, or grab the image. Shopify, Amazon, Sales and
+              Social stay in THIS tab and save the operator's place first (onLeave); Edit product and Product page still open a new tab.
+              Shopify is groupid-grain (straight to the drill); Amazon is per-size, so it opens the Find screen pre-filled. ---- */}
       {/* ONE button style for every action (owner, 2026-09-24): the old bar mixed green/amber/brand tints, pipe separators and
           emoji ↗ glyphs, and read as six unrelated widgets. Now they are one row of equal neutral buttons; a new-tab jump carries the
           same small outbound icon on the right. */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 text-xs">
-        <a
-          href={`/pricing/style/${encodeURIComponent(data.groupid)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Reprice this style on Shopify (new tab)"
-          className={BTN}
-        >
-          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Reprice Shopify
-          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
-        </a>
-        <a
-          href={`/amz/find?q=${encodeURIComponent(data.groupid)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Reprice this style's sizes on Amazon (new tab)"
-          className={BTN}
-        >
-          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Reprice Amazon
-          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
-        </a>
+        <button type="button" onClick={openShopify} title="Price this style on Shopify" className={BTN}>
+          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Shopify
+        </button>
+        <button type="button" onClick={openAmazon} title="Price this style's sizes on Amazon" className={BTN}>
+          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Amazon
+        </button>
         <button type="button" onClick={openSales} title="This style's sales, last 12 months, all channels" className={BTN}>
           <ChartBarIcon className="h-3.5 w-3.5 text-slate-400" /> Sales
         </button>
-        {/* Edit the product itself — title, attributes, sizes, images — one hop from the shelf, same new-tab rule as the reprice
-            jumps. groupid-grain, so /products opens straight on this style's edit panel (it searches and selects on arrival). */}
+        {/* Edit the product itself — title, attributes, sizes, images — one hop from the shelf, opens in a new tab (unlike the
+            pricing jumps). groupid-grain, so /products opens straight on this style's edit panel (it searches and selects on arrival). */}
         <a
           href={`/products?groupid=${encodeURIComponent(data.groupid)}`}
           target="_blank"
