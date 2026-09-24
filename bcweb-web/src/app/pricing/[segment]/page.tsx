@@ -26,7 +26,9 @@ Top earners grouping (removed the same day). ONE UNSPLIT LIST, not the Selling/S
 splitting"): EVERY style with the status, from GET /pricing-status-list — OUT OF STOCK INCLUDED (stock 0), so prices can be set ahead
 of stock arriving rather than left at an old clearance price (owner). The list's length therefore equals the Winners card. The view
 tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status
-tab or from a card on the Winners screen (back link = wherever it came from).
+tab or from a card on the Winners screen (back link = wherever it came from). From Winners it opens with Due OFF (?pending=1) so the
+list is the card's whole number, and WINNERS carries the dial's ?bar= (e.g. 2500 -> only the winners over £2,500, on the revenue
+stamped at the last Update), shown in the crumb and kept through the drill round-trip.
 
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
@@ -44,6 +46,7 @@ import { getTriage, getLosers, getStatusList, applyPrice, parkStyleBulk, Pricing
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
+import { barLabel } from '@/lib/portfolioStatusUi';
 
 // Bulk price + review controls — kept identical to the Shopify drill's price-setter (owner: "exactly the same as the individual item").
 // Nudge denominations = the drill's −£1/−50p/+50p/+£1/+£2 steps; review chips = the drill's day set. Shopify green tone throughout.
@@ -104,8 +107,12 @@ function SegmentContent() {
   const segment = decodeURIComponent(params.segment);
   const by = parseGroupBy(searchParams.get('by'));
   const group: PricingGroup = { by, name: segment };
-  const byParam = by === 'segment' ? '' : `by=${by}&`;   // carried in every URL this page builds (see header)
   const isStatus = by === 'status';
+  // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
+  const barRaw = Number(searchParams.get('bar'));
+  const bar = isStatus && barRaw > 0 ? barRaw : null;
+  // carried in every URL this page builds (see header) — `bar` with it, so the drill round-trip keeps the same subset
+  const byParam = (by === 'segment' ? '' : `by=${by}&`) + (bar ? `bar=${bar}&` : '');
   const { logout } = useAuth();
 
   // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
@@ -126,12 +133,12 @@ function SegmentContent() {
   // Promise.all rather than two useApiQuery calls because PARTIAL TOLERANCE matters: if one list fails the other must still render,
   // under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['pricing-lists', group.by, segment],
+    ['pricing-lists', group.by, segment, bar],
     async () => {
       // A STATUS is one unsplit list (GET /pricing-status-list — every in-stock style with the status, not the two bars). Its rows
       // go in `winners` with `losers` empty, and the view is pinned to 'all' below, so the rest of the page works unchanged.
       if (isStatus) {
-        const s = await getStatusList(segment);
+        const s = await getStatusList(segment, bar);
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
@@ -194,7 +201,7 @@ function SegmentContent() {
 
   // Bulk selection + the last run's feedback belong to ONE view of ONE segment. Scoping them means switching view or segment discards
   // them during render — no reset effect, and no frame where the previous view's ticks are still visible.
-  const scope = `${mode}|${showPending}|${group.by}|${segment}`;
+  const scope = `${mode}|${showPending}|${group.by}|${segment}|${bar ?? ''}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -276,7 +283,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="shopify" note={GROUP_SUBTITLE[by]} />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}

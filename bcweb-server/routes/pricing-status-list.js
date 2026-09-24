@@ -26,12 +26,17 @@ Requires auth.
 Request: GET /pricing-status-list?status=WINNERS[&parked=include][&limit=N]
   status   required — one of the five (case-insensitive). Anything else -> MISSING_FIELDS.
   limit    safety cap only (utils/listLimit.js, default 100 / max 500). The web client asks for 500: STEADY alone is ~175 styles.
+  bar      optional, WINNERS only — one of the Winners screen's dial marks (WINNER_BAR_LADDER: 1500 / 2500 / 5000 / 10000). Keeps the
+           winners whose 12m revenue AS STAMPED AT THE LAST UPDATE (skusummary.portfolio_revenue_12m) is over it, so tapping the card
+           at £2,500 opens exactly the styles behind that card's number (owner, 2026-09-25). Stamped, not live, for the same reason the
+           dial reads it: a live figure would drift from the card after the next sale. Anything else -> MISSING_FIELDS.
 
 Success Response:
 {
   "return_code": "SUCCESS",
   "status": "WINNERS",
-  "total": 73,                 // styles with the status (pre-cap; parked included only with ?parked=include)
+  "bar": null,                 // the dial mark applied, or null
+  "total": 73,                // styles with the status (pre-cap; parked included only with ?parked=include)
   "truncated": false,
   "out_of_stock": 15,          // how many of those have no sellable stock (listed, stock 0)
   "rows": [ { "rank": 1, "groupid": "…", "title": "…", "price": 49.95, "stock": 31, "u30": 12,
@@ -53,6 +58,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { parseGroup } = require('../utils/pricingGroup');
+const { WINNER_BAR_LADDER } = require('../utils/portfolio');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -66,6 +72,15 @@ router.get('/', async (req, res) => {
     }
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
+
+    // The dial's bar — WINNERS only, and only a mark the dial actually offers, so it can never become a free-form revenue filter.
+    let bar = null;
+    if (req.query.bar !== undefined && req.query.bar !== '') {
+      bar = Number(req.query.bar);
+      if (group.name !== 'WINNERS' || !WINNER_BAR_LADDER.includes(bar)) {
+        return res.json({ return_code: 'MISSING_FIELDS', message: 'bar is only valid for WINNERS, and must be one of ' + WINNER_BAR_LADDER.join(', ') });
+      }
+    }
 
     // $1 status, $2 limit, $3 includeParked. Window functions run BEFORE the LIMIT, so total and out_of_stock are pre-cap figures.
     const result = await query(`
@@ -94,10 +109,11 @@ router.get('/', async (req, res) => {
       LEFT JOIN win w   ON w.groupid  = ss.groupid
       LEFT JOIN title t ON t.groupid  = ss.groupid
       WHERE ${group.column} = $1
+        AND ($4::numeric IS NULL OR ss.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue (see header)
         AND ($3::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
       ORDER BY COALESCE(w.u30, 0) DESC, COALESCE(st.stock, 0) DESC, ss.groupid
       LIMIT $2::int
-    `, [group.name, limit, includeParked]);
+    `, [group.name, limit, includeParked, bar]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -113,7 +129,9 @@ router.get('/', async (req, res) => {
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
     const outOfStock = result.rows.length > 0 ? Number(result.rows[0].oos_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', status: group.name, total, truncated: rows.length < total, out_of_stock: outOfStock, rows });
+    return res.json({
+      return_code: 'SUCCESS', status: group.name, bar, total, truncated: rows.length < total, out_of_stock: outOfStock, rows,
+    });
   } catch (err) {
     logger.error('[pricing-status-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load status list' });

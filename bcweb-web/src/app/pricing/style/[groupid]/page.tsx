@@ -62,8 +62,12 @@ function DrillContent() {
     if (!backTo.startsWith('/pricing/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/pricing/', ''));
-    // A status list (?by=status) is ONE unsplit list — no Selling / Stuck / Both — so its name alone ("← WINNERS").
-    if (/(?:^|&)by=status(?:&|$)/.test(qs)) return seg;
+    // A status list (?by=status) is ONE unsplit list — no Selling / Stuck / Both — so its name alone ("← WINNERS"), plus the dial
+    // mark when it was opened at one ("← WINNERS · over £2,500").
+    if (/(?:^|&)by=status(?:&|$)/.test(qs)) {
+      const b = /(?:^|&)bar=(\d+)(?:&|$)/.exec(qs);
+      return b ? `${seg} · over £${Number(b[1]).toLocaleString('en-GB')}` : seg;
+    }
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
     const modeLabel = m && m[1] === 'losers' ? 'Stuck' : m && m[1] === 'all' ? 'Both' : 'Selling';
     return `${seg} · ${modeLabel}`;

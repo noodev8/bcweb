@@ -19,14 +19,17 @@ the last 3 months → NEW created under 90 days ago → HARVEST out of season (S
 
 THE DIAL STAYS, "JUST FOR SCREEN REPORTING" (owner, 2026-09-24). It filters the TAGGED winners on the revenue stamped beside the tag
 at the last Update: at £1,500 it is exactly the tag count, at £2,500+ a subset. It moves the WINNERS box and the brand list and
-nothing else — the other four statuses have no bar, and the graph records the tag. It is view state only; nothing is sent anywhere.
+nothing else — the other four statuses have no bar, and the graph records the tag. It lives in the URL (?bar=2500) so a list opened
+at £2,500 returns here still at £2,500; it never re-tags and nothing is written.
 
 THE BRANDS STAY TOO ("now or later I want to see the brands"). Winners and units side by side because they disagree — a brand with
 many modest winners and a brand with few huge ones are different businesses.
 
-EVERY CARD OPENS ITS LIST ON REPRICING (2026-09-24): /pricing/<STATUS>?by=status — ONE unsplit list of the status's in-stock
-styles (no Selling / Stuck), with "← Winners" back here. The list counts the out-of-stock ones it leaves out, which is why it can be
-shorter than the card. Repricing's own first tab (Status, which replaced Top earners) opens the same lists.
+EVERY CARD OPENS ITS LIST ON REPRICING (2026-09-24): /pricing/<STATUS>?by=status — ONE unsplit list of every style with the status,
+out of stock included (no Selling / Stuck), with "← Winners" back here. It opens with Due OFF (?pending=1) so the list is the card's
+whole number, parked styles included (owner, 2026-09-25: "tapping on 2500 winners I would want to see which ones they are"), and the
+WINNERS card carries the dial (?bar=2500) so it opens exactly the winners behind its count. Repricing's own first tab (Status, which
+replaced Top earners) opens the same lists with Due on.
 
 ONE BUTTON: "Update now" re-tags every style AND records today's point on the status graph, in one transaction (it also still
 writes the old portfolio_snapshot row, which nothing draws). Pressing twice in a day overwrites today's point, never appends.
@@ -41,7 +44,7 @@ Guarded by AppShell. Consumes GET /portfolio-status and POST /portfolio-snapshot
 */
 
 import { Suspense, useMemo, useState, type MouseEvent } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -69,9 +72,6 @@ function shortDate(iso: string): string {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : iso || '—';
 }
 
-// A card opens its status's list on Repricing (the one unsplit list, /pricing/<STATUS>?by=status), whose "← Winners" returns here.
-const cardHref = (s: PortfolioStatusName) => statusListHref(s, '/analytics/winners', 'Winners');
-
 const pct1 = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : null);
 
 export default function WinnersPage() {
@@ -83,6 +83,7 @@ export default function WinnersPage() {
 }
 
 function WinnersPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const backHref = searchParams.get('from') || '/analytics';
   const backLabel = searchParams.get('back') || 'Reports';
@@ -99,9 +100,24 @@ function WinnersPageInner() {
   const bars = q.data?.bars ?? [];
   const trackedBar = bars[0] ?? null;
 
-  // WHICH BAR IS ON SCREEN. null = the tag's own bar. View state only.
-  const [bar, setBar] = useState<number | null>(null);
-  const selBar = bar ?? trackedBar;
+  // WHICH BAR IS ON SCREEN — in the URL (?bar=2500), not component state, so "← Winners" from a list opened at £2,500 lands back
+  // on £2,500 (owner, 2026-09-25). Absent, or not a mark the server offers = the tag's own bar. Nothing is sent anywhere; it is a
+  // reading. replace, not push: flipping the dial is not a navigation Back should step through.
+  const urlBar = Number(searchParams.get('bar'));
+  const selBar = bars.includes(urlBar) ? urlBar : trackedBar;
+  function setBar(b: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    if (b === trackedBar) next.delete('bar'); else next.set('bar', String(b));
+    const qs = next.toString();
+    router.replace(`/analytics/winners${qs ? `?${qs}` : ''}`, { scroll: false });
+  }
+  // This exact view (dial + our own back context), as the lists' "← Winners" target.
+  const selfHref = `/analytics/winners${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+  // A card opens its status's list on Repricing — the one unsplit list — with Due OFF, so the list is the card's whole number and not
+  // just what is due (owner, 2026-09-25: "I would want to see which ones they are"). WINNERS carries the dial's bar, so at £2,500
+  // it opens exactly the winners behind that card's count. The four greyed boxes don't depend on the bar and open their whole status.
+  const cardHref = (s: PortfolioStatusName) =>
+    statusListHref(s, selfHref, 'Winners', 'shopify', { showAll: true, bar: s === 'WINNERS' && offTracked ? selBar : null });
   const offTracked = selBar !== null && trackedBar !== null && selBar !== trackedBar;
 
   // The tagged winners at the selected bar — a filter on the STAMPED revenue. At the tracked bar this is every tagged winner.
@@ -213,8 +229,8 @@ function WinnersPageInner() {
       ) : (
         /* WINNERS IS THE HERO — half the width, two rows tall, twice the type. The other four are its siblings in a 2×2. */
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 lg:grid-rows-2">
-          {/* Every card opens its status's list on Repricing (owner, 2026-09-24). The list is always the TAGGED set — the dial is a
-              reading, so at £2,500 the WINNERS card still opens all tagged winners; the list says so by being the tag. */}
+          {/* Every card opens its status's list on Repricing — the card's whole number (Due off). At £2,500 the WINNERS card opens
+              only the winners over £2,500 (cardHref carries the bar), so the list is the styles behind the figure on the card. */}
           <Link
             href={cardHref('WINNERS')}
             className="group col-span-2 flex flex-col rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:border-slate-300 sm:p-8 lg:row-span-2"
@@ -257,6 +273,7 @@ function WinnersPageInner() {
               since={since(s)}
               sinceDate={prevPoint?.date}
               dimmed={offTracked}
+              href={cardHref(s)}
             />
           ))}
         </div>
@@ -327,6 +344,7 @@ function StatusBox({
   since,
   sinceDate,
   dimmed = false,
+  href,
 }: {
   status: PortfolioStatusName;
   row: PortfolioStatusCount | undefined;
@@ -334,11 +352,12 @@ function StatusBox({
   since: number | null;
   sinceDate: string | undefined;
   dimmed?: boolean;               // the dial is off £1,500 — this count is the tag, not the dial's reading
+  href: string;                   // its Repricing list (built by the page, which knows the dial and its own URL)
 }) {
   // A link to the status's Repricing list. Still a link when dimmed — the dim says "not what the dial is reading", not "unavailable".
   return (
     <Link
-      href={cardHref(status)}
+      href={href}
       className={`group flex flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${dimmed ? 'opacity-40 grayscale' : ''}`}
       title={dimmed ? 'Tagged at £1,500 — not affected by the dial' : undefined}
     >

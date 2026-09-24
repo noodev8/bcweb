@@ -340,9 +340,11 @@ const STATUS_LIST_LIMIT = 500;
 // The ONE Shopify list behind a status: every style carrying it, unsplit, out of stock included (stock 0), sellers first. Same row shape
 // as getLosers (u30 = Shopify units in 30 days), so the list page's table, drill and bulk bar take it unchanged. Always fetched with
 // parked included — the page's Due switch filters client-side, like the other lists.
-export function getStatusList(status: string) {
+// `bar` (WINNERS only) = a Winners-screen dial mark: keep the winners whose STAMPED 12m revenue is over it, so a card read at £2,500
+// opens exactly the styles behind its number. The server refuses any value the dial doesn't offer.
+export function getStatusList(status: string, bar?: number | null) {
   return request<{ status: string; total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
-    { url: '/pricing-status-list', method: 'GET', params: { status, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    { url: '/pricing-status-list', method: 'GET', params: { status, bar: bar ?? undefined, limit: STATUS_LIST_LIMIT, parked: 'include' } },
     (b) => ({
       status: String(b.status || status),
       total: Number(b.total) || 0,
