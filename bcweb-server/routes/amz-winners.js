@@ -32,10 +32,9 @@ Schema landmines respected: amzfeed is FBA-only, READ ONLY. amzprice is a junk-p
 integer. Size = the code's suffix after the last '-'. Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
 =======================================================================================================================================
 Request Query Params:
-  segment    (string)         - the segment to shortlist within — give exactly one of segment / topearners
-  topearners (string)         - any non-empty value: scope to TOP EARNERS instead — the SKUs of styles whose AMAZON revenue
-                                cleared the portfolio winner bar over 12 months (utils/portfolio.js). Added 2026-09-23 (owner);
-                                `segment` then carries "Top earners" and `by` says which. No campaign grouping on Amazon.
+  segment    (string)         - the segment to shortlist within — give exactly one of segment / status
+  status     (string)         - a portfolio status instead of a segment. Accepted (utils/pricingGroup.js), but the Repricing screen
+                                reads a status from amz-status-list, which is one unsplit list — not this route's bar.
   days     (int, optional)     - lookback window in days for sales; default 30
   limit    (int, optional)     - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked     (string, optional) - 'include' = also return PARKED SKUs (future skumap.next_amz_price_review), each flagged
@@ -45,7 +44,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
-  "by": "segment",      // "segment" | "topearners"
+  "by": "segment",      // "segment" | "status"
   "segment": "IVES-WHITE",
   "days": 30,
   "total": 23,          // qualifying SKUs in the segment, BEFORE the cap
@@ -86,7 +85,7 @@ const MIN_PROFIT = 2;    // £ realised net profit per unit (AVG of sales.profit
 
 router.get('/', async (req, res) => {
   try {
-    // The group this list is scoped to — a segment or (since 2026-09-23) Top earners. Amazon has no campaign grouping (campaigns are
+    // The group this list is scoped to — a segment (or a status). Amazon has no campaign grouping (campaigns are
     // Shopify only), so parseGroup refuses one here. `sk` is this route's skusummary alias. See utils/pricingGroup.js.
     const group = parseGroup(req.query, { alias: 'sk', channel: 'AMZ' });
     // 30-day window; `limit` is a safety cap, not a shortlist size (utils/listLimit.js). Parse defensively.
@@ -94,7 +93,7 @@ router.get('/', async (req, res) => {
     const limit = parseListLimit(req.query.limit);
 
     if (!group) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment or topearners is required' });
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment or status is required' });
     }
     const includeParked = req.query.parked === 'include';
 

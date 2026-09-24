@@ -126,15 +126,19 @@ router.post('/', async (req, res) => {
       //    by the price stage; shopify OFF; colourmap mirrors colour; google fields seed the 'standard' Shopping campaign (was 'new' until 2026-09-19 — owner's call).
       // `created`/`updated` are the legacy TEXT stamps. `created_at` is our proper timestamptz (added going forward) — set explicitly
       // here (it also has a column DEFAULT now(), but we set it so intent is clear and it survives if the default is ever dropped).
+      // portfolio_status 'NEW' — the owner's rule for a new item (2026-09-24). Also the column default, set explicitly for the same
+      // reason. portfolio_status_at stays NULL on purpose: no Update has assessed it yet (utils/portfolioStatus.js).
       await client.query(`
         INSERT INTO skusummary (
           groupid, brand, colour, colourmap, segment, season, supplier, imagename, handle,
           rrp, shopifyprice, minshopifyprice, maxshopifyprice, cost,
-          tax, shopify, googlestatus, googlecampaign, created, updated, created_at, updated_date
+          tax, shopify, googlestatus, googlecampaign, created, updated, created_at, updated_date,
+          portfolio_status
         ) VALUES (
           $1, $2, $3, $3, $4, $5, $6, '', $7,
           '0.00', '0.00', '0.00', 'RRP', '0.00',
-          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now()
+          1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now(),
+          'NEW'
         )
       `, [groupid, brand, colour, segment, season, supplier, handle]);
 

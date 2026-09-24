@@ -35,7 +35,17 @@ WHAT A SNAPSHOT MEANS, AND WHY IT IS NOT JUST A CACHE
            - The prune removes rows older than 2 years in the same transaction. Max size ~730 rows, permanently.
 
          Wrapped in withTransaction (upsert + prune as one unit), matching the module's sibling snapshot writers. The compute itself
-         is a read; only our own snapshot table is mutated. NOTHING in the product tables is touched by this route.
+         is a read.
+
+         ⚠ SINCE 2026-09-24 THIS PRESS ALSO RE-TAGS EVERY STYLE — skusummary.portfolio_status (WINNERS | STEADY | NEW | HARVEST |
+           LOSERS; the rules are in utils/portfolioStatus.js). The owner asked for one button, not two: "when pressed, the latest
+           tag is set". It runs in the SAME transaction as the snapshot, so a failed press leaves neither the trend point nor the
+           tags half written. It writes only portfolio_status / _at / _revenue_12m / _units_12m — no legacy `updated` stamp, no
+           shopifychange — and that is the ONLY write this route makes to a product table. It also upserts today's row in
+           portfolio_status_snapshot (the five counts), which is what the screen's status graph draws.
+
+           The old portfolio_snapshot row is STILL written (no screen draws it since 2026-09-24, when the Winners screen moved to
+           the stored tags). Kept so that series does not gain a hole if it is ever wanted back; it costs one query.
 
          Requires auth.
 =======================================================================================================================================
@@ -52,7 +62,11 @@ Success Response:
   "contenders": {
     "young_styles": 99, "expected_winners": 20, "high_confidence_count": 14
   },
-  "pruned": 0                         // rows removed for being older than 2 years
+  "pruned": 0,                        // rows removed for being older than 2 years
+  "status": {                         // the tags just written to skusummary.portfolio_status, counted
+    "counts": { "WINNERS": 73, "STEADY": 175, "NEW": 22, "HARVEST": 15, "LOSERS": 20 },
+    "total": 305
+  }
 }
 =======================================================================================================================================
 Return Codes:
@@ -67,6 +81,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { computeWinners, computeContenders, WINNER_METRIC, WINNER_BAR } = require('../utils/portfolio');
+const { applyPortfolioStatus, recordStatusSnapshot } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -132,10 +147,18 @@ router.post('/', async (req, res) => {
       const del = await client.query(
         `DELETE FROM portfolio_snapshot WHERE snapshot_date < CURRENT_DATE - INTERVAL '2 years'`
       );
-      return { date: ins.rows[0].date, pruned: del.rowCount || 0 };
+
+      // 3) Re-tag every style's portfolio status, in the same transaction — see the header — and record the five counts as
+      //    today's point on the status trend (portfolio_status_snapshot), so the graph is exactly what was just tagged.
+      const status = await applyPortfolioStatus(client);
+      await recordStatusSnapshot(client, status);
+
+      return { date: ins.rows[0].date, pruned: del.rowCount || 0, status };
     });
 
-    return res.json({ return_code: 'SUCCESS', date: written.date, summary, contenders, pruned: written.pruned });
+    return res.json({
+      return_code: 'SUCCESS', date: written.date, summary, contenders, pruned: written.pruned, status: written.status,
+    });
   } catch (err) {
     logger.error('[portfolio-snapshot-update] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to record portfolio snapshot' });

@@ -35,7 +35,7 @@ const SHP_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.pro
  *   groupExpr: a SQL expression over the skusummary alias `ss` naming the group — ALWAYS one of utils/pricingGroup.js GROUP_COLUMNS,
  *              never request input (it is interpolated).
  * Returns Map<groupName, { instock, outstanding, selling, stuck, nextWake }> — selling + stuck = outstanding, split by which list
- * (Selling = WINNERS, Stuck = LOSERS) each un-parked style sits on. Only the Top earners cards read the split so far. Groups with no actionable in-stock live style are simply absent —
+ * (Selling = WINNERS, Stuck = LOSERS) each un-parked style sits on. Nothing reads the split since the Top earners cards were removed (2026-09-24). Groups with no actionable in-stock live style are simply absent —
  * deriveShopify() treats a missing entry as zero ('ok').
  */
 async function shopifyActionableByGroup(groupExpr) {

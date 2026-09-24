@@ -58,6 +58,8 @@ function DrillContent() {
     if (!backTo.startsWith('/amz/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');
     const seg = decodeURIComponent(path.replace('/amz/', ''));
+    // A status list (?by=status) is ONE unsplit list — no Selling / Stuck / Both — so its name alone ("← WINNERS").
+    if (/(?:^|&)by=status(?:&|$)/.test(qs)) return seg;
     const m = /(?:^|&)mode=(winners|losers|all)(?:&|$)/.exec(qs);
     const modeLabel = m && m[1] === 'losers' ? 'Stuck' : m && m[1] === 'all' ? 'Both' : 'Selling';
     return `${seg} · ${modeLabel}`;

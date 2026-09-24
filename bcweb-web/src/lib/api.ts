@@ -282,19 +282,89 @@ export function getSegments() {
 }
 
 // Which group a WINNERS / LOSERS list is scoped to — a segment, a Google campaign bucket (skusummary.googlecampaign, 2026-09-23,
-// SHOPIFY ONLY), or Top earners (2026-09-23 — styles whose revenue on THAT channel cleared the portfolio winner bar over 12 months;
-// server utils/portfolio.js). Same lists either way; `by` becomes the query param name (?segment= / ?campaign= / ?topearners=).
-// The Amazon list functions take the same shape but the server refuses a campaign there.
-export type PricingGroupBy = 'segment' | 'campaign' | 'topearners';
+// SHOPIFY ONLY), or a portfolio STATUS (2026-09-24 — the stored skusummary.portfolio_status; the name is WINNERS | STEADY | NEW |
+// HARVEST | LOSERS). `by` becomes the query param name (?segment= / ?campaign= / ?status=). The Amazon list functions take the same
+// shape but the server refuses a campaign there.
+// A status is NOT read through the Selling/Stuck pair: it is one unsplit list, out-of-stock included (getStatusList /
+// getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
+export type PricingGroupBy = 'segment' | 'campaign' | 'status';
 export interface PricingGroup { by: PricingGroupBy; name: string }
-
-// The one name every Top earner groups under — matches the server's TOP_EARNERS_NAME (utils/pricingGroup.js). Used as the URL path
-// segment for its lists and as the label on screen.
-export const TOP_EARNERS = 'Top earners';
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'topearners' ? v : 'segment';
+  return v === 'campaign' || v === 'status' ? v : 'segment';
+}
+
+// Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
+// list a tile opens (Due switch on). Out-of-stock styles / SKUs are LISTED (owner, 2026-09-24: price ahead of stock arriving, not at an
+// old clearance price) — outOfStock only says how many.
+export interface StatusChannelCounts {
+  total: number;                  // Shopify: styles with the status (= the Winners card). Amazon: amzfeed SKUs of those styles
+  due: number;
+  parked: number;
+  outOfStock: number;
+}
+export interface StatusOverviewRow {
+  status: PortfolioStatusName;
+  shopify: StatusChannelCounts;
+  amazon: StatusChannelCounts;
+}
+
+function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannelCounts {
+  return {
+    total: Number(c?.total) || 0,
+    due: Number(c?.due) || 0,
+    parked: Number(c?.parked) || 0,
+    outOfStock: Number(c?.out_of_stock) || 0,
+  };
+}
+
+export function getStatusOverview() {
+  return request<{ updatedAt: string | null; statuses: StatusOverviewRow[] }>(
+    { url: '/pricing-status-overview', method: 'GET' },
+    (b) => ({
+      updatedAt: (b.updated_at as string | null) ?? null,
+      statuses: ((b.statuses as Record<string, unknown>[]) || []).map((s) => ({
+        status: s.status as PortfolioStatusName,
+        shopify: mapChannelCounts(s.shopify as Record<string, unknown> | undefined),
+        amazon: mapChannelCounts(s.amazon as Record<string, unknown> | undefined),
+      })),
+    })
+  );
+}
+
+// A status list asks for the server's MAXIMUM safety cap, not the default 100: it is the whole status, and STEADY alone is ~175 styles
+// / ~300 Amazon SKUs. The page still flags `truncated` if even this bites.
+const STATUS_LIST_LIMIT = 500;
+
+// The ONE Shopify list behind a status: every style carrying it, unsplit, out of stock included (stock 0), sellers first. Same row shape
+// as getLosers (u30 = Shopify units in 30 days), so the list page's table, drill and bulk bar take it unchanged. Always fetched with
+// parked included — the page's Due switch filters client-side, like the other lists.
+export function getStatusList(status: string) {
+  return request<{ status: string; total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
+    { url: '/pricing-status-list', method: 'GET', params: { status, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({
+      status: String(b.status || status),
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
+      outOfStock: Number(b.out_of_stock) || 0,
+      rows: b.rows || [],
+    })
+  );
+}
+
+// The Amazon twin — every amzfeed SKU whose style carries the status, 0 FBA included, same row shape as getAmzWinners (units = 30d).
+export function getAmzStatusList(status: string) {
+  return request<{ status: string; total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
+    { url: '/amz-status-list', method: 'GET', params: { status, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({
+      status: String(b.status || status),
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
+      outOfStock: Number(b.out_of_stock) || 0,
+      rows: b.rows || [],
+    })
+  );
 }
 
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
@@ -724,24 +794,6 @@ export function getCampaignsOverview(days?: number) {
   return request<{ days: number; campaigns: SegmentOverviewRow[] }>(
     { url: '/pricing-campaigns', method: 'GET', params: { days } },
     (b) => ({ days: b.days, campaigns: b.campaigns || [] })
-  );
-}
-
-// A Top earners channel cell — the heatmap cell plus what the Repricing screen's cards show: the due count split by list, and that
-// channel's own revenue / GP (its sales of its own top earners), not the row's all-channel gutter.
-export interface TopEarnerCell extends SegmentAreaCell {
-  selling: number;                // due AND on the Selling (WINNERS) list
-  stuck: number;                  // due AND on the Stuck (LOSERS) list — selling + stuck = outstanding
-  revenue30: number;
-  gpPct: number | null;
-}
-
-// The Repricing screen's Top earners tab — one row, Shopify + Amazon cells with an all-channel gutter. by 'campaign' = Shopify cell
-// only with a Shopify-only gutter (unused since the row moved off the Campaign view to its own tab).
-export function getTopEarnersOverview(by: PricingGroupBy, days?: number) {
-  return request<{ days: number; row: Omit<SegmentOverviewRow, 'areas'> & { areas: TopEarnerCell[] } }>(
-    { url: '/pricing-top-earners', method: 'GET', params: { days, by: by === 'campaign' ? 'campaign' : undefined } },
-    (b) => ({ days: b.days, row: b.row })
   );
 }
 
@@ -3791,6 +3843,93 @@ function mapBandMovement(m: Record<string, unknown>): PortfolioBandMovement {
   };
 }
 
+// PORTFOLIO STATUS — the STORED tag on every style (skusummary.portfolio_status), set by "Update now" and read by everything else.
+// Rules, in order, first match wins: WINNERS (> £1,500 revenue in 12m) → STEADY (sold in 3m) → NEW (created < 90 days) →
+// HARVEST (out of season) → LOSERS. The repricer will filter its lists on this same value. See bcweb-server/utils/portfolioStatus.js.
+export const PORTFOLIO_STATUSES = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'] as const;
+export type PortfolioStatusName = (typeof PORTFOLIO_STATUSES)[number];
+
+export interface PortfolioStatusCount {
+  status: PortfolioStatusName;
+  count: number;
+  pct: number | null;             // of `total`, one decimal. null only on an empty catalogue
+}
+
+export interface PortfolioStatusSummary {
+  total: number;                  // every style in skusummary
+  updatedAt: string | null;       // 'YYYY-MM-DD HH:MM' London time of the last Update; null = never run
+  addedSince: number;             // created since that Update — tagged NEW, not yet assessed
+  untagged: number;               // no tag at all (pre-column rows no Update has reached)
+  statuses: PortfolioStatusCount[]; // always all five, in rule order
+}
+
+function mapStatusSummary(s: Record<string, unknown> | undefined): PortfolioStatusSummary {
+  const rows = (s?.statuses as Record<string, unknown>[]) || [];
+  return {
+    total: Number(s?.total) || 0,
+    updatedAt: (s?.updated_at as string | null) ?? null,
+    addedSince: Number(s?.added_since) || 0,
+    untagged: Number(s?.untagged) || 0,
+    // Built from the fixed list, not from whatever arrived, so the screen always draws five cards in rule order.
+    statuses: PORTFOLIO_STATUSES.map((status) => {
+      const r = rows.find((x) => x.status === status);
+      return {
+        status,
+        count: Number(r?.count) || 0,
+        pct: r?.pct === null || r?.pct === undefined ? null : Number(r.pct),
+      };
+    }),
+  };
+}
+
+// A tagged winner with the revenue/units STAMPED at the last Update — what the screen's bar dial filters and its brand list
+// groups. Also the rows a winners list / "reprice these" jump will use.
+export interface TaggedWinner {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  revenue12m: number;
+  units12m: number;
+}
+
+// One recorded Update: how many styles held each status that day.
+export interface PortfolioStatusPoint extends Record<PortfolioStatusName, number> {
+  date: string;                   // 'YYYY-MM-DD'
+  total: number;
+}
+
+// GET /portfolio-status — the Winners screen's source since 2026-09-24. Stored data only, nothing live.
+export function getPortfolioStatus(days?: number) {
+  return request<{
+    status: PortfolioStatusSummary;
+    bars: number[];               // the dial; bars[0] is the tag's own bar (£1,500)
+    winners: TaggedWinner[];      // stamped revenue descending
+    history: PortfolioStatusPoint[];
+  }>(
+    { url: '/portfolio-status', method: 'GET', params: days ? { days } : undefined },
+    (b) => ({
+      status: mapStatusSummary(b.status as Record<string, unknown> | undefined),
+      bars: ((b.bars as unknown[]) || []).map(Number).filter((n) => n > 0),
+      winners: ((b.winners as Record<string, unknown>[]) || []).map((w) => ({
+        groupid: String(w.groupid),
+        title: (w.title as string | null) ?? null,
+        brand: (w.brand as string | null) ?? null,
+        revenue12m: Number(w.revenue_12m) || 0,
+        units12m: Number(w.units_12m) || 0,
+      })),
+      history: ((b.history as Record<string, unknown>[]) || []).map((h) => ({
+        date: String(h.date || ''),
+        WINNERS: Number(h.WINNERS) || 0,
+        STEADY: Number(h.STEADY) || 0,
+        NEW: Number(h.NEW) || 0,
+        HARVEST: Number(h.HARVEST) || 0,
+        LOSERS: Number(h.LOSERS) || 0,
+        total: Number(h.total) || 0,
+      })),
+    })
+  );
+}
+
 export function getPortfolioWinners(days?: number) {
   return request<{ summary: PortfolioWinnersSummary; winners: PortfolioWinner[]; history: PortfolioSnapshot[] }>(
     { url: '/portfolio-winners', method: 'GET', params: days ? { days } : undefined },
@@ -3830,7 +3969,9 @@ export function getPortfolioWinners(days?: number) {
 }
 
 // "Update now" — the deliberate act that records today's figures as a trend point. UPSERTs today's row (pressing twice in a day
-// overwrites, never appends) and prunes past 2 years. Writes ONLY our own snapshot table; nothing in the product tables moves.
+// overwrites, never appends) and prunes past 2 years. Since 2026-09-24 the same press, in the same transaction, re-tags every
+// style's portfolio status (skusummary.portfolio_status) and records the status trend point. The screen re-reads everything via
+// GET /portfolio-status afterwards, so the POST's `status` echo is not mapped here.
 export function updatePortfolioSnapshot() {
   return request<{ date: string; summary: PortfolioWinnersSummary; contenders: PortfolioContendersSummary; pruned: number }>(
     { url: '/portfolio-snapshot-update', method: 'POST' },

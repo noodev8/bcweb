@@ -22,16 +22,18 @@ export function parseListView(v: string | null): ListView {
   return v === 'losers' ? 'losers' : v === 'all' ? 'all' : 'winners';
 }
 
-export default function ListViewControls({ view, onViewChange, counts, dueOnly, onDueOnlyChange }: {
+export default function ListViewControls({ view, onViewChange, counts, dueOnly, onDueOnlyChange, showTabs = true }: {
   view: ListView;
   onViewChange: (v: ListView) => void;
   counts: { winners: number; losers: number; all: number } | null;   // null while loading
   dueOnly: boolean;
   onDueOnlyChange: (v: boolean) => void;
+  // false = no Selling | Stuck | Both — a Status list is ONE unsplit list (owner, 2026-09-24), so only the Due switch applies.
+  showTabs?: boolean;
 }) {
   return (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <ViewTabs view={view} onChange={onViewChange} counts={counts} />
+      {showTabs ? <ViewTabs view={view} onChange={onViewChange} counts={counts} /> : <span />}
       <DueSwitch on={dueOnly} onChange={onDueOnlyChange} />
     </div>
   );

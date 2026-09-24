@@ -143,12 +143,14 @@ router.post('/', async (req, res) => {
         INSERT INTO skusummary (
           groupid, brand, colour, colourmap, segment, season, width, material, supplier, imagename, handle,
           rrp, shopifyprice, minshopifyprice, maxshopifyprice, cost, tax, shopify, googlestatus, googlecampaign,
-          created, updated, created_at, updated_date, next_shopify_price_review, shopifychange
+          created, updated, created_at, updated_date, next_shopify_price_review, shopifychange, portfolio_status
         )
         SELECT
           $2, brand, colour, colourmap, segment, season, width, material, supplier, '', $3,
           rrp, shopifyprice, minshopifyprice, maxshopifyprice, cost, tax, 0, googlestatus, googlecampaign,
-          ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now(), NULL, 0
+          -- portfolio_status is NOT copied: a clone of a WINNER is a new product with no sales of its own. It starts NEW (owner,
+          -- 2026-09-24), with a NULL portfolio_status_at until the next Update assesses it.
+          ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now(), NULL, 0, 'NEW'
         FROM skusummary WHERE groupid = $1
       `, [sourceGroupid, newGroupid, handle]);
 

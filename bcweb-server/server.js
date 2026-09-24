@@ -101,7 +101,12 @@ app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
 app.use('/pricing-losers', require('./routes/pricing-losers'));
 app.use('/pricing-campaigns', require('./routes/pricing-campaigns'));  // Segments screen, campaign view (Shopify only)
-app.use('/pricing-top-earners', require('./routes/pricing-top-earners'));  // Segments screen, pinned Top earners row (Shopify + Amazon)
+// Repricing's STATUS tab (2026-09-24, replaced Top earners — its route was removed the same day): the stored portfolio status tag
+// (skusummary.portfolio_status). Overview = per-status tiles for both channels; lists = every style (Shopify) / SKU (Amazon) with the
+// status, UNSPLIT and out-of-stock included.
+app.use('/pricing-status-overview', require('./routes/pricing-status-overview')); // GET: per-status, per-channel due / parked counts
+app.use('/pricing-status-list', require('./routes/pricing-status-list'));         // GET ?status=: the Shopify list behind a status
+app.use('/amz-status-list', require('./routes/amz-status-list'));                 // GET ?status=: the Amazon (SKU) list behind a status
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-apply', require('./routes/pricing-apply'));
@@ -339,7 +344,10 @@ app.use('/portfolio-contenders', require('./routes/portfolio-contenders')); // G
 // "Update now" — the deliberate act that RECORDS the headline count as a trend point (upsert today + prune past 2 years). The GETs
 // above compute live and store nothing, so viewing the screen never appends a snapshot. Same split as Stock Position / Birk
 // Availability; the shared definition both sides use lives in utils/portfolio.js.
-app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: upsert today's row, prune, return it
+app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: upsert today's row, prune, RE-TAG statuses
+// The Winners screen's own source since 2026-09-24: the STORED portfolio status tags (skusummary.portfolio_status), the tagged
+// winners for the bar dial + brands, and the status trend. Read-only; "Update now" above is what writes the tags.
+app.use('/portfolio-status', require('./routes/portfolio-status'));                   // GET: status counts, tagged winners, trend
 
 // --- Shopify order sync (the "Sync orders" button on Analytics -> Sales) ---
 // !! THE LOGIC BEHIND /order-sync ALSO LIVES IN C:\scripts\orders\update_orders.py, WHICH IS STILL IN CRON. Both are live and must

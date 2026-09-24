@@ -21,8 +21,12 @@ style's drill restores the same view.
 SEGMENT OR CAMPAIGN (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=campaign makes it a Google campaign bucket
 (skusummary.googlecampaign) instead of a segment. Same lists, same bars, same drill and writes — only the slice differs (the server
 switches ?segment= for ?campaign=, see utils/pricingGroup.js). `by` rides along in every URL this page builds so it survives the drill.
-?by=topearners (2026-09-23) is the third grouping: styles whose SHOPIFY revenue cleared the portfolio winner bar over 12 months
-(path name "Top earners"; server utils/portfolio.js).
+?by=status (2026-09-24) — the stored portfolio status (path name WINNERS / STEADY / NEW / HARVEST / LOSERS). It replaced the
+Top earners grouping (removed the same day). ONE UNSPLIT LIST, not the Selling/Stuck pair (owner: "I don't think there's much point in
+splitting"): EVERY style with the status, from GET /pricing-status-list — OUT OF STOCK INCLUDED (stock 0), so prices can be set ahead
+of stock arriving rather than left at an old clearance price (owner). The list's length therefore equals the Winners card. The view
+tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status
+tab or from a card on the Winners screen (back link = wherever it came from).
 
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
@@ -36,7 +40,7 @@ import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getTriage, getLosers, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
+import { getTriage, getLosers, getStatusList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -81,14 +85,13 @@ export default function SegmentPage() {
   );
 }
 
-// Crumb note (after the name — components/PricingCrumb) + empty-state noun per grouping. A segment needs no subtitle — it is the default; nor does Top earners (its
-// "on Shopify sales, last 12 months" line came out, owner 2026-09-24 — the title says which group it is).
+// Crumb note (after the name — components/PricingCrumb) + empty-state noun per grouping. A segment needs no subtitle — it is the default.
 const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   segment: undefined,
   campaign: 'Google campaign',
-  topearners: undefined,
+  status: 'status',
 };
-const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', topearners: 'group' };
+const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status' };
 
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
@@ -102,9 +105,12 @@ function SegmentContent() {
   const by = parseGroupBy(searchParams.get('by'));
   const group: PricingGroup = { by, name: segment };
   const byParam = by === 'segment' ? '' : `by=${by}&`;   // carried in every URL this page builds (see header)
+  const isStatus = by === 'status';
   const { logout } = useAuth();
 
-  const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
+  const [modeState, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  const mode: ListView = isStatus ? 'all' : modeState;
   const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
   // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments heatmap returns you there — not to /pricing
@@ -122,6 +128,22 @@ function SegmentContent() {
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
     ['pricing-lists', group.by, segment],
     async () => {
+      // A STATUS is one unsplit list (GET /pricing-status-list — every in-stock style with the status, not the two bars). Its rows
+      // go in `winners` with `losers` empty, and the view is pinned to 'all' below, so the rest of the page works unchanged.
+      if (isStatus) {
+        const s = await getStatusList(segment);
+        if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
+        const rows: ListRow[] = s.data.rows.map((r) => ({
+          kind: 'winner', groupid: r.groupid, title: r.title, units: r.u30, stock: r.stock, price: r.price,
+          match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
+        };
+      }
       const [w, l] = await Promise.all([
         getTriage(group, undefined, undefined, true),
         getLosers(group, undefined, undefined, true),
@@ -149,6 +171,7 @@ function SegmentContent() {
           // The safety cap trimmed a list — the page must never let a capped list pass for the whole job.
           capped: !!(w.data?.truncated || l.data?.truncated),
           partialError: err,
+          outOfStock: null as number | null,   // only a status list reports how many rows have no stock
         },
       };
     },
@@ -260,6 +283,7 @@ function SegmentContent() {
         counts={data ? view.counts : null}
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
+        showTabs={!isStatus}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -296,6 +320,8 @@ function SegmentContent() {
             {dueCount} style{dueCount === 1 ? '' : 's'} due for review
             {showPending && <> · {rows.length - dueCount} pending</>}
             {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
+            {/* A status list includes out-of-stock styles (stock 0) so they can be priced ahead of arrival — say how many. */}
+            {!!data.outOfStock && <> · {data.outOfStock} out of stock</>}
           </p>
           <ListTable
             rows={rows}

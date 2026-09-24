@@ -6,8 +6,8 @@ Purpose: The derived AMAZON clock's counts (docs/segments-spec.md §10.3), per G
          How many pricing-ACTIONABLE SKUs each group holds, how many of those still need pricing (un-parked), and when the soonest
          parked one comes back. Feeds deriveShopify() (utils/segmentDerived.js — grain-agnostic despite the name).
 
-Extracted from routes/segments.js on 2026-09-23 when the same cell was needed for Top earners (routes/pricing-top-earners.js). One
-copy, parameterised by the grouping column, so the segment and Top-earners views can never count differently.
+Extracted from routes/segments.js on 2026-09-23 when the same cell was needed for Top earners (that view and its route were removed
+2026-09-24). One copy, parameterised by the grouping column, so any view that groups by a different column counts the same way.
 
 Candidate pool = FBA-in-stock SKUs (amzfeed.amzlive > 0, the same pool amz-winners / amz-losers draw from); the per-SKU review date
 lives on skumap (next_amz_price_review). code is unique in skumap and every in-stock amzfeed SKU has a skumap row, so the join is 1:1
@@ -40,7 +40,7 @@ const AMZ_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.pro
  *   groupExpr: a SQL expression over the skusummary alias `sk` naming the group — ALWAYS from utils/pricingGroup.js groupColumn(…,
  *              { alias: 'sk', channel: 'AMZ' }), never request input (it is interpolated).
  * Returns Map<groupName, { instock, outstanding, selling, stuck, nextWake }> — selling + stuck = outstanding, split by which list
- * (Selling = WINNERS, Stuck = LOSERS) each un-parked SKU sits on. Only the Top earners cards read the split so far. Groups with no actionable FBA-in-stock SKU are simply absent —
+ * (Selling = WINNERS, Stuck = LOSERS) each un-parked SKU sits on. Nothing reads the split since the Top earners cards were removed (2026-09-24). Groups with no actionable FBA-in-stock SKU are simply absent —
  * deriveShopify() treats a missing entry as zero ('ok').
  */
 async function amazonActionableByGroup(groupExpr) {

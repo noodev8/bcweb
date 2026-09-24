@@ -14,12 +14,13 @@ same row shape. Campaign view is SHOPIFY ONLY (Google Shopping sells the Shopify
 clock) and no detail page — a campaign's name and its Shopify cell both open its WINNERS / LOSERS list (/pricing/[name]?by=campaign).
 pause + blank buckets are hidden server-side. The switch lives in the URL (?by=campaign) so "← Segments" from a list lands back here.
 
-TOP EARNERS (owner, 2026-09-23): styles over the Winners screen's bar on each channel's own 12-month sales (GET /pricing-top-earners).
-Its cells open /pricing|/amz/Top earners?by=topearners. It started as a row pinned above the ranked ones in both views; the same evening
-the owner made it their priority and moved it to its own tab — FIRST and the DEFAULT, so bare /segments opens it and the segment view
-is /segments?by=segment. It renders as two channel cards (components/TopEarnersCards), not a one-row table — see that file.
-It no longer appears in the Segment or Campaign views.
-Guarded by AppShell. Consumes GET /segments, GET /pricing-campaigns or GET /pricing-top-earners — one per tab.
+STATUS (owner, 2026-09-24: "This pricing group should replace the old top earners") — the FIRST and DEFAULT tab: bare /segments
+opens it; the segment view is /segments?by=segment. Tiles per stored portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS,
+skusummary.portfolio_status, set by the Winners screen) for Shopify (styles) and Amazon (SKUs), each opening ONE unsplit list of every
+style / SKU with the status, out of stock included (/pricing|/amz/WINNERS?by=status). See components/StatusTiles.
+Top earners (2026-09-23: styles over the Winners bar per channel, as two channel cards) held this slot for a day; its tab, cards, route
+and grouping were removed 2026-09-24.
+Guarded by AppShell. Consumes GET /pricing-status-overview (via StatusTiles), GET /segments or GET /pricing-campaigns — one per tab.
 =======================================================================================================================================
 */
 
@@ -27,7 +28,7 @@ import { Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import TopEarnersCards from '@/components/TopEarnersCards';
+import StatusTiles from '@/components/StatusTiles';
 import { getSegmentsOverview, getCampaignsOverview, SegmentOverviewRow, SegmentAreaCell, PricingGroupBy } from '@/lib/api';
 import { dueTone, dueCellLabel, cellTitle, fmtMoney } from '@/lib/segmentUi';
 
@@ -47,18 +48,19 @@ function SegmentsHeatmap() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Read straight from the URL (no state mirror): the switch writes the URL, so back/forward and "← Segments" all agree.
-  // Absent / unknown ?by= = Top earners (the owner's priority, 2026-09-23). NOT parseGroupBy — the list pages' default is segment.
+  // Absent / unknown ?by= = Status (replaced Top earners as the default, 2026-09-24). NOT parseGroupBy — the list pages' default is
+  // segment. An old ?by=topearners bookmark lands on Status too.
   const rawBy = searchParams.get('by');
-  const by: PricingGroupBy = rawBy === 'segment' || rawBy === 'campaign' ? rawBy : 'topearners';
+  const by: PricingGroupBy = rawBy === 'segment' || rawBy === 'campaign' ? rawBy : 'status';
   const isCampaign = by === 'campaign';
-  const isTop = by === 'topearners';
-  const viewPath = by === 'topearners' ? '/segments' : `/segments?by=${by}`;   // this tab's own URL — the lists' back target
+  const isStatus = by === 'status';   // the default tab — renders its own tiles instead of the table
+  const viewPath = by === 'status' ? '/segments' : `/segments?by=${by}`;   // this tab's own URL — the lists' back target
 
   // One fetch per view, keyed by it. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
   // the caller decides, and for this whole module the decision is the same one). Campaign rows come back in the segment row shape.
-  // The Top earners tab fetches inside its own cards component, so the table's query holds off (null key) there.
+  // The Status tab fetches inside its own tiles component, so the table's query holds off (null key) there.
   const { data, error: loadError, isLoading: loading } = useApiQuery(
-    isTop ? null : ['segments-overview', by],
+    isStatus ? null : ['segments-overview', by],
     async () => {
       if (!isCampaign) return getSegmentsOverview();
       const r = await getCampaignsOverview();
@@ -76,7 +78,7 @@ function SegmentsHeatmap() {
   // A pricing cell drops into its work screen (Shopify triage / Amazon SKU lists); Housekeeping (and any manual area) opens the
   // segment detail, where it can be marked worked.
   function setBy(next: PricingGroupBy) {
-    router.replace(next === 'topearners' ? '/segments' : `/segments?by=${next}`);
+    router.replace(next === 'status' ? '/segments' : `/segments?by=${next}`);
   }
 
   function openCell(name: string, cell: SegmentAreaCell) {
@@ -97,12 +99,12 @@ function SegmentsHeatmap() {
     <AppShell>
       <GroupSwitch by={by} onChange={setBy} />
 
-      {isTop && <TopEarnersCards />}
+      {isStatus && <StatusTiles />}
 
-      {!isTop && loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {!isTop && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {!isStatus && loading && <p className="text-sm text-slate-400">Loading…</p>}
+      {!isStatus && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {!isTop && !loading && !error && (
+      {!isStatus && !loading && !error && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
@@ -161,11 +163,11 @@ function SegmentsHeatmap() {
   );
 }
 
-// Top earners | Segment | Campaign — which grouping the table (and the lists it opens) is sliced by. Same pill style as the list pages'
+// Status | Segment | Campaign — which grouping the table (and the lists it opens) is sliced by. Same pill style as the list pages'
 // Selling | Stuck | Both tabs, without counts (owner: no counts beside toggles).
 function GroupSwitch({ by, onChange }: { by: PricingGroupBy; onChange: (v: PricingGroupBy) => void }) {
   const opts: { key: PricingGroupBy; label: string }[] = [
-    { key: 'topearners', label: 'Top earners' },
+    { key: 'status', label: 'Status' },
     { key: 'segment', label: 'Segment' },
     { key: 'campaign', label: 'Campaign' },
   ];

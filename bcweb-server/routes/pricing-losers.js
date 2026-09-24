@@ -37,13 +37,12 @@ most-stock-first ordering is what keeps the few high-stock styles at the top whe
 Schema landmines respected: stock from localstock (#FREE, not deleted, qty>0), never stockvariants. Human name from title.shopifytitle.
 =======================================================================================================================================
 Request Query Params:
-  segment    (string)         - the segment to list. Give exactly one of segment / campaign / topearners.
+  segment    (string)         - the segment to list. Give exactly one of segment / campaign / status.
   campaign   (string)         - a Google campaign bucket (skusummary.googlecampaign) instead of a segment. Added 2026-09-23
                                 (owner): the same list sliced by campaign — same rule, same response shape (`segment` then carries
                                 the campaign name; `by` says which it is). See utils/pricingGroup.js.
-  topearners (string)         - any non-empty value: scope to TOP EARNERS instead — styles whose SHOPIFY revenue cleared the
-                                portfolio winner bar over 12 months (utils/portfolio.js). Added 2026-09-23 (owner); `segment` then
-                                carries "Top earners". Same bar, same response shape.
+  status     (string)         - a portfolio status. Accepted (utils/pricingGroup.js), but the Repricing screen reads a status from
+                                pricing-status-list, which is one unsplit list — not this route's rule.
   days       (int, optional)  - the "sold nothing in this many days" window; default 30
   limit      (int, optional)  - safety cap on rows returned; default 100, hard max 500 (utils/listLimit.js)
   parked     (string, optional) - 'include' = also return PARKED styles (future next_shopify_price_review), each flagged parked:true.
@@ -53,7 +52,7 @@ Request Query Params:
 Success Response:
 {
   "return_code": "SUCCESS",
-  "by": "segment",      // "segment" | "campaign" | "topearners" — which grouping was asked for
+  "by": "segment",      // "segment" | "campaign" | "status" — which grouping was asked for
   "segment": "GIZEH-SEG",
   "days": 30,
   "total": 3,           // qualifying styles in the segment, BEFORE the cap
@@ -99,7 +98,7 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
 
     if (!group) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment, campaign or topearners is required' });
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'one of segment, campaign or status is required' });
     }
 
     // $1 segment, $2 days, $3 limit, $4 includeParked.

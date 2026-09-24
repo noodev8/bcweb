@@ -9,9 +9,12 @@ Purpose: The list view for a segment — the Amazon mirror of /pricing/[segment]
   - LOSERS:  FBA stock that sold NOTHING in the last 30 days — candidates to cut and get moving. Most FBA stock at risk first.
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
 
-SEGMENT OR TOP EARNERS (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=topearners makes it "Top earners" — the SKUs
-of styles whose AMAZON revenue cleared the portfolio winner bar over 12 months (server utils/portfolio.js). Same lists, bars, drill and
-writes. `by` rides along in the drill round-trip. There is no campaign grouping on Amazon (campaigns are Shopify only).
+SEGMENT OR STATUS: the [segment] path param is the GROUP name; ?by=status (2026-09-24, owner: "Apply amazon pricing in reprice") makes
+it a portfolio status (WINNERS / STEADY / NEW / HARVEST / LOSERS) — the Amazon SKUs of every style carrying it. A status is ONE UNSPLIT
+LIST from GET /amz-status-list, not the Selling/Stuck pair, and OUT-OF-STOCK SKUs (0 FBA) ARE LISTED so their price can be set ahead of
+stock arriving (owner). The view tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill, bulk bar and upload basket
+are unchanged. `by` rides along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
+campaign grouping on Amazon (campaigns are Shopify only).
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
   - Selling | Stuck | Both (?mode=all) — on-screen names for WINNERS | LOSERS since 2026-09-23; code and URLs keep winners/losers.
@@ -33,7 +36,7 @@ import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getAmzWinners, getAmzLosers, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
+import { getAmzWinners, getAmzLosers, getAmzStatusList, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -91,14 +94,16 @@ function SegmentContent() {
   const params = useParams<{ segment: string }>();
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
-  // Only segment | topearners exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
-  const by = parseGroupBy(searchParams.get('by')) === 'topearners' ? 'topearners' : 'segment';
-  const isTop = by === 'topearners';
+  // Only segment | status exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
+  const by = parseGroupBy(searchParams.get('by')) === 'status' ? 'status' : 'segment';
+  const isStatus = by === 'status';
   const group: PricingGroup = { by, name: segment };
   const { logout } = useAuth();
   const { items, add } = useAmzBasket();
 
-  const [mode, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
+  const [modeState, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
+  const mode: ListView = isStatus ? 'all' : modeState;
   const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
   // Back target — threaded via ?from=/&back= so arriving from the Segments heatmap returns you there rather than to /amz (the Amazon
@@ -114,6 +119,22 @@ function SegmentContent() {
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
     ['amz-lists', by, segment],
     async () => {
+      // A STATUS is one unsplit list (GET /amz-status-list — every SKU of the status's styles, 0 FBA included). Its rows go in
+      // `winners` with `losers` empty, and the view is pinned to 'all' above, so the rest of the page works unchanged.
+      if (isStatus) {
+        const s = await getAmzStatusList(segment);
+        if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
+        const rows: ListRow[] = s.data.rows.map((r) => ({
+          kind: 'winner', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+          fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
+        };
+      }
       const [w, l] = await Promise.all([
         getAmzWinners(group, undefined, undefined, true),
         getAmzLosers(group, undefined, undefined, true),
@@ -141,6 +162,7 @@ function SegmentContent() {
           // The safety cap trimmed a list — the page must never let a capped list pass for the whole job.
           capped: !!(w.data?.truncated || l.data?.truncated),
           partialError: err,
+          outOfStock: null as number | null,   // only a status list reports how many rows have no stock
         },
       };
     },
@@ -169,15 +191,15 @@ function SegmentContent() {
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
 
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
-  // The basket item's segment is display-only and the server rebuild fills the real one (amz-basket: sk.segment). On Top earners the
-  // page name isn't a segment, so leave it blank rather than label a SKU "Top earners" until the next rebuild.
-  const basketSegment = isTop ? null : segment;
+  // The basket item's segment is display-only and the server rebuild fills the real one (amz-basket: sk.segment). On a status list the
+  // page name isn't a segment, so leave it blank rather than label a SKU "WINNERS" until the next rebuild.
+  const basketSegment = isStatus ? null : segment;
 
   function openSku(code: string) {
     // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
-    const from = `/amz/${encodeURIComponent(segment)}?${isTop ? 'by=topearners&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    const from = `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }
 
@@ -280,7 +302,7 @@ function SegmentContent() {
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" />} headerRight={<AmzUploadButton />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" note={isStatus ? 'status' : undefined} />} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <ListViewControls
@@ -289,6 +311,7 @@ function SegmentContent() {
         counts={data ? view.counts : null}
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
+        showTabs={!isStatus}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -296,7 +319,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isTop ? 'group' : 'segment'} right now.
+          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isStatus ? 'status' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}
@@ -326,6 +349,8 @@ function SegmentContent() {
             {dueCount} SKU{dueCount === 1 ? '' : 's'} due for review
             {showPending && <> · {rows.length - dueCount} pending</>}
             {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
+            {/* A status list includes 0-FBA SKUs so they can be priced ahead of stock arriving — say how many. */}
+            {!!data.outOfStock && <> · {data.outOfStock} out of stock</>}
           </p>
           <ListTable
             rows={rows}

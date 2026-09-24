@@ -85,7 +85,7 @@ const logger = require('../utils/logger');
 router.use(verifyToken);
 
 // The Shopify and Amazon WINNERS bars used by the heatmap counts live in utils/shopifyActionable.js / utils/amazonActionable.js
-// (shared with the campaign and Top-earners views).
+// (shared with the campaign view).
 
 router.get('/', async (req, res) => {
   try {
@@ -125,7 +125,7 @@ router.get('/', async (req, res) => {
 
     // 2c) Derived AMAZON clock (spec §10.3) — the SKU-grain twin of 2b: per segment, how many pricing-ACTIONABLE (WINNERS ∪ LOSERS)
     //     FBA-in-stock SKUs still need pricing. The query, its history and its landmine (it must track the amz-winners / amz-losers
-    //     bars) live in utils/amazonActionable.js since 2026-09-23, shared with the Top-earners row (routes/pricing-top-earners.js).
+    //     bars) live in utils/amazonActionable.js since 2026-09-23.
     const amazonByName = await amazonActionableByGroup(groupColumn('segment', { alias: 'sk', channel: 'AMZ' }));
 
     // 3) Clocks + last-worked for every ACTIVE segment × ACTIVE area. One set-based query (no N+1), ordered for assembly.
