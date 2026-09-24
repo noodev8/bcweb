@@ -342,7 +342,7 @@ const GROUPS: Group[] = [
 ===================================================================================================================================== */
 const FLOW: Tile[] = [
       {
-        title: 'Add / Modify Product',
+        title: 'Product',
         subtitle: 'Edit or create a product',
         description: 'Find an existing product to edit, or create a new one.',
         href: '/products',

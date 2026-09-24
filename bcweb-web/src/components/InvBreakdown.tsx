@@ -148,7 +148,7 @@ export default function InvBreakdown({ data, onLeave }: {
   return (
     <div className="border-t border-slate-200 bg-slate-50/40">
       {/* ---- Jump-off actions. Price this style, see its sales, open its live page, or grab the image. Shopify, Amazon, Sales and
-              Social stay in THIS tab and save the operator's place first (onLeave); Edit product and Product page still open a new tab.
+              Social stay in THIS tab and save the operator's place first (onLeave); Edit Product and Product page still open a new tab.
               Shopify is groupid-grain (straight to the drill); Amazon is per-size, so it opens the Find screen pre-filled. ---- */}
       {/* ONE button style for every action (owner, 2026-09-24): the old bar mixed green/amber/brand tints, pipe separators and
           emoji ↗ glyphs, and read as six unrelated widgets. Now they are one row of equal neutral buttons; a new-tab jump carries the
@@ -172,7 +172,7 @@ export default function InvBreakdown({ data, onLeave }: {
           title="Open this product in Add / Modify (new tab)"
           className={BTN}
         >
-          <PencilSquareIcon className="h-3.5 w-3.5 text-slate-400" /> Edit product
+          <PencilSquareIcon className="h-3.5 w-3.5 text-slate-400" /> Edit Product
           <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
         </a>
         {productUrl && (

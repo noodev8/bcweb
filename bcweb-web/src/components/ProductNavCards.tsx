@@ -69,7 +69,7 @@ const TARGETS: NavTarget[] = [
     build: (g, from) => `/pricing/style/${encodeURIComponent(g)}?from=${from}`,
   },
   {
-    label: 'Add / Modify',
+    label: 'Edit Product',
     hint: 'Edit this product — title, attributes, sizes, price, image',
     icon: TagIcon,
     build: (g, from) => `/products?groupid=${encodeURIComponent(g)}&from=${from}&back=Product`,

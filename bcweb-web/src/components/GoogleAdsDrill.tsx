@@ -166,7 +166,7 @@ export default function GoogleAdsDrill({ groupid, onClose }: { groupid: string; 
             <div className="flex flex-wrap gap-2">
               <NavPill href={`/pricing/style/${encodeURIComponent(groupid)}`} label="Shopify price" />
               <NavPill href={`/amz/find?q=${encodeURIComponent(groupid)}`} label="Amazon price" />
-              <NavPill href={`/products?groupid=${encodeURIComponent(groupid)}`} label="Add / Modify" />
+              <NavPill href={`/products?groupid=${encodeURIComponent(groupid)}`} label="Edit Product" />
             </div>
 
             {/* ---- size curve ------------------------------------------------------------------------------------------
