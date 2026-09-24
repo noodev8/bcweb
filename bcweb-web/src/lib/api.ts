@@ -303,6 +303,7 @@ export interface StatusChannelCounts {
   due: number;
   parked: number;
   outOfStock: number;
+  styles: number;                 // styles behind the rows — = total on Shopify; on Amazon the rows are sizes (SKUs)
 }
 export interface StatusOverviewRow {
   status: PortfolioStatusName;
@@ -316,6 +317,7 @@ function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannel
     due: Number(c?.due) || 0,
     parked: Number(c?.parked) || 0,
     outOfStock: Number(c?.out_of_stock) || 0,
+    styles: Number(c?.styles) || 0,
   };
 }
 

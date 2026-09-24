@@ -53,7 +53,7 @@ export default function StatusTiles() {
         <section key={ch}>
           <div className="mb-2 flex items-center gap-3">
             <ChannelBadge channel={ch} />
-            <span className="text-xs text-slate-400">{ch === 'amazon' ? 'per size (SKU)' : 'per style'}</span>
+            <span className="text-xs text-slate-400">{ch === 'amazon' ? 'priced per size' : 'priced per style'}</span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {data.statuses.map((s) => <Tile key={s.status} status={s.status} channel={ch} counts={s[ch]} />)}
@@ -66,7 +66,9 @@ export default function StatusTiles() {
 
 function Tile({ status, channel, counts }: { status: PortfolioStatusName; channel: Channel; counts: StatusChannelCounts }) {
   const live = counts.total > 0;
-  const unit = channel === 'amazon' ? 'SKUs' : 'styles';
+  // Amazon rows are SIZES (Amazon prices per size), so its tile names both units: the style count matches the Winners screen's chip,
+  // the sizes and "due" match the rows of the list it opens (owner, 2026-09-25: "23 styles ... showing 78").
+  const isAmz = channel === 'amazon';
   const inner = (
     <>
       <span className="flex items-center gap-2 text-xs font-semibold tracking-wide text-slate-500">
@@ -76,11 +78,17 @@ function Tile({ status, channel, counts }: { status: PortfolioStatusName; channe
       <span className={'mt-2 block text-3xl font-bold leading-none tabular-nums ' + (counts.due > 0 ? 'text-slate-900' : 'text-slate-300')}>
         {counts.due}
       </span>
-      <span className="mt-1 block text-xs text-slate-500">due for review</span>
+      <span className="mt-1 block text-xs text-slate-500">{isAmz ? 'sizes due for review' : 'due for review'}</span>
+      {/* Line 1 = what's behind the tile (units); line 2 = its state. Kept apart so neither wraps mid-phrase on a narrow tile. */}
       <span className="mt-3 block text-xs tabular-nums text-slate-400">
-        {counts.total} {unit}{counts.parked > 0 && ` · ${counts.parked} parked`}
+        {isAmz ? `${counts.styles} styles · ${counts.total} sizes` : `${counts.total} styles`}
       </span>
-      {counts.outOfStock > 0 && <span className="block text-xs tabular-nums text-slate-400">{counts.outOfStock} out of stock</span>}
+      {(counts.parked > 0 || counts.outOfStock > 0) && (
+        <span className="block text-xs tabular-nums text-slate-400">
+          {[counts.parked > 0 && `${counts.parked} parked`, counts.outOfStock > 0 && `${counts.outOfStock} out of stock`]
+            .filter(Boolean).join(' · ')}
+        </span>
+      )}
       <span className="mt-2 block text-[11px] text-slate-400">{STATUS_RULE[status]}</span>
     </>
   );

@@ -14,6 +14,8 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
                           ahead of stock arriving, not at an old clearance price)
            parked         review date in the future — what switching Due off adds
            out_of_stock   of `total`, how many have no stock (Shopify: #FREE localstock; Amazon: FBA amzlive). Listed, just flagged.
+           styles         how many STYLES those rows are — equals `total` on Shopify; on Amazon the rows are sizes (SKUs), and the
+                          style count is what matches the Winners screen's chip (owner, 2026-09-25: "23 styles ... showing 78").
 
          EACH CHANNEL COUNTS ONLY ITS OWN STYLES (2026-09-25): lead channel (skusummary.portfolio_channel) SHP|BOTH for Shopify,
          AMZ|BOTH for Amazon — the same predicate the lists use (utils/portfolioStatus.js → channelFilterSql).
@@ -28,8 +30,8 @@ Success Response:
   "updated_at": "2026-09-24 22:44",   // London time the tags were last set; null = never
   "statuses": [
     { "status": "WINNERS",
-      "shopify": { "total": 73,  "due": 39, "parked": 34, "out_of_stock": 15 },
-      "amazon":  { "total": 131, "due": 78, "parked": 53, "out_of_stock": 54 } }, ...
+      "shopify": { "total": 50,  "due": 27, "parked": 23, "out_of_stock": 5,  "styles": 50 },
+      "amazon":  { "total": 131, "due": 78, "parked": 53, "out_of_stock": 54, "styles": 23 } }, ...
   ]
 }
 =======================================================================================================================================
@@ -49,7 +51,7 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0 };
+const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0, styles: 0 };
 
 router.get('/', async (req, res) => {
   try {
@@ -67,6 +69,7 @@ router.get('/', async (req, res) => {
                                    OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS due,
                COUNT(*) FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE)::int AS parked,
                COUNT(*) FILTER (WHERE st.groupid IS NULL)::int AS out_of_stock,
+               COUNT(*)::int AS styles,                                -- a Shopify row IS a style
                to_char(MAX(ss.portfolio_status_at) AT TIME ZONE 'Europe/London', 'YYYY-MM-DD HH24:MI') AS last_at
         FROM skusummary ss
         LEFT JOIN stk st ON st.groupid = ss.groupid
@@ -80,7 +83,8 @@ router.get('/', async (req, res) => {
                COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
                                    OR m.next_amz_price_review <= CURRENT_DATE)::int AS due,
                COUNT(*) FILTER (WHERE m.next_amz_price_review > CURRENT_DATE)::int AS parked,
-               COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0)::int AS out_of_stock
+               COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0)::int AS out_of_stock,
+               COUNT(DISTINCT a.groupid)::int AS styles                -- rows are sizes; this is how many styles they belong to
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code
@@ -92,7 +96,7 @@ router.get('/', async (req, res) => {
 
     const pick = (rows, status) => {
       const x = rows.find((r) => r.status === status);
-      return x ? { total: x.total, due: x.due, parked: x.parked, out_of_stock: x.out_of_stock } : { ...ZERO };
+      return x ? { total: x.total, due: x.due, parked: x.parked, out_of_stock: x.out_of_stock, styles: x.styles } : { ...ZERO };
     };
     const statuses = STATUSES.map((status) => ({ status, shopify: pick(shp.rows, status), amazon: pick(amz.rows, status) }));
     const updatedAt = shp.rows.map((x) => x.last_at).filter(Boolean).sort().pop() || null;

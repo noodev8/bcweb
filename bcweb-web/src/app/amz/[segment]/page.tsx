@@ -67,6 +67,7 @@ const AMZ_TONE: BulkTone = {
 interface ListRow {
   kind: 'winner' | 'loser';
   code: string;
+  groupid: string;   // the STYLE — a status list says how many styles it covers, matching the Winners card it was opened from
   amz_sku: string;
   size: string;
   title: string | null;
@@ -131,7 +132,7 @@ function SegmentContent() {
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
-          kind: 'winner', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+          kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
           fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
         }));
         return {
@@ -151,11 +152,11 @@ function SegmentContent() {
       if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
-        kind: 'winner', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+        kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
         fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
-        kind: 'loser', code: r.code, amz_sku: r.amz_sku, size: r.size, title: r.title, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
+        kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
         fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
@@ -304,6 +305,13 @@ function SegmentContent() {
 
   const rows = view.rows;
   const ready = !loading && !error && !!data;
+  // A status list's headline counts, over EVERY row fetched (parked included) — see the count line below.
+  const statusSummary = isStatus && data ? {
+    styles: new Set(data.winners.map((r) => r.groupid)).size,
+    sizes: data.winners.length,
+    due: data.winners.filter((r) => !r.parked).length,
+    parked: data.winners.filter((r) => r.parked).length,
+  } : null;
   const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
@@ -351,8 +359,22 @@ function SegmentContent() {
       {ready && rows.length > 0 && (
         <>
           <p className="mb-2 text-xs text-slate-400">
-            {dueCount} SKU{dueCount === 1 ? '' : 's'} due for review
-            {showPending && <> · {rows.length - dueCount} pending</>}
+            {isStatus && statusSummary ? (
+              // STYLES FIRST (owner, 2026-09-25: "I pressed AMZ with 23 styles and the repricer is showing 78"). The Winners screen
+              // and Repricing's tiles count STYLES; this list has a row per SIZE, because Amazon prices per size. Leading with the
+              // style count makes the list read as the card it was opened from; the sizes, due and parked follow. Taken over the
+              // whole status (every row fetched), not just what the Due switch is showing — it describes the card, not the filter.
+              <>
+                <span className="font-medium text-slate-600">{statusSummary.styles} style{statusSummary.styles === 1 ? '' : 's'}</span>
+                {' '}· {statusSummary.sizes} size{statusSummary.sizes === 1 ? '' : 's'} · {statusSummary.due} due
+                {statusSummary.parked > 0 && <> · {statusSummary.parked} parked</>}
+              </>
+            ) : (
+              <>
+                {dueCount} SKU{dueCount === 1 ? '' : 's'} due for review
+                {showPending && <> · {rows.length - dueCount} pending</>}
+              </>
+            )}
             {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
             {/* A status list includes 0-FBA SKUs so they can be priced ahead of stock arriving — say how many. */}
             {!!data.outOfStock && <> · {data.outOfStock} out of stock</>}
