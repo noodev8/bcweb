@@ -83,7 +83,7 @@ Success Response:
   "return_code": "SUCCESS",
   "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
   "has": ["ARIZONA"], "not": ["EVA"], "sort": "date", "dir": "desc",
-  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640, "lines": 318,
+  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "unitsSoldSinceReturned": 24, "orders": 640, "lines": 318,
                // revenue is GROSS (inc VAT, as the customer paid); netRevenue is the same trade ex-VAT and is the denominator of marginPct
                "revenue": 41234.55, "netRevenue": 34362.13, "profit": 6120.11, "marginPct": 17.8, "products": 137 },
   "rows": [
@@ -304,7 +304,23 @@ router.get('/', async (req, res) => {
          COALESCE(SUM(qty), 0)::int                                     AS units_net,
          COUNT(DISTINCT ordernum) FILTER (WHERE qty > 0 AND ordernum IS NOT NULL AND ordernum <> '') AS orders,
          COALESCE(SUM(soldprice * qty), 0)::numeric                     AS revenue,
-         COALESCE(SUM(profit), 0)::numeric                             AS profit
+         COALESCE(SUM(profit), 0)::numeric                             AS profit,
+         -- RETURN RATE BY SALE DATE (owner, 2026-09-25). units_returned above counts return rows BOOKED in the window — right for the
+         -- money, wrong for a rate: a return is dated the day it's processed (sync_returns.py / the Amazon import), so a batch of old
+         -- refunds landing in a 3-day window was divided by 3 days of sales and read as 26.7% "returned". This instead takes the units
+         -- SOLD in the window and counts how many of them have since come back, whenever that return was booked — matched on
+         -- channel + ordernum + code (every return row carries an ordernum; idx_sales_channel_ordernum_code serves the lookup).
+         -- LEAST caps a key at what was sold, so a duplicate reversal can't push a line past 100%. Consequence the owner accepted: a
+         -- recent window reads LOW, because its returns haven't happened yet.
+         (SELECT COALESCE(SUM(LEAST(k.sold, r.ret)), 0)::int
+            FROM (SELECT channel, ordernum, code, SUM(qty) AS sold
+                    FROM f
+                   WHERE qty > 0 AND COALESCE(ordernum, '') <> ''
+                   GROUP BY channel, ordernum, code) k
+            JOIN LATERAL (SELECT -SUM(rs.qty) AS ret
+                            FROM sales rs
+                           WHERE rs.channel = k.channel AND rs.ordernum = k.ordernum AND rs.code = k.code AND rs.qty < 0) r
+              ON r.ret IS NOT NULL)                                     AS units_sold_since_returned
        FROM f`,
       filterParams
     );
@@ -364,6 +380,9 @@ router.get('/', async (req, res) => {
       unitsSold: Number(s.units_sold) || 0,
       unitsReturned: Number(s.units_returned) || 0,
       unitsNet: Number(s.units_net) || 0,
+      // Of unitsSold, how many have since been returned (any date) — the numerator of the return RATE. Not the same thing as
+      // unitsReturned, which is returns booked in the window (cash basis, what unitsNet and the money are netted by). See the SQL.
+      unitsSoldSinceReturned: Number(s.units_sold_since_returned) || 0,
       orders: Number(s.orders) || 0,
       lines: Number(s.lines) || 0,   // matched lines BEFORE the row cap — lets the UI say "latest 200 of 318" honestly
 

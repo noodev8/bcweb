@@ -1341,6 +1341,7 @@ export interface SalesReportSummary {
   unitsSold: number;
   unitsReturned: number;
   unitsNet: number;
+  unitsSoldSinceReturned: number; // of unitsSold, how many have since come back (any date) — the return-rate numerator
   orders: number;
   lines: number;             // matched lines BEFORE the row cap ("latest 200 of 318")
   revenue: number;           // GROSS, VAT-inclusive — the figure that reconciles with Shopify/Seller Central and the bank
@@ -1418,7 +1419,7 @@ export function getSalesReport(params: {
       search: b.search ?? null,
       sort: (b.sort as SalesSort) || 'date',
       dir: (b.dir as SalesSortDir) || 'desc',
-      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, products: 0 },
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, unitsSoldSinceReturned: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,
       count: b.count ?? 0,

@@ -482,10 +482,19 @@ function SalesPageContent() {
               transactions − 9 returned" wraps at the tile's width on a laptop.
               The RETURN RATE rides on the label as a colour-graded pill — it's the number you want to catch without reading, and on this
               catalogue it's a real signal (a style returning at 45% is a sizing problem, not a pricing one). The bands are deliberately
-              coarse: quiet grey under 15%, amber to 30%, red above — a traffic light, not a measurement. */}
+              coarse: quiet grey under 15%, amber to 30%, red above — a traffic light, not a measurement.
+              THE RATE IS BY SALE DATE (owner, 2026-09-25): units sold in this window that have since come back, whenever the refund was
+              booked. It used to be returns-booked ÷ sold in the same window, and because a return is dated the day it's processed, a
+              batch of month-old refunds read as 26.7% on a 3-day view. The sub-line keeps the booked-in-window count — that's the
+              equation for the net figure and the money tiles, which are cash for the window. So the pill and the sub-line can differ,
+              and a recent window's pill reads low (its returns haven't happened yet). */}
           <Stat label="Sold" value={int(summary.unitsNet)}
-            badge={summary.unitsSold > 0 && summary.unitsReturned > 0
-              ? { text: `${pct((summary.unitsReturned / summary.unitsSold) * 100)} returned`, tone: returnTone((summary.unitsReturned / summary.unitsSold) * 100) }
+            badge={summary.unitsSold > 0 && summary.unitsSoldSinceReturned > 0
+              ? {
+                  text: `${pct((summary.unitsSoldSinceReturned / summary.unitsSold) * 100)} returned`,
+                  tone: returnTone((summary.unitsSoldSinceReturned / summary.unitsSold) * 100),
+                  title: `${int(summary.unitsSoldSinceReturned)} of the ${int(summary.unitsSold)} units sold in this period have since been returned. Recent sales can still come back.`,
+                }
               : undefined}
             sub={summary.unitsReturned
               ? `${int(summary.unitsSold)} total − ${int(summary.unitsReturned)} returned`
@@ -705,14 +714,14 @@ function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
   // Hover text for the sub-line. Used by the margin tile to name its denominator without spending a line of the tile on it.
   subTitle?: string;
   valueClassName?: string;
-  badge?: { text: string; tone: StatTone };
+  badge?: { text: string; tone: StatTone; title?: string };
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
         {badge && (
-          <span className={'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' + TONE_CLASS[badge.tone]}>
+          <span className={'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' + TONE_CLASS[badge.tone]} title={badge.title}>
             {badge.text}
           </span>
         )}
