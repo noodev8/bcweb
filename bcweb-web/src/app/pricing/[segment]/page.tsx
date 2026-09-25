@@ -75,6 +75,7 @@ interface ListRow {
   units: number | null;
   stock: number;
   price: number | null;
+  rrp: number | null;       // the "Reset to RRP" target (null = junk/blank on skusummary -> skipped)
   match_amazon: boolean;
   next_review: string | null;
   parked: boolean;
@@ -143,7 +144,7 @@ function SegmentContent() {
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
-          kind: 'winner', groupid: r.groupid, title: r.title, units: r.u30, stock: r.stock, price: r.price,
+          kind: 'winner', groupid: r.groupid, title: r.title, units: r.u30, stock: r.stock, price: r.price, rrp: r.rrp,
           match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
         }));
         return {
@@ -163,11 +164,11 @@ function SegmentContent() {
       if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
-        kind: 'winner', groupid: r.groupid, title: r.title, units: r.units, stock: r.stock, price: r.price,
+        kind: 'winner', groupid: r.groupid, title: r.title, units: r.units, stock: r.stock, price: r.price, rrp: r.rrp,
         match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
-        kind: 'loser', groupid: r.groupid, title: r.title, units: 0, stock: r.stock, price: r.price,   // units 0: sold nothing in 30d — the Stuck rule
+        kind: 'loser', groupid: r.groupid, title: r.title, units: 0, stock: r.stock, price: r.price, rrp: r.rrp,   // units 0: sold nothing in 30d — the Stuck rule
         match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
@@ -262,6 +263,34 @@ function SegmentContent() {
     await loadLists();
   }
 
+  // BULK RESET TO RRP — the same W1 loop, each style to its OWN RRP. Rows with no RRP, or already at it, are skipped (a no-change
+  // apply would still write a log row and a push). A blank note becomes "Reset to RRP" so the price log says why.
+  async function bulkResetToRrp(reviewDays: number | null, note: string) {
+    const targets = view.rows.filter((r) => selected.has(r.groupid));
+    if (targets.length === 0) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, noRrp = 0, already = 0, skipped = 0, pushIssues = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.rrp === null) noRrp++;
+      else if (row.price !== null && Math.round(row.price * 100) === Math.round(row.rrp * 100)) already++;
+      else {
+        const res = await applyPrice(row.groupid, Math.round(row.rrp * 100) / 100, reviewDays, note || 'Reset to RRP');
+        if (res.success && res.data) {
+          applied++;
+          if (res.data.shopify && res.data.shopify.pushed === false) pushIssues++;
+        } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+        else { skipped++; }
+      }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${pushIssues ? ` · ${pushIssues} push issue${pushIssues > 1 ? 's' : ''}` : ''}`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
   // BULK REVIEW ONLY — park the ticked styles with no price change (batch POST /pricing-park-bulk, W2). On success clear + refetch so
   // parked styles move to "pending review" (hidden unless that toggle is on).
   async function bulkSetReview(days: number) {
@@ -318,6 +347,7 @@ function SegmentContent() {
           resultSummary={resultSummary}
           error={markError}
           onApplyPrice={bulkApplyPrice}
+          onResetToRrp={bulkResetToRrp}
           onSetReview={bulkSetReview}
         />
       )}

@@ -62,6 +62,9 @@ interface BulkActionBarProps {
   // exactly as it always has, relative-only. Deliberately opt-in per page: Shopify's Apply pushes live to the store, so its lists keep
   // the relative-only bar until the owner asks otherwise (owner, 2026-07-25).
   onApplySetPrice?: (price: number, reviewDays: number | null, note: string) => void;
+  // OPTIONAL "Reset to RRP" — writes each selected row's OWN RRP (the rows carry it; RRPs differ per style, so this is neither a move
+  // nor one set price). Passing it reveals the button; the page owns the loop, skipping rows with no RRP or already at it.
+  onResetToRrp?: (reviewDays: number | null, note: string) => void;
 }
 
 // Format a signed delta as "+£1.00" / "−£0.50" / "£0.00" (proper minus sign, matching the drill's button glyphs).
@@ -81,7 +84,7 @@ function parseDelta(raw: string): number {
 
 export default function BulkActionBar({
   channel, count, nudges, reviewChips, tone, busy, progress, resultSummary, error, noteEnabled = true, onApplyPrice, onSetReview,
-  onApplySetPrice,
+  onApplySetPrice, onResetToRrp,
 }: BulkActionBarProps) {
   const banner = CHANNEL_BANNER[channel];
   const [open, setOpen] = useState(false);
@@ -125,6 +128,9 @@ export default function BulkActionBar({
   const priceStaged = active === 'set' ? hasSetPrice : hasMove;
   const priceDisabled = busy || count === 0 || !priceStaged;
   const reviewOnlyDisabled = busy || count === 0 || reviewDays === null;
+  const canResetRrp = typeof onResetToRrp === 'function';
+  // The note rides a reset too (it is a price change like any other), so it unlocks when either action is available.
+  const noteDisabled = busy || !(priceStaged || (canResetRrp && count > 0));
 
   // Header summary line — count + a hint of what's staged.
   const staged = useMemo(() => {
@@ -231,9 +237,9 @@ export default function BulkActionBar({
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                disabled={busy || !priceStaged}
+                disabled={noteDisabled}
                 maxLength={NOTE_MAX}
-                placeholder={priceStaged ? 'Why the prices are changing' : active === 'set' ? 'Set a price to add a note' : 'Set a price move to add a note'}
+                placeholder={!noteDisabled ? 'Why the prices are changing' : active === 'set' ? 'Set a price to add a note' : 'Set a price move to add a note'}
                 className="mb-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
               />
               {/* Live length counter — keeps notes tidy on the reports (they render on one line). Amber once the cap is reached. */}
@@ -273,6 +279,18 @@ export default function BulkActionBar({
                   ? `Set all ${count} to ${hasSetPrice ? `£${setPrice.toFixed(2)}` : '…'}`
                   : `Apply ${hasMove ? fmtDelta(delta) + ' ' : ''}to ${count}`}
             </button>
+            {/* Reset to RRP — each row goes to its own RRP, so it sits beside Apply rather than inside the Move by / Set all box. Uses the
+                same review chip and note as Apply. */}
+            {canResetRrp && (
+              <button
+                onClick={() => onResetToRrp && onResetToRrp(reviewDays, note.trim())}
+                disabled={busy || count === 0}
+                title="Set every selected row to its own RRP (rows with no RRP, or already at it, are skipped)"
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Reset {count} to RRP
+              </button>
+            )}
             <button
               onClick={() => reviewDays !== null && onSetReview(reviewDays)}
               disabled={reviewOnlyDisabled}

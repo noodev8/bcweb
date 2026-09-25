@@ -125,6 +125,15 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
         <button onClick={() => nudge(0.3)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+30p</button>
         <button onClick={() => nudge(0.5)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+50p</button>
         <button onClick={() => nudge(1)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+£1</button>
+        {/* Reset to RRP — fills the box with the style's RRP; nothing is written until Apply, so the usual bounds still speak. */}
+        <button
+          onClick={() => header.rrp !== null && setPriceStr(header.rrp.toFixed(2))}
+          disabled={header.rrp === null}
+          title={header.rrp === null ? 'No RRP on file' : `Reset to RRP (£${header.rrp.toFixed(2)})`}
+          className="ml-1 rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Reset to RRP
+        </button>
       </div>
 
       {/* Bound feedback */}

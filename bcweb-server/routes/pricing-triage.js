@@ -123,6 +123,7 @@ router.get('/', async (req, res) => {
       )
       SELECT w.groupid, w.units, st.stock, t.shopifytitle,
              ${safeNumeric('sp.shopifyprice')} AS price,  -- current live price, so the bulk price-editor can compute per-row deltas
+             ${safeNumeric('sp.rrp')} AS rrp,             -- for the bulk bar's "Reset to RRP" (NULL on junk/blank -> row skipped)
              sp.match_amazon_price AS match_amazon,       -- so the list can badge auto-matched styles (kept IN the list for review)
              sp.next_shopify_price_review::text AS next_review,               -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(sp.next_shopify_price_review > CURRENT_DATE, false) AS parked,
@@ -145,6 +146,7 @@ router.get('/', async (req, res) => {
       units: Number(r.units),
       stock: Number(r.stock),
       price: r.price === null || r.price === undefined ? null : Number(r.price),
+      rrp: r.rrp === null || r.rrp === undefined ? null : Number(r.rrp),
       match_amazon: r.match_amazon === true,  // auto-matched styles stay in the list for a "keep matching?" review; badged in the UI
       next_review: r.next_review || null,
       parked: r.parked === true,              // only ever true with ?parked=include

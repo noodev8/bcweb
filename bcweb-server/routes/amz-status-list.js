@@ -101,6 +101,7 @@ router.get('/', async (req, res) => {
       SELECT a.code, a.groupid, a.sku AS amz_sku, SUBSTRING(a.code FROM '[^-]*$') AS size,   -- size = suffix after the last '-'
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
+             ${safeNumeric('sk.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP" (skusummary, same as amz-apply's bound)
              COALESCE(a.amzlive,0) AS fba,
              COALESCE(u.u30,0)     AS units,
              COALESCE(u.u7,0)      AS u7,
@@ -131,6 +132,7 @@ router.get('/', async (req, res) => {
       size: r.size,
       title: r.title || null,
       price: num(r.price),
+      rrp: num(r.rrp),
       fba: Number(r.fba),
       units: Number(r.units),
       u7: Number(r.u7),

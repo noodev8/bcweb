@@ -101,6 +101,7 @@ router.get('/', async (req, res) => {
       )
       SELECT ss.groupid,
              ${safeNumeric('ss.shopifyprice')} AS price,
+             ${safeNumeric('ss.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP"
              COALESCE(st.stock, 0) AS stock,
              COALESCE(w.u30, 0) AS u30,
              ss.match_amazon_price AS match_amazon,
@@ -126,6 +127,7 @@ router.get('/', async (req, res) => {
       groupid: r.groupid,
       title: r.shopifytitle || null,
       price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
+      rrp: r.rrp === null || r.rrp === undefined ? null : Number(r.rrp),
       stock: Number(r.stock),
       u30: Number(r.u30),
       match_amazon: r.match_amazon === true,

@@ -75,6 +75,7 @@ interface ListRow {
   u7: number | null;
   fba: number;
   price: number | null;
+  rrp: number | null;       // the "Reset to RRP" target (skusummary.rrp; null = junk/blank -> skipped)
   next_review: string | null;
   parked: boolean;
 }
@@ -133,7 +134,7 @@ function SegmentContent() {
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
-          fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+          fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
         }));
         return {
           success: true,
@@ -153,11 +154,11 @@ function SegmentContent() {
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
         kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
-        fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+        fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
         kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
-        fba: r.fba, price: r.price, next_review: r.next_review, parked: r.parked,
+        fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
         success: true,
@@ -286,6 +287,35 @@ function SegmentContent() {
     await loadLists();
   }
 
+  // BULK RESET TO RRP — the same /amz-apply loop, each SKU to its OWN RRP (skusummary, per style). Rows with no RRP, or already at
+  // it, are skipped. A blank note becomes "Reset to RRP" so the price log says why. The server's floor still blocks per row.
+  async function bulkResetToRrp(reviewDays: number | null, note: string) {
+    const targets = selectedRows();
+    if (targets.length === 0) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, noRrp = 0, already = 0, skipped = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.rrp === null) noRrp++;
+      else if (row.price !== null && Math.round(row.price * 100) === Math.round(row.rrp * 100)) already++;
+      else {
+        const res = await applyAmzPrice(row.code, Math.round(row.rrp * 100) / 100, note || 'Reset to RRP', reviewDays);
+        if (res.success && res.data) {
+          const d = res.data;
+          add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: basketSegment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+          applied++;
+        } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+        else { skipped++; }
+      }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
   // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). On success clear the selection and refetch so
   // parked SKUs move to "pending review" (hidden unless that toggle is on).
   async function bulkSetReview(days: number) {
@@ -352,6 +382,7 @@ function SegmentContent() {
           error={markError}
           onApplyPrice={bulkApplyPrice}
           onApplySetPrice={bulkSetPrice}
+          onResetToRrp={bulkResetToRrp}
           onSetReview={bulkSetReview}
         />
       )}

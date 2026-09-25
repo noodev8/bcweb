@@ -116,6 +116,7 @@ router.get('/', async (req, res) => {
       )
       SELECT ss.groupid,
              ${safeNumeric('ss.shopifyprice')} AS price,   -- current live price, so the bulk price-editor can compute per-row deltas
+             ${safeNumeric('ss.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP" (NULL on junk/blank -> row skipped)
              st.stock,
              COALESCE(w.u_win,0) AS u30,               -- always 0 (that IS the test); kept for the shared "Units (30d)" column
              ss.match_amazon_price AS match_amazon,   -- kept IN the list: a slow/dead matched style is where the operator decides the
@@ -142,6 +143,7 @@ router.get('/', async (req, res) => {
       groupid: r.groupid,
       title: r.shopifytitle || null,
       price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
+      rrp: r.rrp === null || r.rrp === undefined ? null : Number(r.rrp),
       stock: Number(r.stock),
       u30: Number(r.u30),                       // always 0 — see the header note
       match_amazon: r.match_amazon === true,  // auto-matched styles stay in the list so a margin-hurting match can be spotted + switched off

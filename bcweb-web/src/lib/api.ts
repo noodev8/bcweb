@@ -87,6 +87,7 @@ export interface Segment { segment: string; styles: number; }
 // WINNERS: styles that sold >= 2 units in the window AND averaged >= £2 realised net profit per unit. Same bar on Amazon.
 export interface TriageRow {
   rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean;
+  rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target; null = junk/blank, row skipped
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
@@ -95,6 +96,7 @@ export interface TriageRow {
 // only because the LOSERS table shares its column layout with WINNERS and renders it into the shared "Units (30d)" cell.
 export interface LoserRow {
   rank: number; groupid: string; title: string | null; price: number | null;
+  rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   stock: number; u30: number;
   match_amazon: boolean;        // auto-matched to Amazon — badged; review-only (switch matching off to price/cut manually)
   next_review: string | null;   // YYYY-MM-DD or null
@@ -108,6 +110,7 @@ export interface AmzSegment { segment: string; skus: number; }
 export interface AmzWinnerRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
+  rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
@@ -117,6 +120,7 @@ export interface AmzWinnerRow {
 export interface AmzLoserRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
   price: number | null; fba: number; u7: number; u30: number;
+  rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   last_sold: string | null; days_since_sale: number | null;
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
