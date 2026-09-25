@@ -13,7 +13,7 @@ Purpose: Which styles really sell all year? Every style's season (Summer | Winte
          ITS OWN BACK OFFICE JOB, NOT PART OF REPRICING (owner, 2026-09-25): done every quarter or so, in a review mindset, maybe
          before a full winners/prices/stock review. So it links nowhere into the pricing flow.
 
-         LOGIC SUGGESTS, THE OWNER DECIDES. "Suggested" (on by default) keeps the list short: a Summer/Winter style that sold in at
+         LOGIC SUGGESTS, THE OWNER DECIDES. "Suggested" (off by default — owner, 2026-09-25) narrows the list to: a Summer/Winter style that sold in at
          least half its OFF-SEASON months, or an Any style whose sales all fall in one season. Counted against the months the off-season
          has (7 winter / 5 summer), not a flat N-of-12 — see routes/product-seasons.js. Turn it off to see every style.
 
@@ -39,7 +39,12 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 // Summer = April–August, the same months as utils/portfolioStatus.js. Index = month - 1.
 const isSummerIdx = (i: number) => i >= 3 && i <= 7;
 
-type SortKey = 'off' | 'revenue';
+type SortKey = 'style' | 'brand' | 'off' | 'revenue' | 'status';
+type SortDir = 'asc' | 'desc';
+// First click on a column sorts it the useful way round: names A–Z, everything else biggest / best first. A second click flips it.
+const FIRST_DIR: Record<SortKey, SortDir> = { style: 'asc', brand: 'asc', off: 'desc', revenue: 'desc', status: 'asc' };
+// Status sorts in rule order (Winners first), not alphabetically; untagged last.
+const STATUS_ORDER = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'];
 
 function money(v: number): string {
   return '£' + Math.round(v).toLocaleString('en-GB');
@@ -87,11 +92,31 @@ function MonthStrip({ row }: { row: SeasonRow }) {
   );
 }
 
+// A clickable column header: the active column is darker and carries its arrow; the others show a faint arrow on hover.
+function SortHeader({ k, label, right, sort, dir, onSort }: {
+  k: SortKey; label: string; right?: boolean; sort: SortKey; dir: SortDir; onSort: (k: SortKey) => void;
+}) {
+  const active = sort === k;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      className={'group inline-flex items-center gap-1 ' + (right ? 'flex-row-reverse ' : '') + (active ? 'text-slate-800' : 'hover:text-slate-700')}
+    >
+      {label}
+      <span className={active ? '' : 'invisible text-slate-300 group-hover:visible'}>{active && dir === 'asc' ? '▲' : '▼'}</span>
+    </button>
+  );
+}
+
 export default function SeasonsPage() {
   const [season, setSeason] = useState<SeasonName>('Summer');
-  const [suggestedOnly, setSuggestedOnly] = useState(true);
-  const [search, setSearch] = useState('');
+  const [suggestedOnly, setSuggestedOnly] = useState(false);
+  // Statuses switched OFF (owner, 2026-09-25: "not really interested in NEW at the moment"). All on by default; an untagged style
+  // (none today) always shows.
+  const [hiddenStatus, setHiddenStatus] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortKey>('off');
+  const [dir, setDir] = useState<SortDir>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -103,20 +128,58 @@ export default function SeasonsPage() {
   const allRows = useMemo(() => data?.rows ?? [], [data]);
 
   const inSeason = useMemo(() => allRows.filter((r) => r.season === season), [allRows, season]);
-  const suggestedCount = inSeason.filter((r) => r.suggested).length;
 
   const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    // No search box — removed 2026-09-25 (owner: "not sure I will use it"). Git history has it if wanted.
     const out = inSeason.filter((r) => {
       if (suggestedOnly && !r.suggested) return false;
-      if (!term) return true;
-      return r.groupid.toLowerCase().includes(term) || (r.title || '').toLowerCase().includes(term) || (r.brand || '').toLowerCase().includes(term);
+      return !(r.status && hiddenStatus.has(r.status));
     });
-    // Off-season spread first (on Any, months sold), then revenue — so the strongest all-year case sits at the top.
-    const spread = (r: SeasonRow) => (r.off_sold ?? r.months_sold);
-    out.sort((a, b) => (sort === 'off' ? spread(b) - spread(a) || b.revenue_12m - a.revenue_12m : b.revenue_12m - a.revenue_12m));
+    // Each column compares ascending; the direction flips it. Ties fall back to revenue (biggest first) so equal rows keep a
+    // sensible order — e.g. every 4 / 7 style, earners first.
+    const spread = (r: SeasonRow) => (r.off_sold ?? r.months_sold);   // Any has no off-season: months sold instead
+    const rank = (r: SeasonRow) => (r.status ? STATUS_ORDER.indexOf(r.status) : STATUS_ORDER.length);
+    const cmp = (a: SeasonRow, b: SeasonRow): number => {
+      switch (sort) {
+        case 'style': return a.groupid.localeCompare(b.groupid);
+        case 'brand': return (a.brand || '~').localeCompare(b.brand || '~');   // unbranded last
+        case 'off': return spread(a) - spread(b);
+        case 'revenue': return a.revenue_12m - b.revenue_12m;
+        case 'status': return rank(a) - rank(b);
+      }
+    };
+    const sign = dir === 'asc' ? 1 : -1;
+    out.sort((a, b) => sign * cmp(a, b) || b.revenue_12m - a.revenue_12m);
     return out;
-  }, [inSeason, suggestedOnly, search, sort]);
+  }, [inSeason, suggestedOnly, hiddenStatus, sort, dir]);
+
+  // Ticked rows that a filter hides are unticked, so a bulk change can never hit a style that is off screen.
+  function toggleStatus(st: string) {
+    setHiddenStatus((prev) => {
+      const next = new Set(prev);
+      if (next.has(st)) next.delete(st); else next.add(st);
+      return next;
+    });
+    setSelected(new Set());
+  }
+
+  function sortBy(key: SortKey) {
+    if (key === sort) setDir(dir === 'asc' ? 'desc' : 'asc');
+    else { setSort(key); setDir(FIRST_DIR[key]); }
+  }
+
+
+  // Why the list is empty, when there's a reason worth saying. The common one: a Summer style can't be a WINNER in winter (and vice
+  // versa) — its earners are HARVEST — so Summer + Winners-only is always empty out of season. Month read on London time; month-only,
+  // so the DB/box date disagreement doesn't matter here.
+  const londonMonth = Number(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', month: 'numeric' }));
+  const seasonNow: SeasonName = isSummerIdx(londonMonth - 1) ? 'Summer' : 'Winter';
+  const emptyMessage =
+    season !== 'Any' && season !== seasonNow && !hiddenStatus.has('WINNERS') && hiddenStatus.has('HARVEST')
+      ? `${season} styles can't be Winners in ${seasonNow.toLowerCase()} — their earners are in Harvest.`
+      : suggestedOnly
+        ? 'Nothing suggested here. Untick "Suggested" to see every style.'
+        : 'No styles match these filters.';
 
   const allVisibleTicked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
 
@@ -140,7 +203,8 @@ export default function SeasonsPage() {
   }
 
   async function applySeason(target: SeasonName) {
-    const ids = [...selected];
+    // Only ticked rows that are ON SCREEN — a filter may have hidden some since they were ticked.
+    const ids = rows.filter((r) => selected.has(r.groupid)).map((r) => r.groupid);
     if (ids.length === 0) return;
     setBusy(true);
     setError(null);
@@ -189,108 +253,148 @@ export default function SeasonsPage() {
           ))}
         </div>
 
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+        {/* The rule is a hover, not a line — a line that appears on tick would shift the table (owner, 2026-09-25). */}
+        <label
+          className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600"
+          title={season === 'Any' ? 'Suggested: all sales in one season' : 'Suggested: sold in at least half their off-season months'}
+        >
           <input
             type="checkbox"
             checked={suggestedOnly}
             onChange={(e) => { setSuggestedOnly(e.target.checked); setSelected(new Set()); }}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Suggested only
+          Suggested
         </label>
 
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter by name, code or brand"
-          className="w-64 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        />
+        {/* STATUS — each one switches on/off. No counts on the chips (owner's rule for toggles). */}
+        <div className="inline-flex gap-1" role="group" aria-label="Status">
+          {STATUS_ORDER.map((st) => {
+            const on = !hiddenStatus.has(st);
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() => toggleStatus(st)}
+                aria-pressed={on}
+                className={
+                  'rounded-full border px-2.5 py-1 text-xs font-medium transition ' +
+                  (on ? 'border-slate-300 bg-slate-100 text-slate-700' : 'border-slate-200 bg-white text-slate-400 line-through hover:text-slate-500')
+                }
+              >
+                {st.charAt(0) + st.slice(1).toLowerCase()}
+              </button>
+            );
+          })}
+        </div>
 
         <div className="ml-auto text-right text-xs text-slate-400">
+          {/* Which season the business is in today — the one the status rules test against (owner, 2026-09-25). */}
+          <div>
+            <span className="font-medium text-slate-600">{seasonNow} now</span>
+            {seasonNow === 'Summer' ? ' · Apr–Aug' : ' · Sep–Mar'}
+          </div>
           {data?.window && <div>Sales {monthLabel(data.window.from)} – {monthLabel(data.window.to)}</div>}
           {data?.last_change && <div>Last season change {dayLabel(data.last_change.at)} · {data.last_change.who}</div>}
         </div>
       </div>
 
-      <p className="mb-3 text-sm text-slate-500">
-        {season === 'Any'
-          ? <>{inSeason.length} styles set to Any · {suggestedCount} only sell in one season</>
-          : <>{inSeason.length} {season} styles · {suggestedCount} sold in at least half their off-season months</>}
-      </p>
 
       {loadError && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError.message}</div>}
-      {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {/* BULK BAR — only once something is ticked, or while a change is waiting on a re-tag. */}
-      {(selected.size > 0 || message || retagDue) && (
-        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          {selected.size > 0 ? (
-            <>
-              <span className="text-sm font-medium text-slate-700">{selected.size} selected</span>
-              <span className="text-sm text-slate-500">Set season:</span>
-              {SEASONS.filter((s) => s !== season).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => applySeason(s)}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {s}
-                </button>
-              ))}
-              <button type="button" onClick={() => setSelected(new Set())} className="text-sm text-slate-400 hover:text-slate-600">
-                Clear
+      {/* BULK BAR — ALWAYS ON SCREEN (owner, 2026-09-25): a bar that appeared on the first tick pushed the table down under the
+          click. Fixed height; only its contents change. All three seasons are shown, the tab's own one marked as where these styles
+          are now (and not clickable — it would be a no-op). Messages and errors live in the bar for the same no-jump reason. */}
+      <div className="sticky top-0 z-10 mb-3 flex min-h-[46px] flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        {/* The list's count lives here, not on the Summer | Winter | Any switch (owner's no-counts-on-toggles rule). It follows every
+            filter, so it is always the length of the table below. Fixed width so the bar doesn't shift as the numbers change. */}
+        <span className="w-36 text-sm text-slate-400 tabular-nums">
+          <span className={selected.size > 0 ? 'font-medium text-slate-700' : ''}>{selected.size}</span> of{' '}
+          <span className="font-medium text-slate-700">{rows.length}</span> selected
+        </span>
+        <span className="text-sm text-slate-500">Set season:</span>
+        <div className="inline-flex gap-2">
+          {SEASONS.map((s) => {
+            const current = s === season;
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={current || busy || selected.size === 0}
+                onClick={() => applySeason(s)}
+                title={current ? `These styles are ${s} now` : undefined}
+                className={
+                  'rounded-md border px-3 py-1 text-sm font-medium ' +
+                  (current
+                    ? 'cursor-default border-slate-300 bg-slate-100 text-slate-500'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-40')
+                }
+              >
+                {s}{current && <span className="ml-1 text-xs font-normal">· now</span>}
               </button>
-            </>
-          ) : (
-            message && <span className="text-sm text-slate-600">{message}</span>
-          )}
-          {retagDue && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={retag}
-              className="ml-auto rounded-md bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              Update statuses
-            </button>
-          )}
+            );
+          })}
         </div>
-      )}
+        <button
+          type="button"
+          onClick={() => setSelected(new Set())}
+          className={'text-sm text-slate-400 hover:text-slate-600 ' + (selected.size > 0 ? '' : 'invisible')}
+        >
+          Clear
+        </button>
+        {error ? <span className="text-sm text-red-600">{error}</span> : message && <span className="text-sm text-slate-600">{message}</span>}
+        {retagDue && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={retag}
+            className="ml-auto rounded-md bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          >
+            Update statuses
+          </button>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="text-sm text-slate-400">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="rounded-md border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-          {suggestedOnly ? 'Nothing suggested here. Untick "Suggested only" to see every style.' : 'No styles.'}
+          {emptyMessage}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-          <table className="w-full text-sm">
+          {/* FIXED COLUMN WIDTHS (owner, 2026-09-25): with auto layout a longer code scrolling into view widened Style and shifted
+              every column. Style fits the longest code today (21 chars, e.g. FLE030-IVES-NAVY-BLUE) with room to spare; anything
+              longer truncates, full title still on hover. Status takes whatever is left. */}
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-10" />
+              <col className="w-60" />
+              <col className="w-32" />
+              <col className="w-[252px]" />
+              <col className="w-32" />
+              <col className="w-28" />
+              <col />
+            </colgroup>
             <thead className="border-b border-slate-200 text-left text-xs text-slate-500">
               <tr>
                 <th className="w-8 px-3 py-2">
                   <input type="checkbox" checked={allVisibleTicked} onChange={toggleAll} className="h-4 w-4 rounded border-slate-300" />
                 </th>
-                <th className="px-3 py-2 font-medium">Style</th>
+                <th className="px-3 py-2 font-medium"><SortHeader k="style" label="Style" sort={sort} dir={dir} onSort={sortBy} /></th>
+                <th className="px-3 py-2 font-medium"><SortHeader k="brand" label="Brand" sort={sort} dir={dir} onSort={sortBy} /></th>
                 <th className="px-3 py-2 font-medium">
                   <div className="flex gap-0.5">
                     {MONTH_LETTERS.map((l, i) => <span key={i} className="w-4 text-center">{l}</span>)}
                   </div>
                 </th>
-                <th className="px-3 py-2 font-medium">
-                  <button type="button" onClick={() => setSort('off')} className={sort === 'off' ? 'text-slate-800' : 'hover:text-slate-700'}>
-                    {season === 'Any' ? 'Months sold' : 'Off-season'}
-                  </button>
+                <th className="px-3 py-2 text-center font-medium">
+                  <SortHeader k="off" label={season === 'Any' ? 'Months sold' : 'Off-season'} sort={sort} dir={dir} onSort={sortBy} />
                 </th>
                 <th className="px-3 py-2 text-right font-medium">
-                  <button type="button" onClick={() => setSort('revenue')} className={sort === 'revenue' ? 'text-slate-800' : 'hover:text-slate-700'}>
-                    12 months
-                  </button>
+                  <SortHeader k="revenue" label="12 months" right sort={sort} dir={dir} onSort={sortBy} />
                 </th>
-                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium"><SortHeader k="status" label="Status" sort={sort} dir={dir} onSort={sortBy} /></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -310,14 +414,18 @@ export default function SeasonsPage() {
                     />
                   </td>
                   <td className="px-3 py-1.5">
-                    <div className="text-slate-800">{r.title || r.groupid}</div>
-                    <div className="text-xs text-slate-400">{r.groupid}</div>
+                    {/* The code, full title on hover (owner, 2026-09-25) — the long Shopify titles made rows wide for little gain. */}
+                    <div className="truncate text-slate-800" title={r.title || r.groupid}>{r.groupid}</div>
                   </td>
+                  <td className="truncate px-3 py-1.5 text-slate-600">{r.brand || '—'}</td>
                   <td className="px-3 py-1.5"><MonthStrip row={r} /></td>
-                  <td className="px-3 py-1.5 tabular-nums text-slate-600">
-                    {r.off_total !== null
-                      ? <>{r.off_sold} / {r.off_total}</>
-                      : <>{r.months_sold} / 12{r.suggested_season && <span className="ml-2 text-xs text-slate-400">{r.suggested_season} only</span>}</>}
+                  {/* Centred in a narrow column so it sits with its neighbours (owner, 2026-09-25: a wide left-aligned column left a
+                      gap). On Any, "Summer only" / "Winter only" is a hover, not text — it needed the width that caused the gap. */}
+                  <td
+                    className="px-3 py-1.5 text-center tabular-nums text-slate-600"
+                    title={r.suggested_season && r.off_total === null ? `${r.suggested_season} only` : undefined}
+                  >
+                    {r.off_total !== null ? <>{r.off_sold} / {r.off_total}</> : <>{r.months_sold} / 12</>}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{money(r.revenue_12m)}</td>
                   <td className="px-3 py-1.5 text-xs text-slate-500">
