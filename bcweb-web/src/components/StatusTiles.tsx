@@ -31,8 +31,8 @@ import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getStatusOverview, updatePortfolioSnapshot, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowPathIcon } from '@heroicons/react/20/solid';
-import { STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
+import { ArrowPathIcon, CheckIcon } from '@heroicons/react/20/solid';
+import { STATUS_COLOR, STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
 
 // 'YYYY-MM-DD HH:MM' -> '24 Sep, 22:44', from the string parts (never new Date — CLAUDE.md dates).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -182,14 +182,28 @@ function Tile({ status, counts, hero, rule, href, dimmed }: {
   // so the list the tile opens — per size, Amazon prices per size — can show more due rows than the tile's number.
   const inner = (
     <>
-      <span className={'block font-semibold tracking-wide ' + (hero ? 'text-sm text-slate-700' : 'text-xs text-slate-500')}>{status}</span>
+      {/* The status dot is the same key the Winners screen and its trend chart use — identity, not decoration. */}
+      <span className={'flex items-center gap-2 font-semibold tracking-wide ' + (hero ? 'text-sm text-slate-700' : 'text-xs text-slate-500')}>
+        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[status] }} />
+        {status}
+      </span>
       <span className={'mt-2 block font-bold leading-none tabular-nums ' + (hero ? 'text-6xl ' : 'text-3xl ') + (counts.styles > 0 ? 'text-slate-900' : 'text-slate-300')}>
         {counts.styles}
       </span>
-      {/* The work due — the length of the list the tile opens. Parked / out-of-stock counts dropped (owner, 2026-09-25). */}
-      <span className={'mt-3 block tabular-nums text-slate-500 ' + (hero ? 'text-sm' : 'text-xs')}>
-        {counts.dueStyles} due for review
-      </span>
+      {/* The work due, as TEXT (owner, 2026-09-25 — red pills were tried and "felt bolted on": nearly every tile is due, so red
+          everywhere signalled nothing and a box inside a card was one layer too many). Only the count is darker. Colour is kept for
+          the exception worth noticing — nothing left to price — as a green tick, no box. No styles at all = no line. */}
+      {counts.styles > 0 && (
+        counts.dueStyles > 0 ? (
+          <span className={'mt-3 block tabular-nums text-slate-500 ' + (hero ? 'text-sm' : 'text-xs')}>
+            <span className="font-semibold text-slate-800">{counts.dueStyles}</span> due for review
+          </span>
+        ) : (
+          <span className={'mt-3 flex items-center gap-1 font-medium text-green-700 ' + (hero ? 'text-sm' : 'text-xs')}>
+            <CheckIcon className="h-4 w-4" aria-hidden="true" />all priced
+          </span>
+        )
+      )}
       {rule && <span className={'mt-2 block text-slate-400 ' + (hero ? 'text-xs' : 'text-[11px]')}>{rule}</span>}
     </>
   );
