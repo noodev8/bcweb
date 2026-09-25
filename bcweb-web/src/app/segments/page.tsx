@@ -97,9 +97,11 @@ function SegmentsHeatmap() {
   // No page title and no "← Dashboard": the highlighted nav tab already says Repricing, and it's a top-level screen (owner, 2026-09-24).
   return (
     <AppShell>
-      <GroupSwitch by={by} onChange={setBy} />
-
-      {isStatus && <StatusTiles />}
+      {/* The Status tab seats the switch in its own top row, beside its "Statuses set … / Update now" control (owner, 2026-09-25);
+          the table tabs have no such control, so the switch stands alone above the table. */}
+      {isStatus
+        ? <StatusTiles toolbar={<GroupSwitch by={by} onChange={setBy} />} />
+        : <div className="mb-5"><GroupSwitch by={by} onChange={setBy} /></div>}
 
       {!isStatus && loading && <p className="text-sm text-slate-400">Loading…</p>}
       {!isStatus && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -172,7 +174,7 @@ function GroupSwitch({ by, onChange }: { by: PricingGroupBy; onChange: (v: Prici
     { key: 'campaign', label: 'Campaign' },
   ];
   return (
-    <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+    <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100/70 p-1">
       {opts.map((o) => {
         const active = by === o.key;
         return (
