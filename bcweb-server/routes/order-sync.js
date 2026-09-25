@@ -28,7 +28,7 @@ Success Response:
 { "return_code": "SUCCESS",
   "fetched": { "orders": 41, "pages": 1, "truncated": false },
   "summary": { "orders": {...}, "sales": {...}, "archive": {...}, "picks": {...}, "housekeeping": {...}, "notes": [...] },
-  "headline": "+3 orders" }
+  "headline": "2 new orders" }  // or "No new orders"
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "SHOPIFY_NOT_CONFIGURED" · "SHOPIFY_FETCH_FAILED" · "UNAUTHORIZED" · "SERVER_ERROR"
@@ -47,13 +47,13 @@ router.use(verifyToken);
 
 /*
  * headlineOf(summary) -> 'the one line the button shows'
- * Only the parts that actually moved, so a quiet run reads "Up to date" instead of a row of zeros. Also feeds the bclog audit row
- * (varchar(500)), which is what /order-sync-last reads back for the "last run" stamp.
+ * Answers "were there any new orders?" (owner, 2026-09-25) — counted as distinct ORDERS, not orderstatus rows, so a 3-item order
+ * reads "1 new order". "New" means new to our database: orders the cron (update_orders.py) already pulled in won't count again.
+ * Also feeds the bclog audit row (varchar(500)), which is what /order-sync-last reads back for the "last run" stamp.
  */
 function headlineOf(s) {
-  return s.orders.inserted
-    ? `+${s.orders.inserted} order${s.orders.inserted === 1 ? '' : 's'}`
-    : 'Up to date';
+  const n = s.orders.newOrders;
+  return n ? `${n} new order${n === 1 ? '' : 's'}` : 'No new orders';
 }
 
 router.post('/', async (req, res) => {

@@ -226,6 +226,9 @@ async function syncOrders(client, orders) {
   const currentKeys = new Set();
   const notes = [];
   let inserted = 0, updated = 0, skippedNoSku = 0, salesInserted = 0, salesNoGroupid = 0, salesDuplicate = 0, folded = 0;
+  // Distinct ORDERS that got at least one new row. `inserted` counts orderstatus rows (one per order line), so a 3-line order is 3
+  // there but 1 here — and "how many new orders" is the question the button's headline answers.
+  const newOrders = new Set();
 
   for (const order of orders) {
     // The Python fetches every open unfulfilled order and filters HERE rather than in the query, so that BOTH 'paid' and
@@ -336,6 +339,7 @@ async function syncOrders(client, orders) {
         ]
       );
       inserted += 1;
+      newOrders.add(ordernum);
 
       // PHASE B rides on a genuinely new row only.
       const saleResult = await insertSale(client, order, line, ordernum);
@@ -350,7 +354,9 @@ async function syncOrders(client, orders) {
     }
   }
 
-  return { inserted, updated, skippedNoSku, salesInserted, salesNoGroupid, salesDuplicate, folded, currentKeys, notes };
+  return {
+    inserted, newOrders: newOrders.size, updated, skippedNoSku, salesInserted, salesNoGroupid, salesDuplicate, folded, currentKeys, notes
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -673,7 +679,7 @@ async function runFullSync(client, orders, { truncated = false } = {}) {
   const housekeeping = await cleanup(client);
 
   return {
-    orders: { inserted: sync.inserted, updated: sync.updated, linesWithoutSku: sync.skippedNoSku, linesFolded: sync.folded },
+    orders: { inserted: sync.inserted, newOrders: sync.newOrders, updated: sync.updated, linesWithoutSku: sync.skippedNoSku, linesFolded: sync.folded },
     sales: { inserted: sync.salesInserted, skippedNoGroupid: sync.salesNoGroupid, skippedDuplicate: sync.salesDuplicate },
     archive,
     picks: {

@@ -2246,7 +2246,7 @@ export interface OrderSyncSummary {
 export interface OrderSyncResult {
   fetched: { orders: number; pages: number; truncated: boolean };
   summary: OrderSyncSummary;
-  headline: string;   // the one line the button shows, e.g. '+3 orders · +3 sales · 3 picks'
+  headline: string;   // the one line the button shows: '2 new orders' or 'No new orders'
 }
 
 // Run it now. Writes — but it is safe to press twice: an order already in orderstatus is refreshed rather than re-inserted, and its
