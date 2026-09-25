@@ -3649,7 +3649,7 @@ export function commitBirkOrder(args: { lines: BirkOrderCommitLine[] }) {
 // number is the tag.
 
 // PORTFOLIO STATUS — the STORED tag on every style (skusummary.portfolio_status), set by "Update now" and read by everything else.
-// Rules, in order, first match wins: WINNERS (> £1,500 revenue in 12m) → STEADY (sold in 3m) → NEW (created < 90 days) →
+// Rules, in order, first match wins: WINNERS (> £1,500 revenue in 12m AND in season — an out-of-season earner is HARVEST) → STEADY (sold in 3m) → NEW (created < 90 days) →
 // HARVEST (out of season) → LOSERS. The repricer will filter its lists on this same value. See bcweb-server/utils/portfolioStatus.js.
 export const PORTFOLIO_STATUSES = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'] as const;
 export type PortfolioStatusName = (typeof PORTFOLIO_STATUSES)[number];

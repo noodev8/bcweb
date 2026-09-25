@@ -5,10 +5,10 @@ import type { PortfolioStatusName } from '@/lib/api';
 // What each status means, in a few words. Mirrors the rules in bcweb-server/utils/portfolioStatus.js — if a rule moves there, move
 // it here.
 export const STATUS_RULE: Record<PortfolioStatusName, string> = {
-  WINNERS: 'over £1,500 in 12 months',
+  WINNERS: 'over £1,500 in 12 months, in season',
   STEADY: 'sold in the last 3 months',
   NEW: 'created under 90 days ago',
-  HARVEST: 'out of season',
+  HARVEST: 'out of season (winners too)',
   LOSERS: 'none of the above',
 };
 

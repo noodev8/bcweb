@@ -13,9 +13,15 @@ Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | HARVES
 
 THE RULES, TESTED IN THIS ORDER — FIRST MATCH WINS (owner, 2026-09-24):
 
-  1. WINNERS  gross revenue > WINNER_BAR (£1,500) in the rolling 12 months, all channels. The SAME test as utils/portfolio.js
-              (qty > 0, SUM(soldprice * qty), strictly greater) and the SAME constant, so the tag can never disagree with the
-              portfolio definition about who is a winner.
+  1. WINNERS  gross revenue > WINNER_BAR (£1,500) in the rolling 12 months, all channels — AND IN SEASON. The revenue test is the
+              SAME as utils/portfolio.js (qty > 0, SUM(soldprice * qty), strictly greater) with the SAME constant.
+     ...an OUT-OF-SEASON earner over the bar goes straight to HARVEST, skipping STEADY (owner, 2026-09-25). Why: the 12-month
+              window kept every summer winner a WINNER all winter — 56 of 73 winners were summer styles on the day — so pricing
+              the winners never shrank the list. They come back as WINNERS together on 1 April, which is when they want pricing.
+              Straight to HARVEST because every one of them sold in the last 3 months and would otherwise all land in STEADY.
+              ONE calendar rule on both channels, knowingly: on the day 15 of 16 Amazon summer winners were still selling in 30d
+              and move to HARVEST anyway (option "keep it a winner while it still sells" was offered and declined). The owner's
+              next step is to review those HARVEST earners by data — some may really be season 'Any'.
   2. STEADY   sold at least one unit in the last STEADY_MONTHS (3) months.
   3. NEW      skusummary.created_at under NEW_DAYS (90) days ago.
   4. HARVEST  the style's season is OUT of season today — Summer is April-August, Winter September-March.
@@ -25,8 +31,9 @@ THE RULES, TESTED IN THIS ORDER — FIRST MATCH WINS (owner, 2026-09-24):
     made a summer style added in September a HARVEST on its first day, before it had had any chance to sell. A product gets its
     90 days as NEW whatever the calendar says; after that, out-of-season beats loser.
 
-  ⚠ SEASON 'Any' IS NEVER OUT OF SEASON, so it never HARVESTs (owner, 2026-09-24). Only 'Summer' and 'Winter' can. The test is
-    case- and space-insensitive because this is a legacy free-text column, but today it holds exactly Summer/Winter/Any.
+  ⚠ SEASON 'Any' IS NEVER OUT OF SEASON, so it never HARVESTs and an 'Any' earner is a WINNER all year (owner, 2026-09-24).
+    Only 'Summer' and 'Winter' can. (The six summer IVES were re-seasoned 'Any' on 2026-09-25: they sold at 24-53% of their summer
+    rate through the winter.) The test is case- and space-insensitive because this is a legacy free-text column, but today it holds exactly Summer/Winter/Any.
 
   THE UNIVERSE IS skusummary — the catalogue as it stands. A deleted style cannot carry a tag, which is why the WINNERS card can
   read a couple lower than the portfolio hero count (that one also counts styles that traded this year and were then deleted —
@@ -79,6 +86,10 @@ function channelFilterSql(alias, channel) {
   return `COALESCE(${alias}.portfolio_channel, 'BOTH') IN ('${channel}', 'BOTH')`;
 }
 
+// "Is this style out of season today?" over ss (skusummary) and sn (season_now) — used by BOTH the winner test and the HARVEST rule.
+// Only 'Summer'/'Winter' can be out of season; 'Any' and blanks never are.
+const OUT_OF_SEASON = `(LOWER(TRIM(ss.season)) IN ('summer', 'winter') AND LOWER(TRIM(ss.season)) <> sn.s)`;
+
 // The classification, as one SELECT returning (groupid, status) for every row in skusummary. ONE pass over sales with FILTER for
 // both windows, so the table is scanned once — then a CASE in rule order.
 //
@@ -108,11 +119,12 @@ const CLASSIFY_SQL = `
   )
   SELECT ss.groupid,
          CASE
+           -- an out-of-season earner is HARVEST, not WINNERS and not STEADY (see rule 1 in the header)
+           WHEN COALESCE(so.revenue_12m, 0) > ${Number(WINNER_BAR)} AND ${OUT_OF_SEASON} THEN 'HARVEST'
            WHEN COALESCE(so.revenue_12m, 0) > ${Number(WINNER_BAR)}                THEN 'WINNERS'
            WHEN COALESCE(so.lines_recent, 0) > 0                                    THEN 'STEADY'
            WHEN ss.created_at >= now() - INTERVAL '${Number(NEW_DAYS)} days'       THEN 'NEW'
-           WHEN LOWER(TRIM(ss.season)) IN ('summer', 'winter')
-            AND LOWER(TRIM(ss.season)) <> sn.s                                      THEN 'HARVEST'
+           WHEN ${OUT_OF_SEASON}                                                    THEN 'HARVEST'
            ELSE 'LOSERS'
          END AS status,
          -- Stamped beside the tag so the screen's bar dial and the winners list read the figures the tag was decided on,
