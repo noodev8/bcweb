@@ -62,6 +62,12 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const raised = bar !== null && bar !== bars[0];              // a higher tier than the tag: only WINNERS can answer it
   const barRow = data?.winnerBars.find((w) => w.bar === bar);
   const viewPath = raised ? `/segments?bar=${bar}` : '/segments';
+  // Each channel's winners by brand, at the tier — drawn INSIDE that channel's WINNERS tile (owner, 2026-09-25: "I am changing the
+  // tier and scrolling"), so the number and its brands change together right under the toggle.
+  const winnerBrands = useMemo(
+    () => brandsByChannel(portfolio.data?.winners ?? [], raised ? bar : null),
+    [portfolio.data, raised, bar]
+  );
   function setBar(next: number) {
     router.replace(next === bars[0] ? '/segments' : `/segments?bar=${next}`);
   }
@@ -131,6 +137,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
                   rule={isWin ? (raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS) : null}
                   href={statusListHref(s.status, viewPath, 'Repricing', ch, { bar: isWin && raised ? bar : null })}
                   dimmed={raised && !isWin}
+                  brands={isWin && portfolio.data ? winnerBrands[ch === 'amazon' ? 'AMZ' : 'SHP'] : undefined}
                 />
               );
             })}
@@ -148,9 +155,6 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
         </p>
       )}
 
-      {portfolio.data && (
-        <BrandSplit winners={portfolio.data.winners} bar={raised ? bar : null} />
-      )}
       {portfolio.data && <TrendByChannel history={portfolio.data.history} dimmed={raised} />}
     </div>
   );
@@ -160,49 +164,46 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
 // counts add up to the WINNERS tiles.
 const onChannel = (c: PortfolioChannel, key: PortfolioChannelKey) => c === key || c === 'BOTH';
 
-// WINNERS BY BRAND, SPLIT BY CHANNEL (owner, 2026-09-25 — chose this over the Winners screen's all-channel list, which summed across
-// channels). Each brand shows its Shopify and Amazon winner counts; a column adds up to its WINNERS tile, a BOTH style counting on
-// both. It follows the tier (on the STAMPED revenue, as the tiles do). No "units shifted": units are stored only all-channel, so a
-// per-channel column can't carry them honestly. Each column's bar is scaled to that channel's biggest brand.
-function BrandSplit({ winners, bar }: { winners: TaggedWinner[]; bar: number | null }) {
-  const rows = useMemo(() => {
-    const m = new Map<string, { brand: string; SHP: number; AMZ: number }>();
+// WINNERS BY BRAND, PER CHANNEL (owner, 2026-09-25). First a panel under the tiles with Shopify / Amazon columns; then moved INTO each
+// channel's WINNERS tile so the tier toggle, the number and its brands sit together without scrolling. A channel's counts add up to its
+// WINNERS tile (a BOTH style counts on both). Follows the tier on the STAMPED revenue, as the tiles do. No "units shifted": units are
+// stored only all-channel, so a per-channel figure can't carry them honestly.
+type BrandCount = { brand: string; n: number };
+function brandsByChannel(winners: TaggedWinner[], bar: number | null): Record<PortfolioChannelKey, BrandCount[]> {
+  const out: Record<PortfolioChannelKey, BrandCount[]> = { SHP: [], AMZ: [] };
+  for (const key of ['SHP', 'AMZ'] as const) {
+    const m = new Map<string, number>();
     for (const w of winners) {
       if (bar !== null && !(w.revenue12m > bar)) continue;
-      const key = (w.brand || '').trim() || 'Unbranded';
-      const b = m.get(key) || { brand: key, SHP: 0, AMZ: 0 };
-      if (onChannel(w.channel, 'SHP')) b.SHP += 1;
-      if (onChannel(w.channel, 'AMZ')) b.AMZ += 1;
-      m.set(key, b);
+      if (!onChannel(w.channel, key)) continue;
+      const b = (w.brand || '').trim() || 'Unbranded';
+      m.set(b, (m.get(b) ?? 0) + 1);
     }
-    return [...m.values()].sort((a, b) => Math.max(b.SHP, b.AMZ) - Math.max(a.SHP, a.AMZ) || a.brand.localeCompare(b.brand));
-  }, [winners, bar]);
-  if (rows.length === 0) return null;
-  const top = { SHP: Math.max(1, ...rows.map((r) => r.SHP)), AMZ: Math.max(1, ...rows.map((r) => r.AMZ)) };
+    out[key] = [...m.entries()].map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n || a.brand.localeCompare(b.brand));
+  }
+  return out;
+}
 
+// Top BRAND_CAP brands, then "+N more" — the cap is the knob if the tile ever feels busy (owner was wary of too much in a tile).
+const BRAND_CAP = 4;
+function BrandList({ brands }: { brands: BrandCount[] }) {
+  if (brands.length === 0) return null;
+  const top = Math.max(1, brands[0].n);
+  const shown = brands.slice(0, BRAND_CAP);
+  const more = brands.length - shown.length;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 grid grid-cols-[8rem_1fr_1fr] items-center gap-x-6 text-xs text-slate-400">
-        <span>winners by brand{bar !== null ? `, ${barLabel(bar)}` : ''}</span>
-        <span className="flex items-center gap-2"><ChannelLogo channel="shopify" /> Shopify</span>
-        <span className="flex items-center gap-2"><ChannelLogo channel="amazon" /> Amazon</span>
-      </div>
-      <ul className="space-y-1.5">
-        {rows.map((r) => (
-          <li key={r.brand} className="grid grid-cols-[8rem_1fr_1fr] items-center gap-x-6 text-sm">
-            <span className="truncate text-slate-600" title={r.brand}>{r.brand}</span>
-            {(['SHP', 'AMZ'] as const).map((ch) => (
-              <span key={ch} className="flex items-center gap-3">
-                <span className={'w-6 flex-none text-right tabular-nums ' + (r[ch] > 0 ? 'font-medium text-slate-900' : 'text-slate-300')}>{r[ch]}</span>
-                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                  {r[ch] > 0 && <span className="block h-full rounded-full bg-slate-400" style={{ width: `${Math.max(2, (r[ch] / top[ch]) * 100)}%` }} />}
-                </span>
-              </span>
-            ))}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="min-w-0 flex-1 space-y-1.5 self-center text-xs">
+      {shown.map((b) => (
+        <li key={b.brand} className="flex items-center gap-2">
+          <span className="w-24 truncate text-slate-600" title={b.brand}>{b.brand}</span>
+          <span className="w-6 flex-none text-right font-medium tabular-nums text-slate-900">{b.n}</span>
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <span className="block h-full rounded-full bg-slate-400" style={{ width: `${Math.max(4, (b.n / top) * 100)}%` }} />
+          </span>
+        </li>
+      ))}
+      {more > 0 && <li className="text-slate-400">+{more} more</li>}
+    </ul>
   );
 }
 
@@ -279,13 +280,14 @@ function BarDial({ bars, selected, onChange }: { bars: number[]; selected: numbe
   );
 }
 
-function Tile({ status, counts, hero, rule, href, dimmed }: {
+function Tile({ status, counts, hero, rule, href, dimmed, brands }: {
   status: PortfolioStatusName; counts: StatusChannelCounts; hero: boolean; rule: string | null; href: string; dimmed: boolean;
+  brands?: BrandCount[];          // WINNERS only: its winners by brand, drawn to the right of the number
 }) {
   const live = counts.total > 0 && !dimmed;
   // The hero and the due line are both STYLES, on both channels. On Amazon a style is due if ANY of its sizes is (owner, 2026-09-25),
   // so the list the tile opens — per size, Amazon prices per size — can show more due rows than the tile's number.
-  const inner = (
+  const main = (
     <>
       {/* The status dot is the same key the status trend chart below uses — identity, not decoration. */}
       <span className={'flex items-center gap-2 font-semibold tracking-wide ' + (hero ? 'text-sm text-slate-700' : 'text-xs text-slate-500')}>
@@ -312,6 +314,12 @@ function Tile({ status, counts, hero, rule, href, dimmed }: {
       {rule && <span className={'mt-2 block text-slate-400 ' + (hero ? 'text-xs' : 'text-[11px]')}>{rule}</span>}
     </>
   );
+  const inner = brands && brands.length > 0 ? (
+    <div className="flex gap-5">
+      <div className="flex-none">{main}</div>
+      <BrandList brands={brands} />
+    </div>
+  ) : main;
   const cls = 'block rounded-xl border bg-white shadow-sm ' + (hero ? 'col-span-2 p-5' : 'p-4');
   if (dimmed) return <div className={cls + ' border-slate-100 opacity-40'}>{inner}</div>;
   if (!live) return <div className={cls + ' border-slate-100 opacity-70'}>{inner}</div>;
