@@ -15,6 +15,7 @@ Purpose: The two controls above a segment's pricing list, shared by Shopify (/pr
 */
 
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
+import type { ReactNode } from 'react';
 
 export type ListView = 'winners' | 'losers' | 'all';
 
@@ -22,7 +23,7 @@ export function parseListView(v: string | null): ListView {
   return v === 'losers' ? 'losers' : v === 'all' ? 'all' : 'winners';
 }
 
-export default function ListViewControls({ view, onViewChange, counts, dueOnly, onDueOnlyChange, showTabs = true }: {
+export default function ListViewControls({ view, onViewChange, counts, dueOnly, onDueOnlyChange, showTabs = true, summary = null }: {
   view: ListView;
   onViewChange: (v: ListView) => void;
   counts: { winners: number; losers: number; all: number } | null;   // null while loading
@@ -30,10 +31,16 @@ export default function ListViewControls({ view, onViewChange, counts, dueOnly, 
   onDueOnlyChange: (v: boolean) => void;
   // false = no Selling | Stuck | Both — a Status list is ONE unsplit list (owner, 2026-09-24), so only the Due switch applies.
   showTabs?: boolean;
+  // Optional headline figures for the list (e.g. "50 styles · 24 due for review"), drawn after the tabs. Screens that pass none
+  // render exactly as before.
+  summary?: ReactNode;
 }) {
   return (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-      {showTabs ? <ViewTabs view={view} onChange={onViewChange} counts={counts} /> : <span />}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {showTabs && <ViewTabs view={view} onChange={onViewChange} counts={counts} />}
+        {summary}
+      </div>
       <DueSwitch on={dueOnly} onChange={onDueOnlyChange} />
     </div>
   );

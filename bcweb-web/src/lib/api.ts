@@ -86,7 +86,7 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 export interface Segment { segment: string; styles: number; }
 // WINNERS: styles that sold >= 2 units in the window AND averaged >= £2 realised net profit per unit. Same bar on Amazon.
 export interface TriageRow {
-  rank: number; groupid: string; title: string | null; units: number; stock: number; price: number | null; match_amazon: boolean;
+  rank: number; groupid: string; title: string | null; brand: string | null; units: number; stock: number; price: number | null; match_amazon: boolean;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target; null = junk/blank, row skipped
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
@@ -95,7 +95,7 @@ export interface TriageRow {
 // was simplified to that single test — every row is "dead" by definition, so they carried no information. u30 is always 0 and is kept
 // only because the LOSERS table shares its column layout with WINNERS and renders it into the shared "Units (30d)" cell.
 export interface LoserRow {
-  rank: number; groupid: string; title: string | null; price: number | null;
+  rank: number; groupid: string; title: string | null; brand: string | null; price: number | null;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   stock: number; u30: number;
   match_amazon: boolean;        // auto-matched to Amazon — badged; review-only (switch matching off to price/cut manually)

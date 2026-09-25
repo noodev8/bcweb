@@ -106,6 +106,7 @@ router.get('/', async (req, res) => {
              COALESCE(w.u30, 0) AS u30,
              ss.match_amazon_price AS match_amazon,
              t.shopifytitle,
+             NULLIF(TRIM(ss.brand), '') AS brand,                                -- the list's Brand column (owner, 2026-09-25)
              ss.next_shopify_price_review::text AS next_review,                 -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows,
@@ -126,6 +127,7 @@ router.get('/', async (req, res) => {
       rank: i + 1,
       groupid: r.groupid,
       title: r.shopifytitle || null,
+      brand: r.brand || null,
       price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
       rrp: r.rrp === null || r.rrp === undefined ? null : Number(r.rrp),
       stock: Number(r.stock),

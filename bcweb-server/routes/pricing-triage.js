@@ -122,6 +122,7 @@ router.get('/', async (req, res) => {
         GROUP BY groupid
       )
       SELECT w.groupid, w.units, st.stock, t.shopifytitle,
+             NULLIF(TRIM(sp.brand), '') AS brand,          -- the list's Brand column (owner, 2026-09-25)
              ${safeNumeric('sp.shopifyprice')} AS price,  -- current live price, so the bulk price-editor can compute per-row deltas
              ${safeNumeric('sp.rrp')} AS rrp,             -- for the bulk bar's "Reset to RRP" (NULL on junk/blank -> row skipped)
              sp.match_amazon_price AS match_amazon,       -- so the list can badge auto-matched styles (kept IN the list for review)
@@ -143,6 +144,7 @@ router.get('/', async (req, res) => {
       rank: i + 1,
       groupid: r.groupid,
       title: r.shopifytitle || null,
+      brand: r.brand || null,
       units: Number(r.units),
       stock: Number(r.stock),
       price: r.price === null || r.price === undefined ? null : Number(r.price),

@@ -122,6 +122,7 @@ router.get('/', async (req, res) => {
              ss.match_amazon_price AS match_amazon,   -- kept IN the list: a slow/dead matched style is where the operator decides the
                                                       -- Amazon-matched price is costing us and switches matching OFF (owner). Badged in UI.
              t.shopifytitle,
+             NULLIF(TRIM(ss.brand), '') AS brand,     -- the list's Brand column (owner, 2026-09-25)
              ss.next_shopify_price_review::text AS next_review,               -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows            -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
@@ -142,6 +143,7 @@ router.get('/', async (req, res) => {
       rank: i + 1,
       groupid: r.groupid,
       title: r.shopifytitle || null,
+      brand: r.brand || null,
       price: r.price === null || r.price === undefined ? null : Number(r.price),   // null when the legacy VARCHAR held junk/blank
       rrp: r.rrp === null || r.rrp === undefined ? null : Number(r.rrp),
       stock: Number(r.stock),
