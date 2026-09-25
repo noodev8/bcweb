@@ -12,7 +12,7 @@ Purpose: Ties the production screen to the thing production is FOR. The panel ab
          screens could show two different numbers; that route is gone. Shares Repricing's SWR key ('portfolio-status').
 
          "A year ago" and "joined this year" went with it (owner's call): the tags only started on 2026-09-24 and there is no history
-         to compare against yet. Bring them back from portfolio_status_snapshot once it holds a year — never from a live recompute.
+         to compare against, and the status trend table was removed on 2026-09-25 — so they stay gone. Never from a live recompute.
 
 NAVIGATION: the whole strip is the link, to Repricing (a top-level screen — no back arrow to carry).
 

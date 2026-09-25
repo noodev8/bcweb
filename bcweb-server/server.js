@@ -336,12 +336,16 @@ app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-d
 
 // Winners screen — the business as a portfolio of earning assets, read from the STORED status tags. (GET /portfolio-winners and
 // GET /portfolio-contenders, both computed live, were removed 2026-09-25 — see utils/portfolio.js.)
-// "Update now" — the deliberate act that RE-TAGS every style's portfolio status and records today's status counts as a trend point
-// (upsert today + prune past 2 years). Viewing the screen never appends a point. Same split as Stock Position / Birk Availability.
-app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: re-tag statuses, record today's counts
+// "Update now" — the deliberate act that RE-TAGS every style's portfolio status. (It also recorded a status trend point until
+// 2026-09-25, when the trend was removed.) Viewing a screen never writes.
+app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: re-tag statuses
 // The Winners screen's own source since 2026-09-24: the STORED portfolio status tags (skusummary.portfolio_status), the tagged
-// winners for the bar dial + brands, and the status trend. Read-only; "Update now" above is what writes the tags.
-app.use('/portfolio-status', require('./routes/portfolio-status'));                   // GET: status counts, tagged winners, trend
+// winners for the bar dial + brands. Read-only; "Update now" above is what writes the tags.
+app.use('/portfolio-status', require('./routes/portfolio-status'));                   // GET: status counts, tagged winners
+// Back Office → Seasons: every style's season beside its year of monthly sales, and a bulk season setter. Season decides whether a high
+// earner is a WINNER or HARVEST out of season (utils/portfolioStatus.js). The setter does NOT re-tag — the screen offers Update now after.
+app.use('/product-seasons', require('./routes/product-seasons'));                     // GET: styles, season, units per month, suggestion
+app.use('/product-season-bulk', require('./routes/product-season-bulk'));             // POST {groupids, season}: set season in bulk
 
 // --- Shopify order sync (the "Sync orders" button on Analytics -> Sales) ---
 // !! THE LOGIC BEHIND /order-sync ALSO LIVES IN C:\scripts\orders\update_orders.py, WHICH IS STILL IN CRON. Both are live and must

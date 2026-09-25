@@ -153,7 +153,7 @@ const CLASSIFY_SQL = `
  * what makes MAX(portfolio_status_at) mean "last updated" and a NULL mean "created since the last update".
  *
  * @returns {Promise<{counts: Record<string, number>, total: number, channelCounts: Record<'SHP'|'AMZ', Record<string, number>>}>}
- *          channelCounts = per channel, the styles ON that channel's lists (its own + BOTH) — what the snapshot stores.
+ *          channelCounts = per channel, the styles ON that channel's lists (its own + BOTH).
  */
 async function applyPortfolioStatus(client) {
   const r = await client.query(`
@@ -235,37 +235,6 @@ async function readPortfolioStatus() {
 }
 
 /**
- * Record today's five counts as a trend point — portfolio_status_snapshot (migrations/20260924b). Call INSIDE the same
- * transaction as applyPortfolioStatus, with the counts it just returned, so the point is exactly what was tagged.
- *
- * UPSERT on the date (a second press in a day overwrites) + prune past 2 years, so the table is bounded at ~730 rows. CURRENT_DATE is the
- * authority for the date, never a JS "today" — the DB and the box disagree for an hour a night through BST.
- *
- * @returns {Promise<string>} the date the row was written under, AS THE DB DATED IT ('YYYY-MM-DD').
- */
-async function recordStatusSnapshot(client, { counts, total, channelCounts }) {
-  const ins = await client.query(
-    `INSERT INTO portfolio_status_snapshot
-       (snapshot_date, winners_count, steady_count, new_count, harvest_count, losers_count, total_count, channel_counts, created_at)
-     VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7::jsonb, now())
-     ON CONFLICT (snapshot_date)
-     DO UPDATE SET winners_count = EXCLUDED.winners_count,
-                   steady_count  = EXCLUDED.steady_count,
-                   new_count     = EXCLUDED.new_count,
-                   harvest_count = EXCLUDED.harvest_count,
-                   losers_count  = EXCLUDED.losers_count,
-                   total_count   = EXCLUDED.total_count,
-                   channel_counts = EXCLUDED.channel_counts,
-                   created_at    = now()
-     -- Cast to text in SQL — never toISOString() a pg DATE.
-     RETURNING to_char(snapshot_date, 'YYYY-MM-DD') AS date`,
-    [counts.WINNERS, counts.STEADY, counts.NEW, counts.HARVEST, counts.LOSERS, total, JSON.stringify(channelCounts || null)]
-  );
-  await client.query(`DELETE FROM portfolio_status_snapshot WHERE snapshot_date < CURRENT_DATE - INTERVAL '2 years'`);
-  return ins.rows[0].date;
-}
-
-/**
  * The tagged WINNERS, with the revenue/units stamped at the last Update — biggest first. What the screen's bar dial filters and
  * its brand breakdown groups; also the rows a winners list or a "reprice these" jump will need. Reads stored values only.
  *
@@ -295,29 +264,6 @@ async function readTaggedWinners() {
   }));
 }
 
-/** The recorded status trend, oldest first, over the trailing `days`. Dates cast to text in SQL (never toISOString a pg DATE). */
-async function readStatusHistory(days) {
-  const r = await query(
-    `SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS date,
-            winners_count, steady_count, new_count, harvest_count, losers_count, total_count, channel_counts
-       FROM portfolio_status_snapshot
-      WHERE snapshot_date >= CURRENT_DATE - ($1::int - 1)
-      ORDER BY snapshot_date ASC`,
-    [days]
-  );
-  return r.rows.map((h) => ({
-    date: h.date,
-    WINNERS: h.winners_count,
-    STEADY: h.steady_count,
-    NEW: h.new_count,
-    HARVEST: h.harvest_count,
-    LOSERS: h.losers_count,
-    total: h.total_count,
-    // { SHP: {WINNERS: n, ...}, AMZ: {...} } — null on rows written before 2026-09-25 (the channel graph starts after that)
-    channels: h.channel_counts || null,
-  }));
-}
-
 module.exports = {
   STATUSES,
   CHANNELS,
@@ -329,8 +275,6 @@ module.exports = {
   SUMMER_LAST_MONTH,
   CLASSIFY_SQL,
   applyPortfolioStatus,
-  recordStatusSnapshot,
   readPortfolioStatus,
   readTaggedWinners,
-  readStatusHistory,
 };

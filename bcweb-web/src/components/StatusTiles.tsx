@@ -19,8 +19,8 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSER
 
          THE WINNERS SCREEN LIVES HERE NOW (retired as its own page 2026-09-25 — owner: "the same screen for two different points of
          view", simple repricing and analysing winners). Its dashboard card opens this tab. From it came "Update now" (re-tag every
-         style + record today's status point; no success banner — the tiles and stamp change when the refresh lands), the tier
-         toggle, winners by brand and the status trend, all re-cut per channel.
+         style; no success banner — the tiles and stamp change when the refresh lands), the tier toggle and winners by brand, all
+         re-cut per channel. The status trend came too and was removed 2026-09-25 (see routes/portfolio-snapshot-update.js).
 
 Consumes GET /pricing-status-overview, GET /portfolio-status and POST /portfolio-snapshot-update.
 =======================================================================================================================================
@@ -31,9 +31,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, type PortfolioChannel, type PortfolioChannelKey, type PortfolioStatusPoint, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
+import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, type PortfolioChannel, type PortfolioChannelKey, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import StatusTrendChart from '@/components/StatusTrendChart';
 import { ArrowPathIcon, CheckIcon } from '@heroicons/react/20/solid';
 import { STATUS_COLOR, STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
 
@@ -47,7 +46,7 @@ function fmtStamp(s: string): string {
 // `toolbar` = the page's Status | Segment | Campaign switch, drawn on the same row as the update control.
 export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
-  // The brand breakdown and the status trend (from the retired Winners screen). GET /portfolio-status — stored tags only. The key is
+  // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only. The key is
   // shared with Reports → New's WinnersStrip, so one fetch serves both.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
   const { logout } = useAuth();
@@ -154,8 +153,6 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
           ))}
         </p>
       )}
-
-      {portfolio.data && <TrendByChannel history={portfolio.data.history} dimmed={raised} />}
     </div>
   );
 }
@@ -204,50 +201,6 @@ function BrandList({ brands }: { brands: BrandCount[] }) {
       ))}
       {more > 0 && <li className="text-slate-400">+{more} more</li>}
     </ul>
-  );
-}
-
-// THE STATUS TREND, PER CHANNEL (owner, 2026-09-25): a Shopify | Amazon switch, so each line is one channel's count and matches its
-// row of tiles — never an all-channel total. Channel counts were first recorded on 2026-09-25, so readings before that are skipped
-// and the graph waits for a second channel reading. Greyed at a raised tier: it records the £1,500 tag, not the tier.
-function TrendByChannel({ history, dimmed }: { history: PortfolioStatusPoint[]; dimmed: boolean }) {
-  const [ch, setCh] = useState<PortfolioChannelKey>('SHP');
-  const rows = useMemo<PortfolioStatusPoint[]>(
-    () => history.filter((h) => h.channels).map((h) => ({ ...h, ...h.channels![ch] })),
-    [history, ch]
-  );
-  const switcher = (
-    <span className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" role="group" aria-label="Channel">
-      {(['SHP', 'AMZ'] as const).map((k) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => setCh(k)}
-          aria-pressed={ch === k}
-          title={k === 'SHP' ? 'Shopify' : 'Amazon'}
-          className={'flex h-7 items-center rounded px-1.5 transition ' + (ch === k ? 'bg-slate-100 ring-1 ring-slate-300' : 'opacity-50 hover:opacity-100')}
-        >
-          <ChannelLogo channel={k === 'SHP' ? 'shopify' : 'amazon'} />
-        </button>
-      ))}
-    </span>
-  );
-
-  if (rows.length < 2) {
-    return (
-      <p className="text-xs text-slate-400">
-        Status over time: one channel reading so far — the graph appears after the next Update on another day.
-      </p>
-    );
-  }
-  return (
-    <div
-      className={dimmed ? 'pointer-events-none opacity-40 grayscale transition' : 'transition'}
-      aria-disabled={dimmed}
-      title={dimmed ? 'Tagged at £1,500 — not affected by the tier' : undefined}
-    >
-      <StatusTrendChart rows={rows} showTotal={false} headerExtra={switcher} />
-    </div>
   );
 }
 

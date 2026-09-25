@@ -70,7 +70,7 @@ import {
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
-  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon,
+  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -248,6 +248,15 @@ const GROUPS: Group[] = [
         description: 'Winners, steady, new, harvest and losers per channel — with winners by brand and how the mix is moving.',
         href: '/segments',
         icon: TrophyIcon,
+      },
+      {
+        // Its own Back Office job (owner, 2026-09-25), done in a review mindset, not while repricing: which styles really sell all
+        // year. Season decides whether an earner is a WINNER or HARVEST out of season, so this feeds Repricing without being part of it.
+        title: 'Seasons',
+        subtitle: 'Summer, winter or all year',
+        description: 'Each style’s year of sales month by month, against its season — spot the all-year sellers and re-season them in bulk.',
+        href: '/seasons',
+        icon: CalendarIcon,
       },
       {
         title: 'Brands',

@@ -3714,32 +3714,14 @@ export interface TaggedWinner {
   channel: PortfolioChannel;
 }
 
-// One recorded Update: how many styles held each status that day.
-export interface PortfolioStatusPoint extends Record<PortfolioStatusName, number> {
-  date: string;                   // 'YYYY-MM-DD'
-  total: number;
-  // The same day's counts per channel (own + BOTH). null on readings taken before 2026-09-25, which a channel view skips.
-  channels: Record<PortfolioChannelKey, Record<PortfolioStatusName, number>> | null;
-}
-
-// GET /portfolio-status — the Winners screen's source since 2026-09-24. Stored data only, nothing live.
-// A snapshot's channel_counts, coerced — every status present on both channels, or null when the reading predates it.
-function mapChannelHistory(c: unknown): Record<PortfolioChannelKey, Record<PortfolioStatusName, number>> | null {
-  if (!c || typeof c !== 'object') return null;
-  const src = c as Record<string, Record<string, unknown> | undefined>;
-  const one = (ch: PortfolioChannelKey) =>
-    Object.fromEntries(PORTFOLIO_STATUSES.map((st) => [st, Number(src[ch]?.[st]) || 0])) as Record<PortfolioStatusName, number>;
-  return { SHP: one('SHP'), AMZ: one('AMZ') };
-}
-
-export function getPortfolioStatus(days?: number) {
+// GET /portfolio-status — the Status tab's winners-by-brand and Reports → New's strip. Stored data only, nothing live.
+export function getPortfolioStatus() {
   return request<{
     status: PortfolioStatusSummary;
     bars: number[];               // the dial; bars[0] is the tag's own bar (£1,500)
     winners: TaggedWinner[];      // stamped revenue descending
-    history: PortfolioStatusPoint[];
   }>(
-    { url: '/portfolio-status', method: 'GET', params: days ? { days } : undefined },
+    { url: '/portfolio-status', method: 'GET' },
     (b) => ({
       status: mapStatusSummary(b.status as Record<string, unknown> | undefined),
       bars: ((b.bars as unknown[]) || []).map(Number).filter((n) => n > 0),
@@ -3751,27 +3733,58 @@ export function getPortfolioStatus(days?: number) {
         units12m: Number(w.units_12m) || 0,
         channel: (w.channel === 'SHP' || w.channel === 'AMZ' ? w.channel : 'BOTH') as PortfolioChannel,
       })),
-      history: ((b.history as Record<string, unknown>[]) || []).map((h) => ({
-        date: String(h.date || ''),
-        WINNERS: Number(h.WINNERS) || 0,
-        STEADY: Number(h.STEADY) || 0,
-        NEW: Number(h.NEW) || 0,
-        HARVEST: Number(h.HARVEST) || 0,
-        LOSERS: Number(h.LOSERS) || 0,
-        total: Number(h.total) || 0,
-        channels: mapChannelHistory(h.channels),
-      })),
     })
   );
 }
 
-// "Update now" — the deliberate act: re-tags every style's portfolio status (skusummary.portfolio_status) and records today's
-// status counts as a trend point, in one transaction. Pressing twice in a day overwrites, never appends. The screen re-reads
-// everything via GET /portfolio-status afterwards, so only the recorded date is mapped here.
+// "Update now" — the deliberate act: re-tags every style's portfolio status (skusummary.portfolio_status). Callers re-read the
+// screens afterwards, so nothing from the response is mapped. (The name is historic — it no longer records a trend point.)
 export function updatePortfolioSnapshot() {
-  return request<{ date: string }>(
+  return request<Record<string, never>>(
     { url: '/portfolio-snapshot-update', method: 'POST' },
-    (b) => ({ date: String(b.date || '') })
+    () => ({})
+  );
+}
+
+// ---- Back Office: Seasons -----------------------------------------------------------------------------------------------------------
+// Every style's season beside its year of monthly sales, and a bulk setter. Season decides whether a high earner is a WINNER or
+// HARVEST out of season, so an all-year seller wants 'Any'. The server only SUGGESTS (see bcweb-server/routes/product-seasons.js);
+// the owner decides. Setting a season does NOT re-tag the statuses — the screen offers updatePortfolioSnapshot() afterwards.
+export type SeasonName = 'Summer' | 'Winter' | 'Any';
+
+export interface SeasonRow {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  season: SeasonName;
+  status: PortfolioStatusName | null;
+  months: number[];                 // 12 values, JANUARY first — units sold in that calendar month over the window
+  months_sold: number;
+  off_sold: number | null;          // off-season months with a sale (null on Any)
+  off_total: number | null;         // off-season months there are: 7 for Summer, 5 for Winter (null on Any)
+  revenue_12m: number;
+  units_12m: number;
+  suggested: boolean;
+  suggested_season: SeasonName | null;
+}
+
+export interface SeasonsData {
+  window: { from: string; to: string } | null;   // 'YYYY-MM' first and last month of the window
+  last_change: { at: string; who: string } | null;
+  rows: SeasonRow[];
+}
+
+export function getProductSeasons() {
+  return request<SeasonsData>(
+    { url: '/product-seasons', method: 'GET' },
+    (b) => ({ window: b.window || null, last_change: b.last_change || null, rows: b.rows || [] })
+  );
+}
+
+export function setProductSeasons(groupids: string[], season: SeasonName) {
+  return request<{ changed: string[]; unchanged: number }>(
+    { url: '/product-season-bulk', method: 'POST', data: { groupids, season } },
+    (b) => ({ changed: b.changed || [], unchanged: Number(b.unchanged) || 0 })
   );
 }
 

@@ -3,29 +3,21 @@
 API Route: portfolio_snapshot_update
 =======================================================================================================================================
 Method: POST
-Purpose: Repricing Status tab — the "Update now" button (the Winners screen that first had it was retired 2026-09-25). RE-TAGS every style's portfolio status (skusummary.portfolio_status: WINNERS |
-         STEADY | NEW | HARVEST | LOSERS, plus the lead channel and the stamped 12m revenue/units — the rules are in
-         utils/portfolioStatus.js) and records today's five counts as a point on the status trend (portfolio_status_snapshot).
-         The owner asked for one button, not two: "when pressed, the latest tag is set".
+Purpose: Repricing Status tab — the "Update now" button (also offered by Back Office → Seasons after a season change). RE-TAGS every
+         style's portfolio status (skusummary.portfolio_status: WINNERS | STEADY | NEW | HARVEST | LOSERS, plus the lead channel and
+         the stamped 12m revenue/units — the rules are in utils/portfolioStatus.js), in one transaction.
 
-         MANUAL TRIGGER ONLY — no cron. Viewing the screen (GET /portfolio-status) reads stored data and writes nothing, so merely
-         opening the page never appends a point. Recording one is a deliberate press. Same read/update split as Stock Position and
-         Birk Availability, and for the same reason: a series that grew on every page view would be a record of browsing habits,
-         not of the business.
+         MANUAL TRIGGER ONLY — no cron. Viewing a screen reads the stored tags and writes nothing.
 
-WHAT A SNAPSHOT MEANS, AND WHY IT IS NOT JUST A CACHE
-         A stored point IS WHAT WE SAID ON THE DAY. A recomputation is what the books say NOW about then, and the two drift as
-         late-booked sales, refunds and corrections land. Do not backfill the status trend to make the chart look fuller.
+         THE STATUS TREND WAS REMOVED 2026-09-25 (owner). Until then this also recorded the day's counts in
+         portfolio_status_snapshot for a graph on the Status tab. Once a WINNER had to be in season, WINNERS and HARVEST swing by
+         design every 1 April and 1 September, and every Seasons review moves them too — the line would have charted the rules,
+         the calendar and our own edits, not the business. Graph, table writes and reads all went; git history has them.
 
-         Tag and trend point are written in ONE transaction, so a failed press leaves neither half written. The only product-table
-         write is portfolio_status / _at / _channel / _revenue_12m / _units_12m — no legacy `updated` stamp, no shopifychange.
+         The only product-table write is portfolio_status / _at / _channel / _revenue_12m / _units_12m — no legacy `updated` stamp,
+         no shopifychange.
 
-         Growth safeguard: snapshot_date is the PK and is UPSERTed (a second press in a day overwrites), and the writer prunes rows
-         past 2 years in the same transaction. Max ~730 rows, permanently.
-
-         URL KEEPS ITS OLD NAME. Until 2026-09-25 this also wrote a live winner count to `portfolio_snapshot`; that table, and the
-         GET /portfolio-winners that drew it, were removed so the app has one winners ruler — the tag. Renaming the route would be
-         churn for no behaviour change.
+         URL KEEPS ITS OLD NAME ("snapshot") — renaming it would be churn for no behaviour change.
 
          Requires auth.
 =======================================================================================================================================
@@ -34,7 +26,6 @@ Request Payload: none (POST)
 Success Response:
 {
   "return_code": "SUCCESS",
-  "date": "2026-09-21",               // the row that was written, AS THE DB DATED IT (not this process's idea of today)
   "status": {                         // the tags just written to skusummary.portfolio_status, counted
     "counts": { "WINNERS": 73, "STEADY": 175, "NEW": 22, "HARVEST": 15, "LOSERS": 20 },
     "total": 305
@@ -52,25 +43,16 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { applyPortfolioStatus, recordStatusSnapshot } = require('../utils/portfolioStatus');
+const { applyPortfolioStatus } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-// ⚠ THE DB AND THIS PROCESS DISAGREE ABOUT WHAT DAY IT IS, FOR ONE HOUR A NIGHT THROUGH BST.
-//   The Postgres session runs Etc/UTC while the box runs Europe/London, so between midnight BST and midnight UTC, CURRENT_DATE is
-//   still yesterday while `new Date()` here has already rolled over. The date reported is the one the DATABASE stamped on the row,
-//   read back via RETURNING. Never reintroduce a JS-side "today" here.
-
 router.post('/', async (req, res) => {
   try {
-    const written = await withTransaction(async (client) => {
-      const status = await applyPortfolioStatus(client);
-      const date = await recordStatusSnapshot(client, status);
-      return { date, status };
-    });
+    const status = await withTransaction((client) => applyPortfolioStatus(client));
 
-    return res.json({ return_code: 'SUCCESS', date: written.date, status: written.status });
+    return res.json({ return_code: 'SUCCESS', status });
   } catch (err) {
     logger.error('[portfolio-snapshot-update] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to update portfolio status' });

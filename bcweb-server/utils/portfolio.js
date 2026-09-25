@@ -51,8 +51,7 @@ THE DEFINITION (THE CODE IS THE SPEC):
 // about 7.05x, which puts £200 of contribution at roughly £1,410 of revenue. Rounded to £1,500 — the ladder exists to be read as a
 // spread, not to reproduce the old counts exactly, and a round number reads better in the sentence on screen.
 //
-// ⚠ MOVING THIS SHIFTS THE STATUS TREND. portfolio_status_snapshot records counts, not the bar they were taken at, so a change here
-//   shows on the Winners graph as a step that looks like the business moved. Note the date if it ever moves.
+// ⚠ This bar sets the stored WINNERS tag (utils/portfolioStatus.js) — moving it re-draws who is a winner at the next Update.
 const WINNER_BAR = 1500;
 
 // THE SAME TEST, READ AT HIGHER BARS. Not a second definition — one ruler with extra marks on it. The screen offers these as a
