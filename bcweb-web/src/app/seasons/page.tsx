@@ -26,7 +26,7 @@ Guarded by AppShell. Consumes GET /product-seasons; writes POST /product-season-
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
@@ -98,9 +98,11 @@ it in one read, as the same table the owner was first shown: what each season's 
 months, how many styles, how many in stock, how many added in the last year, and a total. Plain figures, no bars or highlighting
 (owner found a share column and a highlighted row confusing). Whole catalogue — the filters below don't touch it.
 COLLAPSED BY DEFAULT (owner: "out of the way of my real work on that screen"); open/closed is remembered in this browser only.
+Its header strip also carries the screen's context line (`info`) on the right — moved up from the filter row when the search box
+pushed it onto a line of its own (owner, 2026-09-25).
 */
 
-function RangePanel({ rows, open, onToggle }: { rows: SeasonRow[]; open: boolean; onToggle: () => void }) {
+function RangePanel({ rows, open, onToggle, info }: { rows: SeasonRow[]; open: boolean; onToggle: () => void; info?: ReactNode }) {
   // `Number(...) || 0`: a server older than this panel doesn't send these fields — show £0, never NaN.
   const sum = (r: SeasonRow[]) => ({
     summer: r.reduce((n, x) => n + (Number(x.rev_summer) || 0), 0),
@@ -117,15 +119,18 @@ function RangePanel({ rows, open, onToggle }: { rows: SeasonRow[]; open: boolean
   const td = 'px-3 py-1.5 text-right tabular-nums';
   return (
     <div className="mb-6 overflow-hidden rounded-md border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-500 hover:text-slate-700"
-      >
-        <span className={'transition ' + (open ? 'rotate-90' : '')}>▸</span>
-        Range by season
-      </button>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-500 hover:text-slate-700"
+        >
+          <span className={'transition ' + (open ? 'rotate-90' : '')}>▸</span>
+          Range by season
+        </button>
+        {info && <div className="px-3 py-1.5 text-right text-xs text-slate-400">{info}</div>}
+      </div>
       {open && (
         <table className="w-full table-fixed border-t border-slate-200 text-sm">
           {/* Headings never wrap: the months sit on a small second line under the two money columns instead of in brackets
@@ -194,6 +199,9 @@ export default function SeasonsPage() {
   // No un-cut — the Reset button starts the whole screen again. Any FILTER change resets the cuts (a new list, a new pass); a SORT
   // keeps them.
   const [cut, setCut] = useState<Set<string>>(new Set());
+  // SEARCH — back 2026-09-25 (removed earlier the same day, then wanted). Plain case-insensitive "contains" on the code, brand and
+  // title. It only narrows the view: ticks and cuts survive it, and a bulk change only ever hits ticked rows that are ON SCREEN.
+  const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('off');
   const [dir, setDir] = useState<SortDir>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -209,10 +217,11 @@ export default function SeasonsPage() {
   const inSeason = useMemo(() => allRows.filter((r) => r.season === season), [allRows, season]);
 
   const rows = useMemo(() => {
-    // No search box — removed 2026-09-25 (owner: "not sure I will use it"). Git history has it if wanted.
+    const q = query.trim().toLowerCase();
     const out = inSeason.filter((r) => {
       if (suggestedOnly && !r.suggested) return false;
       if (cut.has(r.groupid)) return false;
+      if (q && ![r.groupid, r.brand, r.title].some((f) => !!f && f.toLowerCase().includes(q))) return false;
       return !(r.status && hiddenStatus.has(r.status));
     });
     // Each column compares ascending; the direction flips it. Ties fall back to revenue (biggest first) so equal rows keep a
@@ -231,7 +240,7 @@ export default function SeasonsPage() {
     const sign = dir === 'asc' ? 1 : -1;
     out.sort((a, b) => sign * cmp(a, b) || b.revenue_12m - a.revenue_12m);
     return out;
-  }, [inSeason, suggestedOnly, hiddenStatus, cut, sort, dir]);
+  }, [inSeason, suggestedOnly, hiddenStatus, cut, query, sort, dir]);
 
   // Ticked rows that a filter hides are unticked, so a bulk change can never hit a style that is off screen.
   function toggleStatus(st: string) {
@@ -268,11 +277,15 @@ export default function SeasonsPage() {
   const emptyMessage =
     season !== 'Any' && season !== seasonNow && !hiddenStatus.has('WINNERS') && hiddenStatus.has('HARVEST')
       ? `${season} styles can't be Winners in ${seasonNow.toLowerCase()} — their earners are in Harvest.`
+      : query.trim()
+        ? `Nothing matches "${query.trim()}" here.`
       : suggestedOnly
         ? 'Nothing suggested here. Untick "Suggested" to see every style.'
         : 'No styles match these filters.';
 
   const allVisibleTicked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
+  // Ticked AND on screen — what a bulk change will actually hit (a search can hide ticked rows without unticking them).
+  const tickedOnScreen = rows.filter((r) => selected.has(r.groupid)).length;
 
   // RESET — the whole screen back to how it opens (owner, 2026-09-25): Summer tab, Suggested off, every status on, no cuts, nothing
   // ticked, default sort. Always on screen; it is the only way to bring cut rows back.
@@ -281,6 +294,7 @@ export default function SeasonsPage() {
     setSuggestedOnly(false);
     setHiddenStatus(new Set());
     setCut(new Set());
+    setQuery('');
     setSelected(new Set());
     setSort('off');
     setDir('desc');
@@ -344,7 +358,23 @@ export default function SeasonsPage() {
 
   return (
     <AppShell>
-      {data && <RangePanel rows={allRows} open={rangeOpen} onToggle={toggleRange} />}
+      {data && (
+        <RangePanel
+          rows={allRows}
+          open={rangeOpen}
+          onToggle={toggleRange}
+          info={
+            // Which season the business is in today — the one the status rules test against (owner, 2026-09-25) — then the sales
+            // window and the last change, all on one line.
+            <>
+              <span className="font-medium text-slate-600">{seasonNow} now</span>
+              {seasonNow === 'Summer' ? ' · Apr–Aug' : ' · Sep–Mar'}
+              {data.window && <> · Sales {monthLabel(data.window.from)} – {monthLabel(data.window.to)}</>}
+              {data.last_change && <> · Last season change {dayLabel(data.last_change.at)} · {data.last_change.who}</>}
+            </>
+          }
+        />
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {/* SEASON — what the style is set to now. No counts on the switch (owner's rule for toggles); the line below says it. */}
@@ -396,24 +426,37 @@ export default function SeasonsPage() {
           })}
         </div>
 
+        <div className="relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
+            placeholder="Search"
+            aria-label="Search styles"
+            className="w-48 rounded-md border border-slate-300 bg-white py-1 pl-2.5 pr-7 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-1 text-slate-400 hover:text-slate-700"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={resetScreen}
-          title="Start the screen again — Summer, all statuses, nothing cut"
+          title="Start the screen again — Summer, all statuses, no search, nothing cut"
           className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
         >
           Reset
         </button>
 
-        <div className="ml-auto text-right text-xs text-slate-400">
-          {/* Which season the business is in today — the one the status rules test against (owner, 2026-09-25). */}
-          <div>
-            <span className="font-medium text-slate-600">{seasonNow} now</span>
-            {seasonNow === 'Summer' ? ' · Apr–Aug' : ' · Sep–Mar'}
-          </div>
-          {data?.window && <div>Sales {monthLabel(data.window.from)} – {monthLabel(data.window.to)}</div>}
-          {data?.last_change && <div>Last season change {dayLabel(data.last_change.at)} · {data.last_change.who}</div>}
-        </div>
       </div>
 
 
@@ -426,7 +469,7 @@ export default function SeasonsPage() {
         {/* The list's count lives here, not on the Summer | Winter | Any switch (owner's no-counts-on-toggles rule). It follows every
             filter, so it is always the length of the table below. Fixed width so the bar doesn't shift as the numbers change. */}
         <span className="w-36 text-sm text-slate-400 tabular-nums">
-          <span className={selected.size > 0 ? 'font-medium text-slate-700' : ''}>{selected.size}</span> of{' '}
+          <span className={tickedOnScreen > 0 ? 'font-medium text-slate-700' : ''}>{tickedOnScreen}</span> of{' '}
           <span className="font-medium text-slate-700">{rows.length}</span> selected
         </span>
         <span className="text-sm text-slate-500">Set season:</span>
@@ -437,7 +480,7 @@ export default function SeasonsPage() {
               <button
                 key={s}
                 type="button"
-                disabled={current || busy || selected.size === 0}
+                disabled={current || busy || tickedOnScreen === 0}
                 onClick={() => applySeason(s)}
                 title={current ? `These styles are ${s} now` : undefined}
                 className={

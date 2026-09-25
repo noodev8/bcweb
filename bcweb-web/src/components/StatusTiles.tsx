@@ -192,7 +192,7 @@ function BrandList({ brands }: { brands: BrandCount[] }) {
     <ul className="min-w-0 flex-1 space-y-1.5 self-center text-xs">
       {shown.map((b) => (
         <li key={b.brand} className="flex items-center gap-2">
-          <span className="w-24 truncate text-slate-600" title={b.brand}>{b.brand}</span>
+          <span className="w-24 shrink-0 truncate text-slate-600" title={b.brand}>{b.brand}</span>
           <span className="w-6 flex-none text-right font-medium tabular-nums text-slate-900">{b.n}</span>
           <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
             <span className="block h-full rounded-full bg-slate-400" style={{ width: `${Math.max(4, (b.n / top) * 100)}%` }} />
@@ -264,15 +264,20 @@ function Tile({ status, counts, hero, rule, href, dimmed, brands }: {
           </span>
         )
       )}
-      {rule && <span className={'mt-2 block text-slate-400 ' + (hero ? 'text-xs' : 'text-[11px]')}>{rule}</span>}
     </>
   );
+  const ruleLine = rule && <span className={'mt-2 block text-slate-400 ' + (hero ? 'text-xs' : 'text-[11px]')}>{rule}</span>;
+  // With brands, the rule runs under BOTH columns, not in the number's column: that column is flex-none, so the long rule line
+  // set its width and squeezed the brand list until names truncated and the bars vanished (owner, 2026-09-25).
   const inner = brands && brands.length > 0 ? (
-    <div className="flex gap-5">
-      <div className="flex-none">{main}</div>
-      <BrandList brands={brands} />
-    </div>
-  ) : main;
+    <>
+      <div className="flex gap-5">
+        <div className="flex-none">{main}</div>
+        <BrandList brands={brands} />
+      </div>
+      {ruleLine}
+    </>
+  ) : <>{main}{ruleLine}</>;
   const cls = 'block rounded-xl border bg-white shadow-sm ' + (hero ? 'col-span-2 p-5' : 'p-4');
   if (dimmed) return <div className={cls + ' border-slate-100 opacity-40'}>{inner}</div>;
   if (!live) return <div className={cls + ' border-slate-100 opacity-70'}>{inner}</div>;
