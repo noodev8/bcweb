@@ -24,10 +24,9 @@ switches ?segment= for ?campaign=, see utils/pricingGroup.js). `by` rides along 
 ?by=status (2026-09-24) — the stored portfolio status (path name WINNERS / STEADY / NEW / HARVEST / LOSERS). It replaced the
 Top earners grouping (removed the same day). ONE UNSPLIT LIST, not the Selling/Stuck pair (owner: "I don't think there's much point in
 splitting"): EVERY style with the status, from GET /pricing-status-list — OUT OF STOCK INCLUDED (stock 0), so prices can be set ahead
-of stock arriving rather than left at an old clearance price (owner). The list's length therefore equals the Winners card. The view
-tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status
-tab or from a card on the Winners screen (back link = wherever it came from). From Winners it opens with Due OFF (?pending=1) so the
-list is the card's whole number, and WINNERS carries the dial's ?bar= (e.g. 2500 -> only the winners over £2,500, on the revenue
+of stock arriving rather than left at an old clearance price (owner). The view tabs are hidden and the mode pinned to 'all'; the Due
+switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status tab (the Winners screen that also opened it was retired
+2026-09-25). WINNERS carries the tier's ?bar= (e.g. 2500 -> only the winners over £2,500, on the revenue
 stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
 both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 

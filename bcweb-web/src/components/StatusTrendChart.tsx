@@ -4,8 +4,7 @@
 Component: StatusTrendChart
 =======================================================================================================================================
 Purpose: The portfolio status trend — five lines (WINNERS | STEADY | NEW | HARVEST | LOSERS), one point per recorded "Update now" day.
-         Moved out of the Winners screen (2026-09-25) so Repricing's Status tab can draw it too while the Winners screen is being
-         folded into Repricing; once Winners is retired this is its only home. The caller picks the rows (all channels, or one
+         Moved out of the Winners screen (retired 2026-09-25); drawn on Repricing's Status tab. The caller picks the rows (all channels, or one
          channel's counts) — the chart just draws what it is given.
 =======================================================================================================================================
 */

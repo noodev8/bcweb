@@ -4,7 +4,7 @@ API Route: pricing_status_list
 =======================================================================================================================================
 Method: GET
 Purpose: Repricing — the Shopify list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | HARVEST | LOSERS; the stored tag
-         skusummary.portfolio_status, set by the Winners screen's "Update now" — utils/portfolioStatus.js). The Amazon twin is
+         skusummary.portfolio_status, set by "Update now" on Repricing's Status tab — utils/portfolioStatus.js). The Amazon twin is
          routes/amz-status-list.js (SKU grain).
 
          ONE LIST, NOT SPLIT (owner, 2026-09-24: "I don't think there's much point in splitting"). The segment / campaign lists are two

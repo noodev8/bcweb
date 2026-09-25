@@ -124,10 +124,11 @@ export default function AnalyticsPage() {
             THE DESCRIPTION DELIBERATELY PROMISES NO ACTION. An earlier version advertised the contenders list ("which young ones
             are about to join them"), which the screen no longer shows — that job belongs on the per-brand working screens (owner,
             2026-09-22). A tile that promises a to-do list is how the to-do list gets asked for back. */}
+        {/* Retired as its own screen 2026-09-25: opens Repricing's Status tab, which now carries the tags, brands and trend. */}
         <ModuleTile
           title="Winners"
-          description="How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling."
-          href="/analytics/winners"
+          description="Winners, steady, new, harvest and losers per channel — with winners by brand and how the mix is moving."
+          href="/segments"
           icon={TrophyIcon}
           live
         />

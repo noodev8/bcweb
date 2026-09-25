@@ -16,7 +16,7 @@ pause + blank buckets are hidden server-side. The switch lives in the URL (?by=c
 
 STATUS (owner, 2026-09-24: "This pricing group should replace the old top earners") — the FIRST and DEFAULT tab: bare /segments
 opens it; the segment view is /segments?by=segment. Tiles per stored portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS,
-skusummary.portfolio_status, set by the Winners screen) for Shopify (styles) and Amazon (SKUs), each opening ONE unsplit list of every
+skusummary.portfolio_status, set by "Update now" on this tab) for Shopify (styles) and Amazon (SKUs), each opening ONE unsplit list of every
 style / SKU with the status, out of stock included (/pricing|/amz/WINNERS?by=status). See components/StatusTiles.
 Top earners (2026-09-23: styles over the Winners bar per channel, as two channel cards) held this slot for a day; its tab, cards, route
 and grouping were removed 2026-09-24.

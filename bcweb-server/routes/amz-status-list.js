@@ -4,7 +4,7 @@ API Route: amz_status_list
 =======================================================================================================================================
 Method: GET
 Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | HARVEST | LOSERS; skusummary.portfolio_status,
-         set by the Winners screen's "Update now"). The Amazon twin of routes/pricing-status-list.js, at SKU grain because Amazon prices
+         set by "Update now" on Repricing's Status tab). The Amazon twin of routes/pricing-status-list.js, at SKU grain because Amazon prices
          per size: every amzfeed SKU whose STYLE carries the status (the tag is per style; each of its sizes inherits it).
 
          ONE LIST, NOT SPLIT, OUT OF STOCK INCLUDED — both owner calls of 2026-09-24, argued in pricing-status-list.js: no Selling /

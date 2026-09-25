@@ -4,7 +4,7 @@
 Component: StatusTiles  (the Repricing screen's Status tab — its first and default tab since 2026-09-24)
 =======================================================================================================================================
 Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS — the stored skusummary.portfolio_status tag, set
-         by the Winners screen's "Update now"), for EACH CHANNEL: a Shopify row (styles) and an Amazon row (SKUs — Amazon prices per
+         by "Update now" here), for EACH CHANNEL: a Shopify row (styles) and an Amazon row (SKUs — Amazon prices per
          size; a SKU takes its style's status). It REPLACED the Top earners cards (owner, 2026-09-24: "This pricing group should
          replace the old top earners"), and Amazon joined the same day ("Apply amazon pricing in reprice").
 
@@ -17,10 +17,12 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSER
          to leave them at old clearance price"). A tile opens ONE unsplit list (no Selling / Stuck); its "← Repricing" returns here.
          A status with nothing at all behind it is quiet and not a link.
 
-         "Update now" (re-tag every style + record today's status point) lives here as well as on Winners — the first step of folding
-         the Winners screen into this one. No success banner: the tiles and the stamp change when the refresh lands.
+         THE WINNERS SCREEN LIVES HERE NOW (retired as its own page 2026-09-25 — owner: "the same screen for two different points of
+         view", simple repricing and analysing winners). Its dashboard card opens this tab. From it came "Update now" (re-tag every
+         style + record today's status point; no success banner — the tiles and stamp change when the refresh lands), the tier
+         toggle, winners by brand and the status trend, all re-cut per channel.
 
-Consumes GET /pricing-status-overview and POST /portfolio-snapshot-update.
+Consumes GET /pricing-status-overview, GET /portfolio-status and POST /portfolio-snapshot-update.
 =======================================================================================================================================
 */
 
@@ -45,8 +47,8 @@ function fmtStamp(s: string): string {
 // `toolbar` = the page's Status | Segment | Campaign switch, drawn on the same row as the update control.
 export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
-  // The brand breakdown and the status trend, moved over from the Winners screen (2026-09-25). Same source and cache key as that
-  // screen (GET /portfolio-status — stored tags only), so both read one answer while Winners still exists.
+  // The brand breakdown and the status trend (from the retired Winners screen). GET /portfolio-status — stored tags only. The key is
+  // shared with Reports → New's WinnersStrip, so one fetch serves both.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
   const { logout } = useAuth();
   const router = useRouter();
@@ -285,7 +287,7 @@ function Tile({ status, counts, hero, rule, href, dimmed }: {
   // so the list the tile opens — per size, Amazon prices per size — can show more due rows than the tile's number.
   const inner = (
     <>
-      {/* The status dot is the same key the Winners screen and its trend chart use — identity, not decoration. */}
+      {/* The status dot is the same key the status trend chart below uses — identity, not decoration. */}
       <span className={'flex items-center gap-2 font-semibold tracking-wide ' + (hero ? 'text-sm text-slate-700' : 'text-xs text-slate-500')}>
         <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[status] }} />
         {status}

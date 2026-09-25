@@ -3,6 +3,11 @@
 // never talks to Postgres directly (CLAUDE.md), only to the Express API over HTTP.
 const nextConfig = {
   reactStrictMode: true,
+  // THE WINNERS SCREEN WAS RETIRED 2026-09-25 — folded into Repricing's Status tab, which shows the same stored tags per channel plus
+  // winners by brand and the status trend. Old links and bookmarks land there; the query string (e.g. ?bar=2500) carries over.
+  async redirects() {
+    return [{ source: '/analytics/winners', destination: '/segments', permanent: false }];
+  },
   // next/image refuses to optimise images from hosts it doesn't know, so whitelist our product-image server. Filenames come from
   // skusummary.imagename and are served at https://images.brookfieldcomfort.com/<imagename>.
   images: {

@@ -32,7 +32,7 @@ interface ChannelBadgeProps {
   className?: string;  // extra classes on the wrapper (spacing, etc.)
 }
 
-// Just the logo tile, no name — for tight spots where the logo IS the label (the Winners screen's channel chips and switch).
+// Just the logo tile, no name — for tight spots where the logo IS the label (e.g. Repricing's brand columns and trend switch).
 // `size` sm = 20px tile for inline chips; md = the badge's own 28px.
 export function ChannelLogo({ channel, size = 'sm' }: { channel: Channel; size?: 'sm' | 'md' }) {
   const c = CHANNELS[channel];

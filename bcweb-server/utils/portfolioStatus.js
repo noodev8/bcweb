@@ -3,7 +3,7 @@
 Module: utils/portfolioStatus.js
 =======================================================================================================================================
 Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | HARVEST | LOSERS — defined once, written to
-         skusummary.portfolio_status by the Winners screen's Update button, and READ everywhere else.
+         skusummary.portfolio_status by "Update now" on Repricing's Status tab, and READ everywhere else.
 
          "Instead of determining the WINNERS all the time, lets tag it in the database. By Groupid." — owner, 2026-09-24.
 

@@ -243,8 +243,10 @@ const GROUPS: Group[] = [
       {
         title: 'Winners',
         subtitle: 'Products pulling their weight',
-        description: 'How many products are pulling their weight — the count, its share of the range, and whether it is growing or stalling.',
-        href: '/analytics/winners',
+        // Opens Repricing's Status tab — the Winners screen was folded into it (owner, 2026-09-25: "the same screen for two
+        // different points of view"). The card stays as the analysis way in.
+        description: 'Winners, steady, new, harvest and losers per channel — with winners by brand and how the mix is moving.',
+        href: '/segments',
         icon: TrophyIcon,
       },
       {

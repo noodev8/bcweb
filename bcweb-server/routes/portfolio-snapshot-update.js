@@ -3,7 +3,7 @@
 API Route: portfolio_snapshot_update
 =======================================================================================================================================
 Method: POST
-Purpose: Winners screen — the "Update now" button. RE-TAGS every style's portfolio status (skusummary.portfolio_status: WINNERS |
+Purpose: Repricing Status tab — the "Update now" button (the Winners screen that first had it was retired 2026-09-25). RE-TAGS every style's portfolio status (skusummary.portfolio_status: WINNERS |
          STEADY | NEW | HARVEST | LOSERS, plus the lead channel and the stamped 12m revenue/units — the rules are in
          utils/portfolioStatus.js) and records today's five counts as a point on the status trend (portfolio_status_snapshot).
          The owner asked for one button, not two: "when pressed, the latest tag is set".

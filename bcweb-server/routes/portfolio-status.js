@@ -3,7 +3,7 @@
 API Route: portfolio_status
 =======================================================================================================================================
 Method: GET
-Purpose: Winners screen (since 2026-09-24) — everything it draws, from the STORED portfolio status tags and nothing live.
+Purpose: Repricing Status tab (winners by brand, status trend) and Reports → New's WinnersStrip — from the STORED portfolio status tags and nothing live.
 
          "Instead of determining the WINNERS all the time, lets tag it in the database." — owner, 2026-09-24. Every style carries
          skusummary.portfolio_status (WINNERS | STEADY | NEW | HARVEST | LOSERS), set by "Update now" (POST /portfolio-snapshot-

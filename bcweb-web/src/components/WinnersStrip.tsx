@@ -4,19 +4,17 @@
 Component: WinnersStrip  (the outcome line on Reports -> New)
 =======================================================================================================================================
 Purpose: Ties the production screen to the thing production is FOR. The panel above it counts what we made; this counts what the
-         making has turned into — styles earning over the winner bar in the rolling 12 months — and is the way through to the Winners
-         screen itself.
+         making has turned into — styles earning over the winner bar in the rolling 12 months — and is the way through to Repricing's
+         Status tab (the Winners screen was folded into it, 2026-09-25).
 
-         THE STORED TAG, NOT A LIVE COUNT (2026-09-25). This reads GET /portfolio-status — the same WINNERS count the Winners screen
-         shows, as of the last "Update now". It used to recompute live (GET /portfolio-winners, deleted styles included), so the two
-         screens could show two different numbers; that route is gone. Shares the Winners screen's SWR key, so one fetch serves both.
+         THE STORED TAG, NOT A LIVE COUNT (2026-09-25). This reads GET /portfolio-status — the stored WINNERS tag as of the last
+         "Update now". It used to recompute live (GET /portfolio-winners, deleted styles included), so the two
+         screens could show two different numbers; that route is gone. Shares Repricing's SWR key ('portfolio-status').
 
          "A year ago" and "joined this year" went with it (owner's call): the tags only started on 2026-09-24 and there is no history
          to compare against yet. Bring them back from portfolio_status_snapshot once it holds a year — never from a live recompute.
 
-NAVIGATION: the whole strip is the link, and it carries ?from=/?back= so the Winners screen's own arrow comes back HERE rather than
-dumping the reader on the Reports index a level up. Winners already honours those params (it is reached from several places), so this
-is the existing convention, not a new one.
+NAVIGATION: the whole strip is the link, to Repricing (a top-level screen — no back arrow to carry).
 
 DEGRADES TO A PLAIN LINK. If the figures fail or are still loading, the strip still renders and still navigates — the numbers are the
 bonus, the way through is the point. Loads independently so the winner computation (~200ms) never holds up the list below.
@@ -28,8 +26,7 @@ import { ChevronRightIcon, TrophyIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getPortfolioStatus } from '@/lib/api';
 
-// Back-link contract: Winners reads `from` (where the arrow goes) and `back` (what it reads). Encoded because `from` is a path.
-const WINNERS_HREF = `/analytics/winners?from=${encodeURIComponent('/analytics/new-additions')}&back=${encodeURIComponent('New')}`;
+const WINNERS_HREF = '/segments';
 
 export default function WinnersStrip() {
   const { data } = useApiQuery('portfolio-status', () => getPortfolioStatus());
