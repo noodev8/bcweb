@@ -190,6 +190,10 @@ export default function SeasonsPage() {
   // Statuses switched OFF (owner, 2026-09-25: "not really interested in NEW at the moment"). All on by default; an untagged style
   // (none today) always shows.
   const [hiddenStatus, setHiddenStatus] = useState<Set<string>>(new Set());
+  // CUT (owner, 2026-09-25: "I am working through them and dont want noise"): the ✕ on a row takes it off the list for this pass.
+  // No un-cut — the Reset button starts the whole screen again. Any FILTER change resets the cuts (a new list, a new pass); a SORT
+  // keeps them.
+  const [cut, setCut] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortKey>('off');
   const [dir, setDir] = useState<SortDir>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -208,6 +212,7 @@ export default function SeasonsPage() {
     // No search box — removed 2026-09-25 (owner: "not sure I will use it"). Git history has it if wanted.
     const out = inSeason.filter((r) => {
       if (suggestedOnly && !r.suggested) return false;
+      if (cut.has(r.groupid)) return false;
       return !(r.status && hiddenStatus.has(r.status));
     });
     // Each column compares ascending; the direction flips it. Ties fall back to revenue (biggest first) so equal rows keep a
@@ -226,7 +231,7 @@ export default function SeasonsPage() {
     const sign = dir === 'asc' ? 1 : -1;
     out.sort((a, b) => sign * cmp(a, b) || b.revenue_12m - a.revenue_12m);
     return out;
-  }, [inSeason, suggestedOnly, hiddenStatus, sort, dir]);
+  }, [inSeason, suggestedOnly, hiddenStatus, cut, sort, dir]);
 
   // Ticked rows that a filter hides are unticked, so a bulk change can never hit a style that is off screen.
   function toggleStatus(st: string) {
@@ -236,6 +241,17 @@ export default function SeasonsPage() {
       return next;
     });
     setSelected(new Set());
+    setCut(new Set());
+  }
+
+  // Take styles off the list (and out of the selection).
+  function cutRows(ids: string[]) {
+    setCut((prev) => new Set([...prev, ...ids]));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
   }
 
   function sortBy(key: SortKey) {
@@ -258,9 +274,24 @@ export default function SeasonsPage() {
 
   const allVisibleTicked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
 
+  // RESET — the whole screen back to how it opens (owner, 2026-09-25): Summer tab, Suggested off, every status on, no cuts, nothing
+  // ticked, default sort. Always on screen; it is the only way to bring cut rows back.
+  function resetScreen() {
+    setSeason('Summer');
+    setSuggestedOnly(false);
+    setHiddenStatus(new Set());
+    setCut(new Set());
+    setSelected(new Set());
+    setSort('off');
+    setDir('desc');
+    setMessage(null);
+    setError(null);
+  }
+
   function switchSeason(s: SeasonName) {
     setSeason(s);
     setSelected(new Set());
+    setCut(new Set());
     setMessage(null);
     setError(null);
   }
@@ -338,7 +369,7 @@ export default function SeasonsPage() {
           <input
             type="checkbox"
             checked={suggestedOnly}
-            onChange={(e) => { setSuggestedOnly(e.target.checked); setSelected(new Set()); }}
+            onChange={(e) => { setSuggestedOnly(e.target.checked); setSelected(new Set()); setCut(new Set()); }}
             className="h-4 w-4 rounded border-slate-300"
           />
           Suggested
@@ -364,6 +395,15 @@ export default function SeasonsPage() {
             );
           })}
         </div>
+
+        <button
+          type="button"
+          onClick={resetScreen}
+          title="Start the screen again — Summer, all statuses, nothing cut"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Reset
+        </button>
 
         <div className="ml-auto text-right text-xs text-slate-400">
           {/* Which season the business is in today — the one the status rules test against (owner, 2026-09-25). */}
@@ -452,6 +492,7 @@ export default function SeasonsPage() {
               <col className="w-32" />
               <col className="w-28" />
               <col />
+              <col className="w-10" />
             </colgroup>
             <thead className="border-b border-slate-200 text-left text-xs text-slate-500">
               <tr>
@@ -472,6 +513,7 @@ export default function SeasonsPage() {
                   <SortHeader k="revenue" label="12 months" right sort={sort} dir={dir} onSort={sortBy} />
                 </th>
                 <th className="px-3 py-2 font-medium"><SortHeader k="status" label="Status" sort={sort} dir={dir} onSort={sortBy} /></th>
+                <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -507,6 +549,17 @@ export default function SeasonsPage() {
                   <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{money(r.revenue_12m)}</td>
                   <td className="px-3 py-1.5 text-xs text-slate-500">
                     {r.status ? r.status.charAt(0) + r.status.slice(1).toLowerCase() : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); cutRows([r.groupid]); }}
+                      title="Cut — take off this list"
+                      aria-label={`Cut ${r.groupid}`}
+                      className="rounded px-1.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                    >
+                      ✕
+                    </button>
                   </td>
                 </tr>
               ))}
