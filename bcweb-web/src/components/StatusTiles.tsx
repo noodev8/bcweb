@@ -24,13 +24,14 @@ Consumes GET /pricing-status-overview and POST /portfolio-snapshot-update.
 =======================================================================================================================================
 */
 
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStatusOverview, updatePortfolioSnapshot, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
+import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, type PortfolioChannel, type PortfolioChannelKey, type PortfolioStatusPoint, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import StatusTrendChart from '@/components/StatusTrendChart';
 import { ArrowPathIcon, CheckIcon } from '@heroicons/react/20/solid';
 import { STATUS_COLOR, STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
 
@@ -44,6 +45,9 @@ function fmtStamp(s: string): string {
 // `toolbar` = the page's Status | Segment | Campaign switch, drawn on the same row as the update control.
 export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
+  // The brand breakdown and the status trend, moved over from the Winners screen (2026-09-25). Same source and cache key as that
+  // screen (GET /portfolio-status — stored tags only), so both read one answer while Winners still exists.
+  const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
   const { logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,7 +72,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
     setActionError(null);
     const res = await updatePortfolioSnapshot();
     if (res.success) {
-      await refresh();
+      await Promise.all([refresh(), portfolio.refresh()]);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setActionError(res.error || 'Failed to update');
@@ -141,6 +145,105 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
           ))}
         </p>
       )}
+
+      {portfolio.data && (
+        <BrandSplit winners={portfolio.data.winners} bar={raised ? bar : null} />
+      )}
+      {portfolio.data && <TrendByChannel history={portfolio.data.history} dimmed={raised} />}
+    </div>
+  );
+}
+
+// Is a style with this lead channel on that channel's lists? Its own channel, or BOTH — the server's channelFilterSql, so a brand's
+// counts add up to the WINNERS tiles.
+const onChannel = (c: PortfolioChannel, key: PortfolioChannelKey) => c === key || c === 'BOTH';
+
+// WINNERS BY BRAND, SPLIT BY CHANNEL (owner, 2026-09-25 — chose this over the Winners screen's all-channel list, which summed across
+// channels). Each brand shows its Shopify and Amazon winner counts; a column adds up to its WINNERS tile, a BOTH style counting on
+// both. It follows the tier (on the STAMPED revenue, as the tiles do). No "units shifted": units are stored only all-channel, so a
+// per-channel column can't carry them honestly. Each column's bar is scaled to that channel's biggest brand.
+function BrandSplit({ winners, bar }: { winners: TaggedWinner[]; bar: number | null }) {
+  const rows = useMemo(() => {
+    const m = new Map<string, { brand: string; SHP: number; AMZ: number }>();
+    for (const w of winners) {
+      if (bar !== null && !(w.revenue12m > bar)) continue;
+      const key = (w.brand || '').trim() || 'Unbranded';
+      const b = m.get(key) || { brand: key, SHP: 0, AMZ: 0 };
+      if (onChannel(w.channel, 'SHP')) b.SHP += 1;
+      if (onChannel(w.channel, 'AMZ')) b.AMZ += 1;
+      m.set(key, b);
+    }
+    return [...m.values()].sort((a, b) => Math.max(b.SHP, b.AMZ) - Math.max(a.SHP, a.AMZ) || a.brand.localeCompare(b.brand));
+  }, [winners, bar]);
+  if (rows.length === 0) return null;
+  const top = { SHP: Math.max(1, ...rows.map((r) => r.SHP)), AMZ: Math.max(1, ...rows.map((r) => r.AMZ)) };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 grid grid-cols-[8rem_1fr_1fr] items-center gap-x-6 text-xs text-slate-400">
+        <span>winners by brand{bar !== null ? `, ${barLabel(bar)}` : ''}</span>
+        <span className="flex items-center gap-2"><ChannelLogo channel="shopify" /> Shopify</span>
+        <span className="flex items-center gap-2"><ChannelLogo channel="amazon" /> Amazon</span>
+      </div>
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li key={r.brand} className="grid grid-cols-[8rem_1fr_1fr] items-center gap-x-6 text-sm">
+            <span className="truncate text-slate-600" title={r.brand}>{r.brand}</span>
+            {(['SHP', 'AMZ'] as const).map((ch) => (
+              <span key={ch} className="flex items-center gap-3">
+                <span className={'w-6 flex-none text-right tabular-nums ' + (r[ch] > 0 ? 'font-medium text-slate-900' : 'text-slate-300')}>{r[ch]}</span>
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  {r[ch] > 0 && <span className="block h-full rounded-full bg-slate-400" style={{ width: `${Math.max(2, (r[ch] / top[ch]) * 100)}%` }} />}
+                </span>
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// THE STATUS TREND, PER CHANNEL (owner, 2026-09-25): a Shopify | Amazon switch, so each line is one channel's count and matches its
+// row of tiles — never an all-channel total. Channel counts were first recorded on 2026-09-25, so readings before that are skipped
+// and the graph waits for a second channel reading. Greyed at a raised tier: it records the £1,500 tag, not the tier.
+function TrendByChannel({ history, dimmed }: { history: PortfolioStatusPoint[]; dimmed: boolean }) {
+  const [ch, setCh] = useState<PortfolioChannelKey>('SHP');
+  const rows = useMemo<PortfolioStatusPoint[]>(
+    () => history.filter((h) => h.channels).map((h) => ({ ...h, ...h.channels![ch] })),
+    [history, ch]
+  );
+  const switcher = (
+    <span className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" role="group" aria-label="Channel">
+      {(['SHP', 'AMZ'] as const).map((k) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => setCh(k)}
+          aria-pressed={ch === k}
+          title={k === 'SHP' ? 'Shopify' : 'Amazon'}
+          className={'flex h-7 items-center rounded px-1.5 transition ' + (ch === k ? 'bg-slate-100 ring-1 ring-slate-300' : 'opacity-50 hover:opacity-100')}
+        >
+          <ChannelLogo channel={k === 'SHP' ? 'shopify' : 'amazon'} />
+        </button>
+      ))}
+    </span>
+  );
+
+  if (rows.length < 2) {
+    return (
+      <p className="text-xs text-slate-400">
+        Status over time: one channel reading so far — the graph appears after the next Update on another day.
+      </p>
+    );
+  }
+  return (
+    <div
+      className={dimmed ? 'pointer-events-none opacity-40 grayscale transition' : 'transition'}
+      aria-disabled={dimmed}
+      title={dimmed ? 'Tagged at £1,500 — not affected by the tier' : undefined}
+    >
+      <StatusTrendChart rows={rows} showTotal={false} headerExtra={switcher} />
     </div>
   );
 }
