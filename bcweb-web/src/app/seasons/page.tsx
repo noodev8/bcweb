@@ -92,6 +92,72 @@ function MonthStrip({ row }: { row: SeasonRow }) {
   );
 }
 
+/*
+THE RANGE BY SEASON (owner, 2026-09-25). Switching tabs showed how few Winter styles there are — part of why winter is quiet. This puts
+it in one read, as the same table the owner was first shown: what each season's styles sold in the summer months and in the winter
+months, how many styles, how many in stock, how many added in the last year, and a total. Plain figures, no bars or highlighting
+(owner found a share column and a highlighted row confusing). Whole catalogue — the filters below don't touch it.
+COLLAPSED BY DEFAULT (owner: "out of the way of my real work on that screen"); open/closed is remembered in this browser only.
+*/
+
+function RangePanel({ rows, open, onToggle }: { rows: SeasonRow[]; open: boolean; onToggle: () => void }) {
+  // `Number(...) || 0`: a server older than this panel doesn't send these fields — show £0, never NaN.
+  const sum = (r: SeasonRow[]) => ({
+    summer: r.reduce((n, x) => n + (Number(x.rev_summer) || 0), 0),
+    winter: r.reduce((n, x) => n + (Number(x.rev_winter) || 0), 0),
+    styles: r.length,
+    stocked: r.filter((x) => x.in_stock).length,
+    added: r.filter((x) => x.added_12m).length,
+  });
+  const lines = [
+    ...SEASONS.map((s) => ({ label: s, total: false, ...sum(rows.filter((x) => x.season === s)) })),
+    { label: 'Total', total: true, ...sum(rows) },
+  ];
+  const th = 'whitespace-nowrap px-3 py-1.5 text-right font-medium';
+  const td = 'px-3 py-1.5 text-right tabular-nums';
+  return (
+    <div className="mb-6 overflow-hidden rounded-md border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-500 hover:text-slate-700"
+      >
+        <span className={'transition ' + (open ? 'rotate-90' : '')}>▸</span>
+        Range by season
+      </button>
+      {open && (
+        <table className="w-full table-fixed border-t border-slate-200 text-sm">
+          {/* Headings never wrap: the months sit on a small second line under the two money columns instead of in brackets
+              (the bracketed form broke over two lines mid-word). Every heading bottom-aligned so the one-line ones line up. */}
+          <thead className="border-b border-slate-200 text-xs text-slate-500">
+            <tr className="align-bottom">
+              <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium">Style&apos;s season</th>
+              <th className={th}>Sold in summer<div className="font-normal text-slate-400">Apr–Aug</div></th>
+              <th className={th}>Sold in winter<div className="font-normal text-slate-400">Sep–Mar</div></th>
+              <th className={th}>Styles</th>
+              <th className={th}>In stock</th>
+              <th className={th}>Added<div className="font-normal text-slate-400">last 12 months</div></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-slate-700">
+            {lines.map((x) => (
+              <tr key={x.label} className={x.total ? 'border-t border-slate-200 font-medium text-slate-900' : ''}>
+                <td className="px-3 py-1.5">{x.label}</td>
+                <td className={td}>{money(x.summer)}</td>
+                <td className={td}>{money(x.winter)}</td>
+                <td className={td}>{x.styles}</td>
+                <td className={td}>{x.stocked}</td>
+                <td className={td}>{x.added}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // A clickable column header: the active column is darker and carries its arrow; the others show a faint arrow on hover.
 function SortHeader({ k, label, right, sort, dir, onSort }: {
   k: SortKey; label: string; right?: boolean; sort: SortKey; dir: SortDir; onSort: (k: SortKey) => void;
@@ -112,6 +178,15 @@ function SortHeader({ k, label, right, sort, dir, onSort }: {
 export default function SeasonsPage() {
   const [season, setSeason] = useState<SeasonName>('Summer');
   const [suggestedOnly, setSuggestedOnly] = useState(false);
+  // Range panel open/closed — a per-browser convenience, so localStorage (guarded: it can be missing or throw). Closed by default.
+  const [rangeOpen, setRangeOpen] = useState<boolean>(() => {
+    try { return typeof window !== 'undefined' && window.localStorage.getItem('seasons.rangeOpen') === '1'; } catch { return false; }
+  });
+  function toggleRange() {
+    const next = !rangeOpen;
+    setRangeOpen(next);
+    try { window.localStorage.setItem('seasons.rangeOpen', next ? '1' : '0'); } catch { /* storage unavailable — just don't remember */ }
+  }
   // Statuses switched OFF (owner, 2026-09-25: "not really interested in NEW at the moment"). All on by default; an untagged style
   // (none today) always shows.
   const [hiddenStatus, setHiddenStatus] = useState<Set<string>>(new Set());
@@ -238,6 +313,8 @@ export default function SeasonsPage() {
 
   return (
     <AppShell>
+      {data && <RangePanel rows={allRows} open={rangeOpen} onToggle={toggleRange} />}
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {/* SEASON — what the style is set to now. No counts on the switch (owner's rule for toggles); the line below says it. */}
         <div className="inline-flex overflow-hidden rounded-md border border-slate-300">

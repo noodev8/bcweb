@@ -3764,6 +3764,10 @@ export interface SeasonRow {
   off_total: number | null;         // off-season months there are: 7 for Summer, 5 for Winter (null on Any)
   revenue_12m: number;
   units_12m: number;
+  rev_summer: number;               // the same revenue, sold in April–August (whatever the style's season)
+  rev_winter: number;               // sold in September–March
+  in_stock: boolean;                // any sellable size now
+  added_12m: boolean;               // record created in the last 12 months
   suggested: boolean;
   suggested_season: SeasonName | null;
 }

@@ -47,6 +47,9 @@ Success Response:
       "months_sold": 11,                         // months with a sale
       "off_sold": 6, "off_total": 7,             // off-season months with a sale / off-season months there are (Any: null, null)
       "revenue_12m": 8410.00, "units_12m": 109,
+      "rev_summer": 7575.00, "rev_winter": 845.00,  // the same revenue split by the month it SOLD in
+      "in_stock": true,                              // any sellable size now (localstock #FREE)
+      "added_12m": false,                            // record created in the last 12 months
       "suggested": true, "suggested_season": "Any" | "Summer" | "Winter" | null
     }, …
   ]
@@ -100,11 +103,20 @@ router.get('/', async (req, res) => {
           AND s.solddate >= win.from_date AND s.solddate < win.to_date
         GROUP BY s.groupid, EXTRACT(MONTH FROM s.solddate)
       ),
+      -- Styles with sellable stock now (CLAUDE.md: localstock #FREE, not deleted, qty > 0 — never skusummary's stale stock columns).
+      stocked AS (
+        SELECT DISTINCT m.groupid
+        FROM localstock l JOIN skumap m ON m.code = l.code
+        WHERE l.ordernum = '#FREE' AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0
+      ),
       per_style AS (
         SELECT groupid,
                json_object_agg(m, units) AS by_month,
                SUM(units)::int           AS units_12m,
-               ROUND(SUM(revenue), 2)    AS revenue_12m
+               ROUND(SUM(revenue), 2)    AS revenue_12m,
+               -- split by the month it SOLD in (not the style's season) — for the season summary panel
+               ROUND(COALESCE(SUM(revenue) FILTER (WHERE m BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}), 0), 2) AS rev_summer,
+               ROUND(COALESCE(SUM(revenue) FILTER (WHERE m NOT BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}), 0), 2) AS rev_winter
         FROM sold
         GROUP BY groupid
       )
@@ -116,11 +128,16 @@ router.get('/', async (req, res) => {
              p.by_month,
              COALESCE(p.units_12m, 0)                AS units_12m,
              COALESCE(p.revenue_12m, 0)              AS revenue_12m,
+             COALESCE(p.rev_summer, 0)               AS rev_summer,
+             COALESCE(p.rev_winter, 0)               AS rev_winter,
+             (st.groupid IS NOT NULL)                AS in_stock,
+             COALESCE(ss.created_at >= now() - INTERVAL '12 months', false) AS added_12m,   -- created_at is the authoritative record date
              (SELECT to_char(from_date, 'YYYY-MM') FROM win)                          AS win_from,
              (SELECT to_char(to_date - INTERVAL '1 day', 'YYYY-MM') FROM win)          AS win_to
       FROM skusummary ss
       LEFT JOIN title t     ON t.groupid = ss.groupid
       LEFT JOIN per_style p ON p.groupid = ss.groupid
+      LEFT JOIN stocked st  ON st.groupid = ss.groupid
       WHERE LOWER(TRIM(ss.season)) IN ('summer', 'winter', 'any')
     `);
 
@@ -164,6 +181,10 @@ router.get('/', async (req, res) => {
         off_total: offTotal,
         revenue_12m: Number(x.revenue_12m) || 0,   // pg NUMERIC arrives as a string
         units_12m: Number(x.units_12m) || 0,
+        rev_summer: Number(x.rev_summer) || 0,     // sold in April–August, whatever the style's season
+        rev_winter: Number(x.rev_winter) || 0,     // sold in September–March
+        in_stock: x.in_stock === true,
+        added_12m: x.added_12m === true,
         suggested: suggestedSeason !== null,
         suggested_season: suggestedSeason,
       };
