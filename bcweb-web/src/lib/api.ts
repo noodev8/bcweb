@@ -108,7 +108,7 @@ export interface AmzSegment { segment: string; skus: number; }
 // Stage 1 WINNERS: in-stock SKUs that sold >= 2 units in the window AND averaged >= £2 net profit per unit (candidates to price UP /
 // harvest). Same bar as Shopify's TriageRow — the owner's instruction is that both channels share one definition of a winner.
 export interface AmzWinnerRow {
-  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
+  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null; brand: string | null;
   price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   next_review: string | null;   // YYYY-MM-DD or null
@@ -118,7 +118,7 @@ export interface AmzWinnerRow {
 // LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /
 // days_since_sale are the useful signal here (every row is quiet — these say for how long).
 export interface AmzLoserRow {
-  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null;
+  rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null; brand: string | null;
   price: number | null; fba: number; u7: number; u30: number;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   last_sold: string | null; days_since_sale: number | null;

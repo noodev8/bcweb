@@ -36,9 +36,12 @@ export function AmzUploadButton() {
     <button
       type="button"
       onClick={download}
-      className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+      // A quiet white control like Repricing's "Update now", not a purple call to action (owner, 2026-09-25: "blend the design in").
+      // The count carries the weight: a dark chip, so waiting changes are still easy to spot.
+      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1.5 pl-3 pr-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
     >
-      <ArrowDownTrayIcon className="h-4 w-4" /> Upload file · {count}
+      <ArrowDownTrayIcon className="h-4 w-4 text-slate-400" aria-hidden="true" /> Upload file
+      <span className="rounded-md bg-slate-800 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white">{count}</span>
     </button>
   );
 }

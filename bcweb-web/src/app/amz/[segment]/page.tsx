@@ -71,6 +71,7 @@ interface ListRow {
   amz_sku: string;
   size: string;
   title: string | null;
+  brand: string | null;
   units: number | null;
   u7: number | null;
   fba: number;
@@ -133,7 +134,7 @@ function SegmentContent() {
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
-          kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+          kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
         }));
         return {
@@ -153,11 +154,11 @@ function SegmentContent() {
       if (!(w.success && w.data)) err = err || w.error || 'Failed to load winners';
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
-        kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: r.units, u7: r.u7,
+        kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
         fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
-        kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
+        kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
         fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
@@ -187,6 +188,10 @@ function SegmentContent() {
       rows: mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l],
       counts: { winners: w.length, losers: l.length, all: w.length + l.length },
       pendingCount: inMode.filter((r) => r.parked).length,
+      // The header figure — STYLES with at least one size due, across the WHOLE current tab, so it doesn't move when Due is flipped
+      // and matches the Repricing card's "N due for review" (a style is due if ANY of its sizes is — owner, 2026-09-25). The table
+      // below is per size, so it can hold more rows than this. Counted from the loaded rows: undercounts if the safety cap bites.
+      dueStylesInMode: new Set(inMode.filter((r) => !r.parked).map((r) => r.groupid)).size,
     };
   }, [data, mode, showPending]);
 
@@ -335,14 +340,6 @@ function SegmentContent() {
 
   const rows = view.rows;
   const ready = !loading && !error && !!data;
-  // A status list's headline counts, over EVERY row fetched (parked included) — see the count line below.
-  const statusSummary = isStatus && data ? {
-    styles: new Set(data.winners.map((r) => r.groupid)).size,
-    sizes: data.winners.length,
-    due: data.winners.filter((r) => !r.parked).length,
-    parked: data.winners.filter((r) => r.parked).length,
-  } : null;
-  const dueCount = rows.filter((r) => !r.parked).length;
 
   return (
     <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" note={isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
@@ -355,6 +352,13 @@ function SegmentContent() {
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
         showTabs={!isStatus}
+        summary={data ? (
+          // Same as the Shopify list (owner, 2026-09-25): ONLY the due count, at the top — in STYLES, as the card counts them. The word
+          // "styles" is spelled out here (not on Shopify, where a row IS a style) because the table below is per SIZE.
+          <p className="text-sm text-slate-500">
+            <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.dueStylesInMode}</span> style{view.dueStylesInMode === 1 ? '' : 's'} due for review
+          </p>
+        ) : null}
       />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
@@ -389,27 +393,11 @@ function SegmentContent() {
 
       {ready && rows.length > 0 && (
         <>
-          <p className="mb-2 text-xs text-slate-400">
-            {isStatus && statusSummary ? (
-              // STYLES FIRST (owner, 2026-09-25: "I pressed AMZ with 23 styles and the repricer is showing 78"). The Winners screen
-              // and Repricing's tiles count STYLES; this list has a row per SIZE, because Amazon prices per size. Leading with the
-              // style count makes the list read as the card it was opened from; the sizes, due and parked follow. Taken over the
-              // whole status (every row fetched), not just what the Due switch is showing — it describes the card, not the filter.
-              <>
-                <span className="font-medium text-slate-600">{statusSummary.styles} style{statusSummary.styles === 1 ? '' : 's'}</span>
-                {' '}· {statusSummary.sizes} size{statusSummary.sizes === 1 ? '' : 's'} · {statusSummary.due} due
-                {statusSummary.parked > 0 && <> · {statusSummary.parked} parked</>}
-              </>
-            ) : (
-              <>
-                {dueCount} SKU{dueCount === 1 ? '' : 's'} due for review
-                {showPending && <> · {rows.length - dueCount} pending</>}
-              </>
-            )}
-            {data.capped && <> — list capped by the server; work through these, then reload for the rest.</>}
-            {/* A status list includes 0-FBA SKUs so they can be priced ahead of stock arriving — say how many. */}
-            {!!data.outOfStock && <> · {data.outOfStock} out of stock</>}
-          </p>
+          {/* No summary line above the table (mirrors Shopify, owner 2026-09-25) — the due count is at the top. A capped list must
+              never pass for the whole job, so that warning stays. */}
+          {data.capped && (
+            <p className="mb-2 text-xs text-amber-700">List capped by the server — work through these, then reload for the rest.</p>
+          )}
           <ListTable
             rows={rows}
             queued={items}
@@ -439,10 +427,10 @@ function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
         <colgroup>
           <col className="w-12" />{/* checkbox */}
           <col className="w-12" />{/* # */}
-          <col className="w-24" />{/* Units 30d */}
+          <col className="w-24" />{/* Sold 30d */}
           <col className="w-14" />{/* 7d */}
-          <col className="w-52" />{/* Code */}
-          <col />{/* Product — takes the remaining width */}
+          <col />{/* Code — takes the remaining width: it is the long identifier (owner, 2026-09-25) */}
+          <col className="w-40" />{/* Brand — short; the product name is the Code cell's tooltip */}
           <col className="w-24" />{/* Price */}
           <col className="w-16" />{/* FBA */}
           <col className="w-24" />{/* Review */}
@@ -459,10 +447,10 @@ function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
               />
             </th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Units</th>
+            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Sold</th>
             <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
             <th className="px-4 py-2 font-medium" title="Our code (skumap.code), not the Amazon SKU — size is the last two digits">Code</th>
-            <th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 font-medium">Brand</th>
             <th className="px-4 py-2 text-right font-medium">Price</th>
             <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
             <th className="px-4 py-2 font-medium">Review</th>
@@ -488,11 +476,12 @@ function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
                 <td className="px-4 py-2 text-slate-400">{i + 1}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.u7 ?? '—'}</td>
-                <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
+                {/* The product name is this cell's tooltip — only here, not the whole row (mirrors Shopify, owner 2026-09-25). */}
+                <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>
                   {r.code}
                   {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
                 </td>
-                <td className={'truncate px-4 py-2 ' + tone}>{r.title || <span className="text-slate-400">—</span>}</td>
+                <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}</td>
                 <td className="whitespace-nowrap px-4 py-2">

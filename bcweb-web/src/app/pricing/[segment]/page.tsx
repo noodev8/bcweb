@@ -399,8 +399,8 @@ function ListTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
           <col className="w-12" />{/* checkbox */}
           <col className="w-12" />{/* # */}
           <col className="w-24" />{/* Sold 30d */}
-          <col className="w-40" />{/* Groupid */}
-          <col />{/* Brand — takes the remaining width. The product name is the row's tooltip (owner, 2026-09-25) */}
+          <col />{/* Groupid — takes the remaining width: it is the long identifier (owner, 2026-09-25) */}
+          <col className="w-40" />{/* Brand — short; the product name is the Groupid cell's tooltip */}
           <col className="w-24" />{/* Price */}
           <col className="w-20" />{/* Stock */}
           <col className="w-24" />{/* Review */}
