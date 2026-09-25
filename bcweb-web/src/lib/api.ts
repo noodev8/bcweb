@@ -308,12 +308,17 @@ export interface StatusChannelCounts {
   parked: number;
   outOfStock: number;
   styles: number;                 // styles behind the rows — = total on Shopify; on Amazon the rows are sizes (SKUs)
+  dueStyles: number;              // styles with at least one row due (one due size makes the style due) — = due on Shopify
 }
 export interface StatusOverviewRow {
   status: PortfolioStatusName;
   shopify: StatusChannelCounts;
   amazon: StatusChannelCounts;
 }
+// The WINNERS tile at one dial mark (£1,500 / £2,500 / …): tagged winners whose STAMPED all-channel 12m revenue is over `bar`. Same
+// unit rules as StatusChannelCounts (Amazon total/due are sizes, styles are styles). bars[0] equals the WINNERS tile.
+export interface WinnerBarCounts { total: number; due: number; styles: number; dueStyles: number }
+export interface WinnerBarRow { bar: number; shopify: WinnerBarCounts; amazon: WinnerBarCounts }
 
 function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannelCounts {
   return {
@@ -322,11 +327,14 @@ function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannel
     parked: Number(c?.parked) || 0,
     outOfStock: Number(c?.out_of_stock) || 0,
     styles: Number(c?.styles) || 0,
+    dueStyles: Number(c?.due_styles) || 0,
   };
 }
 
 export function getStatusOverview() {
-  return request<{ updatedAt: string | null; statuses: StatusOverviewRow[] }>(
+  const bar = (c: Record<string, unknown> | undefined): WinnerBarCounts =>
+    ({ total: Number(c?.total) || 0, due: Number(c?.due) || 0, styles: Number(c?.styles) || 0, dueStyles: Number(c?.due_styles) || 0 });
+  return request<{ updatedAt: string | null; statuses: StatusOverviewRow[]; winnerBars: WinnerBarRow[] }>(
     { url: '/pricing-status-overview', method: 'GET' },
     (b) => ({
       updatedAt: (b.updated_at as string | null) ?? null,
@@ -334,6 +342,11 @@ export function getStatusOverview() {
         status: s.status as PortfolioStatusName,
         shopify: mapChannelCounts(s.shopify as Record<string, unknown> | undefined),
         amazon: mapChannelCounts(s.amazon as Record<string, unknown> | undefined),
+      })),
+      winnerBars: ((b.winner_bars as Record<string, unknown>[]) || []).map((w) => ({
+        bar: Number(w.bar) || 0,
+        shopify: bar(w.shopify as Record<string, unknown> | undefined),
+        amazon: bar(w.amazon as Record<string, unknown> | undefined),
       })),
     })
   );
