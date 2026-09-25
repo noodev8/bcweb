@@ -567,14 +567,6 @@ function SalesPageContent() {
                   </span>
                 )}
               </span>
-              <button
-                type="button"
-                onClick={exportCsv}
-                className="font-medium text-slate-500 underline-offset-2 transition hover:text-slate-700 hover:underline"
-                title="Download the current view as a CSV for Excel"
-              >
-                Export CSV
-              </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-sm">
@@ -599,6 +591,17 @@ function SalesPageContent() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* EXPORT CSV SITS UNDER THE GRID (owner, 2026-09-25) — you reach for it after reading the rows, not before. */}
+            <div className="mt-2 flex justify-end text-xs">
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="font-medium text-slate-500 underline-offset-2 transition hover:text-slate-700 hover:underline"
+                title="Download the current view as a CSV for Excel"
+              >
+                Export CSV
+              </button>
             </div>
           </>
         )
