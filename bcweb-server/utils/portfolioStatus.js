@@ -80,7 +80,7 @@ function channelFilterSql(alias, channel) {
 }
 
 // The classification, as one SELECT returning (groupid, status) for every row in skusummary. ONE pass over sales with FILTER for
-// both windows — the computeWinners pattern — then a CASE in rule order.
+// both windows, so the table is scanned once — then a CASE in rule order.
 //
 // THE SEASON IS READ ON LONDON WALL-CLOCK. The pg session runs Etc/UTC; on the night of 31 August the UTC month is still August for
 // an hour after London has moved to September. now() AT TIME ZONE 'Europe/London' gives the month the business is actually in.
@@ -226,11 +226,13 @@ async function readPortfolioStatus() {
  * Record today's five counts as a trend point — portfolio_status_snapshot (migrations/20260924b). Call INSIDE the same
  * transaction as applyPortfolioStatus, with the counts it just returned, so the point is exactly what was tagged.
  *
- * UPSERT on the date (a second press in a day overwrites) + prune past 2 years, the portfolio_snapshot rules. CURRENT_DATE is the
+ * UPSERT on the date (a second press in a day overwrites) + prune past 2 years, so the table is bounded at ~730 rows. CURRENT_DATE is the
  * authority for the date, never a JS "today" — the DB and the box disagree for an hour a night through BST.
+ *
+ * @returns {Promise<string>} the date the row was written under, AS THE DB DATED IT ('YYYY-MM-DD').
  */
 async function recordStatusSnapshot(client, { counts, total, channelCounts }) {
-  await client.query(
+  const ins = await client.query(
     `INSERT INTO portfolio_status_snapshot
        (snapshot_date, winners_count, steady_count, new_count, harvest_count, losers_count, total_count, channel_counts, created_at)
      VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7::jsonb, now())
@@ -242,10 +244,13 @@ async function recordStatusSnapshot(client, { counts, total, channelCounts }) {
                    losers_count  = EXCLUDED.losers_count,
                    total_count   = EXCLUDED.total_count,
                    channel_counts = EXCLUDED.channel_counts,
-                   created_at    = now()`,
+                   created_at    = now()
+     -- Cast to text in SQL — never toISOString() a pg DATE.
+     RETURNING to_char(snapshot_date, 'YYYY-MM-DD') AS date`,
     [counts.WINNERS, counts.STEADY, counts.NEW, counts.HARVEST, counts.LOSERS, total, JSON.stringify(channelCounts || null)]
   );
   await client.query(`DELETE FROM portfolio_status_snapshot WHERE snapshot_date < CURRENT_DATE - INTERVAL '2 years'`);
+  return ins.rows[0].date;
 }
 
 /**
@@ -253,7 +258,7 @@ async function recordStatusSnapshot(client, { counts, total, channelCounts }) {
  * its brand breakdown groups; also the rows a winners list or a "reprice these" jump will need. Reads stored values only.
  *
  * Brand: skusummary's own. A tagged row always has a skusummary row (that is where the tag lives), so no sales-snapshot
- * fallback is needed here, unlike computeWinners.
+ * fallback is needed here.
  */
 async function readTaggedWinners() {
   const r = await query(`

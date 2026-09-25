@@ -14,8 +14,9 @@ Purpose: Winners screen (since 2026-09-24) — everything it draws, from the STO
          reporting". It filters the tagged WINNERS on their STAMPED revenue, so at £1,500 it shows exactly the tag count and at
          higher bars a subset. It never re-tags and never reaches the database — the tag is always the £1,500 test.
 
-         Replaces GET /portfolio-winners as the screen's source. That route (the live hero count incl. deleted styles, the
-         ladder report, the old trend) is left in place untouched; nothing on screen reads it now.
+         Replaced GET /portfolio-winners as the screen's source (2026-09-24). That route — a live count that included deleted
+         styles, so it could disagree with the tag — and its portfolio_snapshot trend were removed on 2026-09-25. The Reports → New
+         strip reads this route too, so every "winners" number in the app is the tag.
 
 Requires auth.
 =======================================================================================================================================

@@ -11,7 +11,7 @@ REBUILT 2026-09-24 AROUND THE STORED TAGS (owner): "Instead of determining the W
 then "remove the current headline stats and code. Replace them with our new stats. Shape it as winners having the bigger box.
 Have the graph include all our status to track progress." The old screen — a live hero count (which also counted deleted styles),
 RANGE and ADDED headlines, revenue / units / more-on-the-way boxes, and a winners-vs-range trend — is gone; it is in git history,
-and GET /portfolio-winners still serves its data untouched. NOTHING ON THIS SCREEN IS COMPUTED LIVE: it reads GET /portfolio-status
+as are GET /portfolio-winners and its portfolio_snapshot trend (removed 2026-09-25). NOTHING ON THIS SCREEN IS COMPUTED LIVE: it reads GET /portfolio-status
 only, so no figure here can disagree with the tag the repricer will filter on.
 
 THE RULES, first match wins (bcweb-server/utils/portfolioStatus.js): WINNERS > £1,500 gross revenue in 12 months → STEADY sold in
@@ -43,8 +43,7 @@ whole number, parked styles included (owner, 2026-09-25: "tapping on 2500 winner
 WINNERS card carries the dial (?bar=2500) so it opens exactly the winners behind its count. Repricing's own first tab (Status, which
 replaced Top earners) opens the same lists with Due on.
 
-ONE BUTTON: "Update now" re-tags every style AND records today's point on the status graph, in one transaction (it also still
-writes the old portfolio_snapshot row, which nothing draws). Pressing twice in a day overwrites today's point, never appends.
+ONE BUTTON: "Update now" re-tags every style AND records today's point on the status graph, in one transaction. Pressing twice in a day overwrites today's point, never appends.
 
 COLOUR. The page is slate; the five status hues exist only because the graph needs to tell five lines apart, and each box wears its
 line's colour as a small dot so the hue is a key, not decoration. Categorical slots 1–5 of the dataviz reference palette, validated

@@ -334,17 +334,11 @@ app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));     
 app.use('/analytics-scratchpad-add', require('./routes/analytics-scratchpad-add'));       // POST {body}: insert a note
 app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-delete')); // POST {id}: remove a note
 
-// Winners screen — the business as a portfolio of earning assets. Two read-only routes behind one screen (/analytics/winners).
-// WINNERS is the scoreboard: styles past 180 days that cleared the profit bar in the rolling 12 months, with the COUNT as the one
-// tracked number. CONTENDERS is the job: young styles scored on profit in their FIRST 30 DAYS, which predicts whether they become
-// winners (100% conversion over 200 pounds, 72% over 100, 8% under 50) while over half the value is still ahead. Both anchor age on
-// MIN(sales.solddate) and never skusummary.created_at — see the route headers, that one is a trap.
-app.use('/portfolio-winners', require('./routes/portfolio-winners'));       // GET: the winners list + the hero count & its prior year
-app.use('/portfolio-contenders', require('./routes/portfolio-contenders')); // GET: young styles banded by their first-30-day profit
-// "Update now" — the deliberate act that RECORDS the headline count as a trend point (upsert today + prune past 2 years). The GETs
-// above compute live and store nothing, so viewing the screen never appends a snapshot. Same split as Stock Position / Birk
-// Availability; the shared definition both sides use lives in utils/portfolio.js.
-app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: upsert today's row, prune, RE-TAG statuses
+// Winners screen — the business as a portfolio of earning assets, read from the STORED status tags. (GET /portfolio-winners and
+// GET /portfolio-contenders, both computed live, were removed 2026-09-25 — see utils/portfolio.js.)
+// "Update now" — the deliberate act that RE-TAGS every style's portfolio status and records today's status counts as a trend point
+// (upsert today + prune past 2 years). Viewing the screen never appends a point. Same split as Stock Position / Birk Availability.
+app.use('/portfolio-snapshot-update', require('./routes/portfolio-snapshot-update')); // POST: re-tag statuses, record today's counts
 // The Winners screen's own source since 2026-09-24: the STORED portfolio status tags (skusummary.portfolio_status), the tagged
 // winners for the bar dial + brands, and the status trend. Read-only; "Update now" above is what writes the tags.
 app.use('/portfolio-status', require('./routes/portfolio-status'));                   // GET: status counts, tagged winners, trend

@@ -7,12 +7,12 @@ Purpose: Ties the production screen to the thing production is FOR. The panel ab
          making has turned into — styles earning over the winner bar in the rolling 12 months — and is the way through to the Winners
          screen itself.
 
-         Deliberately just the count and the year's joiners. The Winners screen owns the bar toggle, the brand split and the
-         distribution; repeating any of that here would make two screens that disagree the moment one changes.
+         THE STORED TAG, NOT A LIVE COUNT (2026-09-25). This reads GET /portfolio-status — the same WINNERS count the Winners screen
+         shows, as of the last "Update now". It used to recompute live (GET /portfolio-winners, deleted styles included), so the two
+         screens could show two different numbers; that route is gone. Shares the Winners screen's SWR key, so one fetch serves both.
 
-         NOT a causal claim. "Joined this year" means a style crossed the bar this year — it is usually an OLDER line that grew into
-         it, not one of this year's builds. The copy says "joined", never "of the products we made", because the second would be
-         false and would flatter the intake.
+         "A year ago" and "joined this year" went with it (owner's call): the tags only started on 2026-09-24 and there is no history
+         to compare against yet. Bring them back from portfolio_status_snapshot once it holds a year — never from a live recompute.
 
 NAVIGATION: the whole strip is the link, and it carries ?from=/?back= so the Winners screen's own arrow comes back HERE rather than
 dumping the reader on the Reports index a level up. Winners already honours those params (it is reached from several places), so this
@@ -26,14 +26,17 @@ bonus, the way through is the point. Loads independently so the winner computati
 import Link from 'next/link';
 import { ChevronRightIcon, TrophyIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getPortfolioWinners } from '@/lib/api';
+import { getPortfolioStatus } from '@/lib/api';
 
 // Back-link contract: Winners reads `from` (where the arrow goes) and `back` (what it reads). Encoded because `from` is a path.
 const WINNERS_HREF = `/analytics/winners?from=${encodeURIComponent('/analytics/new-additions')}&back=${encodeURIComponent('New')}`;
 
 export default function WinnersStrip() {
-  const { data } = useApiQuery(['winners-strip'], () => getPortfolioWinners());
-  const s = data?.summary ?? null;
+  const { data } = useApiQuery('portfolio-status', () => getPortfolioStatus());
+  // Only once an Update has run — before that every count is 0, and "0 styles" would read as a fact rather than "not assessed yet".
+  const tagged = data?.status.updatedAt ? data : null;
+  const winners = tagged?.status.statuses.find((x) => x.status === 'WINNERS')?.count ?? 0;
+  const bar = tagged?.bars[0];
 
   return (
     <Link
@@ -43,13 +46,10 @@ export default function WinnersStrip() {
       <TrophyIcon className="h-5 w-5 shrink-0 text-slate-400" />
       <div className="min-w-0 flex-1">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Winners</div>
-        {s ? (
+        {tagged && bar ? (
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-2xl font-bold leading-none tabular-nums text-slate-900">{s.winnerCount}</span>
-            <span className="text-sm text-slate-500">
-              styles earning £{s.bar}+ over 12 months · {s.winnerCountPriorYear} a year ago
-              {s.joinedThisYear > 0 && <> · {s.joinedThisYear} joined this year</>}
-            </span>
+            <span className="text-2xl font-bold leading-none tabular-nums text-slate-900">{winners}</span>
+            <span className="text-sm text-slate-500">styles earning £{bar.toLocaleString('en-GB')}+ over 12 months</span>
           </div>
         ) : (
           <div className="mt-0.5 text-sm text-slate-500">The styles earning their keep over the last 12 months</div>
