@@ -223,6 +223,8 @@ export default function SeasonsPage() {
   const [cut, setCut] = useState<Set<string>>(new Set());
   // SEARCH — back 2026-09-25 (removed earlier the same day, then wanted). Plain case-insensitive "contains" on the code, brand and
   // title. It only narrows the view: ticks and cuts survive it, and a bulk change only ever hits ticked rows that are ON SCREEN.
+  // Any FILTER change (season tab, Can't get, a status chip) empties it (owner, 2026-09-26) — a search belongs to the list it was typed
+  // over; a sort keeps it.
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('off');
   const [dir, setDir] = useState<SortDir>('desc');
@@ -277,6 +279,7 @@ export default function SeasonsPage() {
     });
     setSelected(new Set());
     setCut(new Set());
+    setQuery('');
   }
 
   // Take styles off the list (and out of the selection).
@@ -336,6 +339,7 @@ export default function SeasonsPage() {
     setSeason(s);
     setSelected(new Set());
     setCut(new Set());
+    setQuery('');
     setMessage(null);
     setError(null);
   }
