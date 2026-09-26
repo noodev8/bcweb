@@ -29,6 +29,10 @@ Purpose: Every style's SEASON (skusummary.season: Summer | Winter | Any) beside 
          Rows with a season other than Summer/Winter/Any (blank, legacy junk) are left out — there is nothing to re-season FROM, and
          Add/Modify is the place to fix a blank.
 
+         ALSO "CAN'T GET IT" (owner, 2026-09-26): each row carries the no-supply park (utils/noSupply.js) so this screen can list and
+         manage them — a separate fact from the season, deliberately, shown side by side and never merged. Written by
+         POST /no-supply-set and /no-supply-clear, not by this route. A style fact, not a channel one (utils/noSupply.js).
+
          Requires auth. Read-only.
 =======================================================================================================================================
 Request: none
@@ -50,7 +54,9 @@ Success Response:
       "rev_summer": 7575.00, "rev_winter": 845.00,  // the same revenue split by the month it SOLD in
       "in_stock": true,                              // any sellable size now (localstock #FREE)
       "added_12m": false,                            // record created in the last 12 months
-      "suggested": true, "suggested_season": "Any" | "Summer" | "Winter" | null
+      "suggested": true, "suggested_season": "Any" | "Summer" | "Winter" | null,
+      "no_supply": false,                            // "Can't get it" parked right now (utils/noSupply.js)
+      "no_supply_since": null, "no_supply_until": null, "no_supply_by": null   // 'YYYY-MM-DD' / name; since+by outlive the park
     }, …
   ]
 }
@@ -67,6 +73,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { SUMMER_FIRST_MONTH, SUMMER_LAST_MONTH } = require('../utils/portfolioStatus');
+const { noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -132,6 +139,8 @@ router.get('/', async (req, res) => {
              COALESCE(p.rev_winter, 0)               AS rev_winter,
              (st.groupid IS NOT NULL)                AS in_stock,
              COALESCE(ss.created_at >= now() - INTERVAL '12 months', false) AS added_12m,   -- created_at is the authoritative record date
+             -- "Can't get it" (utils/noSupply.js) — shown and managed on this screen's Can't get tab and bulk bar (owner, 2026-09-26).
+             ${noSupplySelectSql('ss')},
              (SELECT to_char(from_date, 'YYYY-MM') FROM win)                          AS win_from,
              (SELECT to_char(to_date - INTERVAL '1 day', 'YYYY-MM') FROM win)          AS win_to
       FROM skusummary ss
@@ -187,6 +196,7 @@ router.get('/', async (req, res) => {
         added_12m: x.added_12m === true,
         suggested: suggestedSeason !== null,
         suggested_season: suggestedSeason,
+        ...noSupplyFields(x),
       };
     });
 

@@ -85,23 +85,6 @@ function seasonNowSql() {
                THEN 'summer' ELSE 'winter' END`;
 }
 
-// Today's date in LONDON, as SQL. CURRENT_DATE is the pg session's (Etc/UTC) date, which is still yesterday for the first hour of a
-// BST day — fine for a 12-month window, wrong for a date someone reads back as "the day I did it".
-const LONDON_TODAY_SQL = `(now() AT TIME ZONE 'Europe/London')::date`;
-
-// The first day of the NEXT season, as a SQL date: 1 September while it is summer, 1 April while it is winter (next year's, from
-// September to December). The boundaries are the season rule's own constants, so "until next season" on Shopify Order's no-supply
-// flag lapses on exactly the day seasonNowSql() flips.
-function nextSeasonStartSql() {
-  const m = `EXTRACT(MONTH FROM ${LONDON_TODAY_SQL})::int`;
-  const y = `EXTRACT(YEAR FROM ${LONDON_TODAY_SQL})::int`;
-  return `CASE WHEN ${m} BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}
-               THEN make_date(${y}, ${Number(SUMMER_LAST_MONTH) + 1}, 1)
-               WHEN ${m} > ${Number(SUMMER_LAST_MONTH)}
-               THEN make_date(${y} + 1, ${Number(SUMMER_FIRST_MONTH)}, 1)
-               ELSE make_date(${y}, ${Number(SUMMER_FIRST_MONTH)}, 1) END`;
-}
-
 // THE LEAD CHANNEL (owner, 2026-09-25) — stamped beside the status, so each channel's pricing lists show only the styles that channel
 // earns from. The status stays ONE all-channel tag and ONE count; the channel only decides which list a style appears on:
 //   SHP / AMZ  >= LEAD_SHARE of the style's 12m gross revenue came from that channel
@@ -315,8 +298,6 @@ module.exports = {
   SUMMER_LAST_MONTH,
   seasonNowSql,
   outOfSeasonSql,
-  LONDON_TODAY_SQL,
-  nextSeasonStartSql,
   CLASSIFY_SQL,
   applyPortfolioStatus,
   readPortfolioStatus,

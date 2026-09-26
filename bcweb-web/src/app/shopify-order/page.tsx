@@ -57,15 +57,19 @@ IN SEASON ONLY, AUTOMATICALLY (owner, 2026-09-26 — "I only want to see what is
       ignores it, as it ignores every other narrowing. KNOWN EDGE, accepted for now: at the turn (late March, late August) this shows
       the ending season while the next one is what you'd be buying for — the X is the way round it until that bites.
 
-NO SUPPLY — "CAN'T GET IT" (owner, 2026-09-26). The supplier has none, so the style comes off this screen until a re-check day, then
-      returns on its own — "I don't want too much to remember". Style level. Two periods, no "forever": until the next season changeover
-      (1 April / 1 September — the season rule's own boundaries) or 3 months. It changes NOTHING else: not the season (which decides
+NO SUPPLY — "CAN'T GET IT" (owner, 2026-09-26). The supplier has none, so the style comes off the order screens until a re-check
+      day, then
+      returns on its own — "I don't want too much to remember". Style level. Always THREE MONTHS, no choice and no "forever" — why
+      three and not a month or the next season changeover is in bcweb-server/utils/noSupply.js. It changes NOTHING else: not the season (which decides
       WINNERS vs HARVEST and feeds the Seasons screen — the reason this isn't done by re-seasoning), not the status, not the Repricing
-      lists ("I can't buy any more, but I can price what I do have"). A chip counts the hidden ones and its X shows them, dimmed.
-      When the day passes the style is back carrying "Couldn't get it — <date>": X clears it (you can get it now), "Still can't"
-      parks it again. Ordering a flagged style through Confirm Basket clears the mark too, and parking a style empties its boxes, so
+      lists ("I can't buy any more, but I can price what I do have"). A chip counts the hidden ones and its X shows them, dimmed, each
+      with an Unpark. When the day passes the style is back carrying "Couldn't get it — <date>": X dismisses it (you can get it now),
+      "Still can't" parks it again. Ordering a flagged style through Confirm Basket clears the mark too, and parking a style empties its boxes, so
       a line the operator has just said can't be bought can't ride along in the next send. Stored on skusummary.no_supply_*
-      (migrations/20260926_no_supply.sql), written by /shopify-order-no-supply and /shopify-order-no-supply-clear.
+      (migrations/20260926_no_supply.sql), written by /no-supply-set and /no-supply-clear. A STYLE fact, not a Shopify one — "if we
+      can't get a style, we can't get it, regardless of where we're trying to sell it" (owner) — so Amazon Order will honour the
+      same mark, and none of this screen's wording for it names a channel. Every parked
+      style, and the lapsed ones still carrying their note, is listed and managed in bulk on Back Office → Seasons (Can't get tab).
 =======================================================================================================================================
 */
 
@@ -165,17 +169,18 @@ interface StyleBlockProps {
   qty: Record<string, string>;
   onQty: (code: string, value: string) => void;
   // "Can't get it" — see NO SUPPLY in the header. Both resolve to an error message, or null when it worked (the list then reloads).
-  nextSeasonStart: string | null;
-  onPark: (style: ShopifyOrderStyle, until: 'season' | '3m') => Promise<string | null>;
+  parkUntil: string | null;   // the day a park set now would lapse — for the confirm's wording
+  onPark: (style: ShopifyOrderStyle) => Promise<string | null>;
   onClearSupply: (groupid: string) => Promise<string | null>;
 }
-const StyleBlock = memo(function StyleBlock({ style, qty, onQty, nextSeasonStart, onPark, onClearSupply }: StyleBlockProps) {
+const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPark, onClearSupply }: StyleBlockProps) {
   const basketUnits = style.sizes.reduce((n, z) => n + (Number(qty[z.code]) || 0), 0);
   const status = statusLabel(style.status);
   const sizeTip = (z: ShopifyOrderSize) =>
     `Size ${z.size} — ${z.stock} on the shelf` + (z.on_order > 0 ? `, ${z.on_order} on order` : '')
     + ` · Shopify sold ${z.sold_90} in 90 days, ${z.sold_365} in 12 months`;
-  // The chooser is this block's own business: open, busy, or showing why the last write failed.
+  // The confirm is this block's own business: open, busy, or showing why the last write failed. A confirm and not a straight click
+  // because parking takes the style off the screen — a stray click on a quiet link would otherwise make it vanish unexplained.
   const [choosing, setChoosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [supplyError, setSupplyError] = useState<string | null>(null);
@@ -219,21 +224,23 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, nextSeasonStart
           <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
             Can&rsquo;t get it until {shortDate(style.no_supply_until)}
             {style.no_supply_by && <span className="text-amber-600">· {style.no_supply_by}</span>}
+            {/* Unpark, not "Clear" — Park's own opposite, and the word Seasons uses for the same act (owner, 2026-09-26). */}
             <button type="button" disabled={busy} onClick={() => run(() => onClearSupply(style.groupid))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
-              Clear
+              Unpark
             </button>
           </span>
         ) : lapsed && !choosing ? (
           <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
             Couldn&rsquo;t get it — {shortDate(style.no_supply_since)}
-            <button type="button" disabled={busy} onClick={() => setChoosing(true)} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+            {/* "Still can't" is its own confirmation — the operator has just read the note and answered it — so it parks straight away. */}
+            <button type="button" disabled={busy} onClick={() => run(() => onPark(style))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
               Still can&rsquo;t
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={() => run(() => onClearSupply(style.groupid))}
-              aria-label="I can get it — clear the note"
+              aria-label="I can get it — dismiss the note"
               className="rounded p-0.5 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
             >
               <XMarkIcon className="h-3.5 w-3.5" />
@@ -241,12 +248,9 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, nextSeasonStart
           </span>
         ) : choosing ? (
           <span className="inline-flex items-center gap-1.5 text-slate-600">
-            Can&rsquo;t get it —
-            <button type="button" disabled={busy} onClick={() => run(() => onPark(style, 'season'))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
-              until {nextSeasonStart ? shortDate(nextSeasonStart) : 'next season'}
-            </button>
-            <button type="button" disabled={busy} onClick={() => run(() => onPark(style, '3m'))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
-              3 months
+            Can&rsquo;t get it — park until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
+            <button type="button" disabled={busy} onClick={() => run(() => onPark(style))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+              Park
             </button>
             <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
               Cancel
@@ -320,7 +324,7 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, nextSeasonStart
       </div>
     </div>
   );
-}, (a, b) => a.style === b.style && a.onQty === b.onQty && a.nextSeasonStart === b.nextSeasonStart
+}, (a, b) => a.style === b.style && a.onQty === b.onQty && a.parkUntil === b.parkUntil
   && a.onPark === b.onPark && a.onClearSupply === b.onClearSupply
   && a.style.sizes.every((z) => a.qty[z.code] === b.qty[z.code]));
 
@@ -454,8 +458,8 @@ function ShopifyOrderContent() {
   // CAN'T GET IT — the two writes a style block can make. Each reloads the list (SWR mutate, stable across renders so the memoised
   // blocks aren't all re-rendered for nothing) and hands back an error message, or null. Parking also EMPTIES that style's boxes: a
   // quantity against a style you've just said you can't get is an order Confirm Basket would otherwise still send, from off screen.
-  const onPark = useCallback(async (style: ShopifyOrderStyle, until: 'season' | '3m') => {
-    const res = await setNoSupply(style.groupid, until);
+  const onPark = useCallback(async (style: ShopifyOrderStyle) => {
+    const res = await setNoSupply([style.groupid]);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
     if (!res.success) return res.error || 'Couldn’t mark it';
     const codes = new Set(style.sizes.map((z) => z.code));
@@ -469,7 +473,7 @@ function ShopifyOrderContent() {
     return null;
   }, [mutate, logout]);
   const onClearSupply = useCallback(async (groupid: string) => {
-    const res = await clearNoSupply(groupid);
+    const res = await clearNoSupply([groupid]);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
     if (!res.success) return res.error || 'Couldn’t clear it';
     await mutate();
@@ -614,7 +618,7 @@ function ShopifyOrderContent() {
     setProgress(null); setSending(false);
     if (failed.length > 0) setSendError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     // Best effort — the orders are what matters; a note that fails to clear just stays until the next time.
-    for (const g of orderedFlagged) await clearNoSupply(g);
+    if (orderedFlagged.size > 0) await clearNoSupply([...orderedFlagged]);
     if (units > 0) {
       setSentNote(`Sent ${units} unit${units === 1 ? '' : 's'} to Order Status`);
       // Picks up the new lines in every "+n on order" and in the backlog figures.
@@ -963,7 +967,7 @@ function ShopifyOrderContent() {
               style={s}
               qty={qty}
               onQty={onQty}
-              nextSeasonStart={data?.next_season_start ?? null}
+              parkUntil={data?.no_supply_default_until ?? null}
               onPark={onPark}
               onClearSupply={onClearSupply}
             />

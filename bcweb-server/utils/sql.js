@@ -10,6 +10,9 @@ safeNumeric(colExpr): safely cast a legacy VARCHAR price column to numeric.
   on any other non-numeric value ("invalid input syntax for type numeric"). This returns NULL unless the trimmed value looks like a
   number, so a bad row degrades to "unknown" instead of 500-ing the whole request.
 
+LONDON_TODAY_SQL: today's date in London, as SQL. CURRENT_DATE is the pg session's date (Etc/UTC), which is still yesterday for the
+  first hour of a BST day — fine for a 12-month window, wrong for a date someone reads back as "the day I did it" or "the day it's due".
+
 SECURITY: colExpr is interpolated into SQL, so ONLY ever pass hard-coded column expressions (e.g. 'ss.cost') — NEVER user input.
 =======================================================================================================================================
 */
@@ -19,4 +22,6 @@ function safeNumeric(colExpr) {
   return `CASE WHEN btrim(${colExpr}::text) ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN btrim(${colExpr}::text)::numeric ELSE NULL END`;
 }
 
-module.exports = { safeNumeric };
+const LONDON_TODAY_SQL = `(now() AT TIME ZONE 'Europe/London')::date`;
+
+module.exports = { safeNumeric, LONDON_TODAY_SQL };

@@ -13,16 +13,25 @@ Purpose: Which styles really sell all year? Every style's season (Summer | Winte
          ITS OWN BACK OFFICE JOB, NOT PART OF REPRICING (owner, 2026-09-25): done every quarter or so, in a review mindset, maybe
          before a full winners/prices/stock review. So it links nowhere into the pricing flow.
 
-         LOGIC SUGGESTS, THE OWNER DECIDES. "Suggested" (off by default — owner, 2026-09-25) narrows the list to: a Summer/Winter style that sold in at
-         least half its OFF-SEASON months, or an Any style whose sales all fall in one season. Counted against the months the off-season
-         has (7 winter / 5 summer), not a flat N-of-12 — see routes/product-seasons.js. Turn it off to see every style.
+         NO "SUGGESTED" FILTER (removed 2026-09-26 — owner: "I'm not using it"). It narrowed the list to the styles the server flags as
+         candidates for a re-season (routes/product-seasons.js still computes `suggested`). The owner reads the month strip instead.
+         Bring it back from git history if that changes.
 
          Setting a season does NOT re-tag the portfolio statuses. After a change the bar offers "Update statuses", so several changes
          cost one re-tag and the WINNERS/HARVEST tiles move when the owner is ready.
 
          New products aren't this screen's concern — whoever enters them sets their season, and they are in it at the time.
 
-Guarded by AppShell. Consumes GET /product-seasons; writes POST /product-season-bulk and (on request) POST /portfolio-snapshot-update.
+         CAN'T GET IT lives here too (owner, 2026-09-26 — "where we set seasons and switch can't get it on and off"). A SEPARATE fact,
+         shown beside the season and never merged into it: season is "when does it sell" (and decides WINNERS vs HARVEST); can't get is
+         "can I buy more" (and only parks a style off the order screens for three months — bcweb-server/utils/noSupply.js). It is about
+         the STYLE, whichever channel it sells on — no wording here names one (owner, 2026-09-26). So: a Can't get
+         view drawn apart from the season switch, listing every marked style whatever its season; a marker beside the code on every view;
+         and a Park 3 months / Unpark pair in the bulk bar, after a divider. Parking or clearing never offers "Update statuses" —
+         nothing it changes feeds the status. It is set mostly from an order screen, where you find out; this is where you see them all.
+
+Guarded by AppShell. Consumes GET /product-seasons; writes POST /product-season-bulk, POST /no-supply-set, /no-supply-clear and (on
+request) POST /portfolio-snapshot-update.
 =======================================================================================================================================
 */
 
@@ -30,10 +39,20 @@ import { useMemo, useState, type ReactNode } from 'react';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getProductSeasons, setProductSeasons, updatePortfolioSnapshot, type SeasonName, type SeasonRow,
+  getProductSeasons, setProductSeasons, updatePortfolioSnapshot, setNoSupply, clearNoSupply, type SeasonName, type SeasonRow,
 } from '@/lib/api';
 
 const SEASONS: SeasonName[] = ['Summer', 'Winter', 'Any'];
+// The view: one of the three seasons, or CANT_GET — every style marked "Can't get it", whatever its season (see the header). Its own
+// value rather than a fourth season because it IS a different fact; it's drawn apart from the season switch for the same reason.
+const CANT_GET = 'CantGet' as const;
+type View = SeasonName | typeof CANT_GET;
+// 'YYYY-MM-DD' -> '26 Dec' straight off the string — never through a Date (BST day-shift).
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function dayMonth(iso: string | null): string {
+  const m = iso ? /^\d{4}-(\d{2})-(\d{2})/.exec(iso) : null;
+  return m ? `${Number(m[2])} ${MONTH_SHORT[Number(m[1]) - 1]}` : '—';
+}
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // Summer = April–August, the same months as utils/portfolioStatus.js. Index = month - 1.
@@ -181,8 +200,10 @@ function SortHeader({ k, label, right, sort, dir, onSort }: {
 }
 
 export default function SeasonsPage() {
-  const [season, setSeason] = useState<SeasonName>('Summer');
-  const [suggestedOnly, setSuggestedOnly] = useState(false);
+  // `season` is the VIEW — a season tab, or the Can't get list (CANT_GET).
+  const [season, setSeason] = useState<View>('Summer');
+  // The season tab to return to when Can't get is pressed off (see toggleCantGet).
+  const [lastSeason, setLastSeason] = useState<SeasonName>('Summer');
   // Range panel open/closed — a per-browser convenience, so localStorage (guarded: it can be missing or throw). Closed by default.
   const [rangeOpen, setRangeOpen] = useState<boolean>(() => {
     try { return typeof window !== 'undefined' && window.localStorage.getItem('seasons.rangeOpen') === '1'; } catch { return false; }
@@ -214,12 +235,18 @@ export default function SeasonsPage() {
   const { data, error: loadError, isLoading, refresh } = useApiQuery(['product-seasons'], () => getProductSeasons());
   const allRows = useMemo(() => data?.rows ?? [], [data]);
 
-  const inSeason = useMemo(() => allRows.filter((r) => r.season === season), [allRows, season]);
+  // The Can't get view lists every style carrying the mark — parked now, and lapsed ones still showing "Couldn't get it" on the
+  // order screens — whatever its season. The season views are unchanged.
+  const inSeason = useMemo(
+    () => (season === CANT_GET
+      ? allRows.filter((r) => r.no_supply || !!r.no_supply_since)
+      : allRows.filter((r) => r.season === season)),
+    [allRows, season],
+  );
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const out = inSeason.filter((r) => {
-      if (suggestedOnly && !r.suggested) return false;
       if (cut.has(r.groupid)) return false;
       if (q && ![r.groupid, r.brand, r.title].some((f) => !!f && f.toLowerCase().includes(q))) return false;
       return !(r.status && hiddenStatus.has(r.status));
@@ -240,7 +267,7 @@ export default function SeasonsPage() {
     const sign = dir === 'asc' ? 1 : -1;
     out.sort((a, b) => sign * cmp(a, b) || b.revenue_12m - a.revenue_12m);
     return out;
-  }, [inSeason, suggestedOnly, hiddenStatus, cut, query, sort, dir]);
+  }, [inSeason, hiddenStatus, cut, query, sort, dir]);
 
   // Ticked rows that a filter hides are unticked, so a bulk change can never hit a style that is off screen.
   function toggleStatus(st: string) {
@@ -275,23 +302,23 @@ export default function SeasonsPage() {
   const londonMonth = Number(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', month: 'numeric' }));
   const seasonNow: SeasonName = isSummerIdx(londonMonth - 1) ? 'Summer' : 'Winter';
   const emptyMessage =
-    season !== 'Any' && season !== seasonNow && !hiddenStatus.has('WINNERS') && hiddenStatus.has('HARVEST')
+    season === CANT_GET
+      ? (query.trim() ? `Nothing matches "${query.trim()}" here.` : 'Nothing parked. Styles marked “Can’t get it” show here.')
+    : season !== 'Any' && season !== seasonNow && !hiddenStatus.has('WINNERS') && hiddenStatus.has('HARVEST')
       ? `${season} styles can't be Winners in ${seasonNow.toLowerCase()} — their earners are in Harvest.`
       : query.trim()
         ? `Nothing matches "${query.trim()}" here.`
-      : suggestedOnly
-        ? 'Nothing suggested here. Untick "Suggested" to see every style.'
         : 'No styles match these filters.';
 
   const allVisibleTicked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   // Ticked AND on screen — what a bulk change will actually hit (a search can hide ticked rows without unticking them).
   const tickedOnScreen = rows.filter((r) => selected.has(r.groupid)).length;
 
-  // RESET — the whole screen back to how it opens (owner, 2026-09-25): Summer tab, Suggested off, every status on, no cuts, nothing
+  // RESET — the whole screen back to how it opens (owner, 2026-09-25): Summer tab, every status on, no cuts, nothing
   // ticked, default sort. Always on screen; it is the only way to bring cut rows back.
   function resetScreen() {
     setSeason('Summer');
-    setSuggestedOnly(false);
+    setLastSeason('Summer');
     setHiddenStatus(new Set());
     setCut(new Set());
     setQuery('');
@@ -302,7 +329,14 @@ export default function SeasonsPage() {
     setError(null);
   }
 
-  function switchSeason(s: SeasonName) {
+  // CAN'T GET TOGGLES (owner, 2026-09-26 — "pressing it again should remove the filter"): a second press returns to the season tab
+  // you came from, not always Summer — so remember the last season view whenever one is chosen.
+  function toggleCantGet() {
+    switchSeason(season === CANT_GET ? lastSeason : CANT_GET);
+  }
+
+  function switchSeason(s: View) {
+    if (s !== CANT_GET) setLastSeason(s);
     setSeason(s);
     setSelected(new Set());
     setCut(new Set());
@@ -338,6 +372,31 @@ export default function SeasonsPage() {
     const n = res.data.changed.length;
     setMessage(`Moved ${n} style${n === 1 ? '' : 's'} to ${target}.`);
     if (n > 0) setRetagDue(true);
+    setSelected(new Set());
+    await refresh();
+  }
+
+  // CAN'T GET IT, in bulk — park the ticked styles for three months, or unpark them (bcweb-server/utils/noSupply.js). Separate from the
+  // season setter on purpose: it changes nothing about the season or the status, so no "Update statuses" follows it.
+  async function applyNoSupply(action: 'park' | 'clear') {
+    const ids = rows.filter((r) => selected.has(r.groupid)).map((r) => r.groupid);
+    if (ids.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    if (action === 'park') {
+      const res = await setNoSupply(ids);
+      setBusy(false);
+      if (!res.success || !res.data) { setError(res.error || 'Could not mark them'); return; }
+      const n = res.data.updated.length;
+      setMessage(`Can't get: ${n} style${n === 1 ? '' : 's'} parked until ${dayMonth(res.data.until)}.`);
+    } else {
+      const res = await clearNoSupply(ids);
+      setBusy(false);
+      if (!res.success || !res.data) { setError(res.error || 'Could not clear them'); return; }
+      const n = res.data.cleared.length;
+      setMessage(n > 0 ? `Unparked ${n} style${n === 1 ? '' : 's'}.` : 'None of those was parked.');
+    }
     setSelected(new Set());
     await refresh();
   }
@@ -391,19 +450,22 @@ export default function SeasonsPage() {
           ))}
         </div>
 
-        {/* The rule is a hover, not a line — a line that appears on tick would shift the table (owner, 2026-09-25). */}
-        <label
-          className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600"
-          title={season === 'Any' ? 'Suggested: all sales in one season' : 'Suggested: sold in at least half their off-season months'}
+        {/* CAN'T GET — a view of its own, drawn APART from the season switch (not a fourth segment): it's a different fact, and one
+            control that mixed "when it sells" with "can I buy it" is exactly what this screen must not become. */}
+        <button
+          type="button"
+          onClick={toggleCantGet}
+          aria-pressed={season === CANT_GET}
+          title={season === CANT_GET
+            ? `Back to ${lastSeason}`
+            : 'Every style marked “Can’t get it” — parked for three months, or back for ordering with its note — whatever its season'}
+          className={
+            'rounded-md border px-3 py-1.5 text-sm font-medium '
+            + (season === CANT_GET ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')
+          }
         >
-          <input
-            type="checkbox"
-            checked={suggestedOnly}
-            onChange={(e) => { setSuggestedOnly(e.target.checked); setSelected(new Set()); setCut(new Set()); }}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          Suggested
-        </label>
+          Can&rsquo;t get
+        </button>
 
         {/* STATUS — each one switches on/off. No counts on the chips (owner's rule for toggles). */}
         <div className="inline-flex gap-1" role="group" aria-label="Status">
@@ -495,6 +557,31 @@ export default function SeasonsPage() {
             );
           })}
         </div>
+        {/* CAN'T GET — its own group, after a divider: parks or clears the ticked styles, changes nothing about their season. */}
+        <span className="h-5 w-px bg-slate-200" aria-hidden />
+        <span className="text-sm text-slate-500">Can&rsquo;t get:</span>
+        <div className="inline-flex gap-2">
+          <button
+            type="button"
+            disabled={busy || tickedOnScreen === 0}
+            onClick={() => applyNoSupply('park')}
+            title="Take the ticked styles off ordering for three months — season and status unchanged"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
+          >
+            Park 3 months
+          </button>
+          <button
+            type="button"
+            disabled={busy || tickedOnScreen === 0}
+            onClick={() => applyNoSupply('clear')}
+            title="Take “Can’t get it” off the ticked styles — they're back for ordering straight away"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
+          >
+            {/* UNPARK, not "Clear" (owner, 2026-09-26): the bar already has a Clear — it empties the ticks — and two Clears side by
+                side read as the same thing. Unpark is Park's own opposite. */}
+            Unpark
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => setSelected(new Set())}
@@ -525,15 +612,17 @@ export default function SeasonsPage() {
         <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
           {/* FIXED COLUMN WIDTHS (owner, 2026-09-25): with auto layout a longer code scrolling into view widened Style and shifted
               every column. Style fits the longest code today (21 chars, e.g. FLE030-IVES-NAVY-BLUE) with room to spare; anything
-              longer truncates, full title still on hover. Status takes whatever is left. */}
+              longer truncates, full title still on hover. Status takes whatever is left.
+              The two number columns are sized to what they hold (owner, 2026-09-26 — "12 months is using unnecessary space to its
+              left"): Off-season fits its header with the sort arrow, 12 months fits "£10,000" — the freed width goes to Status. */}
           <table className="w-full table-fixed text-sm">
             <colgroup>
               <col className="w-10" />
               <col className="w-60" />
               <col className="w-32" />
               <col className="w-[252px]" />
-              <col className="w-32" />
               <col className="w-28" />
+              <col className="w-24" />
               <col />
               <col className="w-10" />
             </colgroup>
@@ -550,7 +639,8 @@ export default function SeasonsPage() {
                   </div>
                 </th>
                 <th className="px-3 py-2 text-center font-medium">
-                  <SortHeader k="off" label={season === 'Any' ? 'Months sold' : 'Off-season'} sort={sort} dir={dir} onSort={sortBy} />
+                  {/* Mixed seasons on the Can't get view: each row still shows its own measure (off-season x / 5 or 7, or months x / 12). */}
+                  <SortHeader k="off" label={season === 'Any' ? 'Months sold' : season === CANT_GET ? 'Months' : 'Off-season'} sort={sort} dir={dir} onSort={sortBy} />
                 </th>
                 <th className="px-3 py-2 text-right font-medium">
                   <SortHeader k="revenue" label="12 months" right sort={sort} dir={dir} onSort={sortBy} />
@@ -577,7 +667,29 @@ export default function SeasonsPage() {
                   </td>
                   <td className="px-3 py-1.5">
                     {/* The code, full title on hover (owner, 2026-09-25) — the long Shopify titles made rows wide for little gain. */}
-                    <div className="truncate text-slate-800" title={r.title || r.groupid}>{r.groupid}</div>
+                    {/* The no-supply mark sits HERE, beside the code — not in Status. Status is the table's leftover column (a few dozen
+                        pixels); a mark squeezed in there truncated the status itself to "Ste…" and hid the mark (owner, 2026-09-26). The
+                        pill never shrinks; a long code truncates instead, full title still on hover. Side by side with the season, never
+                        merged into it: amber while parked, slate once lapsed (back for ordering, with its note). On the Can't get view
+                        every row is marked, so the pill shows the date itself rather than repeating "Can't get". */}
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-slate-800" title={r.title || r.groupid}>{r.groupid}</span>
+                      {r.no_supply ? (
+                        <span
+                          className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 text-[11px] leading-4 text-amber-800"
+                          title={`Can’t get it until ${dayMonth(r.no_supply_until)} — marked ${dayMonth(r.no_supply_since)}${r.no_supply_by ? ` by ${r.no_supply_by}` : ''} · ${r.season}`}
+                        >
+                          {season === CANT_GET ? `until ${dayMonth(r.no_supply_until)}` : 'Can’t get'}
+                        </span>
+                      ) : r.no_supply_since ? (
+                        <span
+                          className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 text-[11px] leading-4 text-slate-600"
+                          title={`Couldn’t get it — ${dayMonth(r.no_supply_since)}. Its three months are up, so it's back for ordering with its note · ${r.season}`}
+                        >
+                          Couldn&rsquo;t get
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="truncate px-3 py-1.5 text-slate-600">{r.brand || '—'}</td>
                   <td className="px-3 py-1.5"><MonthStrip row={r} /></td>
