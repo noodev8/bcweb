@@ -1255,6 +1255,28 @@ export interface PriceChangeRow {
   // which always pairs with unitsLive 0. `lastSold` is that sale's date ('YYYY-MM-DD'), shown as the tooltip on the profit.
   lastProfit: number | null;
   lastSold: string | null;
+  // The VERDICT — did the change leave the item earning more or less PER WEEK? Profit/wk over the old price's last stretch (up to 28 days)
+  // against the new price's run (up to 28 days), with the old figure scaled by `season` (the whole channel's profit/day after ÷ before, 1 =
+  // no adjustment) so a seasonal slump isn't blamed on the price. 'SAME' = within ±10%; 'UNCLEAR' = a window under 7 days or fewer than 3
+  // units across both. All null when the row isn't scored (too recent, a hold, or a first price). pwBefore is the RAW figure.
+  verdict: PriceChangeVerdict | null;
+  daysBefore: number | null;
+  daysAfter: number | null;
+  unitsBefore: number | null;
+  unitsAfter: number | null;
+  pwBefore: number | null;
+  pwAfter: number | null;
+  season: number | null;
+}
+
+export type PriceChangeVerdict = 'MORE' | 'LESS' | 'SAME' | 'UNCLEAR';
+
+// Verdict counts for one kind of change (raises or cuts) on one channel. more/less/same are the JUDGED changes; unclear couldn't be rated.
+export interface PriceChangeVerdictCounts {
+  more: number;
+  less: number;
+  same: number;
+  unclear: number;
 }
 
 // One operator's repricing activity in the window. `user` is null for unattributed legacy rows. `up`/`down` are the direction split
@@ -1282,12 +1304,12 @@ export interface PriceChangeSummary {
 
 // One channel's worth of an operator's scored changes. Counts, never averages — see PriceChangeScorecard for why.
 export interface PriceChangeChannelBlock {
-  raises: number;          // raises made (the denominator)
-  raisesSold: number;      // ...of which sold at least one unit at the new price
+  raises: number;          // raises made
+  raiseVerdicts: PriceChangeVerdictCounts; // ...split by whether they earned more per week (see PriceChangeRow.verdict)
   raiseUnits: number;      // units sold at raised prices
   raiseCash: number;       // £ those units brought in above the old price. Gross, VAT-inclusive
   cuts: number;
-  cutsMoved: number;       // ...of which shifted at least one unit
+  cutVerdicts: PriceChangeVerdictCounts;
   cutUnits: number;        // units cleared
   cutDiscount: number;     // £ given up. Context only — NEVER net this against raiseCash, they're different jobs
 }
@@ -1296,7 +1318,8 @@ export interface PriceChangeChannelBlock {
 // every user, regardless of the window/channel/user filters above. Settled changes only, each credited solely with sales made while its
 // price was live. GROSS: a raise is credited with units that sold at the raised price, assuming they'd have sold anyway.
 //
-// The headline is a HIT RATE — `raisesSold` of `raises`, `cutsMoved` of `cuts` — always rendered with its denominator. Money-per-change
+// The headline is a HIT RATE — changes that EARNED MORE per week, of those that could be judged — always rendered with its denominator.
+// (Until 2026-09-26 it was "sold at least one", which a raise that halved a style's profit/wk still passed.) Money-per-change
 // was tried and removed: "£7.46 per raise" had a £1.40 median behind it, 94 of 277 raises sold nothing, and ten raises made 47% of the
 // quarter's cash. Counts and totals survive that skew; an average implies a typical case that doesn't exist. Do not reintroduce one.
 //

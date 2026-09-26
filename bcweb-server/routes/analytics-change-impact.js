@@ -63,8 +63,10 @@ Purpose: Analytics module — Price Changes. A "did our repricing take effect?" 
                  given away against the cash captured would make an operator look bad for doing the LOSERS job correctly, so the two are
                  returned as separate blocks and rendered as separate panels.
 
-              The headline is a HIT RATE — how many raises sold anything, how many cuts moved anything — expressed as a count and a
-              percentage of a stated denominator, never as a per-change average of money.
+              The headline is a HIT RATE — how many raises / cuts EARNED MORE PER WEEK than the old price did (the VERDICT, season-adjusted;
+              see the block above the handler) — expressed as a count and a percentage of the changes that could be judged, never as a
+              per-change average of money. Until 2026-09-26 the rate was "sold at least one unit", which a raise that halved a style's
+              profit/wk still passed.
 
               Why not money-per-change (this was tried and removed): "£7.46 extra per raise" was arithmetically correct and practically a
               lie. The distribution is savagely skewed — median £1.40 against that £7.46 mean, 94 of 277 raises sold nothing at all, and
@@ -112,10 +114,10 @@ Success Response:
   "scoreWindowDays": 90,                  // the scorecards' OWN look-back — fixed; this layer ignores days, channel AND user
   "scorecards": [                         // one entry per operator, most-scored first; automated writers excluded
     { "user": "Andreas", "settled": 518, "pending": 256,   // pending = in-window but < settleDays old, so scored nowhere on this panel
-      "shp": { "raises": 112, "raisesSold": 57, "raiseUnits": 690, "raiseCash": 1707.40,
-               "cuts": 74, "cutsMoved": 60, "cutUnits": 520, "cutDiscount": 1900.00 },
-      "amz": { "raises": 165, "raisesSold": 126, "raiseUnits": 535, "raiseCash": 358.30,
-               "cuts": 163, "cutsMoved": 133, "cutUnits": 1230, "cutDiscount": 4294.00 },
+      "shp": { "raises": 112, "raiseVerdicts": { "more": 30, "less": 25, "same": 6, "unclear": 51 }, "raiseUnits": 690,
+               "raiseCash": 1707.40,
+               "cuts": 74, "cutVerdicts": { "more": 20, "less": 3, "same": 1, "unclear": 50 }, "cutUnits": 520, "cutDiscount": 1900.00 },
+      "amz": { ...same shape... },
       "excluded": { "level": 5, "newPrice": 1 } },   // logged but not a reprice; kept so counts reconcile with the summary
     ...
   ],
@@ -125,7 +127,9 @@ Success Response:
       "title": "Womens ...", "oldPrice": 36.49, "newPrice": 35.49, "changedBy": "Andreas",
       "changedAt": "2026-07-13T00:55:00.000Z", "note": "creep 0.30 — 4u/7d", "daysSince": 1, "unitsSince": 0,
       "settled": false, "unitsLive": 0, "cashImpact": 0.00,     // unitsLive/cashImpact = bounded to this price's own run
-      "lastProfit": 5.60, "lastSold": "2026-07-24" },           // profit on the latest sale AT THIS PRICE (null = none since the change)
+      "lastProfit": 5.60, "lastSold": "2026-07-24",            // profit on the latest sale AT THIS PRICE (null = none since the change)
+      "verdict": "MORE", "daysBefore": 21, "daysAfter": 17,     // VERDICT block below; all null when the row isn't scored
+      "unitsBefore": 2, "unitsAfter": 3, "pwBefore": 1.77, "pwAfter": 4.99, "season": 0.777 },
     ... // newest change first
   ]
 }
@@ -209,6 +213,107 @@ const saleInRun = (c, col = {}) => {
             AND (${c}.${next} IS NULL OR s.solddate < ${c}.${next} OR (${c}.${newP} IS NOT NULL AND s.soldprice = ${c}.${newP}))`;
 };
 
+// ------------------------------------------------------------------------------------------------------------------------------------
+// VERDICT — "did this change leave the item EARNING more or less per week?" (owner, 2026-09-26). The old hit rates ("sold at least one")
+// only proved a change hadn't killed the item: a raise that took a style from 6/wk at £72 to 1/wk at £80 scored as a success. The verdict
+// compares PROFIT PER WEEK at the old price against profit per week at the new one, so a raise that loses volume but earns more per week
+// is a win, and one that sells but earns less is not. A cut off the Stuck list starts from ~£0/wk (it sold nothing in 30 days by
+// definition), so any profitable sale after it reads as "earned more" — correct: shifting that stock was the job.
+//
+//   before = the old price's last stretch: from the previous change on the same key (or BEFORE_DAYS back, whichever is later) up to this
+//            change. Boundary days are settled by price paid, the same way `saleInRun` does it.
+//   after  = this price's run (`saleInRun`), capped at AFTER_DAYS and stopping before today (today is a part day).
+//   £/wk   = SUM(sales.profit) * 7 / window days. Calendar days the price was LIVE, not first-to-last sale like the drill's timeline — a
+//            week at a price with nothing sold is evidence here, not a gap.
+//   SEASON = the whole channel's profit per day over the same two windows. If Shopify as a whole earned 30% less in the after window,
+//            the before figure is scaled down 30% before comparing — otherwise every August raise on a sandal looks bad because
+//            September arrived, not because of the price. One ratio per change; no per-style modelling. Skipped (factor 1) when either
+//            window has no channel profit.
+//   verdict = MORE / LESS when the after £/wk beats / misses the season-adjusted before by more than VERDICT_BAND, SAME inside the band,
+//            UNCLEAR when either window was under 7 days (price wasn't live long enough to rate) or fewer than VERDICT_MIN_UNITS sold
+//            across both windows (noise). Amazon is scored per SIZE, so expect a lot of UNCLEAR there — that is honest, not a bug.
+//
+// Profit is `sales.profit` on positive lines, matching every other attribution here. The known AMZ ~20% understatement (see memory/docs)
+// sits on BOTH sides of the comparison, so it cancels.
+// ------------------------------------------------------------------------------------------------------------------------------------
+const BEFORE_DAYS = 28;
+const AFTER_DAYS = 28;
+const VERDICT_BAND = 0.1;        // ±10% of the season-adjusted before figure counts as "no real change"
+const VERDICT_MIN_UNITS = 3;     // fewer units than this across both windows = can't tell
+const VERDICT_MIN_DAYS = 7;      // a price live under a week on either side can't be rated per week
+
+// Daily channel profit, the season baseline. `lookback` is SQL text for how many days back the scored changes can reach (window + BEFORE).
+const chanDailyCte = (lookback) => `
+      chan_daily AS (
+        SELECT s.channel, s.solddate AS d, SUM(s.profit) AS profit
+        FROM sales s
+        WHERE s.channel IN ('SHP', 'AMZ') AND s.qty > 0 AND s.soldprice > 0
+          AND s.solddate >= CURRENT_DATE - (${lookback})
+        GROUP BY s.channel, s.solddate
+      )`;
+
+// The chain of LATERALs that produces `ev_v.verdict` plus the evidence behind it for change row `c`. `keyMatch` ties a sales row `s` to the
+// change's item; `gate` is the "should this row be scored at all" test — every LATERAL returns nothing when it fails, so unscored rows
+// (pending, holds, first prices) come back with NULL evidence and a NULL verdict rather than a fake one. Fixed source text only.
+const verdictJoins = (c, col, keyMatch, gate) => {
+  const day = col.day || 'change_date';
+  const next = col.next || 'next_d';
+  const prev = col.prev || 'prev_d';
+  const oldP = col.oldPrice || 'old_price';
+  const chan = col.chan || 'channel';
+  return `
+      LEFT JOIN LATERAL (
+        SELECT GREATEST(${c}.${prev}, ${c}.${day} - ${BEFORE_DAYS}) AS from_d,
+               LEAST(${c}.${next}, CURRENT_DATE, ${c}.${day} + ${AFTER_DAYS}) AS to_d,
+               ${c}.${day} - GREATEST(${c}.${prev}, ${c}.${day} - ${BEFORE_DAYS}) AS days_before,
+               LEAST(${c}.${next}, CURRENT_DATE, ${c}.${day} + ${AFTER_DAYS}) - ${c}.${day} AS days_after
+        WHERE ${gate}
+      ) ev_w ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(s.qty), 0)::int AS units, COALESCE(SUM(s.profit), 0) AS profit
+        FROM sales s
+        WHERE ev_w.from_d IS NOT NULL
+          AND s.channel = ${c}.${chan} AND s.qty > 0 AND s.soldprice > 0 AND ${keyMatch}
+          AND s.solddate >= ev_w.from_d AND s.solddate <= ${c}.${day}
+          AND (s.solddate < ${c}.${day} OR s.soldprice = ${c}.${oldP})
+          AND (${c}.${prev} IS NULL OR s.solddate > ${c}.${prev} OR s.soldprice = ${c}.${oldP})
+      ) ev_b ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(s.qty), 0)::int AS units, COALESCE(SUM(s.profit), 0) AS profit
+        FROM sales s
+        WHERE ev_w.from_d IS NOT NULL
+          AND s.channel = ${c}.${chan} AND s.qty > 0 AND s.soldprice > 0 AND ${keyMatch}
+          AND ${saleInRun(c, col)}
+          AND s.solddate < ${c}.${day} + ${AFTER_DAYS}
+          AND s.solddate < CURRENT_DATE
+      ) ev_a ON true
+      LEFT JOIN LATERAL (
+        SELECT SUM(cd.profit) FILTER (WHERE cd.d <  ${c}.${day}) AS before,
+               SUM(cd.profit) FILTER (WHERE cd.d >= ${c}.${day}) AS after
+        FROM chan_daily cd
+        WHERE ev_w.from_d IS NOT NULL
+          AND cd.channel = ${c}.${chan} AND cd.d >= ev_w.from_d AND cd.d < ev_w.to_d
+      ) ev_c ON true
+      LEFT JOIN LATERAL (
+        SELECT ev_b.profit * 7.0 / GREATEST(ev_w.days_before, 7) AS pw_before,
+               ev_a.profit * 7.0 / GREATEST(ev_w.days_after, 7)  AS pw_after,
+               CASE WHEN ev_c.before > 0 AND ev_c.after > 0 AND ev_w.days_before > 0 AND ev_w.days_after > 0
+                    THEN (ev_c.after / ev_w.days_after) / (ev_c.before / ev_w.days_before)
+                    ELSE 1 END AS season
+        WHERE ev_w.from_d IS NOT NULL
+      ) ev_r ON true
+      LEFT JOIN LATERAL (
+        SELECT CASE
+                 WHEN ev_w.days_before < ${VERDICT_MIN_DAYS} OR ev_w.days_after < ${VERDICT_MIN_DAYS} THEN 'UNCLEAR'
+                 WHEN ev_b.units + ev_a.units < ${VERDICT_MIN_UNITS} THEN 'UNCLEAR'
+                 WHEN ev_r.pw_after > ev_r.pw_before * ev_r.season + ${VERDICT_BAND} * ABS(ev_r.pw_before * ev_r.season) THEN 'MORE'
+                 WHEN ev_r.pw_after < ev_r.pw_before * ev_r.season - ${VERDICT_BAND} * ABS(ev_r.pw_before * ev_r.season) THEN 'LESS'
+                 ELSE 'SAME'
+               END AS verdict
+        WHERE ev_w.from_d IS NOT NULL
+      ) ev_v ON true`;
+};
+
 router.get('/', async (req, res) => {
   try {
     // Channel: normalise to 'all' | 'shp' | 'amz'. Anything unexpected falls back to 'all'.
@@ -274,10 +379,11 @@ router.get('/', async (req, res) => {
                p.changed_by       AS changed_by,
                COALESCE(p.changed_at, p.change_date::timestamptz) AS sort_ts,
                (COALESCE(p.changed_at, p.change_date::timestamptz) AT TIME ZONE 'Europe/London')::date AS change_date,
-               p.id               AS id
+               p.id               AS id,
+               COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - $3::int)::timestamptz AS in_window
         FROM price_change_log p
         WHERE p.channel = 'SHP' AND $1::bool
-          AND COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - $3::int)::timestamptz
+          AND COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - ($3::int + ${BEFORE_DAYS}))::timestamptz
         UNION ALL
         SELECT 'AMZ'::text,
                f.groupid,
@@ -288,20 +394,28 @@ router.get('/', async (req, res) => {
                a.changed_by,
                COALESCE(a.changed_at, a.log_date::timestamptz),
                (COALESCE(a.changed_at, a.log_date::timestamptz) AT TIME ZONE 'Europe/London')::date,
-               a.id
+               a.id,
+               COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - $3::int)::timestamptz
         FROM amz_price_log a
         LEFT JOIN amzfeed f ON f.code = a.code
         WHERE $2::bool
-          AND COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - $3::int)::timestamptz
+          AND COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - ($3::int + ${BEFORE_DAYS}))::timestamptz
       ),
+      -- The source reaches BEFORE_DAYS further back than the window so LAG() can see the change that started the old price's run (the
+      -- verdict's "before" window). Those extra rows are dropped straight after (in_window) and never reach a count, a row or the limit.
       bounded AS (
         SELECT c.*,
                LEAD(c.change_date) OVER (
                  PARTITION BY c.channel, COALESCE(c.amz_code, c.groupid)
                  ORDER BY c.sort_ts, c.id
-               ) AS next_d
+               ) AS next_d,
+               LAG(c.change_date) OVER (
+                 PARTITION BY c.channel, COALESCE(c.amz_code, c.groupid)
+                 ORDER BY c.sort_ts, c.id
+               ) AS prev_d
         FROM changes c
       ),
+      ${chanDailyCte(`$3::int + ${BEFORE_DAYS}`)},
       scored AS (
         SELECT b.*,
                ((CURRENT_DATE - b.change_date) >= $6::int) AS is_settled,
@@ -316,6 +430,7 @@ router.get('/', async (req, res) => {
             AND ( (b.channel = 'SHP' AND s.groupid = b.groupid)
                OR (b.channel = 'AMZ' AND s.code = b.amz_code) )
         ) lu ON true
+        WHERE b.in_window
       ),
       picked AS (
         SELECT *, COUNT(*) OVER ()::int AS total
@@ -343,7 +458,15 @@ router.get('/', async (req, res) => {
              pk.units_live,
              su.units                AS units_since,
              ls.last_profit,
-             ls.last_solddate
+             ls.last_solddate,
+             ev_v.verdict,
+             ev_w.days_before,
+             ev_w.days_after,
+             ev_b.units              AS units_before,
+             ev_a.units              AS units_after,
+             ev_r.pw_before,
+             ev_r.pw_after,
+             ev_r.season
       FROM picked pk
       LEFT JOIN title t ON t.groupid = pk.groupid
       LEFT JOIN LATERAL (
@@ -373,6 +496,13 @@ router.get('/', async (req, res) => {
         ORDER BY s.solddate DESC, NULLIF(s.ordertime, '') DESC NULLS LAST, s.id DESC
         LIMIT 1
       ) ls ON true
+      -- The verdict (see VERDICT above) — picked rows only, and only real reprices old enough to judge.
+      ${verdictJoins(
+        'pk',
+        {},
+        `((pk.channel = 'SHP' AND s.groupid = pk.groupid) OR (pk.channel = 'AMZ' AND s.code = pk.amz_code))`,
+        'pk.is_settled AND pk.old_price > 0 AND pk.new_price > 0 AND pk.old_price <> pk.new_price'
+      )}
       ORDER BY pk.sort_ts DESC, pk.id DESC
       `,
       [wantShp, wantAmz, days, user, limit, SETTLE_DAYS, impact]
@@ -430,146 +560,8 @@ router.get('/', async (req, res) => {
       { total: 0, up: 0, down: 0, flat: 0, shp: 0, amz: 0, byUser }
     );
 
-    // SCORECARDS — the staff read. Ignores EVERY filter above (window, channel, user) and runs on its own fixed basis: the last
-    // SCORE_WINDOW_DAYS, both channels, everyone. One rule is easier to hold than three exceptions, and the grid needs both channels side
-    // by side regardless of what the channel switch says.
-    //
-    //   ch      = both logs normalised, with `kind` classifying each row ONCE (see below). Nothing downstream re-tests prices.
-    //   bounded = LEAD() gives the date the NEXT change on the same key landed -> the end of this change's attribution window.
-    //             Ordered by the exact instant then id so same-day changes chain in the order they were actually made.
-    //   scored  = attaches units sold inside that window, and flags settled-ness. is_settled must be evaluated AFTER the LEAD: a settled
-    //             change is often superseded by a RECENT one, and filtering those out first would leave next_d NULL and let the old change
-    //             claim every sale up to today. A same-day supersede yields an empty window and 0 units, which is correct.
-    //
-    // `kind` is the single source of truth for what a log row IS, replacing the `old_price > 0 AND new_price > 0` tests that used to be
-    // repeated in every aggregate:
-    //   RAISE / CUT  - a real reprice with a usable before and after.
-    //   LEVEL        - logged but the price didn't move: a HOLD. Not a mistake and not a no-op — `pricing-park` (W2) sets a review date
-    //                  but writes no log row and stores no note, so pressing Apply with the price unchanged is the only way to record WHY
-    //                  a style was left alone ("Hold at £45... Review ~2026-06-10; if still 0 units, drop to £40"). It is the third
-    //                  pricing verb after raise and cut, and it evidences that someone looked, so it is counted and shown, never scored:
-    //                  a hold isn't trying to move anything, so "did it sell?" says nothing about it.
-    //   NEW          - old_price is 0/NULL: the FIRST price on a new product, written by Add/Modify. There is no "before", so it can be
-    //                  neither a raise nor a cut. These used to be dropped silently by the >0 filter, which quietly deleted 14 of Summer's
-    //                  82 Shopify rows from her denominator. Now they're classified, excluded from the rates, and counted in `excluded` so
-    //                  the numbers reconcile against the activity summary above.
-    // Rates are per CHANNEL because they are structurally different: Shopify raises sold on 51% of tries against Amazon's 76% in the same
-    // period, so a blended percentage is a channel-mix artefact and cannot be compared between two operators with different mixes.
-    const scoreResult = await query(
-      `
-      WITH ch AS (
-        SELECT COALESCE(p.changed_by, '') AS who, p.groupid AS k, 'SHP'::text AS chan,
-               p.old_price AS o, p.new_price AS nw,
-               CASE WHEN p.old_price IS NULL OR p.old_price <= 0 OR p.new_price IS NULL OR p.new_price <= 0 THEN 'NEW'
-                    WHEN p.new_price > p.old_price THEN 'RAISE'
-                    WHEN p.new_price < p.old_price THEN 'CUT'
-                    ELSE 'LEVEL' END AS kind,
-               COALESCE(p.changed_at, p.change_date::timestamptz)      AS ts,
-               (COALESCE(p.changed_at, p.change_date::timestamptz) AT TIME ZONE 'Europe/London')::date AS d,
-               p.id AS id
-        FROM price_change_log p
-        WHERE p.channel = 'SHP'
-          AND COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - $1::int)::timestamptz
-        UNION ALL
-        SELECT COALESCE(a.changed_by, ''), a.code, 'AMZ',
-               a.old_price, a.new_price,
-               CASE WHEN a.old_price IS NULL OR a.old_price <= 0 OR a.new_price IS NULL OR a.new_price <= 0 THEN 'NEW'
-                    WHEN a.new_price > a.old_price THEN 'RAISE'
-                    WHEN a.new_price < a.old_price THEN 'CUT'
-                    ELSE 'LEVEL' END,
-               COALESCE(a.changed_at, a.log_date::timestamptz),
-               (COALESCE(a.changed_at, a.log_date::timestamptz) AT TIME ZONE 'Europe/London')::date,
-               a.id
-        FROM amz_price_log a
-        WHERE COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - $1::int)::timestamptz
-      ),
-      bounded AS (
-        SELECT ch.*, LEAD(ch.d) OVER (PARTITION BY ch.chan, ch.k ORDER BY ch.ts, ch.id) AS next_d
-        FROM ch
-      ),
-      scored AS (
-        SELECT b.*, ((CURRENT_DATE - b.d) >= $2::int) AS is_settled, su.units
-        FROM bounded b
-        LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(s.qty), 0)::int AS units
-          FROM sales s
-          WHERE s.channel = b.chan
-            AND s.qty > 0 AND s.soldprice > 0
-            AND ${saleInRun('b', { day: 'd', oldPrice: 'o', newPrice: 'nw' })}
-            AND ( (b.chan = 'SHP' AND s.groupid = b.k) OR (b.chan = 'AMZ' AND s.code = b.k) )
-        ) su ON true
-      )
-      -- One row per operator per channel; the front end sums the two where a blended figure is safe (cuts) and keeps them apart where it
-      -- is not (raises). Every aggregate is settled-only, so the settled count is the denominator the rates below can be trusted against.
-      SELECT who, chan,
-             COUNT(*) FILTER (WHERE is_settled)::int                                       AS settled,
-             -- The counterweight to "settled": changes made INSIDE the window but still under SETTLE_DAYS old, so scored nowhere on this
-             -- panel. Surfaced (rather than left as an invisible gap) because it is the single most misread thing here — someone repricing
-             -- hard all month sees a scorecard built on the three-week-old work only, and reads it as the panel being stale or broken.
-             -- Reporting it turns "why isn't my week in this?" into "my week is in the queue", and settled + pending reconciles to the
-             -- window total, so no row can silently vanish between the two.
-             COUNT(*) FILTER (WHERE NOT is_settled)::int                                    AS pending,
-             COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE')::int                     AS raises,
-             COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND units > 0)::int       AS raises_sold,
-             COALESCE(SUM(units) FILTER (WHERE is_settled AND kind = 'RAISE'), 0)::int      AS raise_units,
-             COALESCE(SUM(units * (nw - o)) FILTER (WHERE is_settled AND kind = 'RAISE'), 0) AS raise_cash,
-             COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT')::int                       AS cuts,
-             COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT' AND units > 0)::int         AS cuts_moved,
-             COALESCE(SUM(units) FILTER (WHERE is_settled AND kind = 'CUT'), 0)::int        AS cut_units,
-             COALESCE(SUM(units * (o - nw)) FILTER (WHERE is_settled AND kind = 'CUT'), 0)  AS cut_discount,
-             -- NOT settled-gated, unlike everything above. Settling exists to give a change time to SELL; a hold isn't waiting on an
-             -- outcome and a first-time price has no "before" to beat, so gating these would just hide the last three weeks of work.
-             COUNT(*) FILTER (WHERE kind = 'LEVEL')::int                                    AS level_changes,
-             COUNT(*) FILTER (WHERE kind = 'NEW')::int                                      AS new_prices
-      FROM scored
-      GROUP BY who, chan
-      `,
-      [SCORE_WINDOW_DAYS, SETTLE_DAYS]
-    );
-
-    // Fold the per-(operator, channel) rows into one entry per operator holding both channel blocks. Built by accumulation rather than by
-    // two passes so an operator who has only ever touched one channel still gets a fully-shaped (zeroed) block for the other — the grid
-    // renders a dash there, which is itself informative (Summer has never repriced on Amazon).
-    const emptyBlock = () => ({ raises: 0, raisesSold: 0, raiseUnits: 0, raiseCash: 0, cuts: 0, cutsMoved: 0, cutUnits: 0, cutDiscount: 0 });
-    const byOperator = new Map();
-
-    for (const r of scoreResult.rows) {
-      if (r.who === AUTOMATED_WRITER) continue;      // cron, not staff — see AUTOMATED_WRITER
-      const key = r.who || '';
-      if (!byOperator.has(key)) {
-        byOperator.set(key, {
-          user: r.who || null,                        // null = unattributed legacy rows
-          settled: 0,
-          pending: 0,                                 // in-window but too new to score — see the `pending` column above
-          shp: emptyBlock(),
-          amz: emptyBlock(),
-          excluded: { level: 0, newPrice: 0 },        // logged but not a reprice — surfaced so the counts reconcile
-        });
-      }
-      const entry = byOperator.get(key);
-      const block = r.chan === 'AMZ' ? entry.amz : entry.shp;
-
-      entry.settled += Number(r.settled) || 0;
-      entry.pending += Number(r.pending) || 0;
-      entry.excluded.level += Number(r.level_changes) || 0;
-      entry.excluded.newPrice += Number(r.new_prices) || 0;
-
-      block.raises = Number(r.raises) || 0;
-      block.raisesSold = Number(r.raises_sold) || 0;
-      block.raiseUnits = Number(r.raise_units) || 0;
-      block.raiseCash = Number(Number(r.raise_cash || 0).toFixed(2));
-      block.cuts = Number(r.cuts) || 0;
-      block.cutsMoved = Number(r.cuts_moved) || 0;
-      block.cutUnits = Number(r.cut_units) || 0;
-      block.cutDiscount = Number(Number(r.cut_discount || 0).toFixed(2));
-    }
-
-    // MOST DATA FIRST. Never rank on a rate: a 91%-of-11 would outrank a 51%-of-112 and the grid would lead with its least reliable row.
-    // Sorting by sample size keeps the trustworthy row on top and barely moves month to month; ties by name so reloads don't reshuffle.
-    const scorecards = [...byOperator.values()].sort((a, b) => {
-      if (b.settled !== a.settled) return b.settled - a.settled;
-      return (a.user || '').localeCompare(b.user || '');
-    });
+    // SCORECARDS — see computeScorecards() below the handler. Served from a once-a-day cache (see getScorecards).
+    const scorecards = await getScorecards();
 
     // Distinct operators across BOTH logs, ignoring the current channel/user filter -> a stable dropdown. NULLs (legacy rows written
     // before changed_by existed) are dropped. Sorted alphabetically for a predictable list.
@@ -605,6 +597,16 @@ router.get('/', async (req, res) => {
       // Profit on the latest sale made AT THIS PRICE — same bounded run as unitsLive. null = nothing has sold since the change.
       lastProfit: num(r.last_profit),
       lastSold: toIsoDate(r.last_solddate),
+      // The verdict (see VERDICT above) and the evidence behind it. All null when the row isn't scored (pending, hold, first price).
+      // pwBefore is the RAW old-price figure; `season` is the channel factor it was scaled by before comparing (1 = no adjustment).
+      verdict: r.verdict || null,               // 'MORE' | 'LESS' | 'SAME' | 'UNCLEAR' | null
+      daysBefore: r.days_before === null ? null : Number(r.days_before),
+      daysAfter: r.days_after === null ? null : Number(r.days_after),
+      unitsBefore: r.units_before === null ? null : Number(r.units_before),
+      unitsAfter: r.units_after === null ? null : Number(r.units_after),
+      pwBefore: r.pw_before === null ? null : Number(Number(r.pw_before).toFixed(2)),
+      pwAfter: r.pw_after === null ? null : Number(Number(r.pw_after).toFixed(2)),
+      season: r.season === null ? null : Number(Number(r.season).toFixed(3)),
       cashImpact:
         num(r.old_price) === null || num(r.new_price) === null
           ? null
@@ -636,5 +638,208 @@ router.get('/', async (req, res) => {
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Price Changes' });
   }
 });
+
+// ------------------------------------------------------------------------------------------------------------------------------------
+// SCORECARDS CACHE — the Impact grid is computed at most once a day. It ignores every request filter, so one result serves every request,
+// and it scores only changes at least SETTLE_DAYS old, so it barely moves within a day. The verdict made it the slow part of this route
+// (~1s of the ~1.5s: ~1,350 settled changes x three sales lookups each), and it ran on every filter click. Owner's call (2026-09-26): a grid
+// up to a day stale is fine for this screen.
+//
+// Keyed on the DB's day (UTC — the pg session is Etc/UTC and CURRENT_DATE drives the settled test), so the grid rolls over when the SQL's
+// notion of "today" does. What can lag within a day: sales synced later in the day for already-settled changes, a new change that ends a
+// settled change's run, and the "N scored of M" / hold counts, which include today's activity. The detail list and summary are never cached.
+// The PROMISE is stored, not the result, so requests that arrive while the first load is running share it rather than each starting the query.
+// A failed load is dropped so the next request retries instead of serving an error all day. In-process: PM2 runs one fork, and a restart
+// (every deploy) simply starts cold.
+// ------------------------------------------------------------------------------------------------------------------------------------
+let scorecardCache = { day: null, promise: null };
+
+function getScorecards() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (scorecardCache.day !== day || !scorecardCache.promise) {
+    const promise = computeScorecards().catch((err) => {
+      if (scorecardCache.promise === promise) scorecardCache = { day: null, promise: null };
+      throw err;
+    });
+    scorecardCache = { day, promise };
+  }
+  return scorecardCache.promise;
+}
+
+async function computeScorecards() {
+  // SCORECARDS — the staff read. Ignores EVERY filter above (window, channel, user) and runs on its own fixed basis: the last
+  // SCORE_WINDOW_DAYS, both channels, everyone. One rule is easier to hold than three exceptions, and the grid needs both channels side
+  // by side regardless of what the channel switch says.
+  //
+  //   ch      = both logs normalised, with `kind` classifying each row ONCE (see below). Nothing downstream re-tests prices.
+  //   bounded = LEAD() gives the date the NEXT change on the same key landed -> the end of this change's attribution window.
+  //             Ordered by the exact instant then id so same-day changes chain in the order they were actually made.
+  //   scored  = attaches units sold inside that window, and flags settled-ness. is_settled must be evaluated AFTER the LEAD: a settled
+  //             change is often superseded by a RECENT one, and filtering those out first would leave next_d NULL and let the old change
+  //             claim every sale up to today. A same-day supersede yields an empty window and 0 units, which is correct.
+  //
+  // `kind` is the single source of truth for what a log row IS, replacing the `old_price > 0 AND new_price > 0` tests that used to be
+  // repeated in every aggregate:
+  //   RAISE / CUT  - a real reprice with a usable before and after.
+  //   LEVEL        - logged but the price didn't move: a HOLD. Not a mistake and not a no-op — `pricing-park` (W2) sets a review date
+  //                  but writes no log row and stores no note, so pressing Apply with the price unchanged is the only way to record WHY
+  //                  a style was left alone ("Hold at £45... Review ~2026-06-10; if still 0 units, drop to £40"). It is the third
+  //                  pricing verb after raise and cut, and it evidences that someone looked, so it is counted and shown, never scored:
+  //                  a hold isn't trying to move anything, so "did it sell?" says nothing about it.
+  //   NEW          - old_price is 0/NULL: the FIRST price on a new product, written by Add/Modify. There is no "before", so it can be
+  //                  neither a raise nor a cut. These used to be dropped silently by the >0 filter, which quietly deleted 14 of Summer's
+  //                  82 Shopify rows from her denominator. Now they're classified, excluded from the rates, and counted in `excluded` so
+  //                  the numbers reconcile against the activity summary above.
+  // Rates are per CHANNEL because they are structurally different: Shopify raises sold on 51% of tries against Amazon's 76% in the same
+  // period, so a blended percentage is a channel-mix artefact and cannot be compared between two operators with different mixes.
+  const scoreResult = await query(
+    `
+    WITH ch AS (
+      SELECT COALESCE(p.changed_by, '') AS who, p.groupid AS k, 'SHP'::text AS chan,
+             p.old_price AS o, p.new_price AS nw,
+             CASE WHEN p.old_price IS NULL OR p.old_price <= 0 OR p.new_price IS NULL OR p.new_price <= 0 THEN 'NEW'
+                  WHEN p.new_price > p.old_price THEN 'RAISE'
+                  WHEN p.new_price < p.old_price THEN 'CUT'
+                  ELSE 'LEVEL' END AS kind,
+             COALESCE(p.changed_at, p.change_date::timestamptz)      AS ts,
+             (COALESCE(p.changed_at, p.change_date::timestamptz) AT TIME ZONE 'Europe/London')::date AS d,
+             p.id AS id,
+             COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - $1::int)::timestamptz AS in_window
+      FROM price_change_log p
+      WHERE p.channel = 'SHP'
+        AND COALESCE(p.changed_at, p.change_date::timestamptz) >= (CURRENT_DATE - ($1::int + ${BEFORE_DAYS}))::timestamptz
+      UNION ALL
+      SELECT COALESCE(a.changed_by, ''), a.code, 'AMZ',
+             a.old_price, a.new_price,
+             CASE WHEN a.old_price IS NULL OR a.old_price <= 0 OR a.new_price IS NULL OR a.new_price <= 0 THEN 'NEW'
+                  WHEN a.new_price > a.old_price THEN 'RAISE'
+                  WHEN a.new_price < a.old_price THEN 'CUT'
+                  ELSE 'LEVEL' END,
+             COALESCE(a.changed_at, a.log_date::timestamptz),
+             (COALESCE(a.changed_at, a.log_date::timestamptz) AT TIME ZONE 'Europe/London')::date,
+             a.id,
+             COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - $1::int)::timestamptz
+      FROM amz_price_log a
+      WHERE COALESCE(a.changed_at, a.log_date::timestamptz) >= (CURRENT_DATE - ($1::int + ${BEFORE_DAYS}))::timestamptz
+    ),
+    bounded AS (
+      SELECT ch.*,
+             LEAD(ch.d) OVER (PARTITION BY ch.chan, ch.k ORDER BY ch.ts, ch.id) AS next_d,
+             LAG(ch.d)  OVER (PARTITION BY ch.chan, ch.k ORDER BY ch.ts, ch.id) AS prev_d   -- the verdict's "before" start
+      FROM ch
+    ),
+    scored AS (
+      SELECT b.*, ((CURRENT_DATE - b.d) >= $2::int) AS is_settled, su.units
+      FROM bounded b
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(s.qty), 0)::int AS units
+        FROM sales s
+        WHERE s.channel = b.chan
+          AND s.qty > 0 AND s.soldprice > 0
+          AND ${saleInRun('b', { day: 'd', oldPrice: 'o', newPrice: 'nw' })}
+          AND ( (b.chan = 'SHP' AND s.groupid = b.k) OR (b.chan = 'AMZ' AND s.code = b.k) )
+      ) su ON true
+      WHERE b.in_window        -- the extra BEFORE_DAYS of source rows exist only to feed LAG(); they are not this panel's changes
+    ),
+    ${chanDailyCte(`$1::int + ${BEFORE_DAYS}`)},
+    -- The verdict per settled raise/cut (see VERDICT above). Holds, first prices and pending changes get NULL and are counted nowhere.
+    judged AS (
+      SELECT b.*, ev_v.verdict
+      FROM scored b
+      ${verdictJoins(
+        'b',
+        { day: 'd', oldPrice: 'o', newPrice: 'nw', chan: 'chan' },
+        `((b.chan = 'SHP' AND s.groupid = b.k) OR (b.chan = 'AMZ' AND s.code = b.k))`,
+        `b.is_settled AND b.kind IN ('RAISE', 'CUT')`
+      )}
+    )
+    -- One row per operator per channel; the front end sums the two where a blended figure is safe (cuts) and keeps them apart where it
+    -- is not (raises). Every aggregate is settled-only, so the settled count is the denominator the rates below can be trusted against.
+    SELECT who, chan,
+           COUNT(*) FILTER (WHERE is_settled)::int                                       AS settled,
+           -- The counterweight to "settled": changes made INSIDE the window but still under SETTLE_DAYS old, so scored nowhere on this
+           -- panel. Surfaced (rather than left as an invisible gap) because it is the single most misread thing here — someone repricing
+           -- hard all month sees a scorecard built on the three-week-old work only, and reads it as the panel being stale or broken.
+           -- Reporting it turns "why isn't my week in this?" into "my week is in the queue", and settled + pending reconciles to the
+           -- window total, so no row can silently vanish between the two.
+           COUNT(*) FILTER (WHERE NOT is_settled)::int                                    AS pending,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE')::int                     AS raises,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND verdict = 'MORE')::int    AS raises_more,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND verdict = 'LESS')::int    AS raises_less,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND verdict = 'SAME')::int    AS raises_same,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'RAISE' AND verdict = 'UNCLEAR')::int AS raises_unclear,
+           COALESCE(SUM(units) FILTER (WHERE is_settled AND kind = 'RAISE'), 0)::int      AS raise_units,
+           COALESCE(SUM(units * (nw - o)) FILTER (WHERE is_settled AND kind = 'RAISE'), 0) AS raise_cash,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT')::int                       AS cuts,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT' AND verdict = 'MORE')::int      AS cuts_more,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT' AND verdict = 'LESS')::int      AS cuts_less,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT' AND verdict = 'SAME')::int      AS cuts_same,
+           COUNT(*) FILTER (WHERE is_settled AND kind = 'CUT' AND verdict = 'UNCLEAR')::int   AS cuts_unclear,
+           COALESCE(SUM(units) FILTER (WHERE is_settled AND kind = 'CUT'), 0)::int        AS cut_units,
+           COALESCE(SUM(units * (o - nw)) FILTER (WHERE is_settled AND kind = 'CUT'), 0)  AS cut_discount,
+           -- NOT settled-gated, unlike everything above. Settling exists to give a change time to SELL; a hold isn't waiting on an
+           -- outcome and a first-time price has no "before" to beat, so gating these would just hide the last three weeks of work.
+           COUNT(*) FILTER (WHERE kind = 'LEVEL')::int                                    AS level_changes,
+           COUNT(*) FILTER (WHERE kind = 'NEW')::int                                      AS new_prices
+    FROM judged
+    GROUP BY who, chan
+    `,
+    [SCORE_WINDOW_DAYS, SETTLE_DAYS]
+  );
+
+  // Fold the per-(operator, channel) rows into one entry per operator holding both channel blocks. Built by accumulation rather than by
+  // two passes so an operator who has only ever touched one channel still gets a fully-shaped (zeroed) block for the other — the grid
+  // renders a dash there, which is itself informative (Summer has never repriced on Amazon).
+  const emptyVerdicts = () => ({ more: 0, less: 0, same: 0, unclear: 0 });
+  const emptyBlock = () => ({
+    raises: 0, raiseVerdicts: emptyVerdicts(), raiseUnits: 0, raiseCash: 0,
+    cuts: 0, cutVerdicts: emptyVerdicts(), cutUnits: 0, cutDiscount: 0,
+  });
+  const byOperator = new Map();
+
+  for (const r of scoreResult.rows) {
+    if (r.who === AUTOMATED_WRITER) continue;      // cron, not staff — see AUTOMATED_WRITER
+    const key = r.who || '';
+    if (!byOperator.has(key)) {
+      byOperator.set(key, {
+        user: r.who || null,                        // null = unattributed legacy rows
+        settled: 0,
+        pending: 0,                                 // in-window but too new to score — see the `pending` column above
+        shp: emptyBlock(),
+        amz: emptyBlock(),
+        excluded: { level: 0, newPrice: 0 },        // logged but not a reprice — surfaced so the counts reconcile
+      });
+    }
+    const entry = byOperator.get(key);
+    const block = r.chan === 'AMZ' ? entry.amz : entry.shp;
+
+    entry.settled += Number(r.settled) || 0;
+    entry.pending += Number(r.pending) || 0;
+    entry.excluded.level += Number(r.level_changes) || 0;
+    entry.excluded.newPrice += Number(r.new_prices) || 0;
+
+    block.raises = Number(r.raises) || 0;
+    block.raiseVerdicts = {
+      more: Number(r.raises_more) || 0, less: Number(r.raises_less) || 0,
+      same: Number(r.raises_same) || 0, unclear: Number(r.raises_unclear) || 0,
+    };
+    block.raiseUnits = Number(r.raise_units) || 0;
+    block.raiseCash = Number(Number(r.raise_cash || 0).toFixed(2));
+    block.cuts = Number(r.cuts) || 0;
+    block.cutVerdicts = {
+      more: Number(r.cuts_more) || 0, less: Number(r.cuts_less) || 0,
+      same: Number(r.cuts_same) || 0, unclear: Number(r.cuts_unclear) || 0,
+    };
+    block.cutUnits = Number(r.cut_units) || 0;
+    block.cutDiscount = Number(Number(r.cut_discount || 0).toFixed(2));
+  }
+
+  // MOST DATA FIRST. Never rank on a rate: a 91%-of-11 would outrank a 51%-of-112 and the grid would lead with its least reliable row.
+  // Sorting by sample size keeps the trustworthy row on top and barely moves month to month; ties by name so reloads don't reshuffle.
+  return [...byOperator.values()].sort((a, b) => {
+    if (b.settled !== a.settled) return b.settled - a.settled;
+    return (a.user || '').localeCompare(b.user || '');
+  });
+}
 
 module.exports = router;

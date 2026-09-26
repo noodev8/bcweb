@@ -11,8 +11,9 @@ Purpose: The "did our repricing take effect?" report, over a TIME WINDOW (defaul
            2. IMPACT — the staff read: "did this person's repricing time pay for itself?". One TABLE ROW per operator, on its OWN fixed
               basis (always the last 90 days, both channels, everyone) regardless of every switch above: those switches are activity
               controls, this needs a maturity basis, and coupling them scored 8 changes out of 299 on a 30-day view. The panel states its
-              own period so the mismatch reads as intent, not a bug. The measure is a HIT RATE — raises that sold, cuts that moved, each
-              with its denominator — never an average of money; see the panel comment for why that was tried and removed. Raise rates are
+              own period so the mismatch reads as intent, not a bug. The measure is a HIT RATE — changes that EARNED MORE per week (profit/wk
+              at the new price vs the old, season-adjusted; see the route's VERDICT block), each with its denominator — never an average
+              of money; see the panel comment for why that was tried and removed. Raise rates are
               split Shopify/Amazon because the two differ structurally (51% vs 76%) and a blend would just measure channel mix.
            3. DETAIL — the newest 50 changes matching the current filters, each showing BEFORE -> AFTER, who changed it, when, and its
               SOLD: how many units sold while that exact price was live (the cash effect was dropped — one number per row reads at a glance,
@@ -43,6 +44,7 @@ import {
   getPriceChanges,
   PriceChangeImpactFilter,
   PriceChangeRow,
+  PriceChangeVerdictCounts,
   PriceChangeScorecard,
   PriceChangeSummary,
   PriceChangeUserStat,
@@ -271,6 +273,9 @@ export default function PriceChangesPage() {
                     </th>
                     <th className="px-3 py-2.5 text-right font-medium" title="Profit on the latest sale made at the new price — blank if nothing has sold since the change">
                       Profit
+                    </th>
+                    <th className="px-3 py-2.5 font-medium" title="Profit per week at the new price vs the old, allowing for how the whole channel moved">
+                      Per week
                     </th>
                     <th className="px-4 py-2.5 font-medium">By</th>
                   </tr>
@@ -505,8 +510,16 @@ function ScorecardPanel({
             <em> pending</em> and joins the figures as it ages.
           </p>
           <p>
-            <strong>Sold</strong> means the item shifted at least one unit while that price was live. Raises are split Shopify from Amazon
-            because the two behave differently and a combined figure would just reflect which channel someone worked.
+            <strong>Earned more</strong> compares profit per week at the new price with profit per week at the old one — up to four weeks
+            each side. A raise that sells fewer but earns more per week counts as a win; one that keeps selling but earns less doesn&rsquo;t.
+            The old figure is first scaled by how the <strong>whole channel</strong> moved over the same weeks, so a seasonal slump
+            isn&rsquo;t blamed on the price. Within 10% either way is <em>no change</em>.
+          </p>
+          <p>
+            The percentage is of the changes that <strong>could be judged</strong>. <em>Can&rsquo;t tell</em> means fewer than 3 sold
+            across both sides, or a price that was live under a week — most slow sellers land here, Amazon sizes especially. Raises are
+            split Shopify from Amazon because the two behave differently and a combined figure would just reflect which channel someone
+            worked.
           </p>
           <p>
             <strong>Holds</strong> are styles looked at and deliberately left where they were, usually with the reasoning in the note.
@@ -528,8 +541,8 @@ function ScorecardPanel({
             <thead>
               <tr className="text-xs uppercase tracking-wide text-slate-400">
                 <th className="pb-2 pr-3 text-left font-medium">Who</th>
-                <th className="pb-2 px-3 text-left font-medium" colSpan={2}>Raises that sold</th>
-                <th className="pb-2 px-3 text-left font-medium">Cuts that moved</th>
+                <th className="pb-2 px-3 text-left font-medium" colSpan={2}>Raises that earned more</th>
+                <th className="pb-2 px-3 text-left font-medium">Cuts that earned more</th>
                 <th className="pb-2 px-3 text-right font-medium">Holds</th>
                 <th className="pb-2 px-3 text-right font-medium">Cash in</th>
                 <th className="pb-2 pl-3 text-right font-medium">Cleared</th>
@@ -578,8 +591,12 @@ function OperatorRow({
 
   // Cuts are summed across channels — safe only because the two rates currently match; the server keeps them split so a divergence stays
   // visible rather than being blended away here forever.
-  const cuts = c.shp.cuts + c.amz.cuts;
-  const cutsMoved = c.shp.cutsMoved + c.amz.cutsMoved;
+  const cutVerdicts: PriceChangeVerdictCounts = {
+    more: c.shp.cutVerdicts.more + c.amz.cutVerdicts.more,
+    less: c.shp.cutVerdicts.less + c.amz.cutVerdicts.less,
+    same: c.shp.cutVerdicts.same + c.amz.cutVerdicts.same,
+    unclear: c.shp.cutVerdicts.unclear + c.amz.cutVerdicts.unclear,
+  };
   const cashIn = c.shp.raiseCash + c.amz.raiseCash;
   const cleared = c.shp.cutUnits + c.amz.cutUnits;
 
@@ -609,9 +626,9 @@ function OperatorRow({
           {n(c.settled)} scored{c.pending > 0 && <> of {n(c.settled + c.pending)}</>}
         </div>
       </td>
-      <td className="px-3 align-top"><HitRate made={c.shp.raises} hit={c.shp.raisesSold} n={n} tone="emerald" /></td>
-      <td className="px-3 align-top"><HitRate made={c.amz.raises} hit={c.amz.raisesSold} n={n} tone="emerald" /></td>
-      <td className="px-3 align-top"><HitRate made={cuts} hit={cutsMoved} n={n} tone="sky" /></td>
+      <td className="px-3 align-top"><HitRate v={c.shp.raiseVerdicts} n={n} tone="emerald" /></td>
+      <td className="px-3 align-top"><HitRate v={c.amz.raiseVerdicts} n={n} tone="emerald" /></td>
+      <td className="px-3 align-top"><HitRate v={cutVerdicts} n={n} tone="sky" /></td>
       {/* Holds: a count, never a rate — there's no outcome to hit, the style was deliberately left where it was. Kept visually quiet and
           grouped right with the other plain counts: it's context on how much was reviewed, not a result to be weighed against the rates. */}
       <td className="px-3 pt-2.5 text-right align-top tabular-nums text-slate-400">
@@ -625,28 +642,40 @@ function OperatorRow({
 
 // A hit rate: the percentage large enough to compare at a glance, with its denominator ALWAYS underneath. The counts are the honest part —
 // a percentage over eleven tries looks every bit as authoritative as one over 277, so under MIN_SAMPLE it's muted to say otherwise.
+// The denominator is the JUDGED changes (more + less + same). "Can't tell" sits on its own line rather than in the denominator: folding it in
+// would make an operator who works slow sellers look worse for doing the job, and leaving it off entirely would hide how much went unrated.
 function HitRate({
-  made, hit, n, tone,
+  v, n, tone,
 }: {
-  made: number;
-  hit: number;
+  v: PriceChangeVerdictCounts;
   n: (v: number) => string;
   tone: 'emerald' | 'sky';
 }) {
-  if (!made) return <div className="pt-2.5 text-sm text-slate-300">—</div>;
+  const judged = v.more + v.less + v.same;
+  if (!judged && !v.unclear) return <div className="pt-2.5 text-sm text-slate-300">—</div>;
 
-  const pct = Math.round((hit / made) * 100);
-  const thin = made < MIN_SAMPLE;
+  const pct = judged ? Math.round((v.more / judged) * 100) : null;
+  const thin = judged < MIN_SAMPLE;
   const colour = thin ? 'text-slate-400' : tone === 'emerald' ? 'text-emerald-700' : 'text-sky-700';
 
   return (
     <div className="py-1">
       {/* A thin sample no longer carries a "few" label — the "x of y" line directly under the percentage already states the denominator,
           which is the same warning said in numbers. The greyed-out colour still marks it, so the signal survives without the clutter. */}
-      <div className={'text-xl font-bold leading-none tabular-nums ' + colour}>{pct}%</div>
-      <div className="text-[11px] tabular-nums text-slate-500">
-        {n(hit)} of {n(made)}
-      </div>
+      <div className={'text-xl font-bold leading-none tabular-nums ' + colour}>{pct === null ? '—' : `${pct}%`}</div>
+      {judged > 0 && (
+        <div
+          className="text-[11px] tabular-nums text-slate-500"
+          title={`${n(v.more)} earned more · ${n(v.less)} earned less · ${n(v.same)} no real change`}
+        >
+          {n(v.more)} of {n(judged)} <span className="text-slate-400">· {n(v.less)} less</span>
+        </div>
+      )}
+      {v.unclear > 0 && (
+        <div className="text-[11px] tabular-nums text-slate-400" title="Fewer than 3 sold across both sides, or a price live under a week">
+          {n(v.unclear)} can&rsquo;t tell
+        </div>
+      )}
     </div>
   );
 }
@@ -734,7 +763,49 @@ function ChangeRow({
       >
         {money(r.lastProfit)}
       </td>
+      <VerdictCell r={r} />
       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{r.changedBy || '—'}</td>
     </tr>
+  );
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------
+// The row's verdict: did the item earn more or less PER WEEK at the new price? The word carries the answer; the raw before -> after £/wk sits
+// under it as the evidence. The tooltip spells out the season scaling, because a row reading "£12 -> £9, earned more" is only right once
+// you know the whole channel fell 40% over the same weeks. A dash for a row that isn't scored (too recent, a hold, a first price).
+// -------------------------------------------------------------------------------------------------------------------------------------
+const VERDICT_LOOK: Record<string, { label: string; cls: string }> = {
+  MORE: { label: 'Earned more', cls: 'text-emerald-700' },
+  LESS: { label: 'Earned less', cls: 'text-rose-600' },
+  SAME: { label: 'No change', cls: 'text-slate-600' },
+  UNCLEAR: { label: 'Can’t tell', cls: 'text-slate-400' },
+};
+
+function VerdictCell({ r }: { r: PriceChangeRow }) {
+  if (!r.verdict) return <td className="px-3 py-2.5 text-slate-300">—</td>;
+
+  const look = VERDICT_LOOK[r.verdict];
+  const gbp = (v: number | null) => (v === null ? '—' : `£${Math.round(v)}`);
+  const pct = r.season !== null && r.season !== 1 ? Math.round((r.season - 1) * 100) : null;
+
+  const why =
+    r.verdict === 'UNCLEAR'
+      ? (r.daysBefore ?? 0) < 7 || (r.daysAfter ?? 0) < 7
+        ? `The price was live under a week on one side (${r.daysBefore}d before, ${r.daysAfter}d after) — too short to rate per week.`
+        : `Only ${(r.unitsBefore ?? 0) + (r.unitsAfter ?? 0)} sold across both sides — too few to tell.`
+      : `Old price: ${gbp(r.pwBefore)}/wk over ${r.daysBefore}d (${r.unitsBefore} sold). New price: ${gbp(r.pwAfter)}/wk over ${r.daysAfter}d (${r.unitsAfter} sold).` +
+        (pct !== null
+          ? ` The whole channel moved ${pct > 0 ? '+' : ''}${pct}% over the same weeks, so the old figure is judged as ${gbp((r.pwBefore ?? 0) * (r.season ?? 1))}/wk.`
+          : '');
+
+  return (
+    <td className="px-3 py-2.5 whitespace-nowrap" title={why}>
+      <div className={'text-xs font-medium ' + look.cls}>{look.label}</div>
+      {r.verdict !== 'UNCLEAR' && (
+        <div className="text-[11px] tabular-nums text-slate-400">
+          {gbp(r.pwBefore)} → {gbp(r.pwAfter)}
+        </div>
+      )}
+    </td>
   );
 }
