@@ -287,7 +287,7 @@ export function getSegments() {
 
 // Which group a WINNERS / LOSERS list is scoped to — a segment, a Google campaign bucket (skusummary.googlecampaign, 2026-09-23,
 // SHOPIFY ONLY), or a portfolio STATUS (2026-09-24 — the stored skusummary.portfolio_status; the name is WINNERS | STEADY | NEW |
-// HARVEST | LOSERS). `by` becomes the query param name (?segment= / ?campaign= / ?status=). The Amazon list functions take the same
+// LOSERS). `by` becomes the query param name (?segment= / ?campaign= / ?status=). The Amazon list functions take the same
 // shape but the server refuses a campaign there.
 // A status is NOT read through the Selling/Stuck pair: it is one unsplit list, out-of-stock included (getStatusList /
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
@@ -459,10 +459,8 @@ export interface ShopifyOrderSize {
 }
 export interface ShopifyOrderStyle {
   groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
-  // Can sell THIS season: tag 'Any', blank, or the season we're in — the WINNERS rule's own test (utils/portfolioStatus.js).
-  in_season: boolean;
-  // "Can't get it" (utils/noSupply.js — a style fact, not a channel one). no_supply = parked right now (re-check day still ahead). since/by outlive the
-  // park, so a style that has come back can say why it was away. Dates 'YYYY-MM-DD' (London), null when never marked or cleared.
+  // "Can't get it" (utils/noSupply.js — a style fact, not a channel one). no_supply = marked right now (re-check day still ahead).
+  // since/by outlive the mark, so a style that has come back can say why it was away. Dates 'YYYY-MM-DD' (London), null when never marked or cleared.
   no_supply: boolean;
   no_supply_since: string | null;
   no_supply_until: string | null;
@@ -478,20 +476,16 @@ export type ShopifyOrderOnOrder = AmazonOrderOnOrder;
 // One call, whole list (~300 styles / ~2,100 sizes) — searched client-side, like getAmazonOrderList.
 export function getShopifyOrderList() {
   return request<{
-    count: number; season_now: 'Summer' | 'Winter'; no_supply_default_until: string | null; styles: ShopifyOrderStyle[];
+    count: number; no_supply_default_until: string | null; styles: ShopifyOrderStyle[];
     to_place: ShopifyOrderToPlace; on_order: ShopifyOrderOnOrder;
   }>(
     { url: '/shopify-order-list', method: 'GET' },
     (b) => ({
       count: b.count ?? (b.styles || []).length,
-      // The season in_season was judged against. Summer | Winter only — anything else is read as Winter, the longer half.
-      season_now: b.season_now === 'Summer' ? 'Summer' : 'Winter',
-      // The day "Can't get it" would park a style to if pressed today (three months out — utils/noSupply.js), for the button's hint.
+      // The day a "Can't get it" pressed today would last until (three months out — utils/noSupply.js), for the confirm's wording.
       no_supply_default_until: b.no_supply_default_until ?? null,
-      // An older server sends no in_season: read it as in season, so the filter hides nothing rather than everything.
       styles: ((b.styles || []) as ShopifyOrderStyle[]).map((st) => ({
         ...st,
-        in_season: st.in_season !== false,
         no_supply: st.no_supply === true,
         no_supply_since: st.no_supply_since ?? null,
         no_supply_until: st.no_supply_until ?? null,
@@ -3727,9 +3721,9 @@ export function commitBirkOrder(args: { lines: BirkOrderCommitLine[] }) {
 // number is the tag.
 
 // PORTFOLIO STATUS — the STORED tag on every style (skusummary.portfolio_status), set by "Update now" and read by everything else.
-// Rules, in order, first match wins: WINNERS (> £1,500 revenue in 12m AND in season — an out-of-season earner is HARVEST) → STEADY (sold in 3m) → NEW (created < 90 days) →
-// HARVEST (out of season) → LOSERS. The repricer will filter its lists on this same value. See bcweb-server/utils/portfolioStatus.js.
-export const PORTFOLIO_STATUSES = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'] as const;
+// Rules, in order, first match wins: WINNERS (> £1,500 revenue net of returns in 12m) → STEADY (sold in 3m) → NEW (created < 90 days)
+// → LOSERS. No season anywhere, and no HARVEST — both retired 2026-09-26 (see bcweb-server/utils/portfolioStatus.js for why).
+export const PORTFOLIO_STATUSES = ['WINNERS', 'STEADY', 'NEW', 'LOSERS'] as const;
 export type PortfolioStatusName = (typeof PORTFOLIO_STATUSES)[number];
 
 // A style's LEAD CHANNEL (2026-09-25, stamped at Update beside its status): which channel's pricing lists it sits on. BOTH = mixed
@@ -3825,9 +3819,8 @@ export function updatePortfolioSnapshot() {
 }
 
 // ---- Back Office: Seasons -----------------------------------------------------------------------------------------------------------
-// Every style's season beside its year of monthly sales, and a bulk setter. Season decides whether a high earner is a WINNER or
-// HARVEST out of season, so an all-year seller wants 'Any'. The server only SUGGESTS (see bcweb-server/routes/product-seasons.js);
-// the owner decides. Setting a season does NOT re-tag the statuses — the screen offers updatePortfolioSnapshot() afterwards.
+// Every style's season beside its year of monthly sales, and a bulk setter. Season no longer affects the portfolio status (2026-09-26);
+// it feeds Inventory's WINTER / SUMMER commands and the Google Ads season filter. The same screen manages "Can't get it".
 export type SeasonName = 'Summer' | 'Winter' | 'Any';
 
 export interface SeasonRow {

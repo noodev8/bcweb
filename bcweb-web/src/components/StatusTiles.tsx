@@ -3,7 +3,7 @@
 =======================================================================================================================================
 Component: StatusTiles  (the Repricing screen's Status tab — its first and default tab since 2026-09-24)
 =======================================================================================================================================
-Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS — the stored skusummary.portfolio_status tag, set
+Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the stored skusummary.portfolio_status tag, set
          by "Update now" here), for EACH CHANNEL: a Shopify row (styles) and an Amazon row (SKUs — Amazon prices per
          size; a SKU takes its style's status). It REPLACED the Top earners cards (owner, 2026-09-24: "This pricing group should
          replace the old top earners"), and Amazon joined the same day ("Apply amazon pricing in reprice").
@@ -119,9 +119,10 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
             {ch === 'amazon' ? 'Amazon' : 'Shopify'}
           </h2>
           {/* WINNERS LEADS (owner, 2026-09-25: "make the Winners tab more powerful/bigger — with the others following"): a double-width
-              tile with a bigger number, the other four in line after it. One row per channel, so both channels stay on one screen.
-              At a raised tier WINNERS reads the tier's counts and the other four dim: they are the £1,500 tag and cannot answer it. */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+              tile with a bigger number, the other three in line after it. One row per channel, so both channels stay on one screen.
+              At a raised tier WINNERS reads the tier's counts and the other three dim: they are the £1,500 tag and cannot answer it.
+              Five columns: WINNERS spans two, then STEADY / NEW / LOSERS (HARVEST retired 2026-09-26). */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {data.statuses.map((s) => {
               const isWin = s.status === 'WINNERS';
               const counts = isWin && raised && barRow ? { ...s[ch], ...barRow[ch] } : s[ch];
@@ -131,7 +132,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
                   status={s.status}
                   counts={counts}
                   hero={isWin}
-                  // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other four are
+                  // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other three are
                   // printed once, in the key under the last row (owner, 2026-09-25: the same text twice per status was noise).
                   rule={isWin ? (raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS) : null}
                   href={statusListHref(s.status, viewPath, 'Repricing', ch, { bar: isWin && raised ? bar : null })}
@@ -207,7 +208,7 @@ function BrandList({ brands }: { brands: BrandCount[] }) {
 // The WINNERS tier — £1,500 / £2,500 / £5,000 / £10,000 of all-channel 12m turnover. A LOOKUP WITHIN THE TAG, not a re-tag (owner,
 // 2026-09-25, having weighed it): a raised tier hides the winners under it and nothing else. A winner it hides does NOT move to
 // another status — the tag records only the first rule a style matched, so what it would otherwise be is unknown — which is why the
-// other four tiles dim at a raised tier instead of pretending to update. Rejected alternatives: storing a "status if not a winner"
+// other three tiles dim at a raised tier instead of pretending to update. Rejected alternatives: storing a "status if not a winner"
 // to re-sort properly (not worth it), and printing every tier inside the tile (too much on screen). No counts on the toggles.
 function BarDial({ bars, selected, onChange }: { bars: number[]; selected: number; onChange: (b: number) => void }) {
   return (

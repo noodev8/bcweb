@@ -6,10 +6,9 @@ Method: GET
 Purpose: Every style's SEASON (skusummary.season: Summer | Winter | Any) beside a picture of its year — units sold in each calendar
          month — so the owner can see which styles really sell all year and re-season them in bulk (POST /product-season-bulk).
 
-         WHY IT MATTERS: the portfolio status (utils/portfolioStatus.js) only lets a style be a WINNER while it is IN SEASON — an
-         out-of-season earner is HARVEST. So a summer style that keeps selling through the winter needs season 'Any', or it drops out
-         of WINNERS for half the year. "It's just a slow period, not a switch off" (owner, 2026-09-25). This screen is where that
-         call is made — a quarterly-ish Back Office review, deliberately separate from repricing.
+         WHAT SEASON IS FOR NOW: not the portfolio status — season left it, and HARVEST was retired, on 2026-09-26
+         (utils/portfolioStatus.js). It feeds Inventory's WINTER / SUMMER commands and the Google Ads season filter. This screen is
+         where it is set in bulk — a quarterly-ish Back Office review, deliberately separate from repricing.
 
          LOGIC SUGGESTS, THE OWNER DECIDES. `suggested` is a hint, never an action — nothing here re-seasons automatically:
            Summer / Winter  suggested for 'Any' when it sold in at least SUGGEST_SHARE of its OFF-SEASON months. Counted against the
@@ -46,7 +45,7 @@ Success Response:
     {
       "groupid": "0034701-MILANO", "title": "Birkenstock Milano …", "brand": "Birkenstock",
       "season": "Summer",                        // normalised: Summer | Winter | Any
-      "status": "HARVEST" | null,                // stored portfolio tag
+      "status": "STEADY" | null,                 // stored portfolio tag
       "months": [2,1,0,3,…],                     // 12 numbers, JANUARY first — units sold in that calendar month in the window
       "months_sold": 11,                         // months with a sale
       "off_sold": 6, "off_total": 7,             // off-season months with a sale / off-season months there are (Any: null, null)

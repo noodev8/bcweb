@@ -21,7 +21,7 @@ style's drill restores the same view.
 SEGMENT OR CAMPAIGN (owner, 2026-09-23): the [segment] path param is the GROUP name; ?by=campaign makes it a Google campaign bucket
 (skusummary.googlecampaign) instead of a segment. Same lists, same bars, same drill and writes — only the slice differs (the server
 switches ?segment= for ?campaign=, see utils/pricingGroup.js). `by` rides along in every URL this page builds so it survives the drill.
-?by=status (2026-09-24) — the stored portfolio status (path name WINNERS / STEADY / NEW / HARVEST / LOSERS). It replaced the
+?by=status (2026-09-24) — the stored portfolio status (path name WINNERS / STEADY / NEW / LOSERS). It replaced the
 Top earners grouping (removed the same day). ONE UNSPLIT LIST, not the Selling/Stuck pair (owner: "I don't think there's much point in
 splitting"): EVERY style with the status, from GET /pricing-status-list — OUT OF STOCK INCLUDED (stock 0), so prices can be set ahead
 of stock arriving rather than left at an old clearance price (owner). The view tabs are hidden and the mode pinned to 'all'; the Due

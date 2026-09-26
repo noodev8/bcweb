@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Module: utils/portfolioStatus.js
 =======================================================================================================================================
-Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | HARVEST | LOSERS — defined once, written to
+Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | LOSERS — defined once, written to
          skusummary.portfolio_status by "Update now" on Repricing's Status tab, and READ everywhere else.
 
          "Instead of determining the WINNERS all the time, lets tag it in the database. By Groupid." — owner, 2026-09-24.
@@ -13,7 +13,7 @@ Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | HARVES
 
 THE RULES, TESTED IN THIS ORDER — FIRST MATCH WINS (owner, 2026-09-24):
 
-  1. WINNERS  revenue NET OF RETURNS > WINNER_BAR (£1,500) in the rolling 12 months, all channels — AND IN SEASON. SUM(soldprice *
+  1. WINNERS  revenue NET OF RETURNS > WINNER_BAR (£1,500) in the rolling 12 months, all channels. SUM(soldprice *
               qty) over every sales row in the window, returns (qty < 0) included, strictly greater, WINNER_BAR from utils/portfolio.js.
      ...NET, NOT GROSS (owner, 2026-09-26 — "if we sold 100 of a product and had 90 returned, I would be treating it as a winner,
               but its a mess"). Until then returns were excluded, which made four Shopify winners on the day — UPPSALA £1,712 gross /
@@ -21,25 +21,23 @@ THE RULES, TESTED IN THIS ORDER — FIRST MATCH WINS (owner, 2026-09-24):
               we have to draw the line somewhere." A return counts in the window it was BOOKED (refund date), not the sale's.
               The stamped portfolio_revenue_12m / _units_12m are net too, so the tier dial (£2,500 / £5,000 / £10,000) reads the
               same figure the tag was decided on.
-     ...an OUT-OF-SEASON earner over the bar goes straight to HARVEST, skipping STEADY (owner, 2026-09-25). Why: the 12-month
-              window kept every summer winner a WINNER all winter — 56 of 73 winners were summer styles on the day — so pricing
-              the winners never shrank the list. They come back as WINNERS together on 1 April, which is when they want pricing.
-              Straight to HARVEST because every one of them sold in the last 3 months and would otherwise all land in STEADY.
-              ONE calendar rule on both channels, knowingly: on the day 15 of 16 Amazon summer winners were still selling in 30d
-              and move to HARVEST anyway (option "keep it a winner while it still sells" was offered and declined). The owner's
-              next step is to review those HARVEST earners by data — some may really be season 'Any'.
   2. STEADY   sold at least one unit in the last STEADY_MONTHS (3) months.
   3. NEW      skusummary.created_at under NEW_DAYS (90) days ago.
-  4. HARVEST  the style's season is OUT of season today — Summer is April-August, Winter September-March.
-  5. LOSERS   everything else.
+  4. LOSERS   everything else.
 
-  ⚠ NEW IS TESTED BEFORE HARVEST — the owner's call when asked (2026-09-24). His first description had HARVEST first, which
-    made a summer style added in September a HARVEST on its first day, before it had had any chance to sell. A product gets its
-    90 days as NEW whatever the calendar says; after that, out-of-season beats loser.
-
-  ⚠ SEASON 'Any' IS NEVER OUT OF SEASON, so it never HARVESTs and an 'Any' earner is a WINNER all year (owner, 2026-09-24).
-    Only 'Summer' and 'Winter' can. (The six summer IVES were re-seasoned 'Any' on 2026-09-25: they sold at 24-53% of their summer
-    rate through the winter.) The test is case- and space-insensitive because this is a legacy free-text column, but today it holds exactly Summer/Winter/Any.
+  ⚠ NO SEASON ANYWHERE IN THE STATUS — AND NO HARVEST (owner, 2026-09-26). Between 2026-09-25 and 26 a WINNER also had to be IN
+    SEASON: an out-of-season earner went to a fifth status, HARVEST, as did an out-of-season style that wasn't STEADY or NEW. The
+    reason then was that the 12-month window kept every summer winner a WINNER all winter, so pricing the winners never shrank
+    the list. Reversed a day later, with "Can't get it" (utils/noSupply.js) in place: "Winners are our 12 month winners. Price
+    them any time. But ordering should be against what is actually available. And the human knows if they should wait or not."
+    So season left the status entirely:
+      - pricing: a winner is a winner all year; the Due switch and review dates are what shrink the repricing list;
+      - ordering: what can be bought is the no-supply mark's job, not the calendar's (Shopify Order's in-season filter went too).
+    HARVEST was retired rather than kept for its second job (the out-of-season non-sellers) — they are LOSERS now. On the day this
+    moved 14 summer earners HARVEST -> WINNERS (Shopify list 34 -> 44, Amazon 15 -> 19) and 16 styles HARVEST -> LOSERS. Season
+    itself stays on skusummary and on Back Office → Seasons: Inventory's WINTER/SUMMER commands and the Google Ads season filter
+    still read it. DO NOT put a season test back in here without the owner — this is the second time the question has been settled.
+    (The CHECK constraint on portfolio_status still admits 'HARVEST'; nothing writes it.)
 
   THE UNIVERSE IS skusummary — the catalogue as it stands. A deleted style cannot carry a tag, which is why the WINNERS card can
   read a couple lower than the portfolio hero count (that one also counts styles that traded this year and were then deleted —
@@ -62,8 +60,9 @@ const { query } = require('../database');
 const { WINNER_BAR } = require('./portfolio');
 
 // The statuses in RULE ORDER, which is also the order the screen draws the cards. Exported so the repricer and the web client
-// have one list to agree with. Must match the CHECK constraint in migrations/20260924_portfolio_status.sql.
-const STATUSES = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'];
+// have one list to agree with. A subset of the CHECK constraint in migrations/20260924_portfolio_status.sql, which still admits the
+// retired 'HARVEST' (see the header) — nothing writes it.
+const STATUSES = ['WINNERS', 'STEADY', 'NEW', 'LOSERS'];
 
 // "Sold at least 1 item in 3 months."
 const STEADY_MONTHS = 3;
@@ -71,19 +70,11 @@ const STEADY_MONTHS = 3;
 // "Less than 90 days old from created date."
 const NEW_DAYS = 90;
 
-// Summer = April..August (5 months); every other month is Winter (September..March, 7 months). Month numbers, 1-based.
+// Summer = April..August (5 months); every other month is Winter (September..March, 7 months). Month numbers, 1-based. No longer
+// part of any status (see the header) — kept here because Back Office → Seasons (routes/product-seasons.js) splits a style's year
+// on the same months.
 const SUMMER_FIRST_MONTH = 4;
 const SUMMER_LAST_MONTH = 8;
-
-// The season the business is in today, as a SQL expression yielding 'summer' | 'winter' (lower case). London wall-clock month — see
-// "THE SEASON IS READ ON LONDON WALL-CLOCK" above CLASSIFY_SQL. ONE definition: the status classifier below and Shopify Order's
-// in-season filter (routes/shopify-order-list.js) both read this, so a WINNER and "in season" on the order screen can never disagree
-// about what month it is.
-function seasonNowSql() {
-  return `CASE WHEN EXTRACT(MONTH FROM now() AT TIME ZONE 'Europe/London')
-                    BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}
-               THEN 'summer' ELSE 'winter' END`;
-}
 
 // THE LEAD CHANNEL (owner, 2026-09-25) — stamped beside the status, so each channel's pricing lists show only the styles that channel
 // earns from. The status stays ONE all-channel tag and ONE count; the channel only decides which list a style appears on:
@@ -102,20 +93,8 @@ function channelFilterSql(alias, channel) {
   return `COALESCE(${alias}.portfolio_channel, 'BOTH') IN ('${channel}', 'BOTH')`;
 }
 
-// "Is this style out of season today?" — used by BOTH the winner test and the HARVEST rule, and (negated) by Shopify Order's
-// in-season filter. Only 'Summer'/'Winter' can be out of season; 'Any' and blanks never are. `alias` is the skusummary alias; `now`
-// is the current season ('summer' | 'winter') as SQL — the classifier passes its season_now CTE column, a one-off query can take the
-// default and inline seasonNowSql().
-function outOfSeasonSql(alias, now = `(${seasonNowSql()})`) {
-  return `(LOWER(TRIM(${alias}.season)) IN ('summer', 'winter') AND LOWER(TRIM(${alias}.season)) <> ${now})`;
-}
-const OUT_OF_SEASON = outOfSeasonSql('ss', 'sn.s');
-
 // The classification, as one SELECT returning (groupid, status) for every row in skusummary. ONE pass over sales with FILTER for
 // both windows, so the table is scanned once — then a CASE in rule order.
-//
-// THE SEASON IS READ ON LONDON WALL-CLOCK. The pg session runs Etc/UTC; on the night of 31 August the UTC month is still August for
-// an hour after London has moved to September. now() AT TIME ZONE 'Europe/London' gives the month the business is actually in.
 //
 // The constants are interpolated as Number()s — never anything from a request.
 const CLASSIFY_SQL = `
@@ -136,18 +115,12 @@ const CLASSIFY_SQL = `
       AND solddate >= CURRENT_DATE - INTERVAL '12 months'
     GROUP BY groupid
   ),
-  on_amz AS (SELECT DISTINCT groupid FROM amzfeed),
-  season_now AS (
-    SELECT ${seasonNowSql()} AS s
-  )
+  on_amz AS (SELECT DISTINCT groupid FROM amzfeed)
   SELECT ss.groupid,
          CASE
-           -- an out-of-season earner is HARVEST, not WINNERS and not STEADY (see rule 1 in the header)
-           WHEN COALESCE(so.revenue_12m, 0) > ${Number(WINNER_BAR)} AND ${OUT_OF_SEASON} THEN 'HARVEST'
            WHEN COALESCE(so.revenue_12m, 0) > ${Number(WINNER_BAR)}                THEN 'WINNERS'
            WHEN COALESCE(so.lines_recent, 0) > 0                                    THEN 'STEADY'
            WHEN ss.created_at >= now() - INTERVAL '${Number(NEW_DAYS)} days'       THEN 'NEW'
-           WHEN ${OUT_OF_SEASON}                                                    THEN 'HARVEST'
            ELSE 'LOSERS'
          END AS status,
          -- Stamped beside the tag so the screen's bar dial and the winners list read the figures the tag was decided on,
@@ -164,7 +137,6 @@ const CLASSIFY_SQL = `
            ELSE 'SHP'
          END AS channel
   FROM skusummary ss
-  CROSS JOIN season_now sn
   LEFT JOIN sold so   ON so.groupid = ss.groupid
   LEFT JOIN on_amz oa ON oa.groupid = ss.groupid
 `;
@@ -296,8 +268,6 @@ module.exports = {
   NEW_DAYS,
   SUMMER_FIRST_MONTH,
   SUMMER_LAST_MONTH,
-  seasonNowSql,
-  outOfSeasonSql,
   CLASSIFY_SQL,
   applyPortfolioStatus,
   readPortfolioStatus,

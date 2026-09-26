@@ -1,14 +1,13 @@
-// Shared look-and-words for the five portfolio statuses (skusummary.portfolio_status), used by Repricing's Status tab and its
+// Shared look-and-words for the four portfolio statuses (skusummary.portfolio_status), used by Repricing's Status tab and its
 // status lists so a status reads the same — same colour, same one-line rule — wherever it appears.
 import type { PortfolioStatusName } from '@/lib/api';
 
 // What each status means, in a few words. Mirrors the rules in bcweb-server/utils/portfolioStatus.js — if a rule moves there, move
 // it here.
 export const STATUS_RULE: Record<PortfolioStatusName, string> = {
-  WINNERS: 'over £1,500 in 12 months, in season',
+  WINNERS: 'over £1,500 in 12 months, after returns',
   STEADY: 'sold in the last 3 months',
   NEW: 'created under 90 days ago',
-  HARVEST: 'out of season (winners too)',
   LOSERS: 'none of the above',
 };
 
@@ -19,7 +18,6 @@ export const STATUS_COLOR: Record<PortfolioStatusName, string> = {
   WINNERS: '#2a78d6',
   STEADY: '#eb6834',
   NEW: '#1baf7a',
-  HARVEST: '#eda100',
   LOSERS: '#e87ba4',
 };
 

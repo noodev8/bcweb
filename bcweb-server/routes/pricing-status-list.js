@@ -3,7 +3,7 @@
 API Route: pricing_status_list
 =======================================================================================================================================
 Method: GET
-Purpose: Repricing — the Shopify list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | HARVEST | LOSERS; the stored tag
+Purpose: Repricing — the Shopify list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | LOSERS; the stored tag
          skusummary.portfolio_status, set by "Update now" on Repricing's Status tab — utils/portfolioStatus.js). The Amazon twin is
          routes/amz-status-list.js (SKU grain).
 
@@ -28,7 +28,7 @@ Purpose: Repricing — the Shopify list behind one PORTFOLIO STATUS (WINNERS | S
 Requires auth.
 =======================================================================================================================================
 Request: GET /pricing-status-list?status=WINNERS[&parked=include][&limit=N]
-  status   required — one of the five (case-insensitive). Anything else -> MISSING_FIELDS.
+  status   required — one of the four (case-insensitive). Anything else -> MISSING_FIELDS.
   limit    safety cap only (utils/listLimit.js, default 100 / max 500). The web client asks for 500: STEADY alone is ~175 styles.
   bar      optional, WINNERS only — one of the Winners screen's dial marks (WINNER_BAR_LADDER: 1500 / 2500 / 5000 / 10000). Keeps the
            winners whose 12m revenue AS STAMPED AT THE LAST UPDATE (skusummary.portfolio_revenue_12m) is over it, so tapping the card
@@ -70,10 +70,10 @@ router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    // Only ?status= is accepted here — parseGroup validates it against the five statuses and builds the column.
+    // Only ?status= is accepted here — parseGroup validates it against the four statuses and builds the column.
     const group = typeof req.query.status === 'string' ? parseGroup({ status: req.query.status }) : null;
     if (!group) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'status must be one of WINNERS, STEADY, NEW, HARVEST, LOSERS' });
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'status must be one of WINNERS, STEADY, NEW, LOSERS' });
     }
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';

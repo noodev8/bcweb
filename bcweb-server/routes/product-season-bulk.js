@@ -4,8 +4,8 @@ API Route: product_season_bulk   (Back Office → Seasons)
 =======================================================================================================================================
 Method: POST
 Purpose: Set skusummary.season on a batch of styles in one go — the Seasons screen's bulk bar. The owner reviews the year picture
-         (GET /product-seasons) and moves styles between Summer | Winter | Any; see that route for why season matters (it decides
-         whether a high earner is a WINNER or HARVEST out of season).
+         (GET /product-seasons) and moves styles between Summer | Winter | Any. Season no longer affects the portfolio status
+         (2026-09-26); it feeds Inventory's WINTER / SUMMER commands and the Google Ads season filter.
 
          Writes EXACTLY what Add/Modify's product-update writes for season: the column, plus the legacy `updated` text stamp and
          `updated_date`. Nothing is pushed anywhere — season is not on the Shopify listing. Rows already on the target season are

@@ -15,7 +15,7 @@ clock) and no detail page — a campaign's name and its Shopify cell both open i
 pause + blank buckets are hidden server-side. The switch lives in the URL (?by=campaign) so "← Segments" from a list lands back here.
 
 STATUS (owner, 2026-09-24: "This pricing group should replace the old top earners") — the FIRST and DEFAULT tab: bare /segments
-opens it; the segment view is /segments?by=segment. Tiles per stored portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS,
+opens it; the segment view is /segments?by=segment. Tiles per stored portfolio status (WINNERS | STEADY | NEW | LOSERS,
 skusummary.portfolio_status, set by "Update now" on this tab) for Shopify (styles) and Amazon (SKUs), each opening ONE unsplit list of every
 style / SKU with the status, out of stock included (/pricing|/amz/WINNERS?by=status). See components/StatusTiles.
 Top earners (2026-09-23: styles over the Winners bar per channel, as two channel cards) held this slot for a day; its tab, cards, route

@@ -6,7 +6,7 @@ Method: GET
 Purpose: Repricing Status tab (winners by brand) and Reports → New's WinnersStrip — from the STORED portfolio status tags and nothing live.
 
          "Instead of determining the WINNERS all the time, lets tag it in the database." — owner, 2026-09-24. Every style carries
-         skusummary.portfolio_status (WINNERS | STEADY | NEW | HARVEST | LOSERS), set by "Update now" (POST /portfolio-snapshot-
+         skusummary.portfolio_status (WINNERS | STEADY | NEW | LOSERS), set by "Update now" (POST /portfolio-snapshot-
          update). This route only READS: the counts, the tagged winners with the revenue/units stamped beside the tag, the bar
          ladder the screen's dial offers. (The recorded status trend was removed 2026-09-25 — see
          routes/portfolio-snapshot-update.js.) The rules live in utils/portfolioStatus.js.

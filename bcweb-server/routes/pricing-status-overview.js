@@ -23,7 +23,7 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
          EACH CHANNEL COUNTS ONLY ITS OWN STYLES (2026-09-25): lead channel (skusummary.portfolio_channel) SHP|BOTH for Shopify,
          AMZ|BOTH for Amazon — the same predicate the lists use (utils/portfolioStatus.js → channelFilterSql).
 
-         Always five statuses in rule order, zeros included, so the screen draws a stable set of tiles. Read-only.
+         Always four statuses in rule order, zeros included, so the screen draws a stable set of tiles. Read-only.
 
          THE WINNERS DIAL (2026-09-25 — the Winners screen's £1,500 / £2,500 / £5,000 / £10,000 toggle, moving onto Repricing).
          `winner_bars` gives the WINNERS tile's counts at every mark of WINNER_BAR_LADDER, per channel, in one read so the toggle
@@ -68,7 +68,7 @@ const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0, styles: 0, due_styl
 
 router.get('/', async (req, res) => {
   try {
-    // Independent reads, run together: the five statuses per channel, then the WINNERS counts at each dial mark per channel.
+    // Independent reads, run together: the four statuses per channel, then the WINNERS counts at each dial mark per channel.
     const [shp, amz, shpBars, amzBars] = await Promise.all([
       query(`
         WITH stk AS (

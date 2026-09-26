@@ -38,9 +38,9 @@ PER SIZE:
 
 PER STYLE: identity (groupid, title, brand, supplier, season, status), price, cost, and the per-size figures summed. cost =
 skusummary.cost via safeNumeric (CLAUDE.md: order cost is ALWAYS skusummary.cost, never skumap.cost) — used by the page to total the
-basket's spend. in_season = the style can sell THIS season: its tag is 'Any', blank, or the season we're in (London month; Summer =
-April-August). It is the WINNERS rule's own predicate negated (utils/portfolioStatus.js -> outOfSeasonSql), so the page's in-season
-filter and "a WINNER must be in season" can never disagree. `season_now` beside `styles` names the season it was judged against.
+basket's spend. `season` is shipped for display only — NOTHING on this screen filters on it any more (owner, 2026-09-26: "for
+ordering, I should use Can't get / Release as the de facto"; the in-season filter and its in_season / season_now fields were removed
+the same day season left the portfolio status — utils/portfolioStatus.js).
 no_supply = "Can't get it" is set and its re-check day (no_supply_until) is still ahead — the page hides it by default. no_supply_since /
 _by stay after the day passes, so the style comes back carrying "Couldn't get it — <date>" until cleared (migrations/20260926_no_supply.sql).
 `no_supply_default_until` names the day "Can't get it" would park a style to today (three months out — utils/noSupply.js).
@@ -63,13 +63,11 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 298,
-  "season_now": "Winter",                                                   // 'Summer' | 'Winter' — what in_season was judged against
   "no_supply_default_until": "2026-12-26",                                  // what "Can't get it" would set today
   "to_place": { "units": 4, "skus": 3, "suppliers": 1, "oldest_days": 2 },   // local lines queued but not yet placed
   "on_order": { "units": 10, "skus": 6 },                                   // local lines placed with a supplier, not yet arrived
   "styles": [
     { "groupid": "ELZ006-BLACK", "title": "...", "brand": "Lunar", "supplier": "Lunar", "season": "Winter", "status": "STEADY",
-      "in_season": true,
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,
       "price": 49.99, "cost": 21.50,
       "stock": 7, "on_order": 2, "sold_90": 3, "sold_365": 18,
@@ -94,7 +92,6 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
-const { seasonNowSql, outOfSeasonSql } = require('../utils/portfolioStatus');
 const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
 const logger = require('../utils/logger');
 
@@ -137,9 +134,6 @@ router.get('/', async (req, res) => {
       SELECT s.groupid,
              t.shopifytitle AS title,
              s.brand, s.supplier AS style_supplier, s.season, s.portfolio_status AS status,
-             -- In season today — the WINNERS rule's own predicate, negated (utils/portfolioStatus.js), so "in season" here and a
-             -- style being able to be a WINNER are one test. 'Any' and blank are always in season.
-             NOT ${outOfSeasonSql('s')} AS in_season,
              -- "Can't get it" (utils/noSupply.js): parked-now plus since/until/by.
              ${noSupplySelectSql('s')},
              ${safeNumeric('s.shopifyprice')} AS price,
@@ -177,7 +171,6 @@ router.get('/', async (req, res) => {
           supplier: r.style_supplier || null,
           season: r.season || null,
           status: r.status || null,
-          in_season: r.in_season !== false,
           ...noSupplyFields(r),
           price: num(r.price),
           cost: num(r.cost),
@@ -229,16 +222,13 @@ router.get('/', async (req, res) => {
     };
     const onOrder = { units: Number(p.on_order_units) || 0, skus: Number(p.on_order_skus) || 0 };
 
-    // The season the page's in-season filter is named for — same expression the per-style in_season was computed from. Taken in
-    // its own tiny SELECT, not the list query, so it is there even on a list that somehow came back empty.
-    // no_supply_default_until rides along so the "Can't get it" button can say the day it would park a style to before anything is
-    // written — the same expression routes/no-supply-set.js stamps.
-    const sn = await query(`SELECT ${seasonNowSql()} AS s, (${NO_SUPPLY_UNTIL_SQL})::text AS park_until`);
-    const seasonNow = sn.rows[0] && sn.rows[0].s === 'summer' ? 'Summer' : 'Winter';
-    const parkUntil = (sn.rows[0] && sn.rows[0].park_until) || null;
+    // no_supply_default_until rides along so the "Can't get it" button can name the day a style would come back before anything is
+    // written — the same expression routes/no-supply-set.js stamps. Its own tiny SELECT, so it is there even on an empty list.
+    const pu = await query(`SELECT (${NO_SUPPLY_UNTIL_SQL})::text AS until`);
+    const parkUntil = (pu.rows[0] && pu.rows[0].until) || null;
 
     return res.json({
-      return_code: 'SUCCESS', count: styles.length, season_now: seasonNow, no_supply_default_until: parkUntil,
+      return_code: 'SUCCESS', count: styles.length, no_supply_default_until: parkUntil,
       to_place: toPlace, on_order: onOrder, styles,
     });
   } catch (err) {

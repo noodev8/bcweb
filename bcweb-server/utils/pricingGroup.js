@@ -12,9 +12,9 @@ The three groupings:
                                             because that is how the Google Ads screen groups it (google-ads-campaigns: members CTE).
                                             SHOPIFY ONLY (owner): Google Shopping advertises the Shopify site, so there is no Amazon
                                             list by campaign.
-  status       skusummary.portfolio_status — the STORED portfolio status (WINNERS | STEADY | NEW | HARVEST | LOSERS, set by the Winners
+  status       skusummary.portfolio_status — the STORED portfolio status (WINNERS | STEADY | NEW | LOSERS, set by the Winners
                screen's "Update now"; utils/portfolioStatus.js). Shopify AND Amazon (an Amazon SKU takes its style's status). The name
-               must be one of the five — anything else is refused rather than matching nothing. Its lists are NOT the Selling / Stuck
+               must be one of the four — anything else is refused rather than matching nothing. Its lists are NOT the Selling / Stuck
                bars: routes/pricing-status-list.js and routes/amz-status-list.js return every style / SKU with the status, unsplit and
                out-of-stock included (owner, 2026-09-24).
 
@@ -65,7 +65,7 @@ const GROUP_COLUMNS = {
  * parseGroup(query, { alias, channel }) — read the group from a list route's query string.
  *   ?segment=X      -> { by: 'segment',  name: 'X',       column: '<alias>.segment' }  (the original form, unchanged)
  *   ?campaign=Y     -> { by: 'campaign', name: 'Y',       column: 'TRIM(<alias>.googlecampaign)' }        (Shopify only)
- *   ?status=WINNERS -> { by: 'status',   name: 'WINNERS', column: '<alias>.portfolio_status' }            (one of the five,
+ *   ?status=WINNERS -> { by: 'status',   name: 'WINNERS', column: '<alias>.portfolio_status' }            (one of the four,
  *                      case-insensitive)
  * Exactly one must be given, and it must exist on this channel; returns null otherwise (the route answers MISSING_FIELDS).
  */

@@ -10,7 +10,7 @@ Purpose: The list view for a segment — the Amazon mirror of /pricing/[segment]
 Because a groupid's sizes each have their own price, one colour can have fast sizes in WINNERS and dead sizes in LOSERS at the same time.
 
 SEGMENT OR STATUS: the [segment] path param is the GROUP name; ?by=status (2026-09-24, owner: "Apply amazon pricing in reprice") makes
-it a portfolio status (WINNERS / STEADY / NEW / HARVEST / LOSERS) — the Amazon SKUs of every style carrying it. A status is ONE UNSPLIT
+it a portfolio status (WINNERS / STEADY / NEW / LOSERS) — the Amazon SKUs of every style carrying it. A status is ONE UNSPLIT
 LIST from GET /amz-status-list, not the Selling/Stuck pair, and OUT-OF-STOCK SKUs (0 FBA) ARE LISTED so their price can be set ahead of
 stock arriving (owner). The view tabs are hidden and the mode pinned to 'all'; the Due switch, table, drill, bulk bar and upload basket
 are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (server, 2026-09-25) — a Shopify-led winner is on the

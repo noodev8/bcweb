@@ -4,14 +4,15 @@ API Route: no_supply_clear
 =======================================================================================================================================
 Method: POST
 Purpose: UNPARK — take "Can't get it" off style(s) (routes/no-supply-set.js, rules in utils/noSupply.js): all three no_supply_*
-         columns back to NULL. The screens call the act "Unpark" (owner, 2026-09-26 — "Clear" clashed with the bulk bar's own Clear,
-         which empties the ticks); the route keeps its clear name because that is what it does to the columns. A style-level fact, so
+         columns back to NULL. The screens call the act "Release" (owner, 2026-09-26 — not "Clear", which clashed with the bulk bar's own
+         Clear, and not "Unpark", because "parked" means a pricing review date); the route keeps its clear name because that is what it
+         does to the columns. A style-level fact, so
          no channel in the name. Called:
-           - from an order screen: a parked style's Unpark (the supplier came back early), and the X on the "Couldn't get it — <date>"
+           - from an order screen: a marked style's Release (the supplier came back early), and the X on the "Couldn't get it — <date>"
              note a style carries once its park has lapsed (the operator's "yes, I can get it"),
            - by an order screen after Confirm Basket lands an order line for a flagged style — a style you've just ordered is plainly
              one you can get,
-           - from Back Office → Seasons: the bulk bar's Unpark on ticked rows (usually on the Can't get view).
+           - from Back Office → Seasons: the bulk bar's Release on ticked rows (usually on the Can't get view).
          Idempotent: clearing a style with no flag changes nothing. One bclog row per call (section "Can't get") for the styles that
          actually carried a flag — clearing nothing logs nothing. Touches nothing else on skusummary.
 =======================================================================================================================================
@@ -69,7 +70,7 @@ router.post('/', async (req, res) => {
         await writeBcLog(client, {
           who,
           section: "Can't get",
-          log: `unparked ${names.length} style${names.length === 1 ? '' : 's'}: ${names.join(', ')}`,
+          log: `released ${names.length} style${names.length === 1 ? '' : 's'}: ${names.join(', ')}`,
         });
       }
       return names;

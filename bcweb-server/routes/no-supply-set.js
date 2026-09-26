@@ -3,7 +3,7 @@
 API Route: no_supply_set
 =======================================================================================================================================
 Method: POST
-Purpose: "Can't get it" (owner, 2026-09-26) — the supplier has none of the style, so park it off the ORDER SCREENS for three months,
+Purpose: "Can't get it" (owner, 2026-09-26) — the supplier has none of the style, so hide it from the ORDER SCREENS for three months,
          then let it come back on its own. A fact about the STYLE, not a channel: "if we can't get a style, we can't get it,
          regardless of where we're trying to sell it" (owner) — so the name carries no channel. Shopify Order reads it today; Amazon
          Order will read the same flag. The rule and why it is three months: utils/noSupply.js.
@@ -16,7 +16,7 @@ Purpose: "Can't get it" (owner, 2026-09-26) — the supplier has none of the sty
          Re-marking a style already parked restarts its three months from today ("Still can't").
 
          NOT a product edit: no legacy `updated` stamp, no shopifychange, no price or season touched, and the style stays on every
-         Repricing list. One bclog row per call (section "Can't get") in the same transaction, so the activity Log shows who parked what.
+         Repricing list. One bclog row per call (section "Can't get") in the same transaction, so the activity Log shows who marked what.
 =======================================================================================================================================
 Request Payload:
 { "groupids": ["0034791-MILANO", "1025583-UPPSALA"] }   // 1..MAX_BATCH. A single { "groupid": "…" } is accepted too.
@@ -85,7 +85,7 @@ router.post('/', async (req, res) => {
     });
 
     if (result.length === 0) return res.json({ return_code: 'NOT_FOUND', message: 'None of those is a style' });
-    logger.info(`[no-supply-set] ${result.length} parked ${NO_SUPPLY_MONTHS} months by ${who}`);
+    logger.info(`[no-supply-set] ${result.length} marked can't-get for ${NO_SUPPLY_MONTHS} months by ${who}`);
     return res.json({
       return_code: 'SUCCESS', since: result[0].since, until: result[0].until, by: who, updated: result.map((r) => r.groupid),
     });

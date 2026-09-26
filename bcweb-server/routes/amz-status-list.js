@@ -3,7 +3,7 @@
 API Route: amz_status_list
 =======================================================================================================================================
 Method: GET
-Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | HARVEST | LOSERS; skusummary.portfolio_status,
+Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | STEADY | NEW | LOSERS; skusummary.portfolio_status,
          set by "Update now" on Repricing's Status tab). The Amazon twin of routes/pricing-status-list.js, at SKU grain because Amazon prices
          per size: every amzfeed SKU whose STYLE carries the status (the tag is per style; each of its sizes inherits it).
 
@@ -24,7 +24,7 @@ Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | ST
 Requires auth.
 =======================================================================================================================================
 Request: GET /amz-status-list?status=WINNERS[&parked=include][&limit=N]
-  status   required — one of the five (case-insensitive). Anything else -> MISSING_FIELDS.
+  status   required — one of the four (case-insensitive). Anything else -> MISSING_FIELDS.
   limit    safety cap only (utils/listLimit.js, default 100 / max 500). The web client asks for 500: STEADY alone is ~300 SKUs.
   bar      optional, WINNERS only — a Winners-screen dial mark (1500 / 2500 / 5000 / 10000): only the SKUs of winners whose 12m
            revenue AS STAMPED AT THE LAST UPDATE is over it — the Shopify list's rule (pricing-status-list.js), same reason.
@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
       ? parseGroup({ status: req.query.status }, { alias: 'sk', channel: 'AMZ' })
       : null;
     if (!group) {
-      return res.json({ return_code: 'MISSING_FIELDS', message: 'status must be one of WINNERS, STEADY, NEW, HARVEST, LOSERS' });
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'status must be one of WINNERS, STEADY, NEW, LOSERS' });
     }
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';

@@ -6,9 +6,9 @@ Page: /seasons  (Back Office → Seasons)
 Purpose: Which styles really sell all year? Every style's season (Summer | Winter | Any) beside its year of sales month by month, so
          the owner can glance, filter, and re-season in bulk.
 
-         Why it matters: a style is only a WINNER while it is in season — an out-of-season earner is HARVEST (bcweb-server/utils/
-         portfolioStatus.js). A summer style that keeps selling through the winter ("a slow period, not a switch off" — owner,
-         2026-09-25) needs season Any, or it leaves WINNERS for half the year.
+         What season is for now: NOT the portfolio status. Until 2026-09-26 a WINNER had to be in season (an out-of-season earner
+         was HARVEST); season left the status that day and HARVEST was retired (bcweb-server/utils/portfolioStatus.js). Season still
+         drives Inventory's WINTER / SUMMER commands and the Google Ads season filter, and this screen is where it is set in bulk.
 
          ITS OWN BACK OFFICE JOB, NOT PART OF REPRICING (owner, 2026-09-25): done every quarter or so, in a review mindset, maybe
          before a full winners/prices/stock review. So it links nowhere into the pricing flow.
@@ -17,18 +17,19 @@ Purpose: Which styles really sell all year? Every style's season (Summer | Winte
          candidates for a re-season (routes/product-seasons.js still computes `suggested`). The owner reads the month strip instead.
          Bring it back from git history if that changes.
 
-         Setting a season does NOT re-tag the portfolio statuses. After a change the bar offers "Update statuses", so several changes
-         cost one re-tag and the WINNERS/HARVEST tiles move when the owner is ready.
+         NO "UPDATE STATUSES" STEP any more: with season out of the status rules, a re-season changes no status, so there is nothing
+         to re-tag after one.
 
          New products aren't this screen's concern — whoever enters them sets their season, and they are in it at the time.
 
          CAN'T GET IT lives here too (owner, 2026-09-26 — "where we set seasons and switch can't get it on and off"). A SEPARATE fact,
-         shown beside the season and never merged into it: season is "when does it sell" (and decides WINNERS vs HARVEST); can't get is
-         "can I buy more" (and only parks a style off the order screens for three months — bcweb-server/utils/noSupply.js). It is about
-         the STYLE, whichever channel it sells on — no wording here names one (owner, 2026-09-26). So: a Can't get
-         view drawn apart from the season switch, listing every marked style whatever its season; a marker beside the code on every view;
-         and a Park 3 months / Unpark pair in the bulk bar, after a divider. Parking or clearing never offers "Update statuses" —
-         nothing it changes feeds the status. It is set mostly from an order screen, where you find out; this is where you see them all.
+         shown beside the season and never merged into it: season is "when does it sell"; can't get is "can I buy more" — for
+         ordering it is THE test (owner, 2026-09-26: "for ordering, I should use Can't get / Release as the de facto"), and it only takes
+         a style off the order screens for three months (bcweb-server/utils/noSupply.js). It is about the STYLE, whichever channel it
+         sells on — no wording here names one. So: a Can't get view drawn apart from the season switch, listing every marked style
+         whatever its season; a marker beside the code on every view; and a Can't get / Release pair in the bulk bar, after a divider.
+         The words are Can't get and Release, not park/unpark: "parked" already means a pricing review date on Repricing. It is set
+         mostly from an order screen, where you find out; this is where you see them all.
 
 Guarded by AppShell. Consumes GET /product-seasons; writes POST /product-season-bulk, POST /no-supply-set, /no-supply-clear and (on
 request) POST /portfolio-snapshot-update.
@@ -39,7 +40,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getProductSeasons, setProductSeasons, updatePortfolioSnapshot, setNoSupply, clearNoSupply, type SeasonName, type SeasonRow,
+  getProductSeasons, setProductSeasons, setNoSupply, clearNoSupply, type SeasonName, type SeasonRow,
 } from '@/lib/api';
 
 const SEASONS: SeasonName[] = ['Summer', 'Winter', 'Any'];
@@ -63,7 +64,7 @@ type SortDir = 'asc' | 'desc';
 // First click on a column sorts it the useful way round: names A–Z, everything else biggest / best first. A second click flips it.
 const FIRST_DIR: Record<SortKey, SortDir> = { style: 'asc', brand: 'asc', off: 'desc', revenue: 'desc', status: 'asc' };
 // Status sorts in rule order (Winners first), not alphabetically; untagged last.
-const STATUS_ORDER = ['WINNERS', 'STEADY', 'NEW', 'HARVEST', 'LOSERS'];
+const STATUS_ORDER = ['WINNERS', 'STEADY', 'NEW', 'LOSERS'];
 
 function money(v: number): string {
   return '£' + Math.round(v).toLocaleString('en-GB');
@@ -229,8 +230,6 @@ export default function SeasonsPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Set after a season change and cleared by a re-tag: the statuses on Repricing are now behind the seasons.
-  const [retagDue, setRetagDue] = useState(false);
 
   const { data, error: loadError, isLoading, refresh } = useApiQuery(['product-seasons'], () => getProductSeasons());
   const allRows = useMemo(() => data?.rows ?? [], [data]);
@@ -296,16 +295,13 @@ export default function SeasonsPage() {
   }
 
 
-  // Why the list is empty, when there's a reason worth saying. The common one: a Summer style can't be a WINNER in winter (and vice
-  // versa) — its earners are HARVEST — so Summer + Winners-only is always empty out of season. Month read on London time; month-only,
-  // so the DB/box date disagreement doesn't matter here.
+  // The season the business is in today, for the range panel's "Winter now" line — display only (season is no longer in any status).
+  // Month read on London time; month-only, so the DB/box date disagreement doesn't matter here.
   const londonMonth = Number(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', month: 'numeric' }));
   const seasonNow: SeasonName = isSummerIdx(londonMonth - 1) ? 'Summer' : 'Winter';
   const emptyMessage =
     season === CANT_GET
-      ? (query.trim() ? `Nothing matches "${query.trim()}" here.` : 'Nothing parked. Styles marked “Can’t get it” show here.')
-    : season !== 'Any' && season !== seasonNow && !hiddenStatus.has('WINNERS') && hiddenStatus.has('HARVEST')
-      ? `${season} styles can't be Winners in ${seasonNow.toLowerCase()} — their earners are in Harvest.`
+      ? (query.trim() ? `Nothing matches "${query.trim()}" here.` : 'Nothing marked. Styles marked “Can’t get it” show here.')
       : query.trim()
         ? `Nothing matches "${query.trim()}" here.`
         : 'No styles match these filters.';
@@ -371,13 +367,12 @@ export default function SeasonsPage() {
     }
     const n = res.data.changed.length;
     setMessage(`Moved ${n} style${n === 1 ? '' : 's'} to ${target}.`);
-    if (n > 0) setRetagDue(true);
     setSelected(new Set());
     await refresh();
   }
 
-  // CAN'T GET IT, in bulk — park the ticked styles for three months, or unpark them (bcweb-server/utils/noSupply.js). Separate from the
-  // season setter on purpose: it changes nothing about the season or the status, so no "Update statuses" follows it.
+  // CAN'T GET IT, in bulk — mark the ticked styles for three months, or release them (bcweb-server/utils/noSupply.js). Separate from the
+  // season setter on purpose: it changes nothing about the season or the status.
   async function applyNoSupply(action: 'park' | 'clear') {
     const ids = rows.filter((r) => selected.has(r.groupid)).map((r) => r.groupid);
     if (ids.length === 0) return;
@@ -389,29 +384,15 @@ export default function SeasonsPage() {
       setBusy(false);
       if (!res.success || !res.data) { setError(res.error || 'Could not mark them'); return; }
       const n = res.data.updated.length;
-      setMessage(`Can't get: ${n} style${n === 1 ? '' : 's'} parked until ${dayMonth(res.data.until)}.`);
+      setMessage(`Can't get: ${n} style${n === 1 ? '' : 's'} hidden from ordering until ${dayMonth(res.data.until)}.`);
     } else {
       const res = await clearNoSupply(ids);
       setBusy(false);
       if (!res.success || !res.data) { setError(res.error || 'Could not clear them'); return; }
       const n = res.data.cleared.length;
-      setMessage(n > 0 ? `Unparked ${n} style${n === 1 ? '' : 's'}.` : 'None of those was parked.');
+      setMessage(n > 0 ? `Released ${n} style${n === 1 ? '' : 's'}.` : 'None of those was marked.');
     }
     setSelected(new Set());
-    await refresh();
-  }
-
-  async function retag() {
-    setBusy(true);
-    setError(null);
-    const res = await updatePortfolioSnapshot();
-    setBusy(false);
-    if (!res.success) {
-      setError(res.error || 'Could not update the statuses');
-      return;
-    }
-    setRetagDue(false);
-    setMessage('Statuses updated — Repricing now reflects the new seasons.');
     await refresh();
   }
 
@@ -458,7 +439,7 @@ export default function SeasonsPage() {
           aria-pressed={season === CANT_GET}
           title={season === CANT_GET
             ? `Back to ${lastSeason}`
-            : 'Every style marked “Can’t get it” — parked for three months, or back for ordering with its note — whatever its season'}
+            : 'Every style marked “Can’t get it” — hidden from ordering for three months, or back with its note — whatever its season'}
           className={
             'rounded-md border px-3 py-1.5 text-sm font-medium '
             + (season === CANT_GET ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')
@@ -557,7 +538,8 @@ export default function SeasonsPage() {
             );
           })}
         </div>
-        {/* CAN'T GET — its own group, after a divider: parks or clears the ticked styles, changes nothing about their season. */}
+        {/* CAN'T GET — its own group, after a divider: marks or releases the ticked styles, changes nothing about their season. It
+            reads "Can't get: 3 months | Release". */}
         <span className="h-5 w-px bg-slate-200" aria-hidden />
         <span className="text-sm text-slate-500">Can&rsquo;t get:</span>
         <div className="inline-flex gap-2">
@@ -565,10 +547,10 @@ export default function SeasonsPage() {
             type="button"
             disabled={busy || tickedOnScreen === 0}
             onClick={() => applyNoSupply('park')}
-            title="Take the ticked styles off ordering for three months — season and status unchanged"
+            title="Mark the ticked styles “Can’t get it” — hidden from ordering for three months, season and status unchanged"
             className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
           >
-            Park 3 months
+            3 months
           </button>
           <button
             type="button"
@@ -577,9 +559,9 @@ export default function SeasonsPage() {
             title="Take “Can’t get it” off the ticked styles — they're back for ordering straight away"
             className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
           >
-            {/* UNPARK, not "Clear" (owner, 2026-09-26): the bar already has a Clear — it empties the ticks — and two Clears side by
-                side read as the same thing. Unpark is Park's own opposite. */}
-            Unpark
+            {/* RELEASE (owner, 2026-09-26): not "Clear" — the bar already has a Clear, which empties the ticks — and not "Unpark" —
+                "parked" means a pricing review date on Repricing. */}
+            Release
           </button>
         </div>
         <button
@@ -590,16 +572,6 @@ export default function SeasonsPage() {
           Clear
         </button>
         {error ? <span className="text-sm text-red-600">{error}</span> : message && <span className="text-sm text-slate-600">{message}</span>}
-        {retagDue && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={retag}
-            className="ml-auto rounded-md bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            Update statuses
-          </button>
-        )}
       </div>
 
       {isLoading ? (
@@ -670,7 +642,7 @@ export default function SeasonsPage() {
                     {/* The no-supply mark sits HERE, beside the code — not in Status. Status is the table's leftover column (a few dozen
                         pixels); a mark squeezed in there truncated the status itself to "Ste…" and hid the mark (owner, 2026-09-26). The
                         pill never shrinks; a long code truncates instead, full title still on hover. Side by side with the season, never
-                        merged into it: amber while parked, slate once lapsed (back for ordering, with its note). On the Can't get view
+                        merged into it: amber while marked, slate once lapsed (back for ordering, with its note). On the Can't get view
                         every row is marked, so the pill shows the date itself rather than repeating "Can't get". */}
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate text-slate-800" title={r.title || r.groupid}>{r.groupid}</span>

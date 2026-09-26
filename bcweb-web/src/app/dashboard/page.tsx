@@ -258,8 +258,8 @@ const GROUPS: Group[] = [
         icon: TrophyIcon,
       },
       {
-        // Its own Back Office job (owner, 2026-09-25), done in a review mindset, not while repricing: which styles really sell all
-        // year. Season decides whether an earner is a WINNER or HARVEST out of season, so this feeds Repricing without being part of it.
+        // Its own Back Office job (owner, 2026-09-25), done in a review mindset: which styles really sell all year, and every style
+        // marked "Can't get it". Season no longer affects any status (2026-09-26).
         title: 'Seasons',
         subtitle: 'Summer, winter or all year',
         description: 'Each style’s year of sales month by month, against its season — spot the all-year sellers and re-season them in bulk.',
