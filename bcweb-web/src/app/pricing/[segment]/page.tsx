@@ -38,6 +38,8 @@ browser; when that cap bites the page says so.
 
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { ShoppingBagIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
@@ -211,14 +213,27 @@ function SegmentContent() {
   // A failed bulk write must not blank a list that loaded fine, so the two error sources stay distinct and are merged only for display.
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
 
-  function openStyle(groupid: string) {
-    // Carry the view (mode + pending) and the back-context (from/back) into the return URL, so coming back from the drill lands on the
-    // same view with the same "← back" target.
+  // This list's own URL — the view (mode + pending) and the back-context (from/back) included — so anything opened from here returns
+  // to the same view with the same "← back" target. The return ticket for a style's drill and for Shopify Order alike.
+  function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
-    const from = `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
-    router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(from)}`);
+    return `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
   }
+
+  function openStyle(groupid: string) {
+    router.push(`/pricing/style/${encodeURIComponent(groupid)}?from=${encodeURIComponent(listHref())}`);
+  }
+
+  // STATUS LIST -> SHOPIFY ORDER (owner, 2026-09-26: "start on Winners, go to repricer and then think about stock and re-ordering").
+  // The link carries the LIST'S DEFINITION — the status and the Winners tier — not the groupids on screen, and Shopify Order asks
+  // /pricing-status-list for the members itself, so the two screens can never disagree about who is in it. It is the WHOLE status,
+  // parked styles included, whatever the Due switch says: repricing a style usually parks it, so the styles just worked are exactly
+  // the ones Due hides, and they are the ones whose stock you'd look at next. Back returns to this list, view intact.
+  const shopifyOrderHref = isStatus
+    ? `/shopify-order?status=${encodeURIComponent(segment)}${bar ? `&bar=${bar}` : ''}`
+      + `&from=${encodeURIComponent(listHref())}&back=${encodeURIComponent(segment.charAt(0) + segment.slice(1).toLowerCase())}`
+    : null;
 
   function toggle(groupid: string) {
     setSelected((prev) => {
@@ -321,11 +336,25 @@ function SegmentContent() {
         onDueOnlyChange={(due) => setShowPending(!due)}
         showTabs={!isStatus}
         summary={data ? (
-          // At the top, so it's seen without scrolling: ONE number, the rows in the table below (owner, 2026-09-26). It follows
-          // the Due switch — Due on counts the due rows, Due off counts everything shown.
-          <p className="text-sm text-slate-500">
-            <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.rows.length}</span> in list
-          </p>
+          <>
+            {/* At the top, so it's seen without scrolling: ONE number, the rows in the table below (owner, 2026-09-26). It follows
+                the Due switch — Due on counts the due rows, Due off counts everything shown. */}
+            <p className="text-sm text-slate-500">
+              <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.rows.length}</span> in list
+            </p>
+            {/* The next step in the flow — see shopifyOrderHref. Status lists only; a quiet bordered link, not a button that competes
+                with the bulk bar's Apply. */}
+            {shopifyOrderHref && (
+              <Link
+                href={shopifyOrderHref}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                <ShoppingBagIcon className="h-4 w-4" />
+                Stock &amp; order
+                <span aria-hidden>&rarr;</span>
+              </Link>
+            )}
+          </>
         ) : null}
       />
 

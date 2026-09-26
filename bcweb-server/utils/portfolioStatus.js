@@ -13,8 +13,14 @@ Purpose: THE PORTFOLIO STATUS of every style — WINNERS | STEADY | NEW | HARVES
 
 THE RULES, TESTED IN THIS ORDER — FIRST MATCH WINS (owner, 2026-09-24):
 
-  1. WINNERS  gross revenue > WINNER_BAR (£1,500) in the rolling 12 months, all channels — AND IN SEASON. The revenue test is the
-              SAME as utils/portfolio.js (qty > 0, SUM(soldprice * qty), strictly greater) with the SAME constant.
+  1. WINNERS  revenue NET OF RETURNS > WINNER_BAR (£1,500) in the rolling 12 months, all channels — AND IN SEASON. SUM(soldprice *
+              qty) over every sales row in the window, returns (qty < 0) included, strictly greater, WINNER_BAR from utils/portfolio.js.
+     ...NET, NOT GROSS (owner, 2026-09-26 — "if we sold 100 of a product and had 90 returned, I would be treating it as a winner,
+              but its a mess"). Until then returns were excluded, which made four Shopify winners on the day — UPPSALA £1,712 gross /
+              £1,262 net, a ZERMATT, an ARIZONA and a MAYARI that missed by £1 — winners on sales they had to refund. "Even if by £1,
+              we have to draw the line somewhere." A return counts in the window it was BOOKED (refund date), not the sale's.
+              The stamped portfolio_revenue_12m / _units_12m are net too, so the tier dial (£2,500 / £5,000 / £10,000) reads the
+              same figure the tag was decided on.
      ...an OUT-OF-SEASON earner over the bar goes straight to HARVEST, skipping STEADY (owner, 2026-09-25). Why: the 12-month
               window kept every summer winner a WINNER all winter — 56 of 73 winners were summer styles on the day — so pricing
               the winners never shrank the list. They come back as WINNERS together on 1 April, which is when they want pricing.
@@ -69,6 +75,16 @@ const NEW_DAYS = 90;
 const SUMMER_FIRST_MONTH = 4;
 const SUMMER_LAST_MONTH = 8;
 
+// The season the business is in today, as a SQL expression yielding 'summer' | 'winter' (lower case). London wall-clock month — see
+// "THE SEASON IS READ ON LONDON WALL-CLOCK" above CLASSIFY_SQL. ONE definition: the status classifier below and Shopify Order's
+// in-season filter (routes/shopify-order-list.js) both read this, so a WINNER and "in season" on the order screen can never disagree
+// about what month it is.
+function seasonNowSql() {
+  return `CASE WHEN EXTRACT(MONTH FROM now() AT TIME ZONE 'Europe/London')
+                    BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}
+               THEN 'summer' ELSE 'winter' END`;
+}
+
 // THE LEAD CHANNEL (owner, 2026-09-25) — stamped beside the status, so each channel's pricing lists show only the styles that channel
 // earns from. The status stays ONE all-channel tag and ONE count; the channel only decides which list a style appears on:
 //   SHP / AMZ  >= LEAD_SHARE of the style's 12m gross revenue came from that channel
@@ -86,9 +102,14 @@ function channelFilterSql(alias, channel) {
   return `COALESCE(${alias}.portfolio_channel, 'BOTH') IN ('${channel}', 'BOTH')`;
 }
 
-// "Is this style out of season today?" over ss (skusummary) and sn (season_now) — used by BOTH the winner test and the HARVEST rule.
-// Only 'Summer'/'Winter' can be out of season; 'Any' and blanks never are.
-const OUT_OF_SEASON = `(LOWER(TRIM(ss.season)) IN ('summer', 'winter') AND LOWER(TRIM(ss.season)) <> sn.s)`;
+// "Is this style out of season today?" — used by BOTH the winner test and the HARVEST rule, and (negated) by Shopify Order's
+// in-season filter. Only 'Summer'/'Winter' can be out of season; 'Any' and blanks never are. `alias` is the skusummary alias; `now`
+// is the current season ('summer' | 'winter') as SQL — the classifier passes its season_now CTE column, a one-off query can take the
+// default and inline seasonNowSql().
+function outOfSeasonSql(alias, now = `(${seasonNowSql()})`) {
+  return `(LOWER(TRIM(${alias}.season)) IN ('summer', 'winter') AND LOWER(TRIM(${alias}.season)) <> ${now})`;
+}
+const OUT_OF_SEASON = outOfSeasonSql('ss', 'sn.s');
 
 // The classification, as one SELECT returning (groupid, status) for every row in skusummary. ONE pass over sales with FILTER for
 // both windows, so the table is scanned once — then a CASE in rule order.
@@ -99,23 +120,25 @@ const OUT_OF_SEASON = `(LOWER(TRIM(ss.season)) IN ('summer', 'winter') AND LOWER
 // The constants are interpolated as Number()s — never anything from a request.
 const CLASSIFY_SQL = `
   WITH sold AS (
+    -- Returns are rows with qty < 0 at a positive soldprice (both channels), so SUM(soldprice * qty) over ALL rows is revenue NET of
+    -- returns. revenue_12m / units_12m — the WINNERS test and what is stamped beside it — are net (owner, 2026-09-26, see rule 1).
+    -- Everything else stays on SALES ONLY (qty > 0), unchanged: a refund is not "sold in 3 months" for STEADY, and the lead channel
+    -- is a share of where the style sells, not where it gets returned.
     SELECT groupid,
-           COALESCE(SUM(soldprice * qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0) AS revenue_12m,
-           COALESCE(SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '12 months'), 0)::int        AS units_12m,
-           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'SHP'), 0)                               AS shp_rev,
-           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'AMZ'), 0)                               AS amz_rev,
-           COUNT(*) FILTER (WHERE solddate >= CURRENT_DATE - INTERVAL '${Number(STEADY_MONTHS)} months')    AS lines_recent
+           COALESCE(SUM(soldprice * qty), 0)                                                                AS revenue_12m,
+           COALESCE(SUM(qty), 0)::int                                                                       AS units_12m,
+           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'SHP' AND qty > 0), 0)                   AS shp_rev,
+           COALESCE(SUM(soldprice * qty) FILTER (WHERE channel = 'AMZ' AND qty > 0), 0)                   AS amz_rev,
+           COUNT(*) FILTER (WHERE qty > 0
+                              AND solddate >= CURRENT_DATE - INTERVAL '${Number(STEADY_MONTHS)} months')  AS lines_recent
     FROM sales
-    WHERE qty > 0                      -- returns excluded, not netted — the portfolio rule
-      AND groupid IS NOT NULL AND groupid <> ''
+    WHERE groupid IS NOT NULL AND groupid <> ''
       AND solddate >= CURRENT_DATE - INTERVAL '12 months'
     GROUP BY groupid
   ),
   on_amz AS (SELECT DISTINCT groupid FROM amzfeed),
   season_now AS (
-    SELECT CASE WHEN EXTRACT(MONTH FROM now() AT TIME ZONE 'Europe/London')
-                     BETWEEN ${Number(SUMMER_FIRST_MONTH)} AND ${Number(SUMMER_LAST_MONTH)}
-                THEN 'summer' ELSE 'winter' END AS s
+    SELECT ${seasonNowSql()} AS s
   )
   SELECT ss.groupid,
          CASE
@@ -273,6 +296,8 @@ module.exports = {
   NEW_DAYS,
   SUMMER_FIRST_MONTH,
   SUMMER_LAST_MONTH,
+  seasonNowSql,
+  outOfSeasonSql,
   CLASSIFY_SQL,
   applyPortfolioStatus,
   readPortfolioStatus,

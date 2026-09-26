@@ -15,7 +15,8 @@ Purpose: The winner BAR, in one place:
            more; a second live count also meant two screens could show two different "winners" numbers. One ruler now — the tag.
 
 THE DEFINITION (THE CODE IS THE SPEC):
-  - WINNER = GROSS REVENUE > WINNER_BAR in the rolling 12 months, all channels. No age test (see WINNER_BAR). The metric was PROFIT
+  - WINNER = REVENUE NET OF RETURNS > WINNER_BAR in the rolling 12 months, all channels (net since 2026-09-26 — the rule and the
+    reasoning are in utils/portfolioStatus.js, rule 1). No age test (see WINNER_BAR). The metric was PROFIT
     until 2026-09-22; the argument for the change is on WINNER_BAR — do not quietly put profit back.
   - REVENUE is SUM(soldprice * qty) — soldprice is PER UNIT. (sales.profit, by contrast, is already a line total: no qty multiplier.)
 =======================================================================================================================================

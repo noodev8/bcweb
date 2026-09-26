@@ -459,6 +459,8 @@ export interface ShopifyOrderSize {
 }
 export interface ShopifyOrderStyle {
   groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
+  // Can sell THIS season: tag 'Any', blank, or the season we're in — the WINNERS rule's own test (utils/portfolioStatus.js).
+  in_season: boolean;
   price: number | null; cost: number | null;
   stock: number; on_order: number; sold_90: number; sold_365: number;
   sizes: ShopifyOrderSize[];
@@ -469,11 +471,17 @@ export type ShopifyOrderOnOrder = AmazonOrderOnOrder;
 
 // One call, whole list (~300 styles / ~2,100 sizes) — searched client-side, like getAmazonOrderList.
 export function getShopifyOrderList() {
-  return request<{ count: number; styles: ShopifyOrderStyle[]; to_place: ShopifyOrderToPlace; on_order: ShopifyOrderOnOrder }>(
+  return request<{
+    count: number; season_now: 'Summer' | 'Winter'; styles: ShopifyOrderStyle[];
+    to_place: ShopifyOrderToPlace; on_order: ShopifyOrderOnOrder;
+  }>(
     { url: '/shopify-order-list', method: 'GET' },
     (b) => ({
       count: b.count ?? (b.styles || []).length,
-      styles: b.styles || [],
+      // The season in_season was judged against. Summer | Winter only — anything else is read as Winter, the longer half.
+      season_now: b.season_now === 'Summer' ? 'Summer' : 'Winter',
+      // An older server sends no in_season: read it as in season, so the filter hides nothing rather than everything.
+      styles: ((b.styles || []) as ShopifyOrderStyle[]).map((st) => ({ ...st, in_season: st.in_season !== false })),
       to_place: {
         units: Number(b.to_place?.units) || 0,
         skus: Number(b.to_place?.skus) || 0,

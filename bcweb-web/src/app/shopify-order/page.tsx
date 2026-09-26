@@ -38,20 +38,40 @@ SEND: Confirm Basket loops POST /order-status-add once per SKU with ordertype 2 
 
 DRAFT: the basket is saved to THIS browser (localStorage, debounced, 48h) under its own key, so a reload doesn't lose it — same rules
       and same trade-offs as Amazon Order's draft (per-browser, last tab to write wins).
+
+ARRIVING FROM REPRICING (owner, 2026-09-26 — the flow is Winners -> reprice -> "then think about stock and re-ordering"). A Repricing
+      status list links here with ?status=<WINNERS|STEADY|NEW|HARVEST|LOSERS>[&bar=<tier>]&from=<that list>&back=<label>, and the
+      screen opens as a DEDICATED WINDOW onto that list's styles: everything else is out of view, and search, sort and Load basket work
+      inside it. What arrives is the list's DEFINITION, not a list of groupids — membership comes from GET /pricing-status-list, the
+      very route the Repricing list itself reads, so the two can't disagree. It is the whole status, parked styles included (the Due
+      switch is a repricing cooldown, and the styles just repriced are the ones it hides — see the pricing page's shopifyOrderHref).
+      The scope chip's X shows every style; Reset puts the screen back how you arrived, scope included. The basket is the one basket
+      either way — scoping changes what you see, not what Confirm sends. ?from= is a path, so this page hands it to AppShell as the
+      back link (AppShell only resolves dashboard-group ?from= itself).
+
+IN SEASON ONLY, AUTOMATICALLY (owner, 2026-09-26 — "I only want to see what is currently in-season"). On by default; the season is
+      the month's, never picked: Summer = April-August, Winter = the rest, London time. The server computes each style's in_season with
+      the WINNERS rule's own predicate (utils/portfolioStatus.js -> outOfSeasonSql) and says which season it judged against, so this
+      screen and "a WINNER must be in season" share one definition. 'Any' is in season in both halves. A chip names the season and
+      how many styles it hides; its X shows everything, Reset brings the cut back. Applied inside the Repricing window too. Load basket
+      ignores it, as it ignores every other narrowing. KNOWN EDGE, accepted for now: at the turn (late March, late August) this shows
+      the ending season while the next one is what you'd be buying for — the X is the way round it until that bites.
 =======================================================================================================================================
 */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, ShoppingCartIcon, FunnelIcon, TrashIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import {
-  getShopifyOrderList, addOrderLine, ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
+  getShopifyOrderList, getStatusList, addOrderLine, ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
+import { barLabel } from '@/lib/portfolioStatusUi';
 
 const NO_STYLES: ShopifyOrderStyle[] = [];
 
@@ -216,13 +236,70 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty }: StyleBlockPro
   );
 }, (a, b) => a.style === b.style && a.onQty === b.onQty && a.style.sizes.every((z) => a.qty[z.code] === b.qty[z.code]));
 
+// useSearchParams needs a Suspense boundary for Next's build — same thin-wrapper split /amazon-order and the pricing lists use.
 export default function ShopifyOrderHome() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <ShopifyOrderContent />
+    </Suspense>
+  );
+}
+
+function ShopifyOrderContent() {
   const { logout } = useAuth();
-  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+  const searchParams = useSearchParams();
+  // ARRIVAL CONTEXT — see "ARRIVING FROM REPRICING" in the header. Read once from the URL; the server validates status and bar (a
+  // bad one comes back as an error line, and the full list still shows).
+  const scopeStatus = (searchParams.get('status') || '').trim().toUpperCase() || null;
+  const barRaw = Number(searchParams.get('bar'));
+  const scopeBar = scopeStatus && barRaw > 0 ? barRaw : null;
+  // A PATH ?from= is this page's to hand to AppShell (a dashboard-group one AppShell resolves itself). '//' is refused so the back
+  // link can only ever stay inside the app.
+  const fromParam = searchParams.get('from');
+  const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : undefined;
+  const backLabel = searchParams.get('back') || 'Back';
+
+  const { data, error: loadError, isLoading: listLoading, refresh } = useApiQuery(
     ['shopify-order-list'],
     () => getShopifyOrderList(),
   );
   const styles: ShopifyOrderStyle[] = data?.styles ?? NO_STYLES;
+
+  // The status list's members — the same call the Repricing list makes (parked included), so both screens hold the same styles.
+  // null key = no scope requested, nothing fetched.
+  const { data: scopeData, error: scopeError, isLoading: scopeLoading } = useApiQuery(
+    scopeStatus ? ['shopify-order-scope', scopeStatus, scopeBar] : null,
+    () => getStatusList(scopeStatus!, scopeBar),
+  );
+  const scopeIds = useMemo(
+    () => (scopeData ? new Set(scopeData.rows.map((r) => r.groupid)) : null),
+    [scopeData],
+  );
+  // The chip's X turns the window off to show every style; Reset turns it back on (the screen as you arrived).
+  const [scopeOn, setScopeOn] = useState(true);
+  const scoped = scopeOn && scopeIds !== null;
+  // The Repricing window alone — before the season cut, so the chip can count what the season hides from it.
+  const scopeBase = useMemo(
+    () => (scoped && scopeIds ? styles.filter((s) => scopeIds.has(s.groupid)) : styles),
+    [styles, scoped, scopeIds],
+  );
+  // Status styles that aren't on this screen's list (skusummary.shopify = 0) — said on the chip rather than silently missing.
+  const scopeMissing = scoped && scopeIds ? scopeIds.size - scopeBase.length : 0;
+
+  // IN SEASON ONLY — on by default, and automatic: the season is the month's (the server says which, from the same rule that keeps a
+  // WINNER in season), never a choice the operator makes (owner, 2026-09-26 — "I only want to see what is currently in-season"). The
+  // chip's X shows out-of-season styles too, for the odd off-season order; Reset turns it back on. Applied on top of the Repricing
+  // window, so it narrows Steady / New / Losers / Harvest there and is a no-op on Winners (a WINNER is in season by definition).
+  const seasonNow = data?.season_now ?? null;
+  const [seasonOn, setSeasonOn] = useState(true);
+  const outOfSeason = useMemo(() => scopeBase.filter((s) => !s.in_season).length, [scopeBase]);
+  // The styles the screen is working within: the window, cut to the season.
+  const base = useMemo(
+    () => (seasonOn ? scopeBase.filter((s) => s.in_season) : scopeBase),
+    [scopeBase, seasonOn],
+  );
+  // Hold the whole screen until the scope has landed too, so arriving from Repricing never flashes all ~300 styles first.
+  const loading = listLoading || (!!scopeStatus && scopeLoading);
   const error = loadError?.message ?? null;
 
   // Local lines already sitting in Order Status — see "already in Order Status" in the render. Same pair of figures, same 3-day
@@ -248,7 +325,8 @@ export default function ShopifyOrderHome() {
     const stacked = [...includes, t];
     // Stacks to nothing -> start again on this term alone, rather than an empty list that can't say "not found" apart from
     // "found, but ruled out by an earlier step" (owner, 2026-08-24 — the Amazon Order rule).
-    if (hasSearchMatch(styles, stacked, excludes)) setIncludes(stacked);
+    // Tested against `base`, the styles actually in view — inside a Repricing window, a term that only exists outside it is "not found".
+    if (hasSearchMatch(base, stacked, excludes)) setIncludes(stacked);
     else { setIncludes([t]); setExcludes([]); }
   }
   function addExclude() {
@@ -301,12 +379,14 @@ export default function ShopifyOrderHome() {
   }
 
   const filtered = useMemo(() => {
+    // Load basket reaches past the Repricing window as well as the search: it is "show me what I'm about to send", and Confirm sends
+    // the whole basket, so a line added outside this window must still be seen here.
     if (basketSnapshot) return styles.filter((s) => basketSnapshot.has(s.groupid));
-    if (includes.length === 0 && excludes.length === 0) return styles;
+    if (includes.length === 0 && excludes.length === 0) return base;
     const incTerms = includes.map((t) => t.toLowerCase());
     const excTerms = excludes.map((t) => t.toLowerCase());
-    return styles.filter((s) => matchesSearch(haystack(s), incTerms, excTerms));
-  }, [styles, includes, excludes, basketSnapshot]);
+    return base.filter((s) => matchesSearch(haystack(s), incTerms, excTerms));
+  }, [styles, base, includes, excludes, basketSnapshot]);
 
   const visible = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -421,19 +501,30 @@ export default function ShopifyOrderHome() {
     setBasketSnapshot(null);
   }
 
-  // RESET — a VIEW reset: search steps, Load basket, sort. Leaves the basket alone on purpose (the Amazon Order rule, owner
-  // 2026-08-11 — the basket can be a draft built up over several sittings; emptying it is Clear basket's job).
+  // RESET — a VIEW reset: search steps, Load basket, sort — and back into the Repricing window if you'd left it, i.e. the screen as
+  // you arrived. Leaves the basket alone on purpose (the Amazon Order rule, owner 2026-08-11 — the basket can be a draft built up
+  // over several sittings; emptying it is Clear basket's job).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setBasketSnapshot(null);
+    setScopeOn(true);
+    setSeasonOn(true);
     setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]);
     setConfirmingSend(false); setConfirmingClear(false); setSendError(null); setSentNote(null);
     includeInputRef.current?.focus();
   }
   const sorted = sortKey !== DEFAULT_SORT || sortDir !== DEFAULT_DIR[DEFAULT_SORT];
+  // Reset has something to do if the Repricing window or the season cut was switched off, too — it's how you get back to either.
+  const leftScope = (scopeIds !== null && !scopeOn) || !seasonOn;
+  // "Winners over £2,500" — the list's name as the Repricing crumb gives it.
+  const scopeName = scopeStatus
+    ? scopeStatus.charAt(0) + scopeStatus.slice(1).toLowerCase() + (scopeBar ? ` ${barLabel(scopeBar)}` : '')
+    : null;
+  // What the count reads "of": the window's styles, or the whole list (Load basket reaches past the window, so it counts against all).
+  const countOf = loadBasketOn ? styles.length : base.length;
 
   return (
-    <AppShell>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* ALREADY IN ORDER STATUS — local lines queued or on their way, so the operator knows before ordering the same sizes again.
           Dismissible for this visit; comes back if the numbers change. */}
       {showOpenBanner && (
@@ -519,8 +610,8 @@ export default function ShopifyOrderHome() {
           <button
             type="button"
             onClick={onReset}
-            disabled={!filtering && !sorted}
-            title="Clear the search steps and Load basket, and put the sort back — the basket itself is kept"
+            disabled={!filtering && !sorted && !leftScope}
+            title="Clear the search steps and Load basket, put the sort back, and return to the list you arrived with, in season only — the basket itself is kept"
             className="ml-auto flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
           >
             <ArrowPathIcon className="h-4 w-4" />
@@ -529,11 +620,71 @@ export default function ShopifyOrderHome() {
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+          {/* REPRICING WINDOW — which list this screen is scoped to, first in the row because it governs every count and style below it.
+              Slate, not brand: it's context you arrived with, not a control you're driving. X = show every style; once out, the same
+              slot offers the way back in. */}
+          {scopeName && scopeIds !== null && (scopeOn ? (
+            <span
+              title={
+                `Showing only the ${scopeData?.total ?? scopeIds.size} styles in Repricing's ${scopeName} list — parked ones included.`
+                + (scopeMissing > 0 ? ` ${scopeMissing} of them ${scopeMissing === 1 ? "isn't" : "aren't"} on Shopify, so ${scopeMissing === 1 ? "isn't" : "aren't"} listed here.` : '')
+                + (scopeData?.truncated ? ' The list was capped by the server, so some are missing.' : '')
+              }
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              Repricing: <span className="font-semibold text-slate-800">{scopeName}</span>
+              <button
+                type="button"
+                onClick={() => { setScopeOn(false); setBasketSnapshot(null); }}
+                aria-label="Show every style"
+                title="Show every style, not just this list (Reset brings the list back)"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setScopeOn(true)}
+              className="text-sm font-medium text-brand-600 hover:underline"
+            >
+              Back to {scopeName} only
+            </button>
+          ))}
+          {/* IN SEASON — same shell as the Repricing chip (both are "what this screen is limited to"), and the same X / way-back-in
+              pair. Says how many it hides, so a thin list is never mistaken for a thin range. */}
+          {seasonNow && (seasonOn ? (
+            <span
+              title={`Only styles that sell in ${seasonNow.toLowerCase()} — tagged ${seasonNow} or Any (Back Office → Seasons). The season follows the month: summer is April to August.`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              In season: <span className="font-semibold text-slate-800">{seasonNow}</span>
+              {outOfSeason > 0 && <span className="text-slate-400">· {outOfSeason} hidden</span>}
+              <button
+                type="button"
+                onClick={() => { setSeasonOn(false); setBasketSnapshot(null); }}
+                aria-label="Show out-of-season styles too"
+                title="Show out-of-season styles too (Reset hides them again)"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSeasonOn(true)}
+              className="text-sm font-medium text-brand-600 hover:underline"
+            >
+              In season only
+            </button>
+          ))}
           <span className="whitespace-nowrap text-sm text-slate-500">
             {filtering ? (
-              <>Styles: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {styles.length}</span></>
+              <>Styles: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {countOf}</span></>
             ) : (
-              <><span className="font-semibold text-slate-800">{styles.length}</span><span className="text-slate-400"> styles</span></>
+              <><span className="font-semibold text-slate-800">{countOf}</span><span className="text-slate-400"> styles</span></>
             )}
           </span>
 
@@ -640,6 +791,12 @@ export default function ShopifyOrderHome() {
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {/* The window failed but the list didn't: say so, and carry on with every style rather than show nothing. */}
+      {!loading && !error && scopeStatus && scopeError && (
+        <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Couldn&rsquo;t load the {scopeName} list from Repricing ({scopeError.message}) — showing every style.
+        </div>
+      )}
 
       {!loading && !error && (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -648,7 +805,12 @@ export default function ShopifyOrderHome() {
           ))}
           {visible.length === 0 && styles.length > 0 && (
             <div className="px-4 py-6 text-center text-sm text-slate-400">
-              {loadBasketOn ? 'The basket is empty.' : 'Nothing found.'}
+              {loadBasketOn
+                ? 'The basket is empty.'
+                // Everything in view is out of season (a Harvest list in the wrong half of the year, say) — say that, not "nothing".
+                : seasonOn && outOfSeason > 0 && scopeBase.length === outOfSeason
+                  ? `Nothing here sells in ${seasonNow?.toLowerCase() ?? 'this season'} — ${outOfSeason} out-of-season style${outOfSeason === 1 ? '' : 's'} hidden.`
+                  : 'Nothing found.'}
             </div>
           )}
         </div>

@@ -38,7 +38,9 @@ PER SIZE:
 
 PER STYLE: identity (groupid, title, brand, supplier, season, status), price, cost, and the per-size figures summed. cost =
 skusummary.cost via safeNumeric (CLAUDE.md: order cost is ALWAYS skusummary.cost, never skumap.cost) — used by the page to total the
-basket's spend.
+basket's spend. in_season = the style can sell THIS season: its tag is 'Any', blank, or the season we're in (London month; Summer =
+April-August). It is the WINNERS rule's own predicate negated (utils/portfolioStatus.js -> outOfSeasonSql), so the page's in-season
+filter and "a WINNER must be in season" can never disagree. `season_now` beside `styles` names the season it was judged against.
 
 `to_place` / `on_order` (screen level, beside `styles`) are the local-order backlog: ordertype 2 lines still un-placed, and placed but
 not yet arrived. Same shape and same reason as amazon-order-list.js — a queued line that nobody places reads on this screen as stock on
@@ -58,11 +60,12 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 298,
+  "season_now": "Winter",                                                   // 'Summer' | 'Winter' — what in_season was judged against
   "to_place": { "units": 4, "skus": 3, "suppliers": 1, "oldest_days": 2 },   // local lines queued but not yet placed
   "on_order": { "units": 10, "skus": 6 },                                   // local lines placed with a supplier, not yet arrived
   "styles": [
     { "groupid": "ELZ006-BLACK", "title": "...", "brand": "Lunar", "supplier": "Lunar", "season": "Winter", "status": "STEADY",
-      "price": 49.99, "cost": 21.50,
+      "in_season": true, "price": 49.99, "cost": 21.50,
       "stock": 7, "on_order": 2, "sold_90": 3, "sold_365": 18,
       "sizes": [
         { "code": "ELZ006-BLACK-03", "size": "03", "supplier": "Lunar", "stock": 0, "on_order": 0, "sold_90": 0, "sold_365": 1 },
@@ -85,6 +88,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
+const { seasonNowSql, outOfSeasonSql } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -126,6 +130,9 @@ router.get('/', async (req, res) => {
       SELECT s.groupid,
              t.shopifytitle AS title,
              s.brand, s.supplier AS style_supplier, s.season, s.portfolio_status AS status,
+             -- In season today — the WINNERS rule's own predicate, negated (utils/portfolioStatus.js), so "in season" here and a
+             -- style being able to be a WINNER are one test. 'Any' and blank are always in season.
+             NOT ${outOfSeasonSql('s')} AS in_season,
              ${safeNumeric('s.shopifyprice')} AS price,
              ${safeNumeric('s.cost')} AS cost,
              m.code,
@@ -161,6 +168,7 @@ router.get('/', async (req, res) => {
           supplier: r.style_supplier || null,
           season: r.season || null,
           status: r.status || null,
+          in_season: r.in_season !== false,
           price: num(r.price),
           cost: num(r.cost),
           stock: 0, on_order: 0, sold_90: 0, sold_365: 0,
@@ -211,7 +219,14 @@ router.get('/', async (req, res) => {
     };
     const onOrder = { units: Number(p.on_order_units) || 0, skus: Number(p.on_order_skus) || 0 };
 
-    return res.json({ return_code: 'SUCCESS', count: styles.length, to_place: toPlace, on_order: onOrder, styles });
+    // The season the page's in-season filter is named for — same expression the per-style in_season was computed from. Taken in
+    // its own tiny SELECT, not the list query, so it is there even on a list that somehow came back empty.
+    const sn = await query(`SELECT ${seasonNowSql()} AS s`);
+    const seasonNow = sn.rows[0] && sn.rows[0].s === 'summer' ? 'Summer' : 'Winter';
+
+    return res.json({
+      return_code: 'SUCCESS', count: styles.length, season_now: seasonNow, to_place: toPlace, on_order: onOrder, styles,
+    });
   } catch (err) {
     logger.error('[shopify-order-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Shopify Order list' });
