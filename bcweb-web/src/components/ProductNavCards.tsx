@@ -22,6 +22,8 @@ retyping the groupid into five different search boxes:
   - /products?groupid=        Add/Modify opens straight on the edit panel. Reads ?from= plus ?back= for the label.
   - /amazon-order?q=          Reads ?from=/?back= and seeds one Include step. THE ONLY ONE THAT NEEDED WORK — that page took no query
                               params at all before the hub (see its header note).
+  - /analytics/sales?q=         Seeds a Contains step (product mode, 12 months). Reads ?from=/?back=.
+  - /shopify-order?q=         Seeds one Include step (added 2026-09-26). Reads ?from=/?back=.
   - /inventory?q=<groupid>    The picture browse. Deliberately kept on the row even though the hub list shows a thumbnail: the browse
                               answers "which rack is it on", which nothing else here does, and the dashboard search box no longer
                               lands on it, so without this card Inventory is reachable only from the header tab.
@@ -37,7 +39,7 @@ there is nothing to middle-click or tab onto either.
 
 import Link from 'next/link';
 import {
-  ClipboardDocumentListIcon, BuildingStorefrontIcon, CurrencyPoundIcon, TagIcon, ArchiveBoxIcon,
+  ClipboardDocumentListIcon, BuildingStorefrontIcon, CurrencyPoundIcon, TagIcon, ArchiveBoxIcon, ChartBarIcon, ShoppingCartIcon,
 } from '@heroicons/react/24/outline';
 
 // One destination. `build` gets the selected groupid and the encoded origin, so a card's whole deep-link convention sits on one line
@@ -50,6 +52,18 @@ interface NavTarget {
 }
 
 const TARGETS: NavTarget[] = [
+  {
+    label: 'Sales',
+    hint: '12 months of sales for this product, every channel',
+    icon: ChartBarIcon,
+    build: (g, from) => `/analytics/sales?q=${encodeURIComponent(g)}&from=${from}&back=Product`,
+  },
+  {
+    label: 'Shopify Order',
+    hint: 'Order this style in for the Shopify shelf — size strip, filtered to this product',
+    icon: ShoppingCartIcon,
+    build: (g, from) => `/shopify-order?q=${encodeURIComponent(g)}&from=${from}&back=Product`,
+  },
   {
     label: 'Amazon Order',
     hint: 'What Amazon needs of this product — what to buy in, and what to send from the local shelf',

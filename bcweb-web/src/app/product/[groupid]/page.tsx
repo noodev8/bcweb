@@ -86,46 +86,42 @@ function ProductDrillContent() {
 
       {header && (
         <>
-          {/* Header — the style-level frame the size rows sit inside. Shopify price lives here; see the note at the top. */}
-          <div className="mb-4 flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+          {/* HERO HEADER (owner, 2026-09-26 — "a much bigger RRP and PRICE"): the style's headline numbers are the main detail of the
+              page, so they are drawn large; the size table below is the supporting evidence. The Shopify and Amazon
+              prices were tried up here and taken back out (same day) — the grid already carries both per size. RRP stays as the hero. */}
+          <div className="mb-4 flex flex-col gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:flex-row">
+            <div className="relative h-40 w-40 shrink-0 sm:order-last overflow-hidden rounded-md border border-slate-200 bg-white">
               {header.imagename && (
-                <Image src={IMAGE_BASE + header.imagename} alt={header.title || groupid} fill sizes="112px" className="object-contain" />
+                <Image src={IMAGE_BASE + header.imagename} alt={header.title || groupid} fill sizes="160px" className="object-contain" />
               )}
             </div>
-            <dl className="grid flex-1 grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-400">Shopify price</dt>
-                <dd className="font-medium tabular-nums text-slate-800" title="One price for the whole style — Shopify does not price per size">
-                  {money(header.price)}
-                  {header.rrp !== null && header.price !== null && header.rrp > header.price && (
-                    <span className="ml-2 text-xs font-normal text-slate-400 line-through">{money(header.rrp)}</span>
-                  )}
-                </dd>
+            <div className="flex-1">
+              <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">RRP</div>
+                  <div className="text-4xl font-semibold tabular-nums text-slate-900">{money(header.rrp)}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Cost</div>
+                  <div className="text-2xl font-medium tabular-nums text-slate-700">{money(header.cost)}</div>
+                </div>
+                <div title={`${header.local} on our shelf + ${header.amazon} at Amazon. Excludes the Birkenstock pre-order book, so this can read lower than the Inventory card.`}>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Stock</div>
+                  <div className="text-2xl font-medium tabular-nums text-slate-700">
+                    {header.stock}
+                    <span className="ml-2 text-sm font-normal text-slate-400">{header.local} here · {header.amazon} amz</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Sold 30d</div>
+                  <div className="text-2xl font-medium tabular-nums text-slate-700">{header.sold30}</div>
+                </div>
               </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-400">Cost</dt>
-                <dd className="font-medium tabular-nums text-slate-800">{money(header.cost)}</dd>
+              <div className="mt-4 text-sm">
+                <span className="text-xs uppercase tracking-wide text-slate-400">Segment </span>
+                <span className="text-slate-700">{header.segment || '—'}</span>
               </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-400">Stock</dt>
-                <dd
-                  className="font-medium tabular-nums text-slate-800"
-                  title={`${header.local} on our shelf + ${header.amazon} at Amazon. Excludes the Birkenstock pre-order book, so this can read lower than the Inventory card.`}
-                >
-                  {header.stock}
-                  <span className="ml-2 text-xs font-normal text-slate-400">{header.local} here · {header.amazon} amz</span>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-400">Sold 30d</dt>
-                <dd className="font-medium tabular-nums text-slate-800">{header.sold30}</dd>
-              </div>
-              <div className="col-span-2 sm:col-span-4">
-                <dt className="text-xs uppercase tracking-wide text-slate-400">Segment</dt>
-                <dd className="text-slate-700">{header.segment || '—'}</dd>
-              </div>
-            </dl>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
