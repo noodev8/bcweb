@@ -20,6 +20,7 @@ because PowerBuilder is still in service (decision D1). When PB is retired, dele
 */
 
 const { SOLD_WINDOW_DAYS, SOLD_RECENT_DAYS } = require('./amzImport');
+const { safeNumeric } = require('./sql');
 
 // Rows per multi-row INSERT. A 12-month backfill can be tens of thousands of lines, and one statement per row would be an N+1 in
 // all but name; one giant statement would blow past Postgres' parameter ceiling. 500 rows x 11 params keeps both in hand.
@@ -44,14 +45,17 @@ async function insertSales(client, rows) {
     const params = [];
     chunk.forEach((r, n) => {
       const b = n * 12;
-      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},'AMZ')`);
+      // rrp is stamped from the style's current skusummary.rrp (2026-09-26, migrations/20260926b_sales_rrp.sql) — a subquery on the
+      // row's own groupid param, so no extra round trip. Returns take today's figure too (Amazon returns aren't tied back to a row).
+      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},'AMZ',
+        (SELECT ${safeNumeric('sk.rrp')} FROM skusummary sk WHERE sk.groupid = $${b + 3} LIMIT 1))`);
       params.push(
         r.code, r.solddate, r.groupid, r.ordernum, r.ordertime, r.qty,
         r.soldprice, r.productname, r.brand, r.profit, r.discount, r.sourceKey
       );
     });
     const res = await client.query(`
-      INSERT INTO sales (code, solddate, groupid, ordernum, ordertime, qty, soldprice, productname, brand, profit, discount, source_key, channel)
+      INSERT INTO sales (code, solddate, groupid, ordernum, ordertime, qty, soldprice, productname, brand, profit, discount, source_key, channel, rrp)
       VALUES ${values.join(',')}
       ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`, params);
     inserted += res.rowCount;

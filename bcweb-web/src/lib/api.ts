@@ -1408,6 +1408,7 @@ export interface SalesReportRow {
   groupid: string | null;    // style key
   productname: string | null;
   brand: string | null;      // stamped on the sale line at booking; null on legacy rows
+  rrp: number | null;        // RRP stamped on the sale at booking (sales.rrp), else the style's current RRP; null if neither
   ordernum: string | null;
   qty: number;               // negative on a return
   soldprice: number | null;  // per unit, GROSS (VAT-inclusive, as the customer paid)

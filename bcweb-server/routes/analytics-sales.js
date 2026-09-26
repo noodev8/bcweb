@@ -110,6 +110,7 @@ const router = express.Router();
 // numerator did. Mirrors VAT_MULTIPLIER in routes/brand-overview.js; see the header before changing this to sales.collectedvat.
 const VAT_MULTIPLIER = 1.2;
 const { query } = require('../database');
+const { safeNumeric } = require('../utils/sql');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -267,9 +268,11 @@ router.get('/', async (req, res) => {
           END AS to_date
       ),
       f AS (
-        -- LEFT JOIN skusummary for sk.supplier (the HAY term match only - no other column of sk is read here), so a sale can still
-        -- match on a groupid skusummary has since dropped rather than disappearing from the search entirely.
-        SELECT s.*
+        -- LEFT JOIN skusummary for sk.supplier (the HAY term match) and as the RRP fallback, so a sale can still match on a groupid
+        -- skusummary has since dropped rather than disappearing from the search entirely.
+        -- RRP is sales.rrp — stamped at booking (migrations/20260926b_sales_rrp.sql) — falling back to the style's CURRENT rrp only
+        -- where the stamp is NULL (a writer that missed it, or junk at the time). s.* is listed first so this rrp replaces it.
+        SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown
         FROM sales s
         LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
         WHERE (
@@ -334,7 +337,7 @@ router.get('/', async (req, res) => {
       : await query(
           `${filterCte}
            SELECT solddate, ordertime, channel, code, SUBSTRING(code FROM '[^-]*$') AS size, groupid, productname, brand, ordernum,
-                  qty, soldprice, profit
+                  qty, soldprice, profit, rrp_shown AS rrp
            FROM f
            ORDER BY ${orderBy}
            LIMIT $${filterParams.length + 1}::int`,
@@ -367,6 +370,7 @@ router.get('/', async (req, res) => {
         ordernum: r.ordernum || null,
         qty,
         soldprice,
+        rrp: num(r.rrp),                    // stamped sales.rrp, else the style's current RRP; null if neither is known
         profit,
         marginPct,
       };

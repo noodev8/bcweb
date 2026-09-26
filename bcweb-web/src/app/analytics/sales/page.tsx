@@ -30,8 +30,17 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
          that is what's shown, silently — the breadcrumb already shows what's in force. If that is empty too, the screen says there are
          no sales. See the fetcher for the 3-char departure from Inventory, and for why the retry isn't in an effect.
 
-         Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel. Row click reuses the
-         cross-module ProductActions chooser (reprice / copy), same as Price Changes.
+         Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel.
+
+         ROW CLICK SELECTS THE STYLE; THE HAND-OFF CARDS GO (owner, 2026-09-26). The product hub's card row (ProductNavCards) sits above
+         the table, greyed until a row is picked, with Product first and Sales left out (it is this page). It replaced the old click
+         model — channel badge -> its pricing page in a new tab, code / order cells -> copy to clipboard — whose copy half existed only
+         to paste into another screen's search box, and the cards now go straight there.
+
+         VIEW STATE LIVES IN THE URL, for the same reason as New Additions: the cards navigate in the SAME tab and hand over this exact
+         URL as ?from=, so "← Back" must rebuild the channel, window, sort, committed steps and selection. Read once into initial state,
+         written with router.replace from the handlers (never an effect). Steps are ?s=has:TERM / ?s=not:TERM in order; ?f=<n> says the
+         last n of them are the newest Find (always a suffix — see onFind), which the start-fresh retry needs to reproduce the same view.
 
          UPDATE ORDERS (2026-07-28) sits at the right-hand end of the filter row — deliberately quiet, and deliberately NOT its own
          row. This screen is where you notice today's sales look thin, so this is where the "is that real, or has the update not run?"
@@ -47,10 +56,11 @@ Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order
 */
 
 import { Suspense, useCallback, useMemo, useRef, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
+import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
   getSalesReport,
@@ -106,42 +116,45 @@ export default function SalesPage() {
 function SalesPageContent() {
   const pathname = usePathname();
 
-  // ARRIVING FOR ONE PRODUCT (owner, 2026-09-24). Inventory's Detail has a Sales button (it replaced the inline recent-sales panel
-  // there) that lands here as ?q=<groupid>&from=/inventory&back=Inventory. The term is committed as the opening Contains step — read
-  // ONCE into initial state, not in an effect, so the screen never paints today's ledger and then snaps to the product — which puts
-  // the screen straight into product mode (12 months). from/back thread the "← Back" the same way the pricing screens do; only a
-  // same-site path is honoured. Arriving from the nav passes neither, and nothing changes.
+  // ARRIVING FOR ONE PRODUCT (owner, 2026-09-24). The hub's Sales card (and Inventory's) lands here as ?q=<groupid>&from=…&back=…. The
+  // term is committed as the opening Contains step — read ONCE into initial state, not in an effect, so the screen never paints today's
+  // ledger and then snaps to the product — which puts the screen straight into product mode (12 months). from/back thread the
+  // "← Back" the same way the pricing screens do; only a same-site path is honoured. Arriving from the nav passes neither.
+  //
+  // Everything else is restored from the URL this page writes about itself (see VIEW STATE in the header). ?q= only seeds when no ?s=
+  // steps are present, so a round trip through a hand-off card comes back to the steps you had, not to the term you arrived with.
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const [seedSteps] = useState<SalesFilterStep[]>(() => {
+  const [initial] = useState(() => {
+    const parsed: SalesFilterStep[] = searchParams.getAll('s').flatMap((raw): SalesFilterStep[] => {
+      const i = raw.indexOf(':');
+      const op = raw.slice(0, i);
+      const term = raw.slice(i + 1).trim().toUpperCase();
+      return (op === 'has' || op === 'not') && term ? [{ op, term }] : [];
+    });
     const q = (searchParams.get('q') || '').trim().toUpperCase();
-    return q ? [{ op: 'has', term: q }] : [];
+    const steps: SalesFilterStep[] = parsed.length ? parsed : q ? [{ op: 'has', term: q }] : [];
+    const f = parseInt(searchParams.get('f') || '', 10);
+    const lastFind = steps.slice(steps.length - (f >= 1 && f <= steps.length ? f : steps.length));
+    const ch = searchParams.get('ch');
+    const w = searchParams.get('w');
+    const winKeys: string[] = [...SHORT_WINDOW_TABS, ...LONG_WINDOW_TABS].map((t) => t.key);
+    return {
+      steps,
+      lastFind,
+      channel: (ch === 'shp' || ch === 'amz' ? ch : 'all') as ChannelFilter,
+      win: (w && winKeys.includes(w) ? w : 'today') as SalesWindow,
+      sort: (searchParams.get('sort') === 'product' ? 'product' : 'date') as SalesSort,
+      dir: (searchParams.get('dir') === 'asc' ? 'asc' : 'desc') as SalesSortDir,
+      sel: searchParams.get('sel'),
+    };
   });
   const fromParam = searchParams.get('from');
   const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : '/analytics';
   const backLabel = backHref === '/analytics' ? 'Reports' : searchParams.get('back') || 'Back';
 
-  // Direct, column-aware click behaviour (replaces the shared reprice/copy chooser on this page). The operator told us: don't ask —
-  //   • click the Product cell  -> copy the groupid
-  //   • click the Order cell     -> copy the order number
-  //   • click anything else      -> jump straight to the row's OWN channel pricing page (Shopify rows -> Shopify, Amazon rows -> Amazon).
-  //     A row that isn't Shopify or Amazon (e.g. CM3) has no pricing page here, so a click on it does nothing.
-  // Price pages open in a NEW TAB and carry ?from=<here> so their "← Back" returns to this ledger (same behaviour the old chooser had).
-  const rowAction = useCallback((r: SalesReportRow) => {
-    const from = encodeURIComponent(pathname || '/');
-    if (r.channel === 'SHP' && r.groupid) {
-      window.open(`/pricing/style/${encodeURIComponent(r.groupid)}?from=${from}`, '_blank', 'noopener');
-    } else if (r.channel === 'AMZ') {
-      // SKU-grain: an Amazon row carries its exact code -> deep-link to that size's drill; fall back to a pre-search by groupid.
-      const url = r.code
-        ? `/amz/sku/${encodeURIComponent(r.code)}?from=${from}`
-        : `/amz/find?q=${encodeURIComponent(r.groupid || '')}&from=${from}`;
-      window.open(url, '_blank', 'noopener');
-    }
-    // else: not a priceable channel here — stay put.
-  }, [pathname]);
-
-  const [channel, setChannel] = useState<ChannelFilter>('all');
-  const [win, setWin] = useState<SalesWindow>('today');
+  const [channel, setChannelState] = useState<ChannelFilter>(initial.channel);
+  const [win, setWinState] = useState<SalesWindow>(initial.win);
 
   // Column sort (owner, 2026-08-03). Two columns only — When and Product — which is what was asked for, and they're the two you
   // actually re-order a ledger by ("show me these grouped by style", "walk it forwards from the oldest"). Default is the ledger's
@@ -150,23 +163,61 @@ function SalesPageContent() {
   // It goes to the SERVER, not Array.prototype.sort, because this page holds at most `limit` rows out of the matched set: sorting the
   // loaded page ascending would show the oldest of the LATEST 200 while the header claimed "oldest first". See routes/analytics-sales.js.
   // Being in the SWR key below is what makes a header click re-query — there is no separate "go fetch" call, same as the steps.
-  const [sort, setSort] = useState<SalesSort>('date');
-  const [dir, setDir] = useState<SalesSortDir>('desc');
+  const [sort, setSort] = useState<SalesSort>(initial.sort);
+  const [dir, setDir] = useState<SalesSortDir>(initial.dir);
   // Click the sorted column to flip direction; click a different one to sort by it, starting descending (newest / Z-A) because that is
   // where each column already sat and a click shouldn't jump the list to somewhere unrelated before you've asked it to.
-  const onSort = useCallback((col: SalesSort) => {
-    setDir((d) => (sort === col ? (d === 'desc' ? 'asc' : 'desc') : 'desc'));
+  const onSort = (col: SalesSort) => {
+    const nextDir: SalesSortDir = sort === col ? (dir === 'desc' ? 'asc' : 'desc') : 'desc';
+    setDir(nextDir);
     setSort(col);
-  }, [sort]);
+    writeUrl({ sort: col, dir: nextDir });
+  };
 
   // The two boxes, and the ordered steps committed so far (same model as Inventory). Steps are display-only here too: to drop one, Reset.
   const [contains, setContains] = useState('');
   const [notContains, setNotContains] = useState('');
-  const [steps, setSteps] = useState<SalesFilterStep[]>(seedSteps);
+  const [steps, setSteps] = useState<SalesFilterStep[]>(initial.steps);
   // The terms committed by the MOST RECENT Find, kept apart from the merged list because the start-fresh rule below has to be able to
   // re-run them on their own. Inventory doesn't need this — it rebuilds the criteria inside its own handler — but here the retry happens
   // in the fetcher, which only ever sees the merged `steps`.
-  const [lastFind, setLastFind] = useState<SalesFilterStep[]>(seedSteps);
+  const [lastFind, setLastFind] = useState<SalesFilterStep[]>(initial.lastFind);
+  // The selected STYLE (groupid) — what the hand-off cards act on. Every line of that style highlights, not just the one clicked.
+  const [selected, setSelected] = useState<string | null>(initial.sel);
+
+  // THE URL MIRRORS THE VIEW. Every handler that changes view state calls writeUrl with its patch; from/back pass through untouched so
+  // this screen's own back arrow survives the round trip. replace, not push: re-cutting the ledger shouldn't pile up history entries.
+  type View = {
+    channel: ChannelFilter; win: SalesWindow; sort: SalesSort; dir: SalesSortDir;
+    steps: SalesFilterStep[]; lastFind: SalesFilterStep[]; sel: string | null;
+  };
+  const current: View = { channel, win, sort, dir, steps, lastFind, sel: selected };
+  const viewUrl = (v: View) => {
+    const q = new URLSearchParams();
+    const from = searchParams.get('from');
+    const back = searchParams.get('back');
+    if (from) q.set('from', from);
+    if (back) q.set('back', back);
+    if (v.channel !== 'all') q.set('ch', v.channel);
+    if (v.win !== 'today') q.set('w', v.win);
+    if (v.sort !== 'date') q.set('sort', v.sort);
+    if (v.dir !== 'desc') q.set('dir', v.dir);
+    v.steps.forEach((st) => q.append('s', `${st.op}:${st.term}`));
+    if (v.steps.length && v.lastFind.length !== v.steps.length) q.set('f', String(v.lastFind.length));
+    if (v.sel) q.set('sel', v.sel);
+    const qs = q.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
+  const selfUrl = viewUrl(current);
+  const writeUrl = (patch: Partial<View>) => router.replace(viewUrl({ ...current, ...patch }), { scroll: false });
+  const setChannel = (c: ChannelFilter) => { setChannelState(c); writeUrl({ channel: c }); };
+  const setWin = (w: SalesWindow) => { setWinState(w); writeUrl({ win: w }); };
+  // Click a line to select its style; click a line of the selected style again to clear.
+  const toggleSelect = (g: string) => {
+    const next = selected === g ? null : g;
+    setSelected(next);
+    writeUrl({ sel: next });
+  };
   const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
   const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
 
@@ -255,7 +306,7 @@ function SalesPageContent() {
 
   // FIND — commit whatever is in the boxes as steps, then clear them (Inventory's behaviour). The re-query falls out of `steps` being a
   // dependency of load(); nothing fires until this runs, which is the point of dropping the debounce.
-  const onFind = useCallback((e: React.FormEvent) => {
+  const onFind = (e: React.FormEvent) => {
     e.preventDefault();
     const c = contains.trim();
     const n = notContains.trim();
@@ -280,21 +331,25 @@ function SalesPageContent() {
     // reason not on display anywhere. `lastFind` is what the start-fresh retry re-runs on its own if this narrowing empties the list.
     setSteps([...usedSteps, ...next]);
     setLastFind(next);
+    setSelected(null);
+    writeUrl({ steps: [...usedSteps, ...next], lastFind: next, sel: null });
     setContains('');
     setNotContains('');
     setHint(null);
     containsRef.current?.focus();
-  }, [contains, notContains, hasSteps.length, summaryOnly, usedSteps]);
+  };
 
   // RESET — drop every step, which drops the screen back to the window pulse (load() re-runs off the empty steps array).
-  const onReset = useCallback(() => {
+  const onReset = () => {
     setSteps([]);
     setLastFind([]);
+    setSelected(null);
+    writeUrl({ steps: [], lastFind: [], sel: null });
     setContains('');
     setNotContains('');
     setHint(null);
     containsRef.current?.focus();
-  }, []);
+  };
 
   // --- formatters --------------------------------------------------------------------------------------------------------------
   const money = (v: number | null) =>
@@ -325,7 +380,7 @@ function SalesPageContent() {
   // --- CSV export (current filtered view) --------------------------------------------------------------------------------------
   const exportCsv = useCallback(() => {
     if (rows.length === 0) return;
-    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'Sold price (inc VAT)', 'Profit', 'Margin % (ex VAT)'];
+    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'RRP', 'Sold price (inc VAT)', 'Profit', 'Margin % (ex VAT)'];
     const esc = (v: string | number | null) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -333,6 +388,7 @@ function SalesPageContent() {
     const lines = rows.map((r) => [
       r.solddate, r.ordertime, CHANNEL_CHIP[r.channel]?.label ?? r.channel, r.code, r.size, r.groupid,
       r.brand, r.productname, r.ordernum, r.qty,
+      r.rrp === null ? '' : r.rrp.toFixed(2),
       r.soldprice === null ? '' : r.soldprice.toFixed(2),
       r.profit === null ? '' : r.profit.toFixed(2),
       r.marginPct === null ? '' : r.marginPct.toFixed(1),
@@ -577,6 +633,11 @@ function SalesPageContent() {
                 )}
               </span>
             </div>
+            {/* Hand-off row — the product hub's cards, greyed until a row is picked, Product first and Sales left out (it is this
+                page). Every card carries this exact view as ?from=, which is what the URL state above is for. */}
+            <div className="mb-3">
+              <ProductNavCards groupid={selected} from={selfUrl} showProduct exclude={['Sales']} />
+            </div>
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_theme(colors.slate.200)]">
@@ -585,9 +646,10 @@ function SalesPageContent() {
                         affordance — a header that looks clickable and isn't is worse than one that never invited the click. */}
                     <SortableTh label="When" col="date" sort={sort} dir={dir} onSort={onSort} />
                     <th className="px-4 py-2.5 font-medium">Channel</th>
-                    <th className="px-4 py-2.5 font-medium">Brand</th>
                     <SortableTh label="Product" col="product" sort={sort} dir={dir} onSort={onSort} />
-                    <th className="px-3 py-2.5 text-right font-medium" title="Sold price per unit, VAT-inclusive as the customer paid">Sold</th>
+                    <th className="px-4 py-2.5 font-medium">Brand</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="RRP when the sale was booked. Lines from before RRP was recorded show the RRP as it stood when it was backfilled">RRP</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Sold price per unit, VAT-inclusive as the customer paid">Price</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
                     <th className="px-3 py-2.5 text-right font-medium" title="Profit over the line's ex-VAT revenue — profit already has the VAT taken out, so the denominator does too">Margin</th>
                     <th className="px-4 py-2.5 font-medium">Order</th>
@@ -595,7 +657,8 @@ function SalesPageContent() {
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <SaleRow key={`${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}-${i}`} r={r} onAction={rowAction}
+                    <SaleRow key={`${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}-${i}`} r={r}
+                             selected={!!r.groupid && r.groupid === selected} onSelect={toggleSelect}
                              money={money} pct={pct} fmtDate={fmtDay} />
                   ))}
                 </tbody>
@@ -733,14 +796,14 @@ function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------
-// One sale line — column-aware clicks (no chooser menu, owner 2026-07-23):
-//   • Channel badge -> the row's own channel pricing page    • Product cell -> copy groupid    • Order cell -> copy order number.
-// Every other cell does NOTHING (owner: don't send them away from a click with no action). A non-priceable channel (not SHP/AMZ)
-// leaves even the badge inert. Returns render red (negative qty + profit) — the row tint carries that, not a Qty column.
+// One sale line. A click anywhere selects its STYLE for the hand-off cards (again to clear); a line with no groupid can't be selected.
+// No per-cell actions any more — the channel badge's pricing jump and the copy cells were retired 2026-09-26 (see header).
+// Returns render red (negative qty + profit) — the row tint carries that, not a Qty column.
 // -------------------------------------------------------------------------------------------------------------------------------
-function SaleRow({ r, onAction, money, pct, fmtDate }: {
+function SaleRow({ r, selected, onSelect, money, pct, fmtDate }: {
   r: SalesReportRow;
-  onAction: (r: SalesReportRow) => void;
+  selected: boolean;
+  onSelect: (groupid: string) => void;
   money: (v: number | null) => string;
   pct: (v: number | null) => string;
   fmtDate: (d: string | null) => string;
@@ -748,43 +811,25 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
   const chip = CHANNEL_CHIP[r.channel] ?? { label: r.channel, cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
   const isReturn = r.qty < 0;
   const profitCls = r.profit === null ? 'text-slate-400' : r.profit < 0 ? 'text-rose-600' : 'text-slate-700';
-  const priceable = (r.channel === 'SHP' && !!r.groupid) || r.channel === 'AMZ';
 
-  // Transient "Copied" flag on whichever copy cell was last clicked.
-  const [copied, setCopied] = useState<null | 'groupid' | 'order'>(null);
-  const copy = (key: 'groupid' | 'order', value: string) => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied(null), 900);
-    }).catch(() => {});
-  };
-
-  // The channel badge is the only cell that navigates (and only when priceable). Everything except the copy cells is inert.
-  const go = () => priceable && onAction(r);
-
-  // Show the FULL code (owner 2026-07-29) — it already ends in the size (RIGHT(code,2)), so a separate size element was repeating it.
-  // Fall back to the groupid on a row with no code. The copy click copies whatever is displayed.
+  // Show the FULL code (owner 2026-07-29) — it already ends in the size, so a separate size element would repeat it. Falls back to
+  // the groupid on a row with no code.
   const groupKey = r.code || r.groupid || '';
 
   return (
     <tr
-      className={'border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ' + (isReturn ? 'bg-rose-50/40' : '')}
+      onClick={() => r.groupid && onSelect(r.groupid)}
+      className={'border-b border-slate-100 last:border-0 ' + (r.groupid ? 'cursor-pointer ' : '') +
+        (selected ? 'bg-brand-50' : isReturn ? 'bg-rose-50/40 hover:bg-rose-50/70' : 'hover:bg-slate-50/60')}
     >
       <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">
         {fmtDate(r.solddate)}
         {r.ordertime && <span className="ml-2 text-xs text-slate-400">{r.ordertime}</span>}
       </td>
       <td className="px-4 py-2.5">
-        <span onClick={go}
-              className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls + (priceable ? ' cursor-pointer hover:brightness-95' : '')}
-              title={priceable ? 'Open its pricing page' : undefined}>{chip.label}</span>
+        <span className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls}>{chip.label}</span>
       </td>
-      {/* Brand as its own column (trying it, owner 2026-07-29 — the alternative was a grey word inline next to the code). Nullable on
-          legacy rows, hence the dash. */}
-      <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">{r.brand || '—'}</td>
-      <td onClick={() => groupKey && copy('groupid', groupKey)}
-          className={'px-4 py-2.5 ' + (groupKey ? 'cursor-pointer' : '')}
-          title={groupKey ? 'Click to copy the code' : undefined}>
+      <td className="px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs tracking-tight text-slate-900">{groupKey || '—'}</span>
           {/* No Qty column (owner 2026-07-27: it is 1 on ~every line). The rare non-1 line still says so, inline. */}
@@ -793,18 +838,16 @@ function SaleRow({ r, onAction, money, pct, fmtDate }: {
               ×{r.qty}
             </span>
           )}
-          {copied === 'groupid' && <span className="text-xs font-medium text-green-600">Copied</span>}
         </div>
       </td>
+      {/* Brand as its own column (trying it, owner 2026-07-29 — the alternative was a grey word inline next to the code). Nullable on
+          legacy rows, hence the dash. */}
+      <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">{r.brand || '—'}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
       <td className={'px-3 py-2.5 text-right font-medium tabular-nums ' + profitCls}>{money(r.profit)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.marginPct)}</td>
-      <td onClick={() => r.ordernum && copy('order', r.ordernum)}
-          className={'px-4 py-2.5 whitespace-nowrap text-xs text-slate-400 ' + (r.ordernum ? 'cursor-pointer' : '')}
-          title={r.ordernum ? 'Click to copy the order number' : undefined}>
-        {r.ordernum || '—'}
-        {copied === 'order' && <span className="ml-1.5 font-medium text-green-600">Copied</span>}
-      </td>
+      <td className="px-4 py-2.5 whitespace-nowrap text-xs text-slate-400">{r.ordernum || '—'}</td>
     </tr>
   );
 }

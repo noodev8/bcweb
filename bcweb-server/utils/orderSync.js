@@ -50,6 +50,7 @@ SCOPE NOTE — phases E and F reach outside this module's own data:
 */
 
 const { shopifyProfit } = require('./shopifyProfit');
+const { safeNumeric } = require('./sql');
 const logger = require('./logger');
 
 // The 44 columns an inserted orderstatus row carries, and the 44 that get copied into the archive. Written out rather than using
@@ -193,8 +194,13 @@ async function insertSale(client, order, line, ordernum) {
   );
   if (dup.rows.length) return 'duplicate';
 
-  const meta = await client.query(`SELECT brand, cost FROM skusummary WHERE groupid = $1 LIMIT 1`, [groupid]);
+  // rrp is stamped onto the sale (2026-09-26, migrations/20260926b_sales_rrp.sql) so it survives the style being deleted or
+  // re-priced. !! update_orders.py stamps it too — keep the two in step. !!
+  const meta = await client.query(
+    `SELECT brand, cost, ${safeNumeric('rrp')} AS rrp FROM skusummary WHERE groupid = $1 LIMIT 1`, [groupid]
+  );
   const brand = meta.rows[0] ? meta.rows[0].brand : null;
+  const rrp = meta.rows[0] ? meta.rows[0].rrp : null;
   const costRaw = meta.rows[0] ? meta.rows[0].cost : null;
 
   const soldprice = Number(line.price) || 0;
@@ -207,11 +213,11 @@ async function insertSale(client, order, line, ordernum) {
 
   await client.query(
     `INSERT INTO sales (code, solddate, groupid, ordernum, ordertime, qty, soldprice, channel, paytype,
-                        collectedvat, productname, brand, profit, discount)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'SHP', $8, NULL, $9, $10, $11, 0)`,
+                        collectedvat, productname, brand, profit, discount, rrp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'SHP', $8, NULL, $9, $10, $11, 0, $12)`,
     [
       safe(line.sku, 50), when ? when.date : null, safe(groupid, 50), safe(ordernum, 50), when ? when.time.slice(0, 20) : '',
-      line.qty, soldprice, paytype, safe(line.title, 200), safe(brand, 50), profit
+      line.qty, soldprice, paytype, safe(line.title, 200), safe(brand, 50), profit, rrp
     ]
   );
   return 'inserted';
