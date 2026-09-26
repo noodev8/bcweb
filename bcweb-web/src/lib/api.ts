@@ -461,6 +461,12 @@ export interface ShopifyOrderStyle {
   groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
   // Can sell THIS season: tag 'Any', blank, or the season we're in — the WINNERS rule's own test (utils/portfolioStatus.js).
   in_season: boolean;
+  // "Can't get it" (routes/shopify-order-no-supply.js). no_supply = parked right now (re-check day still ahead). since/by outlive the
+  // park, so a style that has come back can say why it was away. Dates 'YYYY-MM-DD' (London), null when never marked or cleared.
+  no_supply: boolean;
+  no_supply_since: string | null;
+  no_supply_until: string | null;
+  no_supply_by: string | null;
   price: number | null; cost: number | null;
   stock: number; on_order: number; sold_90: number; sold_365: number;
   sizes: ShopifyOrderSize[];
@@ -472,7 +478,7 @@ export type ShopifyOrderOnOrder = AmazonOrderOnOrder;
 // One call, whole list (~300 styles / ~2,100 sizes) — searched client-side, like getAmazonOrderList.
 export function getShopifyOrderList() {
   return request<{
-    count: number; season_now: 'Summer' | 'Winter'; styles: ShopifyOrderStyle[];
+    count: number; season_now: 'Summer' | 'Winter'; next_season_start: string | null; styles: ShopifyOrderStyle[];
     to_place: ShopifyOrderToPlace; on_order: ShopifyOrderOnOrder;
   }>(
     { url: '/shopify-order-list', method: 'GET' },
@@ -480,8 +486,16 @@ export function getShopifyOrderList() {
       count: b.count ?? (b.styles || []).length,
       // The season in_season was judged against. Summer | Winter only — anything else is read as Winter, the longer half.
       season_now: b.season_now === 'Summer' ? 'Summer' : 'Winter',
+      next_season_start: b.next_season_start ?? null,
       // An older server sends no in_season: read it as in season, so the filter hides nothing rather than everything.
-      styles: ((b.styles || []) as ShopifyOrderStyle[]).map((st) => ({ ...st, in_season: st.in_season !== false })),
+      styles: ((b.styles || []) as ShopifyOrderStyle[]).map((st) => ({
+        ...st,
+        in_season: st.in_season !== false,
+        no_supply: st.no_supply === true,
+        no_supply_since: st.no_supply_since ?? null,
+        no_supply_until: st.no_supply_until ?? null,
+        no_supply_by: st.no_supply_by ?? null,
+      })),
       to_place: {
         units: Number(b.to_place?.units) || 0,
         skus: Number(b.to_place?.skus) || 0,
@@ -490,6 +504,22 @@ export function getShopifyOrderList() {
       },
       on_order: { units: Number(b.on_order?.units) || 0, skus: Number(b.on_order?.skus) || 0 },
     })
+  );
+}
+
+// Shopify Order — "Can't get it": park a style off the order screen until the next season changeover ('season') or three months out
+// ('3m'). The server picks the date and stamps who did it; nothing else about the style changes (season, status, pricing).
+export function setNoSupply(groupid: string, until: 'season' | '3m') {
+  return request<{ groupid: string; since: string; until: string; by: string | null }>(
+    { url: '/shopify-order-no-supply', method: 'POST', data: { groupid, until } },
+    (b) => ({ groupid: String(b.groupid || groupid), since: String(b.since || ''), until: String(b.until || ''), by: b.by ?? null })
+  );
+}
+// Take the flag off again — "I can get it after all", or the note on a style whose park has lapsed. Idempotent.
+export function clearNoSupply(groupid: string) {
+  return request<{ groupid: string }>(
+    { url: '/shopify-order-no-supply-clear', method: 'POST', data: { groupid } },
+    (b) => ({ groupid: String(b.groupid || groupid) })
   );
 }
 

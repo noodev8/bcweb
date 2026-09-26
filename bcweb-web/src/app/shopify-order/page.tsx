@@ -56,6 +56,16 @@ IN SEASON ONLY, AUTOMATICALLY (owner, 2026-09-26 — "I only want to see what is
       how many styles it hides; its X shows everything, Reset brings the cut back. Applied inside the Repricing window too. Load basket
       ignores it, as it ignores every other narrowing. KNOWN EDGE, accepted for now: at the turn (late March, late August) this shows
       the ending season while the next one is what you'd be buying for — the X is the way round it until that bites.
+
+NO SUPPLY — "CAN'T GET IT" (owner, 2026-09-26). The supplier has none, so the style comes off this screen until a re-check day, then
+      returns on its own — "I don't want too much to remember". Style level. Two periods, no "forever": until the next season changeover
+      (1 April / 1 September — the season rule's own boundaries) or 3 months. It changes NOTHING else: not the season (which decides
+      WINNERS vs HARVEST and feeds the Seasons screen — the reason this isn't done by re-seasoning), not the status, not the Repricing
+      lists ("I can't buy any more, but I can price what I do have"). A chip counts the hidden ones and its X shows them, dimmed.
+      When the day passes the style is back carrying "Couldn't get it — <date>": X clears it (you can get it now), "Still can't"
+      parks it again. Ordering a flagged style through Confirm Basket clears the mark too, and parking a style empties its boxes, so
+      a line the operator has just said can't be bought can't ride along in the next send. Stored on skusummary.no_supply_*
+      (migrations/20260926_no_supply.sql), written by /shopify-order-no-supply and /shopify-order-no-supply-clear.
 =======================================================================================================================================
 */
 
@@ -67,7 +77,8 @@ import {
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import {
-  getShopifyOrderList, getStatusList, addOrderLine, ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
+  getShopifyOrderList, getStatusList, addOrderLine, setNoSupply, clearNoSupply,
+  ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
@@ -115,6 +126,16 @@ const DRAFT_KEY = 'bcweb:shopify-order-draft';
 const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 interface ShopifyOrderDraft { qty?: Record<string, string>; savedAt?: number; }
 
+// 'YYYY-MM-DD' -> '1 Apr' (with the year only when it isn't this one). Read straight off the string — never through a Date, which
+// would parse it as UTC midnight and can land on the day before in the browser's zone (CLAUDE.md's BST day-shift, client side).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const THIS_YEAR = String(new Date().getFullYear());
+function shortDate(iso: string | null): string {
+  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null;
+  if (!m) return '—';
+  return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}${m[1] === THIS_YEAR ? '' : ` ${m[1]}`}`;
+}
+
 // Portfolio status as a word, not a shout — the stored tag is upper-case (WINNERS | STEADY | NEW | HARVEST | LOSERS).
 function statusLabel(s: string | null): string | null {
   if (!s) return null;
@@ -143,13 +164,29 @@ interface StyleBlockProps {
   style: ShopifyOrderStyle;
   qty: Record<string, string>;
   onQty: (code: string, value: string) => void;
+  // "Can't get it" — see NO SUPPLY in the header. Both resolve to an error message, or null when it worked (the list then reloads).
+  nextSeasonStart: string | null;
+  onPark: (style: ShopifyOrderStyle, until: 'season' | '3m') => Promise<string | null>;
+  onClearSupply: (groupid: string) => Promise<string | null>;
 }
-const StyleBlock = memo(function StyleBlock({ style, qty, onQty }: StyleBlockProps) {
+const StyleBlock = memo(function StyleBlock({ style, qty, onQty, nextSeasonStart, onPark, onClearSupply }: StyleBlockProps) {
   const basketUnits = style.sizes.reduce((n, z) => n + (Number(qty[z.code]) || 0), 0);
   const status = statusLabel(style.status);
   const sizeTip = (z: ShopifyOrderSize) =>
     `Size ${z.size} — ${z.stock} on the shelf` + (z.on_order > 0 ? `, ${z.on_order} on order` : '')
     + ` · Shopify sold ${z.sold_90} in 90 days, ${z.sold_365} in 12 months`;
+  // The chooser is this block's own business: open, busy, or showing why the last write failed.
+  const [choosing, setChoosing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [supplyError, setSupplyError] = useState<string | null>(null);
+  async function run(write: () => Promise<string | null>) {
+    setBusy(true); setSupplyError(null);
+    const err = await write();
+    setBusy(false);
+    if (err) setSupplyError(err); else setChoosing(false);
+  }
+  // A park that has run out: the style is back, and says why it was away until the operator clears it or orders it.
+  const lapsed = !style.no_supply && !!style.no_supply_since;
   return (
     <div className="border-b border-slate-100 px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -175,9 +212,58 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty }: StyleBlockPro
         </div>
       </div>
 
+      {/* NO SUPPLY — one line under the header, in one of four states. Quiet slate text until it means something: a parked style (only
+          seen when the chip shows them) and a returning one both wear amber, because each is a fact the operator should notice. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        {style.no_supply ? (
+          <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+            Can&rsquo;t get it until {shortDate(style.no_supply_until)}
+            {style.no_supply_by && <span className="text-amber-600">· {style.no_supply_by}</span>}
+            <button type="button" disabled={busy} onClick={() => run(() => onClearSupply(style.groupid))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+              Clear
+            </button>
+          </span>
+        ) : lapsed && !choosing ? (
+          <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+            Couldn&rsquo;t get it — {shortDate(style.no_supply_since)}
+            <button type="button" disabled={busy} onClick={() => setChoosing(true)} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+              Still can&rsquo;t
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => run(() => onClearSupply(style.groupid))}
+              aria-label="I can get it — clear the note"
+              className="rounded p-0.5 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+            >
+              <XMarkIcon className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ) : choosing ? (
+          <span className="inline-flex items-center gap-1.5 text-slate-600">
+            Can&rsquo;t get it —
+            <button type="button" disabled={busy} onClick={() => run(() => onPark(style, 'season'))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+              until {nextSeasonStart ? shortDate(nextSeasonStart) : 'next season'}
+            </button>
+            <button type="button" disabled={busy} onClick={() => run(() => onPark(style, '3m'))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+              3 months
+            </button>
+            <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button type="button" onClick={() => setChoosing(true)} className="text-slate-400 hover:text-slate-600 hover:underline">
+            Can&rsquo;t get it
+          </button>
+        )}
+        {supplyError && <span className="text-red-600">{supplyError}</span>}
+      </div>
+
       {/* The size grid scrolls sideways inside its own block if it ever has to (a very wide range on a narrow screen), rather than
-          pushing the whole page into a horizontal scroll. Fixed-width size columns so a style's curve reads as a shape. */}
-      <div className="mt-2 overflow-x-auto">
+          pushing the whole page into a horizontal scroll. Fixed-width size columns so a style's curve reads as a shape. A parked style
+          (only on screen when the chip shows them) is dimmed — it's listed to look at, not to order. */}
+      <div className={'mt-2 overflow-x-auto' + (style.no_supply ? ' opacity-50' : '')}>
         <table className="border-separate border-spacing-0 text-xs">
           <tbody>
             <tr>
@@ -234,7 +320,9 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty }: StyleBlockPro
       </div>
     </div>
   );
-}, (a, b) => a.style === b.style && a.onQty === b.onQty && a.style.sizes.every((z) => a.qty[z.code] === b.qty[z.code]));
+}, (a, b) => a.style === b.style && a.onQty === b.onQty && a.nextSeasonStart === b.nextSeasonStart
+  && a.onPark === b.onPark && a.onClearSupply === b.onClearSupply
+  && a.style.sizes.every((z) => a.qty[z.code] === b.qty[z.code]));
 
 // useSearchParams needs a Suspense boundary for Next's build — same thin-wrapper split /amazon-order and the pricing lists use.
 export default function ShopifyOrderHome() {
@@ -259,7 +347,7 @@ function ShopifyOrderContent() {
   const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : undefined;
   const backLabel = searchParams.get('back') || 'Back';
 
-  const { data, error: loadError, isLoading: listLoading, refresh } = useApiQuery(
+  const { data, error: loadError, isLoading: listLoading, refresh, mutate } = useApiQuery(
     ['shopify-order-list'],
     () => getShopifyOrderList(),
   );
@@ -293,10 +381,19 @@ function ShopifyOrderContent() {
   const seasonNow = data?.season_now ?? null;
   const [seasonOn, setSeasonOn] = useState(true);
   const outOfSeason = useMemo(() => scopeBase.filter((s) => !s.in_season).length, [scopeBase]);
-  // The styles the screen is working within: the window, cut to the season.
-  const base = useMemo(
+  const seasonBase = useMemo(
     () => (seasonOn ? scopeBase.filter((s) => s.in_season) : scopeBase),
     [scopeBase, seasonOn],
+  );
+
+  // NO SUPPLY — styles marked "Can't get it" are off the screen until their re-check day (see the header). Counted after the season
+  // cut, so the chip's number is what it's hiding from the list you'd otherwise see.
+  const [supplyOn, setSupplyOn] = useState(true);
+  const parkedCount = useMemo(() => seasonBase.filter((s) => s.no_supply).length, [seasonBase]);
+  // The styles the screen is working within: the window, cut to the season, less anything you can't get.
+  const base = useMemo(
+    () => (supplyOn ? seasonBase.filter((s) => !s.no_supply) : seasonBase),
+    [seasonBase, supplyOn],
   );
   // Hold the whole screen until the scope has landed too, so arriving from Repricing never flashes all ~300 styles first.
   const loading = listLoading || (!!scopeStatus && scopeLoading);
@@ -353,6 +450,31 @@ function ShopifyOrderContent() {
       return next;
     });
   }, []);
+
+  // CAN'T GET IT — the two writes a style block can make. Each reloads the list (SWR mutate, stable across renders so the memoised
+  // blocks aren't all re-rendered for nothing) and hands back an error message, or null. Parking also EMPTIES that style's boxes: a
+  // quantity against a style you've just said you can't get is an order Confirm Basket would otherwise still send, from off screen.
+  const onPark = useCallback(async (style: ShopifyOrderStyle, until: 'season' | '3m') => {
+    const res = await setNoSupply(style.groupid, until);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
+    if (!res.success) return res.error || 'Couldn’t mark it';
+    const codes = new Set(style.sizes.map((z) => z.code));
+    setQty((prev) => {
+      if (!Object.keys(prev).some((c) => codes.has(c))) return prev;
+      const next = { ...prev };
+      codes.forEach((c) => { delete next[c]; });
+      return next;
+    });
+    await mutate();
+    return null;
+  }, [mutate, logout]);
+  const onClearSupply = useCallback(async (groupid: string) => {
+    const res = await clearNoSupply(groupid);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
+    if (!res.success) return res.error || 'Couldn’t clear it';
+    await mutate();
+    return null;
+  }, [mutate, logout]);
 
   // LOAD BASKET — show only styles with something in the basket, across the whole list, ignoring the search steps. Membership is a
   // SNAPSHOT taken when it's switched on (the Amazon Order rule, owner 2026-08-27): zeroing a box while it's on must not make the
@@ -471,11 +593,16 @@ function ShopifyOrderContent() {
     setProgress({ done: 0, total: targets.length });
     const failed: string[] = [];
     let units = 0;
+    // Styles that carry a "Can't get it" mark (live or lapsed) and just had an order land — cleared after the loop: a style you've
+    // just ordered is plainly one you can get, so its note would only be noise.
+    const orderedFlagged = new Set<string>();
     for (let i = 0; i < targets.length; i++) {
       const { code, qty: n, supplier } = targets[i];
       const res = await addOrderLine(supplier, code, n, 2);
       if (res.success) {
         units += n;
+        const st = byCode.get(code)?.style;
+        if (st && st.no_supply_since) orderedFlagged.add(st.groupid);
         setQty((prev) => { const next = { ...prev }; delete next[code]; return next; });
       } else if (res.return_code === 'UNAUTHORIZED') {
         setSending(false); setProgress(null); logout(); return;
@@ -486,6 +613,8 @@ function ShopifyOrderContent() {
     }
     setProgress(null); setSending(false);
     if (failed.length > 0) setSendError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
+    // Best effort — the orders are what matters; a note that fails to clear just stays until the next time.
+    for (const g of orderedFlagged) await clearNoSupply(g);
     if (units > 0) {
       setSentNote(`Sent ${units} unit${units === 1 ? '' : 's'} to Order Status`);
       // Picks up the new lines in every "+n on order" and in the backlog figures.
@@ -509,13 +638,14 @@ function ShopifyOrderContent() {
     setBasketSnapshot(null);
     setScopeOn(true);
     setSeasonOn(true);
+    setSupplyOn(true);
     setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]);
     setConfirmingSend(false); setConfirmingClear(false); setSendError(null); setSentNote(null);
     includeInputRef.current?.focus();
   }
   const sorted = sortKey !== DEFAULT_SORT || sortDir !== DEFAULT_DIR[DEFAULT_SORT];
   // Reset has something to do if the Repricing window or the season cut was switched off, too — it's how you get back to either.
-  const leftScope = (scopeIds !== null && !scopeOn) || !seasonOn;
+  const leftScope = (scopeIds !== null && !scopeOn) || !seasonOn || !supplyOn;
   // "Winners over £2,500" — the list's name as the Repricing crumb gives it.
   const scopeName = scopeStatus
     ? scopeStatus.charAt(0) + scopeStatus.slice(1).toLowerCase() + (scopeBar ? ` ${barLabel(scopeBar)}` : '')
@@ -680,6 +810,33 @@ function ShopifyOrderContent() {
               In season only
             </button>
           ))}
+          {/* CAN'T GET — only when something is actually parked; the same chip shell and X / way-back-in pair as the two before it. */}
+          {parkedCount > 0 && (supplyOn ? (
+            <span
+              title="Styles marked “Can’t get it” — off this screen until their re-check date, then back on their own. Still on every Repricing list."
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              Can&rsquo;t get: <span className="font-semibold text-slate-800">{parkedCount}</span>
+              <span className="text-slate-400">hidden</span>
+              <button
+                type="button"
+                onClick={() => { setSupplyOn(false); setBasketSnapshot(null); }}
+                aria-label="Show styles you can't get"
+                title="Show them, dimmed (Reset hides them again)"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSupplyOn(true)}
+              className="text-sm font-medium text-brand-600 hover:underline"
+            >
+              Hide can&rsquo;t-get
+            </button>
+          ))}
           <span className="whitespace-nowrap text-sm text-slate-500">
             {filtering ? (
               <>Styles: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {countOf}</span></>
@@ -801,7 +958,15 @@ function ShopifyOrderContent() {
       {!loading && !error && (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           {visible.map((s) => (
-            <StyleBlock key={s.groupid} style={s} qty={qty} onQty={onQty} />
+            <StyleBlock
+              key={s.groupid}
+              style={s}
+              qty={qty}
+              onQty={onQty}
+              nextSeasonStart={data?.next_season_start ?? null}
+              onPark={onPark}
+              onClearSupply={onClearSupply}
+            />
           ))}
           {visible.length === 0 && styles.length > 0 && (
             <div className="px-4 py-6 text-center text-sm text-slate-400">

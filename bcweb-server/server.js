@@ -159,6 +159,9 @@ app.use('/amz-pick-allocate', require('./routes/amz-pick-allocate')); // the Pic
 // Shopify Order — the local-shelf counterpart: every Shopify style with its size curve (shelf / on order / Shopify sold). Read only;
 // its basket writes through /order-status-add with ordertype 2 (local), the same route Amazon Order and Order Status use.
 app.use('/shopify-order-list', require('./routes/shopify-order-list'));
+// "Can't get it" — park a style off Shopify Order until a re-check date (next season / 3 months), and clear it again.
+app.use('/shopify-order-no-supply', require('./routes/shopify-order-no-supply'));
+app.use('/shopify-order-no-supply-clear', require('./routes/shopify-order-no-supply-clear'));
 
 // --- Update Amazon module (data ingest; replaces the PowerBuilder UPDATE AMAZON button — see _amz-port/design/update-amazon-port.md) ---
 // Two stages over the same uploaded files: preview reads and writes nothing, commit does the lot in one transaction. Files are
