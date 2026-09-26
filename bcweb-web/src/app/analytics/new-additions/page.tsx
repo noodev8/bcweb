@@ -22,7 +22,7 @@ Guarded by AppShell. Consumes GET /analytics-new-additions (the list) and, via A
 
 import { Suspense, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ClipboardDocumentIcon, CheckIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
 import { useProductActions } from '@/components/ProductActions';
