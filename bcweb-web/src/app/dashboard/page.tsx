@@ -19,8 +19,7 @@ is a new heading, not a "Misc" group or a sixth kind of label.
 
   A SCREEN MAY APPEAR UNDER MORE THAN ONE HEADING, deliberately (owner). Under the old bands a tile had one home and duplication was
   a bug; with intent headings it is the entire point, because two mindsets genuinely look in two places for the same screen. Repricing
-  is part of the business flow AND a daily operations job; Amazon Order likewise; Google Ads is a step in the flow AND the head of
-  the Google card. So DON'T "de-duplicate" this page — a repeat
+  is a daily operations job AND a pricing one; Google Ads heads the Google card AND sits with the reports. So DON'T "de-duplicate" this page — a repeat
   here is load-bearing. (It is cheap, too: a repeat is one line in one array.)
 
 EXPANDED IN PLACE, ONE AT A TIME, rather than each heading being its own sub-page. The whole problem is not knowing where a screen
@@ -59,7 +58,6 @@ answers "get me there, I'm mid-task", where the destination is already known and
 */
 
 import { useState, ComponentType, SVGProps } from 'react';
-import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
@@ -69,7 +67,7 @@ import {
   ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
-  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 
@@ -100,7 +98,7 @@ interface Group {
 }
 
 /* =====================================================================================================================================
-   THE MENU. All four groups and every tile, as data (Business Flow is the strip above them — see FLOW) — a screen moves group, or gains a second home, by moving or copying one entry.
+   THE MENU. All four groups and every tile, as data — a screen moves group, or gains a second home, by moving or copying one entry.
    RE-ALIGNED 2026-09-24 (owner). Built first as a "provisional new menu" rendered UNDER the old one so the team's menu didn't move
    while the shape was worked out, then promoted to be the only menu. The old five (Do today's work / See how we're doing / Set
    prices / Feed the channels / Look after the catalogue) are in git history. What changed, on purpose:
@@ -166,20 +164,6 @@ const GROUPS: Group[] = [
         icon: ShoppingCartIcon,
       },
       {
-        title: 'Location',
-        subtitle: "What's on a rack",
-        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
-        href: '/locations',
-        icon: MapPinIcon,
-      },
-      {
-        title: 'Inventory',
-        subtitle: 'Browse without searching',
-        description: 'Browse and filter the whole catalogue when you have no term to search for.',
-        href: '/inventory',
-        icon: ArchiveBoxIcon,
-      },
-      {
         title: 'Repricing',
         subtitle: 'Selling and stuck lists',
         description: 'See which segment needs attention next, and track who worked what.',
@@ -226,6 +210,30 @@ const GROUPS: Group[] = [
         description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
         href: '/analytics/stock-position',
         icon: CubeIcon,
+      },
+      {
+        // Location and Inventory moved here from Operations (owner, 2026-09-26), beside Stock Position.
+        title: 'Location',
+        subtitle: "What's on a rack",
+        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
+        href: '/locations',
+        icon: MapPinIcon,
+      },
+      {
+        title: 'Inventory',
+        subtitle: 'Browse without searching',
+        description: 'Browse and filter the whole catalogue when you have no term to search for.',
+        href: '/inventory',
+        icon: ArchiveBoxIcon,
+      },
+      {
+        // Moved here from the retired Business Flow strip (owner, 2026-09-26) — its only door for creating a product; beside New
+        // Products because adding one is when the owner checks it. Titled Add / Modify, the module's own name (owner, 2026-09-26).
+        title: 'Add / Modify',
+        subtitle: 'Edit or create a product',
+        description: 'Find an existing product to edit, or create a new one.',
+        href: '/products',
+        icon: TagIcon,
       },
       {
         title: 'New Products',
@@ -326,7 +334,7 @@ const GROUPS: Group[] = [
     blurb: 'Campaigns, and what the spend is earning',
     icon: CursorArrowRaysIcon,
     // Google Ads plus the two ad reports moved out of Reports (owner, 2026-09-24) — the campaigns and the read on whether the
-    // spend is paying sit together. Google Ads also stays in Business Flow.
+    // spend is paying sit together.
     tiles: [
       {
         title: 'Google Ads',
@@ -353,51 +361,6 @@ const GROUPS: Group[] = [
   },
 ];
 
-/* =====================================================================================================================================
-   BUSINESS FLOW — a strip, not a card (owner, 2026-09-24). It's a SEQUENCE (product in → stock bought → advertised → priced), so it is
-   drawn as steps with arrows in a full-width strip below the cards (closed until clicked) rather than a card of its own. What it is FOR is still open — a daily
-   route, or a reminder of what to work on next ("I might use it daily. Don't know yet but let's put something") — so it is kept
-   light: a handful of links, nothing else. Every step also lives in a card below; this is a second door, not the only one.
-===================================================================================================================================== */
-const FLOW: Tile[] = [
-      {
-        title: 'Product',
-        subtitle: 'Edit or create a product',
-        description: 'Find an existing product to edit, or create a new one.',
-        href: '/products',
-        icon: TagIcon,
-      },
-      {
-        // Added after Product (owner, 2026-09-24) — same screen as Back Office → Sales.
-        title: 'Sales',
-        subtitle: 'Recent sales and profit',
-        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
-        href: '/analytics/sales',
-        icon: BanknotesIcon,
-      },
-      {
-        title: 'Amazon Order',
-        subtitle: 'What to buy in, what to send',
-        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
-        href: '/amazon-order',
-        icon: ClipboardDocumentListIcon,
-      },
-      {
-        title: 'Google Ads',
-        subtitle: 'Shopping campaigns and spend',
-        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
-        href: '/google-ads',
-        icon: CursorArrowRaysIcon,
-      },
-      {
-        title: 'Repricing',
-        subtitle: 'Selling and stuck lists',
-        description: 'See which segment needs attention next, and track who worked what.',
-        href: '/segments',
-        icon: Squares2X2Icon,
-      },
-];
-
 export default function DashboardPage() {
   // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
   // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
@@ -420,7 +383,6 @@ export default function DashboardPage() {
 
       <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
 
-      <FlowStrip />
     </AppShell>
   );
 }
@@ -497,48 +459,5 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
         </section>
       )}
     </>
-  );
-}
-
-// The Business Flow strip — see FLOW. BELOW the cards and CLOSED by default (owner, 2026-09-24): open and above them it competed with
-// the header bar for "the menu". Full width even when closed, so it still reads as a line of its own rather than a sixth card. Its
-// open state is its own, not the cards' one-at-a-time slot — it's a different kind of thing, and opening it shouldn't shut a group.
-// Links carry ?from=flow like the cards do, so the landing page's back link says Dashboard; there is no 'flow' group to re-open, so
-// it returns to the dashboard with nothing open.
-function FlowStrip() {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-controls="flow-steps"
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
-      >
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-          <ArrowsRightLeftIcon className="h-4 w-4" />
-        </span>
-        <span className="text-sm font-semibold text-slate-900">Business Flow</span>
-        <span className="text-xs text-slate-500">Product in, stock bought, price set</span>
-        <ChevronDownIcon className={'ml-auto h-4 w-4 text-slate-400 transition-transform ' + (open ? 'rotate-180' : '')} />
-      </button>
-      {open && (
-        <nav id="flow-steps" aria-label="Business flow" className="flex flex-wrap items-center gap-x-1 gap-y-2 border-t border-slate-100 px-4 py-2.5">
-          {FLOW.map((t, i) => (
-            <span key={t.href} className="flex items-center gap-1">
-              {i > 0 && <ChevronRightIcon className="h-4 w-4 text-slate-300" />}
-              <Link
-                href={t.href + (t.href.includes('?') ? '&' : '?') + 'from=flow'}
-                className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-brand-50 hover:text-brand-700"
-              >
-                <t.icon className="h-4 w-4 text-brand-600" />
-                {t.title}
-              </Link>
-            </span>
-          ))}
-        </nav>
-      )}
-    </div>
   );
 }
