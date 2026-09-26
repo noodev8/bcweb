@@ -65,7 +65,7 @@ function toIsoDate(d) {
 
 router.get('/', async (req, res) => {
   try {
-    // Creation window — 30 days (owner decision, re-confirmed 2026-07-27 after trying 60). The month is the unit the owner reads
+    // Creation window — default 30 days here, but the New screen asks for 90 (owner, 2026-09-26: the new-line trial is 90 days). The month is the unit the owner reads
     // these numbers in; a wider default just made the hero count harder to place. The screen's "21+ days live" filter is left to eat
     // into it. Honours ?days= within [1, 365] as documented; the query cost is flat whatever the window.
     const raw = parseInt(req.query.days, 10);

@@ -33,13 +33,14 @@ import {
   NewAdditionRow,
 } from '@/lib/api';
 
-// Fixed 30-day window, no lens toggle (owner decision, re-confirmed 2026-07-27 after a brief try at 60). The month is the unit the
-// owner thinks in, so the screen shows a month — full stop. Yes, ticking the 21+ filter then leaves only a ~9-day slice; that is
-// accepted (a heavy intake month fills it anyway, and unticking always shows the whole 30 days).
-const DAYS = 30;
-// "Settled in" threshold for the table filter: a line live this long has had a fair chance to sell. 14, not 21 (owner 2026-07-27) —
-// inside a 30-day window, 21 left too thin a slice to be a useful list; a fortnight is enough of a chance to judge one.
-const MATURE_DAYS = 14;
+// Fixed 90-day window, no lens toggle (owner, 2026-09-26 — was 30 since 2026-07-27). 90 days is the owner's rule for a new line:
+// "that's when I want each to sell at least once", so the list has to hold a line for its whole trial, not drop it at day 30 while
+// it is still being judged. The hero count follows the window (owner chose that over keeping a 30-day hero). ~3x the rows of the
+// old window — a few hundred at most, loaded in one request; the owner is happy to wait for it.
+const DAYS = 90;
+// "Settled in" threshold for the table filter: 20 days (owner, 2026-09-26 — was 14) — "that's when I'd expect something to happen
+// and act on it if not". Ticked, the list is the lines past that point, i.e. the ones to judge.
+const MATURE_DAYS = 20;
 
 // Stable identities for "nothing loaded yet". A fresh [] each render would change the identity of everything derived from it
 // (the sortedRows useMemo below), defeating the memo.
@@ -253,13 +254,13 @@ function NewAdditionsPageInner() {
             {showAbout && (
               <p className="mt-4 max-w-3xl border-t border-slate-100 pt-3 text-sm text-slate-500">
                 Styles <strong>added in the last {DAYS} days</strong>, newest first — and how each new line has sold so far (all channels). A
-                quick read on whether the month brought a lot of new product or a little. Tick <strong>{MATURE_DAYS}+ days live only</strong>
+                quick read on whether the last quarter brought a lot of new product or a little. Tick <strong>{MATURE_DAYS}+ days live only</strong>
                 to drop the lines from the list that are still too new to judge — the totals above always cover the full {DAYS} days.
               </p>
             )}
           </div>
 
-          {/* PRODUCTION — the pace of making new product, this year against last. Sits between the hero (what the last 30 days
+          {/* PRODUCTION — the pace of making new product, this year against last. Sits between the hero (what the last 90 days
               brought) and the list (what those additions are), because it is the same subject at a longer focal length. Loads its
               own data, so it can't hold the list up. */}
           <AdditionsTrend />
@@ -332,7 +333,7 @@ function NewAdditionsPageInner() {
                       <button
                         onClick={() => toggleSort('sold')}
                         className={`inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ${sortBy === 'sold' ? 'text-slate-800' : ''}`}
-                        title="Sort by units sold — units since the style was added, not a 30-day window"
+                        title="Sort by units sold — units since the style was added, not a fixed window"
                       >
                         {caret('sold')} Sold
                       </button>
