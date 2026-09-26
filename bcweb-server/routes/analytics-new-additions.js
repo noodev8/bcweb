@@ -120,6 +120,7 @@ router.get('/', async (req, res) => {
       )
       SELECT c.groupid,
              t.shopifytitle              AS title,
+             NULLIF(TRIM(ss.brand), '')  AS brand,   -- Brand column (owner, 2026-09-26)
              c.created_ts,
              ${safeNumeric('ss.shopifyprice')} AS price,
              ${safeNumeric('ss.rrp')}          AS rrp,
@@ -144,6 +145,7 @@ router.get('/', async (req, res) => {
     const rows = result.rows.map((r) => ({
       groupid: r.groupid,
       title: r.title || null,
+      brand: r.brand || null,
       created: toIsoDate(r.created_ts),
       price: num(r.price),
       rrp: num(r.rrp),

@@ -335,11 +335,6 @@ app.use('/analytics-sales', require('./routes/analytics-sales'));
 // to staff. Fills the gap between Ad Efficiency (monthly, too slow to show a decision working) and the Google Ads grid (per style,
 // never totals the book). No kept column on a ROW: daily units are a small count and the swing would be noise. Read-only.
 app.use('/analytics-ad-daily', require('./routes/analytics-ad-daily'));
-// Scratchpad: a free-form shared notepad on the New Additions screen (research-mode product notes). GET lists newest-first; add/delete
-// are POSTs (add returns the new row; delete is idempotent). No edit path by design (add + delete only).
-app.use('/analytics-scratchpad', require('./routes/analytics-scratchpad'));               // GET: all notes, newest first
-app.use('/analytics-scratchpad-add', require('./routes/analytics-scratchpad-add'));       // POST {body}: insert a note
-app.use('/analytics-scratchpad-delete', require('./routes/analytics-scratchpad-delete')); // POST {id}: remove a note
 
 // Winners screen — the business as a portfolio of earning assets, read from the STORED status tags. (GET /portfolio-winners and
 // GET /portfolio-contenders, both computed live, were removed 2026-09-25 — see utils/portfolio.js.)

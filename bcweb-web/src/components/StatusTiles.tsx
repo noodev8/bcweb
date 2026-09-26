@@ -46,8 +46,7 @@ function fmtStamp(s: string): string {
 // `toolbar` = the page's Status | Segment | Campaign switch, drawn on the same row as the update control.
 export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
-  // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only. The key is
-  // shared with Reports → New's WinnersStrip, so one fetch serves both.
+  // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
   const { logout } = useAuth();
   const router = useRouter();

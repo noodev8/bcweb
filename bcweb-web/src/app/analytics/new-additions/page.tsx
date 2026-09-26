@@ -25,19 +25,13 @@ import { useSearchParams } from 'next/navigation';
 import { ClipboardDocumentIcon, CheckIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
-import WinnersStrip from '@/components/WinnersStrip';
 import { useProductActions } from '@/components/ProductActions';
-import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import {
   getNewAdditions,
   getNewAdditionsTrend,
   NewAdditionRow,
-  getScratchpad,
-  addScratchpadNote,
-  deleteScratchpadNote,
-  ScratchpadNote,
 } from '@/lib/api';
 
 // Fixed 30-day window, no lens toggle (owner decision, re-confirmed 2026-07-27 after a brief try at 60). The month is the unit the
@@ -53,7 +47,6 @@ const MATURE_DAYS = 14;
 type SortKey = 'added' | 'sold' | 'profit' | 'stock';
 
 const NO_ROWS: NewAdditionRow[] = [];
-const NO_NOTES: ScratchpadNote[] = [];
 
 export default function NewAdditionsPage() {
   return (
@@ -69,7 +62,6 @@ function NewAdditionsPageInner() {
   const backHref = searchParams.get('from') || '/analytics';
   const backLabel = searchParams.get('back') || 'Reports';
 
-  const { logout } = useAuth();
   const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
   const [sortBy, setSortBy] = useState<SortKey>('added');                    // which column the list is sorted by
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');            // direction; default desc (newest / most first)
@@ -256,10 +248,6 @@ function NewAdditionsPageInner() {
               own data, so it can't hold the list up. */}
           <AdditionsTrend />
 
-          {/* What the making is FOR — the winner count, and the way through to that screen. Sits directly under production because
-              it is the outcome half of the same subject; the Winners screen owns everything else about it. */}
-          <WinnersStrip />
-
           {/* Table controls. The filter sits HERE, not in the hero — it changes the list below it and nothing above it, and being next
               to the row count makes that obvious at a glance. */}
           {rows.length > 0 && (
@@ -312,6 +300,7 @@ function NewAdditionsPageInner() {
                       </button>
                     </th>
                     <th className="px-4 py-2.5 font-medium">Product</th>
+                    <th className="px-3 py-2.5 font-medium">Brand</th>
                     <th className="px-3 py-2.5 text-right font-medium">RRP</th>
                     <th className="px-3 py-2.5 text-right font-medium">Price</th>
                     <th className="px-3 py-2.5 text-right font-medium">
@@ -384,6 +373,7 @@ function NewAdditionsPageInner() {
                         <div className="font-mono text-sm tracking-tight text-slate-900">{r.groupid}</div>
                         <div className="text-xs text-slate-400">{r.title || 'Untitled'}</div>
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-600">{r.brand || '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
                       <td
                         className={`px-3 py-2 text-right tabular-nums ${
@@ -413,163 +403,8 @@ function NewAdditionsPageInner() {
         </>
       )}
 
-      <Scratchpad onUnauthorized={logout} />
       {actions.node}
     </AppShell>
-  );
-}
-
-// -------------------------------------------------------------------------------------------------------------------------------------
-// Scratchpad — a free-form shared notepad for research-mode product notes. Loads independently of the New Additions report above (its
-// own fetch/state), so a slow report never blocks jotting. Add + delete only (no edit): to change a note, delete and re-add.
-// -------------------------------------------------------------------------------------------------------------------------------------
-function Scratchpad({ onUnauthorized }: { onUnauthorized: () => void }) {
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [copiedId, setCopiedId] = useState<number | null>(null); // note just copied (brief "Copied" flash)
-  // Errors raised by add/delete. Separate from the query's own error so a failed save doesn't blank the list of existing notes.
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const { data: notesData, error: loadError, busy: loading, mutate } = useApiQuery(
-    ['scratchpad'],
-    () => getScratchpad(),
-  );
-  const notes: ScratchpadNote[] = notesData ?? NO_NOTES;
-  const error = actionError ?? loadError?.message ?? null;
-
-  const add = async () => {
-    const body = draft.trim();
-    if (!body || saving) return;
-    setSaving(true);
-    setActionError(null);
-    const res = await addScratchpadNote(body);
-    if (res.success && res.data) {
-      // Write the new note straight into the cache (revalidate: false) — the POST already returned the saved row, so a refetch
-      // would only cost a round trip to learn what we already know.
-      const saved = res.data as ScratchpadNote;
-      await mutate((n) => [saved, ...(n ?? NO_NOTES)], { revalidate: false });
-      setDraft('');
-    } else {
-      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      setActionError(res.error || 'Failed to save note');
-    }
-    setSaving(false);
-  };
-
-  const remove = async (id: number) => {
-    // Optimistic — drop it from the cache immediately; SWR rolls back automatically if the delete throws.
-    const prev = notes;
-    await mutate((n) => (n ?? NO_NOTES).filter((x) => x.id !== id), { revalidate: false });
-    const res = await deleteScratchpadNote(id);
-    if (!res.success) {
-      if (res.return_code === 'UNAUTHORIZED') { onUnauthorized(); return; }
-      await mutate(prev, { revalidate: false });
-      setActionError(res.error || 'Failed to delete note');
-    }
-  };
-
-  // Copy a note's text to the clipboard (paste into a new note to tweak, or anywhere else). Brief "Copied" flash on that card.
-  const copy = async (note: ScratchpadNote) => {
-    try {
-      await navigator.clipboard.writeText(note.body);
-      setCopiedId(note.id);
-      setTimeout(() => setCopiedId((c) => (c === note.id ? null : c)), 1200);
-    } catch {
-      /* clipboard unavailable — no-op */
-    }
-  };
-
-  // Ctrl/Cmd+Enter to add — keeps a jotting flow fast without stealing the plain Enter (notes are often multi-line).
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); add(); }
-  };
-
-  const fmtWhen = (iso: string | null) => {
-    if (!iso) return '';
-    const dt = new Date(iso);
-    return `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}, ${dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
-  };
-
-  return (
-    <section className="mt-10">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Scratchpad</h2>
-      <p className="mt-1 mb-4 max-w-3xl text-sm text-slate-500">
-        Loose notes for products you might order — jot them while researching, refer back when the stock arrives and you&apos;re setting
-        it up. Shared with the team. No rules.
-      </p>
-
-      {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-
-      {!loading && notes.length === 0 && (
-        <p className="mb-4 text-sm text-slate-400">No notes yet — add the first one below.</p>
-      )}
-
-      {notes.length > 0 && (
-        <ul className="mb-4 space-y-2">
-          {notes.map((n) => (
-            <li
-              key={n.id}
-              className="group flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{n.body}</p>
-                <p className="mt-1.5 text-xs text-slate-400">
-                  {n.created_by || 'Someone'}
-                  {n.created_at && <> · {fmtWhen(n.created_at)}</>}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  onClick={() => copy(n)}
-                  title="Copy note text"
-                  aria-label="Copy note text"
-                  className="inline-flex items-center justify-center rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                >
-                  {copiedId === n.id ? <CheckIcon className="h-4 w-4 text-green-600" /> : <ClipboardDocumentIcon className="h-4 w-4" />}
-                </button>
-                <button
-                  onClick={() => remove(n.id)}
-                  title="Delete note"
-                  aria-label="Delete note"
-                  className="rounded-md px-2 py-1 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
-                >
-                  ✕
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* Composer — set apart from the list by a divider + label + tinted well, so it reads as the input zone, not another saved note. */}
-      <div className="mt-8 border-t border-slate-200 pt-6">
-        <label htmlFor="scratch-new" className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
-          Add a note
-        </label>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <textarea
-            id="scratch-new"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            rows={3}
-            placeholder="e.g. Arizona Taupe suede — check EU availability, ~£55 landed? Ask supplier re: 36–42 run."
-            className="w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-          />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-slate-400">Ctrl/⌘ + Enter to add</span>
-            <button
-              onClick={add}
-              disabled={!draft.trim() || saving}
-              className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saving ? 'Adding…' : 'Add note'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
