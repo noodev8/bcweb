@@ -156,6 +156,9 @@ app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm
 // profit report, not a pricing-decision screen.
 app.use('/amazon-order-list', require('./routes/amazon-order-list')); // every managed SKU + 30d realised profit / unit profit
 app.use('/amz-pick-allocate', require('./routes/amz-pick-allocate')); // the Pick basket's write: flag free shelf units allocated='amz' -> they appear on /pick
+// Shopify Order — the local-shelf counterpart: every Shopify style with its size curve (shelf / on order / Shopify sold). Read only;
+// its basket writes through /order-status-add with ordertype 2 (local), the same route Amazon Order and Order Status use.
+app.use('/shopify-order-list', require('./routes/shopify-order-list'));
 
 // --- Update Amazon module (data ingest; replaces the PowerBuilder UPDATE AMAZON button — see _amz-port/design/update-amazon-port.md) ---
 // Two stages over the same uploaded files: preview reads and writes nothing, commit does the lot in one transaction. Files are

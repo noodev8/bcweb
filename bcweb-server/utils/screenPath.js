@@ -34,6 +34,7 @@ const STATIC = new Set([
   '/order-status',
   '/goods-in',
   '/amazon-order',
+  '/shopify-order',
   '/locations',
   '/finance',
   '/birk-tracker',

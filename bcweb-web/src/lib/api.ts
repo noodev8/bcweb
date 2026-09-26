@@ -449,6 +449,42 @@ export function getAmazonOrderList() {
   );
 }
 
+// Shopify Order — the local-shelf counterpart of Amazon Order, at STYLE grain with the full size curve nested (routes/shopify-order-list.js).
+// stock = sellable shelf (#FREE, less anything committed to Amazon); on_order = un-arrived LOCAL lines (ordertype 2, TO PLACE + ON ORDER);
+// sold_90 / sold_365 = Shopify units (SHP, qty > 0). Per-style figures are the sum of the sizes. supplier on a size is skumap.supplier —
+// what /order-status-add validates the line against. Order quantities are the page's own scratchpad, not a server field.
+export interface ShopifyOrderSize {
+  code: string; size: string; supplier: string | null;
+  stock: number; on_order: number; sold_90: number; sold_365: number;
+}
+export interface ShopifyOrderStyle {
+  groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
+  price: number | null; cost: number | null;
+  stock: number; on_order: number; sold_90: number; sold_365: number;
+  sizes: ShopifyOrderSize[];
+}
+// Same two screen-level backlog figures as Amazon Order, for ordertype 2 (local) instead of 3.
+export type ShopifyOrderToPlace = AmazonOrderToPlace;
+export type ShopifyOrderOnOrder = AmazonOrderOnOrder;
+
+// One call, whole list (~300 styles / ~2,100 sizes) — searched client-side, like getAmazonOrderList.
+export function getShopifyOrderList() {
+  return request<{ count: number; styles: ShopifyOrderStyle[]; to_place: ShopifyOrderToPlace; on_order: ShopifyOrderOnOrder }>(
+    { url: '/shopify-order-list', method: 'GET' },
+    (b) => ({
+      count: b.count ?? (b.styles || []).length,
+      styles: b.styles || [],
+      to_place: {
+        units: Number(b.to_place?.units) || 0,
+        skus: Number(b.to_place?.skus) || 0,
+        suppliers: Number(b.to_place?.suppliers) || 0,
+        oldest_days: b.to_place?.oldest_days === null || b.to_place?.oldest_days === undefined ? null : Number(b.to_place.oldest_days),
+      },
+      on_order: { units: Number(b.on_order?.units) || 0, skus: Number(b.on_order?.skus) || 0 },
+    })
+  );
+}
+
 // Amazon Pricing — Stage 2 drill: one SKU's header + 6-week velocity + 60d price bands. Mirrors getDrill().
 export function getAmzDrill(code: string) {
   return request<AmzDrillData>(

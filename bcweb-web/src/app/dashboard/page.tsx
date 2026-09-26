@@ -70,7 +70,7 @@ import {
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
-  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon,
+  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -147,6 +147,14 @@ const GROUPS: Group[] = [
         description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
         href: '/amazon-order',
         icon: ClipboardDocumentListIcon,
+      },
+      {
+        // The local-shelf counterpart of Amazon Order, beside it (owner, 2026-09-26).
+        title: 'Shopify Order',
+        subtitle: 'What to buy in for the shelf',
+        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
+        href: '/shopify-order',
+        icon: ShoppingBagIcon,
       },
       {
         // Renamed from "Order Status" here only (owner, 2026-09-24) — beside Customer Orders and Amazon Order, "Order Status" no
