@@ -58,6 +58,7 @@ answers "get me there, I'm mid-task", where the destination is already known and
 */
 
 import { useState, ComponentType, SVGProps } from 'react';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
@@ -94,6 +95,9 @@ interface Group {
   // used). The extra width is spent on the contents, not on white space — naming what's in a group is the whole cure for the
   // "where does that screen live?" problem this page exists to solve.
   size?: 'main';
+  // A card that IS a screen rather than a group of them (owner, 2026-09-26: Sales and Winners promoted to cards of their own).
+  // Clicking goes straight there; `tiles` stays empty.
+  link?: string;
   tiles: Tile[];
 }
 
@@ -111,6 +115,22 @@ interface Group {
    ORDER IS THE OWNER'S. Don't sort these alphabetically or by build order.
 ===================================================================================================================================== */
 const GROUPS: Group[] = [
+  {
+    id: 'sales',
+    title: 'Sales',
+    blurb: 'Recent sales and profit',
+    icon: BanknotesIcon,
+    link: '/analytics/sales',
+    tiles: [],
+  },
+  {
+    id: 'winners',
+    title: 'Winners',
+    blurb: 'Products pulling their weight',
+    icon: TrophyIcon,
+    link: '/segments',
+    tiles: [],
+  },
   {
     id: 'ops',
     title: 'Operations',
@@ -198,13 +218,6 @@ const GROUPS: Group[] = [
     // Email arrives, Facebook + Email become their own Marketing card. The id stays 'reports' so ?from=/?g= links keep working.
     tiles: [
       {
-        title: 'Sales',
-        subtitle: 'Recent sales and profit',
-        description: 'Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel.',
-        href: '/analytics/sales',
-        icon: BanknotesIcon,
-      },
-      {
         title: 'Stock Position',
         subtitle: 'What’s commercially alive',
         description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
@@ -257,15 +270,6 @@ const GROUPS: Group[] = [
         icon: DocumentMagnifyingGlassIcon,
       },
       {
-        title: 'Winners',
-        subtitle: 'Products pulling their weight',
-        // Opens Repricing's Status tab — the Winners screen was folded into it (owner, 2026-09-25: "the same screen for two
-        // different points of view"). The card stays as the analysis way in.
-        description: 'Winners, steady, new, harvest and losers per channel — with winners by brand and how the mix is moving.',
-        href: '/segments',
-        icon: TrophyIcon,
-      },
-      {
         // Its own Back Office job (owner, 2026-09-25), done in a review mindset: which styles really sell all year, and every style
         // marked "Can't get it". Season no longer affects any status (2026-09-26).
         title: 'Seasons',
@@ -294,6 +298,210 @@ const GROUPS: Group[] = [
         description: 'Queue and publish the daily Facebook post — graphic, caption, link, scheduled.',
         href: '/social',
         icon: MegaphoneIcon,
+      },
+    ],
+  },
+];
+
+/* =====================================================================================================================================
+   FIND-BY-PART CARDS (owner, 2026-09-26). A second row BELOW the main menu, left exactly as it was. Each card gathers every screen for
+   one part of the business so it can be found by what it is rather than by mindset. Every tile here ALSO lives in the main menu (or
+   was deliberately left off it) — the repeats are the point, don't de-duplicate.
+===================================================================================================================================== */
+const PART_GROUPS: Group[] = [
+  {
+    id: 'packing',
+    title: 'Packing',
+    blurb: 'Book it in, pick it, send it',
+    icon: ArchiveBoxIcon,
+    tiles: [
+      {
+        title: 'Goods In',
+        subtitle: 'Book in a delivery',
+        description: "Book in what's arrived from a supplier and put it on the shelf.",
+        href: '/goods-in',
+        icon: InboxArrowDownIcon,
+      },
+      {
+        title: 'Pick',
+        subtitle: 'What to take off the shelf',
+        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
+        href: '/pick',
+        icon: HandRaisedIcon,
+      },
+      {
+        title: 'Customer Orders',
+        subtitle: 'Fulfil what customers bought',
+        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
+        href: '/customer-orders',
+        icon: UserGroupIcon,
+      },
+    ],
+  },
+  {
+    id: 'orders',
+    title: 'Orders',
+    blurb: 'What to buy in, and what’s coming',
+    icon: ShoppingCartIcon,
+    tiles: [
+      {
+        title: 'Shopify Order',
+        subtitle: 'What to buy in for the shelf',
+        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
+        href: '/shopify-order',
+        icon: ShoppingBagIcon,
+      },
+      {
+        title: 'Amazon Order',
+        subtitle: 'What to buy in, what to send',
+        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
+        href: '/amazon-order',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        title: 'Supplier Orders',
+        subtitle: 'What’s placed, what’s coming',
+        description: "Place supplier orders and chase what's on its way.",
+        href: '/order-status',
+        icon: ShoppingCartIcon,
+      },
+    ],
+  },
+  {
+    id: 'pricing',
+    title: 'Pricing',
+    blurb: 'Every pricing screen in one place',
+    icon: TagIcon,
+    tiles: [
+      {
+        title: 'Repricing',
+        subtitle: 'Selling and stuck lists',
+        description: 'See which segment needs attention next, and track who worked what.',
+        href: '/segments',
+        icon: Squares2X2Icon,
+      },
+      {
+        title: 'Shopify Price',
+        subtitle: 'Shopify pricing home',
+        description: 'Shopify pricing — pick a segment or find a style.',
+        href: '/pricing',
+        icon: ShoppingBagIcon,
+      },
+      {
+        title: 'Amazon Price',
+        subtitle: 'Amazon pricing home',
+        description: 'Amazon pricing — pick a segment or find a SKU.',
+        href: '/amz',
+        icon: ShoppingCartIcon,
+      },
+      {
+        title: 'Price Changes',
+        subtitle: 'Recent moves, and what shifted',
+        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
+        href: '/analytics/price-changes',
+        icon: ArrowsRightLeftIcon,
+      },
+    ],
+  },
+  {
+    id: 'data',
+    title: 'Data',
+    blurb: 'Pull in orders and reports',
+    icon: CloudArrowDownIcon,
+    tiles: [
+      {
+        title: 'Update Shopify',
+        subtitle: 'Pull in new orders now',
+        description: 'Run the Shopify order update now rather than waiting for the scheduled run — the same as the Update orders button on Sales and Customer Orders.',
+        href: '/customer-orders',
+        icon: CloudArrowDownIcon,
+        action: 'update-shopify',
+      },
+      {
+        title: 'Update Amazon',
+        subtitle: 'Load Seller Central reports',
+        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
+        href: '/update-amazon',
+        icon: ArrowUpTrayIcon,
+      },
+      {
+        title: 'Log',
+        subtitle: 'Who did what, and when',
+        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
+        href: '/analytics/activity-log',
+        icon: DocumentMagnifyingGlassIcon,
+      },
+    ],
+  },
+  {
+    id: 'products',
+    title: 'Products',
+    blurb: 'The range — what’s in it, how it’s doing',
+    icon: CubeIcon,
+    tiles: [
+      {
+        title: 'Winners',
+        subtitle: 'Products pulling their weight',
+        description: 'Winners, steady, new and losers per channel — with winners by brand.',
+        href: '/segments',
+        icon: TrophyIcon,
+      },
+      {
+        title: 'Add / Modify',
+        subtitle: 'Edit or create a product',
+        description: 'Find an existing product to edit, or create a new one.',
+        href: '/products',
+        icon: TagIcon,
+      },
+      {
+        title: 'New Products',
+        subtitle: 'Added in the last 30 days',
+        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
+        href: '/analytics/new-additions',
+        icon: SparklesIcon,
+      },
+      {
+        title: 'Brands',
+        subtitle: 'What each brand earned',
+        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
+        href: '/brands',
+        icon: ChartPieIcon,
+      },
+      {
+        title: 'Seasons',
+        subtitle: 'Summer, winter or all year',
+        description: 'Each style’s year of sales month by month, against its season — spot the all-year sellers and re-season them in bulk.',
+        href: '/seasons',
+        icon: CalendarIcon,
+      },
+      {
+        title: 'Stock Position',
+        subtitle: 'What’s commercially alive',
+        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
+        href: '/analytics/stock-position',
+        icon: CubeIcon,
+      },
+    ],
+  },
+  {
+    id: 'location',
+    title: 'Location',
+    blurb: 'Where stock sits, and what’s held',
+    icon: MapPinIcon,
+    tiles: [
+      {
+        title: 'Inventory',
+        subtitle: 'Browse without searching',
+        description: 'Browse and filter the whole catalogue when you have no term to search for.',
+        href: '/inventory',
+        icon: ArchiveBoxIcon,
+      },
+      {
+        title: 'Location',
+        subtitle: "What's on a rack",
+        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
+        href: '/locations',
+        icon: MapPinIcon,
       },
     ],
   },
@@ -366,7 +574,7 @@ export default function DashboardPage() {
   // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
   // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
   const g = useUrlParam('g');
-  const urlGroup = g && GROUPS.some((x) => x.id === g) ? g : null;
+  const urlGroup = g && [...GROUPS, ...PART_GROUPS].some((x) => x.id === g && !x.link) ? g : null;
 
   // The group the operator clicked open or shut. undefined = no click yet, so the ?g= group (or nothing) shows; null = every group
   // closed, which is how a bare /dashboard opens (see the header note on not remembering).
@@ -383,21 +591,45 @@ export default function DashboardPage() {
 
       <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
 
+      {/* Find-by-part row, below the main menu. Shares the one open-group state, so opening a card here closes one above. */}
+      {/* Rendered four cards per GroupRow so each row's panel opens directly under that row, not below all of them. */}
+      {[0, 4].map((i) => (
+        <div key={i} className={i === 0 ? 'mt-6' : 'mt-3'}>
+          <GroupRow groups={PART_GROUPS.slice(i, i + 4)} openId={openId} onToggle={setOpenId} cols="lg:grid-cols-4" />
+        </div>
+      ))}
+
     </AppShell>
   );
 }
 
 // The row of group headings with its expand-in-place panel below. (A separate component because the menu was briefly rendered twice
 // — old and provisional — during the 2026-09-24 re-alignment; kept, it's a clean split of state from layout.)
-function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void }) {
+function GroupRow({ groups, openId, onToggle, cols = 'lg:grid-cols-6' }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void; cols?: string }) {
   const open = groups.find((g) => g.id === openId) ?? null;
   return (
     <>
       {/* THE HEADINGS. Six columns at lg: the two 'main' cards take two each, the rest one — so Operations and Back Office read
           first and biggest, Birkenstock and Google trail. Below lg, main cards go full width and the small ones pair up. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <div className={'grid grid-cols-1 gap-3 sm:grid-cols-2 ' + cols}>
         {groups.map((g) => {
           const isOpen = g.id === openId;
+          if (g.link) {
+            return (
+              <Link
+                key={g.id}
+                // ?from= hides the screen's own back link to its parent (Reports) — home via the logo lands on the dashboard.
+                href={g.link + '?from=' + g.id}
+                className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-500 hover:shadow-md"
+              >
+                <span className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                  <g.icon className="h-5 w-5" />
+                </span>
+                <h2 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h2>
+                <p className="mt-1 text-xs leading-snug text-slate-500">{g.blurb}</p>
+              </Link>
+            );
+          }
           return (
             <button
               key={g.id}
