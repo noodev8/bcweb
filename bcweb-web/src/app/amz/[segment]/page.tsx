@@ -184,14 +184,12 @@ function SegmentContent() {
     const w = winners.filter(keep);
     const l = losers.filter(keep);
     const inMode = mode === 'winners' ? winners : mode === 'losers' ? losers : [...winners, ...losers];
+    const rows = mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l];
     return {
-      rows: mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l],
+      rows,
+      styleCount: new Set(rows.map((r) => r.groupid)).size,
       counts: { winners: w.length, losers: l.length, all: w.length + l.length },
       pendingCount: inMode.filter((r) => r.parked).length,
-      // The header figure — STYLES with at least one size due, across the WHOLE current tab, so it doesn't move when Due is flipped
-      // and matches the Repricing card's "N due for review" (a style is due if ANY of its sizes is — owner, 2026-09-25). The table
-      // below is per size, so it can hold more rows than this. Counted from the loaded rows: undercounts if the safety cap bites.
-      dueStylesInMode: new Set(inMode.filter((r) => !r.parked).map((r) => r.groupid)).size,
     };
   }, [data, mode, showPending]);
 
@@ -353,11 +351,12 @@ function SegmentContent() {
         onDueOnlyChange={(due) => setShowPending(!due)}
         showTabs={!isStatus}
         summary={data ? (
-          // Same as the Shopify list (owner, 2026-09-25): ONLY the due count, at the top — in STYLES, as the card counts them. The word
-          // "styles" is spelled out here (not on Shopify, where a row IS a style) because the table below is per SIZE.
-          <p className="text-sm text-slate-500">
-            <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.dueStylesInMode}</span> style{view.dueStylesInMode === 1 ? '' : 's'} due for review
-          </p>
+          // At the top, so it's seen without scrolling (owner, 2026-09-26): the STYLES in the table below as the header — as the
+          // Repricing card counts them — and under it the items (sizes = table rows). Both follow the Due switch.
+          <div className="text-sm text-slate-500">
+            <p><span className="text-2xl font-semibold tabular-nums text-slate-900">{view.styleCount}</span> style{view.styleCount === 1 ? '' : 's'}</p>
+            <p className="tabular-nums">{view.rows.length} item{view.rows.length === 1 ? '' : 's'} in list</p>
+          </div>
         ) : null}
       />
 

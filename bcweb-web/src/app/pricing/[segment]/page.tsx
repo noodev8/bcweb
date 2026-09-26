@@ -198,9 +198,6 @@ function SegmentContent() {
       rows: mode === 'winners' ? w : mode === 'losers' ? l : [...w, ...l],
       counts: { winners: w.length, losers: l.length, all: w.length + l.length },
       pendingCount: inMode.filter((r) => r.parked).length,
-      // The header figure — due across the WHOLE current tab, so it doesn't move when Due is flipped and matches the card that
-      // opened the list ("N due for review"). Counted from the loaded rows: if the server's safety cap ever bites, it undercounts.
-      dueInMode: inMode.filter((r) => !r.parked).length,
     };
   }, [data, mode, showPending]);
 
@@ -324,11 +321,10 @@ function SegmentContent() {
         onDueOnlyChange={(due) => setShowPending(!due)}
         showTabs={!isStatus}
         summary={data ? (
-          // At the top, where the eye looks first when arriving from a Repricing card (owner, 2026-09-25): ONLY the due count — the
-          // number the card's "N due for review" shows. It is the whole tab's due count, so it stays put when Due is flipped off.
-          // (A total-styles figure was tried beside it and dropped — the owner looks for the due number.)
+          // At the top, so it's seen without scrolling: ONE number, the rows in the table below (owner, 2026-09-26). It follows
+          // the Due switch — Due on counts the due rows, Due off counts everything shown.
           <p className="text-sm text-slate-500">
-            <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.dueInMode}</span> due for review
+            <span className="text-2xl font-semibold tabular-nums text-slate-900">{view.rows.length}</span> in list
           </p>
         ) : null}
       />
