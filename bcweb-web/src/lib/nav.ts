@@ -13,6 +13,8 @@ const RENAMED: Record<string, string> = { '/segments': 'Repricing' };
 export function prettyPathLabel(p: string): string {
   const path = p.split('?')[0];
   if (RENAMED[path]) return RENAMED[path];
+  // The product hub and its per-style page both read "Product" — the last segment of /product/<groupid> is a code, not a name.
+  if (path === '/product' || path.startsWith('/product/')) return 'Product';
   const seg = path.split('/').filter(Boolean).pop() || '';
   if (!seg) return 'Back';
   return seg.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

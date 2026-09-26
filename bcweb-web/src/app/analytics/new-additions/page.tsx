@@ -21,13 +21,12 @@ Guarded by AppShell. Consumes GET /analytics-new-additions (the list) and, via A
 */
 
 import { Suspense, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
-import { useProductActions } from '@/components/ProductActions';
+import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { useListCursor } from '@/lib/useListCursor';
 import {
   getNewAdditions,
   getNewAdditionsTrend,
@@ -62,10 +61,41 @@ function NewAdditionsPageInner() {
   const backHref = searchParams.get('from') || '/analytics';
   const backLabel = searchParams.get('back') || 'Reports';
 
-  const actions = useProductActions(); // row click -> cross-module "reprice this" chooser (Shopify / Amazon / copy)
-  const [sortBy, setSortBy] = useState<SortKey>('added');                    // which column the list is sorted by
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');            // direction; default desc (newest / most first)
-  const [matureOnly, setMatureOnly] = useState(false);                       // hide lines too new to judge (see MATURE_DAYS)
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // VIEW STATE LIVES IN THE URL (owner, 2026-09-26): sort, the maturity filter and the selected row are seeded from ?sort= ?dir=
+  // ?mature= ?sel= and written back with router.replace from the event handlers (never an effect). That is what makes the hand-off
+  // cards' "← Back" land on the list exactly as it was left, highlight included. Read ONCE into initial state.
+  const [sortBy, setSortBy] = useState<SortKey>(() => {
+    const v = searchParams.get('sort');
+    return v === 'sold' || v === 'profit' || v === 'stock' ? v : 'added';
+  });
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'asc' ? 'asc' : 'desc'));
+  const [matureOnly, setMatureOnly] = useState(() => searchParams.get('mature') === '1');
+  const [selected, setSelected] = useState<string | null>(() => searchParams.get('sel'));
+
+  // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
+  const viewUrl = (v: { sort: SortKey; dir: 'asc' | 'desc'; mature: boolean; sel: string | null }) => {
+    const q = new URLSearchParams();
+    const from = searchParams.get('from');
+    const back = searchParams.get('back');
+    if (from) q.set('from', from);
+    if (back) q.set('back', back);
+    if (v.sort !== 'added') q.set('sort', v.sort);
+    if (v.dir !== 'desc') q.set('dir', v.dir);
+    if (v.mature) q.set('mature', '1');
+    if (v.sel) q.set('sel', v.sel);
+    const qs = q.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
+  const current = { sort: sortBy, dir: sortDir, mature: matureOnly, sel: selected };
+  const selfUrl = viewUrl(current);
+  const setView = (patch: Partial<typeof current>) => {
+    const next = { ...current, ...patch };
+    setSortBy(next.sort); setSortDir(next.dir); setMatureOnly(next.mature); setSelected(next.sel);
+    router.replace(viewUrl(next), { scroll: false });
+  };
   const [showAbout, setShowAbout] = useState(false);                         // the "what is this screen" blurb — off by default
 
   // "Now" is captured HERE, inside the fetcher, not during render. Date.now() is impure, so reading it while rendering makes the
@@ -130,28 +160,14 @@ function NewAdditionsPageInner() {
     return [...visibleRows].sort(cmp);
   }, [visibleRows, sortBy, sortDir]);
 
-  // KEYBOARD CURSOR over the table — the same gesture the operators have on Inventory, via the same shared hook (a per-screen copy
-  // would drift). Deliberately the LEAN version: up/down (plus Home/End) move a highlight that STAYS where it was left, and that is
-  // all. No Enter action here — the row's action is the reprice/copy chooser, which is a pop-over anchored at the mouse pointer and
-  // has no sensible keyboard anchor; clicking the highlighted row still opens it.
-  //
-  // Keys are groupids, so re-sorting a column or ticking the maturity filter leaves the highlight on the SAME style rather than on
-  // whatever slid into that position. Enabled only once the table is actually painted.
-  const cursorKeys = useMemo(() => sortedRows.map((r) => r.groupid), [sortedRows]);
-  const cursor = useListCursor({
-    keys: cursorKeys,
-    enabled: !loading && !error && sortedRows.length > 0,
-    // Arrowing away closes the reprice/copy pop-over. It is pinned at the point you clicked, so the moment the list moves under it
-    // it is hovering over one style while still acting on another — a mis-click waiting to happen (owner, 2026-07-28).
-    onMove: actions.close,
-    // 'nearest' (the default), unlike Inventory's 'center': table rows are one line tall, so a whole screen of them is in view at
-    // once and re-centering the page on every keypress would be constant motion for no gain.
-  });
+  // ROW SELECTION (owner, 2026-09-26): click a row to highlight it, click it again to clear it. Mouse only, no keyboard cursor,
+  // and no reprice/copy chooser — it just marks your place while you read down the list. Keyed by groupid, so a re-sort keeps the
+  // highlight on the same style. It also enables the hand-off cards above the table (state: `selected`, above).
 
   // Click a sortable header: same column flips direction; a new column switches to it, defaulting to descending (most / newest first).
   const toggleSort = (key: SortKey) => {
-    if (sortBy === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortBy(key); setSortDir('desc'); }
+    if (sortBy === key) setView({ dir: sortDir === 'asc' ? 'desc' : 'asc' });
+    else setView({ sort: key, dir: 'desc' });
   };
   const caret = (key: SortKey) =>
     sortBy === key ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null;
@@ -248,6 +264,14 @@ function NewAdditionsPageInner() {
               own data, so it can't hold the list up. */}
           <AdditionsTrend />
 
+          {/* Hand-off row — the same cards as the product hub, greyed until a row is selected, plus Product (the style's own page)
+              first. Above the table so it is in view when you pick a row. Every card carries this exact view as ?from=. */}
+          {rows.length > 0 && (
+            <div className="mb-3">
+              <ProductNavCards groupid={selected} from={selfUrl} showProduct />
+            </div>
+          )}
+
           {/* Table controls. The filter sits HERE, not in the hero — it changes the list below it and nothing above it, and being next
               to the row count makes that obvious at a glance. */}
           {rows.length > 0 && (
@@ -266,7 +290,7 @@ function NewAdditionsPageInner() {
                   // list, so a highlight carried over from the old one is meaningless — worse than meaningless when the row it was on
                   // has just been filtered away, because the hook would otherwise re-seat it on whatever now sits at that position and
                   // that looks like a selection you made. Start clean and let the operator place it again.
-                  onChange={(e) => { cursor.setCursor(null); setMatureOnly(e.target.checked); }}
+                  onChange={(e) => setView({ sel: null, mature: e.target.checked })}
                   className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
                 />
                 <span>
@@ -299,6 +323,7 @@ function NewAdditionsPageInner() {
                         Added {caret('added')}
                       </button>
                     </th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Days since the style was created">Days</th>
                     <th className="px-4 py-2.5 font-medium">Product</th>
                     <th className="px-3 py-2.5 font-medium">Brand</th>
                     <th className="px-3 py-2.5 text-right font-medium">RRP</th>
@@ -338,40 +363,24 @@ function NewAdditionsPageInner() {
                   {sortedRows.map((r) => (
                     <tr
                       key={r.groupid}
-                      ref={cursor.itemRef(r.groupid)}
-                      // TWO-STAGE CLICK (owner, 2026-07-28 — trying the feel): a tap on a row only PLACES the cursor; the reprice/copy
-                      // chooser opens on a second tap of the row that is already current. The reason is how the screen is actually
-                      // worked — you tap a row to mark your place while reading down the list, and most of those taps are not "act on
-                      // this", so a pop-over on every one of them is in the way. Acting is the deliberate second press.
-                      //
-                      // It also keeps mouse and keyboard agreeing about where you are: arrow on from the row you just tapped, not from
-                      // wherever the highlight happened to be left.
-                      onClick={(e) => {
-                        if (cursor.isCursor(r.groupid)) actions.open(e, r.groupid, { title: r.title });
-                        else cursor.setCursor(r.groupid);
-                      }}
+                      onClick={() => setView({ sel: selected === r.groupid ? null : r.groupid })}
                       className={
-                        // scroll-mt clears the sticky header row, which would otherwise cover a row scrolled to the very top.
-                        'cursor-pointer scroll-mt-12 border-b border-slate-100 last:border-0 ' +
-                        (cursor.isCursor(r.groupid)
-                          // The highlight is a tinted row + a solid left bar (inset shadow — a border would shift every cell by 3px
-                          // as the cursor passes). Strong enough to find after walking away from the screen, which is its whole job.
-                          ? 'bg-brand-50 shadow-[inset_3px_0_0_0_theme(colors.brand.500)]'
+                        'cursor-pointer border-b border-slate-100 last:border-0 ' +
+                        (selected === r.groupid
+                          // Tint only, no left bar (owner, 2026-09-26).
+                          ? 'bg-brand-50'
                           : 'hover:bg-slate-50/60')
                       }
-                      /* Spells the second press out — with the chooser no longer on the first click, nothing else would tell you it
-                         exists. The hint changes on the current row so it reads as an instruction for the row you are on. */
-                      title={cursor.isCursor(r.groupid) ? 'Click again to reprice or copy' : 'Click to select'}
                     >
                       <td className="px-4 py-2 whitespace-nowrap text-slate-500">
                         {fmtDate(r.created)}
-                        {daysLive(r.created) !== null && (
-                          <span className="ml-2 text-xs text-slate-400">{daysLive(r.created)}d</span>
-                        )}
                       </td>
-                      <td className="px-4 py-2">
-                        <div className="font-mono text-sm tracking-tight text-slate-900">{r.groupid}</div>
-                        <div className="text-xs text-slate-400">{r.title || 'Untitled'}</div>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                        {daysLive(r.created) !== null ? daysLive(r.created) : '—'}
+                      </td>
+                      {/* Title lives in the tooltip (owner, 2026-09-26) — one line per row, the groupid is what gets read. */}
+                      <td className="px-4 py-2 font-mono text-sm tracking-tight text-slate-900" title={r.title || 'Untitled'}>
+                        {r.groupid}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-slate-600">{r.brand || '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
@@ -403,7 +412,6 @@ function NewAdditionsPageInner() {
         </>
       )}
 
-      {actions.node}
     </AppShell>
   );
 }
