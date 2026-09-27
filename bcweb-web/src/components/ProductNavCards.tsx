@@ -159,14 +159,14 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude }:
     // and keyboard, not just unclickable by mouse.
     if (!groupid) {
       return (
-        <span key={key} aria-disabled className={`${BASE} ${DISABLED}`} title="Pick a product first">
+        <span key={key} aria-disabled className={`${BASE} ${DISABLED}`}>
           <Icon className="h-4 w-4 text-slate-300" />
           {t.label}
         </span>
       );
     }
     return (
-      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} title={t.hint} className={`${BASE} ${ENABLED}`}>
+      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} className={`${BASE} ${ENABLED}`}>
         <Icon className="h-4 w-4 text-brand-600" />
         {t.label}
       </Link>

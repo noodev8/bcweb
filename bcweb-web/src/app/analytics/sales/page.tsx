@@ -108,9 +108,17 @@ const NO_ROWS: SalesReportRow[] = [];
 export default function SalesPage() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
-      <SalesPageContent />
+      <SalesPageKeyed />
     </Suspense>
   );
+}
+
+// The Sales hand-off card opens THIS page with ?q=<groupid> (owner, 2026-09-27: "full sales of the product I've just clicked"). Same
+// route, so Next keeps the component mounted and the useState initialisers below never re-read the URL — keying on q remounts it so
+// the new product search takes. The page's own URL writes never set q (they use s=), so this doesn't remount on every filter change.
+function SalesPageKeyed() {
+  const q = useSearchParams().get('q') || '';
+  return <SalesPageContent key={q} />;
 }
 
 function SalesPageContent() {
@@ -633,10 +641,10 @@ function SalesPageContent() {
                 )}
               </span>
             </div>
-            {/* Hand-off row — the product hub's cards, greyed until a row is picked, Product first and Sales left out (it is this
-                page). Every card carries this exact view as ?from=, which is what the URL state above is for. */}
+            {/* Hand-off row — the product hub's cards, greyed until a row is picked, Product first. Sales stays in (owner, 2026-09-27):
+                it opens this page searched to the picked product, all time, with Back returning here. Every card carries this exact view as ?from=, which is what the URL state above is for. */}
             <div className="mb-3">
-              <ProductNavCards groupid={selected} from={selfUrl} showProduct exclude={['Sales']} />
+              <ProductNavCards groupid={selected} from={selfUrl} showProduct />
             </div>
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-sm">

@@ -167,10 +167,18 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
             </span>
           </span>
         )}
-        {/* Ad floor. Rendered ONLY when the server could actually derive one — a floor built on a handful of clicks reads as
-            authoritative as a solid one, so 'none' shows nothing rather than a hedged number. A 'segment' floor is an estimate
+        {/* Ad floor. A number ONLY when the server could actually derive one — a floor built on a handful of clicks reads as
+            authoritative as a solid one, so 'none' shows no number rather than a hedged one. It still shows the label with "not
+            enough data" (owner, 2026-09-27): a line that silently came and went read as a bug. A 'segment' floor is an estimate
             borrowed from neighbouring styles and says so, both in the label and in the tooltip. */}
-        {header.ad_floor !== null && (
+        {header.ad_floor === null ? (
+          <span
+            className="text-slate-500"
+            title="Too little Google ad data on this style or its segment to work out a floor. Advisory only — nothing blocks."
+          >
+            Ad floor: <span className="text-slate-400">not enough data</span>
+          </span>
+        ) : (
           <span
             className="text-slate-500"
             title={
