@@ -6,8 +6,8 @@ Page: /amz/sku/[code]  (Stage 2 drill-down + Stage 3 set price)
 Purpose: The decision screen for one Amazon SKU (one size), mirroring the Shopify /pricing/style/[groupid] drill. Shows:
            - Header: current price, cost, FBA fee, RRP, floor, net margin, FBA live/inbound stock.
            - The AmzPriceSetter control (price + nudges + note → Apply).
-           - Evidence: 6-week velocity + units-by-price bands (the resistance guardrail).
-           - Collapsible, lazy Price history + Recent sales.
+           - Recent sales (open) + Price history (collapsed), both lazily loaded.
+           (Supporting detail — 6-week velocity + units-by-price bands — REMOVED 2026-09-27, owner: not used. Mirrors the Shopify drill.)
          On Apply -> POST /amz-apply (writes the amz_price_log audit row) AND queues the change into the session upload basket. There is
          NO live push and NO review/park (Amazon differences): the price reaches Amazon only when the operator downloads + uploads the
          basket file. After a successful apply the drill refreshes in place and the change shows as "queued".
@@ -23,8 +23,6 @@ import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
 import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
-import PriceBands from '@/components/PriceBands';
-import VelocityBars from '@/components/VelocityBars';
 import { getAmzDrill, applyAmzPrice, markAmzReviewed } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useAuth } from '@/contexts/AuthContext';
@@ -236,18 +234,6 @@ function DrillContent() {
 
           {/* Price history — the other main report, high but collapsed. */}
           <AmzHistory key={`hist-${reloadKey}`} code={code} />
-
-          {/* Supporting detail — the evidence blocks that were being skipped, demoted below a divider but still to hand. */}
-          <div className="flex items-center gap-3 pt-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Supporting detail</span>
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
-
-          {/* Evidence — the read-only case for a decision: velocity trend + price-band resistance. */}
-          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <VelocityBars weeks={data.weeks} />
-            <PriceBands bands={data.bands} currentPrice={data.header.price} />
-          </section>
         </div>
       )}
     </AppShell>

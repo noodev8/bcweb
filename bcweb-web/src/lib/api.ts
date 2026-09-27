@@ -167,15 +167,13 @@ export interface AmzDrillHeader {
   fba_live: number; fba_inbound: number;
   match_amazon: boolean;                 // read-only: the parent STYLE auto-matches its Shopify price to Amazon lowest in-stock
 }
-// VelocityWeek is the shared weekly-pace shape both drills return (drill-evidence-spec §4). Zero-filled, oldest→newest. profit is NET
-// (from sales.profit). Rendered by the shared VelocityBars component.
+// VelocityWeek is the weekly-pace shape the Shopify drill still returns (drill-evidence-spec §4). Zero-filled, oldest→newest. profit is
+// NET (from sales.profit). No screen renders it since both drills dropped their supporting detail.
 export interface VelocityWeek { week_start: string; units: number; avg_price: number | null; profit: number; }
-export type AmzWeek = VelocityWeek;
-// PriceBand is the shared units-by-price shape both drills return (drill-evidence-spec §3/§4). profit_per_unit is NET per unit at that
-// price (Amazon: price-cost-FBA; Shopify: from sales.profit). Rendered by the shared PriceBands component.
+// PriceBand is the units-by-price shape the Shopify drill still returns (drill-evidence-spec §3/§4). profit_per_unit is NET per unit.
 export interface PriceBand { price: number | null; units: number; profit_per_unit: number | null; first: string; last: string; }
-export type AmzBand = PriceBand;
-export interface AmzDrillData { header: AmzDrillHeader; weeks: AmzWeek[]; bands: AmzBand[]; }
+// Header only — the weeks / bands evidence was removed 2026-09-27 (owner: not used).
+export interface AmzDrillData { header: AmzDrillHeader; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
 export interface AmzHistoryRow { log_date: string; old_price: number | null; new_price: number | null; direction: string; notes: string; changed_by: string | null; }
 export interface AmzHistoryData { rows: AmzHistoryRow[]; limit: number; truncated: boolean; }
@@ -536,11 +534,11 @@ export function clearNoSupply(groupids: string[]) {
   );
 }
 
-// Amazon Pricing — Stage 2 drill: one SKU's header + 6-week velocity + 60d price bands. Mirrors getDrill().
+// Amazon Pricing — Stage 2 drill: one SKU's header. Mirrors getDrill().
 export function getAmzDrill(code: string) {
   return request<AmzDrillData>(
     { url: '/amz-drill', method: 'GET', params: { code } },
-    (b) => ({ header: b.header, weeks: b.weeks || [], bands: b.bands || [] })
+    (b) => ({ header: b.header })
   );
 }
 

@@ -4,14 +4,11 @@ API Route: amz_drill
 =======================================================================================================================================
 Method: GET
 Purpose: Stage 2 — the drill-down / decision screen for ONE Amazon SKU (one size), the mirror of Shopify's pricing-drill. Returns the
-         header stats plus the two evidence datasets a price decision needs (docs/amz-pricing-spec.md §2/§5). Everything read-only:
+         header stats — the frame for the decision. Everything read-only:
            - header : current Amazon price, cost, FBA fee, RRP, computed floor (cost+FBA) and net margin, FBA live/inbound stock, the
-                      Amazon SKU (amz_sku — needed for the upload file), title. This is the frame for the decision.
-           - weeks  : 6-week velocity, zero-filled (units, avg sold price, profit per week). Shows the TREND — a halving week over week is
-                      the act-now signal; a gap week reads as 0, not a hidden hole. (Returns are deliberately NOT surfaced — noise for
-                      pricing intent, owner decision.)
-           - bands  : units sold at each distinct price over 60 days (the resistance guardrail). Where units dry up above a price is the
-                      discovered ceiling; useful before creeping past a level that just failed.
+                      Amazon SKU (amz_sku — needed for the upload file), title.
+         (The 6-week velocity `weeks` and 60-day price `bands` evidence were REMOVED 2026-09-27 with the drill's "Supporting detail"
+         block — owner: not used.)
 
          The price-change history and the raw sales list are SEPARATE lazily-loaded reports (amz-history / amz-sales), fetched only when the
          operator opens those sections — keeping the initial drill fast (mirrors the Shopify pricing-history / pricing-sales split).
@@ -35,9 +32,7 @@ Success Response:
     "floor": 19.05,                            // cost + FBA fee (breakeven)
     "margin": 18.94, "margin_pct": 50,         // net = price - cost - FBA fee, and as % of price (null if any part unknown)
     "fba_live": 96, "fba_inbound": 0
-  },
-  "weeks":   [ { "week_start": "2026-06-01", "units": 9, "avg_price": 39.82, "profit": 154.74 }, ... ],  // oldest -> newest
-  "bands":   [ { "price": 38.99, "units": 49, "profit_per_unit": 18.94, "first": "2026-05-16", "last": "2026-05-29" }, ... ]  // ascending price; profit_per_unit = NET/unit
+  }
 }
 =======================================================================================================================================
 Return Codes:
@@ -134,49 +129,7 @@ router.get('/', async (req, res) => {
       fba_inbound: Number(h.fba_inbound),
     };
 
-    // ---- Evidence: 6-week zero-filled velocity + 60-day sold-price bands. Independent reads, run in parallel. ----
-    const [weeksR, bandsR] = await Promise.all([
-      query(`
-        WITH wk AS (
-          SELECT generate_series(date_trunc('week', CURRENT_DATE) - INTERVAL '5 weeks',
-                                 date_trunc('week', CURRENT_DATE), INTERVAL '1 week')::date AS week_start
-        ),
-        s AS (
-          SELECT date_trunc('week', solddate)::date AS week_start,
-                 SUM(CASE WHEN qty>0 THEN qty ELSE 0 END)::int AS units,
-                 ROUND(AVG(CASE WHEN qty>0 THEN soldprice END)::numeric, 2) AS avg_price,
-                 ROUND(SUM(profit)::numeric, 2) AS profit
-          FROM sales
-          WHERE channel='AMZ' AND code=$1 AND solddate >= date_trunc('week', CURRENT_DATE) - INTERVAL '5 weeks'
-          GROUP BY 1
-        )
-        SELECT to_char(wk.week_start, 'YYYY-MM-DD') AS week_start,
-               COALESCE(s.units,0) AS units, s.avg_price, COALESCE(s.profit,0) AS profit
-        FROM wk LEFT JOIN s USING (week_start)
-        ORDER BY wk.week_start
-      `, [code]),
-
-      query(`
-        SELECT ${safeNumeric('soldprice')} AS price, SUM(qty)::int AS units,
-               ROUND(SUM(profit)::numeric / NULLIF(SUM(qty), 0), 2) AS profit_per_unit,
-               to_char(MIN(solddate), 'YYYY-MM-DD') AS first, to_char(MAX(solddate), 'YYYY-MM-DD') AS last
-        FROM sales
-        WHERE channel='AMZ' AND code=$1 AND qty>0 AND solddate >= CURRENT_DATE - 60
-        GROUP BY ${safeNumeric('soldprice')} ORDER BY 1
-      `, [code]),
-    ]);
-
-    const weeks = weeksR.rows.map((r) => ({
-      week_start: r.week_start, units: Number(r.units),
-      avg_price: num(r.avg_price), profit: Number(r.profit),
-    }));
-    // profit_per_unit added for drill-evidence parity (§4, block 3): NET (price - cost - FBA fee) per unit at that band, so the band
-    // reads as reward-vs-resistance, not raw units. Same shared PriceBands component renders it on both drills.
-    const bands = bandsR.rows.map((r) => ({
-      price: num(r.price), units: Number(r.units), profit_per_unit: num(r.profit_per_unit), first: r.first, last: r.last,
-    }));
-
-    return res.json({ return_code: 'SUCCESS', header, weeks, bands });
+    return res.json({ return_code: 'SUCCESS', header });
   } catch (err) {
     logger.error('[amz-drill] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load SKU detail' });
