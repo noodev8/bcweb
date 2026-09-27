@@ -7,8 +7,9 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
          the drill pages and the Find pages so their "← Back" reads sensibly instead of a raw path (or a wrong hardcoded default).
 =======================================================================================================================================
 */
-// Screens whose on-screen name no longer matches their route. /segments was renamed Repricing (owner, 2026-09-23) but kept its URL.
-const RENAMED: Record<string, string> = { '/segments': 'Repricing' };
+// Screens whose on-screen name no longer matches their route. /segments is Repricing in the nav, but reached from the dashboard's
+// Winners card too — one screen, two names — so a link back to it just says Back (owner, 2026-09-26).
+const RENAMED: Record<string, string> = { '/segments': 'Back' };
 
 export function prettyPathLabel(p: string): string {
   const path = p.split('?')[0];

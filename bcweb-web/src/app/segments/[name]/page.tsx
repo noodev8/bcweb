@@ -34,7 +34,7 @@ export default function SegmentDetailPage() {
   // No AppShell title: the heading is rendered here because it carries the rename control, and AppShell's title is a plain string.
   // Back to the SEGMENT tab explicitly — bare /segments opens Status (the default tab since 2026-09-24).
   return (
-    <AppShell backHref="/segments?by=segment" backLabel="Repricing">
+    <AppShell backHref="/segments?by=segment" backLabel="Back">
       <div className="space-y-6">
         <SegmentName current={name} onRenamed={(newName) => router.replace(`/segments/${encodeURIComponent(newName)}`)} />
 

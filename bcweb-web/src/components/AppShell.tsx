@@ -44,7 +44,7 @@ interface AppShellProps {
   headerRight?: ReactNode; // optional node rendered flush-right of the title (e.g. a product thumbnail) — uses the title row's
                            // otherwise-empty right side so it costs no vertical space in the page body. With no title it moves up
                            // to the back-link row, for the same reason.
-  crumb?: ReactNode;       // optional "where you are" rendered after the back link as `← Repricing / GIZEH-SEG` — for pages whose
+  crumb?: ReactNode;       // optional "where you are" rendered after the back link as `← Back / GIZEH-SEG` — for pages whose
                            // name is context you picked one click ago, not a heading worth a row (owner, 2026-09-24: the pricing lists)
   // BARE — no sub-header at all: no back link (not even the ?from= one the dashboard adds) and no title. For full-width working
   // screens where the top rows are worth more as data than as a "← Dashboard / Title" line (owner, 2026-09-24: the three Birk

@@ -208,7 +208,7 @@ function SegmentContent() {
   function openSku(code: string) {
     // Carry the view (mode + pending) and the back-context (from/back) through the drill round-trip.
     const rawFrom = searchParams.get('from');
-    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
     const from = `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(from)}`);
   }

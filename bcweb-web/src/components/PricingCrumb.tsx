@@ -3,7 +3,7 @@
 =======================================================================================================================================
 Component: PricingCrumb  (the "where you are" after ← back on the Shopify / Amazon pricing lists)
 =======================================================================================================================================
-Purpose: Renders `GIZEH-SEG · [Shopify]` into AppShell's crumb slot, so the list reads `← Repricing / GIZEH-SEG · [Shopify]`.
+Purpose: Renders `GIZEH-SEG · [Shopify]` into AppShell's crumb slot, so the list reads `← Back / GIZEH-SEG · [Shopify]`.
          OWNER, 2026-09-24: the group name used to be the page's H1 — the loudest thing on screen for the thing you'd picked one click
          earlier, standing alone in its own row. It's context, not the subject, so it moved into the back-link line. The channel badge
          came with it because the two channels' lists are now near-identical (same tabs, columns and bulk bar) — without it nothing

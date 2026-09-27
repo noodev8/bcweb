@@ -217,7 +217,7 @@ function SegmentContent() {
   // to the same view with the same "← back" target. The return ticket for a style's drill and for Shopify Order alike.
   function listHref(): string {
     const rawFrom = searchParams.get('from');
-    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Repricing')}` : '';
+    const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
     return `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
   }
 

@@ -14,7 +14,7 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the 
          and a sum would mislead (owner: "I'm literally interested in the split cleanly"). Beneath the hero, the pricing work: what is
          due (the length of the list it opens, Due on by default — sizes on Amazon). No parked / out-of-stock counts on the tile. OUT-OF-STOCK IS LISTED AND COUNTED IN
          DUE (owner, 2026-09-24: "I do want to reprice out of stock when adjusting prices in preparation for stock arrival... Don't want
-         to leave them at old clearance price"). A tile opens ONE unsplit list (no Selling / Stuck); its "← Repricing" returns here.
+         to leave them at old clearance price"). A tile opens ONE unsplit list (no Selling / Stuck); its "← Back" returns here.
          A status with nothing at all behind it is quiet and not a link.
 
          THE WINNERS SCREEN LIVES HERE NOW (retired as its own page 2026-09-25 — owner: "the same screen for two different points of
@@ -52,7 +52,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // THE TIER lives in the URL (?bar=2500) so "← Repricing" from a list lands back on the same tier. Only a mark the server offers
+  // THE TIER lives in the URL (?bar=2500) so "← Back" from a list lands back on the same tier. Only a mark the server offers
   // counts; anything else (absent, junk, an old bookmark) reads as the first mark — the tag's own bar, i.e. the normal screen.
   const bars = data?.winnerBars.map((w) => w.bar) ?? [];
   const rawBar = Number(searchParams.get('bar'));
@@ -134,7 +134,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
                   // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other three are
                   // printed once, in the key under the last row (owner, 2026-09-25: the same text twice per status was noise).
                   rule={isWin ? (raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS) : null}
-                  href={statusListHref(s.status, viewPath, 'Repricing', ch, { bar: isWin && raised ? bar : null })}
+                  href={statusListHref(s.status, viewPath, 'Back', ch, { bar: isWin && raised ? bar : null })}
                   dimmed={raised && !isWin}
                   brands={isWin && portfolio.data ? winnerBrands[ch === 'amazon' ? 'AMZ' : 'SHP'] : undefined}
                 />

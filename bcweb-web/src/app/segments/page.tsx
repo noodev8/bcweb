@@ -87,7 +87,7 @@ function SegmentsHeatmap() {
     // the pricing home (owner, 2026-09-23 — it used to return to the segment's detail page). from = path, incl. the tab; back = the
     // back-link label.
     const detail = `/segments/${encodeURIComponent(name)}`;
-    const ctx = `from=${encodeURIComponent(viewPath)}&back=Repricing`;
+    const ctx = `from=${encodeURIComponent(viewPath)}&back=Back`;
     if (a === 'shopify') router.push(`/pricing/${encodeURIComponent(name)}?${isCampaign ? 'by=campaign&' : ''}${ctx}`);
     else if (isCampaign) return;   // a campaign carries only a Shopify cell; nothing else to open
     else if (a === 'amazon') router.push(`/amz/${encodeURIComponent(name)}?${ctx}`);
