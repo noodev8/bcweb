@@ -71,6 +71,13 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          not persisted. What IS persisted is what the operator CONFIRMS: an Order becomes orderstatus rows (visible here through
          `ord`), a Pick becomes flagged shelf rows (visible here through pick_pending).
 
+         no_supply = "Can't get it" (utils/noSupply.js) — a STYLE fact, not a channel one ("if we can't get a style, we can't get it,
+         regardless of where we're trying to sell it" — owner), so every size of a marked style carries its style's mark: the same
+         skusummary.no_supply_* columns Shopify Order reads, set on either screen or on Back Office → Seasons. It only stops the
+         SUPPLIER side: the page hides a marked size only when it has no local stock to pick either ("we can get them because we have
+         them" — owner, 2026-09-27), and the rate fill leaves such a row's Order half empty while still filling its Pick.
+         `no_supply_default_until` names the day "Can't get it" would park a style to today (three months out).
+
          NO server-side search/limit (unlike the pricing lists' listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
          no round-trip. A safety cap would only get in the way of "search everything".
@@ -84,13 +91,15 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 522,
+  "no_supply_default_until": "2026-12-27",                                   // what "Can't get it" would set today
   "to_place": { "units": 14, "skus": 6, "suppliers": 2, "oldest_days": 9 },   // Amazon lines queued here but not yet placed
   "on_order": { "units": 20, "skus": 11 },                                    // Amazon lines placed with a supplier, not yet arrived
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
-      "last_sold": "2026-06-02" },
+      "last_sold": "2026-06-02",
+      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },   // the STYLE's mark
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
 }
@@ -108,6 +117,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
+const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -177,7 +187,9 @@ router.get('/', async (req, res) => {
              sk.brand AS brand,
              COALESCE(loc.units,0) AS local_stock,
              ${safeNumeric('sk.cost')} AS cost,
-             to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold
+             to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold,
+             -- "Can't get it" (utils/noSupply.js): the STYLE's mark, carried by each of its sizes.
+             ${noSupplySelectSql('sk')}
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code
@@ -213,6 +225,7 @@ router.get('/', async (req, res) => {
         local_stock: Number(r.local_stock) || 0,
         cost: num(r.cost),
         last_sold: r.last_sold || null,
+        ...noSupplyFields(r),
       };
     });
 
@@ -238,7 +251,14 @@ router.get('/', async (req, res) => {
 
     const onOrder = { units: Number(p.on_order_units) || 0, skus: Number(p.on_order_skus) || 0 };
 
-    return res.json({ return_code: 'SUCCESS', count: rows.length, to_place: toPlace, on_order: onOrder, rows });
+    // The day a "Can't get it" pressed today would last until — the same expression routes/no-supply-set.js stamps, so the button can
+    // name it before anything is written. Its own tiny SELECT, so it is there even on an empty list (as on shopify-order-list.js).
+    const pu = await query(`SELECT (${NO_SUPPLY_UNTIL_SQL})::text AS until`);
+    const parkUntil = (pu.rows[0] && pu.rows[0].until) || null;
+
+    return res.json({
+      return_code: 'SUCCESS', count: rows.length, no_supply_default_until: parkUntil, to_place: toPlace, on_order: onOrder, rows,
+    });
   } catch (err) {
     logger.error('[amazon-order-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Amazon Order list' });

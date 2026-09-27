@@ -64,8 +64,8 @@ NO SUPPLY — "CAN'T GET IT" / "RELEASE" (owner, 2026-09-26). The supplier has n
       again. Ordering a flagged style through Confirm Basket clears the mark too, and marking a style empties its boxes, so a line the
       operator has just said can't be bought can't ride along in the next send. Stored on skusummary.no_supply_*
       (migrations/20260926_no_supply.sql), written by /no-supply-set and /no-supply-clear. A STYLE fact, not a Shopify one — "if we
-      can't get a style, we can't get it, regardless of where we're trying to sell it" (owner) — so Amazon Order will honour the
-      same mark, and none of this screen's wording for it names a channel. Every marked style, and the lapsed ones still carrying
+      can't get a style, we can't get it, regardless of where we're trying to sell it" (owner) — so Amazon Order honours the
+      same mark (since 2026-09-27; a style marked on either screen is off both), and none of this screen's wording for it names a channel. Every marked style, and the lapsed ones still carrying
       their note, is listed and managed in bulk on Back Office → Seasons (the Can't get view).
 =======================================================================================================================================
 */

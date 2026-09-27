@@ -47,6 +47,24 @@ ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen i
       A pick is a real commitment: orderSync phase E only allocates 'unallocated' rows, so a unit sent to Amazon here can no longer
       be picked for a Shopify customer order — which is the thing Pick keep exists to protect. Undo is /pick's own Unallocate.
 
+CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selection works like a Windows file list:
+        - CLICK a row selects it ALONE, clearing every other selection.
+        - CTRL/CMD-click adds a row to the selection, or takes it back out.
+        - SHIFT-click selects the range from the last row clicked (the anchor) to this one, replacing what was selected.
+        - Clicking a row that is ALREADY selected unselects it (just that row).
+        - Any filter change — a search step, a preset, the Repricing or Can't get chip, Load basket, restoring cut rows, Reset —
+          clears the selection, so Cut / Can't get can never act on a row that has left the screen.
+      ARROW KEYS walk the list: the one highlight moves and replaces the selection (Enter cuts it). THE CARET beside a SKU is the
+      only thing that expands a row, and only ONE detail row is open at a time (opening another closes the first); it never touches
+      the selection. Typing in an Order box doesn't change the selection either — that row is tinted (focus-within) instead.
+      NO SELECTED COUNT ANYWHERE (owner, 2026-09-27 — "no need to show a selected count at all"). The blue rows are the count. It
+      was tried twice and both moved the screen on every click: "(n)" in the Cut / Can't get labels widened row 2 until the basket
+      buttons wrapped, and a badge in the SKU header grew the header row. Cut and Can't get are a fixed width for the same reason.
+
+PANEL LAYOUT (2026-09-27): row 1 FINDS — search, Hot | Warm | Cold, the Repricing and Can't get chips, the row count (what the
+      finding produced), Reset. Row 2 ACTS — Order | Pick, the rates, Pick keep, then Can't get and Cut on the selection, then the
+      basket actions on the right. Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
+
 SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
       clicking sets it, Enter and the "Cut (n)" button both act on it. This screen used to run a keyboard cursor (a hairline on the
       SKU cell) alongside a separate multi-select (a full row fill), which is what useListCursor is built for and what /inventory
@@ -131,21 +149,48 @@ RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE 
       months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
       null, excluded): this is stock with a track record that's gone quiet, worth a fresh look (reprice, re-list, bundle) rather
       than the dead-stock problem a never-sold row represents.
+
+HOT / WARM / COLD — the three presets' ON-SCREEN names since 2026-09-27 (owner picked them from three sets). They were Winners /
+      Potential / Recycle, and "Winners" collided with the portfolio WINNERS status this screen is now opened from (see ARRIVING FROM
+      REPRICING). A temperature reads as "how is this SIZE selling on Amazon right now" — a 30-day, per-SKU reading — where the status
+      is a style's 12 months. Labels only: the tests, the handlers and the code identifiers (winnersOnly, 'potential', …) keep the
+      old words, the same labels-only rule as Repricing's Selling | Stuck.
+
+ARRIVING FROM REPRICING (owner, 2026-09-27 — "check and order Amazon products from the winners screen via repricer"): an Amazon
+      Repricing status list links here with ?status=<WINNERS|STEADY|NEW|LOSERS>[&bar=<tier>]&from=<that list>&back=<label>, the twin of
+      Shopify Order's arrival. The screen then shows only that list's SKUs — fetched from /amz-status-list, the very route the Repricing
+      list reads (parked included), so the two can't disagree. A chip names the list; its X shows every SKU and Reset brings the list
+      back. Search, presets and cut all work inside it; Load basket still reaches the whole basket, window or not.
+
+CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we can't get a style, we can't get it, regardless of where
+      we're trying to sell it"): skusummary.no_supply_*, three months, via /no-supply-set and /no-supply-clear (utils/noSupply.js). Set
+      here with the "Can't get" button beside Cut (on the selected rows' styles; "Release" when they're all marked already) or from a
+      row's detail line, it marks the whole style — every size, on both order screens. It only stops the SUPPLIER side,
+      because a Can't get style can still be picked: "we can get them because we have them". So:
+        - a marked size with NO local stock is hidden (nothing to order, nothing to pick); a chip counts them, its X shows them dimmed;
+        - a marked size WITH local stock stays, tagged "Can't get", and works as normal;
+        - the rate fill leaves a marked row's Order half empty and still fills its Pick — see fillCoverage.
+      Nothing else guards it: a number typed into a marked row's Order box by hand is sent like any other (owner, 2026-09-27 — "leave
+      that to the operator"). Marking empties that style's ORDER boxes (never Pick), and an order that lands for a marked style clears
+      the mark — the same two rules as Shopify Order. The words are Can't get / Release, never park/unpark ("parked" is the pricing
+      review date on Repricing).
 =======================================================================================================================================
 */
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, TrophyIcon, SparklesIcon, ShoppingCartIcon,
-  FunnelIcon, TrashIcon, ClockIcon,
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, CloudIcon, ShoppingCartIcon,
+  FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon,
 } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, addOrderLine, allocateAmazonPick, AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
+  getAmazonOrderList, getAmzStatusList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply,
+  AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
 } from '@/lib/api';
+import { barLabel } from '@/lib/portfolioStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
@@ -191,6 +236,22 @@ function isBirkenstock(r: AmazonOrderRow): boolean {
 // (unit_profit === null) is not treated as a loss, since there's nothing to judge it on.
 function isLoss(r: AmazonOrderRow): boolean {
   return r.unit_profit !== null && r.unit_profit <= 0;
+}
+
+// CAN'T GET, HIDDEN — the style is marked (live) AND this size has nothing on the local shelf to pick, so there is nothing to do with it
+// here. A marked size WITH local stock stays on screen: it can still be picked (see CAN'T GET in the header).
+function supplyHidden(r: AmazonOrderRow): boolean {
+  return r.no_supply && r.local_stock === 0;
+}
+
+// 'YYYY-MM-DD' -> '1 Apr' (with the year only when it isn't this one) — same helper as Shopify Order. Read straight off the string,
+// never through a Date, which would parse it as UTC midnight and can land on the day before in the browser's zone (the BST day-shift).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const THIS_YEAR = String(new Date().getFullYear());
+function shortDate(iso: string | null): string {
+  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null;
+  if (!m) return '—';
+  return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}${m[1] === THIS_YEAR ? '' : ` ${m[1]}`}`;
 }
 
 // SOLD IN 6MO — unit_profit (skumap.amzprofit) is STICKY (route header, amazon-order-list.js): a SKU that sold once over a year
@@ -260,9 +321,11 @@ const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 // these from the local shelf to Amazon). Everything else about the screen is identical between the two — same rows, same search,
 // same presets, same rate buttons — only the column, and what a rate fill computes into it, differ (owner, 2026-08-28).
 type BasketMode = 'order' | 'pick';
-const BASKET_MODES: { key: BasketMode; label: string; title: string }[] = [
-  { key: 'order', label: 'Order', title: 'Plan what to BUY IN from the supplier — a rate fill works out the shortfall Amazon needs that local stock cannot cover' },
-  { key: 'pick', label: 'Pick', title: 'Plan what to SEND from the local shelf to Amazon — a rate fill takes as much of the shortfall as local stock can cover, above the Pick keep rate' },
+// Order = what to BUY IN from the supplier; Pick = what to SEND from the local shelf to Amazon. (No tooltips on the panel's
+// buttons since 2026-09-27 — owner: "training will sort that out".)
+const BASKET_MODES: { key: BasketMode; label: string }[] = [
+  { key: 'order', label: 'Order' },
+  { key: 'pick', label: 'Pick' },
 ];
 
 // One sendable line: a quantity against a SKU, tagged with the basket it came from so a single send loop can carry both halves and
@@ -358,6 +421,82 @@ function renderColumnHeader(
 }
 
 /*
+ * CAN'T GET CONTROL — the detail row's line for the row's STYLE (see CAN'T GET in the header). Same four states and the same words as
+ * Shopify Order's style block: marked (until when, by whom, Release) / lapsed ("Couldn't get it", Still can't, X) / confirming / the
+ * quiet "Can't get it" link. Its own component so each open detail row keeps its own confirm, busy and error state. Both writes
+ * resolve to an error message, or null when it worked (the list then reloads).
+ */
+interface SupplyControlProps {
+  row: AmazonOrderRow;
+  sizes: number;              // how many of this style's sizes are on the list — the confirm says the mark takes them all
+  parkUntil: string | null;   // the day a mark set now would lapse
+  onPark: (groupids: string[]) => Promise<string | null>;
+  onClearSupply: (groupids: string[]) => Promise<string | null>;
+}
+function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyControlProps) {
+  const [choosing, setChoosing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [supplyError, setSupplyError] = useState<string | null>(null);
+  async function run(write: () => Promise<string | null>) {
+    setBusy(true); setSupplyError(null);
+    const err = await write();
+    setBusy(false);
+    if (err) setSupplyError(err); else setChoosing(false);
+  }
+  const lapsed = !row.no_supply && !!row.no_supply_since;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      {row.no_supply ? (
+        <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+          Can&rsquo;t get {row.groupid} until {shortDate(row.no_supply_until)}
+          {row.no_supply_by && <span className="text-amber-600">· {row.no_supply_by}</span>}
+          {/* Release — Can't get's own opposite, the word Shopify Order and Seasons use. Not "Clear", not "Unpark". */}
+          <button type="button" disabled={busy} onClick={() => run(() => onClearSupply([row.groupid]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+            Release
+          </button>
+        </span>
+      ) : lapsed && !choosing ? (
+        <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+          Couldn&rsquo;t get it — {shortDate(row.no_supply_since)}
+          {/* "Still can't" is its own confirmation — the operator has just read the note and answered it — so it marks straight away. */}
+          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.groupid]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+            Still can&rsquo;t
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => onClearSupply([row.groupid]))}
+            aria-label="I can get it — dismiss the note"
+            className="rounded p-0.5 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+          >
+            <XMarkIcon className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      ) : choosing ? (
+        <span className="inline-flex items-center gap-1.5 text-slate-700">
+          Can&rsquo;t get {row.groupid} ({sizes === 1 ? 'its one size' : `all ${sizes} sizes`}, Shopify too) — stop ordering until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
+          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.groupid]))} className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+            Yes
+          </button>
+          <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setChoosing(true)}
+          className="text-slate-500 hover:text-slate-700 hover:underline"
+        >
+          Can&rsquo;t get it
+        </button>
+      )}
+      {supplyError && <span className="text-red-600">{supplyError}</span>}
+    </span>
+  );
+}
+
+/*
  * DEEP LINK IN (added 2026-09-22 for the product hub). This screen took no query params at all until then: the only way to reach one
  * product's Amazon numbers was to open the page and retype its groupid into the Include box, which is exactly the hunting the hub
  * exists to remove. It now reads three:
@@ -387,11 +526,58 @@ function AmazonOrderContent() {
   const backHref = from || undefined;
   // An explicit ?back= wins; otherwise derive a readable name from the origin path.
   const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : 'Back');
-  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
+  const { data, error: loadError, isLoading: listLoading, refresh } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
   );
   const rows: AmazonOrderRow[] = data?.rows ?? NO_ROWS;
+
+  // ARRIVAL FROM REPRICING — see the header. Read once from the URL; the server validates status and bar (a bad one comes back as an
+  // error line, and the full list still shows).
+  const scopeStatus = (searchParams.get('status') || '').trim().toUpperCase() || null;
+  const barRaw = Number(searchParams.get('bar'));
+  const scopeBar = scopeStatus && barRaw > 0 ? barRaw : null;
+  // The status list's SKUs — the same call the Amazon Repricing list makes (parked included). null key = no scope, nothing fetched.
+  const { data: scopeData, error: scopeError, isLoading: scopeLoading } = useApiQuery(
+    scopeStatus ? ['amazon-order-scope', scopeStatus, scopeBar] : null,
+    () => getAmzStatusList(scopeStatus!, scopeBar),
+  );
+  const scopeCodes = useMemo(
+    () => (scopeData ? new Set(scopeData.rows.map((r) => r.code)) : null),
+    [scopeData],
+  );
+  // The chip's X turns the window off to show every SKU; Reset turns it back on (the screen as you arrived).
+  const [scopeOn, setScopeOn] = useState(true);
+  const scoped = scopeOn && scopeCodes !== null;
+  // The Repricing window alone — before the Can't get cut, so that chip can count what it hides from the list you'd otherwise see.
+  const scopeBase = useMemo(
+    () => (scoped && scopeCodes ? rows.filter((r) => scopeCodes.has(r.code)) : rows),
+    [rows, scoped, scopeCodes],
+  );
+  // "Winners over £2,500" — the list's name as the Repricing crumb gives it.
+  const scopeName = scopeStatus
+    ? scopeStatus.charAt(0) + scopeStatus.slice(1).toLowerCase() + (scopeBar ? ` ${barLabel(scopeBar)}` : '')
+    : null;
+
+  // CAN'T GET — sizes of a marked style with nothing on the local shelf are off the screen (supplyHidden; see the header). Counted
+  // inside the window, so the chip's number is what it's hiding from the list you'd otherwise see.
+  const [supplyOn, setSupplyOn] = useState(true);
+  const supplyHiddenCount = useMemo(() => scopeBase.filter(supplyHidden).length, [scopeBase]);
+  // The rows the screen works within: the window, less what you can neither order nor pick. Search and the presets narrow THIS.
+  const baseRows = useMemo(
+    () => (supplyOn ? scopeBase.filter((r) => !supplyHidden(r)) : scopeBase),
+    [scopeBase, supplyOn],
+  );
+  // Reset has something to do if the window or the Can't get cut was switched off — it's how you get back to either.
+  const leftScope = (scopeCodes !== null && !scopeOn) || !supplyOn;
+  // How many sizes of each style are on the list — the Can't get confirm says the mark takes them all.
+  const sizesByStyle = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.groupid, (m.get(r.groupid) || 0) + 1);
+    return m;
+  }, [rows]);
+  // Hold the whole screen until the scope has landed too, so arriving from Repricing never flashes all ~520 SKUs first.
+  const loading = listLoading || (!!scopeStatus && scopeLoading);
   // Amazon lines already queued to Order Status and still sitting un-placed — see the UNPLACED BACKLOG note in the header block.
   const toPlace: AmazonOrderToPlace | null = data?.to_place ?? null;
   // 3 days is the line between "sent it this morning" and "this has been sitting". Under it the indicator is quiet slate and says
@@ -425,7 +611,7 @@ function AmazonOrderContent() {
     setIncludeInput('');
     if (!t || includes.includes(t)) return;
     const stacked = [...includes, t];
-    if (hasSearchMatch(rows, stacked, excludes)) {
+    if (hasSearchMatch(baseRows, stacked, excludes)) {
       setIncludes(stacked);
     } else {
       setIncludes([t]);
@@ -578,7 +764,9 @@ function AmazonOrderContent() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
     setBasketSnapshot(null);
-    setCut(new Set()); setSelected(new Set());
+    setCut(new Set()); deselectAll();
+    // Back into the Repricing window and the Can't get cut if either was switched off — the screen as you arrived.
+    setScopeOn(true); setSupplyOn(true);
     setCoverageByView(NO_COVERAGE_BOTH);
     setManualOrder(null);
     // Reset drops the snapshot outright rather than re-taking it (clearManualOrder) — it's tearing down the very view the
@@ -599,7 +787,8 @@ function AmazonOrderContent() {
       return rows.filter((r) => r.code === focusedOrderCode
         || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(qty[r.code]) || 0) > 0));
     }
-    let out = rows;
+    // Everything else narrows the working set: the Repricing window, less what Can't get hides (baseRows, above).
+    let out = baseRows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
       const excTerms = excludes.map((t) => t.toLowerCase());
@@ -625,7 +814,7 @@ function AmazonOrderContent() {
       });
     }
     return out;
-  }, [rows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
+  }, [rows, baseRows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
@@ -836,6 +1025,9 @@ function AmazonOrderContent() {
     // so the stock figure this screen filled from is always a little old. Reported as a note so the operator can see which SKUs went
     // out light rather than assuming the whole basket landed.
     const shortfalls: string[] = [];
+    // Styles carrying a "Can't get it" mark (live or lapsed) that just had an ORDER line land — cleared after the loop, as on Shopify
+    // Order: a style you've just ordered is plainly one you can get. A pick says nothing about the supplier, so it never clears one.
+    const orderedFlagged = new Set<string>();
     for (let i = 0; i < sendTargets.length; i++) {
       // `half` is the TARGET's own basket. The screen's `mode` state is not consulted anywhere in this loop any more, which is the
       // whole point of the change: what you're looking at no longer decides what gets written.
@@ -858,8 +1050,11 @@ function AmazonOrderContent() {
         } else unauthorized = res.return_code === 'UNAUTHORIZED';
       } else {
         const res = await addOrderLine(supplier, code, qty, 3);
-        if (res.success) landed = true;
-        else unauthorized = res.return_code === 'UNAUTHORIZED';
+        if (res.success) {
+          landed = true;
+          const row = rowByCode.get(code);
+          if (row && row.no_supply_since) orderedFlagged.add(row.groupid);
+        } else unauthorized = res.return_code === 'UNAUTHORIZED';
       }
 
       if (unauthorized) { setOrdering(false); setOrderProgress(null); logout(); return; }
@@ -880,6 +1075,8 @@ function AmazonOrderContent() {
       setOrderProgress({ done: i + 1, total: sendTargets.length });
     }
     setOrderProgress(null); setOrdering(false);
+    // Best effort — the orders are what matter; a note that fails to clear just stays until the next time.
+    if (orderedFlagged.size > 0) await clearNoSupply([...orderedFlagged]);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     if (shortfalls.length > 0) {
       setSendNote(`Shelf came up short on ${shortfalls.length} SKU${shortfalls.length === 1 ? '' : 's'}: ${shortfalls.slice(0, 5).join(', ')}${shortfalls.length > 5 ? '…' : ''}`);
@@ -964,7 +1161,9 @@ function AmazonOrderContent() {
       // 2026-08-28). A keep of 0 holds nothing back, so the whole local shelf counts.
       const available = Math.max(0, r.local_stock - keep);
       const pick = Math.min(shortfall, available);
-      const order = shortfall - pick; // pick <= shortfall by construction, so this can't go negative
+      // CAN'T GET (owner, 2026-09-27): the supplier has none, so what the shelf can't cover is left unbought rather than put in Order —
+      // the pick is unaffected, that stock is ours. Only a LIVE mark; a lapsed one is back to normal.
+      const order = r.no_supply ? 0 : shortfall - pick; // pick <= shortfall by construction, so this can't go negative
       // A row with nothing to do on a given side is left OUT of that side rather than written as a 0.
       if (pick > 0) filled.pick.push({ code: r.code, qty: pick });
       if (order > 0) filled.order.push({ code: r.code, qty: order });
@@ -1041,6 +1240,33 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
+  // CAN'T GET — the two writes, for the row-1 button (the selected rows' styles) and the detail row (SupplyControl, one style). Each
+  // reloads the list and hands back an error message, or null. Marking EMPTIES those styles' ORDER boxes (every size, on screen or not)
+  // — a buy against a style you've just said you can't get is an order Confirm Basket would otherwise still send. Pick is left alone:
+  // that stock is on our shelf.
+  async function onPark(groupids: string[]): Promise<string | null> {
+    const res = await setNoSupply(groupids);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
+    if (!res.success) return res.error || 'Couldn’t mark it';
+    const marked = new Set(groupids);
+    const codes = new Set(rows.filter((r) => marked.has(r.groupid)).map((r) => r.code));
+    setQtyByMode((prev) => {
+      if (!Object.keys(prev.order).some((c) => codes.has(c))) return prev;
+      const order = { ...prev.order };
+      codes.forEach((c) => { delete order[c]; });
+      return { ...prev, order };
+    });
+    await refresh();
+    return null;
+  }
+  async function onClearSupply(groupids: string[]): Promise<string | null> {
+    const res = await clearNoSupply(groupids);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
+    if (!res.success) return res.error || 'Couldn’t clear it';
+    await refresh();
+    return null;
+  }
+
   // CLEAR BASKET — empties the whole scratchpad in one go, off-screen rows included, and (via the autosave effect above, which
   // removes the key rather than persisting an empty draft) the saved draft with it. Deliberately its OWN action rather than part
   // of Reset: Reset is a view reset and leaves the basket alone on purpose (owner, 2026-08-11 — the basket is a draft built up
@@ -1113,15 +1339,11 @@ function AmazonOrderContent() {
   });
 
   // DETAIL EXPAND — barcode/Amazon SKU/brand are looked up rarely, so they're not columns anymore (they were most of why the
-  // table needed side-scrolling); double-clicking a row reveals them inline instead (owner request, 2026-08-13). Keyed by code,
-  // same as cut/selected — a plain Set, since more than one row can be open at once and there's no ordering to track.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // table needed side-scrolling); the caret beside a SKU reveals them inline instead (owner request, 2026-08-13), with the style's
+  // Can't get line. ONE row at a time since 2026-09-27 (see CLICK, SELECT, EXPAND in the header): opening another closes the first.
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
   function toggleExpanded(code: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code); else next.add(code);
-      return next;
-    });
+    setExpandedCode((prev) => (prev === code ? null : code));
   }
 
   // MULTI-SELECT for bulk cut — separate from the cursor above (see header comment). `anchorRef` is the last PLAIN click, which
@@ -1141,17 +1363,11 @@ function AmazonOrderContent() {
     setSelected(new Set());
     anchorRef.current = null;
   }
+  // THE WINDOWS RULES (owner, 2026-09-27 — see CLICK, SELECT, EXPAND in the header). Plain click = this row alone; Ctrl/Cmd =
+  // add or remove it; Shift = the range from the anchor, replacing the selection; a plain click on a row already selected unselects
+  // just that row. The keyboard position follows the click, so the next arrow key carries on from here — unless the click left
+  // nothing selected, when it goes too (a cursor with nothing blue is invisible to the operator).
   function onRowClick(e: React.MouseEvent, code: string) {
-    // A plain click on the row that's ALREADY the sole selection turns it off again — clicking the blue row is how you take the
-    // highlight away, so a mis-click costs one click to undo rather than needing Escape (owner, 2026-08-27). The cursor goes with
-    // it: leaving it parked on a row with nothing blue would put the next arrow key somewhere invisible. Only the plain,
-    // single-row case — a click inside a multi-row selection still narrows to that row, which is what every list does.
-    if (!e.shiftKey && !e.ctrlKey && !e.metaKey && selected.size === 1 && selected.has(code)) {
-      cursor.setCursor(null);
-      deselectAll();
-      return;
-    }
-    cursor.setCursor(code);
     if (e.shiftKey && anchorRef.current) {
       const a = cursorKeys.indexOf(anchorRef.current);
       const b = cursorKeys.indexOf(code);
@@ -1159,29 +1375,25 @@ function AmazonOrderContent() {
         const [lo, hi] = a < b ? [a, b] : [b, a];
         setSelected(new Set(cursorKeys.slice(lo, hi + 1)));
       }
-    } else if (e.ctrlKey || e.metaKey) {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (next.has(code)) next.delete(code); else next.add(code);
-        return next;
-      });
-      anchorRef.current = code;
-    } else {
-      setSelected(new Set([code]));
-      anchorRef.current = code;
+      cursor.setCursor(code);
+      return;
     }
+    let next: Set<string>;
+    if (e.ctrlKey || e.metaKey || selected.has(code)) {
+      // Ctrl toggles; a plain click on an already-selected row is the same "take this one out".
+      next = new Set(selected);
+      if (next.has(code)) next.delete(code); else next.add(code);
+    } else {
+      next = new Set([code]);
+    }
+    setSelected(next);
+    if (next.size === 0) { cursor.setCursor(null); anchorRef.current = null; return; }
+    anchorRef.current = code;
+    cursor.setCursor(code);
   }
-  // A cut row can't stay selected — without this, a single X-cut on a selected row leaves it in `selected` (invisible but still
-  // counted), so the "Cut (n)" button would silently claim more rows than are actually left to cut.
-  useEffect(() => {
-    if (cut.size === 0) return;
-    setSelected((prev) => {
-      if (![...prev].some((c) => cut.has(c))) return prev;
-      const next = new Set(prev);
-      cut.forEach((c) => next.delete(c));
-      return next;
-    });
-  }, [cut]);
+  // A cut row can't stay selected. There used to be an effect here stripping cut rows out of `selected`; it's gone (2026-09-27)
+  // because both ways of cutting — the Cut button (cutSelected) and a row's own X (onCut) — already end with nothing selected, so
+  // there is nothing left for it to strip.
   // Escape clears the cursor inside useListCursor. With one highlight that has to clear the selection too, or Escape would look
   // like it did nothing at all — the cursor has no separate mark left to remove. Watches the transition rather than the value, so
   // an empty selection at rest isn't constantly being re-set.
@@ -1211,6 +1423,34 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
+  // CAN'T GET FROM THE SELECTION (owner, 2026-09-27 — "am I not able to set Can't get from this screen?": the detail row alone was
+  // too hidden). The button beside Cut acts on the STYLES of the selected rows — select the way you select for Cut — because the mark
+  // is per style: three sizes of one style selected is one style marked. If every one of them is already marked it offers Release
+  // instead, so the same button undoes itself. Inline confirm, since marking hides sizes with no local stock from the screen.
+  const markedStyles = useMemo(() => new Set(rows.filter((r) => r.no_supply).map((r) => r.groupid)), [rows]);
+  const selectedStyles = useMemo(() => {
+    const out = new Set<string>();
+    for (const code of selected) {
+      const r = rowByCode.get(code);
+      if (r) out.add(r.groupid);
+    }
+    return [...out];
+  }, [selected, rowByCode]);
+  const releasing = selectedStyles.length > 0 && selectedStyles.every((g) => markedStyles.has(g));
+  const selectedStyleSizes = selectedStyles.reduce((n, g) => n + (sizesByStyle.get(g) ?? 0), 0);
+  const [confirmingPark, setConfirmingPark] = useState(false);
+  const [parkBusy, setParkBusy] = useState(false);
+  const [parkError, setParkError] = useState<string | null>(null);
+  async function submitPark() {
+    setParkBusy(true); setParkError(null);
+    const err = releasing ? await onClearSupply(selectedStyles) : await onPark(selectedStyles);
+    setParkBusy(false);
+    if (err) { setParkError(err); return; }
+    setConfirmingPark(false);
+    cursor.setCursor(null);
+    deselectAll();
+  }
+
   // Order box: Up/Down walks rows and keeps focus in the box (see the header comment for why this needs its own handler rather
   // than relying on useListCursor, which leaves focused inputs alone everywhere else).
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -1227,8 +1467,9 @@ function AmazonOrderContent() {
     const nextCode = cursorKeys[nextI];
     if (nextCode === code) return; // already at an end — leave the caret alone rather than eat the keystroke for nothing
     e.preventDefault();
+    // Moves the keyboard position only — typing never changes the selection (see CLICK, SELECT, EXPAND in the header). The row
+    // being typed in is tinted by its own focus-within instead.
     cursor.setCursor(nextCode);
-    selectOnly(nextCode); // the box's own Up/Down is still a keyboard move, so it moves the one highlight like any other
     const nextInput = inputRefs.current.get(nextCode);
     nextInput?.focus();
     nextInput?.select();
@@ -1286,7 +1527,7 @@ function AmazonOrderContent() {
             type="button"
             onClick={() => setDismissedOpenSig(openSig)}
             aria-label="Dismiss"
-            title="Hide this message"
+            title="Hide"
             className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100"
           >
             <XMarkIcon className="h-5 w-5" />
@@ -1320,8 +1561,7 @@ function AmazonOrderContent() {
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
               autoFocus
               placeholder="Include, then Enter"
-              title="Narrow to rows containing this text — Enter commits it as a step, and steps stack (all must match)"
-              className="w-48 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-44 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
           <div className="relative">
@@ -1331,8 +1571,7 @@ function AmazonOrderContent() {
               onChange={onExcludeInputChange}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExclude(); } }}
               placeholder="Exclude, then Enter"
-              title="Drop rows containing this word — whole words only, so excluding SAND doesn't also drop SANDALS"
-              className="w-48 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-44 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
 
@@ -1346,60 +1585,107 @@ function AmazonOrderContent() {
             <button
               type="button"
               onClick={toggleWinners}
-              title="Show only SKUs with more than £30 profit in the last 30 days"
+              title="Over £30 profit in 30 days"
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (winnersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
               }
             >
-              <TrophyIcon className="h-4 w-4" />
-              Winners
+              <FireIcon className="h-4 w-4" />
+              Hot
             </button>
             <button
               type="button"
               onClick={togglePotential}
-              title="Show only SKUs under £30 profit this month that still earn more than £3 per unit"
+              title="Under £30 in 30 days, over £3 a unit"
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (potentialOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
               }
             >
-              <SparklesIcon className="h-4 w-4" />
-              Potential
+              <SunIcon className="h-4 w-4" />
+              Warm
             </button>
             <button
               type="button"
               onClick={toggleRecycle}
-              title="Show only SKUs that sold before, but not in the last 6 months"
+              title="No sale in 6 months"
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (recycleOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
               }
             >
-              <ClockIcon className="h-4 w-4" />
-              Recycle
+              <CloudIcon className="h-4 w-4" />
+              Cold
             </button>
           </div>
 
-          {/* Cut + Reset — view operations on the list the controls to their left just produced, so they close this row rather than
-              sitting next to the send button. Reset goes last: it's the escape hatch, and the escape hatch belongs at the end of
-              the row you might need escaping from. */}
+          {/* REPRICING WINDOW — which list this screen is scoped to (see ARRIVING FROM REPRICING). In row 1 because it decides which rows
+            are on screen, like the presets beside it — and row 2 is full (in row 2 it pushed the SKU count onto a line of its own, owner
+            2026-09-27). Slate, not brand: it's context you arrived with, not a control you're driving. X = show every SKU; once out,
+            the same slot offers the way back in. */}
+          {scopeName && scopeCodes !== null && (scopeOn ? (
+            <span
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              Repricing: <span className="font-semibold text-slate-800">{scopeName}</span>
+              <button
+                type="button"
+                onClick={() => { setScopeOn(false); deselectAll(); }}
+                aria-label="Show every SKU"
+                title="Show all"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => { setScopeOn(true); deselectAll(); }} className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
+              Back to {scopeName} only
+            </button>
+          ))}
+          {/* CAN'T GET — only when something is actually hidden; the same chip shell and X / way-back-in pair as the window's. */}
+          {supplyHiddenCount > 0 && (supplyOn ? (
+            <span
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              Can&rsquo;t get: <span className="font-semibold text-slate-800">{supplyHiddenCount}</span>
+              <span className="text-slate-400">hidden</span>
+              <button
+                type="button"
+                onClick={() => { setSupplyOn(false); deselectAll(); }}
+                aria-label="Show sizes you can't get"
+                title="Show them"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => { setSupplyOn(true); deselectAll(); }} className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
+              Hide can&rsquo;t-get
+            </button>
+          ))}
+
+          {/* Row count — in row 1 since 2026-09-27, beside the controls whose result it is (in row 2 it wrapped under the Repricing
+              chip). The "n cut · restore" that sat beside it is gone (owner, 2026-09-27): appearing on the first cut, it pushed row 1
+              about. Reset brings cut rows back. Committed search steps (includes/excludes) deliberately show no chips of their own (owner,
+              2026-08-20 — "they get messy") — Reset is the one way back to an unfiltered list. */}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+            <span className="mr-1 whitespace-nowrap text-slate-500">
+              {/* The rows on screen, plainly — search, presets and cuts all count (owner, 2026-09-27: "just show the row count as it
+                  is"). It used to switch to "Rows: X of Y" once anything narrowed the list; the "of Y" changed its width on a click. */}
+              <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> SKUs</span>
+            </span>
+          </div>
+
+          {/* Reset — the escape hatch, alone at the end of the row you might need escaping from. Cut and Can't get moved to row 2
+              (2026-09-27): they ACT on the rows, and at the end of this row they wrapped onto a line of their own. */}
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
-              onClick={cutSelected}
-              disabled={selected.size === 0}
-              title="Cut every selected row — arrow to one, or click it; Shift-click to extend a range, Ctrl/Cmd-click to add one. Enter does the same."
-              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
-            >
-              <XMarkIcon className="h-4 w-4" />
-              Cut{selected.size > 0 ? ` (${selected.size})` : ''}
-            </button>
-            <button
-              type="button"
               onClick={onReset}
-              disabled={!filtering && cut.size === 0 && !anyCoverage}
-              title="Clear every filter, restore cut rows, clear the coverage fill, and show the whole list"
+              disabled={!filtering && cut.size === 0 && !anyCoverage && !leftScope}
               className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >
               <ArrowPathIcon className="h-4 w-4" />
@@ -1410,9 +1696,8 @@ function AmazonOrderContent() {
 
         {/* ROW 2 — FILL, then the state of what you've built, then SEND: the rest of the loop, reading left to right. The rate
             strip used to sit alone on its own divided row as if it were unrelated furniture, when it's really the second half of
-            the core gesture (narrow the list in row 1, then fill what's left). The counts and chips sit in the middle on a
-            reserved height, so committing or dropping a search step no longer changes the panel's height — this panel is sticky,
-            so any resize shoves the whole table up or down under it. */}
+            the core gesture (narrow the list in row 1, then fill what's left). Since 2026-09-27 the selection actions (Can't get,
+            Cut) sit after the fill controls and the row count has moved up to row 1 — see PANEL LAYOUT in the header. */}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
           {/* MODE — Order / Pick. First in the row because it governs everything to its right: the rate buttons, the keep rate and
               the column they all write into mean something different depending on which of these is lit. Same segmented shell as
@@ -1426,7 +1711,6 @@ function AmazonOrderContent() {
                 key={m.key}
                 type="button"
                 onClick={() => switchMode(m.key)}
-                title={m.title}
                 aria-pressed={mode === m.key}
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
@@ -1444,13 +1728,6 @@ function AmazonOrderContent() {
                 key={months}
                 type="button"
                 onClick={() => applyCoverage(months)}
-                title={
-                  coverageMonths === months
-                    ? 'Click again to clear the Basket'
-                    : mode === 'pick'
-                      ? `Fill Pick with as much of ${months} month${months === 1 ? '' : 's'} of cover as local stock can supply (Sold 30d x ${months}, minus FBA Total, capped at local stock above the Pick keep rate)`
-                      : `Fill Order with what's needed to cover ${months} month${months === 1 ? '' : 's'} of sales (Sold 30d x ${months}, minus FBA Total, minus local stock above the Pick keep rate)`
-                }
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
                   (coverageMonths === months
@@ -1480,7 +1757,6 @@ function AmazonOrderContent() {
               value={String(pickKeep)}
               onChange={(e) => onPickKeep(Number(e.target.value))}
               aria-label="Pick keep — units to hold back in local stock"
-              title="How many units to hold back in local stock. A rate fill covers the shortfall from any local stock above this before ordering the rest from the supplier — e.g. 2 local with Pick keep 1 means 1 fewer on the order. Pick keep 0 holds nothing back."
               className="rounded border-0 bg-transparent px-1.5 py-1 text-sm font-medium text-slate-600 focus:outline-none"
             >
               {PICK_KEEP_OPTIONS.map((n) => (
@@ -1489,29 +1765,32 @@ function AmazonOrderContent() {
             </select>
           </div>
 
-          {/* Row count and cut count. Committed search steps (includes/excludes) deliberately show no chips of their own (owner,
-              2026-08-20 — "they get messy") — Reset is the one way back to an unfiltered list. */}
-          <div className="flex min-h-[2.25rem] min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
-            <span className="mr-1 whitespace-nowrap text-slate-500">
-              {/* Cut rows drop out of visible too, so the count includes them alongside search/preset filtering — a cut shouldn't
-                  leave the "Rows: X of Y" figure reading as if nothing happened (owner, 2026-08-13). */}
-              {filtering || cut.size > 0 ? (
-                <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
-              ) : (
-                <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> SKUs</span></>
-              )}
-            </span>
-            {cut.size > 0 && (
-              <>
-                <span className="text-slate-300">|</span>
-                <span className="whitespace-nowrap text-slate-400">
-                  {cut.size} cut
-                  <button type="button" onClick={() => setCut(new Set())} className="ml-1.5 font-medium text-brand-600 hover:underline">
-                    restore
-                  </button>
-                </span>
-              </>
-            )}
+          {/* SELECTION ACTIONS — Can't get and Cut act on the selected rows (see CLICK, SELECT, EXPAND in the header). Both are a
+              FIXED width with no count: a width that moved with the selection re-wrapped this row and made the sticky panel jump. Left, straight after the fill controls, so the row reads: set up the fill, deal with the rows, then send. */}
+          <div className="flex items-center gap-2">
+            {/* CAN'T GET / RELEASE — see CAN'T GET FROM THE SELECTION. Acts on STYLES, not rows — the confirm says how many of each. */}
+            <button
+              type="button"
+              onClick={() => { setParkError(null); setConfirmingPark((v) => !v); }}
+              disabled={selectedStyles.length === 0}
+              aria-pressed={confirmingPark}
+              className={
+                'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
+                + (confirmingPark && selectedStyles.length > 0 ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <NoSymbolIcon className="h-4 w-4" />
+              {releasing ? 'Release' : 'Can’t get'}
+            </button>
+            <button
+              type="button"
+              onClick={cutSelected}
+              disabled={selected.size === 0}
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <XMarkIcon className="h-4 w-4" />
+              Cut
+            </button>
           </div>
 
           {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: send it, or throw it
@@ -1533,7 +1812,6 @@ function AmazonOrderContent() {
             <button
               type="button"
               onClick={toggleOrdersOnly}
-              title="Show every SKU with a number currently in Basket — ignores the search steps and the other presets, and brings back any cut rows"
               className={
                 'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ' +
                 (ordersOnly
@@ -1570,18 +1848,6 @@ function AmazonOrderContent() {
                 type="button"
                 onClick={() => { setConfirmingClear(false); setConfirmingOrder(true); }}
                 disabled={ordering || sendTargets.length === 0}
-                title={
-                  // Names BOTH halves, always — the button sends both regardless of the mode on screen, and the one thing the
-                  // operator must not be able to press this without knowing is that the Pick half commits physical stock.
-                  [
-                    orderUnits > 0 ? `${orderUnits} unit${orderUnits === 1 ? '' : 's'} from Order go to the Order Status TO PLACE queue (still editable there).` : '',
-                    pickUnits > 0 ? `${pickUnits} unit${pickUnits === 1 ? '' : 's'} from Pick are flagged on the local shelf and appear on the Pick screen's Amazon tab to be gathered — nothing physically moves until someone does, but that stock can no longer be picked for a Shopify customer order.` : '',
-                    `Every row with a value, not just the ones on screen.`,
-                    basketCost.total > 0 || basketCost.unpriced > 0
-                      ? `Cost shown is the on-screen Order rows only${basketCost.unpriced > 0 ? ` (+${basketCost.unpriced} unit${basketCost.unpriced === 1 ? '' : 's'} with no known cost, not in the total)` : ''}.`
-                      : '',
-                  ].filter(Boolean).join(' ')
-                }
                 className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
               >
                 <ShoppingCartIcon className="h-5 w-5" />
@@ -1643,7 +1909,7 @@ function AmazonOrderContent() {
                 onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
                 disabled={ordering || sendTargets.length === 0}
                 aria-label="Clear basket"
-                title="Empty BOTH baskets — Order and Pick, every row with a value, not just the ones on screen — and discard the saved draft"
+                title="Clear basket"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
               >
                 <TrashIcon className="h-5 w-5" />
@@ -1660,8 +1926,25 @@ function AmazonOrderContent() {
           </div>
         </div>
 
-        {(orderError || sendNote || (toPlace && toPlace.units > 0)) && (
+        {(orderError || sendNote || (toPlace && toPlace.units > 0) || (confirmingPark && selectedStyles.length > 0)) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
+            {/* CAN'T GET / RELEASE CONFIRM — here rather than in place of the button, so a whole sentence never wraps row 2. */}
+            {confirmingPark && selectedStyles.length > 0 && (
+              <span className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-slate-700">
+                  {releasing
+                    ? `Release ${selectedStyles.length} style${selectedStyles.length === 1 ? '' : 's'} — back on both order screens?`
+                    : `Can’t get ${selectedStyles.length} style${selectedStyles.length === 1 ? '' : 's'} (${selectedStyleSizes} size${selectedStyleSizes === 1 ? '' : 's'}, Shopify too) — stop ordering until ${data?.no_supply_default_until ? shortDate(data.no_supply_default_until) : 'three months from today'}? Sizes with local stock stay for picking.`}
+                </span>
+                {parkError && <span className="text-red-600">{parkError}</span>}
+                <button type="button" disabled={parkBusy} onClick={submitPark} className="rounded bg-slate-800 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50">
+                  {releasing ? 'Release' : 'Can’t get'}
+                </button>
+                <button type="button" disabled={parkBusy} onClick={() => { setConfirmingPark(false); setParkError(null); }} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                  Cancel
+                </button>
+              </span>
+            )}
             {orderError && <span className="text-red-600">{orderError}</span>}
             {/* A shortfall is amber, not red: the send worked, the shelf just had less on it than the screen thought. */}
             {sendNote && <span className="text-amber-600">{sendNote}</span>}
@@ -1674,11 +1957,7 @@ function AmazonOrderContent() {
                 href="/order-status?stage=place"
                 target="_blank"
                 rel="noopener noreferrer"
-                title={
-                  `${toPlace.units} Amazon unit${toPlace.units === 1 ? '' : 's'} across ${toPlace.skus} SKU${toPlace.skus === 1 ? '' : 's'}`
-                  + ` and ${toPlace.suppliers} supplier${toPlace.suppliers === 1 ? '' : 's'} have been confirmed here but not yet ordered`
-                  + ` from the supplier. Opens Order Status (TO PLACE) in a new tab.`
-                }
+                title="Open Order Status"
                 className={
                   'ml-auto flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium hover:underline '
                   + (stale ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500')
@@ -1698,6 +1977,11 @@ function AmazonOrderContent() {
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {!loading && !error && scopeStatus && scopeError && (
+        <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Couldn&rsquo;t load the {scopeName} list from Repricing ({scopeError.message}) — showing every SKU.
+        </div>
+      )}
 
       {!loading && !error && (
         // No overflow of its own — see panelHeight above. Anything with overflow:auto here would become the sticky positioning
@@ -1747,7 +2031,10 @@ function AmazonOrderContent() {
                     'group cursor-pointer select-none ' +
                     // The one highlight on the screen. A step up from the old brand-50 because it's now carrying the job the
                     // hairline cursor used to share — you have to be able to find it after looking away, not just notice it.
-                    (selected.has(r.code) ? 'bg-brand-100' : 'hover:bg-slate-50')
+                    // focus-within = the row whose Order box is being typed in, which no longer selects it (see the header).
+                    (selected.has(r.code) ? 'bg-brand-100' : 'hover:bg-slate-50 focus-within:bg-slate-50')
+                    // A size Can't get would hide, on screen only because its chip's X was pressed — dimmed, as on Shopify Order.
+                    + (supplyHidden(r) ? ' opacity-50' : '')
                   }
                 >
                   {/* Pinned LEFT to match the header (see renderColumnHeader). Its background can't just inherit the row's — a
@@ -1764,13 +2051,28 @@ function AmazonOrderContent() {
                   }>
                     <span className="inline-flex items-center gap-1">
                       {r.code}
+                      {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
+                          Still can't live. A lapsed mark gets a quieter tag: the style is back, the note says why it was away. */}
+                      {(r.no_supply || r.no_supply_since) && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
+                          title={r.no_supply ? `Can’t get until ${shortDate(r.no_supply_until)}` : `Couldn’t get — ${shortDate(r.no_supply_since)}`}
+                          className={
+                            'rounded border px-1 font-sans text-[10px] font-medium leading-4 '
+                            + (r.no_supply ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500')
+                          }
+                        >
+                          {r.no_supply ? 'Can’t get' : 'Couldn’t get'}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
-                        title="Barcode / Amazon SKU / brand"
+                        title="Details"
                         className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-500"
                       >
-                        <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expanded.has(r.code) ? 'rotate-180' : '')} />
+                        <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expandedCode === r.code ? 'rotate-180' : '')} />
                       </button>
                     </span>
                   </td>
@@ -1789,7 +2091,7 @@ function AmazonOrderContent() {
                       value={qty[r.code] || ''}
                       onChange={(e) => setQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
                       onKeyDown={(e) => onEditKeyDown(e, r.code)}
-                      onFocus={() => { cursor.setCursor(r.code); selectOnly(r.code); setFocusedOrderCode(r.code); }}
+                      onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
                       onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
                       inputMode="numeric"
                       style={{ scrollMarginTop: stickyOffset }}
@@ -1798,7 +2100,7 @@ function AmazonOrderContent() {
                          it means anything on this screen. */
                       disabled={isBirkenstock(r)}
                       placeholder="—"
-                      title={isBirkenstock(r) ? 'Birkenstock never goes to Amazon — it’s bought separately, in bulk, and sold elsewhere' : undefined}
+                      title={isBirkenstock(r) ? 'Birkenstock — not sold on Amazon' : undefined}
                       className={
                         'w-16 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 ' +
                         (isBirkenstock(r)
@@ -1813,7 +2115,7 @@ function AmazonOrderContent() {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onCut(r.code); }}
-                      title="Cut from list (Reset or the restore link brings it back)"
+                      title="Cut"
                       className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-600"
                     >
                       <XMarkIcon className="h-4 w-4" />
@@ -1825,7 +2127,7 @@ function AmazonOrderContent() {
                     column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
                     CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
                     clickable — a bare click target you can't see the boundary of invites mis-clicks on a line with three values. */}
-                {expanded.has(r.code) && (
+                {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
                     <td colSpan={10} className="px-3 py-2">
                       <div className="flex flex-wrap gap-x-6 gap-y-1 pl-3 text-xs text-slate-600">
@@ -1841,6 +2143,13 @@ function AmazonOrderContent() {
                           Brand: <span className="text-slate-800">{r.brand || '—'}</span>
                           {r.brand && <CopyButton value={r.brand} label="brand" />}
                         </span>
+                        <SupplyControl
+                          row={r}
+                          sizes={sizesByStyle.get(r.groupid) ?? 1}
+                          parkUntil={data?.no_supply_default_until ?? null}
+                          onPark={onPark}
+                          onClearSupply={onClearSupply}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -1851,9 +2160,14 @@ function AmazonOrderContent() {
           </table>
           {visible.length === 0 && rows.length > 0 && (
             <div className="px-4 py-6 text-center text-sm text-slate-400">
-              {filtered.length === 0 ? 'Nothing found.' : 'Every matching SKU is cut.'}
+              {filtered.length === 0
+                // Everything in view is a size Can't get hides — say that, not "nothing".
+                ? (!ordersOnly && supplyOn && supplyHiddenCount > 0 && scopeBase.length === supplyHiddenCount
+                  ? `Everything here is marked Can’t get with nothing to pick — ${supplyHiddenCount} hidden.`
+                  : 'Nothing found.')
+                : 'Every matching SKU is cut.'}
               {cut.size > 0 && (
-                <> <button type="button" onClick={() => setCut(new Set())} className="text-brand-600 underline">Restore</button> to bring {cut.size === 1 ? 'it' : 'them'} back.</>
+                <> <button type="button" onClick={() => { setCut(new Set()); deselectAll(); }} className="text-brand-600 underline">Restore</button> to bring {cut.size === 1 ? 'it' : 'them'} back.</>
               )}
             </div>
           )}

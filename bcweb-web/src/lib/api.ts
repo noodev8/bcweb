@@ -146,6 +146,11 @@ export interface AmazonOrderRow {
   barcode: string | null; amz_sku: string | null; supplier: string | null; brand: string | null;
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
+  // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
+  no_supply: boolean;
+  no_supply_since: string | null;
+  no_supply_until: string | null;
+  no_supply_by: string | null;
 }
 // Screen-level, not per row: Amazon order lines queued from this screen that nobody has actually placed with a supplier yet
 // (orderstatus, ordertype 3, arrived=0, orderdate=''). Drives the "waiting to be placed" indicator on /amazon-order.
@@ -432,11 +437,22 @@ export function getAmzLosers(group: PricingGroup, days?: number, limit?: number,
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {
-  return request<{ count: number; rows: AmazonOrderRow[]; to_place: AmazonOrderToPlace; on_order: AmazonOrderOnOrder }>(
+  return request<{
+    count: number; no_supply_default_until: string | null; rows: AmazonOrderRow[];
+    to_place: AmazonOrderToPlace; on_order: AmazonOrderOnOrder;
+  }>(
     { url: '/amazon-order-list', method: 'GET' },
     (b) => ({
       count: b.count ?? (b.rows || []).length,
-      rows: b.rows || [],
+      // The day a "Can't get it" pressed today would last until (three months out — utils/noSupply.js), for the confirm's wording.
+      no_supply_default_until: b.no_supply_default_until ?? null,
+      rows: ((b.rows || []) as AmazonOrderRow[]).map((r) => ({
+        ...r,
+        no_supply: r.no_supply === true,
+        no_supply_since: r.no_supply_since ?? null,
+        no_supply_until: r.no_supply_until ?? null,
+        no_supply_by: r.no_supply_by ?? null,
+      })),
       // Absent (an older server) reads as "nothing waiting" rather than NaN — the indicator then simply doesn't appear.
       to_place: {
         units: Number(b.to_place?.units) || 0,

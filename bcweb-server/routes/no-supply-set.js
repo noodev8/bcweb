@@ -5,8 +5,8 @@ API Route: no_supply_set
 Method: POST
 Purpose: "Can't get it" (owner, 2026-09-26) — the supplier has none of the style, so hide it from the ORDER SCREENS for three months,
          then let it come back on its own. A fact about the STYLE, not a channel: "if we can't get a style, we can't get it,
-         regardless of where we're trying to sell it" (owner) — so the name carries no channel. Shopify Order reads it today; Amazon
-         Order will read the same flag. The rule and why it is three months: utils/noSupply.js.
+         regardless of where we're trying to sell it" (owner) — so the name carries no channel. Shopify Order and Amazon Order both
+         read it (and both set it, one style at a time). The rule and why it is three months: utils/noSupply.js.
 
          Called with ONE style from an order screen (the button under a style) and with a TICKED BATCH from Back Office → Seasons (the
          bulk bar). Stamps three columns on skusummary and nothing else:

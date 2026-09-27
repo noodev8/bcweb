@@ -11,11 +11,14 @@ Purpose: "CAN'T GET IT" — the supplier has none of a style, so it is hidden fr
          internal verb for setting the mark.) Stored on skusummary.no_supply_since / _until / _by (migrations/20260926_no_supply.sql).
 
          A FACT ABOUT THE STYLE, NOT A CHANNEL: "if we can't get a style, we can't get it, regardless of where we're trying to sell it"
-         (owner). Nothing here, in its routes or in its wording names a channel. Shopify Order reads it today; Amazon Order will read the
-         same flag, unchanged, when it gets it.
+         (owner). Nothing here, in its routes or in its wording names a channel. Both order screens read the same flag, so a style marked
+         on either is off both. Amazon Order (2026-09-27) hides a marked size only when it has no local stock too — a Can't get style
+         can still be PICKED to FBA from our own shelf ("we can get them because we have them") — and its rate fill leaves such a
+         row's Order half empty while still filling the Pick.
 
          Defined once here and read by:
            routes/shopify-order-list.js    hides a marked style on Shopify Order (the first order screen to read it)
+           routes/amazon-order-list.js     carries the style's mark on each Amazon SKU (Amazon Order, 2026-09-27)
            routes/product-seasons.js       shows and manages them on Back Office → Seasons
            routes/no-supply-set.js         sets it (one style from an order screen, or a ticked batch from Seasons)
            routes/no-supply-clear.js       clears it
