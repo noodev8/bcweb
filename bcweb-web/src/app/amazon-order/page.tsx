@@ -227,6 +227,21 @@ function hasSearchMatch(rows: AmazonOrderRow[], includes: string[], excludes: st
   return rows.some((r) => matchesSearch(haystack(r), incTerms, excTerms));
 }
 
+// SEASON — typed WINTER / SUMMER into the Include box (owner, 2026-09-28), the same command Inventory takes and the same rule: reads
+// skusummary.season, and 'Any' is YEAR-ROUND so it answers YES to both — "could I sell it this season", not a literal tag match. A
+// standing filter, not a text step: the words aren't in the haystack, and a second one REPLACES the first (both at once would leave
+// only the Any styles and look broken). An untagged style falls out of both rather than defaulting into one.
+type Season = 'Winter' | 'Summer';
+function parseSeason(term: string): Season | null {
+  const t = term.trim().toUpperCase();
+  return t === 'WINTER' ? 'Winter' : t === 'SUMMER' ? 'Summer' : null;
+}
+function inSeason(r: AmazonOrderRow, season: Season | null): boolean {
+  if (season === null) return true;
+  const tag = (r.season || '').trim().toLowerCase();
+  return tag === season.toLowerCase() || tag === 'any';
+}
+
 // Birkenstock is ordered separately, in bulk, ~6 months ahead (CLAUDE.md) — never orderable from this per-SKU screen.
 function isBirkenstock(r: AmazonOrderRow): boolean {
   return (r.supplier || '').toUpperCase() === 'BIRKENSTOCK';
@@ -594,7 +609,10 @@ function AmazonOrderContent() {
   // Committed steps — each Enter/Add stacks another one; multiple of the same kind AND together.
   // A ?q= arrival starts with that one step already committed (see the deep-link note above); it behaves exactly like a typed one
   // from here on, Reset included.
-  const [includes, setIncludes] = useState<string[]>(seedTerm ? [seedTerm] : []);
+  // A ?q=SUMMER / ?q=WINTER arrival seeds the season filter instead of a text step — see SEASON above.
+  const seedSeason = parseSeason(seedTerm);
+  const [includes, setIncludes] = useState<string[]>(seedTerm && !seedSeason ? [seedTerm] : []);
+  const [seasonFilter, setSeasonFilter] = useState<Season | null>(seedSeason);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [includeInput, setIncludeInput] = useState('');
   const includeInputRef = useRef<HTMLInputElement>(null);
@@ -609,9 +627,19 @@ function AmazonOrderContent() {
   function addInclude() {
     const t = includeInput.trim();
     setIncludeInput('');
-    if (!t || includes.includes(t)) return;
+    if (!t) return;
+    // SUMMER / WINTER set (or replace) the season filter rather than stacking a text step. Same empty-result rule as a term: if the
+    // season plus the steps already stacked finds nothing, the steps go and the season stands alone.
+    const season = parseSeason(t);
+    if (season) {
+      if (!hasSearchMatch(baseRows.filter((r) => inSeason(r, season)), includes, excludes)) { setIncludes([]); setExcludes([]); }
+      setSeasonFilter(season);
+      deselectAll();
+      return;
+    }
+    if (includes.includes(t)) return;
     const stacked = [...includes, t];
-    if (hasSearchMatch(baseRows, stacked, excludes)) {
+    if (hasSearchMatch(baseRows.filter((r) => inSeason(r, seasonFilter)), stacked, excludes)) {
       setIncludes(stacked);
     } else {
       setIncludes([t]);
@@ -761,7 +789,7 @@ function AmazonOrderContent() {
   // view (applyCoverage below); emptying the basket outright is Clear basket (clearBasket below), which is its own deliberate,
   // confirmed action for exactly that reason.
   function onReset() {
-    setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
+    setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
@@ -788,7 +816,7 @@ function AmazonOrderContent() {
         || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(qty[r.code]) || 0) > 0));
     }
     // Everything else narrows the working set: the Repricing window, less what Can't get hides (baseRows, above).
-    let out = baseRows;
+    let out = seasonFilter ? baseRows.filter((r) => inSeason(r, seasonFilter)) : baseRows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
       const excTerms = excludes.map((t) => t.toLowerCase());
@@ -814,9 +842,9 @@ function AmazonOrderContent() {
       });
     }
     return out;
-  }, [rows, baseRows, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
+  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
+  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
   // Order box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
   // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
@@ -1666,6 +1694,26 @@ function AmazonOrderContent() {
               Hide can&rsquo;t-get
             </button>
           ))}
+
+          {/* SEASON — the one search command that gets a chip: unlike a text step it matches a hidden field (and 'Any' too), so
+              without one the list would be narrowed by something nowhere on screen. X clears just the season. */}
+          {seasonFilter && (
+            <span
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
+            >
+              Season: <span className="font-semibold text-slate-800">{seasonFilter}</span>
+              <span className="text-slate-400">+ Any</span>
+              <button
+                type="button"
+                onClick={() => { setSeasonFilter(null); deselectAll(); }}
+                aria-label="Clear the season filter"
+                title="Clear season"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </span>
+          )}
 
           {/* Row count — in row 1 since 2026-09-27, beside the controls whose result it is (in row 2 it wrapped under the Repricing
               chip). The "n cut · restore" that sat beside it is gone (owner, 2026-09-27): appearing on the first cut, it pushed row 1

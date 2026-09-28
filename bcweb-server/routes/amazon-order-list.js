@@ -98,7 +98,7 @@ Success Response:
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
-      "last_sold": "2026-06-02",
+      "last_sold": "2026-06-02", "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },   // the STYLE's mark
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
@@ -185,6 +185,7 @@ router.get('/', async (req, res) => {
              a.sku AS amz_sku,
              m.supplier AS supplier,
              sk.brand AS brand,
+             sk.season AS season,
              COALESCE(loc.units,0) AS local_stock,
              ${safeNumeric('sk.cost')} AS cost,
              to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold,
@@ -225,6 +226,7 @@ router.get('/', async (req, res) => {
         local_stock: Number(r.local_stock) || 0,
         cost: num(r.cost),
         last_sold: r.last_sold || null,
+        season: r.season || null,
         ...noSupplyFields(r),
       };
     });

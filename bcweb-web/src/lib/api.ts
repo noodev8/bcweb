@@ -146,6 +146,7 @@ export interface AmazonOrderRow {
   barcode: string | null; amz_sku: string | null; supplier: string | null; brand: string | null;
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
+  season: string | null; // skusummary.season — Summer | Winter | Any; drives the SUMMER / WINTER search command
   // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
   no_supply: boolean;
   no_supply_since: string | null;
@@ -446,6 +447,7 @@ export function getAmazonOrderList() {
       no_supply_default_until: b.no_supply_default_until ?? null,
       rows: ((b.rows || []) as AmazonOrderRow[]).map((r) => ({
         ...r,
+        season: r.season ?? null,
         no_supply: r.no_supply === true,
         no_supply_since: r.no_supply_since ?? null,
         no_supply_until: r.no_supply_until ?? null,
