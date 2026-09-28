@@ -336,6 +336,13 @@ const PART_GROUPS: Group[] = [
         href: '/customer-orders',
         icon: UserGroupIcon,
       },
+      {
+        title: 'AMZ Shipment',
+        subtitle: 'Pack the Amazon boxes',
+        description: 'Pack what has been gathered on C3-Amazon into boxes for the next FBA shipment.',
+        href: '/amz-shipment',
+        icon: CubeIcon,
+      },
     ],
   },
   {
