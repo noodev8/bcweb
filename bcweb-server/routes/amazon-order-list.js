@@ -98,7 +98,8 @@ Success Response:
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
-      "last_sold": "2026-06-02", "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
+      "last_sold": "2026-06-02", "last_price": 39.99, "rrp": 65.00, "imagename": "...jpg",   // detail row
+      "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },   // the STYLE's mark
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ]
@@ -170,7 +171,11 @@ router.get('/', async (req, res) => {
       lastsold AS (
         -- Most recent Amazon sale date per code, same shape as routes/amz-losers.js's own 'ls' CTE — lets the web page tell a genuinely
         -- recent sale apart from unit_profit's STICKY last-seen figure (which can be a year+ stale and still pass a >£3 test).
-        SELECT code, MAX(solddate) AS last_sold FROM sales WHERE channel='AMZ' AND qty>0 GROUP BY code
+        -- DISTINCT ON rather than MAX so the same row also gives that sale's unit price (sales.soldprice is per unit) for the detail
+        -- row's "Last sold" (owner, 2026-09-28); id breaks a same-day tie towards the later booking.
+        SELECT DISTINCT ON (code) code, solddate AS last_sold, soldprice AS last_price
+        FROM sales WHERE channel='AMZ' AND qty>0
+        ORDER BY code, solddate DESC, id DESC
       )
       SELECT a.code, a.groupid, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
@@ -189,6 +194,10 @@ router.get('/', async (req, res) => {
              COALESCE(loc.units,0) AS local_stock,
              ${safeNumeric('sk.cost')} AS cost,
              to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold,
+             lastsold.last_price AS last_price,
+             -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
+             ${safeNumeric('sk.rrp')} AS rrp,
+             NULLIF(sk.imagename, '') AS imagename,
              -- "Can't get it" (utils/noSupply.js): the STYLE's mark, carried by each of its sizes.
              ${noSupplySelectSql('sk')}
       FROM amzfeed a
@@ -227,6 +236,9 @@ router.get('/', async (req, res) => {
         cost: num(r.cost),
         last_sold: r.last_sold || null,
         season: r.season || null,
+        last_price: num(r.last_price),
+        rrp: num(r.rrp),
+        imagename: r.imagename || null,
         ...noSupplyFields(r),
       };
     });

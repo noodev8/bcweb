@@ -184,6 +184,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import { prettyPathLabel } from '@/lib/nav';
 import {
@@ -199,6 +200,20 @@ const NO_ROWS: AmazonOrderRow[] = [];
 
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
+}
+
+// Detail row thumbnail (owner, 2026-09-28) — the style's picture, a "is this the shoe I think it is" check before ordering. Same
+// image host as the other screens. Its own component so each open row keeps its own failed state; a missing or broken image takes
+// no space rather than showing a broken-image box.
+const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
+function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!imagename || failed) return null;
+  return (
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
+      <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="56px" onError={() => setFailed(true)} className="object-contain" />
+    </div>
+  );
 }
 
 function haystack(r: AmazonOrderRow): string {
@@ -2170,7 +2185,7 @@ function AmazonOrderContent() {
                     </button>
                   </td>
                 </tr>
-                {/* Detail row — barcode/Amazon SKU/brand, toggled by the caret next to the SKU above (see toggleExpanded). Not a
+                {/* Detail row — thumbnail, RRP, last sold, barcode/Amazon SKU/brand, toggled by the caret next to the SKU above (see toggleExpanded). Not a
                     real column anymore (rarely needed, and was most of why the table needed side-scrolling); colSpan covers every
                     column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
                     CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
@@ -2178,7 +2193,24 @@ function AmazonOrderContent() {
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
                     <td colSpan={10} className="px-3 py-2">
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 pl-3 text-xs text-slate-600">
+                      <div className="flex items-center gap-4 pl-3">
+                      <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
+                        {/* RRP and the last Amazon sale's unit price (owner, 2026-09-28) — what it's worth vs what it last went for. */}
+                        <span>
+                          RRP: <span className="text-slate-800">{money(r.rrp)}</span>
+                        </span>
+                        <span>
+                          Last sold:{' '}
+                          {r.last_sold ? (
+                            <>
+                              <span className="text-slate-800">{money(r.last_price)}</span>
+                              <span className="text-slate-400"> on {shortDate(r.last_sold)}</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400">never on Amazon</span>
+                          )}
+                        </span>
                         <span className="inline-flex items-center gap-0.5">
                           Barcode: <span className="font-mono text-slate-800">{r.barcode || '—'}</span>
                           {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
@@ -2198,6 +2230,7 @@ function AmazonOrderContent() {
                           onPark={onPark}
                           onClearSupply={onClearSupply}
                         />
+                      </div>
                       </div>
                     </td>
                   </tr>

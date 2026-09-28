@@ -147,6 +147,10 @@ export interface AmazonOrderRow {
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
   season: string | null; // skusummary.season — Summer | Winter | Any; drives the SUMMER / WINTER search command
+  last_price: number | null; // unit price of that most recent Amazon sale
+  rrp: number | null; // skusummary.rrp (safeNumeric — null when junk)
+  imagename: string | null; // bare filename on images.brookfieldcomfort.com
+
   // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
   no_supply: boolean;
   no_supply_since: string | null;
@@ -448,6 +452,9 @@ export function getAmazonOrderList() {
       rows: ((b.rows || []) as AmazonOrderRow[]).map((r) => ({
         ...r,
         season: r.season ?? null,
+        last_price: r.last_price ?? null,
+        rrp: r.rrp ?? null,
+        imagename: r.imagename ?? null,
         no_supply: r.no_supply === true,
         no_supply_since: r.no_supply_since ?? null,
         no_supply_until: r.no_supply_until ?? null,
