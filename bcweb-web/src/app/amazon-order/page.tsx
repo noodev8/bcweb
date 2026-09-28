@@ -180,15 +180,16 @@ CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, CloudIcon, ShoppingCartIcon,
-  FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon,
+  FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon, MinusIcon, PlusIcon,
 } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, getAmzStatusList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply,
+  getAmazonOrderList, getAmzStatusList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
   AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
 } from '@/lib/api';
 import { barLabel } from '@/lib/portfolioStatusUi';
@@ -210,8 +211,113 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
   const [failed, setFailed] = useState(false);
   if (!imagename || failed) return null;
   return (
-    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
-      <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="56px" onError={() => setFailed(true)} className="object-contain" />
+    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+      <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="64px" onError={() => setFailed(true)} className="object-contain" />
+    </div>
+  );
+}
+
+/*
+ * PRICE CONTROL — the detail row's Amazon price for THIS SIZE (owner, 2026-09-28: "up or down 10p with a + and -, or let me edit the
+ * box"). − / + move the box 10p; the box can be typed; Set (or Enter) writes it. The nudges only move the box — nothing is written until
+ * Set — so three taps is one price change, not three log rows. Escape puts the box back.
+ *
+ * The write is the Amazon Pricing one, POST /amz-apply (W-A1): it LOGS the price to amz_price_log and nothing more — no live push. The
+ * price reaches Amazon through the upload basket on Amazon Pricing, which is rebuilt from that log team-wide, so a price set here is in
+ * the next Seller Central file without this screen touching the basket itself. The review date is left alone (no reviewDays), exactly
+ * as a "None" apply on the pricing screens. The server enforces the bounds: below the floor (cost + FBA fee) is blocked — mirrored here
+ * so Set greys out rather than bouncing — and above RRP is allowed but flagged.
+ *
+ * The box starts from the QUEUED price when there is one (set, not yet uploaded), else the live one, so a second nudge builds on the
+ * first rather than on a live price Amazon hasn't caught up with.
+ */
+interface PriceControlProps {
+  row: AmazonOrderRow;
+  queued: number | null;
+  onSetPrice: (code: string, price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
+}
+function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
+  const current = queued ?? row.price;
+  const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+
+  const n = Number(draft);
+  const price = draft.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+  const changed = price !== null && (current === null || Math.abs(price - current) >= 0.005);
+  const belowFloor = price !== null && row.floor !== null && price < row.floor;
+
+  function nudge(delta: number) {
+    const base = price ?? current ?? 0;
+    setDraft(Math.max(0.01, Math.round((base + delta) * 100) / 100).toFixed(2));
+    setMsg(null);
+  }
+  async function submit() {
+    if (!changed || belowFloor || busy || price === null) return;
+    setBusy(true); setMsg(null);
+    const res = await onSetPrice(row.code, price);
+    setBusy(false);
+    if (res.error) { setMsg({ tone: 'err', text: res.error }); return; }
+    setDraft(price.toFixed(2));
+    setMsg(res.aboveRrp
+      ? { tone: 'warn', text: `Set to ${money(price)} — above RRP` }
+      : { tone: 'ok', text: `Set to ${money(price)}` });
+  }
+
+  const stepBtn = 'flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40';
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Amazon price</div>
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => nudge(-0.1)} disabled={busy} aria-label="10p down" title="10p down" className={stepBtn}>
+          <MinusIcon className="h-4 w-4" />
+        </button>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={draft}
+            disabled={busy}
+            onChange={(e) => { setDraft(e.target.value.replace(/[^0-9.]/g, '')); setMsg(null); }}
+            onBlur={() => { if (price !== null) setDraft(price.toFixed(2)); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); submit(); }
+              if (e.key === 'Escape') { setDraft(current !== null ? current.toFixed(2) : ''); setMsg(null); }
+            }}
+            aria-label="Amazon price"
+            className={'h-8 w-24 rounded-md border pl-5 pr-2 text-right text-sm font-semibold tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 '
+              + (belowFloor ? 'border-red-400' : 'border-slate-300')}
+          />
+        </div>
+        <button type="button" onClick={() => nudge(0.1)} disabled={busy} aria-label="10p up" title="10p up" className={stepBtn}>
+          <PlusIcon className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!changed || belowFloor || busy}
+          className="ml-1 h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {busy ? 'Setting…' : 'Set'}
+        </button>
+      </div>
+      <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+        <div>
+          Live {money(row.price)}
+          {row.floor !== null && <span className="text-slate-400"> · floor {money(row.floor)}</span>}
+        </div>
+        {belowFloor && <div className="text-red-600">Below the floor (cost + FBA fee) — can&rsquo;t be set.</div>}
+        {!belowFloor && msg && (
+          <div className={msg.tone === 'err' ? 'text-red-600' : msg.tone === 'warn' ? 'text-amber-700' : 'text-emerald-700'}>{msg.text}</div>
+        )}
+        {queued !== null && (
+          <div className="text-amber-700">
+            {money(queued)} waiting to upload ·{' '}
+            <Link href="/amz" className="font-medium text-brand-600 hover:underline">Amazon Pricing</Link>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1283,6 +1389,19 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
+  // PRICE — the detail row's Set (PriceControl). queuedByCode holds what was set this visit, so the box and its "waiting to upload"
+  // line are right at once without reloading ~520 rows; the server's queued_price says the same after the next load. The note names
+  // this screen in the audit log so a change can be traced back to where it was made.
+  const [queuedByCode, setQueuedByCode] = useState<Record<string, number>>({});
+  async function onSetPrice(code: string, price: number): Promise<{ error: string | null; aboveRrp: boolean }> {
+    const res = await applyAmzPrice(code, price, 'Amazon Order');
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return { error: 'Session expired', aboveRrp: false }; }
+    if (!res.success || !res.data) return { error: res.error || 'Couldn’t set the price', aboveRrp: false };
+    const set = res.data.new_price;
+    setQueuedByCode((prev) => ({ ...prev, [code]: set }));
+    return { error: null, aboveRrp: res.data.warnings.includes('ABOVE_RRP') };
+  }
+
   // CAN'T GET — the two writes, for the row-1 button (the selected rows' styles) and the detail row (SupplyControl, one style). Each
   // reloads the list and hands back an error message, or null. Marking EMPTIES those styles' ORDER boxes (every size, on screen or not)
   // — a buy against a style you've just said you can't get is an order Confirm Basket would otherwise still send. Pick is left alone:
@@ -2185,7 +2304,7 @@ function AmazonOrderContent() {
                     </button>
                   </td>
                 </tr>
-                {/* Detail row — thumbnail, RRP, last sold, barcode/Amazon SKU/brand, toggled by the caret next to the SKU above (see toggleExpanded). Not a
+                {/* Detail row — thumbnail, price control, RRP/last sold/brand, barcode/Amazon SKU, toggled by the caret next to the SKU above (see toggleExpanded). Not a
                     real column anymore (rarely needed, and was most of why the table needed side-scrolling); colSpan covers every
                     column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
                     CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
@@ -2193,44 +2312,51 @@ function AmazonOrderContent() {
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
                     <td colSpan={10} className="px-3 py-2">
-                      <div className="flex items-center gap-4 pl-3">
-                      <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
-                        {/* RRP and the last Amazon sale's unit price (owner, 2026-09-28) — what it's worth vs what it last went for. */}
-                        <span>
-                          RRP: <span className="text-slate-800">{money(r.rrp)}</span>
-                        </span>
-                        <span>
-                          Last sold:{' '}
-                          {r.last_sold ? (
-                            <>
-                              <span className="text-slate-800">{money(r.last_price)}</span>
-                              <span className="text-slate-400"> on {shortDate(r.last_sold)}</span>
-                            </>
-                          ) : (
-                            <span className="text-slate-400">never on Amazon</span>
-                          )}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5">
-                          Barcode: <span className="font-mono text-slate-800">{r.barcode || '—'}</span>
-                          {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5">
-                          Amazon SKU: <span className="font-mono text-slate-800">{r.amz_sku || '—'}</span>
-                          {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5">
-                          Brand: <span className="text-slate-800">{r.brand || '—'}</span>
-                          {r.brand && <CopyButton value={r.brand} label="brand" />}
-                        </span>
-                        <SupplyControl
-                          row={r}
-                          sizes={sizesByStyle.get(r.groupid) ?? 1}
-                          parkUntil={data?.no_supply_default_until ?? null}
-                          onPark={onPark}
-                          onClearSupply={onClearSupply}
-                        />
-                      </div>
+                      {/* Five blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
+                          went for, the codes you copy, and Can't get. Label beside value at text-sm (owner, 2026-09-28: "easier to
+                          read") rather than one run-on xs line. */}
+                      <div className="flex flex-wrap items-start gap-x-10 gap-y-4 py-1 pl-3">
+                        <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
+                        <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} onSetPrice={onSetPrice} />
+                        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
+                          <dt className="text-slate-500">RRP</dt>
+                          <dd className="font-medium tabular-nums text-slate-900">{money(r.rrp)}</dd>
+                          <dt className="text-slate-500">Last sold</dt>
+                          <dd className="text-slate-900">
+                            {r.last_sold ? (
+                              <><span className="font-medium tabular-nums">{money(r.last_price)}</span>
+                                <span className="text-slate-500"> on {shortDate(r.last_sold)}</span></>
+                            ) : (
+                              <span className="text-slate-400">never on Amazon</span>
+                            )}
+                          </dd>
+                          <dt className="text-slate-500">Brand</dt>
+                          <dd className="flex items-center gap-0.5 text-slate-900">
+                            {r.brand || '—'}
+                            {r.brand && <CopyButton value={r.brand} label="brand" />}
+                          </dd>
+                        </dl>
+                        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
+                          <dt className="text-slate-500">Barcode</dt>
+                          <dd className="flex items-center gap-0.5 font-mono text-slate-900">
+                            {r.barcode || '—'}
+                            {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
+                          </dd>
+                          <dt className="text-slate-500">Amazon SKU</dt>
+                          <dd className="flex items-center gap-0.5 font-mono text-slate-900">
+                            {r.amz_sku || '—'}
+                            {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
+                          </dd>
+                        </dl>
+                        <div className="text-sm">
+                          <SupplyControl
+                            row={r}
+                            sizes={sizesByStyle.get(r.groupid) ?? 1}
+                            parkUntil={data?.no_supply_default_until ?? null}
+                            onPark={onPark}
+                            onClearSupply={onClearSupply}
+                          />
+                        </div>
                       </div>
                     </td>
                   </tr>

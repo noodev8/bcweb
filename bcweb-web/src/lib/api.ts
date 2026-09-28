@@ -150,6 +150,8 @@ export interface AmazonOrderRow {
   last_price: number | null; // unit price of that most recent Amazon sale
   rrp: number | null; // skusummary.rrp (safeNumeric — null when junk)
   imagename: string | null; // bare filename on images.brookfieldcomfort.com
+  queued_price: number | null; // a price set but not yet uploaded to Seller Central (the /amz basket's pending rule)
+  floor: number | null; // cost + FBA fee — /amz-apply blocks below it; null when either part is unknown
 
   // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
   no_supply: boolean;
@@ -455,6 +457,8 @@ export function getAmazonOrderList() {
         last_price: r.last_price ?? null,
         rrp: r.rrp ?? null,
         imagename: r.imagename ?? null,
+        queued_price: r.queued_price ?? null,
+        floor: r.floor ?? null,
         no_supply: r.no_supply === true,
         no_supply_since: r.no_supply_since ?? null,
         no_supply_until: r.no_supply_until ?? null,

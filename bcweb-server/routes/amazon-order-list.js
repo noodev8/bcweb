@@ -99,6 +99,7 @@ Success Response:
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
       "last_sold": "2026-06-02", "last_price": 39.99, "rrp": 65.00, "imagename": "...jpg",   // detail row
+      "queued_price": 39.69, "floor": 27.40,                        // pending upload (null if none); cost + FBA fee (null if unknown)
       "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },   // the STYLE's mark
     ...  // profit_30d desc NULLS LAST, code as tiebreak
@@ -176,6 +177,18 @@ router.get('/', async (req, res) => {
         SELECT DISTINCT ON (code) code, solddate AS last_sold, soldprice AS last_price
         FROM sales WHERE channel='AMZ' AND qty>0
         ORDER BY code, solddate DESC, id DESC
+      ),
+      queued AS (
+        -- A price set but not yet uploaded to Seller Central — the detail row's price box starts from it, so a second nudge builds on
+        -- the first rather than on the stale live price. EXACTLY the pending rule of routes/amz-basket.js (not uploaded, inside its
+        -- 72h window, newest per code, and not already the live price) — keep the two in step, or this box and the basket disagree.
+        SELECT DISTINCT ON (l.code) l.code, l.new_price
+        FROM amz_price_log l
+        LEFT JOIN amzfeed af ON af.code = l.code
+        WHERE l.uploaded_at IS NULL
+          AND l.changed_at >= now() - interval '72 hours'
+          AND ROUND(l.new_price, 2) IS DISTINCT FROM ROUND(${safeNumeric('af.amzprice')}, 2)
+        ORDER BY l.code, l.id DESC
       )
       SELECT a.code, a.groupid, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
@@ -195,6 +208,9 @@ router.get('/', async (req, res) => {
              ${safeNumeric('sk.cost')} AS cost,
              to_char(lastsold.last_sold, 'YYYY-MM-DD') AS last_sold,
              lastsold.last_price AS last_price,
+             queued.new_price AS queued_price,
+             -- The floor /amz-apply blocks below (cost + FBA fee), shown beside the price box so the operator isn't surprised by it.
+             ${safeNumeric('sk.cost')} + ${safeNumeric('a.fbafee')} AS floor,
              -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
@@ -209,6 +225,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN staged ON staged.code = a.code
       LEFT JOIN ord ON ord.code = a.code
       LEFT JOIN lastsold ON lastsold.code = a.code
+      LEFT JOIN queued ON queued.code = a.code
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
@@ -237,6 +254,8 @@ router.get('/', async (req, res) => {
         last_sold: r.last_sold || null,
         season: r.season || null,
         last_price: num(r.last_price),
+        queued_price: num(r.queued_price),
+        floor: r.floor === null ? null : Math.round(Number(r.floor) * 100) / 100,
         rrp: num(r.rrp),
         imagename: r.imagename || null,
         ...noSupplyFields(r),
