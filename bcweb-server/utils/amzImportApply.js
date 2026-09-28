@@ -48,7 +48,7 @@ async function insertSales(client, rows) {
       // rrp is stamped from the style's current skusummary.rrp (2026-09-26, migrations/20260926b_sales_rrp.sql) — a subquery on the
       // row's own groupid param, so no extra round trip. Returns take today's figure too (Amazon returns aren't tied back to a row).
       values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},'AMZ',
-        (SELECT ${safeNumeric('sk.rrp')} FROM skusummary sk WHERE sk.groupid = $${b + 3} LIMIT 1))`);
+        (SELECT ${safeNumeric('sk.rrp')} FROM skusummary sk WHERE sk.groupid = $${b + 3}::varchar LIMIT 1))`);
       params.push(
         r.code, r.solddate, r.groupid, r.ordernum, r.ordertime, r.qty,
         r.soldprice, r.productname, r.brand, r.profit, r.discount, r.sourceKey
