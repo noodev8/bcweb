@@ -23,6 +23,8 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - Login: `claude_dev` (display name "Claude", shared with API testing). Test writes use BEGIN…ROLLBACK, so only real applies reach the log.
 - Until Learnings show a track record: propose → owner approves → Claude applies.
 - Every change carries a note saying why, so the result can be judged later.
+- Notes: 80 characters max, plain words, one clear reason (e.g. "Hold: season stall, not price. All Mayaris stopped mid-Sep."). The detail goes in the Decisions log, not the note (owner, 2026-09-29).
+- Notes are evidence for judging past moves (owner, 2026-09-29). When reviewing a style's history, read each change's note (ours and staff's) as the intent behind it, and judge what followed against that intent. Example: Summer's "trying to get moving" cut to £72 sold nothing in a week, so the cut didn't do what it was meant to. So write notes that can be checked later: say what you expect to happen, not only what you did.
 - Default review periods: raise 7d, cut 14d, hold 30d.
 - A HOLD is recorded as a same-price apply with a note (e.g. 80 -> 80), not park-only, so it can be judged later like any change (owner, 2026-09-29).
 - _(add as we go)_
@@ -41,3 +43,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 
 - 2026-09-28: created.
 - 2026-09-29: hold rule, first learning, decisions log (STEADY session).
+- 2026-09-29: 80-char note rule.
