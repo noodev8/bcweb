@@ -6,10 +6,14 @@ Page: /amz-shipment  (AMZ Shipment — packing the Amazon boxes)
 Purpose: Where the FBA boxes get packed. Pick's Amazon tab gathers the units flagged for Amazon onto the C3-Amazon shelf; this screen is
          the next step — scanning those shoes into numbered boxes, then sending the shipment.
 
-LAYOUT ONLY (owner, 2026-09-28: "just do the layout for now. users need to be able to scan shoes into an amz box"). Everything here is
-client-side and in memory — nothing is looked up and nothing is written, and a reload starts over. A scan is recorded as the raw code the
-scanner sent; matching it to a SKU (barcode or FNSKU), checking it against what is on C3-Amazon, and keeping boxes across a reload all
-come with the back end.
+LAYOUT ONLY (owner, 2026-09-28: "just do the layout for now. users need to be able to scan shoes into an amz box").
+
+BOXES FROM THE DB (owner, 2026-09-29: "look at the db and get any box info ... no edits yet just display"). The boxes already packed live
+in the legacy `amzshipment` table (one row per box + code, with the Amazon sku/fnsku and the box's measurements on every row); GET
+/amz-shipment-boxes reads them and they become this screen's starting boxes — numbers, contents and measurements as stored. Nothing is
+written back: scanning, −, new/delete box and the measurement inputs still only change what's on screen, and a reload goes back to the
+DB. A scan is recorded as the raw code the scanner sent; matching it to a SKU (barcode or FNSKU), checking it against what is on
+C3-Amazon, and saving all come with the writes.
 
 Decided so far for that back end: when the boxes go out, "Mark shipped" takes the packed units out of localstock (C3-Amazon) in one
 transaction. The button is here, disabled, so the layout has its place.
@@ -32,8 +36,11 @@ Seller Central template's exact format.
 import { useRef, useState } from 'react';
 import { PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import { getAmzShipmentBoxes, type AmzBox } from '@/lib/api';
+import { useApiQuery } from '@/lib/useApiQuery';
 
-interface BoxLine { code: string; qty: number; }
+// sku / fnsku / title come with a line loaded from the DB; a line made by scanning here only has the raw code.
+interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; title?: string; }
 // Measurements are held as typed (strings), so a half-typed "12." isn't rewritten under the cursor.
 interface BoxDims { length: string; width: string; height: string; weight: string; }
 interface Box { id: number; lines: BoxLine[]; dims: BoxDims; }
@@ -41,6 +48,11 @@ interface Box { id: number; lines: BoxLine[]; dims: BoxDims; }
 const NO_DIMS: BoxDims = { length: '', width: '', height: '', weight: '' };
 const newBoxOf = (id: number): Box => ({ id, lines: [], dims: NO_DIMS });
 const boxUnits = (b: Box) => b.lines.reduce((n, l) => n + l.qty, 0);
+const fromDb = (b: AmzBox): Box => ({
+  id: b.box,
+  lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, title: l.title })),
+  dims: { length: b.length, width: b.width, height: b.height, weight: b.weight },
+});
 
 // Amazon's standard-carton limits (UK/EU): no side over 63.5 cm, no box over 23 kg. Advisory here — see MEASUREMENTS in the header.
 const MAX_SIDE_CM = 63.5;
@@ -62,9 +74,26 @@ function dimsWarning(d: BoxDims): string | null {
   return parts.length ? `Over Amazon's standard box limit: ${parts.join(', ')}.` : null;
 }
 
+// Loads the packed boxes, then hands them to Packing as its starting state (so Packing's useState seeds from real data, no effect).
 export default function AmzShipmentPage() {
-  const [boxes, setBoxes] = useState<Box[]>([newBoxOf(1)]);
-  const [activeId, setActiveId] = useState(1);
+  const { data, error, isLoading } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
+  return (
+    <AppShell title="AMZ Shipment">
+      {isLoading ? (
+        <div className="py-10 text-center text-sm text-slate-400">Loading boxes…</div>
+      ) : error || !data ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
+      ) : (
+        <Packing initial={data.boxes.map(fromDb)} />
+      )}
+    </AppShell>
+  );
+}
+
+function Packing({ initial }: { initial: Box[] }) {
+  // No boxes packed yet -> one empty Box 1 to scan into.
+  const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
+  const [activeId, setActiveId] = useState(initial.length ? initial[0].id : 1);
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
@@ -158,7 +187,7 @@ export default function AmzShipmentPage() {
   }
 
   return (
-    <AppShell title="AMZ Shipment">
+    <>
       {/* Shipment summary + the send action. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
         <div className="text-sm text-slate-600">
@@ -171,6 +200,8 @@ export default function AmzShipmentPage() {
               <span className="text-amber-700">{needSize} {needSize === 1 ? 'box needs' : 'boxes need'} measuring</span>
             </>
           )}
+          <span className="mx-2 text-slate-300">·</span>
+          <span className="text-xs text-slate-400">Loaded from the database — changes here aren&apos;t saved yet</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-xs text-slate-400 sm:inline">{fileBlocker}</span>
@@ -281,7 +312,9 @@ export default function AmzShipmentPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-                  <th className="px-4 py-2 font-medium">Scanned</th>
+                  <th className="px-4 py-2 font-medium">Code</th>
+                  <th className="px-4 py-2 font-medium">Amazon SKU</th>
+                  <th className="px-4 py-2 font-medium">FNSKU</th>
                   <th className="px-4 py-2 text-right font-medium">Qty</th>
                   <th className="w-12 px-4 py-2" />
                 </tr>
@@ -289,7 +322,12 @@ export default function AmzShipmentPage() {
               <tbody>
                 {active.lines.map((l) => (
                   <tr key={l.code} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-2 font-mono text-slate-900">{l.code}</td>
+                    <td className="px-4 py-2">
+                      <div className="font-mono text-slate-900">{l.code}</div>
+                      {l.title && <div className="text-xs text-slate-500">{l.title}</div>}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-slate-600">{l.sku || '—'}</td>
+                    <td className="px-4 py-2 font-mono text-slate-600">{l.fnsku || '—'}</td>
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-slate-900">{l.qty}</td>
                     <td className="px-4 py-2 text-right">
                       <button
@@ -338,6 +376,6 @@ export default function AmzShipmentPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

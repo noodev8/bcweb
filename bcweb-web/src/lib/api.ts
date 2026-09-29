@@ -2306,6 +2306,16 @@ export function getAmzBarcodeCheck() {
   }));
 }
 
+// AMZ Shipment — the Amazon boxes packed so far (amzshipment), with each box's contents and measurements. READ ONLY.
+// Measurements come through as the strings the legacy table holds ('' when unset).
+export interface AmzBoxLine { code: string; sku: string; fnsku: string; supplier: string; title: string; qty: number }
+export interface AmzBox { box: number; weight: string; length: string; width: string; height: string; lines: AmzBoxLine[] }
+export function getAmzShipmentBoxes() {
+  return request<{ boxes: AmzBox[] }>({ url: '/amz-shipment-boxes', method: 'GET' }, (b) => ({
+    boxes: (b.boxes as AmzBox[]) || [],
+  }));
+}
+
 // =============================================================================================================================
 // Shopify order sync — the "Update orders" button (Analytics -> Sales and Customer Orders; the LABEL is the legacy term, this
 // route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).
