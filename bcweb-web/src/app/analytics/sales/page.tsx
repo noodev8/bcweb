@@ -115,7 +115,7 @@ export default function SalesPage() {
 
 // The Sales hand-off card opens THIS page with ?q=<groupid> (owner, 2026-09-27: "full sales of the product I've just clicked"). Same
 // route, so Next keeps the component mounted and the useState initialisers below never re-read the URL — keying on q remounts it so
-// the new product search takes. The page's own URL writes never set q (they use s=), so this doesn't remount on every filter change.
+// the new product search takes. The page's own URL writes carry q through unchanged (viewUrl), so this doesn't remount on a click or filter change.
 function SalesPageKeyed() {
   const q = useSearchParams().get('q') || '';
   return <SalesPageContent key={q} />;
@@ -155,6 +155,7 @@ function SalesPageContent() {
       sort: (searchParams.get('sort') === 'product' ? 'product' : 'date') as SalesSort,
       dir: (searchParams.get('dir') === 'asc' ? 'asc' : 'desc') as SalesSortDir,
       sel: searchParams.get('sel'),
+      row: searchParams.get('row'),
     };
   });
   const fromParam = searchParams.get('from');
@@ -190,22 +191,28 @@ function SalesPageContent() {
   // re-run them on their own. Inventory doesn't need this — it rebuilds the criteria inside its own handler — but here the retry happens
   // in the fetcher, which only ever sees the merged `steps`.
   const [lastFind, setLastFind] = useState<SalesFilterStep[]>(initial.lastFind);
-  // The selected STYLE (groupid) — what the hand-off cards act on. Every line of that style highlights, not just the one clicked.
+  // The selected STYLE (groupid) — what the hand-off cards act on — and the ONE line clicked, which alone highlights (owner,
+  // 2026-09-29: a product search lists one style, so highlighting every line of it looked like select-all).
   const [selected, setSelected] = useState<string | null>(initial.sel);
+  const [selectedRow, setSelectedRow] = useState<string | null>(initial.row);
 
   // THE URL MIRRORS THE VIEW. Every handler that changes view state calls writeUrl with its patch; from/back pass through untouched so
   // this screen's own back arrow survives the round trip. replace, not push: re-cutting the ledger shouldn't pile up history entries.
   type View = {
     channel: ChannelFilter; win: SalesWindow; sort: SalesSort; dir: SalesSortDir;
-    steps: SalesFilterStep[]; lastFind: SalesFilterStep[]; sel: string | null;
+    steps: SalesFilterStep[]; lastFind: SalesFilterStep[]; sel: string | null; row?: string | null;
   };
-  const current: View = { channel, win, sort, dir, steps, lastFind, sel: selected };
+  const current: View = { channel, win, sort, dir, steps, lastFind, sel: selected, row: selectedRow };
   const viewUrl = (v: View) => {
     const q = new URLSearchParams();
     const from = searchParams.get('from');
     const back = searchParams.get('back');
     if (from) q.set('from', from);
     if (back) q.set('back', back);
+    // Carry an arrival ?q= through: SalesPageKeyed keys on it, so dropping it remounts the page on the first click (the "reload").
+    // Harmless otherwise — ?s= steps win over q in the initialiser above.
+    const arrivedQ = searchParams.get('q');
+    if (arrivedQ) q.set('q', arrivedQ);
     if (v.channel !== 'all') q.set('ch', v.channel);
     if (v.win !== 'today') q.set('w', v.win);
     if (v.sort !== 'date') q.set('sort', v.sort);
@@ -213,6 +220,7 @@ function SalesPageContent() {
     v.steps.forEach((st) => q.append('s', `${st.op}:${st.term}`));
     if (v.steps.length && v.lastFind.length !== v.steps.length) q.set('f', String(v.lastFind.length));
     if (v.sel) q.set('sel', v.sel);
+    if (v.sel && v.row) q.set('row', v.row);
     const qs = q.toString();
     return qs ? `${pathname}?${qs}` : pathname;
   };
@@ -220,11 +228,12 @@ function SalesPageContent() {
   const writeUrl = (patch: Partial<View>) => router.replace(viewUrl({ ...current, ...patch }), { scroll: false });
   const setChannel = (c: ChannelFilter) => { setChannelState(c); writeUrl({ channel: c }); };
   const setWin = (w: SalesWindow) => { setWinState(w); writeUrl({ win: w }); };
-  // Click a line to select its style; click a line of the selected style again to clear.
-  const toggleSelect = (g: string) => {
-    const next = selected === g ? null : g;
-    setSelected(next);
-    writeUrl({ sel: next });
+  // Click a line to select it (and its style, for the cards); click the same line again to clear.
+  const toggleSelect = (g: string, rowKey: string) => {
+    const off = selectedRow === rowKey;
+    setSelected(off ? null : g);
+    setSelectedRow(off ? null : rowKey);
+    writeUrl({ sel: off ? null : g, row: off ? null : rowKey });
   };
   const [hint, setHint] = useState<string | null>(null);  // inline "why nothing happened" note on a rejected Find
   const containsRef = useRef<HTMLInputElement>(null);     // Reset / Find hand focus back here for the next term
@@ -340,6 +349,7 @@ function SalesPageContent() {
     setSteps([...usedSteps, ...next]);
     setLastFind(next);
     setSelected(null);
+    setSelectedRow(null);
     writeUrl({ steps: [...usedSteps, ...next], lastFind: next, sel: null });
     setContains('');
     setNotContains('');
@@ -352,6 +362,7 @@ function SalesPageContent() {
     setSteps([]);
     setLastFind([]);
     setSelected(null);
+    setSelectedRow(null);
     writeUrl({ steps: [], lastFind: [], sel: null });
     setContains('');
     setNotContains('');
@@ -664,11 +675,15 @@ function SalesPageContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <SaleRow key={`${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}-${i}`} r={r}
-                             selected={!!r.groupid && r.groupid === selected} onSelect={toggleSelect}
+                  {rows.map((r, i) => {
+                    // No index in the selection key, so the highlight stays on the same sale when the list re-sorts.
+                    const rowKey = `${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}`;
+                    return (
+                    <SaleRow key={`${rowKey}-${i}`} r={r}
+                             selected={!!r.groupid && rowKey === selectedRow} onSelect={(g) => toggleSelect(g, rowKey)}
                              money={money} pct={pct} fmtDate={fmtDay} />
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -804,7 +819,7 @@ function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------
-// One sale line. A click anywhere selects its STYLE for the hand-off cards (again to clear); a line with no groupid can't be selected.
+// One sale line. A click selects the line (only it highlights) and its STYLE for the hand-off cards (again to clear); a line with no groupid can't be selected.
 // No per-cell actions any more — the channel badge's pricing jump and the copy cells were retired 2026-09-26 (see header).
 // Returns render red (negative qty + profit) — the row tint carries that, not a Qty column.
 // -------------------------------------------------------------------------------------------------------------------------------
