@@ -173,6 +173,7 @@ export interface AmzDrillHeader {
   margin: number | null; margin_pct: number | null;
   fba_live: number; fba_inbound: number;
   match_amazon: boolean;                 // read-only: the parent STYLE auto-matches its Shopify price to Amazon lowest in-stock
+  next_review: string | null;            // YYYY-MM-DD or null
 }
 // VelocityWeek is the weekly-pace shape the Shopify drill still returns (drill-evidence-spec §4). Zero-filled, oldest→newest. profit is
 // NET (from sales.profit). No screen renders it since both drills dropped their supporting detail.

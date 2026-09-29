@@ -108,7 +108,12 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         <ChannelBadge channel="shopify" label="Shopify price" />
         <span className="text-xs text-emerald-700/80">Apply updates the live store immediately</span>
         {/* The review cooldown, here rather than as its own line above the card (owner, 2026-09-24): the band had room to spare. */}
-        {header.next_review && <span className="ml-auto text-xs text-emerald-700/80">Parked until {header.next_review}</span>}
+        {header.next_review && (() => {
+          // A review date that has arrived is no longer a cooldown — the style is due, so say so (owner, 2026-09-29).
+          const today = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD, same shape as next_review
+          const text = header.next_review > today ? `Parked until ${header.next_review}` : header.next_review === today ? 'Due today' : `Due since ${header.next_review}`;
+          return <span className="ml-auto text-xs text-emerald-700/80">{text}</span>;
+        })()}
       </div>
 
       {/* Reference line: bounds / stock / Amazon */}

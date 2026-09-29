@@ -90,6 +90,12 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
       <div className="-mx-5 -mt-5 mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-amber-200 bg-amber-50 px-5 py-2.5">
         <ChannelBadge channel="amazon" label="Amazon price" />
         <span className="text-xs text-amber-700/90">Apply queues a Seller Central upload — no live change</span>
+        {header.next_review && (() => {
+          // Same wording as the Shopify card: a review date that has arrived is Due, not parked.
+          const today = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD, same shape as next_review
+          const text = header.next_review > today ? `Parked until ${header.next_review}` : header.next_review === today ? 'Due today' : `Due since ${header.next_review}`;
+          return <span className="ml-auto text-xs text-amber-700/90">{text}</span>;
+        })()}
       </div>
 
       {/* Reference line: current / FBA / net margin / floor / RRP */}

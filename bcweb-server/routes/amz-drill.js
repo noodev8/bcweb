@@ -72,6 +72,7 @@ router.get('/', async (req, res) => {
              t.shopifytitle AS title,
              sk.imagename,
              sk.match_amazon_price AS match_amazon,
+             m.next_amz_price_review::text AS next_review,  -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.cost')}    AS cost,
              ${safeNumeric('sk.rrp')}     AS rrp,
@@ -80,6 +81,7 @@ router.get('/', async (req, res) => {
              GREATEST(COALESCE(a.amztotal,0) - COALESCE(a.amzlive,0), 0) AS fba_inbound
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
+      LEFT JOIN skumap m ON m.code = a.code
       LEFT JOIN title t ON t.groupid = a.groupid
       WHERE a.code = $1
     `, [code]);
@@ -118,6 +120,8 @@ router.get('/', async (req, res) => {
       // Read-only flag for the drill badge: the parent STYLE auto-matches its Shopify price to Amazon's lowest in-stock size. Purely
       // informational on the Amazon side (this SKU's Amazon price is set here as usual); it tells the operator Shopify follows Amazon.
       match_amazon: h.match_amazon === true,
+      // Per-SKU review date (skumap.next_amz_price_review), YYYY-MM-DD or null. The banner words it Parked until / Due since.
+      next_review: h.next_review || null,
       price,
       cost,
       fbafee,
