@@ -19,6 +19,8 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 
 ## Instructions (how Claude should work)
 
+- **The owner's MOOD (from 2026-09-30, coming):** the owner will sometimes give a mood for a session or a style: **push lower** (cut to try and create sales), **hold**, or **push higher** (raise to harvest profit). The mood is the direction; the evidence decides the size and whether it's sensible. Take the mood as the intent, propose a price that serves it, and say so if the data argues against it (e.g. "you want to cut, but it sold nothing at 3 prices already"). Put the mood in the Decisions log (Why) and write the note in its terms ("Push down to get it moving", "Up to harvest"). No mood given = judge on the evidence, as now. Still learning: which mood works on which kind of style is what Learnings should build up.
+- Review periods are a default, not a rule: on a slow seller (~1/month) a 7-day review can't show anything, so lengthen it (raise on a slow seller: 14d).
 - Prices are 2dp. No price-ending convention (owner, 2026-09-28): pick the number, not a .95/.99 pattern.
 - Login: `claude_dev` (display name "Claude", shared with API testing). Test writes use BEGIN…ROLLBACK, so only real applies reach the log.
 - Until Learnings show a track record: propose → owner approves → Claude applies.
@@ -37,6 +39,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-09-30: Staff's £0.50 nudges with no note (Summer, 5 in 6 weeks on ARIZONA) can't be judged, and they move too little to show a response. Prefer one move with a note, then wait out the review period.
 - 2026-09-30: Returns muddy a 30-day unit count. Net them off before calling a style a "seller" (ARIZONA: 1 sold, 1 returned, so net 0).
 - 2026-09-30: STEADY (Shopify, due, in stock) is mostly 1-unit-a-month styles in Birkenstock's Sept lull. Expect mostly holds until the season turns; save cuts for styles with a lot of stock and a clearly failed price step.
+- 2026-09-30: A hold isn't always right for a stalled style. If the stall is the season, the price isn't costing sales, so a small step back UP to a price that has sold before costs little and harvests margin (owner's call on 1031695-SYDNEY: £90 → £95, which sold 3 in a week in July). Rule of thumb: on a slow, can't-reorder style with broken sizes, harvest rather than chase.
 - 2026-09-30: The API isn't normally running in a Claude session. Apply through the real W1 route in-process (temp express app, JWT signed for claude_dev, POST body uses `newPrice` not `price`). Don't hand-write SQL for applies: W1 also pushes to Shopify.
 
 ## Decisions log
@@ -46,6 +49,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-09-29 | 1031620-MAYARI | 80 → 80 (hold) | 30d (29 Oct) | Season stall, not price. Walk-up 72→75→76→78 sold at each step; £80 untested. 8 left, core 37/39/41 gone. | _pending_ |
 | 2026-09-30 | 1027704-ARIZONA | 69.99 → 69.99 (hold) | 30d (30 Oct) | Season stall, not price. £66.99 sold 12 in 6wk, £72.99 none, £69 a few. 10 left (36-40), net 0 in 30d. | _pending_ |
 | 2026-09-30 | 1014932-ZERMATT | 55 → 55 (hold) | 30d (30 Oct) | ~1 a month at £52.50-£55, no price signal either way, Sept lull. 15 left (35-41). £12/pair margin, so a cut costs a lot for no visible gain. | _pending_ |
+| 2026-09-30 | 1031695-SYDNEY | 90 → 95 (raise, harvest) | 14d (14 Oct) | Owner: small rise to harvest. £95 sold 3 in a week in July; nothing moved 97→90 through the lull, so £90 buys no speed. 7 left, broken sizes, £5/pair extra. Judge: units and profit/wk 14 Oct vs the ~1/month before. | _pending_ |
 
 ## Change log of this playbook
 
@@ -54,3 +58,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-09-29: 80-char note rule.
 - 2026-09-30: ARIZONA hold, 5 learnings, how to apply in-process.
 - 2026-09-30: note-style rule (Andreas/Summer voice); ZERMATT hold. A same-price apply no longer touches Shopify (W1 fix).
+- 2026-09-30: SYDNEY raise (harvest); owner MOOD section; review length is a default; harvest-vs-hold learning.
