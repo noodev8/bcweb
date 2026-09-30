@@ -145,6 +145,8 @@ router.post('/', async (req, res) => {
     const warnings = [];
     if (rrp !== null && roundedPrice > rrp) warnings.push('ABOVE_RRP');
 
+    const isHold = oldPrice !== null && oldPrice === roundedPrice;   // same price as now = a hold, nothing to push anywhere
+
     const changedBy = req.user.display_name; // resolved server-side from the token — never from the client body
 
     // 7) Atomic write (W1, CLAUDE.md) — UPDATE skusummary + INSERT price_change_log in one transaction.
@@ -166,9 +168,9 @@ router.post('/', async (req, res) => {
       // and changed_at defaults to now() (the full timestamptz — set automatically, not listed here).
       await client.query(`
         INSERT INTO price_change_log
-           (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by)
-        VALUES ($1, 'SHP', $2, $3, NULL, $4, $5)
-      `, [groupid, oldPrice, roundedPrice, note, changedBy]);
+           (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by, google_pushed_at)
+        VALUES ($1, 'SHP', $2, $3, NULL, $4, $5, CASE WHEN $6::boolean THEN now() END)
+      `, [groupid, oldPrice, roundedPrice, note, changedBy, isHold]);   // a hold is born pre-stamped: nothing for the Google sweep to send
 
       return upd.rows[0].next_shopify_price_review;
     });
@@ -184,7 +186,9 @@ router.post('/', async (req, res) => {
     // Push the new price to Shopify NOW (best-effort). Only fires when the style is live (skusummary.shopify=1) and Shopify is
     // configured; otherwise returns null and nothing is sent. Never throws, so a Shopify hiccup can't undo the committed price/review.
     // Owner decision: no shopifychange fallback — a failure is surfaced here and the operator re-Applies (productSet is idempotent).
-    const shopifyResult = await shopify.pushIfLive(groupid);
+    // A same-price apply is a HOLD (docs/hold-logging-spec.md): logged and review-dated, but there is nothing to tell Shopify, so we
+    // don't touch their server (owner, 2026-09-30). null = "nothing sent", the same as a style that isn't live.
+    const shopifyResult = isHold ? null : await shopify.pushIfLive(groupid);
 
     // Google is DECOUPLED (2026-07-24): this route no longer pushes to Google Merchant Center. The change is already recorded in
     // price_change_log above; the periodic sweep (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) picks up un-sent
