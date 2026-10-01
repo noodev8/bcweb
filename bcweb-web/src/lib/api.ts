@@ -2176,6 +2176,15 @@ export function setCustomerOrderFba(ordernum: string) {
   );
 }
 
+// The Amazon MCF order file for an FBA order — the tab-separated text the operator uploads to Seller Central. Read only; the caller
+// turns `content` into the download (see /order-status-customer-fba-file for the column sources).
+export function getCustomerOrderFbaFile(ordernum: string) {
+  return request<{ filename: string; content: string }>(
+    { url: '/order-status-customer-fba-file', method: 'GET', params: { ordernum } },
+    (b) => ({ filename: String(b.filename || `AMZ-Order-${ordernum}.txt`), content: String(b.content || '') })
+  );
+}
+
 // Plain delete, no archive — the order still exists in Shopify and the next sync re-inserts it. That's the point: it's how you ask
 // for a corrected order to be re-read.
 export function deleteCustomerOrder(ordernum: string) {

@@ -123,6 +123,9 @@ router.get('/', async (req, res) => {
              o.postcode,
              o.orderdate,
              COALESCE(o.amz, 0)                        AS fba,
+             -- The same value again under its column name, for rowState(), which reads row.amz. Selected only as fba it was
+             -- invisible there, so every FBA line was derived as no_stock (red) and the FBA chip/file button never appeared.
+             COALESCE(o.amz, 0)                        AS amz,
              o.courier,
              COALESCE(o.notes, '')                     AS note,
              COALESCE(o.localstock, 0)     AS localstock,

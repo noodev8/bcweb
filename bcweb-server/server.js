@@ -262,6 +262,7 @@ app.use('/order-status-customer-note', require('./routes/order-status-customer-n
 app.use('/order-status-customer-waiting', require('./routes/order-status-customer-waiting')); // hold flag — the legacy yellow row
 app.use('/order-status-customer-courier', require('./routes/order-status-customer-courier')); // override the derived shipping service
 app.use('/order-status-customer-fba', require('./routes/order-status-customer-fba'));         // re-route to FBA (ONE-WAY: no Reset)
+app.use('/order-status-customer-fba-file', require('./routes/order-status-customer-fba-file')); // Amazon MCF order file (read only)
 app.use('/order-status-customer-delete', require('./routes/order-status-customer-delete'));   // plain delete; Shopify re-feeds it
 
 // --- Pick module (the physical shelf: localstock rows someone has to walk to and take) ---

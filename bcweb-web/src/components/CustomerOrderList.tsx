@@ -50,7 +50,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon } from '@heroicons/react/24/solid';
 import {
-  CustomerOrderLine, CustomerOrderState, deleteCustomerOrder, getCustomerOrders,
+  CustomerOrderLine, CustomerOrderState, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
   setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote, setCustomerOrderWaiting,
 } from '@/lib/api';
 import {
@@ -180,6 +180,24 @@ export default function CustomerOrderList() {
     return res.success;
   }
 
+  // The Amazon order file. Not through run(): it writes nothing, so there's nothing to refetch — it just fetches the text and hands it
+  // to the browser as a download. Plain Blob text is UTF-8 with no BOM; the server already supplies the CRLF line endings.
+  async function downloadFbaFile(ordernum: string) {
+    setWorking(true);
+    setActionError(null);
+    const res = await getCustomerOrderFbaFile(ordernum);
+    setWorking(false);
+    if (!res.success || !res.data) { setActionError(res.error || 'Couldn’t build the Amazon file'); return; }
+    const url = URL.createObjectURL(new Blob([res.data.content], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = res.data.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   // --- render ------------------------------------------------------------------------------------------------------------------
 
   if (isLoading) return <p className="text-sm text-slate-400">Loading…</p>;
@@ -288,7 +306,12 @@ export default function CustomerOrderList() {
         onNote={(note) => active && run(() => setCustomerOrderNote(active.ordernum, note))}
         onWaiting={(w) => active && run(() => setCustomerOrderWaiting(active.ordernum, w))}
         onCourier={(c) => active && run(() => setCustomerOrderCourier(active.ordernum, c))}
-        onFba={() => active && run(() => setCustomerOrderFba(active.ordernum))}
+        // Flag it, then hand over the Amazon file straight away — flagging alone leaves the order sitting there until somebody
+        // uploads the file to Seller Central, so the two are one job and the operator expects the file from this click (owner).
+        onFba={async () => {
+          if (active && await run(() => setCustomerOrderFba(active.ordernum))) await downloadFbaFile(active.ordernum);
+        }}
+        onFbaFile={() => active && downloadFbaFile(active.ordernum)}
         onDelete={async () => { if (active && await run(() => deleteCustomerOrder(active.ordernum))) setSelected(null); }}
       />
       </div>
@@ -518,7 +541,7 @@ function Chip({ label, count, active, onClick, tone = 'slate' }: {
  * is selected, which keeps the footprint identical between the two states; that is the whole point, so don't "tidy" this into an
  * early return.
  */
-function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onDelete }: {
+function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete }: {
   order: { ordernum: string; customer: string | null; postcode: string | null; courier: string | null; note: string;
            waiting: boolean; lines: CustomerOrderLine[] } | null;
   working: boolean;
@@ -528,6 +551,7 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   onWaiting: (w: boolean) => void;
   onCourier: (c: string) => void;
   onFba: () => void;
+  onFbaFile: () => void;
   onDelete: () => void;
 }) {
   // Keyed on ordernum so selecting a different order re-seeds the field instead of carrying the previous order's note across.
@@ -554,6 +578,7 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   const multiLine = (order?.lines.length ?? 0) > 1;
   const noteChanged = !idle && note.trim() !== order.note.trim();
   const packOnly = order?.courier === PACK_ONLY;
+  const hasFba = order?.lines.some((l) => isFba(l.state)) ?? false;
 
   return (
     // No bottom margin: the pinned block that wraps this owns the gap to the grid, and a margin here would be dead pinned pixels.
@@ -646,6 +671,22 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
             {SHIPPING.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
+
+        {/* --- Amazon order file -------------------------------------------------------------------------------------------- */}
+        {/* Only on an FBA order, and on the FACE of the bar rather than behind More: an FBA order's whole outstanding job is this
+            file, so when one is selected this is the button you came for. Sky, to match the FBA stripe and chip. Appearing doesn't
+            move the table — it sits in the same row, and the note field beside it is what gives way. */}
+        {hasFba && (
+          <button
+            type="button"
+            disabled={off}
+            onClick={onFbaFile}
+            title="Download the Amazon order file to upload to Seller Central"
+            className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-40"
+          >
+            AMZ order file
+          </button>
+        )}
 
         {/* --- the way through to the rare three ------------------------------------------------------------------------------ */}
         {/* Quiet on purpose: a plain text button, no border, no colour. It isn't an action, it's a door — and the whole point of
