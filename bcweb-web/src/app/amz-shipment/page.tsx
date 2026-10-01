@@ -30,7 +30,9 @@ The same code scanned twice is one line with qty 2. − takes one off a line; Un
 
 MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in under its contents —
 Amazon wants all four for every carton. A box with units but no full set is flagged "needs size" in the list. Amazon's standard-carton
-limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks.
+limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks. Two quick fills (owner, 2026-10-01): "Birk box" puts in
+the Birkenstock carton's sides (BIRK_BOX — weight left blank, it depends on the contents), and "Set" takes typed values, applies them to
+the open box and remembers them in this browser so the next Set opens pre-filled.
 
 AMAZON FILE (owner, 2026-09-28). "Amazon file" downloads the box-contents file uploaded to Seller Central — every box, what's in it (as
 Amazon SKUs) and its measurements. Layout only for now: the button is placed and says why it can't be used yet. It needs at least one
@@ -71,6 +73,24 @@ const FIELDS: { key: keyof BoxDims; label: string; unit: string }[] = [
   { key: 'height', label: 'Height', unit: 'cm' },
   { key: 'weight', label: 'Weight', unit: 'kg' },
 ];
+// The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
+// archive (15 boxes) and the owner confirmed it. Sides only — weight depends on what's packed.
+const BIRK_BOX: Partial<BoxDims> = { length: '46', width: '46', height: '33' };
+
+// Set's remembered values. Browser storage: a per-person convenience (the last size YOU used), not shared state — and every access is
+// guarded because storage can be blocked or empty (private window), in which case Set simply opens blank.
+const PRESET_KEY = 'amzShipment.setDims';
+function loadPreset(): BoxDims {
+  try {
+    const v = JSON.parse(localStorage.getItem(PRESET_KEY) || 'null');
+    if (v && typeof v === 'object') return { ...NO_DIMS, ...Object.fromEntries(FIELDS.map((f) => [f.key, String(v[f.key] ?? '')])) };
+  } catch { /* fall through to blank */ }
+  return NO_DIMS;
+}
+function savePreset(d: BoxDims) {
+  try { localStorage.setItem(PRESET_KEY, JSON.stringify(d)); } catch { /* not remembered; still applied */ }
+}
+
 const dimNum = (v: string) => { const n = Number(v); return v.trim() !== '' && Number.isFinite(n) && n > 0 ? n : null; };
 const dimsComplete = (d: BoxDims) => FIELDS.every((f) => dimNum(d[f.key]) !== null);
 function dimsWarning(d: BoxDims): string | null {
@@ -147,6 +167,8 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   const [shipError, setShipError] = useState<string | null>(null);
   // FIND — which box is a SKU in? Matches code, Amazon SKU, FNSKU or title, case-insensitive, across every box.
   const [find, setFind] = useState('');
+  const [presetOpen, setPresetOpen] = useState(false);
+  const [preset, setPreset] = useState<BoxDims>(NO_DIMS);
   const scanRef = useRef<HTMLInputElement>(null);
 
   // What Mark shipped acts on: the STORED shipment as loaded, not this screen's unsaved scans (see the route header). These counts
@@ -233,6 +255,29 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   function setDim(key: keyof BoxDims, value: string) {
     const clean = value.replace(/[^0-9.]/g, '');
     setBoxes((prev) => prev.map((b) => (b.id === active.id ? { ...b, dims: { ...b.dims, [key]: clean } } : b)));
+  }
+
+  // Quick fill: write the given measurements into the open box. Only non-blank values are written, so Birk box (no weight) and a Set
+  // with a field left empty keep whatever that box already had there.
+  function fillDims(d: Partial<BoxDims>) {
+    setBoxes((prev) => prev.map((b) => {
+      if (b.id !== active.id) return b;
+      const next = { ...b.dims };
+      for (const f of FIELDS) { const v = (d[f.key] ?? '').trim(); if (v) next[f.key] = v; }
+      return { ...b, dims: next };
+    }));
+  }
+
+  function openPreset() {
+    setPreset(loadPreset());
+    setPresetOpen(true);
+  }
+
+  function applyPreset() {
+    savePreset(preset);
+    fillDims(preset);
+    setPresetOpen(false);
+    refocus();
   }
 
   function selectBox(id: number) {
@@ -472,12 +517,58 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
 
           {/* MEASUREMENTS — the packed carton's size and weight. Below the contents: you measure once it's packed. */}
           <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-3">
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold text-slate-900">Box {active.id} measurements</h3>
               {dimsComplete(active.dims)
                 ? <span className="text-xs text-emerald-700">Done</span>
                 : boxUnits(active) > 0 && <span className="text-xs text-amber-700">Needed before it can ship</span>}
+              {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
+                  what's packed. Set = your own values, remembered for next time. Both fill the OPEN box only. */}
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fillDims(BIRK_BOX)}
+                  title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Birk box
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (presetOpen ? setPresetOpen(false) : openPreset())}
+                  aria-expanded={presetOpen}
+                  className={'rounded-md border px-2.5 py-1 text-sm font-medium '
+                    + (presetOpen ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
+                >
+                  Set
+                </button>
+              </div>
             </div>
+            {/* SET — type the values once, Apply fills the open box and remembers them; the next Set opens with them already in.
+                A blank field leaves that measurement as it is, so you can keep just a size and weigh each box. */}
+            {presetOpen && (
+              <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md border border-brand-200 bg-white p-2">
+                {FIELDS.map((f) => (
+                  <label key={f.key} className="block w-24">
+                    <span className="mb-0.5 block text-xs text-slate-500">{f.label} ({f.unit})</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={preset[f.key]}
+                      onChange={(e) => setPreset((p) => ({ ...p, [f.key]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPreset(); } }}
+                      className="h-8 w-full rounded-md border border-slate-300 px-2 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </label>
+                ))}
+                <button type="button" onClick={applyPreset}
+                  className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">
+                  Apply to Box {active.id}
+                </button>
+                <button type="button" onClick={() => setPresetOpen(false)}
+                  className="h-8 rounded-md px-2 text-sm text-slate-500 hover:text-slate-800">Cancel</button>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {FIELDS.map((f) => (
                 <label key={f.key} className="block">
