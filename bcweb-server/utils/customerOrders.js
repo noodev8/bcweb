@@ -13,6 +13,8 @@ Purpose: Shared predicates and state derivation for the CUSTOMER ORDERS stage of
     ordertype 2/3  (utils/orderStatus.js)   orderdate <> ''  ==  "bought from the supplier"    — stamped by POST /order-status-place
     ordertype 1    (this file)              orderdate <> ''  ==  "allocated off the shelf"     — stamped by orderSync.js phase E,
                                                                                                  which sets `orderdate = created`
+                                            ...EXCEPT on an amz line, where it means "Amazon MCF file made" — stamped
+                                            (with the time of the file) by /order-status-customer-fba-file and the legacy app
 
   So on this screen the "Order Date" column is simultaneously the customer's Shopify order timestamp AND the "phase E has allocated
   this line" flag. Crossing the two files would silently mislabel every row on one screen or the other. One file per meaning is the
@@ -26,8 +28,9 @@ same derivation plus the two flags that sit on top of it.
   no_stock   all four sourcing flags 0            nothing anywhere — phase E swept it and found nothing. The urgent one.
   waiting    customerwaiting = 1                  known unfulfillable, customer has been told. The legacy yellow row.
   sourcing   ukd > 0 OR othersupplier > 0         flagged to a supplier
-  fba        amz > 0                              coming from Amazon FBA
+  fba        amz > 0, orderdate blank             coming from Amazon FBA, MCF file not made yet
   packed     batch = '2'                          boxed and ready to go — see PACKED below
+             OR amz > 0 with orderdate stamped    the MCF file is made; Amazon ships it, nothing left for us
   picked     every held shelf row at qty = 0      off the shelf, not yet packed — see PICKED below
   pending    localstock > 0                       ALLOCATED against a shelf row, awaiting pick — see the warning below
   parked     orderdate ~ 'do not order'           phase E skips it (see CANDIDATE_SKIP below)
@@ -139,7 +142,10 @@ function rowState(row) {
   if (local === 0 && amz === 0 && ukd === 0 && other === 0) return 'no_stock';
   if (Number(row.customerwaiting) === 1) return 'waiting';
   if (ukd > 0 || other > 0) return 'sourcing';
-  if (amz > 0) return 'fba';
+  // FBA, split on the "file made" stamp. Making the Amazon MCF file (/order-status-customer-fba-file, or the legacy app) stamps
+  // orderdate; nothing else ever stamps an amz line — the sync's FBA fallback leaves it blank and /order-status-customer-fba blanks
+  // it. Once the file exists the order is Amazon's to ship, so it reads as `packed`: done, nothing left for us (owner, 2026-10-01).
+  if (amz > 0) return String(row.orderdate || '').trim() === '' ? 'fba' : 'packed';
   // The last three are one progression, newest step first. All sit below the exception states on purpose: `waiting` and the two
   // sourcing states are decisions someone MADE about this line, and they outrank an observation about where the goods physically are.
   //

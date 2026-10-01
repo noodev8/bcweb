@@ -180,14 +180,18 @@ export default function CustomerOrderList() {
     return res.success;
   }
 
-  // The Amazon order file. Not through run(): it writes nothing, so there's nothing to refetch — it just fetches the text and hands it
-  // to the browser as a download. Plain Blob text is UTF-8 with no BOM; the server already supplies the CRLF line endings.
+  // The Amazon order file. Not through run(), because the response carries the file text that has to be handed to the browser — but
+  // it IS a write (making the file stamps the order done, so the line turns Packed), hence the refresh. Plain Blob text is UTF-8 with
+  // no BOM; the server already supplies the CRLF line endings.
   async function downloadFbaFile(ordernum: string) {
     setWorking(true);
     setActionError(null);
     const res = await getCustomerOrderFbaFile(ordernum);
-    setWorking(false);
-    if (!res.success || !res.data) { setActionError(res.error || 'Couldn’t build the Amazon file'); return; }
+    if (!res.success || !res.data) {
+      setActionError(res.error || 'Couldn’t build the Amazon file');
+      setWorking(false);
+      return;
+    }
     const url = URL.createObjectURL(new Blob([res.data.content], { type: 'text/plain' }));
     const a = document.createElement('a');
     a.href = url;
@@ -196,6 +200,8 @@ export default function CustomerOrderList() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    await refresh();
+    setWorking(false);
   }
 
   // --- render ------------------------------------------------------------------------------------------------------------------
@@ -578,7 +584,10 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   const multiLine = (order?.lines.length ?? 0) > 1;
   const noteChanged = !idle && note.trim() !== order.note.trim();
   const packOnly = order?.courier === PACK_ONLY;
-  const hasFba = order?.lines.some((l) => isFba(l.state)) ?? false;
+  // Keyed on the amz count, not the state: once the file is made the line reads Packed, and the button must stay so a lost or failed
+  // upload can be re-downloaded (the server keeps the first file's stamp). `fileMade` only changes the wording.
+  const hasFba = order?.lines.some((l) => l.fba > 0) ?? false;
+  const fileMade = hasFba && !order!.lines.some((l) => isFba(l.state));
 
   return (
     // No bottom margin: the pinned block that wraps this owns the gap to the grid, and a margin here would be dead pinned pixels.
@@ -681,10 +690,12 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
             type="button"
             disabled={off}
             onClick={onFbaFile}
-            title="Download the Amazon order file to upload to Seller Central"
+            title={fileMade
+              ? 'File already made — download it again (the order stays done)'
+              : 'Download the Amazon order file to upload to Seller Central. Marks the order done.'}
             className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-40"
           >
-            AMZ order file
+            {fileMade ? 'AMZ order file again' : 'AMZ order file'}
           </button>
         )}
 

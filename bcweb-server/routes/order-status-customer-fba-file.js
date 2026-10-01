@@ -2,15 +2,23 @@
 =======================================================================================================================================
 API Route: order_status_customer_fba_file
 =======================================================================================================================================
-Method: GET
+Method: POST
 Purpose: Build the Amazon Multi-Channel Fulfilment (MCF) order file for one FBA customer order — the tab-separated flat file uploaded to
          Seller Central so Amazon ships the order from FBA stock. Replaces making it in the legacy app ("AMZ-Order.txt").
 
 WHY IT EXISTS: a customer order whose stock is at Amazon (`amz > 0`, the `fba` state on the Customer Orders screen) is never boxed here.
 Nothing happens until somebody hands Amazon the order, and this file is how that's done.
 
-READ ONLY. Generating the file changes nothing — the operator can make it twice without harm, and nothing records that it was made.
-(The legacy screen has an `fbaordered` column that may be its "file sent" stamp; that was not confirmed, so it isn't written here.)
+MAKING THE FILE MARKS THE ORDER DONE (owner): once the file exists the order is with Amazon, so there is nothing left for us to do.
+The mark is the LEGACY one — the PowerBuilder app stamps `orderdate` with the time the file was made (seen on BC19249 and BC19259:
+orderdate = the moment of the file, not `created`). Nothing else ever puts a stamp on an amz line: the sync's FBA fallback leaves
+orderdate blank and /order-status-customer-fba blanks it. So "amz > 0 AND orderdate set" means "file made", whichever app made it, and
+utils/customerOrders.js rowState() reads it as `packed`.
+
+The stamp is written only where orderdate is still blank, so downloading the file a second time (lost it, upload failed) keeps the
+time of the FIRST file. Same transaction as the read, FOR UPDATE, so the file and the stamp describe the same rows.
+
+(`fbaordered` is NOT the marker, despite the name: it is NULL on every archived row bar one blank, including the FBA ones.)
 
 THE FORMAT is copied column-for-column from a file the legacy app produced (BC19259, 2026-10-01). Where each value comes from:
 
@@ -37,11 +45,11 @@ coming off our shelf must never be in a file that tells Amazon to ship it.
 Text is returned in the envelope and the browser turns it into the download. CRLF line endings, a trailing CRLF, no BOM — byte-for-byte
 the legacy layout. Tabs/newlines inside a field (a pasted address) are flattened to spaces so they can't break the columns.
 =======================================================================================================================================
-Request Query Params:
-  ordernum  (string, required)
+Request Payload:
+{ "ordernum": "BC19259" }
 
 Success Response:
-{ "return_code": "SUCCESS", "ordernum": "BC19259", "filename": "AMZ-Order-BC19259.txt", "lines": 1, "content": "MerchantFulfillment…" }
+{ "return_code": "SUCCESS", "ordernum": "BC19259", "filename": "AMZ-Order-BC19259.txt", "lines": 1, "stamped": 1, "content": "MerchantFulfillment…" }
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -56,9 +64,11 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
+const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { CUSTOMER_ORDERTYPE, notDiscarded } = require('../utils/customerOrders');
+// Shared date-format constant only — see the note in order-status-customer-note.js.
+const { LEGACY_STAMP } = require('../utils/orderStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -88,50 +98,75 @@ function isoStamp(created) {
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}` : '';
 }
 
-router.get('/', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const num = typeof req.query.ordernum === 'string' ? req.query.ordernum.trim() : '';
+    const { ordernum } = req.body || {};
+    const num = typeof ordernum === 'string' ? ordernum.trim() : '';
     if (!num) return res.json({ return_code: 'MISSING_FIELDS', message: 'ordernum is required' });
 
-    // One row per CODE, not per unit: the per-order fields (address etc.) are identical across an order's lines, so MAX() just picks
-    // the value. The `fba` count lets NOT_FOUND and NOT_FBA be told apart in one query.
-    const result = await query(`
-      SELECT o.shopifysku                         AS code,
-             COUNT(*)                             AS units,
-             BOOL_OR(COALESCE(o.amz, 0) > 0)      AS fba,
-             MAX(o.created)      AS created,
-             MAX(o.shippingname) AS name,
-             MAX(o.address1)     AS address1,
-             MAX(o.address2)     AS address2,
-             MAX(o.county)       AS county,
-             MAX(o.city)         AS city,
-             MAX(o.country)      AS country,
-             MAX(o.postcode)     AS postcode,
-             MAX(o.phone)        AS phone,
-             MAX(o.email)        AS email,
-             MAX(o.courier)      AS courier,
-             MAX(a.sku)          AS amz_sku,
-             MAX(a.amzprice)     AS amz_price
-        FROM orderstatus o
-        LEFT JOIN amzfeed a ON a.code = o.shopifysku
-       WHERE o.ordernum = $1 AND o.ordertype = $2 AND ${notDiscarded('o')}
-       GROUP BY o.shopifysku
-       ORDER BY o.shopifysku
-    `, [num, CUSTOMER_ORDERTYPE]);
+    const outcome = await withTransaction(async (client) => {
+      // Lock the order's lines first: the aggregate below can't take FOR UPDATE itself (GROUP BY), and the stamp at the end must land
+      // on exactly the rows the file was built from.
+      await client.query(
+        `SELECT 1 FROM orderstatus WHERE ordernum = $1 AND ordertype = $2 FOR UPDATE`,
+        [num, CUSTOMER_ORDERTYPE]
+      );
 
-    if (result.rows.length === 0) {
+      // One row per CODE, not per unit: the per-order fields (address etc.) are identical across an order's lines, so MAX() just
+      // picks the value. The `fba` flag lets NOT_FOUND and NOT_FBA be told apart in one query.
+      const result = await client.query(`
+        SELECT o.shopifysku                         AS code,
+               COUNT(*)                             AS units,
+               BOOL_OR(COALESCE(o.amz, 0) > 0)      AS fba,
+               MAX(o.created)      AS created,
+               MAX(o.shippingname) AS name,
+               MAX(o.address1)     AS address1,
+               MAX(o.address2)     AS address2,
+               MAX(o.county)       AS county,
+               MAX(o.city)         AS city,
+               MAX(o.country)      AS country,
+               MAX(o.postcode)     AS postcode,
+               MAX(o.phone)        AS phone,
+               MAX(o.email)        AS email,
+               MAX(o.courier)      AS courier,
+               MAX(a.sku)          AS amz_sku,
+               MAX(a.amzprice)     AS amz_price
+          FROM orderstatus o
+          LEFT JOIN amzfeed a ON a.code = o.shopifysku
+         WHERE o.ordernum = $1 AND o.ordertype = $2 AND ${notDiscarded('o')}
+         GROUP BY o.shopifysku
+         ORDER BY o.shopifysku
+      `, [num, CUSTOMER_ORDERTYPE]);
+
+      if (result.rows.length === 0) return { code: 'NOT_FOUND' };
+      const rows = result.rows.filter((r) => r.fba);
+      if (rows.length === 0) return { code: 'NOT_FBA' };
+      const missing = rows.filter((r) => !cell(r.amz_sku)).map((r) => r.code);
+      if (missing.length) return { code: 'NO_AMAZON_SKU', missing };
+
+      // The "file made" mark — see the header. FBA lines only, and only where not already stamped, so a re-download keeps the time of
+      // the first file. `updated` gets the legacy text stamp like every other write to this table.
+      const stamped = await client.query(
+        `UPDATE orderstatus
+            SET orderdate = ${LEGACY_STAMP}, updated = ${LEGACY_STAMP}
+          WHERE ordernum = $1 AND ordertype = $2 AND COALESCE(amz, 0) > 0 AND COALESCE(orderdate, '') = ''`,
+        [num, CUSTOMER_ORDERTYPE]
+      );
+
+      return { code: 'SUCCESS', rows, stamped: stamped.rowCount || 0 };
+    });
+
+    if (outcome.code === 'NOT_FOUND') {
       return res.json({ return_code: 'NOT_FOUND', message: 'No customer order lines found for that order' });
     }
-    const rows = result.rows.filter((r) => r.fba);
-    if (rows.length === 0) {
+    if (outcome.code === 'NOT_FBA') {
       return res.json({ return_code: 'NOT_FBA', message: 'This order has no lines set to come from FBA' });
     }
-    const missing = rows.filter((r) => !cell(r.amz_sku)).map((r) => r.code);
-    if (missing.length) {
-      return res.json({ return_code: 'NO_AMAZON_SKU', message: `Not on Amazon (no amzfeed row): ${missing.join(', ')}` });
+    if (outcome.code === 'NO_AMAZON_SKU') {
+      return res.json({ return_code: 'NO_AMAZON_SKU', message: `Not on Amazon (no amzfeed row): ${outcome.missing.join(', ')}` });
     }
 
-    const body = rows.map((r) => [
+    const body = outcome.rows.map((r) => [
       num, num, isoStamp(r.created), r.amz_sku, Number(r.units) || 1, r.code, '', '', r.amz_price, ORDER_COMMENT,
       deliverySla(r.courier), r.name, r.address1, r.address2, r.county, r.city, r.country,
       r.city, r.postcode, r.phone, r.email, 'Ship', '',
@@ -143,7 +178,8 @@ router.get('/', async (req, res) => {
       return_code: 'SUCCESS',
       ordernum: num,
       filename: `AMZ-Order-${num}.txt`,
-      lines: rows.length,
+      lines: outcome.rows.length,
+      stamped: outcome.stamped,
       content,
     });
   } catch (err) {

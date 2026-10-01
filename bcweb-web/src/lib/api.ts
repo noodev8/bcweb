@@ -2176,11 +2176,12 @@ export function setCustomerOrderFba(ordernum: string) {
   );
 }
 
-// The Amazon MCF order file for an FBA order — the tab-separated text the operator uploads to Seller Central. Read only; the caller
-// turns `content` into the download (see /order-status-customer-fba-file for the column sources).
+// The Amazon MCF order file for an FBA order — the tab-separated text the operator uploads to Seller Central. A WRITE: making it
+// stamps the order as done (orderdate, the legacy marker), so the line turns Packed. The caller turns `content` into the download
+// (see /order-status-customer-fba-file for the column sources and the stamp).
 export function getCustomerOrderFbaFile(ordernum: string) {
   return request<{ filename: string; content: string }>(
-    { url: '/order-status-customer-fba-file', method: 'GET', params: { ordernum } },
+    { url: '/order-status-customer-fba-file', method: 'POST', data: { ordernum } },
     (b) => ({ filename: String(b.filename || `AMZ-Order-${ordernum}.txt`), content: String(b.content || '') })
   );
 }
