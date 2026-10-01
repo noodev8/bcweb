@@ -199,7 +199,7 @@ router.post('/', async (req, res) => {
       `, [operator, `Goods In ${sku.code} to ${target}`]);
 
       // --- 7. BIRK TRACKER, always. Behind a savepoint so a failure here undoes only this step — see the header.
-      let birk = null;
+      let birk;
       await client.query('SAVEPOINT birk_tracker');
       try {
         birk = await markArrivedFromGoodsIn(client, {
