@@ -376,6 +376,7 @@ app.use('/social-post-publish-now', require('./routes/social-post-publish-now'))
 app.use('/finance-calculate', require('./routes/finance-calculate')); // POST multipart: files + typed figures -> the month  READ ONLY
 app.use('/finance-quickfile', require('./routes/finance-quickfile')); // POST multipart: figures -> the CSVs as text         READ ONLY
 app.use('/finance-car', require('./routes/finance-car'));             // GET ?month -> car mileage total from the Sheet     READ ONLY
+app.use('/finance-car-sheet', require('./routes/finance-car-sheet'));  // GET -> the mileage sheet's URL (for the Open button)  READ ONLY
 
 // Fallback for unknown routes — still return the return_code envelope, not a bare 404.
 app.use((req, res) => {

@@ -3411,6 +3411,14 @@ export function calculateFinanceMonth(args: {
   );
 }
 
+// The mileage sheet's address, for the Finance screen's Open button (route: finance-car-sheet). No sheet read involved.
+export function getFinanceCarSheet() {
+  return request<{ sheetUrl: string | null }>(
+    { url: '/finance-car-sheet', method: 'GET' },
+    (b) => ({ sheetUrl: (b.sheetUrl as string) || null }),
+  );
+}
+
 // Car mileage for the month, from the owner's Google Sheet — what the Car box is pre-filled with (route: finance-car).
 // SHEET_UNAVAILABLE comes back as a normal failed envelope; the page shows it as a note and leaves the box typeable.
 export function getFinanceCar(month: string) {

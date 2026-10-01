@@ -57,7 +57,9 @@ const FEE_COLUMNS = ['selling fees', 'fba fees', 'other transaction fees'];
 
 // Row types that represent money from a customer. Everything else in the file is a fee, an adjustment, or a bank transfer.
 // Liquidations = Amazon disposing of stock on our behalf; Order_Retrocharge = a tax correction on an old order. Both are income.
-const INCOME_TYPES = new Set(['Order', 'Refund', 'Liquidations', 'Order_Retrocharge']);
+// Refund_Retrocharge is the same tax correction on a refund (first seen Sept 2026: one row, -£6.00 Base Tax) - it reverses VAT, so
+// it belongs with the income it corrects. Missing it left the reconciliation £6 out.
+const INCOME_TYPES = new Set(['Order', 'Refund', 'Liquidations', 'Order_Retrocharge', 'Refund_Retrocharge']);
 
 // Excluded entirely: a Transfer is our own payout landing in our own bank. Counting it would double the month.
 const EXCLUDED_TYPES = new Set(['Transfer']);
@@ -351,6 +353,9 @@ async function computeAmazon(db, text) {
   // £3.83, so the exposure is pennies; if liquidations ever become material this is the line to revisit.
   let liquidationUnmatchedRows = 0;
   let liquidationUnmatchedVat = 0;
+  // Grade and Resell: a customer return Amazon resold as used, under a SKU it invents ('amzn.gr.<our code>-<random>'). Never in
+  // skumap, so silently skipped from `unmatched` - VAT taken as Amazon charged it (standard). Sept 2026: 2 rows, both
+  // adult St Ives (standard-rated anyway). Only a resold KIDS item would be over-declared.
 
   for (const row of rows) {
     const bucket = byType.get(row.type) || { type: row.type, rows: 0, net: 0, vat: 0, fees: 0, other: 0, total: 0 };
@@ -376,7 +381,9 @@ async function computeAmazon(db, text) {
       // ours to declare, so it comes out of the declared figure and is shown separately as evidence.
       const hit = row.sku ? taxBySku.get(row.sku) : undefined;
       if (!hit) {
-        if (row.type === 'Liquidations') {
+        if (row.sku.startsWith('amzn.gr.')) {
+          // Grade and Resell - see above. Nothing to report: not shown on screen (owner, 2026-10-01: standard practice, would only confuse).
+        } else if (row.type === 'Liquidations') {
           liquidationUnmatchedRows += 1;
           liquidationUnmatchedVat += row.taxTotal;
         } else if (row.sku) {

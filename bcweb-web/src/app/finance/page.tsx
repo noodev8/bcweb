@@ -29,7 +29,8 @@ THE TYPED FIGURES LIVE IN LOCAL STATE, not in the calculate response. SumUp, sho
 calculating must not force a re-upload of the Amazon file - or, worse, a second half-minute Shopify pull. They are sent with both
 calls so the server can check them, but what the screen shows and what the files are built from is this form.
 
-THE CAR FIGURE IS PRE-FILLED FROM THE MILEAGE SHEET, and is still typed. The owner logs every business journey in a Google Sheet for
+THE CAR FIGURE IS FETCHED FROM THE MILEAGE SHEET ON REQUEST (owner, 2026-10-01: a Fetch button, not an automatic read, plus an
+always-there Open button via /finance-car-sheet so journeys can be checked and added), and is still typed. The owner logs every business journey in a Google Sheet for
 HMRC anyway, so /finance-car reads that sheet for the chosen month and the box arrives filled in - with the journeys behind it listed
 underneath, because a total you cannot see the parts of is a number you have to believe. Three rules hold it in place:
   - IT IS A SUGGESTION. The moment the box is edited the sheet stops driving it (`carTouched`), and what Calculate sends is always what
@@ -64,7 +65,7 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import {
-  calculateFinanceMonth, buildFinanceQuickFile, getFinanceCar, FinanceMonth, FinanceRejectedFile, FinanceFile, FinanceShopify,
+  calculateFinanceMonth, buildFinanceQuickFile, getFinanceCar, getFinanceCarSheet, FinanceMonth, FinanceRejectedFile, FinanceFile, FinanceShopify,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
@@ -139,11 +140,46 @@ function Block({ title, children, aside }: { title: string; children: React.Reac
   );
 }
 
+/** A numbered step heading — the screen reads top to bottom as files, figures, calculate. */
+function Step({ n, title, hint }: { n: number; title: string; hint?: string }) {
+  return (
+    <div className={`mb-3 flex items-baseline gap-3 ${n > 1 ? 'mt-8' : ''}`}>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">{n}</span>
+      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+    </div>
+  );
+}
+
 /** A typed money field. Kept as a STRING in state so a half-typed '-' or '' behaves, and coerced once on send. */
-function MoneyInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+type FileKind = 'amazon' | 'paypal' | 'unknown';
+const fileKey = (f: File) => `${f.name}:${f.size}`;
+
+/** Which slot a dropped file belongs in, from its header (same fingerprint columns the server uses). Display only. */
+async function sniffKind(f: File): Promise<FileKind> {
+  try {
+    const head = (await f.slice(0, 16384).text()).toLowerCase();
+    if (head.includes('settlement id') && head.includes('date/time')) return 'amazon';
+    if (head.includes('transaction id') && head.includes('gross') && head.includes('fee')) return 'paypal';
+  } catch { /* unreadable - leave it to the server */ }
+  return 'unknown';
+}
+
+function MoneyInput({ label, value, onChange, href, extra }: {
+  label: string; value: string; onChange: (v: string) => void; href?: string; extra?: React.ReactNode;
+}) {
   return (
     <label className="flex items-baseline justify-between gap-3 py-1">
-      <span className="text-sm text-slate-600">{label}</span>
+      <span className="text-sm text-slate-600">
+        {label}
+        {extra}
+        {/* Where the figure comes from — a small link, not a button, so it stays out of the way. */}
+        {href && (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="ml-2 text-[11px] text-slate-400 underline decoration-slate-300 underline-offset-2 hover:text-slate-600">
+            open ↗
+          </a>
+        )}
+      </span>
       <span className="flex items-baseline gap-1">
         <span className="text-sm text-slate-400">£</span>
         <input
@@ -163,6 +199,9 @@ export default function FinancePage() {
   const [month, setMonth] = useState<string>(lastMonth());
   const [changingMonth, setChangingMonth] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  // Which slot each file shows in. A display guess only, read from the header in the browser - the server still identifies every
+  // file properly and rejects what it cannot use (`rejected` below).
+  const [kinds, setKinds] = useState<Record<string, FileKind>>({});
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   // Distinct from `busy`: only true while we are actually waiting on Shopify, which is the slow part worth explaining.
@@ -187,10 +226,18 @@ export default function FinancePage() {
 
   // The mileage sheet for this month. Keyed by month, so changing the month re-reads on its own. An error here is NOT surfaced as a
   // page error: the Car box simply stays typeable and a line of text says why (the sheet must never be able to stop a month closing).
-  const { data: carSheet, error: carError, isLoading: carLoading } = useApiQuery(
-    ['finance-car', month],
+  // Fetched only when asked (the Fetch button) - `carAsked` is the month it was asked for, so changing month drops it.
+  const [carAsked, setCarAsked] = useState<string | null>(null);
+  const { data: carSheet, error: carError, isLoading: carLoading, refresh: refetchCar } = useApiQuery(
+    carAsked === month ? ['finance-car', month] : null,
     () => getFinanceCar(month),
   );
+  const { data: carSheetLink } = useApiQuery(['finance-car-sheet'], getFinanceCarSheet);
+  function fetchCar() {
+    setCarTyped(null);
+    if (carAsked === month) refetchCar();
+    else setCarAsked(month);
+  }
 
   // What the box shows: the operator's figure once they have typed one, otherwise the sheet's total. A sheet total of 0 for a month
   // with no journeys is shown as an explicit '0.00' rather than a blank, so "no journeys" is visibly different from "not read yet".
@@ -217,6 +264,9 @@ export default function FinancePage() {
 
   const addFiles = useCallback((incoming: FileList | File[]) => {
     const list = Array.from(incoming);
+    for (const f of list) {
+      sniffKind(f).then((k) => setKinds((prev) => ({ ...prev, [fileKey(f)]: k })));
+    }
     setFiles((prev) => {
       const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
       const merged = [...prev];
@@ -262,10 +312,13 @@ export default function FinancePage() {
     if (!reuse && res.data.shopify?.present) {
       setShopifyCache({ month, data: res.data.shopify, readAt: new Date() });
     }
+
+    // Calculate also produces the files (owner, 2026-10-01: one button). The checks are still on screen to read; a re-run after a
+    // fix simply downloads a fresh set.
+    await runGenerate(data);
   }
 
-  async function runGenerate() {
-    if (!result) return;
+  async function runGenerate(result: FinanceMonth) {
     setBusy(true);
     setError(null);
     // The Amazon file goes up again so kidsvatcharged.csv is cut from the original rows rather than rebuilt from a round trip.
@@ -280,9 +333,9 @@ export default function FinancePage() {
       return;
     }
     setGenerated(res.data.files);
-    // Both QuickFile files save straight away — they are the point of the screen. The kids file is a year-end document, so it is
-    // offered rather than pushed: three simultaneous downloads is a browser prompt nobody reads.
-    for (const f of res.data.files.filter((x) => x.name.startsWith('QuickFile'))) downloadCsv(f.name, f.csv);
+    // Everything saves at once — Calculate is the one button (owner, 2026-10-01). The browser may ask once to allow multiple downloads.
+    for (const f of res.data.files) downloadCsv(f.name, f.csv);
+    if (result.shopify?.csv) downloadCsv('Shopify Transaction.csv', result.shopify.csv as string);
   }
 
   const amz = result?.amazon;
@@ -296,7 +349,7 @@ export default function FinancePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Month End</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Drop the month&apos;s files in, add what only you know, and take the two QuickFile files.
+            Upload, add the shop figures, Calculate.
           </p>
         </div>
         {/* Stated, not chosen - see the header note. The select appears only if the operator asks for it. */}
@@ -328,29 +381,50 @@ export default function FinancePage() {
         </div>
       </div>
 
+      <Step n={1} title="Files" hint="Amazon and PayPal — both optional" />
       {/* --- Sources ------------------------------------------------------------------------------------------------------- */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files); }}
-        className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+        className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
           dragging ? 'border-slate-900 bg-slate-50' : 'border-slate-300 bg-white'
         }`}
       >
-        <ArrowUpTrayIcon className="mx-auto h-7 w-7 text-slate-300" />
-        <p className="mt-2 text-sm font-medium text-slate-700">Drop the Amazon and PayPal files here</p>
-        <p className="mt-1 text-xs text-slate-500">
-          Amazon Monthly Transaction · PayPal all-transactions export. Any filename — they are identified by what is in them.
-        </p>
-        <p className="mt-1 text-xs text-slate-400">
-          Both optional. Shopify and the stock value are read without them.
-        </p>
+        <div className="grid gap-3 text-left sm:grid-cols-2">
+          {([
+            ['amazon', 'Amazon', 'Monthly transaction report', 'https://sellercentral.amazon.co.uk/payments/reports-repository'],
+            ['paypal', 'PayPal', 'All transactions export', 'https://www.paypal.com/reports/dlog'],
+          ] as const).map(
+            ([kind, name, what, href]) => {
+              const got = files.filter((f) => kinds[fileKey(f)] === kind);
+              return (
+                <div key={kind} className={`rounded-lg border px-4 py-3 ${got.length ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'}`}>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-slate-900">{name}</span>
+                    <span className="text-[11px] text-slate-400">optional</span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {what}
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="ml-2 text-[11px] text-slate-400 underline decoration-slate-300 underline-offset-2 hover:text-slate-600">
+                      get it ↗
+                    </a>
+                  </div>
+                  <div className={`mt-2 truncate text-xs font-medium ${got.length ? 'text-emerald-700' : 'text-slate-400'}`}>
+                    {got.length ? `✓ ${got.map((f) => f.name).join(', ')}` : 'Not added'}
+                  </div>
+                </div>
+              );
+            },
+          )}
+        </div>
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
-          Choose files
+          <ArrowUpTrayIcon className="h-4 w-4" />
+          Upload files
         </button>
         <input
           ref={inputRef}
@@ -368,6 +442,9 @@ export default function FinancePage() {
             <li key={`${f.name}:${f.size}`} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
               <DocumentTextIcon className="h-4 w-4 shrink-0 text-slate-400" />
               <span className="flex-1 truncate text-sm text-slate-700">{f.name}</span>
+              {kinds[fileKey(f)] === 'unknown' && (
+                <span className="shrink-0 text-xs text-amber-700">not Amazon or PayPal?</span>
+              )}
               <span className="shrink-0 text-xs tabular-nums text-slate-400">{(f.size / 1024).toFixed(0)} KB</span>
               <button
                 type="button"
@@ -401,18 +478,39 @@ export default function FinancePage() {
       )}
 
       {/* --- Typed figures ------------------------------------------------------------------------------------------------- */}
-      <div className="mt-4 md:max-w-md">
-        <Block title="Shop &amp; expenses">
-          <MoneyInput label="SumUp sales" value={sumupSales} onChange={setSumupSales} />
-          <MoneyInput label="SumUp fees" value={sumupFees} onChange={setSumupFees} />
+      <Step n={2} title="Shop and car" hint="typed figures — blank counts as zero" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Block title="Shop">
+          <MoneyInput label="SumUp sales" value={sumupSales} onChange={setSumupSales} href="https://me.sumup.com/en-gb/reports/all-reports" />
+          <MoneyInput label="SumUp fees" value={sumupFees} onChange={setSumupFees} href="https://me.sumup.com/en-gb/payouts" />
           <MoneyInput label="Shop cash" value={cashSales} onChange={setCashSales} />
-          <MoneyInput label="Car" value={car} onChange={setCarTyped} />
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+            Shop and SumUp VAT is taken at a sixth of the gross, so children&apos;s footwear sold in the shop is over-declared. Agreed
+            as acceptable at this volume.
+          </p>
+        </Block>
+
+        <Block title="Car">
+          <MoneyInput
+            label="Car expenses"
+            value={car}
+            onChange={setCarTyped}
+            href={carSheetLink?.sheetUrl ?? undefined}
+            extra={
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); fetchCar(); }}
+                disabled={carLoading}
+                className="ml-2 text-[11px] text-slate-400 underline decoration-slate-300 underline-offset-2 hover:text-slate-600 disabled:opacity-40"
+              >
+                {carLoading ? 'fetching…' : 'fetch'}
+              </button>
+            }
+          />
 
           {/* The evidence behind the Car figure. A total with its journeys under it can be checked against the sheet without
               opening the sheet; a bare total can only be believed. Every state below is a sentence, never a silent blank. */}
           <div className="pl-0 text-[11px] leading-relaxed text-slate-400">
-            {carLoading && <span>Reading the mileage sheet…</span>}
-
             {carError && (
               <span className="text-amber-700">
                 Mileage sheet unavailable — type the car figure by hand. ({carError.message})
@@ -463,16 +561,12 @@ export default function FinancePage() {
               )
             )}
           </div>
-
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-            Shop and SumUp VAT is taken at a sixth of the gross, so children&apos;s footwear sold in the shop is over-declared. Agreed
-            as acceptable at this volume.
-          </p>
         </Block>
       </div>
 
+      <Step n={3} title="Calculate" />
       {/* --- Actions ------------------------------------------------------------------------------------------------------ */}
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         {/* NOT gated on having uploaded anything. Shopify comes from the API and the stock from the database, so a run with no
             files is a real month — it just has no Amazon or PayPal figures, and the checks say so in words. */}
         <button
@@ -483,16 +577,6 @@ export default function FinancePage() {
         >
           {busy ? (pulling ? 'Reading Shopify…' : 'Calculating…') : 'Calculate'}
         </button>
-        {result && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={runGenerate}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-          >
-            {busy ? 'Building…' : 'Generate QuickFile files'}
-          </button>
-        )}
         <span className="text-xs text-slate-500">
           {busy && pulling
             ? 'Walking every Shopify order for the month — this takes about half a minute.'
@@ -601,7 +685,7 @@ export default function FinancePage() {
                 onClick={() => setShowRows((v) => !v)}
                 className="mt-3 text-xs font-medium text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-900"
               >
-                {showRows ? 'Hide the rows behind these figures' : 'Show the rows behind these figures'}
+                {showRows ? 'Hide transaction totals' : 'Show transaction totals'}
               </button>
             )}
           </div>
@@ -648,8 +732,10 @@ export default function FinancePage() {
                 </p>
               )}
 
-              {amz.unmatched && amz.unmatched.length > 0 && (
+              {((amz.unmatched?.length ?? 0) > 0 || (amz.liquidationUnmatched?.rows ?? 0) > 0) && (
                 <div className="mt-3 border-t border-slate-100 pt-3">
+                  {(amz.unmatched?.length ?? 0) > 0 && (
+                  <>
                   <p className="text-xs font-medium text-slate-600">SKUs with no matching product — VAT assumed standard</p>
                   <ul className="mt-1.5 space-y-1">
                     {amz.unmatched.map((u) => (
@@ -659,6 +745,8 @@ export default function FinancePage() {
                       </li>
                     ))}
                   </ul>
+                  </>
+                  )}
                   {amz.liquidationUnmatched && amz.liquidationUnmatched.rows > 0 && (
                     <p className="mt-2 text-[11px] text-slate-400">
                       A further {amz.liquidationUnmatched.rows} liquidation rows carry Amazon&apos;s own disposal identifiers rather
