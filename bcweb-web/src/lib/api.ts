@@ -2326,6 +2326,19 @@ export function getAmzShipmentBoxes() {
   }));
 }
 
+// "Mark shipped" — archives the STORED shipment, takes the boxed units off C3-Amazon and empties amzshipment, in one transaction.
+// `boxes`/`units` are what the screen showed when the operator confirmed; the server refuses (STALE) if the stored shipment differs.
+export interface AmzShipResult {
+  shipmentId: number; boxes: number; lines: number; units: number; stockRemoved: number;
+  shortfall: { code: string; boxed: number; removed: number }[];   // boxed codes the C3-Amazon shelf couldn't fully cover
+}
+export function shipAmzShipment(boxes: number, units: number) {
+  return request<AmzShipResult>({ url: '/amz-shipment-ship', method: 'POST', data: { boxes, units } }, (b) => ({
+    shipmentId: Number(b.shipmentId), boxes: Number(b.boxes), lines: Number(b.lines), units: Number(b.units),
+    stockRemoved: Number(b.stockRemoved) || 0, shortfall: b.shortfall || [],
+  }));
+}
+
 // =============================================================================================================================
 // Shopify order sync — the "Update orders" button (Analytics -> Sales and Customer Orders; the LABEL is the legacy term, this
 // route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).

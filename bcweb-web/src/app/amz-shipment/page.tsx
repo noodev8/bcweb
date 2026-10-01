@@ -15,8 +15,14 @@ written back: scanning, −, new/delete box and the measurement inputs still onl
 DB. A scan is recorded as the raw code the scanner sent; matching it to a SKU (barcode or FNSKU), checking it against what is on
 C3-Amazon, and saving all come with the writes.
 
-Decided so far for that back end: when the boxes go out, "Mark shipped" takes the packed units out of localstock (C3-Amazon) in one
-transaction. The button is here, disabled, so the layout has its place.
+MARK SHIPPED (owner, 2026-10-01: "the shipped button should clear the whole shipment"). Live. POST /amz-shipment-ship, one transaction:
+the stored shipment is archived to amzshipment_archive under a new shipment id, the boxed units come off the C3-Amazon shelf
+(soft-deleted), and amzshipment is emptied. It acts on the STORED boxes — the confirm says so when this screen has unsaved scans — and
+sends the counts it showed, so the server refuses if the legacy app has packed more since. Codes boxed with nothing on C3-Amazon to
+take are listed in the notice afterwards. See the route header for the detail.
+
+FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list narrows it to boxes holding a match (code, Amazon SKU,
+FNSKU or title) and names the matching codes under each; the matching lines are highlighted in the open box.
 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
 scan, scan, scan with no clicks. Every scan goes into the ACTIVE box (highlighted on the left); click another box, or New box, to switch.
@@ -34,9 +40,11 @@ Seller Central template's exact format.
 */
 
 import { useRef, useState } from 'react';
-import { PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import {
+  PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, MagnifyingGlassIcon,
+} from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { getAmzShipmentBoxes, type AmzBox } from '@/lib/api';
+import { getAmzShipmentBoxes, shipAmzShipment, type AmzBox, type AmzShipResult } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 // sku / fnsku / title come with a line loaded from the DB; a line made by scanning here only has the raw code.
@@ -75,22 +83,57 @@ function dimsWarning(d: BoxDims): string | null {
 }
 
 // Loads the packed boxes, then hands them to Packing as its starting state (so Packing's useState seeds from real data, no effect).
+// After Mark shipped the boxes are re-read and Packing is REMOUNTED (key = round) so it re-seeds from the now-empty shipment — its
+// useState only reads `initial` once, so a re-render alone would leave the shipped boxes on screen.
 export default function AmzShipmentPage() {
-  const { data, error, isLoading } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
+  const { data, error, isLoading, refresh } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
+  const [round, setRound] = useState(0);
+  const [shipped, setShipped] = useState<AmzShipResult | null>(null);
+
+  async function onShipped(r: AmzShipResult) {
+    setShipped(r);
+    await refresh();
+    setRound((n) => n + 1);
+  }
+
   return (
     <AppShell title="AMZ Shipment">
+      {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
       {isLoading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading boxes…</div>
       ) : error || !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
       ) : (
-        <Packing initial={data.boxes.map(fromDb)} />
+        <Packing key={round} initial={data.boxes.map(fromDb)} onShipped={onShipped} />
       )}
     </AppShell>
   );
 }
 
-function Packing({ initial }: { initial: Box[] }) {
+// What Mark shipped did. The shortfall list is the one thing to act on: codes that were boxed but weren't (fully) on the C3-Amazon
+// shelf, so the stock figure for them needs a look. Stays until closed — it's the only record on screen of what just went.
+function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: () => void }) {
+  return (
+    <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+      <div className="flex items-start gap-2">
+        <TruckIcon className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="flex-1">
+          Shipment {result.shipmentId} marked shipped: {result.boxes} {result.boxes === 1 ? 'box' : 'boxes'}, {result.units} units.{' '}
+          {result.stockRemoved} taken off C3-Amazon.
+          {result.shortfall.length > 0 && (
+            <div className="mt-1 text-amber-800">
+              Not on the C3-Amazon shelf, so no stock was taken for:{' '}
+              {result.shortfall.map((s) => `${s.code} (${s.boxed - s.removed} of ${s.boxed})`).join(', ')} — worth checking where they came from.
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:text-emerald-900">Close</button>
+      </div>
+    </div>
+  );
+}
+
+function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShipResult) => Promise<void> }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
   const [activeId, setActiveId] = useState(initial.length ? initial[0].id : 1);
@@ -99,7 +142,34 @@ function Packing({ initial }: { initial: Box[] }) {
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
   const [lastScan, setLastScan] = useState<{ boxId: number; code: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmShip, setConfirmShip] = useState(false);
+  const [shipping, setShipping] = useState(false);
+  const [shipError, setShipError] = useState<string | null>(null);
+  // FIND — which box is a SKU in? Matches code, Amazon SKU, FNSKU or title, case-insensitive, across every box.
+  const [find, setFind] = useState('');
   const scanRef = useRef<HTMLInputElement>(null);
+
+  // What Mark shipped acts on: the STORED shipment as loaded, not this screen's unsaved scans (see the route header). These counts
+  // are what the confirm states and what the server checks against, so it can refuse if the legacy app has packed more since.
+  const storedBoxes = initial.length;
+  const storedUnits = initial.reduce((n, b) => n + boxUnits(b), 0);
+  const editedHere = JSON.stringify(boxes.map((b) => [b.id, b.lines.map((l) => [l.code, l.qty])]))
+    !== JSON.stringify(initial.map((b) => [b.id, b.lines.map((l) => [l.code, l.qty])]));
+
+  async function ship() {
+    setShipping(true);
+    setShipError(null);
+    const res = await shipAmzShipment(storedBoxes, storedUnits);
+    setShipping(false);
+    setConfirmShip(false);
+    if (!res.success || !res.data) { setShipError(res.error || 'Couldn’t mark the shipment shipped'); return; }
+    await onShipped(res.data);
+  }
+
+  const q = find.trim().toLowerCase();
+  const lineMatches = (l: BoxLine) => q !== '' && [l.code, l.sku, l.fnsku, l.title].some((v) => (v || '').toLowerCase().includes(q));
+  // Per box, the lines that match — drives the results list and the highlight in the box list and the open box.
+  const hits = q ? boxes.map((b) => ({ box: b, lines: b.lines.filter(lineMatches) })).filter((h) => h.lines.length > 0) : [];
 
   const active = boxes.find((b) => b.id === activeId) ?? boxes[0];
   const totalUnits = boxes.reduce((n, b) => n + boxUnits(b), 0);
@@ -214,30 +284,74 @@ function Packing({ initial }: { initial: Box[] }) {
             <ArrowDownTrayIcon className="h-4 w-4" />
             Amazon file
           </button>
-          <button
-            type="button"
-            disabled
-            title="Coming with the back end"
-            className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            <TruckIcon className="h-4 w-4" />
-            Mark shipped
-          </button>
+          {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
+              Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. */}
+          {confirmShip ? (
+            <span className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
+              <span className="text-slate-700">
+                Ship all {storedBoxes} {storedBoxes === 1 ? 'box' : 'boxes'} ({storedUnits} units)?
+                {editedHere && <span className="text-amber-700"> Your unsaved changes here aren&apos;t included.</span>}
+              </span>
+              <button type="button" disabled={shipping} onClick={ship}
+                className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50">
+                {shipping ? 'Shipping…' : 'Yes, shipped'}
+              </button>
+              <button type="button" disabled={shipping} onClick={() => setConfirmShip(false)}
+                className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={storedUnits === 0}
+              onClick={() => { setConfirmShip(true); setShipError(null); }}
+              title={storedUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment'}
+              className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <TruckIcon className="h-4 w-4" />
+              Mark shipped
+            </button>
+          )}
         </div>
+        {shipError && <div className="w-full text-sm text-red-700">{shipError}</div>}
       </div>
 
       <div className="grid gap-4 md:grid-cols-[220px_1fr]">
         {/* BOXES — pick the one you're filling. */}
         <div className="space-y-2">
-          {boxes.map((b) => {
+          {/* FIND — "which box is this SKU in?". Typing narrows the list to the boxes holding a match and names the matching codes under
+              each; click one to open it. Uppercased like the app's other find boxes (codes are uppercase); matching ignores case.
+              Its own input, NOT the scan box — a scan here would otherwise go into a box. */}
+          <div className="relative">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={find}
+              onChange={(e) => setFind(e.target.value.toUpperCase())}
+              placeholder="Find a SKU…"
+              aria-label="Find which box a SKU is in"
+              className="h-9 w-full rounded-md border border-slate-300 bg-white pl-8 pr-7 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            {find && (
+              <button type="button" onClick={() => setFind('')} aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400 hover:text-slate-700">×</button>
+            )}
+          </div>
+          {q && (
+            <div className="px-1 text-xs text-slate-500">
+              {hits.length === 0
+                ? 'Not in any box'
+                : `In ${hits.length} ${hits.length === 1 ? 'box' : 'boxes'} · ${hits.reduce((n, h) => n + h.lines.reduce((m, l) => m + l.qty, 0), 0)} units`}
+            </div>
+          )}
+          {(q ? hits.map((h) => h.box) : boxes).map((b) => {
             const on = b.id === active.id;
             const units = boxUnits(b);
+            const matched = q ? b.lines.filter(lineMatches) : [];
             return (
               <button
                 key={b.id}
                 type="button"
                 onClick={() => selectBox(b.id)}
-                className={'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left '
+                className={'flex w-full flex-wrap items-center gap-x-3 rounded-lg border px-3 py-2.5 text-left '
                   + (on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50')}
               >
                 <CubeIcon className={'h-5 w-5 ' + (on ? 'text-brand-600' : 'text-slate-400')} />
@@ -246,6 +360,16 @@ function Packing({ initial }: { initial: Box[] }) {
                   {units} {units === 1 ? 'unit' : 'units'}
                   {units > 0 && !dimsComplete(b.dims) && <span className="block text-xs text-amber-700">needs size</span>}
                 </span>
+                {matched.length > 0 && (
+                  <span className="mt-1.5 w-full space-y-0.5">
+                    {matched.map((l) => (
+                      <span key={l.code} className="flex justify-between gap-2 font-mono text-xs text-amber-900">
+                        <span className="truncate">{l.code}</span>
+                        <span className="tabular-nums">×{l.qty}</span>
+                      </span>
+                    ))}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -321,7 +445,7 @@ function Packing({ initial }: { initial: Box[] }) {
               </thead>
               <tbody>
                 {active.lines.map((l) => (
-                  <tr key={l.code} className="border-b border-slate-100 last:border-0">
+                  <tr key={l.code} className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : '')}>
                     <td className="px-4 py-2">
                       <div className="font-mono text-slate-900">{l.code}</div>
                       {l.title && <div className="text-xs text-slate-500">{l.title}</div>}
