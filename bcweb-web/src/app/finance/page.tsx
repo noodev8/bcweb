@@ -114,6 +114,34 @@ function downloadCsv(name: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Save a file the operator dropped, byte for byte — the accountant gets Amazon's original, not a rebuild of it. */
+function downloadFile(name: string, file: Blob) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** '2026-06' -> 'JUN-2026'. The chosen month, never today's: June is closed in July. */
+function fileStamp(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!m) return month;
+  const names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  return `${names[Number(m[2]) - 1]}-${m[1]}`;
+}
+
+// The accountant's filing names (owner, 2026-10-01). The QuickFile imports keep their plain names — they go into QuickFile, not the
+// year-end folder.
+const shopifyTxName = (month: string) => `Shopify Transaction-${fileStamp(month)}.csv`;
+const amazonSalesName = (month: string) => `AMAZON-Sales-${fileStamp(month)}.csv`;
+function filedName(name: string, month: string): string {
+  return name === 'kidsvatcharged.csv' ? `kidsvatcharged-${fileStamp(month)}.csv` : name;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Small presentational pieces
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -332,10 +360,19 @@ export default function FinancePage() {
       setError(res.error || 'Could not build the files');
       return;
     }
-    setGenerated(res.data.files);
+    const named = res.data.files.map((f) => ({ ...f, name: filedName(f.name, month) }));
+    setGenerated(named);
     // Everything saves at once — Calculate is the one button (owner, 2026-10-01). The browser may ask once to allow multiple downloads.
-    for (const f of res.data.files) downloadCsv(f.name, f.csv);
-    if (result.shopify?.csv) downloadCsv('Shopify Transaction.csv', result.shopify.csv as string);
+    for (const f of named) downloadCsv(f.name, f.csv);
+    if (result.shopify?.csv) downloadCsv(shopifyTxName(month), result.shopify.csv as string);
+    const amzFile = amazonSource(result);
+    if (amzFile) downloadFile(amazonSalesName(month), amzFile);
+  }
+
+  /** The dropped file the server recognised as Amazon's (it reports the filename back), or null if none was. */
+  function amazonSource(result: FinanceMonth | null): File | null {
+    const name = result?.amazon?.present ? result.amazon.filename : undefined;
+    return (name && files.find((f) => f.name === name)) || null;
   }
 
   const amz = result?.amazon;
@@ -738,7 +775,7 @@ export default function FinancePage() {
                   <>
                   <p className="text-xs font-medium text-slate-600">SKUs with no matching product — VAT assumed standard</p>
                   <ul className="mt-1.5 space-y-1">
-                    {amz.unmatched.map((u) => (
+                    {amz.unmatched?.map((u) => (
                       <li key={u.sku} className="text-xs text-slate-500">
                         <span className="font-mono">{u.sku}</span>
                         {u.description ? ` — ${u.description}` : ''} · {money(u.value)}
@@ -802,12 +839,28 @@ export default function FinancePage() {
                   <li className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
                     <DocumentTextIcon className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="flex-1 text-sm text-slate-700">
-                      Shopify Transaction.csv
+                      {shopifyTxName(month)}
                       <span className="ml-2 text-xs text-slate-400">{shop.rowCount} rows</span>
                     </span>
                     <button
                       type="button"
-                      onClick={() => downloadCsv('Shopify Transaction.csv', shop.csv as string)}
+                      onClick={() => downloadCsv(shopifyTxName(month), shop.csv as string)}
+                      className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </li>
+                )}
+
+                {/* Amazon's own download, saved under the filing name. Nothing generated - the file as Amazon wrote it. */}
+                {amazonSource(result) && (
+                  <li className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                    <DocumentTextIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="flex-1 text-sm text-slate-700">{amazonSalesName(month)}</span>
+                    <button
+                      type="button"
+                      onClick={() => { const f = amazonSource(result); if (f) downloadFile(amazonSalesName(month), f); }}
                       className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       <ArrowDownTrayIcon className="h-3.5 w-3.5" />
@@ -817,8 +870,8 @@ export default function FinancePage() {
                 )}
               </ul>
               <p className="mt-3 text-xs text-slate-500">
-                Import both QuickFile files under Account Settings → Import Data. Keep kidsvatcharged.csv with the month&apos;s other
-                documents for the year end.
+                Import both QuickFile files under Account Settings → Import Data. Keep the kidsvatcharged, Shopify Transaction and
+                AMAZON-Sales files with the month&apos;s other documents for the accountant.
               </p>
             </div>
           )}
