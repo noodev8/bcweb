@@ -34,10 +34,11 @@ limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks.
 the Birkenstock carton's sides (BIRK_BOX — weight left blank, it depends on the contents), and "Set" takes typed values, applies them to
 the open box and remembers them in this browser so the next Set opens pre-filled.
 
-AMAZON FILE (owner, 2026-09-28). "Amazon file" downloads the box-contents file uploaded to Seller Central — every box, what's in it (as
-Amazon SKUs) and its measurements. Layout only for now: the button is placed and says why it can't be used yet. It needs at least one
-packed box and every packed box measured; building the file itself needs the back end (a scan has to become an Amazon SKU) and the
-Seller Central template's exact format.
+SHIPPING PLAN (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
+Downloads Amazon-ShippingPlan.txt, the Seller Central shipping-plan upload, in the legacy app's exact layout: the template's header block,
+then "Merchant SKU<TAB>Quantity", one line per Amazon SKU totalled across every box, CRLF line ends. Built here from the STORED boxes (as
+Mark shipped is) because only a stored line carries its Amazon SKU — a scan made on this screen is just the raw code. No measurements in
+this file, so it doesn't wait for them.
 =======================================================================================================================================
 */
 
@@ -100,6 +101,32 @@ function dimsWarning(d: BoxDims): string | null {
   if (over.length) parts.push(`${over.join(' / ')} over ${MAX_SIDE_CM} cm`);
   if (heavy) parts.push(`over ${MAX_WEIGHT_KG} kg`);
   return parts.length ? `Over Amazon's standard box limit: ${parts.join(', ')}.` : null;
+}
+
+// SHIPPING PLAN — the legacy Amazon-ShippingPlan.txt byte for byte in layout (see the header): the template's preamble, then one
+// "SKU<TAB>qty" line per Amazon SKU summed over all boxes, in first-seen order (box, then code). Every stored line has a sku on live data;
+// a blank one is skipped rather than sent as an empty SKU.
+function downloadShippingPlan(boxes: Box[]) {
+  const totals = new Map<string, number>();
+  for (const b of boxes) for (const l of b.lines) {
+    const sku = (l.sku || '').trim();
+    if (sku) totals.set(sku, (totals.get(sku) || 0) + l.qty);
+  }
+  const lines = [
+    'Please review the Example tab before you complete this sheet\t', '\t',
+    'Default prep owner\tSeller', 'Default labeling owner\tSeller', '\t', '\t', '\t',
+    'Merchant SKU\tQuantity',
+    ...[...totals].map(([sku, qty]) => `${sku}\t${qty}`),
+  ];
+  const blob = new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Amazon-ShippingPlan.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // Loads the packed boxes, then hands them to Packing as its starting state (so Packing's useState seeds from real data, no effect).
@@ -198,10 +225,6 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   // Packed boxes still missing a measurement — the summary counts them, the list flags each.
   const needSize = boxes.filter((b) => boxUnits(b) > 0 && !dimsComplete(b.dims)).length;
   const warning = dimsWarning(active.dims);
-  // Why the Amazon file can't be had yet, in the order you'd fix it — the button's tooltip and the line under it. See AMAZON FILE.
-  const fileBlocker = totalUnits === 0 ? 'Scan some shoes into a box first'
-    : needSize > 0 ? `Measure ${needSize} more ${needSize === 1 ? 'box' : 'boxes'} first`
-    : 'Coming with the back end';
   const refocus = () => scanRef.current?.focus();
 
   function addTo(boxId: number, code: string, delta: number) {
@@ -319,15 +342,16 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
           <span className="text-xs text-slate-400">Loaded from the database — changes here aren&apos;t saved yet</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-xs text-slate-400 sm:inline">{fileBlocker}</span>
           <button
             type="button"
-            disabled
-            title={fileBlocker}
+            disabled={storedUnits === 0}
+            onClick={() => downloadShippingPlan(initial)}
+            title={storedUnits === 0 ? 'No packed boxes yet' : `Amazon shipping plan: ${storedUnits} units across ${storedBoxes} ${storedBoxes === 1 ? 'box' : 'boxes'}`
+              + (editedHere ? ' — your unsaved changes here aren’t included' : '')}
             className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
           >
             <ArrowDownTrayIcon className="h-4 w-4" />
-            Amazon file
+            Shipping plan
           </button>
           {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
               Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. */}
