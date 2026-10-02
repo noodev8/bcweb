@@ -28,10 +28,8 @@ buttons until a groupid is selected, or wait for a double click" — both, as it
     position, not the selection - so arrowing on from a cleared row carries on from the right place.
   - ONE CLICK selects. That lights the hand-off cards, which is the common case: most visits end by leaving for another module, not
     by opening the sizes.
-  - DOUBLE-CLICK or Enter drills to the sizes. Double-click is what the owner asked for and what the legacy grid did, Enter is what
-    every other list on this platform does (useListCursor). The row's tooltip says so. There used to be a visible › button per row as
-    a third way in; the owner had it removed (2026-10-02) - the sticky hand-off bar below is the visible thing a click leads to.
-  The first click of a double-click selects, which is harmless — the row it selects is the row about to open.
+  - ENTER drills to the sizes, as on every other list on this platform (useListCursor). Double-click and a per-row › button used to
+    do the same; the owner had both removed (2026-10-02) - a click selects, and the sticky hand-off bar below is what it leads to.
   THE HAND-OFF BAR IS STICKY (owner, 2026-10-02: "I'm further down the list, click and then don't know what to do so I scroll up to
   see the menu"). It pins to the top of the viewport and names the selected product, so a click deep in a long list shows its
   options right where you are.
@@ -516,7 +514,7 @@ function ProductHubContent() {
             <>
               <span className="font-mono text-slate-700">{selectedRow.groupid}</span>
               {selectedRow.title && <span className="text-slate-700"> - {selectedRow.title}</span>}
-              <span className="text-slate-400"> · pick where to go, or double-click the row for its sizes</span>
+              <span className="text-slate-400"> · pick where to go</span>
             </>
           ) : (
             'Click a product to choose what to do with it'
@@ -558,8 +556,7 @@ function ProductHubContent() {
                       key={r.groupid}
                       ref={cursor.itemRef(r.groupid)}
                       onClick={() => { setSelected((cur) => (cur === r.groupid ? null : r.groupid)); cursor.setCursor(r.groupid); }}
-                      onDoubleClick={() => drill(r.groupid)}
-                      title="Click to select · double-click to open the sizes"
+                      title="Click to select · Enter opens the sizes"
                       className={'cursor-pointer scroll-mt-36 ' + (isSel ? 'bg-brand-50' : 'hover:bg-slate-50')}
                     >
                       {/* Intrinsic size is unknown (legacy image library), so next/image gets a fixed box and object-contain
