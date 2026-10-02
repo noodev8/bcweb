@@ -34,6 +34,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - Birkenstock can't be re-ordered. The job is maximum margin from the stock we already hold.
 - Never price below cost (the server blocks it). Going above RRP is allowed but gets flagged.
 - Shopify and Amazon prices are independent. Amazon's price is shown for context, never matched.
+- Re-orderable? (owner, 2026-10-02) Birkenstock: never. Other brands (e.g. Rieker): usually in season, but some sell out at the supplier. Check the "Can't get" flag: `skusummary.no_supply_until > CURRENT_DATE` means staff have marked that we can't get more, so harvest it like a Birkenstock. Unmarked non-Birkenstock = treat as re-orderable (owner: the flag is kept up to date as orders are placed; no extra logic needed).
 - _(add as we go)_
 
 ## Instructions (how Claude should work)
@@ -98,6 +99,16 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-10-02 | 1025046-ARIZONA (Birko-Flor Vegan Pecan Narrow) | 65 → 72 (raise) | 150d (1 Mar 2027) | £72 sold 8 in 2025 (~3.5/mo peak); Andreas: stopped above 72. 2026 at £68.01 sold SLOWER (~1.6/mo), so lower bought nothing; Sep cuts to 65 in the lull. 11 left. | _pending_ |
 | 2026-10-02 | 1031458-ARIZONA (Birko-Flor Basalt Grey Regular) | 74.99 → 74.99 (hold) | 150d (1 Mar 2027) | £69.99 sold 11 Jun-Jul (fast); £73.99-75.99 sold 4, 1 returned (slow, +£3.30/pair). Broken (39/42 gone), 10 left: take the margin. | _pending_ |
 | 2026-10-02 | 1029492-SYDNEY (White Narrow) | 79.99 → 79.99 (hold) | 150d (1 Mar 2027) | Walked 110 → 79.99, 0 on Shopify (1 Amazon); already £10 under regular Sydneys. Pair with Black Narrow at 88.99 as the spring width-vs-price test. | _pending_ |
+| 2026-10-02 | 25511-41-022 (Caprice knee high boot Black Nappa) | 130 → 130 (hold) | 30d (1 Nov 2026) | Winter, in season, re-orderable. Listed 16 Sep; sold 1 at RRP (£41.56). Summer cut to 115, Andreas back to RRP. | _pending_ |
+| 2026-10-02 | 25547-41-306 (Caprice Cafe stretch boot Brown) | 85 → 85 (hold) | 30d (1 Nov 2026) | Winter, in season, re-orderable. Listed 15 Sep; sold 1 at £80, Summer back to RRP £85. | _pending_ |
+| 2026-10-02 | M710AP (Goor patent tuxedo shoe, men's) | 40 → 40 (hold) | 30d (1 Nov 2026) | Any, re-orderable. Autumn peak: sold 26 at £40 RRP Oct-Dec 2024 (£9.54/pair); £28 sold 33 in summer 2024 at £1.50. Sizes 10/11 gone: worth a re-order look. | _pending_ |
+| 2026-10-02 | M620A (Scimitar cadet oxford, men's) | 36 → 36 (hold) | 60d (1 Dec 2026) | Any, re-orderable. ~1/mo at £36 RRP for 18 months (£7.72/pair); £28.80 sold faster in 2024 at £2.90. | _pending_ |
+| 2026-10-02 | 1029356-SYDNEY (Taupe Regular) | 89.99 → 95 (raise, harvest) | 150d (1 Mar 2027) | Sold at 110, 90, 89.99. Regular Sydneys sell 90-95, 110 sold twice. Broken (35/39 gone), 9 left. Matches Metallic Black at 95. | _pending_ |
+| 2026-10-02 | 1032019-ARIZONA (Grey Taupe Regular) | 75 → 85 (raise to RRP, harvest) | 150d (1 Mar 2027) | Sold 3 at £85 Jun-Jul, then 8 at 75-76.50 after a cut. Badly broken (37/40/41/42 only), 8 left. £23.51/pair vs £16.80. | _pending_ |
+| 2026-10-02 | 1001498-ARIZONA (EVA Anthracite Narrow) | 37 → 39 (raise, harvest) | 150d (1 Mar 2027) | Cost £20.83; all Shopify sales at £31-36 for £0.53-2.82/pair. Broken (38/39/41 gone), 8 left. Small step: nothing above 37 proven. | _pending_ |
+| 2026-10-02 | 1016145-GIZEH (Taupe Narrow) | 75 → 75 (hold) | 150d (1 Mar 2027) | Sold 6 at 71.50-73 Jul-Sep (1 returned); Summer up to 75 in the lull. Broken (39/41 gone), 7 left. | _pending_ |
+| 2026-10-02 | 65918-52 (Rieker elasticated sandal Green) | 48 → 48 (hold) | 150d (1 Mar 2027) | Summer, out of season, re-orderable, lead channel BOTH (Amazon 7 vs Shopify 3 in 2026). Shopify: £40 sold 2 at £1.28, £48 sold 1 at £6.64. | _pending_ |
+| 2026-10-02 | JLY219-BRONWYN-BK (Lunar Bronwyn T-bar Black) | 15 → 25 (raise) | 150d (1 Mar 2027) | £15 = -£3.05/pair (cost 10.99) and still only 2 sold in 8 months. Sold at 24.74 (£3.47) and 29.71 (£6.81) before. Break-even ~£20. | _pending_ |
 
 ## Change log of this playbook
 
@@ -113,3 +124,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: first batch (3 EVA styles); season-check and batch instructions.
 - 2026-10-02: batch 2 (5 styles); minimal notes, no dates in notes; season value is Any, not ALL.
 - 2026-10-02: batch 3 (10 styles); sister-style, cross-year pace and lull-cut learnings.
+- 2026-10-02: batch 4 (10 styles, first non-Birkenstock); re-order rule (Can't get flag).
