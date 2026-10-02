@@ -37,6 +37,7 @@ browser; when that cap bites the page says so.
 */
 
 import { Suspense, useMemo, useState } from 'react';
+import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ShoppingBagIcon } from '@heroicons/react/24/outline';
@@ -218,7 +219,7 @@ function SegmentContent() {
   function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
-    return `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    return `/pricing/${encodeURIComponent(segment)}?${byParam}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
   }
 
   function openStyle(groupid: string) {
@@ -410,11 +411,21 @@ function SegmentContent() {
 // One table for every view with the SAME columns in all three — Selling, Stuck and Both use the Selling layout so nothing moves when
 // you flip tabs (owner, 2026-09-23). A Stuck style's Units 30d is 0 by definition, shown as 0 rather than hidden. table-fixed + a
 // colgroup pins the widths.
-function ListTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
+function ListTable({ rows: listRows, onOpen, selected, onToggle, onToggleAll }: {
   rows: ListRow[];
   onOpen: (g: string) => void;
   selected: Set<string>; onToggle: (g: string) => void; onToggleAll: (ids: string[], checked: boolean) => void;
 }) {
+  // Click a header to sort (components/SortableTh). Review: Due rows first, then by review date.
+  const { sorted: rows, sort, onSort } = useTableSort(listRows, {
+    units: (r: ListRow) => r.units,
+    groupid: (r: ListRow) => r.groupid,
+    brand: (r: ListRow) => r.brand,
+    price: (r: ListRow) => r.price,
+    stock: (r: ListRow) => r.stock,
+    review: (r: ListRow) => (r.parked ? r.next_review : '0000'),
+  });
+  const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -441,12 +452,12 @@ function ListTable({ rows, onOpen, selected, onToggle, onToggleAll }: {
               />
             </th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium" title="Units sold, last 30 days">Sold</th>
-            <th className="px-4 py-2 font-medium">Groupid</th>
-            <th className="px-4 py-2 font-medium">Brand</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium">Stock</th>
-            <th className="px-4 py-2 font-medium">Review</th>
+            <SortableTh {...th} sortKey="units" label="Sold" title="Units sold, last 30 days" />
+            <SortableTh {...th} sortKey="groupid" label="Groupid" firstDir="asc" />
+            <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
+            <SortableTh {...th} sortKey="price" label="Price" align="right" />
+            <SortableTh {...th} sortKey="stock" label="Stock" align="right" />
+            <SortableTh {...th} sortKey="review" label="Review" firstDir="asc" />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

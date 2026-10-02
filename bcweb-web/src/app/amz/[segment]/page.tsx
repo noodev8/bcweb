@@ -35,6 +35,7 @@ the upload basket shows a "queued" badge.
 */
 
 import { Suspense, useMemo, useState } from 'react';
+import { SortableTh, useTableSort } from '@/components/SortableTh';
 import Link from 'next/link';
 import { ShoppingBagIcon } from '@heroicons/react/24/outline';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
@@ -216,7 +217,7 @@ function SegmentContent() {
   function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
-    return `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${ctx}`;
+    return `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
   }
 
   function openSku(code: string) {
@@ -444,11 +445,22 @@ function SegmentContent() {
 // One table for every view — the Amazon twin of the Shopify ListTable, with the SAME columns in all three: Selling, Stuck and Both use
 // the Selling layout so nothing moves when you flip tabs (owner, 2026-09-23). A Stuck SKU's Units 30d / 7d are 0 by definition, shown as 0 rather than hidden. A SKU already in the upload basket carries a
 // "queued" pill so it isn't re-touched mid-sitting.
-function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
+function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggleAll }: {
   rows: ListRow[]; queued: Record<string, unknown>;
   onOpen: (c: string) => void;
   selected: Set<string>; onToggle: (c: string) => void; onToggleAll: (codes: string[], checked: boolean) => void;
 }) {
+  // Click a header to sort (components/SortableTh). Review: Due rows first, then by review date.
+  const { sorted: rows, sort, onSort } = useTableSort(listRows, {
+    units: (r: ListRow) => r.units,
+    u7: (r: ListRow) => r.u7,
+    code: (r: ListRow) => r.code,
+    brand: (r: ListRow) => r.brand,
+    price: (r: ListRow) => r.price,
+    fba: (r: ListRow) => r.fba,
+    review: (r: ListRow) => (r.parked ? r.next_review : '0000'),
+  });
+  const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -476,13 +488,13 @@ function ListTable({ rows, queued, onOpen, selected, onToggle, onToggleAll }: {
               />
             </th>
             <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 30 days">Sold</th>
-            <th className="px-4 py-2 text-right font-medium" title="Units sold, last 7 days">7d</th>
-            <th className="px-4 py-2 font-medium" title="Our code (skumap.code), not the Amazon SKU — size is the last two digits">Code</th>
-            <th className="px-4 py-2 font-medium">Brand</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium" title="FBA sellable stock">FBA</th>
-            <th className="px-4 py-2 font-medium">Review</th>
+            <SortableTh {...th} sortKey="units" label="Sold" align="right" title="Units sold, last 30 days" />
+            <SortableTh {...th} sortKey="u7" label="7d" align="right" title="Units sold, last 7 days" />
+            <SortableTh {...th} sortKey="code" label="Code" firstDir="asc" title="Our code (skumap.code), not the Amazon SKU — size is the last two digits" />
+            <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
+            <SortableTh {...th} sortKey="price" label="Price" align="right" />
+            <SortableTh {...th} sortKey="fba" label="FBA" align="right" title="FBA sellable stock" />
+            <SortableTh {...th} sortKey="review" label="Review" firstDir="asc" />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
