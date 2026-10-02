@@ -113,36 +113,44 @@ So the seasonal pivot is right and the target is wrong. **The winter campaign sh
 slippers and the winter-surviving sandals/trainers, not a boot push.** Boots are a 15-style, thin-stock
 corner that has never earned advertising here.
 
-**Restart bidding — a LEANING, not a decision (owner, 2026-09-09).** The relaunched campaign will
-*probably* open on **Maximise conversion value** rather than Maximise clicks, on the reasoning that the
-account carries enough conversion history to bid on. **The owner has explicitly reserved the right to
-change their mind, so do not treat this as settled and do not build anything that assumes it.** If the
-campaign comes back on a different strategy, that is a change of plan, not a mistake to flag.
+**Restart bidding — settled (owner, as at 2026-10-02).** Every campaign runs on **Maximise conversion
+value with NO target ROAS**. With no target, the **daily budget is the lever**: Google spends roughly
+the budget and buys the best value it can for it, so a smaller budget means only the best auctions.
+(It was a leaning on 2026-09-09; the owner can still change it — if so, that is a change of plan, not a
+mistake to flag.)
 
 ---
 
 ## The shape of it
 
-Three buckets, one lifecycle:
+Two buckets plus spin-offs, one lifecycle:
 
 ```
    product-create.js
           |
           v
-       [ new ] --- proven (>= £50 spent, Kept >= 0, shelf ok) ---> [ standard ]
-          |                                                          |    ^
-          |                                                          |    |
-          '------------- didn't work ---------> [ pause ] <-- 2a/2b -'    |
-                                                    |                     |
-                                                    '----- Rule 3 --------'
+     [ standard ] ---- proven line, own job ----> [ spin-off, e.g. ZERMATT ]
+          |    ^                                          |
+    2a/2b |    | Rule 3                                   | job done, or Kept < 0
+          v    |                                          v
+       [ pause ] <------------------------------- back to standard or pause
 ```
 
-`standard` is the only campaign that is trying to make money. `new` buys data (Rule 4). `pause` is
-excluded from Google entirely. **Not** a set of margin-segmented campaigns — see "Why not segment".
+`standard` is both the **intake** and the main money campaign: every new style starts there (Rule 4 —
+there is no `new` bucket any more) and is moved once it has data. `pause` is excluded from Google
+entirely. **Not** a set of margin-segmented campaigns — see "Why not segment".
 
-**Ad-hoc spin-off campaigns happen** — a product line pulled out into its own bucket and campaign to test
-an opportunity (e.g. IVES once its Amazon-matched price moved break-even from 7.4x to ~5x). Always MOVE
-the bucket, never duplicate: a style in two campaigns bids against itself in the same auction.
+**Spin-off campaigns happen** — a proven line pulled out into its own bucket and campaign because it has
+a job of its own. **ZERMATT** (autumn 2026) is the model: a winter winner with deep stock to clear and
+enough sales for Maximise conversion value to learn from. IVES, BIRK-WINNER and RIEKER-WIN are the
+counter-examples: too few conversions, so the campaign never learned. Before starting one, decide what
+"worked" means and when it folds back.
+
+**Split for a job, not a brand.** Google does not bid by brand: Shopping matches products to what people
+search for, and learns from clicks and conversions. A campaign only ring-fences budget and learning. That
+ZERMATT happens to be one brand is incidental — it is split out because it is a winner with stock to clear.
+
+Always MOVE the bucket, never duplicate: a style in two campaigns bids against itself in the same auction.
 
 Everything is read on the **90-day window** of the Google Ads screen. 30 days is too noisy at this
 volume; every threshold here was measured on 90.
@@ -248,60 +256,23 @@ they still mean something with no traffic running. That is the whole reason the 
 
 Same symptom, opposite causes, opposite fixes.
 
-## Rule 4 — NEW (the intake)
+## Rule 4 — new products go straight into `standard`
 
-`routes/product-create.js` seeds **`new`** on every style it creates. It is a TRANSIT bucket, not a home:
-without an exit rule products rot in it. Before this was set up, the five styles sitting in `new` had
-taken **7 clicks and £1.48 in 90 days** — effectively invisible, because `standard`'s campaign does not
-include the label.
+> **NEW is gone (owner, 2026-09-19).** `routes/product-create.js` seeds **`standard`** on every style it
+> creates. There is no `new` bucket and no intake campaign. Don't rebuild one.
 
-### It needs its own Google campaign
-
-| Setting | Value | Why |
-|---|---|---|
-| Bid strategy | **Maximise clicks**, max CPC ~£0.50 | See below. NOT max conversion value. |
-| Budget | **shared daily**, see formula | One campaign budget, not per product. |
-| Scope | `custom_label_0 = new` | |
-
-> **daily budget = (styles in `new` × £50) ÷ 56 days**
-
-5 styles → **£5/day**; 30 styles → **£27/day**. The £50 comes from what it costs to LEARN about one
-style: at £0.429 CPC and 4.65% conversion, 100 clicks ≈ £43 ≈ 5 conversions, which is enough to form a
-view — and it lines up with Rule 2a's £50 floor, so "judgeable" means the same thing everywhere.
-
-**NOT max conversion value** (the first instinct, and wrong here). It predicts conversions from history,
-and a cold campaign has none — it will either not spend or spend erratically, and you will lose weeks not
-knowing which. This campaign's job is to buy INFORMATION, and maximise clicks buys the most samples per
-pound. Profit-seeking is `standard`'s job; a style inherits that target when it graduates.
-
-### Exit rule
-
-> **At £50 of spend, judge it on the normal rules:**
-> - **Kept ≥ 0 AND not a thin shelf** → `standard`
-> - otherwise → `pause`
+A new style runs in `standard` with the rest of the book, on Maximise conversion value, and is judged on
+the normal rules once it has data: at £50 of spend, Rule 2a/2b decide whether it stays or goes to `pause`;
+a proven line with a job of its own can become a spin-off.
 
 **A style that cannot reach £50 in 90 days is NOT a failed product.** It means Google is declining to show
-it — a feed or price fault (missing `skumap.uksize`, weak title, priced far off market). Investigate it;
-do not bucket it. Bucketing it records a verdict that was never actually reached.
+it — a feed or price fault (missing `skumap.uksize`, weak title, priced far off market), or simply that
+Maximise conversion value leans on history and puts its spend on proven sellers first. Investigate it; do
+not bucket it. Bucketing it records a verdict that was never actually reached.
 
-### Two things about a shared budget
-
-**It is not an even split.** Google spends where the auction takes it, so "£50 each" is an average, not an
-allocation. The first five in `new` went 3 / 2 / 2 / 0 / 0 clicks — two got nothing at all. Check the
-zero-click stragglers as the feed problem above rather than waiting on them.
-
-**Admit them in batches when intake spikes**, because intake is violently seasonal:
-
-| | Mar | May | Jun | Jul | Aug | Sep |
-|---|---|---|---|---|---|---|
-| new styles (2026) | 22 | 15 | **30** | 22 | 3 | 3 |
-
-Thirty products on one budget means each gets a thirtieth of the attention, none reach £50 for months, and
-Google concentrates spend on a handful anyway — so you would learn about 5 and nothing about 25. Run 8–10
-at a time and hold the rest, or raise the budget to match. Drip-feeding is cheaper.
-
-⚠ **Re-check the budget against intake every spring.** At £5/day a June cohort of 30 takes 300 days to
-become judgeable and would still be sitting there the following summer. Nothing will warn you.
+*What was retired:* a `new` bucket with its own Maximise-clicks campaign and a budget formula
+(styles × £50 ÷ 56 days), meant to buy data on unproven styles before they graduated to `standard`. It
+never ran as designed. Full detail is in git history if it is ever wanted again.
 
 ---
 
@@ -356,17 +327,21 @@ Considered and rejected 2026-09-07, on the data:
 
 Revisit if lost-to-budget ever climbs off zero. That is the signal that changes the answer.
 
-**`new` (Rule 4) is not an exception to this.** Segmenting `standard` by margin band would be the SAME job
-— make profit — divided across campaigns, which loses data and gains nothing when there is no budget to
-reallocate. `new` does a DIFFERENT job: spending deliberately at a loss to buy data. One campaign cannot
-hold both a profit target and a discovery budget — an 850% target starves every unproven style before it
-gets a sample. Different purpose, not the same purpose subdivided. That is the test for any future split.
+**Spin-offs pass this test; margin tiers don't.** Segmenting `standard` by margin band would be the SAME
+job — make profit — divided across campaigns, which loses data and gains nothing when there is no budget
+to reallocate. With no target ROAS it is worse still: every tier would bid the same way. A spin-off like
+ZERMATT does a DIFFERENT job — ring-fenced budget for a winning line that has stock to clear. Different
+purpose, not the same purpose subdivided. That is the test for any future split.
 
 ---
 
 ## The thing that matters more than any of this
 
 **The campaign target.**
+
+> *As at 2026-10-02 there is no target: campaigns run on Maximise conversion value without one, so the
+> daily budget plays the part the target plays below. The history still explains why spend has to be
+> held back.*
 
 | Month | Spend | ROAS delivered |
 |---|---|---|
