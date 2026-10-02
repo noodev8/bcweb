@@ -14,12 +14,17 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 
 ## Contents
 
+0. [Where this is heading](#where-this-is-heading)
 1. [How a session runs](#how-a-session-runs)
 2. [Rules (owner-set, authoritative)](#rules-owner-set-authoritative)
 3. [Instructions (how Claude should work)](#instructions-how-claude-should-work)
 4. [Learnings (dated, from results)](#learnings-dated-from-results)
 5. [Decisions log](#decisions-log)
 6. [Change log of this playbook](#change-log-of-this-playbook)
+
+## Where this is heading
+
+The owner's intention (2026-10-02): once comfortable, Claude reprices the whole due list in one run; batches with owner review are for when the owner wants to revisit the rules.
 
 ## How a session runs
 
@@ -47,6 +52,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - Every change carries a note saying why, so the result can be judged later.
 - Notes: 80 characters max, plain words, one clear reason (e.g. "Hold: season stall, not price. All Mayaris stopped mid-Sep."). The detail goes in the Decisions log, not the note (owner, 2026-09-29).
 - Note style (owner, 2026-09-30): write like Andreas and Summer do, short and plain, a glance-guide for the next person changing the price, not a technical record. Say what we did, why, and what to expect. Don't try to catch everything; the detail goes in the Decisions log. Examples: "Slow but steady at 55. Not the price, just quiet. Hold." / "Selling at 48" / "Move up, see if it keeps selling".
+- **New styles: hands off for 4 weeks** (owner, 2026-10-02). If a style was listed (`skusummary.created_at`) under 4 weeks ago, don't reprice it: record it unchanged (same-price apply, note "New, listed <date>.") with the review date set to the day it turns 4 weeks old. Why: in Sep 2026 new styles were cut weekly before they'd had a fair run (RAMSES £85 → £60 in 5 weeks; Arizona EVA Pink Clay £50 → £32 for a 14p profit; a Caprice boot cut after 6 days). Playbook only, no screen change.
 - Notes as minimal as possible (owner, 2026-10-02). Never put a check/judge date in a note ("judge in spring", "check Dec"): that's what the review date is for.
 - Notes are evidence for judging past moves (owner, 2026-09-29). When reviewing a style's history, read each change's note (ours and staff's) as the intent behind it, and judge what followed against that intent. Example: Summer's "trying to get moving" cut to £72 sold nothing in a week, so the cut didn't do what it was meant to. So write notes that can be checked later: say what you expect to happen, not only what you did.
 - Default review periods: raise 7d, cut 14d, hold 30d. Out of season, review just before the season returns instead (1 Mar for summer styles).
@@ -69,6 +75,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: Check sister styles (same model, other colour/width) before deciding. Regular Sydneys sell at ~£90 while both Narrows sold 0 at any price, which points at width, not price. Some codes are misfiled (1031689-ARIZONA is a Sydney): go by the title.
 - 2026-10-02: A lower price can sell SLOWER than a higher one a year earlier (1025046-ARIZONA: £72 ~3.5/mo in 2025, £68 ~1.6/mo in 2026). Compare pace at each price across years before assuming a cut helps.
 - 2026-10-02: Summer's September cuts on summer styles bought nothing, because the segment had stopped. Undoing them to a price that sold in season is a free harvest.
+- 2026-10-02: When the core sizes are gone, cuts don't sell the rest. Four Arizonas/Gizehs were cut 4-5 times in Aug-Sep with core sizes out and sold 0 at every step. Put them back to a price that sold.
 - 2026-09-30: The API isn't normally running in a Claude session. Apply through the real W1 route in-process (temp express app, JWT signed for claude_dev, POST body uses `newPrice` not `price`). Don't hand-write SQL for applies: W1 also pushes to Shopify.
 
 ## Decisions log
@@ -109,6 +116,21 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-10-02 | 1016145-GIZEH (Taupe Narrow) | 75 → 75 (hold) | 150d (1 Mar 2027) | Sold 6 at 71.50-73 Jul-Sep (1 returned); Summer up to 75 in the lull. Broken (39/41 gone), 7 left. | _pending_ |
 | 2026-10-02 | 65918-52 (Rieker elasticated sandal Green) | 48 → 48 (hold) | 150d (1 Mar 2027) | Summer, out of season, re-orderable, lead channel BOTH (Amazon 7 vs Shopify 3 in 2026). Shopify: £40 sold 2 at £1.28, £48 sold 1 at £6.64. | _pending_ |
 | 2026-10-02 | JLY219-BRONWYN-BK (Lunar Bronwyn T-bar Black) | 15 → 25 (raise) | 150d (1 Mar 2027) | £15 = -£3.05/pair (cost 10.99) and still only 2 sold in 8 months. Sold at 24.74 (£3.47) and 29.71 (£6.81) before. Break-even ~£20. | _pending_ |
+| 2026-10-02 | JLH587-JULES-BK (Lunar woven strap Black) | 30 → 30 (hold) | 150d (1 Mar 2027) | Summer, re-orderable. Sold 5 at £28-29; 0 at 30-31 (Aug-Sep). 7 left. | _pending_ |
+| 2026-10-02 | 0128221-GIZEH (EVA White Regular) | 34 → 39 (raise, harvest) | 150d (1 Mar 2027) | Only sizes 43-46 left (7). 2025: 15 sold at £40.87-45 incl. Oct/Nov. 2026 cut to 35 sold 18 at £3.88. Andreas 39, Summer walked back to 34. | _pending_ |
+| 2026-10-02 | 1030590-ARIZONA (Birko-Flor Concrete Grey Regular) | 70.49 → 70.49 (hold) | 150d (1 Mar 2027) | 17 sold at £66.99-70.99 Jun-Aug; £73.99 stalled in peak. Core 38-40 gone, 7 left. | _pending_ |
+| 2026-10-02 | 1015471-ARIZONA (EVA Betroot Purple Narrow) | 50 → 50 (hold) | 150d (1 Mar 2027) | Sold 5, all at RRP £50 (£12.21). 7 left. | _pending_ |
+| 2026-10-02 | JLD102-JADEN-NAVY (Lunar Jaden Navy) | 40 → 55 (raise) | 150d (1 Mar 2027) | Summer, re-orderable. £55 sold 1 in ~6-8wk (£13.33); £42 sold 2 in ~6wk (£4.62). Same pace, 3x margin at 55. Out of season. 6 left. | _pending_ |
+| 2026-10-02 | 40535-FRISCO-BLACK (Free Spirit Frisco Black) | 59.99 → 59.99 (hold) | 150d (1 Mar 2027) | Brand asked for RRP (Andreas). 0 Shopify, 2 Amazon. 6 left. | _pending_ |
+| 2026-10-02 | 1029463-SYDNEY (Graceful Pearl White Regular) | 91.50 → 95 (raise, harvest) | 150d (1 Mar 2027) | Sold 5 at ~£90. Broken (35/36/38/41 gone), 5 left. Regular Sydneys now 95; RRP 100. | _pending_ |
+| 2026-10-02 | 0147131-KAIRO (Mocca Regular) | 100 → 100 (hold) | 150d (1 Mar 2027) | Sold 7, all at RRP £100 (£28.35). 5 left. | _pending_ |
+| 2026-10-02 | 1031501-ARIZONA (Birko-Flor Sandcastle Narrow) | 64.99 → 69.99 (raise) | 150d (1 Mar 2027) | £66.99 sold 9 Jun-Jul; 0 since at 64.99-69.99 with only 36/40/41 left. Sister Concrete Grey sold 7 at 69.99. 4 left. | _pending_ |
+| 2026-10-02 | ELZ006-LAKE-OL (Lazy Dogz wellies Olive) | 44.50 → 44.50 (hold) | 30d (1 Nov 2026) | Any, re-orderable, Amazon-led (11 in 2026). Andreas priced above Amazon on purpose (returns). Wellies peaked Nov-Dec 2025. 4 left. | _pending_ |
+| 2026-10-02 | 1013075-GIZEH (Patent Sand Brown Regular) | 60 → 69.30 (raise) | 150d (1 Mar 2027) | 2025 £90 sold 6 (£25). Cut in 5 steps to £60: 1 sold at £5.02. £69.30 sold 8 this spring. Only 36 x1, 42 x3 left. | _pending_ |
+| 2026-10-02 | 1025062-GIZEH (Birkibuc Pecan Regular) | 80 → 80 (hold) | 60d (1 Dec 2026) | Season Any. Sold at £77-82 incl. Nov 2025; £90 sold 6 in 2025. 4 left. | _pending_ |
+| 2026-10-02 | 1031500-ARIZONA (Birko-Flor Basalt Grey Narrow) | 60 → 68.99 (raise) | 150d (1 Mar 2027) | £66.99-68.99 sold 8 Jun-Jul; Summer's cuts to 60 in Aug-Sep sold 0. 39 x2, 41 x2 left. | _pending_ |
+| 2026-10-02 | 0040303-MADRID (Patent Black Narrow) | 62 → 62 (hold) | 60d (1 Dec 2026) | Season Any. Sold 12 at ~57.50 in 2026 (£6.80), 2 at £64 Feb 2026. 0 at 62 since Aug (segment 16 → 0). 41/42 only, 4 left. | _pending_ |
+| 2026-10-02 | 1032070-ARIZONA (Birkibuc Grey Taupe Narrow) | 70 → 75 (raise) | 150d (1 Mar 2027) | £75 sold 7, £85 sold 1 Jun-Jul; walked 85 → 70 in Aug, 0 sold. 36/40/41/42, 4 left. Sister Regular now 85. | _pending_ |
 
 ## Change log of this playbook
 
@@ -125,3 +147,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: batch 2 (5 styles); minimal notes, no dates in notes; season value is Any, not ALL.
 - 2026-10-02: batch 3 (10 styles); sister-style, cross-year pace and lull-cut learnings.
 - 2026-10-02: batch 4 (10 styles, first non-Birkenstock); re-order rule (Can't get flag).
+- 2026-10-02: 4-week hands-off rule for new styles; batch 5 (15 styles); core-sizes learning; where-this-is-heading section.
