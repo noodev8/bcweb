@@ -42,6 +42,8 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 - Shopify and Amazon prices are independent. Amazon's price is shown for context, never matched.
 - Re-orderable? (2026-10-02) Birkenstock (title starts "Birkenstock"): never, ignore the flag. Other brands: re-orderable unless `skusummary.no_supply_until > CURRENT_DATE` (Can't get, set by staff as they order), in which case harvest like a Birkenstock. Don't bulk-mark Birkenstock: the flag hides styles from the order screens and lapses after 3 months.
 - **New styles: hands off for 4 weeks** (2026-10-02). Listed (`created_at`) under 4 weeks ago → don't reprice: same-price apply, note "New, listed <date>.", review date = the day it turns 4 weeks. Why: in Sep 2026 new styles were cut weekly before a fair run (RAMSES £85 → £60 in 5 weeks; Arizona EVA Pink Clay £50 → £32 for 14p profit; a Caprice boot cut after 6 days). Playbook only, no screen change.
+- Stock on order (owner, 2026-10-02): Birkenstock orders are in `birktracker` (one row per size; outstanding = `requested - arrived`; style = `code` minus the size suffix; `due` is the expected month). Other brands are in `orderstatus` (`shopifysku` → `skumap.code`; `ordertype` 2/3; `orderdate=''` to place, else on order). Check both before treating a style as "this is all we'll have", or when pricing an out-of-stock style.
+- Out-of-stock styles on a status list: if nothing is on order, reset clearance/loss prices to the last profitable price that sold (so returning stock isn't sold cheap), hold the rest, review 1 Mar (2026-10-02). Clearance handling in general is NOT settled: owner said it's more complex than first thought; don't build rules for it yet, and ask on any style noted as clearance.
 - A brand's own pricing request stands (e.g. Free Spirit asked for RRP).
 
 ## Instructions (how Claude should work)
@@ -73,6 +75,7 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 - A HOLD is a same-price apply with a note, not park-only, so it can be judged later. A same-price apply doesn't touch Shopify.
 - The API isn't normally running. Apply through the real W1 route in-process: temp express app mounting `routes/pricing-apply`, JWT signed for `claude_dev` (app_users id 9), body `{groupid, newPrice, reviewDays, note}`. Never hand-write SQL for applies: W1 also pushes to Shopify.
 - Test writes use BEGIN…ROLLBACK, so only real applies reach the log.
+- A style priced below cost can't be held through W1 (it blocks any price < cost, even unchanged). Use W2 `/pricing-park` (review date only) instead.
 - One playbook commit per batch, never pushed unless the owner asks.
 
 ## Learnings (from results)
@@ -88,5 +91,5 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 
 - 2026-09-28: created.
 - 2026-09-29/30: hold rule, note rules, mood, first learnings, in-process apply.
-- 2026-10-02: summary/contents; re-order rule; 4-week new-style rule; season values; batches; "where this is heading". 70 STEADY decisions across 7 batches.
+- 2026-10-02: summary/contents; re-order rule; 4-week new-style rule; season values; batches; "where this is heading". 94 STEADY decisions; first full due list cleared (incl. 22 out-of-stock).
 - 2026-10-02: decisions moved to `docs/claude-pricing-decisions.md` (search by style, never read whole); learnings merged from 14 to 6.

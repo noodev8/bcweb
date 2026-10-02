@@ -80,3 +80,27 @@ Add new rows at the bottom. Fill **Result** when the style comes back due (units
 | 2026-10-02 | 1030447-ARIZONA (EVA Taupe Regular) | 45 → 45 (hold) | 60d | Any. Sold at 45 in 2025; Summer back to 45. Last pair (46). | _pending_ |
 | 2026-10-02 | 0071063-MAYARI (Birko-Flor Nubuck Brown Narrow) | 75.50 → 75.50 (hold) | 150d | Sold 11 at £74-75.50. Last pair (38). | _pending_ |
 | 2026-10-02 | FLN038-ESTHER-BK (Lunar wedge Black) | 25 → 37 (raise to RRP) | 60d | Any, re-orderable. £37 sold 1 (£11.27), £25 sold 2 (£3.22). Last pair. | _pending_ |
+| 2026-10-02 | 1009921-ARIZONA (Graceful Pearl White Narrow) | 80 → 80 (hold) | 150d | Last pair (42). Summer set 80 with 1 left, never sold there; £72 sold 7 in 2025, £63.90 sold 16 in 2026 at £7.63. Holding untested in the lull is free. | _pending_ |
+| 2026-10-02 | 0151183-ARIZONA (Birkibuc Mocha Narrow) | 76.50 → 76.50 (hold) | 150d | Last pair (40). Sold 14 at £72-77. | _pending_ |
+| 2026-10-02 | 1029737-FLORIDA (Papillio Black Narrow) | 41 → 57.60 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £41 = -£7.72; £48 sold 11 at a loss; £57.60 sold 5 in 2025 (+£3.41). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 232758-CCOR (Skechers trainer, men's) | 34.85 → 50 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). Re-orderable. £34.85 = -£4.76 (cost £29); £50 sold 1 (+£5.40). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 1022433-ARIZONA (EVA Gold) | 25.20 → 38 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). Andreas 'last one, get rid' at £25.20 (-£4.42). £38.01 sold (+£4.17). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | JLH478-EPSOM-NAVY (Lunar wedge) | 20 → 25 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £20 = -£0.54; £24.98 sold (+£2.80). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | JLH331-MARIELLA-BEIGE (Lunar) | 21.75 → 27.50 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £21.75 = £0.64; £27.43 sold 2 (£4.44). Amazon-led (12 in 2025). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 0051193-ARIZONA (Leather Black Narrow) | 57.51 → 68 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £57.51 = £1.61; £65-68 sold 8 (Any, sold through winter). Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 0040793-MADRID (Birko-Flor Black Narrow) | 48 → 60 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £48 = £2.18 (sold 15); £60-62 sold 9 at ~£11. Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 1009920-ARIZONA (Graceful Pearl White Regular) | 60.25 → 73 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £60.25 = £5.18 (19 sold to shift stock); £73 sold 6 at £13.73. Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | M410B (Goor brogue Tan, men's) | 33.60 → 40 (reset to RRP) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £40 sold 28 (£9.54); £33.60 sold 1. Amazon 9 in 2026. Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 1027339-ARIZONA (White Eggshell Narrow) | 60 → 65 (reset) | 150d | OUT OF STOCK, nothing on order (birktracker/orderstatus). £65 sold 5 in 2025 (£10.10); £60 £6.75. Reset so it isn't sold cheap if stock returns. | _pending_ |
+| 2026-10-02 | 1026697-MAYARI | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 1022466-ARIZONA | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 0943873-GIZEH | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 0040733-MADRID | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 0129421-ARIZONA | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | JLH523-PARADISE-BK | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 0051101-ARIZONA | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 0071791-MAYARI | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | ELZ006-LAKE-PK | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 1030498-ARIZONA | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | NICE-LATTE | hold | 150d | OUT OF STOCK, nothing on order. Already at a proven, profitable price. | _pending_ |
+| 2026-10-02 | 1029671-PASADENA (Birkenstock shoe Taupe) | 59 (park only) | 150d | OUT OF STOCK. Owner: keep low (Andreas's clearance, below cost £64.58). W1 blocks a same-price apply below cost, so parked via W2. | _pending_ |
