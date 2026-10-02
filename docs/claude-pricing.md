@@ -61,6 +61,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-09-30: A hold isn't always right for a stalled style. If the stall is the season, the price isn't costing sales, so a small step back UP to a price that has sold before costs little and harvests margin (owner's call on 1031695-SYDNEY: £90 → £95, which sold 3 in a week in July). Rule of thumb: on a slow, can't-reorder style with broken sizes, harvest rather than chase.
 - 2026-10-02: Pull a style's FULL sales history, not 12 months. On 1005294-ARIZONA, 12 months showed nothing above £73.44; 2024-25 showed ~8/mo at £72-73 and one sale at £85, which changed the call.
 - 2026-10-02: Out of season, set the review to just before the season returns (Arizona: 1 Mar), not 30d. A 30d review on a dead segment only brings it back to be held again.
+- 2026-10-02: Two styles in the same family can have different ceilings. Arizona Patent White Narrow sold ~8/mo at £72; Gizeh Black Narrow sold ~1 in 10 months at £72. Test a price per style, not per family.
 - 2026-09-30: The API isn't normally running in a Claude session. Apply through the real W1 route in-process (temp express app, JWT signed for claude_dev, POST body uses `newPrice` not `price`). Don't hand-write SQL for applies: W1 also pushes to Shopify.
 
 ## Decisions log
@@ -72,6 +73,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-09-30 | 1014932-ZERMATT | 55 → 55 (hold) | 30d (30 Oct) | ~1 a month at £52.50-£55, no price signal either way, Sept lull. 15 left (35-41). £12/pair margin, so a cut costs a lot for no visible gain. | _pending_ |
 | 2026-09-30 | 1031695-SYDNEY | 90 → 95 (raise, harvest) | 14d (14 Oct) | Owner: small rise to harvest. £95 sold 3 in a week in July; nothing moved 97→90 through the lull, so £90 buys no speed. 7 left, broken sizes, £5/pair extra. Judge: units and profit/wk 14 Oct vs the ~1/month before. | _pending_ |
 | 2026-10-02 | 1005294-ARIZONA (Patent White Narrow) | 69 → 90 (raise to RRP, harvest) | 150d (1 Mar 2027) | Owner mood: push to RRP. Overbought (41 left, all sizes), not a price problem. Full history: £72-73.44 sold ~8/mo in summer 2025; £85 sold 1 (Aug 2024); £59 in 2026 sold 16 net at £4.35/pair, so margin given away. £90 untested. Segment sold 1 in Sept, so no signal until spring. Judge: Mar-Apr 2027 sales at £90 vs ~8/mo at £72-73. | _pending_ |
+| 2026-10-02 | 0043693-GIZEH (Birko-Flor Black Narrow) | 69.50 → 69.50 (hold) | 150d (1 Mar 2027) | Season stall (segment 70/mo Jun → 10 Sep, same as 2025). £72 tested fairly and failed: 1 sold Aug 2025-May 2026, incl. peak May. Best at £67-69.50 (5 in Aug). 40 left, all sizes; in-season pace clears ~25-30, so spring may need a small cut, not a raise. | _pending_ |
 
 ## Change log of this playbook
 
@@ -83,3 +85,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-09-30: SYDNEY raise (harvest); owner MOOD section; review length is a default; harvest-vs-hold learning.
 - 2026-10-02: summary and contents at the top.
 - 2026-10-02: ARIZONA Patent raise to RRP; full-history and season-review learnings.
+- 2026-10-02: GIZEH Black Narrow hold to 1 Mar.
