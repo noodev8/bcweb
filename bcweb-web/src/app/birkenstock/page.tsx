@@ -283,8 +283,13 @@ const HEAD_RULE = 'shadow-[inset_0_-1px_0_0_theme(colors.slate.300)]';
 // `align` has to match the cells below it: a heading that centres itself over right-aligned figures reads as a different column from
 // the one it labels, which is exactly what went wrong with Sold 365 / Stock in the first cut (owner, 2026-09-04). The button is
 // `flex w-full` so the alignment applies to the button's own contents, not just to the th's inline box.
-function SortTh({ label, colKey, align = 'left', sortKey, sortDir, onSort }: {
+// Stock's right padding: a gutter between the last figure column and the size grid (owner, 2026-10-02), so the Stock total does not
+// read as part of the size run that starts beside it. Shared by the heading, the row cell and the planner's month total.
+const STOCK_PAD = 'pl-2 pr-5';
+
+function SortTh({ label, colKey, align = 'left', pad = 'px-2', sortKey, sortDir, onSort }: {
   label: string;
+  pad?: string;
   colKey: SortKey;
   align?: 'left' | 'right';
   sortKey: SortKey;
@@ -294,7 +299,7 @@ function SortTh({ label, colKey, align = 'left', sortKey, sortDir, onSort }: {
   const active = sortKey === colKey;
   const arrow = active ? 'text-slate-500' : 'text-transparent';
   return (
-    <th className={`sticky top-0 z-10 whitespace-nowrap bg-slate-100 px-2 py-2 text-xs font-semibold uppercase tracking-wide ${HEAD_RULE}`}>
+    <th className={`sticky top-0 z-10 whitespace-nowrap bg-slate-100 ${pad} py-2 text-xs font-semibold uppercase tracking-wide ${HEAD_RULE}`}>
       <button
         type="button"
         onClick={() => onSort(colKey)}
@@ -908,7 +913,7 @@ export default function BirkenstockPage() {
                   to be, on the one row of the grid that is repeated at the top of every screenful. */}
               <col className="w-[84px]" />
               <col className="w-[88px]" />
-              <col className="w-[72px]" />
+              <col className="w-[88px]" />
               {/* 30px, not 32: two digits at text-sm are ~17px, so 30 holds any quantity this grid can show with room either side,
                   and the 28px it gives back across fourteen columns goes to Style, which is the column that was truncating. */}
               {sizeCols.map((sz) => (
@@ -925,7 +930,7 @@ export default function BirkenstockPage() {
                 </th>
                 <SortTh label="Kept" colKey="gross" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 <SortTh label="Sold 365" colKey="sold365" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                <SortTh label="Stock" colKey="stock" align="right" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Stock" colKey="stock" align="right" pad={STOCK_PAD} sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                 {sizeCols.map((sz, i) => (
                   <th
                     key={sz}
@@ -1020,7 +1025,7 @@ export default function BirkenstockPage() {
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
                       <span className="inline-block px-1.5">{r.sold365 || ''}</span>
                     </td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-slate-800">
+                    <td className={`${STOCK_PAD} py-1.5 text-right font-semibold tabular-nums text-slate-800`}>
                       {/* THE RED IS A BLOCK AROUND THE NUMBER, NOT A FILLED COLUMN (owner, 2026-09-04). Filling the whole cell made
                           Stock read as a highlighted COLUMN running down the sheet — the eye followed the band instead of picking out
                           the handful of rows that are actually short. A tight block on the figure is what the legacy screen does, and
@@ -1077,7 +1082,7 @@ export default function BirkenstockPage() {
                           between what you have and what you will have. In FULL that seven is already inside the number above it, and
                           printing it again beneath invites it to be added twice. The per-size figures stay in both modes — they are
                           the month's SHAPE, which no single total can carry. */}
-                      <td className="px-2 py-1 text-right text-xs font-semibold tabular-nums text-slate-700">
+                      <td className={`${STOCK_PAD} py-1 text-right text-xs font-semibold tabular-nums text-slate-700`}>
                         {mode === 'live' && <span className="inline-block px-1.5">+{m.units}</span>}
                       </td>
                       {sizeCols.map((sz, i) => (
