@@ -198,6 +198,90 @@ function toQuery(c: Criteria): string {
   return qs.join('&');
 }
 
+// COLUMN SORT (owner, 2026-10-02 - "lets have some sorting on that page"). Click a header to sort by it; click the same header again
+// to reverse. Text columns start A->Z, number columns start biggest first (the question is usually "which have the most stock / sell
+// the most"). The default is the server's own order, Product A->Z, and is never written to the URL.
+// Amazon sorts on the LOW end of the spread - the cheapest size is the price a shopper sees first. A missing value (no Amazon row,
+// junk Shopify price, no title) always goes to the BOTTOM whichever way round, so a blank never heads the list.
+// Lives in the URL (?sort=&dir=) beside the filter for the same reason the filter does: a hand-off card's back link rebuilds it.
+type SortKey = 'groupid' | 'title' | 'stock' | 'amazon' | 'price' | 'sold30';
+interface Sort {
+  key: SortKey;
+  dir: 'asc' | 'desc';
+}
+const DEFAULT_SORT: Sort = { key: 'title', dir: 'asc' };
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
+  groupid: 'asc', title: 'asc', stock: 'desc', amazon: 'desc', price: 'desc', sold30: 'desc',
+};
+
+function sortValue(r: ProductOverviewRow, key: SortKey): string | number | null {
+  switch (key) {
+    case 'groupid': return r.groupid;
+    case 'title': return r.title || null;
+    case 'stock': return r.stock;
+    case 'amazon': return r.amz_low;
+    case 'price': return r.price;
+    case 'sold30': return r.sold30;
+  }
+}
+
+function sortRows(rows: ProductOverviewRow[], sort: Sort): ProductOverviewRow[] {
+  const dir = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = sortValue(a, sort.key);
+    const vb = sortValue(b, sort.key);
+    if (va === null || vb === null) {
+      if (va === vb) return a.groupid.localeCompare(b.groupid);
+      return va === null ? 1 : -1;
+    }
+    const d = typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), undefined, { numeric: true });
+    // Ties fall back to groupid so equal values (lots of 0 sold) keep a stable, readable order.
+    return d !== 0 ? d * dir : a.groupid.localeCompare(b.groupid);
+  });
+}
+
+function sortFromQuery(sp: URLSearchParams): Sort {
+  const key = sp.get('sort');
+  if (!key || !(key in DEFAULT_DIR)) return DEFAULT_SORT;
+  const dir = sp.get('dir');
+  return { key: key as SortKey, dir: dir === 'asc' || dir === 'desc' ? dir : DEFAULT_DIR[key as SortKey] };
+}
+
+// The hub's own URL for a filter + sort. The default sort is left off so an unsorted list keeps the short URL it always had.
+function hubUrl(c: Criteria, sort: Sort): string {
+  const parts = [toQuery(c)].filter(Boolean);
+  if (sort.key !== DEFAULT_SORT.key || sort.dir !== DEFAULT_SORT.dir) parts.push(`sort=${sort.key}&dir=${sort.dir}`);
+  return parts.length ? `/product?${parts.join('&')}` : '/product';
+}
+
+// A clickable column header. The active column carries its arrow; the rest show one only on hover, so the header row does not turn
+// into six arrows to read past. A real button inside the th so it is keyboard-reachable.
+function SortTh({ k, sort, onSort, right, title, children }: {
+  k: SortKey; sort: Sort; onSort: (k: SortKey) => void; right?: boolean; title?: string; children: React.ReactNode;
+}) {
+  const active = sort.key === k;
+  return (
+    <th
+      className={'whitespace-nowrap px-3 py-2 font-medium ' + (right ? 'text-right' : '')}
+      title={title}
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={'group inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-800 ' + (active ? 'text-brand-700' : '')}
+      >
+        {children}
+        <span className={active ? 'text-brand-500' : 'text-slate-300 opacity-0 group-hover:opacity-100'}>
+          {active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 // …and back again. Anything malformed is simply dropped rather than throwing: these params get hand-edited and pasted around, and a
 // junk one should cost you that one narrowing, not the whole screen.
 function fromQuery(sp: URLSearchParams, q: string): Criteria {
@@ -278,6 +362,7 @@ function ProductHubContent() {
   // visibly snap to the match. See fromQuery/toQuery for the param shapes.
   const [criteria, setCriteria] = useState<Criteria>(() => fromQuery(new URLSearchParams(searchParams.toString()), q));
   const [selected, setSelected] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>(() => sortFromQuery(new URLSearchParams(searchParams.toString())));
 
   // THE WHOLE CATALOGUE, ONCE. Not keyed on the search: every narrowing below is client-side, so a Find and a Reset are both instant
   // and cost no round-trip. Same shape as /inventory.
@@ -285,16 +370,13 @@ function ProductHubContent() {
   const all = data?.rows ?? NO_ROWS;
 
   const rows = useMemo(
-    () => (isEmpty(criteria) ? all : all.filter((r) => survives(r, criteria))),
-    [all, criteria],
+    () => sortRows(isEmpty(criteria) ? all : all.filter((r) => survives(r, criteria)), sort),
+    [all, criteria, sort],
   );
 
   // This list AS IT CURRENTLY STANDS - every step, not just the opening term - handed to every destination as ?from= so its back link
   // rebuilds exactly what you left rather than the search you happened to start with.
-  const selfUrl = useMemo(() => {
-    const qs = toQuery(criteria);
-    return qs ? `/product?${qs}` : '/product';
-  }, [criteria]);
+  const selfUrl = useMemo(() => hubUrl(criteria, sort), [criteria, sort]);
 
   const keys = useMemo(() => rows.map((r) => r.groupid), [rows]);
   const selectedRow = useMemo(() => (selected ? rows.find((r) => r.groupid === selected) ?? null : null), [rows, selected]);
@@ -306,9 +388,16 @@ function ProductHubContent() {
   const apply = useCallback((next: Criteria) => {
     setCriteria(next);
     setSelected(null);
-    const qs = toQuery(next);
-    router.replace(qs ? `/product?${qs}` : '/product', { scroll: false });
-  }, [router]);
+    router.replace(hubUrl(next, sort), { scroll: false });
+  }, [router, sort]);
+
+  // Re-clicking the active header reverses; a new header adopts its default direction. The selection is KEPT - sorting only moves
+  // the row, and the sticky bar still names it. Reset leaves the sort alone: it clears narrowing, and a sort narrows nothing.
+  function onSort(key: SortKey) {
+    const next: Sort = key === sort.key ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR[key] };
+    setSort(next);
+    router.replace(hubUrl(criteria, next), { scroll: false });
+  }
 
   // Keyboard cursor over the rows — same hook, same gesture as /inventory and the other lists. Selection follows the cursor so the
   // hand-off cards always point at the row the eye is on. No onEnter: the menus are the only way off a row (owner, 2026-10-02).
@@ -531,18 +620,18 @@ function ProductHubContent() {
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="w-14 px-2 py-2" />
-                  <th className="px-3 py-2 font-medium">Group ID</th>
-                  <th className="px-3 py-2 font-medium">Product</th>
+                  <SortTh k="groupid" sort={sort} onSort={onSort}>Group ID</SortTh>
+                  <SortTh k="title" sort={sort} onSort={onSort}>Product</SortTh>
                   {/* ONE TOTAL HERE, SPLIT ON THE DRILL (owner, 2026-09-22 — "don't split stock on both hubs, leave the total in
                       summary hub"). The two screens are asking different questions: this one is "which of these products am I
                       working on", where local-vs-Amazon is detail you have not needed yet and a second numeric column is one more
                       thing to read past on every row. Once you are IN a product the split matters — 5 at FBA and 5 on the shelf are
                       opposite situations — so the sizes table carries Local and Amz separately. The split is in the tooltip here.
                       Excludes the Birkenstock pre-order book, so it can read lower than the Inventory card; see the route header. */}
-                  <th className="px-3 py-2 text-right font-medium" title="On our shelf plus held at Amazon">Stock</th>
-                  <th className="px-3 py-2 text-right font-medium" title="Amazon prices per size, so this is the range, never an average">Amazon</th>
-                  <th className="px-3 py-2 text-right font-medium">Shopify</th>
-                  <th className="px-3 py-2 text-right font-medium" title="Units sold in the last 30 days, all channels">Sold 30d</th>
+                  <SortTh k="stock" sort={sort} onSort={onSort} right title="On our shelf plus held at Amazon">Stock</SortTh>
+                  <SortTh k="amazon" sort={sort} onSort={onSort} right title="Amazon prices per size, so this is the range, never an average. Sorts on the lowest size.">Amazon</SortTh>
+                  <SortTh k="price" sort={sort} onSort={onSort} right>Shopify</SortTh>
+                  <SortTh k="sold30" sort={sort} onSort={onSort} right title="Units sold in the last 30 days, all channels">Sold 30d</SortTh>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
