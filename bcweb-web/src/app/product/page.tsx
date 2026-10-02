@@ -28,10 +28,13 @@ buttons until a groupid is selected, or wait for a double click" — both, as it
     position, not the selection - so arrowing on from a cleared row carries on from the right place.
   - ONE CLICK selects. That lights the hand-off cards, which is the common case: most visits end by leaving for another module, not
     by opening the sizes.
-  - DOUBLE-CLICK, Enter, or the row's own › button drills to the sizes. Three ways in on purpose — double-click is what the owner
-    asked for and what the legacy grid did, Enter is what every other list on this platform does (useListCursor), and the › is the
-    only one of the three that is VISIBLE, so the gesture is discoverable by someone who was told neither.
+  - DOUBLE-CLICK or Enter drills to the sizes. Double-click is what the owner asked for and what the legacy grid did, Enter is what
+    every other list on this platform does (useListCursor). The row's tooltip says so. There used to be a visible › button per row as
+    a third way in; the owner had it removed (2026-10-02) - the sticky hand-off bar below is the visible thing a click leads to.
   The first click of a double-click selects, which is harmless — the row it selects is the row about to open.
+  THE HAND-OFF BAR IS STICKY (owner, 2026-10-02: "I'm further down the list, click and then don't know what to do so I scroll up to
+  see the menu"). It pins to the top of the viewport and names the selected product, so a click deep in a long list shows its
+  options right where you are.
 
 THE FILTER IS /inventory's, DELIBERATELY (owner, 2026-09-22 — "exactly same functionality as inventory search"). Contains / Does not
 contain, either or both, Enter or Find commits them as steps and clears the boxes, each Find narrows what is ALREADY on screen, and
@@ -61,7 +64,7 @@ held only in state comes back as an empty hub and gets retyped, which is the spe
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { MagnifyingGlassIcon, ChevronRightIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
 import { getProductOverview, ProductOverviewRow } from '@/lib/api';
@@ -294,6 +297,7 @@ function ProductHubContent() {
   }, [criteria]);
 
   const keys = useMemo(() => rows.map((r) => r.groupid), [rows]);
+  const selectedRow = useMemo(() => (selected ? rows.find((r) => r.groupid === selected) ?? null : null), [rows, selected]);
 
   // THE URL MIRRORS THE FILTER. Every place that changes `steps` goes through here, so the address bar always describes what is on
   // screen: a reload, a copied link and a hand-off card's back link all rebuild the same list. replace, not push, so narrowing does
@@ -502,8 +506,22 @@ function ProductHubContent() {
       )}
 
       {/* The hand-off row sits ABOVE the list, not under it: it is the destination of most visits, and putting it below a list of
-          unknown length would mean scrolling to reach the thing you came for. Greyed until a row is picked. */}
-      <div className="mb-4">
+          unknown length would mean scrolling to reach the thing you came for. Greyed until a row is picked.
+          STICKY, so it follows you down the list (owner, 2026-10-02 - clicking a row far down left the options off-screen above).
+          It names the selected product because once pinned, the row you clicked may be the only other place that says which one
+          the cards will act on. bg matches the page so rows scrolling underneath do not show through. */}
+      <div className="sticky top-0 z-20 -mx-1 mb-4 border-b border-slate-200 bg-slate-100 px-1 pb-3 pt-2">
+        <p className="mb-1.5 truncate text-xs text-slate-500">
+          {selectedRow ? (
+            <>
+              <span className="font-mono text-slate-700">{selectedRow.groupid}</span>
+              {selectedRow.title && <span className="text-slate-700"> - {selectedRow.title}</span>}
+              <span className="text-slate-400"> · pick where to go, or double-click the row for its sizes</span>
+            </>
+          ) : (
+            'Click a product to choose what to do with it'
+          )}
+        </p>
         <ProductNavCards groupid={selected} from={selfUrl} />
       </div>
 
@@ -530,7 +548,6 @@ function ProductHubContent() {
                   <th className="px-3 py-2 text-right font-medium" title="Amazon prices per size, so this is the range, never an average">Amazon</th>
                   <th className="px-3 py-2 text-right font-medium">Shopify</th>
                   <th className="px-3 py-2 text-right font-medium" title="Units sold in the last 30 days, all channels">Sold 30d</th>
-                  <th className="w-10 px-2 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -543,7 +560,7 @@ function ProductHubContent() {
                       onClick={() => { setSelected((cur) => (cur === r.groupid ? null : r.groupid)); cursor.setCursor(r.groupid); }}
                       onDoubleClick={() => drill(r.groupid)}
                       title="Click to select · double-click to open the sizes"
-                      className={'cursor-pointer ' + (isSel ? 'bg-brand-50' : 'hover:bg-slate-50')}
+                      className={'cursor-pointer scroll-mt-36 ' + (isSel ? 'bg-brand-50' : 'hover:bg-slate-50')}
                     >
                       {/* Intrinsic size is unknown (legacy image library), so next/image gets a fixed box and object-contain
                           letterboxes it — the same treatment every other product thumbnail on the platform gets. Deliberately NOT
@@ -571,19 +588,6 @@ function ProductHubContent() {
                       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums"><AmazonCell r={r} /></td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{money(r.price)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.sold30}</td>
-                      <td className="px-2 py-1.5 text-right">
-                        {/* The VISIBLE way in to the sizes. Double-click and Enter both do the same thing, but neither announces
-                            itself — this does. stopPropagation so it opens rather than just selecting. */}
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); drill(r.groupid); }}
-                          title="Open this product's sizes"
-                          aria-label={`Open sizes for ${r.groupid}`}
-                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        >
-                          <ChevronRightIcon className="h-4 w-4" />
-                        </button>
-                      </td>
                     </tr>
                   );
                 })}
