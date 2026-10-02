@@ -2326,6 +2326,15 @@ export function getAmzShipmentBoxes() {
   }));
 }
 
+// A scan on AMZ Shipment, resolved: code, EAN or FNSKU -> the product. NOT_FOUND when it's nothing we know; fnsku is '' when Amazon
+// hasn't given the product one (the screen refuses those — no FNSKU, no Amazon box).
+export interface AmzScanHit { code: string; sku: string; fnsku: string; title: string }
+export function lookupAmzShipmentScan(scan: string) {
+  return request<AmzScanHit>({ url: '/amz-shipment-scan', method: 'GET', params: { scan } }, (b) => ({
+    code: b.code, sku: b.sku || '', fnsku: b.fnsku || '', title: b.title || '',
+  }));
+}
+
 // "Mark shipped" — archives the STORED shipment, takes the boxed units off C3-Amazon and empties amzshipment, in one transaction.
 // `boxes`/`units` are what the screen showed when the operator confirmed; the server refuses (STALE) if the stored shipment differs.
 export interface AmzShipResult {

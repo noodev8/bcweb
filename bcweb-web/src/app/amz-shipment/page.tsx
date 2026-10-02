@@ -12,8 +12,7 @@ BOXES FROM THE DB (owner, 2026-09-29: "look at the db and get any box info ... n
 in the legacy `amzshipment` table (one row per box + code, with the Amazon sku/fnsku and the box's measurements on every row); GET
 /amz-shipment-boxes reads them and they become this screen's starting boxes — numbers, contents and measurements as stored. Nothing is
 written back: scanning, −, new/delete box and the measurement inputs still only change what's on screen, and a reload goes back to the
-DB. A scan is recorded as the raw code the scanner sent; matching it to a SKU (barcode or FNSKU), checking it against what is on
-C3-Amazon, and saving all come with the writes.
+DB. Checking a scan against what is on C3-Amazon, and saving, come with the writes.
 
 MARK SHIPPED (owner, 2026-10-01: "the shipped button should clear the whole shipment"). Live. POST /amz-shipment-ship, one transaction:
 the stored shipment is archived to amzshipment_archive under a new shipment id, the boxed units come off the C3-Amazon shelf
@@ -27,6 +26,12 @@ FNSKU or title) and names the matching codes under each; the matching lines are 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
 scan, scan, scan with no clicks. Every scan goes into the ACTIVE box (highlighted on the left); click another box, or New box, to switch.
 The same code scanned twice is one line with qty 2. − takes one off a line; Undo takes off the last scan wherever it went.
+
+SCAN CHECK (owner, 2026-10-02). Every scan is looked up (GET /amz-shipment-scan — our code, the EAN or the FNSKU all resolve to the
+product) BEFORE it goes in a box, and is refused if it isn't a product we know, or if Amazon hasn't given it an FNSKU ("it needs to have
+an fnsku to go in an amz box"). A refused scan goes in no box: the scan field turns red, the reason shows under it with the product's name,
+and the browser beeps — the packer is looking at the shoe, not the screen. It clears on the next good scan. A line made by a good scan
+carries the product's code, Amazon SKU, FNSKU and title like a stored one, so an EAN and an FNSKU scan of the same shoe are one line.
 
 MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in under its contents —
 Amazon wants all four for every carton. A box with units but no full set is flagged "needs size" in the list. Amazon's standard-carton
@@ -47,10 +52,12 @@ import {
   PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import { getAmzShipmentBoxes, shipAmzShipment, type AmzBox, type AmzShipResult } from '@/lib/api';
+import {
+  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, type AmzBox, type AmzShipResult, type AmzScanHit,
+} from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
-// sku / fnsku / title come with a line loaded from the DB; a line made by scanning here only has the raw code.
+// sku / fnsku / title come with every line — from the DB for a stored line, from the scan lookup for one scanned here.
 interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; title?: string; }
 // Measurements are held as typed (strings), so a half-typed "12." isn't rewritten under the cursor.
 interface BoxDims { length: string; width: string; height: string; weight: string; }
@@ -74,6 +81,25 @@ const FIELDS: { key: keyof BoxDims; label: string; unit: string }[] = [
   { key: 'height', label: 'Height', unit: 'cm' },
   { key: 'weight', label: 'Weight', unit: 'kg' },
 ];
+// A refused scan's alert sound: two short low beeps, distinct from a scanner's own beep. Web Audio needs no file; any failure (no
+// audio device, autoplay policy before the first click) is ignored — the red on screen still says it.
+function beepError() {
+  try {
+    const ctx = new AudioContext();
+    for (const at of [0, 0.22]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 220;
+      gain.gain.value = 0.15;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.15);
+    }
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* silent; the screen still goes red */ }
+}
+
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
 // archive (15 boxes) and the owner confirmed it. Sides only — weight depends on what's packed.
 const BIRK_BOX: Partial<BoxDims> = { length: '46', width: '46', height: '33' };
@@ -188,6 +214,11 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
   const [lastScan, setLastScan] = useState<{ boxId: number; code: string } | null>(null);
+  // The last scan refused by SCAN CHECK — drives the red scan field and the message under it.
+  const [scanError, setScanError] = useState<{ scan: string; message: string; title?: string } | null>(null);
+  // Good lookups this visit, by what was scanned, so a run of the same shoe is one round trip. Only products WITH an FNSKU are kept:
+  // a refused one is asked again next time, in case Amazon's import has given it one since.
+  const scanCache = useRef(new Map<string, AmzScanHit>());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
@@ -227,23 +258,52 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   const warning = dimsWarning(active.dims);
   const refocus = () => scanRef.current?.focus();
 
-  function addTo(boxId: number, code: string, delta: number) {
+  // `info` is the product a new line is made from (a scan's lookup); taking one off an existing line needs only the code.
+  function addTo(boxId: number, code: string, delta: number, info?: Omit<BoxLine, 'code' | 'qty'>) {
     setBoxes((prev) => prev.map((b) => {
       if (b.id !== boxId) return b;
       const hit = b.lines.find((l) => l.code === code);
-      if (!hit) return delta > 0 ? { ...b, lines: [{ code, qty: delta }, ...b.lines] } : b;
+      if (!hit) return delta > 0 ? { ...b, lines: [{ ...info, code, qty: delta }, ...b.lines] } : b;
       const lines = b.lines.map((l) => (l.code === code ? { ...l, qty: l.qty + delta } : l)).filter((l) => l.qty > 0);
       return { ...b, lines };
     }));
   }
 
-  function onScan() {
-    const code = scan.trim().toUpperCase();
+  // SCAN CHECK (see the header): look the scan up, refuse it red if it's unknown or has no FNSKU, otherwise box it under its real code.
+  // The box is fixed at the moment of the scan, so clicking another box while the lookup is in flight can't redirect it.
+  async function onScan() {
+    const raw = scan.trim().toUpperCase();
     setScan('');
-    if (!code) return;
-    addTo(active.id, code, 1);
-    setHistory((h) => [...h, { boxId: active.id, code }]);
-    setLastScan({ boxId: active.id, code });
+    if (!raw) return;
+    const boxId = active.id;
+    let hit = scanCache.current.get(raw);
+    if (!hit) {
+      const res = await lookupAmzShipmentScan(raw);
+      if (!res.success || !res.data) {
+        const message = res.return_code === 'NOT_FOUND'
+          ? 'Product not found — not a code, barcode or FNSKU we know. Not added.'
+          : `Couldn’t check this scan (${res.error || 'error'}) — scan it again. Not added.`;
+        refuse({ scan: raw, message });
+        return;
+      }
+      if (!res.data.fnsku) {
+        refuse({ scan: raw, message: `${res.data.code} has no FNSKU, so it can’t go in an Amazon box. Not added.`, title: res.data.title });
+        return;
+      }
+      hit = res.data;
+      scanCache.current.set(raw, hit);
+    }
+    const { code, sku, fnsku, title } = hit;
+    addTo(boxId, code, 1, { sku, fnsku, title });
+    setHistory((h) => [...h, { boxId, code }]);
+    setLastScan({ boxId, code });
+    setScanError(null);
+  }
+
+  function refuse(err: { scan: string; message: string; title?: string }) {
+    setScanError(err);
+    setLastScan(null);
+    beepError();
   }
 
   function takeOne(code: string) {
@@ -488,10 +548,17 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onScan(); } }}
               placeholder={`Scan a shoe into Box ${active.id}`}
               aria-label={`Scan into Box ${active.id}`}
-              className="h-12 w-full rounded-md border border-slate-300 px-4 font-mono text-lg text-slate-900 placeholder:font-sans placeholder:text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              aria-invalid={scanError ? true : undefined}
+              className={'h-12 w-full rounded-md border px-4 font-mono text-lg text-slate-900 placeholder:font-sans placeholder:text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 '
+                + (scanError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-slate-300 focus:ring-brand-500')}
             />
-            <div className="mt-1.5 h-5 text-sm">
-              {lastScan && (
+            <div className="mt-1.5 min-h-5 text-sm" role="status" aria-live="assertive">
+              {scanError ? (
+                <div className="rounded-md border border-red-300 bg-red-100 px-3 py-2 font-medium text-red-800">
+                  <span className="font-mono">{scanError.scan}</span>: {scanError.message}
+                  {scanError.title && <div className="text-xs font-normal text-red-700">{scanError.title}</div>}
+                </div>
+              ) : lastScan && (
                 <span className="text-emerald-700">
                   Added <span className="font-mono">{lastScan.code}</span> to Box {lastScan.boxId}
                 </span>

@@ -173,7 +173,8 @@ app.use('/amz-import-last', require('./routes/amz-import-last'));       // when 
 app.use('/amz-barcode-check', require('./routes/amz-barcode-check')); // FNSKUs that need a barcode image; the BROWSER diffs the folder
 app.use('/amz-delete-file', require('./routes/amz-delete-file')); // build the Seller Central .xlsm that de-lists dead SKUs — WRITES NOTHING
 app.use('/amz-shipment-boxes', require('./routes/amz-shipment-boxes')); // AMZ Shipment: boxes packed so far (amzshipment) — READ ONLY
-app.use('/amz-shipment-ship', require('./routes/amz-shipment-ship'));   // Mark shipped: archive the shipment, stock off C3-Amazon, clear
+app.use('/amz-shipment-scan', require('./routes/amz-shipment-scan'));   // AMZ Shipment: resolve a scan (code/EAN/FNSKU) + its FNSKU — READ ONLY
+app.use('/amz-shipment-ship',require('./routes/amz-shipment-ship'));   // Mark shipped: archive the shipment, stock off C3-Amazon, clear
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
