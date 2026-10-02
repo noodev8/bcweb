@@ -135,25 +135,15 @@ function haystack(r: GoogleAdsStyleRow): string {
 }
 interface IndexedRow { row: GoogleAdsStyleRow; hay: string }
 
-function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey, campaignNames: Set<string>): IndexedRow[] {
+function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey): IndexedRow[] {
   let out = indexed;
   for (const s of c.steps) {
     const t = s.term.toLowerCase();
-    // A term that is EXACTLY a live campaign name (e.g. typing "new" when a 'new' bucket exists) filters on the bucket itself —
-    // r.campaign === t — rather than the plain substring search. Otherwise Contains "new" would also catch any title, groupid,
-    // segment or brand that happens to contain the letters "new" (a style genuinely called "New Balance", say), which is not
-    // what typing a real bucket's name means. Does-not-contain gets the same treatment, for the same reason, in both directions.
-    // A one-off, unmanaged bucket typo would just fall through to the substring path, same as before.
-    const isCampaignName = campaignNames.has(t);
     // CONTAINS is a plain substring (operators type partials: "ARIZ" must find Arizona). DOES NOT CONTAIN is its exact mirror — the
     // legacy PowerBuilder rule, and the one Inventory settled on after a whole-word variant broke ¬WOMEN.
-    if (isCampaignName) {
-      out = s.op === 'has'
-        ? out.filter((x) => x.row.campaign.toLowerCase() === t)
-        : out.filter((x) => x.row.campaign.toLowerCase() !== t);
-    } else {
-      out = s.op === 'has' ? out.filter((x) => x.hay.includes(t)) : out.filter((x) => !x.hay.includes(t));
-    }
+    // There is NO exact-campaign-name shortcut any more (owner, 2026-10-02): typing "ZERMATT" used to snap to the 'zermatt' bucket
+    // only, hiding every Zermatt in other campaigns. Searching means every match; the campaign chip is how you narrow to a bucket.
+    out = s.op === 'has' ? out.filter((x) => x.hay.includes(t)) : out.filter((x) => !x.hay.includes(t));
   }
   if (c.thin) out = out.filter((x) => isThinShelf(x.row));
   if (c.floorSide === 'below') out = out.filter((x) => x.row.belowAdFloor);
@@ -564,14 +554,6 @@ function GoogleAdsScreen() {
 
   const indexed = useMemo<IndexedRow[]>(() => rows.map((row) => ({ row, hay: haystack(row) })), [rows]);
 
-  // Live bucket names, lowercased, so a Contains/Does-not-contain term that exactly matches one filters on the bucket rather than
-  // as a substring — see applyCriteria. Read straight off the campaign panel's own data, so a newly-created bucket is usable here
-  // the moment it exists, with nothing to keep in sync by hand.
-  const campaignNames = useMemo(
-    () => new Set((campaignsQ.data?.buckets ?? []).map((b) => b.name.toLowerCase())),
-    [campaignsQ.data]
-  );
-
   const criteria: Criteria = useMemo(
     () => ({ steps, qty, season, bucket, thin, floorSide }),
     [steps, qty, season, bucket, thin, floorSide]
@@ -579,8 +561,8 @@ function GoogleAdsScreen() {
   const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || floorSide !== null || cut.size > 0;
 
   const matched = useMemo(
-    () => applyCriteria(indexed, criteria, win, campaignNames).map((x) => x.row),
-    [indexed, criteria, win, campaignNames]
+    () => applyCriteria(indexed, criteria, win).map((x) => x.row),
+    [indexed, criteria, win]
   );
   // Cuts apply AFTER the filter, so a cut row comes back the moment the filter changes underneath it rather than staying hidden in
   // a list it was never cut from.
@@ -714,7 +696,7 @@ function GoogleAdsScreen() {
     if (next.length > 0) {
       // A Find that would empty the list is treated as a NEW hunt rather than a narrowing — the operator was starting again
       // ("ARIZONA" then "ZERMATT"), not asking for styles that are both. Inventory's rule, and the reason it feels right there.
-      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason, thin }, win, campaignNames);
+      const narrowed = applyCriteria(indexed, { ...criteria, steps: [...steps, ...next], qty: nextQty, season: nextSeason, thin }, win);
       setSteps(narrowed.length === 0 && filtering ? next : [...steps, ...next]);
     }
     setQty(nextQty);
@@ -722,7 +704,7 @@ function GoogleAdsScreen() {
     setContains('');
     setNotContains('');
     clearSelection();
-  }, [contains, notContains, qty, season, steps, thin, indexed, criteria, filtering, win, campaignNames, clearSelection]);
+  }, [contains, notContains, qty, season, steps, thin, indexed, criteria, filtering, win, clearSelection]);
 
   // Enter applies the boxes. Explicit rather than relying on the form's implicit submission: with two text inputs and no submit
   // button, browsers do NOT reliably submit on Enter — and this form deliberately has no Find button.
