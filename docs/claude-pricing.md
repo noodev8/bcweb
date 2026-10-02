@@ -8,7 +8,7 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - **Hard limits:** never below cost (blocked); above RRP is allowed but flagged. Shopify and Amazon prices are independent.
 - **The loop:** owner names a subset → Claude reads each style's price ladder (units/wk at each price, net of returns, against the season and segment) → proposes price + one-line reason → owner approves → Claude applies via W1 with a note and review period → logs the decision.
 - **Owner's mood** sets the direction (push lower / hold / push higher); the evidence sets the size, and Claude says when the data argues against it.
-- **Notes:** ≤80 chars, Andreas/Summer voice, say what we expect to happen. Holds are a same-price apply, not a park.
+- **Notes:** as short as possible, ≤80 chars, Andreas/Summer voice. No check/judge dates (the review date does that). Holds are a same-price apply, not a park.
 - **Reviews:** raise 7d, cut 14d, hold 30d; longer on slow sellers.
 - **Current state (Oct 2026):** STEADY is mostly ~1/month styles in the Birkenstock autumn lull, so expect mostly holds and small harvest raises; cuts only for heavy stock with a clearly failed price step.
 
@@ -46,9 +46,10 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - Every change carries a note saying why, so the result can be judged later.
 - Notes: 80 characters max, plain words, one clear reason (e.g. "Hold: season stall, not price. All Mayaris stopped mid-Sep."). The detail goes in the Decisions log, not the note (owner, 2026-09-29).
 - Note style (owner, 2026-09-30): write like Andreas and Summer do, short and plain, a glance-guide for the next person changing the price, not a technical record. Say what we did, why, and what to expect. Don't try to catch everything; the detail goes in the Decisions log. Examples: "Slow but steady at 55. Not the price, just quiet. Hold." / "Selling at 48" / "Move up, see if it keeps selling".
+- Notes as minimal as possible (owner, 2026-10-02). Never put a check/judge date in a note ("judge in spring", "check Dec"): that's what the review date is for.
 - Notes are evidence for judging past moves (owner, 2026-09-29). When reviewing a style's history, read each change's note (ours and staff's) as the intent behind it, and judge what followed against that intent. Example: Summer's "trying to get moving" cut to £72 sold nothing in a week, so the cut didn't do what it was meant to. So write notes that can be checked later: say what you expect to happen, not only what you did.
 - Default review periods: raise 7d, cut 14d, hold 30d. Out of season, review just before the season returns instead (1 Mar for summer styles).
-- Check `skusummary.season` first (owner, 2026-10-02). Summer = a quiet Sep-Feb is the season, not the price. ALL = sells all year, so a quiet autumn IS a price signal. The owner sets ALL on Back Office → Seasons for Birkenstocks that sell year-round.
+- Check `skusummary.season` first (owner, 2026-10-02). Summer = a quiet Sep-Feb is the season, not the price. Any = sells all year, so a quiet autumn IS a price signal (though a dead segment still weighs). Values are Summer / Any / Winter; the owner sets Any on Back Office → Seasons for Birkenstocks that sell year-round.
 - Batches: when the evidence is clear, propose several styles at once; one approval, apply all, then one playbook commit (owner, 2026-10-02).
 - A HOLD is recorded as a same-price apply with a note (e.g. 80 -> 80), not park-only, so it can be judged later like any change (owner, 2026-09-29).
 - _(add as we go)_
@@ -79,6 +80,11 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-10-02 | 0128163-MADRID (EVA Black Narrow) | 33.50 → 33.50 (hold) | 150d (1 Mar 2027) | Season = Summer, EVA segment 212/mo Jun → 2 Sep. Sells at £32 (16 May 2025, 11 Jun + 11 Aug 2026); £35 sold 3 in total. 39 left. Hold for +£1/pair over £32; if not moving by Apr, back to £32. | _pending_ |
 | 2026-10-02 | 1032100-GIZEH (EVA Pink Clay Regular) | 38.99 → 39.99 (back up) | 150d (1 Mar 2027) | New Jul 2026. £45 sold 0 in 2wk, £39.49-40.49 sold 4 in Aug; Summer's lull nudge to £38.99 bought nothing. 28 left, all sizes. Spring is the real test. | _pending_ |
 | 2026-10-02 | 1015398-BARBADOS (EVA Black Regular) | 33 → 36 (raise, harvest) | 150d (1 Mar 2027) | Broken sizes (36-39 only), 15 left. £39.92 sold 10 in May-Jun 2025 but failed Jun 2026; £32-34 sold ~12. Harvest step under the failed price: ~£6/pair vs £4.30. | _pending_ |
+| 2026-10-02 | 0043663-GIZEH (Patent Black Narrow) | 80 → 80 (hold) | 150d (1 Mar 2027) | Summer jumped 61.18 → 80 on 25 Sep, no note, never sold at 80. Sold 9 Apr-Aug at £56.68-61.68 (£3-6/pair). 14 left, 39/40 gone. Lull makes holding free; expect a stall in spring. | _pending_ |
+| 2026-10-02 | 1031340-ARIZONA (EVA Pink Clay Narrow) | 37 → 37 (hold) | 150d (1 Mar 2027) | New Jul 2026. £38-40 sold 0, £32 sold 3 at 14p profit, £36.50 sold 2 (£3.16). 14 left, all sizes. | _pending_ |
+| 2026-10-02 | 0143623-GIZEH (Birko-Flor Blue Narrow) | 67 → 70 (raise, harvest) | 150d (1 Mar 2027) | Broken sizes (37/40 gone), 13 left. £70 sold 2 in Jun 2026; Sep cuts to £65 sold 0 (lull). Sister Black Narrow sells £67-69.50. | _pending_ |
+| 2026-10-02 | 0040731-MADRID (Birko-Flor White Regular) | 74.99 → 74.99 (hold) | 150d (1 Mar 2027) | RRP is £75. Sold 6 at £74.50-75 Jul-Aug (~£20/pair) + 1 in Jan. 13 left. | _pending_ |
+| 2026-10-02 | 1019142-ARIZONA (EVA Blue Narrow) | 41.99 → 40 (cut) | 60d (1 Dec 2026) | Season = Any. Sold ~1/mo at £40 through winter 2025-26. Summer walked 36 → 41.99 in Aug; 0 at 41.99 since 24 Aug (one 40.49 returned). 13 left, broken. Keep the winter trickle. | _pending_ |
 
 ## Change log of this playbook
 
@@ -92,3 +98,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: ARIZONA Patent raise to RRP; full-history and season-review learnings.
 - 2026-10-02: GIZEH Black Narrow hold to 1 Mar.
 - 2026-10-02: first batch (3 EVA styles); season-check and batch instructions.
+- 2026-10-02: batch 2 (5 styles); minimal notes, no dates in notes; season value is Any, not ALL.
