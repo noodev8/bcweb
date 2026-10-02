@@ -33,6 +33,11 @@ an fnsku to go in an amz box"). A refused scan goes in no box: the scan field tu
 and the browser beeps — the packer is looking at the shoe, not the screen. It clears on the next good scan. A line made by a good scan
 carries the product's code, Amazon SKU, FNSKU and title like a stored one, so an EAN and an FNSKU scan of the same shoe are one line.
 
+FNSKU LABELS (owner, 2026-10-02: "print a fnsku label when its scanned"). Every good scan prints one 50 × 25 mm label — barcode + FNSKU,
+nothing else — via src/lib/fnskuLabel.ts (silent on the packing PC's --kiosk-printing Chrome shortcut, a print dialog anywhere else).
+A refused scan prints nothing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
+it belongs to the bench, not the shipment. The printer icon on a line reprints that line's label (a jam, a smudge, a test).
+
 MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in under its contents —
 Amazon wants all four for every carton. A box with units but no full set is flagged "needs size" in the list. Amazon's standard-carton
 limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks. Two quick fills (owner, 2026-10-01): "Birk box" puts in
@@ -49,13 +54,14 @@ this file, so it doesn't wait for them.
 
 import { useRef, useState } from 'react';
 import {
-  PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, MagnifyingGlassIcon,
+  PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, PrinterIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { printFnskuLabel } from '@/lib/fnskuLabel';
 
 // sku / fnsku / title come with every line — from the DB for a stored line, from the scan lookup for one scanned here.
 interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; title?: string; }
@@ -98,6 +104,15 @@ function beepError() {
     }
     setTimeout(() => ctx.close(), 600);
   } catch { /* silent; the screen still goes red */ }
+}
+
+// Print labels on/off — remembered per browser (the bench's setting, see FNSKU LABELS). Default on; storage failures just mean on.
+const PRINT_KEY = 'amzShipment.printLabels';
+function loadPrintOn(): boolean {
+  try { return localStorage.getItem(PRINT_KEY) !== '0'; } catch { return true; }
+}
+function savePrintOn(on: boolean) {
+  try { localStorage.setItem(PRINT_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
 }
 
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
@@ -219,6 +234,8 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
   // Good lookups this visit, by what was scanned, so a run of the same shoe is one round trip. Only products WITH an FNSKU are kept:
   // a refused one is asked again next time, in case Amazon's import has given it one since.
   const scanCache = useRef(new Map<string, AmzScanHit>());
+  // Lazy initialiser: read once on mount (this component only renders client-side after the boxes load), no effect needed.
+  const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
@@ -298,6 +315,17 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
     setHistory((h) => [...h, { boxId, code }]);
     setLastScan({ boxId, code });
     setScanError(null);
+    if (printOn) printLabel(fnsku);
+  }
+
+  // Print, then hand focus back to the scan field (printing focuses the label's iframe).
+  function printLabel(fnsku: string) {
+    printFnskuLabel(fnsku, refocus);
+  }
+
+  function togglePrint() {
+    setPrintOn((on) => { savePrintOn(!on); return !on; });
+    refocus();
   }
 
   function refuse(err: { scan: string; message: string; title?: string }) {
@@ -521,6 +549,17 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={togglePrint}
+                  aria-pressed={printOn}
+                  title={printOn ? 'A label prints for every good scan — click to stop' : 'Labels are off — click to print one per scan'}
+                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm '
+                    + (printOn ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
+                >
+                  <PrinterIcon className="h-4 w-4" />
+                  {printOn ? 'Print labels: on' : 'Print labels: off'}
+                </button>
+                <button
+                  type="button"
                   onClick={undo}
                   disabled={history.length === 0}
                   className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -561,6 +600,7 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
               ) : lastScan && (
                 <span className="text-emerald-700">
                   Added <span className="font-mono">{lastScan.code}</span> to Box {lastScan.boxId}
+                  {printOn && ' · label printed'}
                 </span>
               )}
             </div>
@@ -576,7 +616,7 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
                   <th className="px-4 py-2 font-medium">Amazon SKU</th>
                   <th className="px-4 py-2 font-medium">FNSKU</th>
                   <th className="px-4 py-2 text-right font-medium">Qty</th>
-                  <th className="w-12 px-4 py-2" />
+                  <th className="w-20 px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -589,7 +629,18 @@ function Packing({ initial, onShipped }: { initial: Box[]; onShipped: (r: AmzShi
                     <td className="px-4 py-2 font-mono text-slate-600">{l.sku || '—'}</td>
                     <td className="px-4 py-2 font-mono text-slate-600">{l.fnsku || '—'}</td>
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-slate-900">{l.qty}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="whitespace-nowrap px-4 py-2 text-right">
+                      {l.fnsku && (
+                        <button
+                          type="button"
+                          onClick={() => printLabel(l.fnsku!)}
+                          aria-label={`Print a label for ${l.code}`}
+                          title={`Print one ${l.fnsku} label`}
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <PrinterIcon className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => takeOne(l.code)}
