@@ -55,3 +55,28 @@ Add new rows at the bottom. Fill **Result** when the style comes back due (units
 | 2026-10-02 | 1031500-ARIZONA (Birko-Flor Basalt Grey Narrow) | 60 → 68.99 (raise) | 150d (1 Mar 2027) | £66.99-68.99 sold 8 Jun-Jul; Summer's cuts to 60 in Aug-Sep sold 0. 39 x2, 41 x2 left. | _pending_ |
 | 2026-10-02 | 0040303-MADRID (Patent Black Narrow) | 62 → 62 (hold) | 60d (1 Dec 2026) | Season Any. Sold 12 at ~57.50 in 2026 (£6.80), 2 at £64 Feb 2026. 0 at 62 since Aug (segment 16 → 0). 41/42 only, 4 left. | _pending_ |
 | 2026-10-02 | 1032070-ARIZONA (Birkibuc Grey Taupe Narrow) | 70 → 75 (raise) | 150d (1 Mar 2027) | £75 sold 7, £85 sold 1 Jun-Jul; walked 85 → 70 in Aug, 0 sold. 36/40/41/42, 4 left. Sister Regular now 85. | _pending_ |
+| 2026-10-02 | M196A (Roamers extra wide, men's) | 50 → 50 (hold) | 30d | Any, re-orderable. 2024 autumn peak: ~23 at £46.40 (Oct-Dec). ~1/mo at £50 since 2025 (£10.44). 3 left (9/10/12). | _pending_ |
+| 2026-10-02 | 1030572-ARIZONA (Concrete Grey Narrow) | 66.49 → 69.99 (raise) | 150d | Sold 4 at £65.99-66.99. 3 left, core 39/40/41. Regular sister sold 7 at 69.99. | _pending_ |
+| 2026-10-02 | 1015399-BARBADOS (EVA White) | 35 → 35 (hold) | 60d | Any. Summer's walk 32 → 35 sold at each step; 37 sold 0. 3 left. | _pending_ |
+| 2026-10-02 | 1005310-MADRID (Patent White Narrow) | 66.50 → 69 (raise) | 150d | Sold at £65-70 incl. 2 at £70 in Feb 2026. 3 left (39/40/42). | _pending_ |
+| 2026-10-02 | FLN002-NATASHA (Lunar comfort shoe Black) | 25 → 25 (hold) | 60d | Any, re-orderable. Sold 2 at £25 (£3.22). 3 left. | _pending_ |
+| 2026-10-02 | 0128181-MADRID (EVA White Regular) | 27 → 32 (raise) | 150d | Only 44/46 left. Last sales £20-21 at -£4.44, £27 at £0.26. 2025: £32-34 sold at ~£4. | _pending_ |
+| 2026-10-02 | 1031278-GIZEH (EVA Eggshell Regular) | 35.50 → 38 (raise, harvest) | 150d | £32 sold 12 at £1.87; each step to 35.50 sold. Sister Gizeh EVA White sold at 40-45 in 2025. 2 left (35/42). | _pending_ |
+| 2026-10-02 | M1655-62 (Rieker closed toe Beige) | 30 → 55 (raise) | 150d | Re-orderable. Cost £28.80: £30 sold 8 at -£7.84 (2 returned). Break-even ~£42. Sold 1 at £55 (£8.92). 2 left. | _pending_ |
+| 2026-10-02 | 1031426-ARIZONA (Ultra Blue Regular) | 75 → 75 (hold) | 150d | Listed Jul. Sold 3 at £70, 1 at £72 in Aug. 2 left, both 37. | _pending_ |
+| 2026-10-02 | 1027697-ARIZONA (Faded Khaki Narrow) | 70 → 70 (hold) | 150d | Sold 12, all at £68. 2 left (36/37). | _pending_ |
+| 2026-10-02 | 1027696-ARIZONA (Stone Coin Narrow) | 70 → 70 (hold) | 150d | Two years at £64-68. Summer to 70 with 2 left (36/39). | _pending_ |
+| 2026-10-02 | TALIA-LATTE (Strive Talia Latte) | 79.95 → 79.95 (hold) | 60d | Any, BOTH, re-orderable. Slow both channels: Shopify 1 at 79.95, Amazon 3. 2 left. | _pending_ |
+| 2026-10-02 | 1013069-ARIZONA (Patent Sand Brown Regular) | 53.99 → 70 (raise) | 150d | 2025: £72 sold 6 (£13). 2026 cut to 49.99: 12 sold at -£1.69 to +£0.99. 2 left, both 41. £70 sold Feb 2026. | _pending_ |
+| 2026-10-02 | 1029726-MAYARI (Birko-Flor Sandcastle Narrow) | 60 → 65 (raise) | 60d | Any. £65 sold 10 Apr-Jul (£10.10). Summer's cut to 60 to clear the last 2 sold 0. 2 left, both 41. | _pending_ |
+| 2026-10-02 | 1019094-ARIZONA (EVA Khaki Green Regular) | 40.50 → 40.50 (hold) | 60d | Any. £40 sells all year (incl. Dec-Feb). 2 left, both 45. | _pending_ |
+| 2026-10-02 | 0071051-MAYARI (Birko-Flor White Regular) | 70 → 70 (hold) | 60d | Any. Sold ~30 at £68-69. 2 left, both 42. | _pending_ |
+| 2026-10-02 | 1019635-ARIZONA (Vegan Light Rose Narrow) | 70 → 80 (raise) | 150d | 2025: 5 sold at £80-81.50 (£19). 2026: 5 at 68.64. Andreas 79.64, Summer cut to 70 in lull. 2 left (41/42). | _pending_ |
+| 2026-10-02 | M404A (Roamers wide touch, men's) | 60 → 60 (hold) | 60d | Any, BOTH. Last pair (12). At RRP. Amazon 4 in 2026. | _pending_ |
+| 2026-10-02 | 1031318-HONOLULU (EVA Eggshell Regular) | 38.99 → 38.99 (hold) | 150d | Summer's walk up sold at each step to 37.05; 0 at 38.99-39.99 (lull). Last pair. | _pending_ |
+| 2026-10-02 | 1029224-ARIZONA (Metallic Black Narrow) | 60 → 70 (raise) | 150d | Sold at 76.51, 70, then 4 at 60.14 (£6.84). Last pair, size 43. | _pending_ |
+| 2026-10-02 | 1030466-ARIZONA (EVA Gray Taupe Narrow) | 38.99 → 40 (raise) | 60d | Any (created_at reset Jul 2026, sales since 2025). Sold at £39-41.50 all year incl. Jan-Mar; Aug cuts to 33.99 sold 4 at £1.47. Last pair. | _pending_ |
+| 2026-10-02 | 1031495-ARIZONA (Leo Pecan Regular) | 69.99 → 69.99 (hold) | 150d | Sold 5 at 69.99. Last pair (36). | _pending_ |
+| 2026-10-02 | 1030447-ARIZONA (EVA Taupe Regular) | 45 → 45 (hold) | 60d | Any. Sold at 45 in 2025; Summer back to 45. Last pair (46). | _pending_ |
+| 2026-10-02 | 0071063-MAYARI (Birko-Flor Nubuck Brown Narrow) | 75.50 → 75.50 (hold) | 150d | Sold 11 at £74-75.50. Last pair (38). | _pending_ |
+| 2026-10-02 | FLN038-ESTHER-BK (Lunar wedge Black) | 25 → 37 (raise to RRP) | 60d | Any, re-orderable. £37 sold 1 (£11.27), £25 sold 2 (£3.22). Last pair. | _pending_ |

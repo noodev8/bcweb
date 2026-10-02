@@ -80,7 +80,7 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 - **Read the ladder.** Units at each price, by month, across years, show where resistance is. A lower price can sell SLOWER than a higher one did a year earlier (1025046-ARIZONA: £72 ~3.5/mo in 2025, £68 ~1.6/mo in 2026), and the same family can have different ceilings (Arizona Patent White Narrow sold ~8/mo at £72; Gizeh Black Narrow ~1 in 10 months at £72). Price per style, not per family.
 - **Season stalls aren't price.** In Sep 2026 Birkenstock Shopify units fell from ~150/wk to ~15/wk and whole segments sold 0. Staff's September cuts on summer styles bought nothing. Undoing them to a price that sold in season is a free harvest.
 - **Harvest broken sizes.** On a can't-reorder style with broken sizes, step back UP to a price that has sold rather than chase. When core sizes are gone, cuts don't sell the rest: four Arizonas/Gizehs were cut 4-5 times in Aug-Sep with core sizes out and sold 0 at every step.
-- **Cheap clearance often just loses margin.** £59 on 1005294-ARIZONA sold 16 at £4.35/pair; £15 on a Lunar sandal lost £3/pair and still sold 2 in 8 months; £28 on a Goor shoe sold 33 at £1.50. Check profit/pair at each price, not just units.
+- **Cheap clearance often just loses margin.** £59 on 1005294-ARIZONA sold 16 at £4.35/pair; £15 on a Lunar sandal lost £3/pair; a Rieker costing £28.80 sold 8 at £30 (-£7.84 each); an Arizona Patent's last pairs sold 12 at a loss. Check profit/pair at each price, not just units. Selling the last 1-2 pairs at a loss frees nothing useful: put them back to a profitable price that sold.
 - **Width can be the problem, not price.** Regular Sydneys sell at ~£90 while both Narrows sold 0 at every price down to £79.99.
 - **Small un-noted nudges can't be judged.** £0.50 steps with no note move too little to show a response. One move with a note, then wait out the review.
 
@@ -88,5 +88,5 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 
 - 2026-09-28: created.
 - 2026-09-29/30: hold rule, note rules, mood, first learnings, in-process apply.
-- 2026-10-02: summary/contents; re-order rule; 4-week new-style rule; season values; batches; "where this is heading". 45 STEADY decisions across 6 batches.
+- 2026-10-02: summary/contents; re-order rule; 4-week new-style rule; season values; batches; "where this is heading". 70 STEADY decisions across 7 batches.
 - 2026-10-02: decisions moved to `docs/claude-pricing-decisions.md` (search by style, never read whole); learnings merged from 14 to 6.
