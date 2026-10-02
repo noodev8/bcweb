@@ -24,13 +24,13 @@ keep scoping a live campaign. That is exactly the silent-state failure this modu
 first; the error says how many are in the way.
 
 NO NAME IS PROTECTED (owner, 2026-09-07)
-'standard' and 'pause' were refused here on the grounds that other code depended on the literal strings. CHECKED, AND IT DOES NOT.
-`routes/product-create.js` seeds `'new'`, not `'standard'` — this guard was written when it seeded `standard` and was never revisited
-when that changed, so it had been protecting a dependency that no longer existed. 'pause' is not hard-coded anywhere in either app.
+'standard' and 'pause' were refused here on the grounds that other code depended on the literal strings. At the time (2026-09-07)
+product-create seeded 'new', so nothing did. 'pause' is not hard-coded anywhere in either app.
 
-'new' IS the live hard-coded seed, and it is deliberately not protected either: renaming it would land new products on a bucket with
-no definition row. That shows in the panel as an unmanaged name rather than failing silently, and it is the owner's call. Recorded
-here so the consequence is known rather than discovered.
+'standard' IS the live hard-coded seed again (NEW was retired 2026-09-19; `routes/product-create.js` writes 'standard' on every new
+style), and it is deliberately not protected: renaming it would land new products on a bucket with no definition row. That shows in
+the panel as an unmanaged name rather than failing silently, and it is the owner's call. Recorded here so the consequence is known
+rather than discovered.
 =======================================================================================================================================
 Request Payload:
 {

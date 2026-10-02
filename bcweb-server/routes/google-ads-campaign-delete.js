@@ -23,13 +23,13 @@ difference is that it is now information after the fact rather than a veto befor
 
 NO NAME IS PROTECTED (owner, 2026-09-07)
 'standard' and 'pause' were refused here and in the update route on the grounds that other code depended on the literal strings.
-CHECKED, AND IT DOES NOT. `routes/product-create.js` seeds `'new'`, not `'standard'` — the protection was written when it seeded
-`standard` and was never revisited when that changed, so it had been guarding a dependency that no longer existed. 'pause' is not
-hard-coded anywhere in either app; it is an ordinary bucket the operator happens to use for pulling styles out of Google.
+At the time (2026-09-07) product-create seeded 'new', so nothing depended on 'standard'. 'pause' is not hard-coded anywhere in
+either app; it is an ordinary bucket the operator happens to use for pulling styles out of Google.
 
-There is one live hard-coded name left and it is 'new': product-create writes it on every new style. Renaming or deleting THAT would
-land new products on a bucket with no definition row — visible in the panel as an unmanaged name, not silent, but still untidy. It is
-deliberately not protected here either; it is recorded so the consequence is known rather than discovered.
+There is one live hard-coded name and it is 'standard' AGAIN: NEW was retired 2026-09-19 and `routes/product-create.js` now writes
+'standard' on every new style. Renaming or deleting THAT would land new products on a bucket with no definition row — visible in the
+panel as an unmanaged name, not silent, but still untidy. It is deliberately not protected here; it is recorded so the consequence is
+known rather than discovered.
 
 THE ONE REMAINING REFUSAL is a bucket that still HOLDS styles: those styles would keep shipping the label to Google with nothing in
 the app defining it, and unlike report history that is a LIVE state rather than a finished one. Move them first; the error says how

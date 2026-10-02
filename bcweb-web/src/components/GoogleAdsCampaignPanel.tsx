@@ -379,8 +379,9 @@ export default function GoogleAdsCampaignPanel({
                     </td>
                     <td className="px-2 py-2 text-right">
                       {/* EVERY MANAGED BUCKET IS EDITABLE (owner, 2026-09-07). 'standard' and 'pause' used to be excluded here and
-                          refused by both routes, on the basis that other code depended on the literal names. It does not:
-                          product-create.js seeds 'new', and 'pause' is hard-coded nowhere. The guard outlived the thing it guarded.
+                          refused by both routes, on the basis that other code depended on the literal names. 'pause' is hard-coded
+                          nowhere; 'standard' IS (product-create.js seeds it since NEW was retired 2026-09-19), so renaming it lands new
+                          products on an unmanaged name. Left editable on purpose — owner's call; see google-ads-campaign-update.js.
                           `managed` still gates this — an unmanaged name has no google_campaign row to rename or delete. */}
                       {b.managed && editing !== b.name && (
                         // Leaving the row disarms a pending delete. Without it "Delete?" would stay armed indefinitely with no way
