@@ -65,6 +65,9 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: Pull a style's FULL sales history, not 12 months. On 1005294-ARIZONA, 12 months showed nothing above £73.44; 2024-25 showed ~8/mo at £72-73 and one sale at £85, which changed the call.
 - 2026-10-02: Out of season, set the review to just before the season returns (Arizona: 1 Mar), not 30d. A 30d review on a dead segment only brings it back to be held again.
 - 2026-10-02: Two styles in the same family can have different ceilings. Arizona Patent White Narrow sold ~8/mo at £72; Gizeh Black Narrow sold ~1 in 10 months at £72. Test a price per style, not per family.
+- 2026-10-02: Check sister styles (same model, other colour/width) before deciding. Regular Sydneys sell at ~£90 while both Narrows sold 0 at any price, which points at width, not price. Some codes are misfiled (1031689-ARIZONA is a Sydney): go by the title.
+- 2026-10-02: A lower price can sell SLOWER than a higher one a year earlier (1025046-ARIZONA: £72 ~3.5/mo in 2025, £68 ~1.6/mo in 2026). Compare pace at each price across years before assuming a cut helps.
+- 2026-10-02: Summer's September cuts on summer styles bought nothing, because the segment had stopped. Undoing them to a price that sold in season is a free harvest.
 - 2026-09-30: The API isn't normally running in a Claude session. Apply through the real W1 route in-process (temp express app, JWT signed for claude_dev, POST body uses `newPrice` not `price`). Don't hand-write SQL for applies: W1 also pushes to Shopify.
 
 ## Decisions log
@@ -85,6 +88,16 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-10-02 | 0143623-GIZEH (Birko-Flor Blue Narrow) | 67 → 70 (raise, harvest) | 150d (1 Mar 2027) | Broken sizes (37/40 gone), 13 left. £70 sold 2 in Jun 2026; Sep cuts to £65 sold 0 (lull). Sister Black Narrow sells £67-69.50. | _pending_ |
 | 2026-10-02 | 0040731-MADRID (Birko-Flor White Regular) | 74.99 → 74.99 (hold) | 150d (1 Mar 2027) | RRP is £75. Sold 6 at £74.50-75 Jul-Aug (~£20/pair) + 1 in Jan. 13 left. | _pending_ |
 | 2026-10-02 | 1019142-ARIZONA (EVA Blue Narrow) | 41.99 → 40 (cut) | 60d (1 Dec 2026) | Season = Any. Sold ~1/mo at £40 through winter 2025-26. Summer walked 36 → 41.99 in Aug; 0 at 41.99 since 24 Aug (one 40.49 returned). 13 left, broken. Keep the winter trickle. | _pending_ |
+| 2026-10-02 | 1031689-ARIZONA (Sydney Black Narrow; ARIZONA code) | 88.99 → 88.99 (hold) | 150d (1 Mar 2027) | Listed Jun, walked 110 → 88.99, 0 net on Shopify. Regular Sydneys sell ~£90 (Pearl 5, Metallic Black 3, Taupe 2). Spring test vs White Narrow at 79.99: if neither sells, it's width not price. | _pending_ |
+| 2026-10-02 | 0044791-RAMSES (Black Regular) | 70 → 70 (hold) | 150d (1 Mar 2027) | Listed Jul, walked 85 → 60, sold 2 at £60 (£6.75). Andreas up to 70 on a Google ads sale; 0 since (lull). £70 ≈ £13/pair. 12 left, 38-42. | _pending_ |
+| 2026-10-02 | 0071793-MAYARI (Birko-Flor Black Narrow) | 70.13 → 75 (raise, harvest) | 150d (1 Mar 2027) | Good seller: £68 ~20 spring 2025, £64-70 ~15 summer 2026. £75.05 sold 2 (Aug 2025, Feb 2026). Broken (39/42 gone, 37 1), 12 left. | _pending_ |
+| 2026-10-02 | 1015487-HONOLULU (EVA Black Regular) | 32 → 35 (raise, harvest) | 150d (1 Mar 2027) | £29 sold 9 in Jun at £1.60/pair; £35-36 sold 3 at ~£6; £30-32 3 in Aug. Broken (37/42 gone), 12 left. | _pending_ |
+| 2026-10-02 | L7514-15 (Rieker fleece zip boot Navy) | 70.99 → 70.99 (hold) | 30d (1 Nov 2026) | Season = Winter, in season now (Winter styles sold 7/5/9 Oct-Dec 2025). Listed 21 Aug; Summer cut 80 → 70.99 in Sep, sold 1 (£15.13). 11 left, all sizes. Re-orderable? Unknown. | _pending_ |
+| 2026-10-02 | 1029151-ARIZONA (Birkibuc Latte Cream Narrow) | 70 → 70 (hold) | 150d (1 Mar 2027) | Slow: 3 sold Jul-Aug at £69-75 while the segment did 100+/mo. Too thin to move. 11 left, 1-2 per size. | _pending_ |
+| 2026-10-02 | 1027721-ARIZONA (Birko-Flor New Beige Regular) | 69.29 → 71 (raise, harvest) | 150d (1 Mar 2027) | Two years of ~1-3/mo at every price £64-72; 3 at £70.29-70.79 Jul-Aug; even sold 3 in Jan 2025. Broken (35/38 gone), 11 left. | _pending_ |
+| 2026-10-02 | 1025046-ARIZONA (Birko-Flor Vegan Pecan Narrow) | 65 → 72 (raise) | 150d (1 Mar 2027) | £72 sold 8 in 2025 (~3.5/mo peak); Andreas: stopped above 72. 2026 at £68.01 sold SLOWER (~1.6/mo), so lower bought nothing; Sep cuts to 65 in the lull. 11 left. | _pending_ |
+| 2026-10-02 | 1031458-ARIZONA (Birko-Flor Basalt Grey Regular) | 74.99 → 74.99 (hold) | 150d (1 Mar 2027) | £69.99 sold 11 Jun-Jul (fast); £73.99-75.99 sold 4, 1 returned (slow, +£3.30/pair). Broken (39/42 gone), 10 left: take the margin. | _pending_ |
+| 2026-10-02 | 1029492-SYDNEY (White Narrow) | 79.99 → 79.99 (hold) | 150d (1 Mar 2027) | Walked 110 → 79.99, 0 on Shopify (1 Amazon); already £10 under regular Sydneys. Pair with Black Narrow at 88.99 as the spring width-vs-price test. | _pending_ |
 
 ## Change log of this playbook
 
@@ -99,3 +112,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: GIZEH Black Narrow hold to 1 Mar.
 - 2026-10-02: first batch (3 EVA styles); season-check and batch instructions.
 - 2026-10-02: batch 2 (5 styles); minimal notes, no dates in notes; season value is Any, not ALL.
+- 2026-10-02: batch 3 (10 styles); sister-style, cross-year pace and lull-cut learnings.
