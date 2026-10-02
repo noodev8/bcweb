@@ -28,8 +28,10 @@ buttons until a groupid is selected, or wait for a double click" — both, as it
     position, not the selection - so arrowing on from a cleared row carries on from the right place.
   - ONE CLICK selects. That lights the hand-off cards, which is the common case: most visits end by leaving for another module, not
     by opening the sizes.
-  - ENTER drills to the sizes, as on every other list on this platform (useListCursor). Double-click and a per-row › button used to
-    do the same; the owner had both removed (2026-10-02) - a click selects, and the sticky hand-off bar below is what it leads to.
+  - NOTHING ON THE ROW OPENS ANYTHING. Double-click, Enter and a per-row › button all used to drill to /product/[groupid]; the owner
+    had all three removed (2026-10-02 - "I just want to use the menus now. Will use INVENTORY for the sizes"). A click or an arrow key
+    selects, and the sticky hand-off bar below is the only way on. The /product/[groupid] page itself stays - other screens still
+    reach it through their Product card (ProductNavCards showProduct).
   THE HAND-OFF BAR IS STICKY (owner, 2026-10-02: "I'm further down the list, click and then don't know what to do so I scroll up to
   see the menu"). It pins to the top of the viewport and names the selected product, so a click deep in a long list shows its
   options right where you are.
@@ -45,7 +47,7 @@ the four other screens that use it.
   Contains box rather than searched for as text - see parseContains - and they narrow like any other step, chip and all. One
   deliberate difference from Inventory in what STOCK compares against, documented on metricValue; read it before making them agree.
   NOT PORTED: Inventory's Size box. It needs the per-size maps this payload does not carry, and a size has nothing to filter on a
-  style-grain table anyway - the drill is where sizes live.
+  style-grain table anyway - Inventory is where sizes live.
 
 THE WHOLE FILTER LIVES IN THE URL, as repeatable ?has= / ?not= params - the convention /amz/find already uses, for the identical
 reason. Every hand-off card sends `from` = this exact URL, so the back link on the far screen rebuilds the list you left; a filter
@@ -308,15 +310,10 @@ function ProductHubContent() {
     router.replace(qs ? `/product?${qs}` : '/product', { scroll: false });
   }, [router]);
 
-  function drill(groupid: string) {
-    router.push(`/product/${encodeURIComponent(groupid)}?from=${encodeURIComponent(selfUrl)}`);
-  }
-
   // Keyboard cursor over the rows — same hook, same gesture as /inventory and the other lists. Selection follows the cursor so the
-  // hand-off cards always point at the row the eye is on; Enter opens it.
+  // hand-off cards always point at the row the eye is on. No onEnter: the menus are the only way off a row (owner, 2026-10-02).
   const cursor = useListCursor({
     keys,
-    onEnter: (key) => drill(key),
     onMove: (key) => setSelected(key),
   });
 
@@ -556,7 +553,7 @@ function ProductHubContent() {
                       key={r.groupid}
                       ref={cursor.itemRef(r.groupid)}
                       onClick={() => { setSelected((cur) => (cur === r.groupid ? null : r.groupid)); cursor.setCursor(r.groupid); }}
-                      title="Click to select · Enter opens the sizes"
+                      title="Click to select, then pick from the menu above"
                       className={'cursor-pointer scroll-mt-36 ' + (isSel ? 'bg-brand-50' : 'hover:bg-slate-50')}
                     >
                       {/* Intrinsic size is unknown (legacy image library), so next/image gets a fixed box and object-contain
