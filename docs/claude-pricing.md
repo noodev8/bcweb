@@ -47,7 +47,9 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - Notes: 80 characters max, plain words, one clear reason (e.g. "Hold: season stall, not price. All Mayaris stopped mid-Sep."). The detail goes in the Decisions log, not the note (owner, 2026-09-29).
 - Note style (owner, 2026-09-30): write like Andreas and Summer do, short and plain, a glance-guide for the next person changing the price, not a technical record. Say what we did, why, and what to expect. Don't try to catch everything; the detail goes in the Decisions log. Examples: "Slow but steady at 55. Not the price, just quiet. Hold." / "Selling at 48" / "Move up, see if it keeps selling".
 - Notes are evidence for judging past moves (owner, 2026-09-29). When reviewing a style's history, read each change's note (ours and staff's) as the intent behind it, and judge what followed against that intent. Example: Summer's "trying to get moving" cut to £72 sold nothing in a week, so the cut didn't do what it was meant to. So write notes that can be checked later: say what you expect to happen, not only what you did.
-- Default review periods: raise 7d, cut 14d, hold 30d.
+- Default review periods: raise 7d, cut 14d, hold 30d. Out of season, review just before the season returns instead (1 Mar for summer styles).
+- Check `skusummary.season` first (owner, 2026-10-02). Summer = a quiet Sep-Feb is the season, not the price. ALL = sells all year, so a quiet autumn IS a price signal. The owner sets ALL on Back Office → Seasons for Birkenstocks that sell year-round.
+- Batches: when the evidence is clear, propose several styles at once; one approval, apply all, then one playbook commit (owner, 2026-10-02).
 - A HOLD is recorded as a same-price apply with a note (e.g. 80 -> 80), not park-only, so it can be judged later like any change (owner, 2026-09-29).
 - _(add as we go)_
 
@@ -74,6 +76,9 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 | 2026-09-30 | 1031695-SYDNEY | 90 → 95 (raise, harvest) | 14d (14 Oct) | Owner: small rise to harvest. £95 sold 3 in a week in July; nothing moved 97→90 through the lull, so £90 buys no speed. 7 left, broken sizes, £5/pair extra. Judge: units and profit/wk 14 Oct vs the ~1/month before. | _pending_ |
 | 2026-10-02 | 1005294-ARIZONA (Patent White Narrow) | 69 → 90 (raise to RRP, harvest) | 150d (1 Mar 2027) | Owner mood: push to RRP. Overbought (41 left, all sizes), not a price problem. Full history: £72-73.44 sold ~8/mo in summer 2025; £85 sold 1 (Aug 2024); £59 in 2026 sold 16 net at £4.35/pair, so margin given away. £90 untested. Segment sold 1 in Sept, so no signal until spring. Judge: Mar-Apr 2027 sales at £90 vs ~8/mo at £72-73. | _pending_ |
 | 2026-10-02 | 0043693-GIZEH (Birko-Flor Black Narrow) | 69.50 → 69.50 (hold) | 150d (1 Mar 2027) | Season stall (segment 70/mo Jun → 10 Sep, same as 2025). £72 tested fairly and failed: 1 sold Aug 2025-May 2026, incl. peak May. Best at £67-69.50 (5 in Aug). 40 left, all sizes; in-season pace clears ~25-30, so spring may need a small cut, not a raise. | _pending_ |
+| 2026-10-02 | 0128163-MADRID (EVA Black Narrow) | 33.50 → 33.50 (hold) | 150d (1 Mar 2027) | Season = Summer, EVA segment 212/mo Jun → 2 Sep. Sells at £32 (16 May 2025, 11 Jun + 11 Aug 2026); £35 sold 3 in total. 39 left. Hold for +£1/pair over £32; if not moving by Apr, back to £32. | _pending_ |
+| 2026-10-02 | 1032100-GIZEH (EVA Pink Clay Regular) | 38.99 → 39.99 (back up) | 150d (1 Mar 2027) | New Jul 2026. £45 sold 0 in 2wk, £39.49-40.49 sold 4 in Aug; Summer's lull nudge to £38.99 bought nothing. 28 left, all sizes. Spring is the real test. | _pending_ |
+| 2026-10-02 | 1015398-BARBADOS (EVA Black Regular) | 33 → 36 (raise, harvest) | 150d (1 Mar 2027) | Broken sizes (36-39 only), 15 left. £39.92 sold 10 in May-Jun 2025 but failed Jun 2026; £32-34 sold ~12. Harvest step under the failed price: ~£6/pair vs £4.30. | _pending_ |
 
 ## Change log of this playbook
 
@@ -86,3 +91,4 @@ Claude reads this at the start of every pricing session. It works as a pricing e
 - 2026-10-02: summary and contents at the top.
 - 2026-10-02: ARIZONA Patent raise to RRP; full-history and season-review learnings.
 - 2026-10-02: GIZEH Black Narrow hold to 1 Mar.
+- 2026-10-02: first batch (3 EVA styles); season-check and batch instructions.
