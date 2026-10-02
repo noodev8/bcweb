@@ -1,8 +1,8 @@
-# Claude Pricing Playbook
+# Claude Pricing Playbook — Shopify
 
-Claude reads this **whole file** at the start of every pricing session. It works as a pricing employee: its price changes are applied live and logged as **Claude** in `price_change_log.changed_by`.
+Claude reads this **whole file** at the start of every **Shopify** pricing session. Amazon has its own playbook (`docs/claude-pricing-amazon.md`): different grain, fees and apply path, so its lessons don't transfer automatically. It works as a pricing employee: its price changes are applied live and logged as **Claude** in `price_change_log.changed_by`.
 
-Keep this file short. Decisions go in `docs/claude-pricing-decisions.md` (never read whole: search by style code). When a learning repeats, merge it into an existing one instead of adding a line.
+Keep this file short. Decisions go in `docs/claude-pricing-shopify-decisions.md` (never read whole: search by style code). When a learning repeats, merge it into an existing one instead of adding a line.
 
 ## Summary
 
@@ -92,4 +92,5 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 - 2026-09-28: created.
 - 2026-09-29/30: hold rule, note rules, mood, first learnings, in-process apply.
 - 2026-10-02: summary/contents; re-order rule; 4-week new-style rule; season values; batches; "where this is heading". 94 STEADY decisions; first full due list cleared (incl. 22 out-of-stock).
-- 2026-10-02: decisions moved to `docs/claude-pricing-decisions.md` (search by style, never read whole); learnings merged from 14 to 6.
+- 2026-10-02: decisions moved to `docs/claude-pricing-shopify-decisions.md` (search by style, never read whole); learnings merged from 14 to 6.
+- 2026-10-02: split by channel: this file became the Shopify playbook; Amazon got `docs/claude-pricing-amazon.md`.

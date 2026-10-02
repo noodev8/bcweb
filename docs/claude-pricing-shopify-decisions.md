@@ -1,4 +1,4 @@
-# Claude Pricing — Decisions log
+# Claude Pricing — Shopify decisions log
 
 One row per Claude price decision (holds included). **Never read this file whole.** When a style comes up, search it by style code (e.g. `grep 1005294-ARIZONA`) and read only those rows. The price, date and short note are also in `price_change_log` (changed_by = 'Claude'); this file adds the longer Why and, later, the Result.
 
