@@ -6,7 +6,8 @@ Keep this file short. Decisions go in `docs/claude-pricing-amazon-decisions.md` 
 
 ## Summary
 
-- **Status: not started.** No Amazon pricing sessions yet. The rules below are the known mechanics; Instructions and Learnings fill in as sessions run.
+- **Status: first session 2026-10-02** (STEADY, due). Instructions and Learnings fill in as sessions run.
+- **0 FBA = no reprice**, review-only 14d (out of season: until the season returns).
 - **The job:** same as Shopify — maximum margin from stock we already hold.
 - **Grain is the SKU (size), not the style.** Amazon prices per size (`code`); one style can run at several prices.
 - **Hard limits:** `/amz-apply` blocks below `cost + fbafee` and flags above RRP — but that floor is far below real breakeven (see Rules).
@@ -30,11 +31,18 @@ Keep this file short. Decisions go in `docs/claude-pricing-amazon-decisions.md` 
 
 ## Instructions (how Claude should work)
 
-_To be written from the first sessions. Start by asking the owner how an Amazon session should run (batch shape, which list, holds-as-applies or not)._
+- **Session shape (owner, 2026-10-02):** one style at a time (all its due SKUs together). A hold on an in-stock SKU is a same-price `/amz-apply` with a note, as on Shopify.
+- **Go with the data, not the mood** (owner, 2026-10-02: "forget my mood for the moment"). State the evidence and the call; don't steer by a push-lower/higher mood until the owner reinstates it.
+- **0 FBA: don't reprice** (owner, 2026-10-02). A SKU with no FBA stock (local stock doesn't count: it can't sell on Amazon until picked) gets review-only (`/amz-review`: writes a same-price hold row for Analytics, which the upload basket filters out as a no-op): **14 days**, or if the style is out of season, until the season returns (summer: 1 Mar). This applies even to a loss-making price.
+- **FBA stock = price it, full stop** (owner, 2026-10-02), in season or not. Season only sets the review date for parked 0-FBA SKUs.
+- Only SKUs actually due are touched; a style's not-due sizes are left alone.
+
+**Applying:** in-process, like Shopify W1: temp express app mounting `routes/amz-apply` (or `routes/amz-review`), JWT signed for `claude_dev` (app_users id 9). `/amz-apply` body `{code, newPrice, reviewDays, note}`; `/amz-review` body `{codes:[…], reviewDays}`.
 
 ## Learnings (from results)
 
-_None yet._
+- **Staff cuts in Aug-Sep on Amazon mostly bought pennies.** Several sizes were walked down one at a time to near breakeven (Summer White £29 = 12p/pair, Deanaaii £31 = ~£1, Blaise size 3 £28.49) and sold no faster than siblings left at the proven price. Check profit/pair at each step, not units.
+- **Most of the due list is 0 FBA.** STEADY due on 2 Oct: ~200 of ~215 SKUs had no FBA stock; only 12 needed pricing.
 
 ## Change log of this playbook
 
