@@ -79,12 +79,13 @@ function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
   // How far the loss runs past the earned total. Capped so a catastrophic window still fits its row.
   const overPct = overspent ? pct(Math.min(-kept, scale)) : 0;
 
-  // RETURN ON THE SPEND, as a percentage rather than a multiple (owner, 2026-09-14). Kept divided by what Google was paid: 100% means
-  // every pound handed over came back again as kept profit on top of itself; 13% means a pound bought 13p. Deliberately measured
+  // RETURN ON THE SPEND, as pounds kept per £1 given to Google (owner, 2026-10-05 — was "+35% of spend", which read as "35% of the
+  // spend was kept"; first a percentage, owner 2026-09-14, rather than a multiple). £1.06 means every pound handed over came back
+  // again as kept profit on top of itself; £0.13 means a pound bought 13p. Deliberately measured
   // against SPEND and not against earned profit — the question the bar is asked is "was the money given to Google worth giving", and
   // that question's denominator is the money given. Null when nothing was spent: a ratio over zero spend is not a large number, it is
   // an undefined one, and printing anything there would invent a verdict on a window that never ran an ad.
-  const keptOverSpend = w.spend > 0 ? (kept / w.spend) * 100 : null;
+  const keptPerPound = w.spend > 0 ? kept / w.spend : null;
 
   // Built as one fragment and then either wrapped in a link or not. A polymorphic `const Row = drillHref ? Link : 'div'` reads
   // tidier and does not typecheck — Link's props demand an href the div branch cannot supply — so the branch is explicit.
@@ -102,22 +103,19 @@ function Bar({ title, sub, w, scale, muted, drillHref }: RowProps) {
           <span className={`text-lg font-semibold tabular-nums ${overspent ? 'text-red-600' : 'text-slate-900'}`}>
             {money(kept)}
           </span>
-          {/* Kept AS A SHARE OF SPEND, on the SAME LINE as the figure it reads (owner, 2026-09-14 — a second line under the hero
+          {/* Kept PER £1 OF SPEND, on the SAME LINE as the figure it reads (owner, 2026-09-14 — a second line under the hero
               number bought a whole extra row of height for a parenthetical). It is a reading of the number beside it, not a fifth
-              measurement, so it is punctuated onto it. Sub-10% carries a decimal so a barely-breaking-even window does not print
-              "0%" and read as a total loss; anything larger is whole percent, at this size the decimal is noise. The tooltip's
-              per-pound figure is written in pence rather than through money(), which rounds to whole pounds and would say
-              "£0 was kept" of a window that kept 13p in every pound. */}
+              measurement, so it is punctuated onto it. Written in pence (toFixed(2)) rather than through money(), which rounds to
+              whole pounds and would print "£0 per £1" of a window that kept 13p in every pound. */}
           <span className="ml-1.5 text-xs text-slate-500">
             kept
-            {keptOverSpend !== null && (
+            {keptPerPound !== null && (
               <span
                 className={`tabular-nums ${overspent ? 'text-red-600' : ''}`}
-                title={`For every £1 paid to Google, ${kept < 0 ? '-' : ''}£${Math.abs(kept / w.spend).toFixed(2)} was kept. Kept (${money(kept)}) as a percentage of ad spend (${money(w.spend)}).`}
+                title={`For every £1 paid to Google, ${keptPerPound < 0 ? '-' : ''}£${Math.abs(keptPerPound).toFixed(2)} was kept after the ad cost: ${money(kept)} kept on ${money(w.spend)} of ad spend.`}
               >
                 {' · '}
-                {keptOverSpend > 0 && '+'}
-                {Math.abs(keptOverSpend) < 10 ? keptOverSpend.toFixed(1) : Math.round(keptOverSpend)}% of spend
+                {keptPerPound < 0 ? '-' : ''}£{Math.abs(keptPerPound).toFixed(2)} per £1 spent
               </span>
             )}
           </span>
