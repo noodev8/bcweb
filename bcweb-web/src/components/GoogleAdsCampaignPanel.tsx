@@ -492,13 +492,15 @@ export default function GoogleAdsCampaignPanel({
           <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">In Google Ads</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-2 text-left font-semibold">Campaign</th>
                 <th className="px-2 py-2 text-right font-semibold">Days</th>
                 <th className="px-2 py-2 text-right font-semibold">Spend</th>
+                <th className="px-2 py-2 text-right font-semibold">Impr.</th>
                 <th className="px-2 py-2 text-right font-semibold">Clicks</th>
+                <th className="px-2 py-2 text-right font-semibold">Click rate</th>
                 <th className="px-2 py-2 text-right font-semibold">Impr. share</th>
                 <th className="px-2 py-2 text-right font-semibold" title="A bid or quality problem, not a budget one.">Lost to rank</th>
                 <th className="px-4 py-2 text-right font-semibold" title="Near zero means spending more buys nothing — the impressions are already being won.">Lost to budget</th>
@@ -506,7 +508,7 @@ export default function GoogleAdsCampaignPanel({
             </thead>
             <tbody>
               {adsCampaigns.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-400">
                   No campaign report imported for this window yet.
                 </td></tr>
               )}
@@ -530,7 +532,14 @@ export default function GoogleAdsCampaignPanel({
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-500">{c.days}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money(c.cost)}</td>
+                  {/* Impressions give the share column its size: 89% of a small market is still a small market (Caprice, 2026-10). */}
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-500">{c.impressions.toLocaleString('en-GB')}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-500">{c.clicks.toLocaleString('en-GB')}</td>
+                  {/* The shopper's first verdict — they see the price before they click. Two decimals because the campaigns sit within a
+                      fraction of a point of each other (1.79% vs 1.85%) and one decimal would show them as equal. */}
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">
+                    {c.impressions > 0 ? `${((c.clicks / c.impressions) * 100).toFixed(2)}%` : '—'}
+                  </td>
                   {/* Averaged over the days Google actually reported a figure — see the one-line version above for why the censored
                       count lives on this tooltip rather than beside the campaign name. */}
                   <td
