@@ -856,7 +856,9 @@ function InventoryPageContent() {
           {/* Breadcrumb of applied steps + the row count, at the top where the operator uses it to decide whether to narrow again. */}
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
             <span className="mr-1 whitespace-nowrap text-slate-500">
-              {filtering ? (
+              {/* "N of 295" whenever the list is narrower than the catalogue — a filter OR a cut. Keyed on `filtering` alone, the
+                  unfiltered branch printed the catalogue total and a cut never moved the count (owner, 2026-10-06). */}
+              {filtering || visible.length !== rows.length ? (
                 <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
               ) : (
                 <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> styles</span></>
