@@ -40,7 +40,6 @@ const STATIC = new Set([
   '/birk-tracker',
   '/birkenstock',
   '/products',
-  '/product',
   '/pricing',
   '/pricing/find',
   '/amz',
@@ -69,7 +68,7 @@ const DYNAMIC = [
   '/amz',                // /amz/[segment]
   '/segments',           // /segments/[name]
   '/order-status',       // /order-status/[supplier]
-  '/product',            // /product/[groupid]
+  '/product',            // /product/[groupid]. The bare /product list was retired 2026-10-06 (it redirects to /inventory).
 ];
 
 function normaliseScreenPath(raw) {

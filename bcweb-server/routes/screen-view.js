@@ -18,7 +18,7 @@ WHY ITS OWN TABLE AND NOT bclog, which is the obvious home. bclog audits things 
 PER-PERSON IS IN SCOPE, AND WHAT IT IS FOR (owner, 2026-09-22): "because of training. If one person is using a single screen and we
          feel there is a better screen, then we know what discussion to have." Hold to that, because the same numbers support a very
          different use. The question this answers is WHICH SCREEN SOMEONE IS DOING A JOB ON — somebody working from Inventory all day
-         when the product hub would answer it in one hop is a training prompt, and per person is the only way to see it. It is NOT an
+         when another screen would answer it in one hop is a training prompt, and per person is the only way to see it. It is NOT an
          activity measure: a report ranking people by row count would measure how chatty their navigation is, not their output.
          So: break down by person. Rank screens within a person. DO NOT RANK PEOPLE.
 

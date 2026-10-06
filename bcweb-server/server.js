@@ -35,8 +35,8 @@ app.set('trust proxy', 1);
 app.use(helmet());                 // sensible security headers
 
 // GZIP EVERY RESPONSE (2026-09-22). This API's payloads are large, repetitive JSON — the exact shape gzip is best at — and nothing
-// was compressing them: the list routes that ship a whole table in one call (product-overview 153kB, inv-styles, amazon-order-list,
-// birk-stock) were going over the wire raw. product-overview measured 152.8kB raw / 21.0kB gzipped, a 7x saving, and the others are
+// was compressing them: the list routes that ship a whole table in one call (inv-styles, amazon-order-list, birk-stock, and the
+// since-retired product-overview at 153kB) were going over the wire raw. product-overview measured 152.8kB raw / 21.0kB gzipped, a 7x saving, and the others are
 // the same shape.
 //
 // WHY EXPRESS AND NOT NGINX, since nginx is already in front (docs/VPS-setup.txt). nginx CAN do this, but it was not: it reaches this
@@ -133,7 +133,6 @@ app.use('/product-amazon', require('./routes/product-amazon'));   // produce the
 // Product hub (/product) — the product-FIRST front door (owner, 2026-09-22). Read-only: find the style, read the four numbers that
 // decide which screen you actually want, then jump there with the groupid already in hand. Deliberately NOT a replacement for
 // pricing-find / amz-find, which answer "which SKU am I repricing"; these answer "which product am I working on at all".
-app.use('/product-overview', require('./routes/product-overview')); // style-grain list: stock, Amazon price SPREAD, Shopify price, 30d sold
 app.use('/product-variants', require('./routes/product-variants')); // one style opened out to its sizes + barcode (named for product-sizes, the WRITE)
 
 // Amazon Pricing module (SKU-grain; mirrors the Shopify Pricing flow — segment picker -> WINNERS|LOSERS lists -> per-SKU drill).

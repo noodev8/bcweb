@@ -1559,6 +1559,14 @@ export interface InvStyleRow {
   // RRP is only worth showing struck-through when it is above price.
   price: number | null;
   rrp: number | null;
+  // The Amazon price SPREAD across sizes, never an average — Amazon prices per SIZE, and CLAUDE.md records that the retired
+  // match_amazon_price autopilot died because one thin size could set the whole style's price. Equal low/high = one price across
+  // every priced size; null = no priced amzfeed row at all. amzLive=false: no FBA stock, so the spread is over all feed rows (what it
+  // WOULD sell at) and the card dims it. amzSizes = how many priced sizes the spread covers.
+  amzLow: number | null;
+  amzHigh: number | null;
+  amzLive: boolean;
+  amzSizes: number;
   local: number;
   // Stock held AT Amazon (live + inbound + in-transit). Part of `total`, which is what the browse card's stock pill shows. NOT part of
   // the STOCK LESS / STOCK MORE filter or the Local sort — those compare `local` alone, since their question is what we can pick today.
@@ -1576,9 +1584,9 @@ export interface InvStyleRow {
   // weighed against stock to decide what to drop. A plain 30-day gross count; velocity/per-channel nuance lives on the pricing screens.
   sold30: number;
   total: number;
-  // Space-joined full Amazon Seller SKUs held under this style (skumap.sku, e.g. "17659-23-42-2607 …"), so the Contains box can find a
-  // style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon-mapped variants.
-  amazonSkus: string | null;
+  // Space-joined internal size codes AND full Amazon Seller SKUs under this style (skumap.code + skumap.sku, e.g. "B710AP-05 …
+  // 17659-23-42-2607 …"), so the Contains box finds a style by either one pasted. Never displayed. Null when the style has no skumap rows.
+  codes: string | null;
   // When the style was added: skusummary.created_at, rendered server-side as 'YYYYMMDD HH24:MI:SS' (Europe/London) — a plain string,
   // NOT a Date, and it sorts correctly as one. The Inventory browse opens newest-first on this. Null only if the style has no
   // created_at, which sorts it to the bottom.
@@ -1599,59 +1607,23 @@ export function getInvStyles() {
         ...r,
         localSizes: r.localSizes || {},
         totalSizes: r.totalSizes || r.localSizes || {},
+        // The Amazon spread arrived 2026-10-06. The web deploys separately from the server, so an older server reads as "no Amazon
+        // price" (a dash on the card) rather than undefined.
+        amzLow: r.amzLow ?? null,
+        amzHigh: r.amzHigh ?? null,
+        amzLive: !!r.amzLive,
+        amzSizes: r.amzSizes ?? 0,
       })),
     })
   );
 }
 
-// ---- Product hub (/product) — the product-FIRST front door -----------------------------------------------------------------------
-// "We always start with PRODUCT" (owner, 2026-09-22): find the style, read the four numbers that say which screen you actually want,
-// then jump there with the groupid in hand. Two calls, one per rung — the style list and one style's sizes.
+// ---- Product page (/product/<groupid>) -------------------------------------------------------------------------------------------
+// One style opened out to its sizes. The /product LIST that used to sit in front of it was folded into /inventory on 2026-10-06 (its
+// numbers moved onto the Inventory card - see InvStyleRow's amz* fields); this page is still reached from the Product card on other
+// screens (ProductNavCards showProduct).
 
-// One STYLE on the hub list. See routes/product-overview.js for where each number comes from and why.
-export interface ProductOverviewRow {
-  groupid: string;
-  title: string | null;          // title.shopifytitle — the human name. NOT skusummary.colour, which is an overloaded tag
-  segment: string | null;
-  // skusummary.season — 'Summer' | 'Winter' | 'Any', or null if untagged. Drives the hub's typed WINTER / SUMMER commands. 'Any'
-  // means year-round and counts as BOTH seasons there; the folding happens on the client, so this stays the raw tag.
-  season: string | null;
-  imagename: string | null;      // bare filename; the page builds https://images.brookfieldcomfort.com/<imagename>
-  // THE stock column: local + Amazon-held, one number (owner — "just add local + Amz at this stage"). Deliberately NOT Inventory's
-  // `total`, which also carries the Birkenstock pre-order book (~6 months out), so this can legitimately read LOWER than the
-  // Inventory card for the same style — the gap is the Birk book. `local`/`amazon` ride along for the hover that explains it.
-  stock: number;
-  local: number;
-  amazon: number;
-  // The Amazon price SPREAD across sizes, not an average. Amazon prices per SIZE, and CLAUDE.md records that the retired
-  // match_amazon_price autopilot was killed precisely because one thin size could set a whole style's price — an average column would
-  // put that same error back on screen. Equal low/high = the style has one price; null = no amzfeed row at all.
-  amz_low: number | null;
-  amz_high: number | null;
-  // false = the style has no FBA stock, so the spread is over ALL its feed rows rather than the ones a customer can buy today. Drawn
-  // dimmed: "this is what it would sell at" is worth seeing, but it is not a live price.
-  amz_live: boolean;
-  amz_sizes: number;             // how many sizes the spread covers — £41.09 off one size is not the fact £41.09 off six sizes is
-  price: number | null;          // live SHOPIFY price; null when the legacy varchar holds junk (safeNumeric)
-  sold30: number;                // units in 30 days, all channels, returns excluded — same basis as Inventory's sold30
-  // Every size code AND full Amazon Seller SKU under this style, space-joined. Purely so the client's substring search can find a
-  // style by a pasted '0151183-ARIZONA-38' or '17659-23-42-2607' — neither the groupid nor the title carries the size or the
-  // supplier suffix. Never displayed.
-  codes: string | null;
-}
-
-// The WHOLE style list in one call — deliberately unfiltered, exactly like getInvStyles (owner, 2026-09-22: the hub search should work
-// "exactly the same as inventory search"). ~305 styles / ~150kB, fetched once on mount, and every Contains / Does-not-contain step and
-// Reset then happens in the browser with no round-trip. It used to take a `term` and filter server-side; one request per search is
-// precisely what makes stacked steps and an instant Reset impossible.
-export function getProductOverview() {
-  return request<{ count: number; rows: ProductOverviewRow[] }>(
-    { url: '/product-overview', method: 'GET' },
-    (b) => ({ count: Number(b.count) || (b.rows || []).length, rows: (b.rows as ProductOverviewRow[]) || [] })
-  );
-}
-
-// One SIZE of one style, on the hub's drill. No Shopify price here on purpose — see ProductVariantsHeader.
+// One SIZE of one style, on /product/<groupid>. No Shopify price here on purpose — see ProductVariantsHeader.
 export interface ProductVariantRow {
   code: string;
   eu: string | null;

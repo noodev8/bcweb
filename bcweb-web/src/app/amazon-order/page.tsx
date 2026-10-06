@@ -633,12 +633,12 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
 }
 
 /*
- * DEEP LINK IN (added 2026-09-22 for the product hub). This screen took no query params at all until then: the only way to reach one
- * product's Amazon numbers was to open the page and retype its groupid into the Include box, which is exactly the hunting the hub
+ * DEEP LINK IN (added 2026-09-22 for the product menu, ProductNavCards). This screen took no query params at all until then: the only way to reach one
+ * product's Amazon numbers was to open the page and retype its groupid into the Include box, which is exactly the hunting the menu
  * exists to remove. It now reads three:
  *   ?q=<term>   seeds ONE committed Include step, as though it had been typed and Entered. One step, not a special "filtered" mode -
  *               so Reset clears it and the operator carries on with a normal, fully working screen rather than a locked-down view.
- *   ?from=      where the back arrow goes (the hub list or drill it was opened from), so the trip returns instead of dead-ending.
+ *   ?from=      where the back arrow goes (Inventory, or whichever screen's product menu opened it), so the trip returns instead of dead-ending.
  *   ?back=      that link's label. Both default to the dashboard, which is what every arrival before this used.
  * useSearchParams forces a Suspense boundary for Next's build (App Router), so the page body moved into AmazonOrderContent and this
  * thin wrapper is all the default export does - the same split /product, /pricing/find and the drills already use.

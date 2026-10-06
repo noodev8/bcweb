@@ -73,6 +73,25 @@ function sortedSizes(localSizes: Record<string, number>): [string, number][] {
   });
 }
 
+/**
+ * The Amazon figure: a SPREAD, printed as one value only when every priced size agrees. Amazon prices per size (IVES BLACKSOLE ran
+ * £36.69–£40.89 across six), and CLAUDE.md records that the retired match_amazon_price autopilot died of treating that as one price —
+ * so this never averages. amzLive=false means no FBA stock: the spread is over dead feed rows, what it WOULD sell at, so it is dimmed
+ * with the reason on hover. Ported from the retired /product list (2026-10-06).
+ */
+function AmazonSpread({ row }: { row: InvStyleRow }) {
+  if (row.amzLow === null || row.amzHigh === null) return <span className="text-slate-300">—</span>;
+  const one = row.amzLow === row.amzHigh;
+  const text = one ? `£${row.amzLow.toFixed(2)}` : `£${row.amzLow.toFixed(2)}–${row.amzHigh.toFixed(2)}`;
+  const title = [
+    one
+      ? `One price across ${row.amzSizes} size${row.amzSizes === 1 ? '' : 's'}.`
+      : `Amazon prices per size — ${row.amzSizes} sizes span this range.`,
+    row.amzLive ? 'In stock at FBA.' : 'No FBA stock: this is what the listing WOULD sell at, not a price on sale today.',
+  ].join(' ');
+  return <span className={row.amzLive ? 'text-slate-700' : 'italic text-slate-400'} title={title}>{text}</span>;
+}
+
 export default function InvStyleCard({
   row,
   sizeFilter,
@@ -88,7 +107,7 @@ export default function InvStyleCard({
   // card's Detail never collapses another's (owner, 2026-07-23).
   detailOpen: boolean;
   onToggleDetail: () => void;
-  // Passed through to Detail's same-tab jumps (Sales, Social) so the list can save the operator's place first.
+  // Passed through to Detail's same-tab jump (Send to Social) so the list can save the operator's place first.
   onLeave?: () => void;
   // Remove this card from the list (view state only — the list owns the cut set).
   onCut?: () => void;
@@ -324,12 +343,13 @@ export default function InvStyleCard({
               </div>
               <div className="font-mono text-xs text-slate-500">{row.groupid}</div>
             </div>
-            {/* Price block: RRP and the current Shopify price, both always shown and both labelled (owner, 2026-09-24) — a customer
-                question is usually "what's it normally / what is it now", and the old face only showed RRP (struck through) when the
-                price was below it, so a full-price style gave no sign whether £77 was RRP or a cut. The stock + sold-30d pills that
-                used to sit here are gone (same date): the size chips already carry stock, and sold-30d is a pricing question the
-                Repricing screens answer. The SOLD worded filter still uses sold30 (page.tsx), so the field stays on the row. */}
-            {/* Fixed-width, right-aligned columns so RRP and Price line up down the list whatever the amounts (£59.99 vs £130.00). */}
+            {/* Number block: RRP, Shopify, Amazon, Sold 30d — every one always shown and labelled. RRP + Shopify since 2026-09-24
+                (a customer question is "what's it normally / what is it now"). AMAZON and SOLD 30D came back 2026-10-06 (owner) when
+                the /product list was folded into this screen: with the hand-off menu here, these are the numbers that say WHICH screen
+                to hand off to (a pricing job, an ordering job) without opening one. Sold 30d had been taken off on 2026-09-24 as "a
+                pricing question" — it is back because this is now where pricing jobs start. Stock stays on the size chips.
+                The Shopify column was labelled "Price" until Amazon sat beside it and made that ambiguous. */}
+            {/* Fixed-width, right-aligned columns so the figures line up down the list whatever the amounts (£59.99 vs £130.00). */}
             <div className="shrink-0 text-right">
               <div className="flex items-baseline justify-end gap-3">
                 <div className="w-[4.5rem]">
@@ -339,10 +359,18 @@ export default function InvStyleCard({
                   </div>
                 </div>
                 <div className="w-20">
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Price</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Shopify</div>
                   <div className="text-base font-semibold tabular-nums text-slate-900">
                     {row.price !== null ? `£${row.price.toFixed(2)}` : '—'}
                   </div>
+                </div>
+                <div className="hidden w-28 sm:block">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Amazon</div>
+                  <div className="whitespace-nowrap text-sm tabular-nums"><AmazonSpread row={row} /></div>
+                </div>
+                <div className="hidden w-14 sm:block">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400" title="Units sold in the last 30 days, all channels">Sold 30d</div>
+                  <div className="text-sm tabular-nums text-slate-700">{row.sold30}</div>
                 </div>
               </div>
             </div>

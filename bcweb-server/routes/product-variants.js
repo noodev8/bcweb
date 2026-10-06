@@ -4,8 +4,8 @@ API Route: product_variants
 =======================================================================================================================================
 Method: GET
 Purpose: The drill behind /product/<groupid> — one STYLE opened out to its sizes (owner, 2026-09-22: "double click to drill down if on
-         groupid level ... CODE, Stock, Amz Price, Shopify Price, Total Sold for code"). Same four numbers as product-overview, one
-         rung down, plus the barcode, so the whole product-first errand — find it, look at it, act on it — never leaves this pair of
+         groupid level ... CODE, Stock, Amz Price, Shopify Price, Total Sold for code"). Same four numbers the old /product list carried
+         (that list was folded into /inventory on 2026-10-06), one rung down, plus the barcode, so the whole product-first errand — find it, look at it, act on it — never leaves this pair of
          screens for the numbers. Read-only.
 
 NAMED product-variants, NOT product-sizes. routes/product-sizes.js already exists and is the Add/Modify WRITE that saves a style's
@@ -15,15 +15,15 @@ extra word in a filename.
 THE SHOPIFY PRICE IS IN THE HEADER, NOT ON THE ROWS (owner's list asked for it per code, and this is the one place the shape was
 changed). skusummary.shopifyprice is STYLE grain — there is no per-size Shopify price to read — so a Shopify column here would print
 the same number down every row and quietly invite the reader to believe the sizes could differ. They cannot. Amazon's CAN, and does
-(see product-overview's header on the spread), so amz_price stays a real per-row column and the asymmetry between the two channels is
+(see the amz_live CTE in inv-styles.js on the spread), so amz_price stays a real per-row column and the asymmetry between the two channels is
 visible on the screen instead of being flattened away. That asymmetry is the whole reason CLAUDE.md retired the amz-match autopilot.
 
 SIZES COME FROM skumap, NOT localstock (CLAUDE.md landmine): localstock holds in-stock rows only, so a sold-out size has NO row there.
 Taking the range from skumap and LEFT JOINing each source means a sold-out size still appears, reading 0 — which is the answer the
 operator needs ("we have none in a 39"), not a missing row they will read as "not stocked". Same rule, same reason, as inv-stock.js.
 
-STOCK IS ONE COLUMN, local + Amazon-held, exactly as product-overview defines it — and the rows here must sum back to the figure the
-list showed, or the two screens disagree about the same style one click apart. If you change the definition in one file, change both.
+STOCK IS ONE COLUMN, local + Amazon-held (inv-styles' `local` + `amazon`, NOT its `total`, which adds the Birk pre-order book). If
+you change what "local" or "at Amazon" means, change inv-styles.js too, or the two screens disagree about the same style.
 
 Requires auth.
 =======================================================================================================================================
@@ -112,7 +112,7 @@ router.get('/', async (req, res) => {
         GROUP BY code
       ),
       sold AS (
-        -- 30 days, all channels, returns dropped (qty > 0) - the same basis as product-overview, one rung down. sales.code is the
+        -- 30 days, all channels, returns dropped (qty > 0) - the same basis as inv-styles' sold30, one rung down. sales.code is the
         -- internal size code, so this is a straight per-size count with no join.
         SELECT code, SUM(qty) AS units
         FROM sales
@@ -131,7 +131,7 @@ router.get('/', async (req, res) => {
         NULLIF(regexp_replace(COALESCE(m.ean, ''), 'B$', ''), '') AS barcode,
         m.sku AS amz_sku,
         COALESCE(loc.units, 0)  AS local_units,
-        -- amztotal is live + inbound already; do NOT add amzlive to it (see product-overview). amzfeed is FBA-only and READ ONLY.
+        -- amztotal is live + inbound already; do NOT add amzlive to it (see inv-styles.js). amzfeed is FBA-only and READ ONLY.
         COALESCE(f.amztotal, 0) AS amazon_units,
         COALESCE(f.amzlive, 0)  AS amz_live,
         ${safeNumeric('f.amzprice')} AS amz_price,

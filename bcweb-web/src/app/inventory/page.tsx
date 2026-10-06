@@ -9,6 +9,17 @@ Purpose: "Have we got this, in my size, and where is it?" The operator filters t
          Why a browse and not a list-plus-detail-panel: the normal result is a dozen near-identical black Arizonas, and a browse shows
          every picture at once, which is how a human tells them apart. See InvStyleCard for the per-card behaviour.
 
+THIS IS ALSO THE PRODUCT SEARCH (owner, 2026-10-06). The dashboard's search box lands here, and a sticky PRODUCT MENU over the cards
+(ProductNavCards: Sales, Edit Product, Shopify Order / Price, Amazon Order / Price) hands the SELECTED card to whichever screen the
+job turns out to need, with the groupid filled in. That menu used to live on a /product list that the search box fed (2026-09-22 to
+2026-10-06); the two screens ran the same search over the same catalogue, so reaching a product's sizes cost an extra page and
+click. The list was folded in here rather than the other way round because the sizes, racks and adjust are the hard part, and the
+list only added the menu and its figures. /product now redirects here; /product/<groupid> (one style's sizes) stays.
+  What came across with it: the menu (see selectedKey for the selection rule, and saveReturn for how Back returns here), the Amazon
+  price spread and Sold 30d on the card face, and the Shopify / Sold 30d sorts.
+  What did NOT: the compact table (cards only, by choice — a list toggle can be added if price-scanning here is missed), and the
+  /product meaning of STOCK LESS/MORE (local + Amazon) — here it stays shelf-only, see metricValue.
+
 THE FILTER IS UNCHANGED — it is the proven part of this screen and the redesign leaves it exactly as it was:
   - Two boxes: Contains / Does not contain. Either or both may be filled. Enter or Find applies them, then clears them; each Find
     narrows what is ALREADY on screen ("Arizona" -> not "EVA" -> "black"). Steps are display-only; to undo, Reset.
@@ -53,7 +64,8 @@ and comes back having forgotten which of a dozen near-identical black Arizonas t
 arrowing onto the last rendered card extends it — so the keyboard can reach the whole list without touching the mouse, and never
 points at a card that isn't painted. The mechanics live in the shared `useListCursor` hook; this page supplies the keys, when it is
 enabled, what Enter does, and the look of the highlight. Detail's open/closed state had to move UP here for Enter to drive it, so
-InvStyleCard now takes it as a prop.
+InvStyleCard now takes it as a prop. Since 2026-10-06 the cursor is also THE SELECTION the product menu acts on, so a click puts it
+on a card too and it is always drawn (see selectedKey).
 =======================================================================================================================================
 */
 
@@ -64,6 +76,7 @@ import AppShell from '@/components/AppShell';
 import { prettyPathLabel } from '@/lib/nav';
 import { getInvStyles, InvStyleRow } from '@/lib/api';
 import InvStyleCard from '@/components/InvStyleCard';
+import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 
@@ -98,23 +111,31 @@ function metricValue(r: InvStyleRow, metric: QtyMetric): number {
 // SORTING (owner). A visible, click-to-reverse control rather than a worded command: sorting is a MODE you sit in and flip, not a
 // one-shot action like the STOCK/SOLD filters, so it needs a standing affordance that shows the current key + direction. Client-side —
 // the whole list is already in memory, same as the filters. Each key clicks in at a sensible default direction (see DEFAULT_DIR);
-// clicking the active key again reverses it. Added and Title only: the Local and Sold sorts were removed (owner, 2026-09-24) along
-// with the stock / sold-30d figures on the card face, which were what they ranked by. The STOCK / SOLD worded filters stay.
-type SortKey = 'created' | 'title';
+// clicking the active key again reverses it. The Local and Sold sorts were removed on 2026-09-24 along with the figures on the card
+// face; SOLD 30D and SHOPIFY price came back on 2026-10-06 (owner) with the /product list's figures, because this is now where a
+// pricing hunt starts ("what is selling", "what is dearest"). Local stays off — stock is read off the size chips, not ranked.
+type SortKey = 'created' | 'title' | 'price' | 'sold';
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'created', label: 'Added' },
   { key: 'title', label: 'Title' },
+  { key: 'price', label: 'Shopify' },
+  { key: 'sold', label: 'Sold 30d' },
 ];
-// The direction a key adopts when first picked: Added newest first, Title A→Z. Re-clicking the active key toggles from here.
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { created: 'desc', title: 'asc' };
+// The direction a key adopts when first picked: Added newest first, Title A→Z, the numbers biggest first. Re-clicking the active key
+// toggles from here.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { created: 'desc', title: 'asc', price: 'desc', sold: 'desc' };
 
-// The value a row sorts on for a given key. Title falls back to groupid so an untitled style still lands somewhere sensible.
-function sortValue(r: InvStyleRow, key: SortKey): string {
+// Compare two rows on a key, ascending; the caller flips it for descending. 0 = tie (the caller breaks it on groupid).
+function compareOn(a: InvStyleRow, b: InvStyleRow, key: SortKey): number {
   // `created` is skusummary.created_at, already rendered server-side as 'YYYYMMDD HH24:MI:SS' — that shape sorts correctly as plain
   // text, so no Date parsing here and no BST day-shift. An unstamped style reads as '' and lands at the bottom of newest-first, which
   // is where an unknown date belongs.
-  if (key === 'created') return r.created || '';
-  return (r.title || r.groupid).toLowerCase();
+  if (key === 'created') return (a.created || '').localeCompare(b.created || '');
+  if (key === 'sold') return a.sold30 - b.sold30;
+  // A junk price (null) sorts as the lowest, so it sinks on the default biggest-first rather than heading the list.
+  if (key === 'price') return (a.price ?? -1) - (b.price ?? -1);
+  // Title falls back to groupid so an untitled style still lands somewhere sensible.
+  return (a.title || a.groupid).toLowerCase().localeCompare((b.title || b.groupid).toLowerCase());
 }
 
 // How many cards are painted at a time (see the window note in the header). Every match is shown eventually; this is only how far the
@@ -125,13 +146,15 @@ const CARD_CHUNK = 40;
 const CHUNK_ROOT_MARGIN = '800px';
 
 // The text a filter step is matched against. Built once per row and cached. Lowercased here so each step is a plain indexOf.
-// Includes the style's Amazon Seller SKUs (skumap.sku) so a pasted Amazon SKU like 17659-23-42-2607 — which doesn't share the internal
-// code — still finds its style (owner, 2026-07-25). Includes supplier (skusummary.supplier, e.g. "UKD") so typing the supplier code
+// Includes `codes`: the style's Amazon Seller SKUs (skumap.sku) so a pasted Amazon SKU like 17659-23-42-2607 — which doesn't share the
+// internal code — still finds its style (owner, 2026-07-25), and its internal size codes (2026-10-06), so a pasted B710AP-05 or
+// FLE030-IVES-WHITE-05 finds it too: parseContains splits off the size only for digit-led codes, which ~10% of live codes are not.
+// Includes supplier (skusummary.supplier, e.g. "UKD") so typing the supplier code
 // finds every style under it — a brand name is already in the title, but a supplier that groups several brands (Goor, Roamers, Dek…
 // all UKD) isn't, and there was previously no way to pull that set up in one search (owner, 2026-09-07). Same rule as the other three
 // Contains sites (Amazon Order, amz-find.js, analytics-sales.js) — keep them in step.
 function haystack(r: InvStyleRow): string {
-  return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.amazonSkus || ''} ${r.supplier || ''}`.toLowerCase();
+  return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.codes || ''} ${r.supplier || ''}`.toLowerCase();
 }
 
 // Normalise a size token for matching, so a typed "5" finds a stored "05" and "41" finds "41".
@@ -257,7 +280,7 @@ function parseContains(raw: string): { term: string; size: string; qty: QtyFilte
 }
 
 // ---- RETURN TO YOUR PLACE (owner, 2026-09-24) ----------------------------------------------------------------------------------
-// Detail's Sales and Send to Social buttons leave in the SAME tab — the owner allowed that only if coming back puts you exactly where
+// The product menu (ProductNavCards) and Detail's Send to Social leave in the SAME tab — the owner allowed that only if coming back puts you exactly where
 // you were, with the Detail still open. Everything on this screen is component state, so a same-tab trip would otherwise return to the
 // default catalogue at the top. So just before leaving we write the whole view to sessionStorage — filters, sort, cuts, which Details
 // are open, how far the window is painted, and the card you left from plus where it sat on screen — and the next mount reads it back.
@@ -335,11 +358,23 @@ function InventoryPageContent() {
   const [back] = useState<ReturnSnapshot | null>(() => (searchParams.get('q') ? null : readReturn()));
 
   // WHERE "BACK" GOES, threaded via ?from=/&back= - the convention the pricing, Amazon, Add/Modify and Amazon Order screens already
-  // use. Added 2026-09-22 with the product hub: Inventory is one of its hand-off cards, and a screen you are sent INTO from a hub
-  // needs a way back out to the list you were working (owner - "when going to INVENTORY, need to come back easy"). Landing here from
-  // the header tab or a bare URL passes no params and is unchanged - no back arrow at all, as before.
+  // use. Added 2026-09-22: Inventory is a hand-off card on other screens (the /product/<groupid> page, Sales, New Additions), and a
+  // screen you are sent INTO needs a way back out to the list you were working (owner - "when going to INVENTORY, need to come back
+  // easy"). Landing here from the header tab, the dashboard search or a bare URL passes no params - no back arrow at all.
   const from = searchParams.get('from');
-  const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : undefined);
+  const backParam = searchParams.get('back');
+  const backLabel = backParam || (from ? prettyPathLabel(from) : undefined);
+  // THIS SCREEN'S ADDRESS for the return trip — what the menu hands on as ?from=, and what saveReturn rewrites the history entry to.
+  // Its own ?from=/&back= are kept, so after a round trip this screen's Back still leads where it did. NO ?q=, on purpose: the filter
+  // comes back from the RETURN snapshot (which holds the whole view — every step, cuts, scroll, open Details, the selection), and a
+  // ?q= would override the snapshot with just the first term.
+  const selfUrl = useMemo(() => {
+    const p = new URLSearchParams();
+    if (from) p.set('from', from);
+    if (backParam) p.set('back', backParam);
+    const qs = p.toString();
+    return qs ? `/inventory?${qs}` : '/inventory';
+  }, [from, backParam]);
 
   // The two input boxes, and the ordered list of steps applied so far.
   const [contains, setContains] = useState('');
@@ -434,7 +469,7 @@ function InventoryPageContent() {
   const sortedVisible = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...visible].sort((a, b) => {
-      const d = sortValue(a, sortKey).localeCompare(sortValue(b, sortKey));
+      const d = compareOn(a, b, sortKey);
       if (d === 0) return a.groupid.localeCompare(b.groupid);
       return d * dir;
     });
@@ -492,13 +527,8 @@ function InventoryPageContent() {
   // effect — the growth is caused by the keypress, and doing it in the handler avoids a cascading render. Extending only ADDS keys,
   // so the cursor keeps its place.
   const lastRenderedKey = rendered.length > 0 ? rendered[rendered.length - 1].groupid : null;
-  // THE RING SHOWS ONLY FOR THE KEYBOARD (owner, 2026-09-24). A click still moves the cursor to the card clicked, so the arrows carry
-  // on from wherever the mouse left off, but it does so silently: the mouse never draws a selection. The ring comes on with the first
-  // arrow press and goes off again with the next click.
-  const [ringOn, setRingOn] = useState(false);
   const onCursorMove = useCallback(
     (key: string) => {
-      setRingOn(true);
       if (moreCount > 0 && key === lastRenderedKey) extend();
     },
     [moreCount, lastRenderedKey, extend],
@@ -515,18 +545,30 @@ function InventoryPageContent() {
     scrollBlock: 'center',
   });
 
+  // THE SELECTED PRODUCT — what the sticky menu acts on (owner, 2026-10-06, when the /product list was folded into this screen).
+  // It IS the cursor: a click or an arrow puts it on a card, Escape or Reset takes it off, so mouse and keyboard can never disagree
+  // about which product the menu will open. This reverses the 2026-09-24 rule that the mouse never showed a selection ("not sure
+  // there is a need for a selection") — with a menu above the cards there now is one, and an invisible target behind a row of
+  // buttons is the "right 95% of the time, silently wrong the rest" control ProductNavCards' header warns against. So the selected
+  // card is always drawn, and the menu bar names it.
+  // ONE MATCH IS SELECTED WITHOUT A CLICK: a search that lands on a single product (the dashboard box with a groupid or a pasted SKU,
+  // the common case) lights the menu straight away, so Shopify Price / Amazon Order is one click from the search.
+  // Derived, not set in an effect: nothing is stored until the operator actually picks something.
+  const selectedKey = cursor.cursorKey ?? (sortedVisible.length === 1 ? sortedVisible[0].groupid : null);
+  const selectedRow = useMemo(
+    () => (selectedKey ? sortedVisible.find((r) => r.groupid === selectedKey) ?? null : null),
+    [selectedKey, sortedVisible],
+  );
+
   // CLICKING A CARD (owner, 2026-09-24). A click on EMPTY space opens or closes the card's Detail, the same as the arrow: the
   // whole card is the target, not just the chevron. A click on a control inside it (a size chip, the arrow, a button or link, the
   // picture) just does that control's job. A drag that selected some text (copying a code) is not a click and changes nothing. The
   // zoomed picture sits inside the card's DOM, so its overlay (data-list-cursor="off") counts as a control too; closing the zoom
   // must not also close the Detail behind it.
-  //
-  // THE MOUSE NEVER SHOWS A SELECTION (same date, owner: "not sure there is a need for a selection"). But it DOES move the keyboard
-  // cursor here, quietly (see ringOn), so up/down carry on from the card just clicked rather than jumping back to the top of the
-  // list, which is the place-keeping the keyboard cursor exists for.
+  // ANY click on a card — a control included — also SELECTS it (see selectedKey), so tapping a size chip and then a menu card acts
+  // on the product whose size you just looked at.
   const onCardClick = useCallback((e: React.MouseEvent, groupid: string) => {
     cursor.setCursor(groupid);
-    setRingOn(false);
     const target = e.target as Element;
     if (target.closest('button, a, input, select, textarea, label, [role="button"], [data-list-cursor="off"]')) return;
     if (window.getSelection()?.toString()) return;
@@ -547,7 +589,13 @@ function InventoryPageContent() {
       anchorTop: el ? el.getBoundingClientRect().top : 0,
     };
     try { window.sessionStorage.setItem(RETURN_KEY, JSON.stringify(snap)); } catch { /* storage blocked: they just come back fresh */ }
-  }, [steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir, cut, detailOpen, shown]);
+    // ...and make the BROWSER's Back land on the snapshot too, not just the destination's "← Back" link. This history entry may still
+    // carry the dashboard's ?q=, and a ?q= seed deliberately wins over a snapshot (it is a new question) — so the browser's Back would
+    // rebuild only that first term, dropping every later step, the cuts and the selection. Rewriting this entry to selfUrl (same
+    // ?from=/&back=, no q) before leaving makes both Backs the same return trip. A plain history rewrite rather than a router call:
+    // nothing should re-render on the way out, and Next's router stays in step with replaceState.
+    try { window.history.replaceState(window.history.state, '', selfUrl); } catch { /* cannot rewrite: browser Back re-seeds ?q= */ }
+  }, [steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir, cut, detailOpen, shown, selfUrl]);
 
   // ...and put the operator back: scroll the card they left from to the same height on screen, with the keyboard cursor on it.
   //
@@ -563,7 +611,7 @@ function InventoryPageContent() {
     if (!back || restoredRef.current || loading || error) return;
     restoredRef.current = true;
     clearReturn();
-    // Cursor back on the card left from, quietly (no ring), so the arrows carry on from there.
+    // Cursor (= the selection) back on the card left from, so the menu and the arrows carry on from there.
     setCursor(back.anchor);
     const RESTORE_MS = 1500;
     const until = performance.now() + RESTORE_MS;
@@ -668,11 +716,17 @@ function InventoryPageContent() {
     setContains('');
     setNotContains('');
     setSizeInput('');
+    // A Find changes WHICH products are listed, so it drops the selection rather than letting the cursor slide to whichever card
+    // survived — the menu would then act on a product nobody picked. A Find that leaves one match re-selects it (see selectedKey).
+    cursor.setCursor(null);
     containsRef.current?.focus();
   }
 
   // Cut one row from the view. (No row click to stop propagating from anymore — the card owns its own clicks — so this is a plain hide.)
   function onCut(groupid: string) {
+    // Cutting the selected card drops the selection, for the same reason a Find does: the cursor would otherwise slide onto the next
+    // card and the menu would quietly change product.
+    if (cursor.cursorKey === groupid) cursor.setCursor(null);
     setCut((prev) => {
       const next = new Set(prev);
       next.add(groupid);
@@ -818,7 +872,7 @@ function InventoryPageContent() {
             {visible.length > 0 && (
               <>
                 <span className="text-slate-300">|</span>
-                <span className="whitespace-nowrap text-xs text-slate-400">↑↓ move · Enter opens detail</span>
+                <span className="whitespace-nowrap text-xs text-slate-400">Click or ↑↓ to pick · Enter opens detail</span>
               </>
             )}
             {cutInView > 0 && (
@@ -940,6 +994,36 @@ function InventoryPageContent() {
         </form>
       </div>
 
+      {/* ---- The product menu (owner, 2026-10-06) -------------------------------------------------------------------------
+          Every other screen for the SELECTED product (see selectedKey), greyed until one is picked. Moved here from the retired
+          /product list with the same look. STICKY, unlike the command bar above: the owner asked for it on /product ("I'm further
+          down the list, click and then don't know what to do so I scroll up"), and what got the command bar unstuck — a tall
+          pinned box with cards streaming under it while arrowing — is kept small here: one caption line and one row of buttons.
+          It names the selected product, because once pinned, the card you clicked may have scrolled off.
+          bg matches the page so cards scrolling underneath do not show through. Inventory is excluded: it is this screen.
+          onLeave saves the whole view first (saveReturn), so either Back lands on the same cards, filter, scroll and selection. */}
+      {!loading && !error && (
+        <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-2">
+          <p className="mb-1.5 truncate text-xs text-slate-500">
+            {selectedRow ? (
+              <>
+                <span className="font-mono text-slate-700">{selectedRow.groupid}</span>
+                {selectedRow.title && <span className="text-slate-700"> - {selectedRow.title}</span>}
+                <span className="text-slate-400"> · pick where to go</span>
+              </>
+            ) : (
+              'Click a product to choose what to do with it'
+            )}
+          </p>
+          <ProductNavCards
+            groupid={selectedRow ? selectedRow.groupid : null}
+            from={selfUrl}
+            exclude={['Inventory']}
+            onLeave={() => { if (selectedRow) saveReturn(selectedRow.groupid); }}
+          />
+        </div>
+      )}
+
       {/* ---- Results ----------------------------------------------------------------------------------------------------- */}
       {loading && <p className="text-sm text-slate-400">Loading stock…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -955,17 +1039,16 @@ function InventoryPageContent() {
               data-inv-card={r.groupid}
               ref={cursor.itemRef(r.groupid)}
               onClick={(e) => onCardClick(e, r.groupid)}
-              // scroll-mt is the clearance for a STICKY command bar (a card scrolled to the viewport top would otherwise sit under
-              // it). The bar is unstuck at the moment and 'center' scrolling barely uses this — kept so pinning the bar again is a
-              // one-line change that doesn't quietly start hiding the current card.
+              // scroll-mt is the clearance for the STICKY product menu (a card scrolled to the viewport top would otherwise sit
+              // under it). 'center' scrolling barely uses it; it matters for any 'nearest'-style scroll.
               className={
                 'group relative scroll-mt-36 cursor-pointer rounded-lg ' +
-                (ringOn && cursor.isCursor(r.groupid) ? 'ring-2 ring-brand-500' : '')
+                (selectedKey === r.groupid ? 'ring-2 ring-brand-500' : '')
               }
             >
-              {/* The "you are here" bar. The ring alone reads as focus; this reads across a room, which is the actual job — the
-                  operator comes back from the racks and has to re-find their place at a glance. */}
-              {ringOn && cursor.isCursor(r.groupid) && (
+              {/* The "you are here" bar on the SELECTED card. The ring alone reads as focus; this reads across a room, which is the
+                  actual job — the operator comes back from the racks and has to re-find their place at a glance. */}
+              {selectedKey === r.groupid && (
                 <div className="absolute left-0 top-0 z-10 h-full w-1 rounded-l-lg bg-brand-500" />
               )}
               <InvStyleCard

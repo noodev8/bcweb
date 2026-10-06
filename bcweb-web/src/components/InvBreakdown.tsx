@@ -8,7 +8,7 @@ Purpose: The "why is that number what it is" deep view for one style on the Inve
            - the FULL size range including sold-out zeros (the face chips show only in-stock sizes),
            - where every unit sits across the buckets worth acting on (shown in full — opening Breakdown IS the request for detail, so
              there is no second "Show detail" toggle to click; see DETAIL_GROUPS for the buckets deliberately left off),
-           - jumping off to reprice the style, open its live product page, or grab its image,
+           - opening its live product page, grabbing its image, or sending it to Social,
            - and whether it is actually selling (recent sales).
 
          It is handed the InvStockData the card ALREADY fetched on the first size tap / breakdown open, so opening it costs no extra
@@ -23,7 +23,7 @@ most of the time. Reorder DETAIL_GROUPS to change the layout; nothing else needs
 
 import { useRouter } from 'next/navigation';
 import {
-  ArrowDownTrayIcon, ArrowUpRightIcon, ChartBarIcon, CurrencyPoundIcon, GlobeAltIcon, MegaphoneIcon, PencilSquareIcon,
+  ArrowDownTrayIcon, ArrowUpRightIcon, GlobeAltIcon, MegaphoneIcon,
 } from '@heroicons/react/24/outline';
 import { InvStockData, InvBuckets, InvSizeRow } from '@/lib/api';
 import CopyButton from '@/components/CopyButton';
@@ -102,7 +102,7 @@ function sizeLabel(s: { sizeDisplay: string | null; eu: string; uksize: string |
 
 export default function InvBreakdown({ data, onLeave }: {
   data: InvStockData;
-  // Called just before a SAME-TAB jump away (Shopify, Amazon, Sales, Send to Social), so /inventory can save the operator's place and
+  // Called just before a SAME-TAB jump away (Send to Social), so /inventory can save the operator's place and
   // put them back on this card, Detail open, when they return. See RETURN TO YOUR PLACE in app/inventory/page.tsx.
   onLeave?: () => void;
 }) {
@@ -131,50 +131,15 @@ export default function InvBreakdown({ data, onLeave }: {
     router.push(`/social?${params.toString()}`);
   };
 
-  // SALES replaced the inline recent-sales panel (owner, 2026-09-24): the panel was a pricing question squatting on a stock screen, and
-  // Analytics → Sales answers it properly (12 months, every channel, returns netted). SAME TAB, not new — on the owner's condition that
-  // coming back lands on this card with Detail still open; onLeave saves that, and the Sales screen's Back (from=/inventory) or the
-  // browser's Back both return to it. The groupid seeds Sales' Contains box, which matches groupid as a substring.
-  // SHOPIFY / AMAZON pricing moved to the same tab too (owner, 2026-09-24), on the same terms. Both screens already honour ?from= for
-  // their Back link, so passing /inventory is all it takes; Amazon's Find threads it on through to the SKU drill and back.
-  const leaveTo = (path: string, params: Record<string, string>) => {
-    onLeave?.();
-    router.push(`${path}?${new URLSearchParams({ ...params, from: '/inventory' }).toString()}`);
-  };
-  const openSales = () => leaveTo('/analytics/sales', { q: data.groupid, back: 'Inventory' });
-  const openShopify = () => leaveTo(`/pricing/style/${encodeURIComponent(data.groupid)}`, {});
-  const openAmazon = () => leaveTo('/amz/find', { q: data.groupid });
-
   return (
     <div className="border-t border-slate-200 bg-slate-50/40">
-      {/* ---- Jump-off actions. Price this style, see its sales, open its live page, or grab the image. Shopify, Amazon, Sales and
-              Social stay in THIS tab and save the operator's place first (onLeave); Edit Product and Product page still open a new tab.
-              Shopify is groupid-grain (straight to the drill); Amazon is per-size, so it opens the Find screen pre-filled. ---- */}
-      {/* ONE button style for every action (owner, 2026-09-24): the old bar mixed green/amber/brand tints, pipe separators and
-          emoji ↗ glyphs, and read as six unrelated widgets. Now they are one row of equal neutral buttons; a new-tab jump carries the
-          same small outbound icon on the right. */}
+      {/* ---- Jump-off actions: the live page, the image, and Send to Social — the things about THIS listing rather than another
+              screen. Shopify / Amazon pricing, Sales and Edit Product were here until 2026-10-06 and came off when the sticky
+              product menu (ProductNavCards) arrived above the cards: the same four jumps twice on one screen was clutter, and the
+              menu carries the Order screens as well. Social stays in THIS tab and saves the operator's place first (onLeave). ---- */}
+      {/* ONE button style for every action (owner, 2026-09-24): equal neutral buttons; a new-tab jump carries the small outbound
+          icon on the right. */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 text-xs">
-        <button type="button" onClick={openShopify} title="Price this style on Shopify" className={BTN}>
-          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Shopify
-        </button>
-        <button type="button" onClick={openAmazon} title="Price this style's sizes on Amazon" className={BTN}>
-          <CurrencyPoundIcon className="h-3.5 w-3.5 text-slate-400" /> Amazon
-        </button>
-        <button type="button" onClick={openSales} title="This style's sales, last 12 months, all channels" className={BTN}>
-          <ChartBarIcon className="h-3.5 w-3.5 text-slate-400" /> Sales
-        </button>
-        {/* Edit the product itself — title, attributes, sizes, images — one hop from the shelf, opens in a new tab (unlike the
-            pricing jumps). groupid-grain, so /products opens straight on this style's edit panel (it searches and selects on arrival). */}
-        <a
-          href={`/products?groupid=${encodeURIComponent(data.groupid)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open this product in Add / Modify (new tab)"
-          className={BTN}
-        >
-          <PencilSquareIcon className="h-3.5 w-3.5 text-slate-400" /> Edit Product
-          <ArrowUpRightIcon className="h-3 w-3 text-slate-400" />
-        </a>
         {productUrl && (
           // The copy-link icon sits INSIDE the same bordered group as its button, so it reads as part of "Product page" rather than
           // a stray glyph floating between two buttons.

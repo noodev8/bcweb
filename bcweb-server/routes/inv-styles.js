@@ -44,6 +44,9 @@ Success Response:
       "imagename": "birkenstock-....jpg",   // bare filename; the web builds https://images.brookfieldcomfort.com/<imagename>
       "price": 57.00,                       // safeNumeric(shopifyprice); null if the legacy varchar holds junk. For the card face.
       "rrp": 80.00,                         // safeNumeric(rrp); null likewise. Shown struck-through only when above price.
+      "amzLow": 37.30, "amzHigh": 41.09,    // Amazon price SPREAD across sizes (never an average); null if no priced amzfeed row
+      "amzLive": true,                      // spread over in-stock FBA sizes; false = no FBA stock, spread is over all feed rows
+      "amzSizes": 4,                        // how many priced sizes the spread covers
       "local": 38,                          // SUM(localstock.qty), all states
       "amazon": 11,                         // held AT Amazon (live + inbound + transit). Its own field so the client can show/filter "local + Amazon"
       "localSizes": { "35": 0, "36": 10, "37": 4 },  // {size: localQty} for EVERY size in skumap (0 = sold out); the pickable figure
@@ -51,8 +54,8 @@ Success Response:
       "onOrder": 0,                         // COUNT(orderstatus rows), arrived=0, ordertype 2|3
       "sold30": 7,                          // units sold in the last 30 days, all channels (positive sales only); for the SALES filter
       "total": 38,                          // local + amazon + birk pre-order book (NOT the same as local+amazon — birk is future stock)
-      "amazonSkus": "17659-23-42-2607 17659-23-43-2607", // space-joined skumap.sku for every variant; null if none. Lets the client's
-                                             // Contains search find a style by a pasted Amazon SKU
+      "codes": "1005292-ARIZONA-36 … 17659-23-42-2607 …", // every internal size code AND Amazon Seller SKU, space-joined; null if
+                                             // none. Lets the client's Contains search find a style by either, pasted
       "created": "20260724 11:07:30"          // skusummary.created_at as 'YYYYMMDD HH24:MI:SS' (Europe/London); null if unstamped.
                                              // Sortable as plain text — the browse opens newest-first on it
     },
@@ -162,14 +165,17 @@ router.get('/', async (req, res) => {
         FROM amzfeed
         GROUP BY groupid
       ),
-      amz_skus AS (
-        -- Full Amazon Seller SKUs (skumap.sku = internal code + supplier suffix, e.g. 17659-23-42-2607) held under each style, so a
-        -- pasted Amazon SKU can be found by the Contains box even though it isn't the internal code (owner request 2026-07-25). skumap
-        -- is one row per variant and always carries sku, unlike amzfeed (live FBA rows only) — this way a style search still works even
-        -- when the size isn't currently live on Amazon. Space-joined so the client's plain-substring haystack search works unchanged.
-        SELECT groupid, string_agg(sku, ' ') AS skus
+      codes AS (
+        -- Every INTERNAL size code (skumap.code, e.g. B710AP-05) and full Amazon Seller SKU (skumap.sku = internal code + supplier
+        -- suffix, e.g. 17659-23-42-2607) under each style, space-joined so the client's plain-substring Contains search finds a style
+        -- by either one pasted. Amazon SKUs since 2026-07-25 (owner). Internal codes since 2026-10-06, when the /product list (whose
+        -- search had them) was folded into Inventory: the client's parser splits a pasted code into groupid + size only when the code
+        -- starts with a digit (0151183-ARIZONA-38), and ~10% of live codes don't (B710AP-05, CASSIS-BLACK-38, FLE030-IVES-WHITE-05),
+        -- so without them here those pasted codes found nothing. skumap is one row per variant and always carries code; sku can be null,
+        -- so it is FILTERed out rather than allowed to poison the string.
+        SELECT groupid,
+               string_agg(code, ' ') || COALESCE(' ' || string_agg(sku, ' ') FILTER (WHERE sku IS NOT NULL), '') AS codes
         FROM skumap
-        WHERE sku IS NOT NULL
         GROUP BY groupid
       ),
       -- NO boxed CTE. amzshipment units are still in localstock (allocated 'amz' at C3-Amazon) until DPD collects, so they are
@@ -193,6 +199,30 @@ router.get('/', async (req, res) => {
         FROM birktracker b
         JOIN skumap m ON m.code = b.code
         GROUP BY m.groupid
+      ),
+      amz_live AS (
+        -- THE AMAZON PRICE SPREAD for the card face (owner, 2026-10-06 — moved here from product-overview when the /product list was
+        -- folded into this screen). Amazon prices per SIZE, so this is MIN and MAX, never an average: CLAUDE.md records that the
+        -- retired match_amazon_price autopilot died of "there is no single Amazon price". Taken over sizes a customer can buy TODAY
+        -- (amzlive > 0); amzprice is junk-prone varchar, so safeNumeric. COUNT is of PRICED sizes, so the hover can say how thin
+        -- the spread is. pricing-drill ships the same pair (amazon_lowest / amazon_highest); keep them consistent.
+        SELECT f.groupid,
+               MIN(${safeNumeric('f.amzprice')}) AS lo,
+               MAX(${safeNumeric('f.amzprice')}) AS hi,
+               COUNT(${safeNumeric('f.amzprice')}) AS sizes
+        FROM amzfeed f
+        WHERE COALESCE(f.amzlive, 0) > 0
+        GROUP BY f.groupid
+      ),
+      amz_any AS (
+        -- The same spread over EVERY amzfeed row, live or not — used only when no size is live. A blank would read "not on Amazon",
+        -- which is a different fact from "on Amazon, out of stock at FBA"; the client dims it instead.
+        SELECT f.groupid,
+               MIN(${safeNumeric('f.amzprice')}) AS lo,
+               MAX(${safeNumeric('f.amzprice')}) AS hi,
+               COUNT(${safeNumeric('f.amzprice')}) AS sizes
+        FROM amzfeed f
+        GROUP BY f.groupid
       ),
       sold AS (
         -- Units SOLD in the last 30 days, ALL channels (AMZ + SHP + CM3) — the simple "is this moving" number the operator weighs
@@ -229,7 +259,13 @@ router.get('/', async (req, res) => {
           + COALESCE(transit.units, 0)                        AS amazon_units,
         COALESCE(birk.units, 0)                               AS birk_units,
         COALESCE(sold.units, 0)                               AS sold_units,
-        amz_skus.skus                                         AS amz_skus,
+        codes.codes                                           AS codes,
+        amz_live.lo                                           AS live_lo,
+        amz_live.hi                                           AS live_hi,
+        amz_live.sizes                                        AS live_sizes,
+        amz_any.lo                                            AS any_lo,
+        amz_any.hi                                            AS any_hi,
+        amz_any.sizes                                         AS any_sizes,
         -- WHEN THE STYLE WAS ADDED — the Inventory browse opens on newest-first, so this is its default sort key (owner, 2026-07-28).
         -- Read from created_at, the proper timestamptz column: it is the one being built on, and the legacy created varchar is only a
         -- text stamp kept for the older systems. (No backticks in this comment — the whole query is a JS template literal.) migrations/20260728_skusummary_created_at_backfill.sql filled created_at for the
@@ -250,7 +286,9 @@ router.get('/', async (req, res) => {
       LEFT JOIN transit         ON transit.groupid = s.groupid
       LEFT JOIN birk            ON birk.groupid    = s.groupid
       LEFT JOIN sold            ON sold.groupid    = s.groupid
-      LEFT JOIN amz_skus        ON amz_skus.groupid = s.groupid
+      LEFT JOIN codes           ON codes.groupid    = s.groupid
+      LEFT JOIN amz_live        ON amz_live.groupid = s.groupid
+      LEFT JOIN amz_any         ON amz_any.groupid  = s.groupid
       ORDER BY t.shopifytitle NULLS LAST, s.groupid
     `);
 
@@ -260,6 +298,10 @@ router.get('/', async (req, res) => {
       const local = Number(r.local_units) || 0;
       const amazon = Number(r.amazon_units) || 0;
       const birk = Number(r.birk_units) || 0;
+      // Amazon spread: live sizes first, the whole feed only when nothing is in stock at FBA (see the amz_live CTE).
+      const hasLive = Number(r.live_sizes) > 0;
+      const amzLo = hasLive ? r.live_lo : r.any_lo;
+      const amzHi = hasLive ? r.live_hi : r.any_hi;
       return {
         groupid: r.groupid,
         title: r.title || null,
@@ -274,6 +316,12 @@ router.get('/', async (req, res) => {
         // safeNumeric already rejected junk to NULL, so ship numbers the client formats without parsing.
         price: r.price === null ? null : Number(r.price),
         rrp: r.rrp === null ? null : Number(r.rrp),
+        // Amazon price SPREAD across sizes (see the amz_live CTE) — equal when one price covers every size; null when the style has
+        // no priced amzfeed row. amzLive=false: no FBA stock, so the spread is what it WOULD sell at, and the card dims it.
+        amzLow: amzLo === null || amzLo === undefined ? null : Number(amzLo),
+        amzHigh: amzHi === null || amzHi === undefined ? null : Number(amzHi),
+        amzLive: hasLive,
+        amzSizes: Number(hasLive ? r.live_sizes : r.any_sizes) || 0,
         local,
         // Stock held AT Amazon (live + inbound + in-transit). Sent as its own field so the client can show a "local + Amazon" combined
         // indicator and filter on it (STOCK LESS / STOCK MORE) — the "what have we actually got right now?" number used to decide what
@@ -301,9 +349,9 @@ router.get('/', async (req, res) => {
           return out;
         })(),
         onOrder: Number(r.order_units) || 0,
-        // Space-joined full Amazon Seller SKUs held under this style (e.g. "JLH455-CHARL-BLACK-04-2606 …"), so the Contains box can
-        // find a style by a pasted Amazon SKU that doesn't share the internal code. Null when the style has no Amazon presence.
-        amazonSkus: r.amz_skus || null,
+        // Space-joined internal size codes + full Amazon Seller SKUs under this style (see the codes CTE), so the Contains box finds a
+        // style by either one pasted. Null when the style has no skumap rows.
+        codes: r.codes || null,
         // Units sold in the last 30 days, all channels (positive sales only). The "is it moving" figure the client shows and
         // SALES LESS / SALES MORE filters on — weighed against stock to decide a drop.
         sold30: Number(r.sold_units) || 0,

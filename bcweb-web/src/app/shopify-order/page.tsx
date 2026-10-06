@@ -401,7 +401,7 @@ function ShopifyOrderContent() {
   const showOpenBanner = openUnits > 0 && dismissedOpenSig !== openSig;
 
   // SEARCH STEPS — see the header.
-  // ?q= (from the product hub) seeds the opening Include step — read ONCE into initial state, not an effect, so the full list never
+  // ?q= (from the product menu) seeds the opening Include step — read ONCE into initial state, not an effect, so the full list never
   // paints first. Same convention as Analytics → Sales and Amazon Order.
   const [includes, setIncludes] = useState<string[]>(() => {
     const q = (searchParams.get('q') || '').trim();

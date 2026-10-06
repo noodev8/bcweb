@@ -3,15 +3,16 @@
 =======================================================================================================================================
 Component: ProductNavCards
 =======================================================================================================================================
-Purpose: The hand-off row on the product hub (/product and /product/<groupid>). One card per screen that can do something to the style
-         you are looking at, each deep-linked with the groupid already filled in — the whole point of the hub (owner, 2026-09-22):
-         "From the product, I need to find what I need or adjust anything about it, WITHOUT HUNTING AROUND FOR THE CORRECT SCREEN."
+Purpose: The hand-off menu for one product — on /inventory (the sticky bar over the cards), /product/<groupid>, Sales and New
+         Additions. One card per screen that can do something to the style you are looking at, each deep-linked with the groupid
+         already filled in (owner, 2026-09-22): "From the product, I need to find what I need or adjust anything about it, WITHOUT HUNTING AROUND FOR THE CORRECT SCREEN."
 
 SAME TAB, ALWAYS (owner, 2026-09-22 — "all navigation must stay on the same tab and be able to return"). This is the one thing that
 makes these different from the NavPill row on the Google Ads drill, which they otherwise resemble closely: those open in a NEW tab on
 purpose, because that screen's value is a filtered list with cuts and a selection built up over minutes, and navigating away throws it
-away. The hub has nothing to lose — its state is one search term, which lives in the URL and comes back intact. So every card here is
-an ordinary same-tab link, and each one carries `from` = the exact hub URL it left, which the destination turns into its "← Back".
+away. Here every card is an ordinary same-tab link carrying `from` = the URL it left, which the destination turns into its "← Back".
+A screen whose state is NOT all in its URL (Inventory: steps, cuts, scroll, open Details) passes `onLeave`, fired on the click just
+before the navigation, to save that state for the return trip.
 Do not add target="_blank" to these without re-reading that: a new tab per hop is exactly what the owner asked not to have.
 
 EVERY DESTINATION USES THE DEEP LINK IT ALREADY HAD — this component invented no new conventions, it just stopped the operator
@@ -21,14 +22,11 @@ retyping the groupid into five different search boxes:
                               size, which is the correct landing for "price this product on Amazon". Reads ?from=.
   - /products?groupid=        Add/Modify opens straight on the edit panel. Reads ?from= plus ?back= for the label.
   - /amazon-order?q=          Reads ?from=/?back= and seeds one Include step. THE ONLY ONE THAT NEEDED WORK — that page took no query
-                              params at all before the hub (see its header note).
+                              params at all before this row (see its header note).
   - /analytics/sales?q=         Seeds a Contains step (product mode, 12 months). Reads ?from=/?back=.
   - /shopify-order?q=         Seeds one Include step (added 2026-09-26). Reads ?from=/?back=.
-  - /inventory?q=<groupid>    The picture browse. Deliberately kept on the row even though the hub list shows a thumbnail: the browse
-                              answers "which rack is it on", which nothing else here does, and the dashboard search box no longer
-                              lands on it, so without this card Inventory is reachable only from the header tab.
-                              It learned ?from=/?back= on 2026-09-22 (owner) - it had neither, because nothing used to send you into
-                              it, and arriving from here with no way out was a dead end.
+  - /inventory?q=<groupid>    Sizes and racks. Reads ?from=/?back=. Left off (exclude) on Inventory itself, where it would be a link
+                              to the screen you are on.
 
 DISABLED UNTIL A ROW IS PICKED (owner: "we can either grey out the buttons until a groupid is selected or wait for a double click").
 Greying out was the choice: a card that navigates SOMEWHERE ELSE depending on which row is highlighted is the kind of control that is
@@ -52,8 +50,9 @@ interface NavTarget {
   build: (groupid: string, from: string, back: string) => string;
 }
 
-// The product hub page for this style — offered only by screens OUTSIDE the hub (showProduct), e.g. Reports → New. On the hub itself
-// it would be a link to the page you are on. (Tried as Add/Modify the same day and reverted — the hub page is the leaner landing.)
+// The product page for this style (/product/<groupid>, its sizes) — offered only where asked for (showProduct), e.g. Reports → New.
+// On that page itself it would be a link to the page you are on. (Tried as Add/Modify the same day and reverted — the product page is
+// the leaner landing.)
 const PRODUCT_TARGET: NavTarget = {
   label: 'Product',
   hint: 'Open this style on the product page — RRP, sizes, stock and every card again',
@@ -82,7 +81,7 @@ const TARGETS: (NavTarget & { group: Group })[] = [
     icon: ArchiveBoxIcon,
     build: (g, from, back) => `/inventory?q=${encodeURIComponent(g)}&from=${from}&back=${back}`,
   },
-  // Only on the hub itself. Where a Product card leads the row (showProduct), Edit Product is left off (owner, 2026-09-26 — "they can
+  // Where a Product card leads the row (showProduct), Edit Product is left off (owner, 2026-09-26 — "they can
   // go to product first"): the product page carries this card, so it is one hop away, and the row stays one line.
   {
     group: 'general',
@@ -124,9 +123,11 @@ const TARGETS: (NavTarget & { group: Group })[] = [
 interface Props {
   /** The selected style, or null when nothing is picked yet — which greys every card. */
   groupid: string | null;
-  /** The hub URL to come back to. Passed through as ?from= on every card that supports it. */
+  /** The URL to come back to. Passed through as ?from= on every card that supports it. */
   from: string;
-  /** Lead with a Product card (the hub page for this style). For screens outside the hub. */
+  /** Fired on a card's click, just before the navigation — for a screen that must save state its URL doesn't hold (Inventory). */
+  onLeave?: () => void;
+  /** Lead with a Product card (/product/<groupid>, this style's sizes). */
   showProduct?: boolean;
   /** Card labels to leave out — the screen you are ON (e.g. Sales hides 'Sales'), so no card links to the page it sits on. Matches
    *  general cards only: grouped labels ('Order', 'Price') are not unique. */
@@ -143,9 +144,9 @@ const BASE =
 const ENABLED = 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900';
 const DISABLED = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400';
 
-export default function ProductNavCards({ groupid, from, showProduct, exclude }: Props) {
+export default function ProductNavCards({ groupid, from, showProduct, exclude, onLeave }: Props) {
   const encodedFrom = encodeURIComponent(from);
-  // The destination's back-link label names where you actually came from ("Product", "New Additions"), not a fixed "Product".
+  // The destination's back-link label names where you actually came from ("Inventory", "New Additions"), not a fixed label.
   const encodedBack = encodeURIComponent(prettyPathLabel(from));
 
   const all = showProduct ? [{ ...PRODUCT_TARGET, group: 'general' as Group }, ...TARGETS] : TARGETS;
@@ -166,7 +167,7 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude }:
       );
     }
     return (
-      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} className={`${BASE} ${ENABLED}`}>
+      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} onClick={onLeave} className={`${BASE} ${ENABLED}`}>
         <Icon className="h-4 w-4 text-brand-600" />
         {t.label}
       </Link>

@@ -265,7 +265,7 @@ function NewAdditionsPageInner() {
               own data, so it can't hold the list up. */}
           <AdditionsTrend />
 
-          {/* Hand-off row — the same cards as the product hub, greyed until a row is selected, plus Product (the style's own page)
+          {/* Hand-off row — the same product menu as Inventory, greyed until a row is selected, plus Product (the style's own page)
               first. Above the table so it is in view when you pick a row. Every card carries this exact view as ?from=. */}
           {rows.length > 0 && (
             <div className="mb-3">

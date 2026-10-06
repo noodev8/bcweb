@@ -38,8 +38,9 @@ one mindset and quietly wrong for the other four, and re-opening is one click.
   THIS IS NOT THE REMEMBERING THE PARAGRAPH ABOVE RULES OUT. It's explicit and it's in the URL: it lasts exactly one journey, is
   visible, and is bookmarkable. Nothing is inferred about what you'd want NEXT time.
 
-SEARCH STAYS THE FRONT DOOR and is NOT one of the five. The day starts by looking a product up, the product hub answers it, and that
-path is already solved — so it sits above the groups, unboxed and hero-sized, and gets no heading of its own. THERE IS STILL NO
+SEARCH STAYS THE FRONT DOOR and is NOT one of the five. The day starts by looking a product up, Inventory answers it (with the
+hand-off menu to every other screen for that product — 2026-10-06, when the /product list was folded into it), and that path is
+already solved — so it sits above the groups, unboxed and hero-sized, and gets no heading of its own. THERE IS STILL NO
 INVENTORY TILE at top level for the reason the 2026-08-27 note gave: the search box IS that tile on this screen. (Inventory does
 appear inside Operations, where it is the browse-with-no-term case rather than the search.)
 

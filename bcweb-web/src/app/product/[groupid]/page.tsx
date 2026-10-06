@@ -1,15 +1,15 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /product/<groupid>  (the product hub — one style, opened out to its sizes)
+Page: /product/<groupid>  (one style, opened out to its sizes)
 =======================================================================================================================================
-Purpose: The second rung of the hub (owner, 2026-09-22): "Double click to drill down if on groupid level — CODE, Stock, Amz Price,
-         Shopify Price, Total Sold for code." Same four numbers as the list, one grain down, so a decision that turns out to be about
-         one SIZE rather than the whole style can be made here instead of on a pricing screen.
+Purpose: One style's sizes (owner, 2026-09-22): "CODE, Stock, Amz Price, Shopify Price, Total Sold for code." The style-level
+         numbers one grain down, so a decision that turns out to be about one SIZE rather than the whole style can be made here
+         instead of on a pricing screen. Reached from the Product card on other screens (ProductNavCards showProduct).
 
-         The hand-off cards are repeated at the bottom, pointing at the same style. That is not a duplicate of the list's row: by the
-         time you have opened the sizes you have usually stopped browsing and started deciding, and sending you back up a level to
-         reach the card you now want would undo the trip.
+         It was the second rung of the /product list, which was folded into /inventory on 2026-10-06; this page stayed because
+         Sales and New Additions still open it. The hand-off cards sit at the bottom, pointing at the same style, so the decision you
+         reach here is one click from the screen that acts on it.
 
 SHOPIFY PRICE IS BOTH A HEADER FIELD AND A COLUMN (owner, 2026-09-22 — "I was looking for it"). It shipped as a header field only,
 on the reasoning that skusummary.shopifyprice is STYLE grain, so a column would repeat one number down every row and imply the sizes
@@ -60,10 +60,10 @@ function ProductDrillContent() {
   const params = useParams<{ groupid: string }>();
   const searchParams = useSearchParams();
   const groupid = decodeURIComponent(params.groupid);
-  // Where we came from — normally the hub list with its search term intact, so Back rebuilds the list rather than emptying it. A
-  // deep link with no origin falls back to the bare hub.
-  const backTo = searchParams.get('from') || '/product';
-  const backLabel = backTo === '/product' ? 'Product' : prettyPathLabel(backTo);
+  // Where we came from — normally a list with its search intact, so Back rebuilds it rather than emptying it. A deep link with no
+  // origin falls back to Inventory, the product search (the /product list it used to fall back to was retired 2026-10-06).
+  const backTo = searchParams.get('from') || '/inventory';
+  const backLabel = prettyPathLabel(backTo);
 
   const { data, error, isLoading } = useApiQuery(['product-variants', groupid], () => getProductVariants(groupid));
   const header = data?.header;

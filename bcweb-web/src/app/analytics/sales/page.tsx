@@ -32,7 +32,7 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
 
          Export CSV builds from the loaded rows (the current filtered view) so the analyst can carry it into Excel.
 
-         ROW CLICK SELECTS THE STYLE; THE HAND-OFF CARDS GO (owner, 2026-09-26). The product hub's card row (ProductNavCards) sits above
+         ROW CLICK SELECTS THE STYLE; THE HAND-OFF CARDS GO (owner, 2026-09-26). The product menu (ProductNavCards) sits above
          the table, greyed until a row is picked, with Product first and Sales left out (it is this page). It replaced the old click
          model — channel badge -> its pricing page in a new tab, code / order cells -> copy to clipboard — whose copy half existed only
          to paste into another screen's search box, and the cards now go straight there.
@@ -124,7 +124,7 @@ function SalesPageKeyed() {
 function SalesPageContent() {
   const pathname = usePathname();
 
-  // ARRIVING FOR ONE PRODUCT (owner, 2026-09-24). The hub's Sales card (and Inventory's) lands here as ?q=<groupid>&from=…&back=…. The
+  // ARRIVING FOR ONE PRODUCT (owner, 2026-09-24). The product menu's Sales card (Inventory and others) lands here as ?q=<groupid>&from=…&back=…. The
   // term is committed as the opening Contains step — read ONCE into initial state, not in an effect, so the screen never paints today's
   // ledger and then snaps to the product — which puts the screen straight into product mode (12 months). from/back thread the
   // "← Back" the same way the pricing screens do; only a same-site path is honoured. Arriving from the nav passes neither.
@@ -652,7 +652,7 @@ function SalesPageContent() {
                 )}
               </span>
             </div>
-            {/* Hand-off row — the product hub's cards, greyed until a row is picked, Product first. Sales stays in (owner, 2026-09-27):
+            {/* Hand-off row — the product menu, greyed until a row is picked, Product first. Sales stays in (owner, 2026-09-27):
                 it opens this page searched to the picked product, all time, with Back returning here. Every card carries this exact view as ?from=, which is what the URL state above is for. */}
             <div className="mb-3">
               <ProductNavCards groupid={selected} from={selfUrl} showProduct />

@@ -9,22 +9,15 @@ Purpose: The dashboard's opening search box, because looking a product up is the
          Before this, searching cost two moves — find the Inventory tile, land on the page, THEN type. The box removes the middle
          step: whatever is typed here goes straight to a product list, already narrowed.
 
-         IT LANDS ON /product, NOT /inventory (owner, 2026-09-22 — "we always start with PRODUCT"). It fed Inventory until then,
-         and the swap is the one thing on this component worth understanding before changing it back.
-           WHY IT MOVED. The box's job was never "open Inventory", it was "start from a product" — and Inventory answers only one of
-           the questions that follow (have we got it, in my size, on which rack). The others — what is it priced at here and on
-           Amazon, is it moving, does it need ordering, editing, a barcode — each meant going back to the dashboard and into another
-           module, retyping the same groupid. /product answers the identifying question and then hands the style to whichever screen
-           the answer turned out to need, with the groupid already filled in.
-           WHAT IT COST, stated plainly because it is a real loss and not a rounding error: the dashboard has no Inventory card — this
-           box WAS the Inventory tile, which is exactly why that card was deleted (see the /dashboard header) — so Inventory is now
-           one click further away than it was. It is the first hand-off card on /product, and the header tab is untouched. If that
-           proves to be the wrong trade, the fix is to put the Inventory CARD back on the dashboard, not to re-point this box: the box
-           has stopped being a module shortcut and become the front door to a screen of its own.
+         IT LANDS ON /inventory (owner, 2026-10-06). History, because it has moved twice: it fed Inventory until 2026-09-22, then
+         a /product list ("we always start with PRODUCT") whose row-click lit a menu of hand-off cards, one of which was Inventory.
+         The two screens did the same search, so a lookup cost an extra page and an extra click to reach the sizes and racks. The
+         list was folded INTO Inventory instead: Inventory gained the sticky hand-off menu and the list's Amazon / Sold 30d figures,
+         and /product now redirects there. So "start from a product" and "have we got it, and where" are one screen again.
 
-         The term is still parsed at the far end, not here — /product hands it to the server, which matches it against groupid, the
-         human title, the internal size code and the full Amazon Seller SKU. So a pasted SKU (0151183-ARIZONA-38) or a pasted Amazon
-         SKU (17659-23-42-2607) finds its style without this box knowing anything about either shape.
+         The term is still parsed at the far end, not here — Inventory runs it through the same parser as its own Contains box, which
+         splits a pasted size code (0151183-ARIZONA-38 -> that style, leading with size 38) and matches a pasted Amazon SKU
+         (17659-23-42-2607). So neither shape needs this box to know anything about it.
 
          DASHBOARD ONLY (owner, 2026-08-27). A compact copy rode in the AppShell header for a while, so a hunt could start from any
          screen. It came out: the owner returns to the dashboard to search anyway, so the trip isn't a detour, and a search box on
@@ -59,7 +52,7 @@ Purpose: The dashboard's opening search box, because looking a product up is the
            - A heavier resting border (slate-300) and a wider box, so it holds its own line rather than melting into the background.
          Deliberately NOT given a band heading: it isn't a group of things, and a label above it would just be a word to read past.
 
-         Input is force-uppercased to match the search boxes it hands off to (/product, Inventory's Contains box, both Find pages),
+         Input is force-uppercased to match the search boxes it hands off to (Inventory's Contains box, both Find pages),
          so the term reads the same in every one and a round-trip (search here -> refine there) never changes case mid-hunt.
 =======================================================================================================================================
 */
@@ -76,8 +69,8 @@ export default function ProductSearchBox() {
     e.preventDefault();
     const q = term.trim();
     if (!q) return;
-    // Push (not replace): Back from the product hub returns to the dashboard the search was run from.
-    router.push('/product?q=' + encodeURIComponent(q));
+    // Push (not replace): Back from Inventory returns to the dashboard the search was run from.
+    router.push('/inventory?q=' + encodeURIComponent(q));
   }
 
   return (
