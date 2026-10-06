@@ -2348,6 +2348,25 @@ export function shipAmzShipment(boxes: number, units: number) {
   }));
 }
 
+// Saving the boxes as they're packed (2026-10-06) — every scan, −, measurement and box delete is written to amzshipment at once.
+export interface AmzBoxDims { length: string; width: string; height: string; weight: string }
+// +1 / −1 a unit of `code` in `box`. `dims` are used only when the box has no stored rows yet (its first unit).
+export function saveAmzShipmentLine(box: number, code: string, delta: 1 | -1, dims?: AmzBoxDims) {
+  return request<{ qty: number }>({ url: '/amz-shipment-line', method: 'POST', data: { box, code, delta, dims } }, (b) => ({
+    qty: Number(b.qty) || 0,
+  }));
+}
+export function saveAmzShipmentDims(box: number, dims: AmzBoxDims) {
+  return request<{ saved: boolean }>({ url: '/amz-shipment-dims', method: 'POST', data: { box, dims } }, (b) => ({
+    saved: !!b.saved,
+  }));
+}
+export function deleteAmzShipmentBox(box: number) {
+  return request<{ removed: number }>({ url: '/amz-shipment-box-delete', method: 'POST', data: { box } }, (b) => ({
+    removed: Number(b.removed) || 0,
+  }));
+}
+
 // =============================================================================================================================
 // Shopify order sync — the "Update orders" button (Analytics -> Sales and Customer Orders; the LABEL is the legacy term, this
 // route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).

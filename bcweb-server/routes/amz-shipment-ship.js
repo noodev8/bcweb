@@ -25,8 +25,8 @@ STALE-SCREEN GUARD: the client sends the box and unit counts it showed when the 
 the same table, so if the stored shipment no longer matches, nothing is written and STALE comes back — you never ship boxes you
 didn't see. The table is locked (EXCLUSIVE) for the transaction, so two clicks can't both archive the same rows.
 
-WHAT IS SHIPPED IS THE STORED SHIPMENT. The screen's scans and measurement edits aren't saved yet (see app/amz-shipment/page.tsx), so
-they are not part of this; the confirm on screen says so.
+WHAT IS SHIPPED IS THE STORED SHIPMENT. Every scan, −, box delete and measurement is saved as it happens (amz-shipment-line / -dims /
+-box-delete, 2026-10-06), so the stored shipment is what the screen shows; the counts sent are the screen's packed boxes and units.
 =======================================================================================================================================
 Request Payload:
 { "boxes": 20, "units": 212 }        // what the operator saw; must match the stored shipment
