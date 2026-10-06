@@ -577,6 +577,20 @@ function InventoryPageContent() {
   // exactly what is on screen at that moment.
   const saveReturn = useCallback((groupid: string) => {
     const el = document.querySelector(`[data-inv-card="${CSS.escape(groupid)}"]`);
+    // WHERE THE CARD COMES BACK. Normally exactly where it sat on screen as you left, so the page looks untouched. But the menu is
+    // sticky, so you can select a card, scroll on, and leave from the menu with that card far off-screen — and an exact return then
+    // lands you somewhere the selected card isn't (owner, 2026-10-06: "should we also scroll to it?"). So when the card was not
+    // meaningfully in view below the pinned menu, the return places it mid-screen instead (top-aligned under the menu when it is
+    // taller than the screen, e.g. with Detail open).
+    let anchorTop = 0;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const menuH = document.querySelector('[data-inv-menu]')?.getBoundingClientRect().height ?? 0;
+      const inView = r.bottom > menuH + 40 && r.top < window.innerHeight - 40;
+      anchorTop = inView
+        ? r.top
+        : Math.max(menuH + 12, (window.innerHeight - Math.min(r.height, window.innerHeight)) / 2);
+    }
     const snap: ReturnSnapshot = {
       at: Date.now(),
       steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir,
@@ -584,7 +598,7 @@ function InventoryPageContent() {
       detailOpen: [...detailOpen],
       shown,
       anchor: groupid,
-      anchorTop: el ? el.getBoundingClientRect().top : 0,
+      anchorTop,
     };
     try { window.sessionStorage.setItem(RETURN_KEY, JSON.stringify(snap)); } catch { /* storage blocked: they just come back fresh */ }
     // ...and make the BROWSER's Back land on the snapshot too, not just the destination's "← Back" link. This history entry may still
@@ -593,6 +607,11 @@ function InventoryPageContent() {
     // ?from=/&back=, no q) before leaving makes both Backs the same return trip. A plain history rewrite rather than a router call:
     // nothing should re-render on the way out, and Next's router stays in step with replaceState.
     try { window.history.replaceState(window.history.state, '', selfUrl); } catch { /* cannot rewrite: browser Back re-seeds ?q= */ }
+    // The browser's own Back scroll memory would put this entry back where the page was SCROLLED when you left — which is not
+    // where the selected card is when you left from the sticky menu with it off-screen — and it can land AFTER the placement
+    // loop (seen 2026-10-06 when the tab was in the background on return). scrollRestoration is per history entry, so 'manual' here
+    // hands this one entry's scroll to the restore effect alone; every other page keeps the browser's normal behaviour.
+    try { window.history.scrollRestoration = 'manual'; } catch { /* unsupported: the placement loop still runs */ }
   }, [steps, sizeFilter, sizeStrict, seasonFilter, qtyFilters, sortKey, sortDir, cut, detailOpen, shown, selfUrl]);
 
   // ...and put the operator back: scroll the card they left from to the same height on screen, with the keyboard cursor on it.
@@ -611,11 +630,25 @@ function InventoryPageContent() {
     clearReturn();
     // Cursor (= the selection) back on the card left from, so the menu and the arrows carry on from there.
     setCursor(back.anchor);
+    // ...and take focus OFF the Contains box, which autoFocus grabbed on mount. A return is "carry on where I was", not a new search:
+    // with the box focused the arrows typed into it instead of moving the cursor, and the browser scrolled the focused box back
+    // into view (the top of the page) whenever the window regained focus, undoing the placement below (found 2026-10-06).
+    containsRef.current?.blur();
     const RESTORE_MS = 1500;
-    const until = performance.now() + RESTORE_MS;
+    // Placed straight away, AND again for a fresh window once the page is VISIBLE if it isn't yet. A background tab (another window
+    // in front) pauses animation frames, so the first window can run out before a frame is drawn, and the browser then settles the
+    // scroll wherever it likes when the tab is shown (found 2026-10-06).
+    let until = performance.now() + RESTORE_MS;
     let raf = 0;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', onVisible);
+      until = performance.now() + RESTORE_MS;
+      place();
+    };
     const stop = () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('wheel', stop);
       window.removeEventListener('touchstart', stop);
       window.removeEventListener('keydown', stop);
@@ -628,13 +661,15 @@ function InventoryPageContent() {
         if (Math.abs(off) > 1) window.scrollTo({ top: window.scrollY + off, behavior: 'instant' });
       }
       if (performance.now() < until) raf = requestAnimationFrame(place);
-      else stop();
+      // Out of time: end the loop, but leave the visibility listener armed while the page is still hidden.
+      else if (document.visibilityState === 'visible') stop();
     };
     window.addEventListener('wheel', stop, { passive: true });
     window.addEventListener('touchstart', stop, { passive: true });
     window.addEventListener('keydown', stop);
     window.addEventListener('mousedown', stop);
     place();
+    if (document.visibilityState !== 'visible') document.addEventListener('visibilitychange', onVisible);
     // No cleanup that cancels the loop: restoredRef makes a StrictMode re-run a no-op, so cancelling here would kill the only loop.
   }, [back, loading, error, setCursor]);
 
@@ -969,22 +1004,12 @@ function InventoryPageContent() {
           /product list with the same look. STICKY, unlike the command bar above: the owner asked for it on /product ("I'm further
           down the list, click and then don't know what to do so I scroll up"), and what got the command bar unstuck — a tall
           pinned box with cards streaming under it while arrowing — is kept small here: one caption line and one row of buttons.
-          It names the selected product, because once pinned, the card you clicked may have scrolled off.
           bg matches the page so cards scrolling underneath do not show through. Inventory is excluded: it is this screen.
           onLeave saves the whole view first (saveReturn), so either Back lands on the same cards, filter, scroll and selection. */}
       {!loading && !error && (
-        <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-2">
-          {/* Names the selected product; EMPTY until one is picked (owner, 2026-10-06 — the "Click a product to choose…" prompt came
-              out: greyed buttons already say it). The line keeps its height either way, so picking a card never shifts the menu or the
-              cards under the pointer. */}
-          <p className="mb-1.5 h-4 truncate text-xs text-slate-500">
-            {selectedRow && (
-              <>
-                <span className="font-mono text-slate-700">{selectedRow.groupid}</span>
-                {selectedRow.title && <span className="text-slate-700"> - {selectedRow.title}</span>}
-              </>
-            )}
-          </p>
+        <div data-inv-menu className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-1">
+          {/* NO CAPTION LINE (owner, 2026-10-06). It said "Click a product to choose…" until picked, then named the product; both
+              came out and the space went back to the cards. The highlighted card is what says which product the menu acts on. */}
           <ProductNavCards
             groupid={selectedRow ? selectedRow.groupid : null}
             from={selfUrl}
