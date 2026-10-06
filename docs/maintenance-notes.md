@@ -29,7 +29,13 @@ braces — so it detonated on the first file match and `npm run lint` died outri
 There is no API-compatible patched version: the latest of every major below 5 is 1.1.16 / 2.1.2 / 3.0.2 / 4.0.1, and the advisory
 (GHSA-mh99-v99m-4gvg) covers everything `<=5.0.7`. **The patch IS the breaking major.**
 
-**Consequence, accepted deliberately:** `bcweb-web` reports 9 high **dev-only** advisories. `npm audit --omit=dev` is 0 — the
+**Current state (2026-10-06):** `bcweb-web` reports 7 high + 2 moderate, all **dev/build-only**; `npm audit --omit=dev` is 0. The
+highs are `braces` (GHSA-vfj7-8cjw-p6xm — **no patched release exists**, `3.0.3` is the latest) through `micromatch` /
+`fast-glob` in the lint and Tailwind build tooling; the moderates are `postcss-selector-parser <7.1.6` under Tailwind 3's
+`postcss-nested`, whose only fix is the breaking Tailwind 4 upgrade. Neither reaches the browser. The paragraph below is the
+earlier `brace-expansion` chain, kept for why the override must not return.
+
+**Consequence, accepted deliberately:** `bcweb-web` reported 9 high **dev-only** advisories. `npm audit --omit=dev` is 0 — the
 shipped bundle is clean. The whole chain is lint tooling (`eslint-plugin-import` / `-jsx-a11y` / `-react` → `minimatch` →
 `brace-expansion@1.1.16`) that never reaches a browser, and exploiting it means feeding hostile glob patterns to your own linter.
 This is the one place in this repo where "dev-only" is the honest answer rather than an excuse, **because there is no fix to
