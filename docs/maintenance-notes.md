@@ -35,6 +35,14 @@ shipped bundle is clean. The whole chain is lint tooling (`eslint-plugin-import`
 This is the one place in this repo where "dev-only" is the honest answer rather than an excuse, **because there is no fix to
 apply**. The real fix is upstream: `@eslint/config-array@0.21.2` still depends on EOL `minimatch ^3.1.5`.
 
+### `bcweb-server` has no nodemon — `npm run dev` is `node --watch` (2026-10-06)
+
+nodemon → `chokidar@3` → `braces` carried 3 high advisories (GHSA-vfj7-8cjw-p6xm) with **no patched release**: `braces@3.0.3`
+is the latest and the advisory covers every version, and `npm audit fix --force` "fixes" it by downgrading nodemon to 1.14.10
+(2017). Node's built-in `--watch` (stable since Node 22) restarts on any change in the server's module graph, which is all
+nodemon was doing here, so the dependency was dropped instead. Don't add nodemon back. Production is unaffected — the VPS runs
+`npm start` under PM2.
+
 ### ESLint is pinned to 9 in `bcweb-web` while `bcweb-server` is on 10 — deliberate
 
 `eslint-config-next@16` advertises peer `eslint >=9.0.0`, which looks like the Next 15-era blocker (peer `^7||^8||^9`) is gone.

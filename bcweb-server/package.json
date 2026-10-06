@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "node --watch server.js",
     "seed": "node scripts/seed-user.js",
     "lint": "eslint ."
   },
@@ -27,8 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.0",
-    "globals": "^17.7.0",
-    "nodemon": "^3.1.4"
+    "globals": "^17.7.0"
   },
   "overrides": {
     "qs": "^6.16.0"
