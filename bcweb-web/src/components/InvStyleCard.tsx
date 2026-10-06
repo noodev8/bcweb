@@ -474,7 +474,7 @@ export default function InvStyleCard({
           <button
             type="button"
             onClick={onCut}
-            title="Cut from list (Restore or Reset brings it back)"
+            title="Cut from list (Reset brings it back)"
             className="absolute bottom-2 right-2 rounded p-1 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
           >
             <XMarkIcon className="h-4 w-4" />

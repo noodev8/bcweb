@@ -32,7 +32,8 @@ THE FILTER IS UNCHANGED — it is the proven part of this screen and the redesig
     and WINTER / SUMMER (see the Season type). Season is typed rather than read off the segment NAME because only RIEKER-WIN /
     RIEKER-SUM / REMONTE-WIN encode it — 32 of 295 styles — so the old habit of hunting "-WIN" in Contains silently missed the rest.
     skusummary.season is the real tag and is fully populated. Year-round ('Any') styles answer to BOTH seasons (owner).
-  - Cut: a per-row manual hide for stragglers a text step can't drop without over-matching. View-only; Restore or Reset brings them back.
+  - Cut: a per-row manual hide for stragglers a text step can't drop without over-matching. View-only; Reset brings them back. No cut
+    count and no Restore (owner, 2026-10-06 — "just adds too many options. We can reset if needed").
   - Reset clears everything AND re-reads from the DB (the refresh), mirroring PowerBuilder.
 
 THE LIST IS ALWAYS THERE (owner, 2026-07-28). The screen used to open blank and stay blank until the first Find. It now opens on the
@@ -428,7 +429,7 @@ function InventoryPageContent() {
   }, [sortKey]);
 
   // CUT: groupids the operator has hidden by hand — the manual trim for a straggler a text step can't drop without over-matching.
-  // Purely view state: nothing is written, Restore or Reset brings them back.
+  // Purely view state: nothing is written, Reset brings them back (there is deliberately no separate Restore — see the header).
   const [cut, setCut] = useState<Set<string>>(() => new Set(back?.cut ?? []));
 
   // Reset hands focus straight back to Contains so the next hunt starts by typing.
@@ -462,7 +463,6 @@ function InventoryPageContent() {
 
   // What actually shows = the text-filtered rows minus the hand-cut ones.
   const visible = useMemo(() => filtered.filter((r) => !cut.has(r.groupid)), [filtered, cut]);
-  const cutInView = filtered.length - visible.length;
 
   // Apply the sort mode to what's on screen. groupid is the stable tie-break (always ascending) so equal rows keep a fixed
   // order rather than jittering between renders.
@@ -734,11 +734,6 @@ function InventoryPageContent() {
     });
   }
 
-  // Restore all cuts without touching the filter or re-reading the DB — the light undo for a mis-cut.
-  function restoreCuts() {
-    setCut(new Set());
-  }
-
   // Reset = back to the opening view: the WHOLE catalogue, newest first. Not a blank screen — the list is the resting state of this
   // screen now, so Reset is "show me everything again", the same thing the operator sees on arrival.
   function onReset() {
@@ -873,17 +868,6 @@ function InventoryPageContent() {
               <>
                 <span className="text-slate-300">|</span>
                 <span className="whitespace-nowrap text-xs text-slate-400">Click or ↑↓ to pick · Enter opens detail</span>
-              </>
-            )}
-            {cutInView > 0 && (
-              <>
-                <span className="text-slate-300">|</span>
-                <span className="whitespace-nowrap text-slate-400">
-                  {cutInView} cut
-                  <button type="button" onClick={restoreCuts} className="ml-1.5 font-medium text-brand-600 hover:underline">
-                    restore
-                  </button>
-                </span>
               </>
             )}
             {/* Only the STRICT size filter (typed in its own box) earns a removable chip here — it actually narrows the list, so its ✕
@@ -1080,10 +1064,10 @@ function InventoryPageContent() {
             </div>
           )}
 
-          {visible.length === 0 && cutInView > 0 && (
+          {/* Every match cut by hand: say so rather than leave a blank screen, and point at Reset — the one way back (no Restore). */}
+          {visible.length === 0 && filtered.length > 0 && (
             <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">
-              All {cutInView} matching {cutInView === 1 ? 'style is' : 'styles are'} cut.{' '}
-              <button type="button" onClick={restoreCuts} className="text-brand-600 underline">Restore</button> to bring {cutInView === 1 ? 'it' : 'them'} back.
+              Everything here is cut. <button type="button" onClick={onReset} className="text-brand-600 underline">Reset</button> to start again.
             </div>
           )}
           {filtered.length === 0 && (
