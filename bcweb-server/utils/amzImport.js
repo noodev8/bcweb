@@ -362,7 +362,7 @@ async function planFees(db, feeRows, ref) {
  * product does.
  */
 async function planStock(db, stockRows, ref) {
-  const out = { rows: stockRows.length, matched: 0, unknownSku: [], virtual: [], goneFromAmazon: [], liveUnits: 0, totalUnits: 0, newBarcodes: [] };
+  const out = { rows: stockRows.length, matched: 0, unknownSku: [], virtual: [], goneFromAmazon: [], liveUnits: 0, totalUnits: 0, newBarcodes: [], manualPrices: [] };
   if (stockRows.length === 0) return out;
 
   // Read amzfeed first — the loop below needs to know each code's CURRENT fnsku to spot new and re-issued ones.
@@ -396,7 +396,46 @@ async function planStock(db, stockRows, ref) {
 
   // Most stock first — a listing that vanished while holding units is the one worth looking at.
   out.unknownSku.sort((a, b) => b.total - a.total);
+
+  out.manualPrices = await planManualPrices(db, stockRows, ref);
   return out;
+}
+
+/**
+ * Prices changed OUTSIDE BCWEB (owner, 2026-10-06) — the list amzImportApply.logManualPriceChanges() writes to amz_price_log as
+ * 'Manual'. Planned here, not at write time, so the check step shows exactly what the apply will log (the commit rebuilds the plan
+ * inside its transaction, so the two can't drift).
+ *
+ * A price set by hand in Seller Central never passed through /amz-apply, so it left no log row. The report's your-price is Amazon's
+ * live price and amzfeed.amzprice still holds the previous import's, so a difference is a price change. Our own uploads move Amazon's
+ * price too: a SKU whose LATEST log row already carries the report price is skipped — that change is on record under whoever made it.
+ * A SKU with no usable amzfeed price (new listing, junk VARCHAR) has no "before" and is skipped (old_price is NOT NULL). Re-importing
+ * the same file finds nothing: amzfeed then already matches the report.
+ */
+async function planManualPrices(db, stockRows, ref) {
+  const byCode = new Map();
+  for (const r of stockRows) {
+    if (r.isVirtual || r.price === null) continue;
+    const m = ref.bySku.get(r.sku);
+    if (!m) continue;
+    byCode.set(m.code, { sku: r.sku, price: Math.round(r.price * 100) / 100 });
+  }
+  if (byCode.size === 0) return [];
+
+  const amzPrice = safeNumeric('a.amzprice');
+  const res = await db.query(`
+    WITH r AS (SELECT UNNEST($1::text[]) AS code, UNNEST($2::numeric[]) AS price)
+    SELECT r.code, ROUND(${amzPrice}, 2) AS from_price, r.price AS to_price
+    FROM r
+    JOIN amzfeed a ON a.code = r.code
+    LEFT JOIN LATERAL (SELECT l.new_price FROM amz_price_log l WHERE l.code = r.code ORDER BY l.id DESC LIMIT 1) last ON true
+    WHERE ${amzPrice} IS NOT NULL
+      AND ROUND(${amzPrice}, 2) <> r.price
+      AND (last.new_price IS NULL OR ROUND(last.new_price, 2) <> r.price)
+    ORDER BY r.code`,
+    [[...byCode.keys()], [...byCode.values()].map((v) => v.price)]
+  );
+  return res.rows.map((x) => ({ code: x.code, sku: byCode.get(x.code).sku, from: Number(x.from_price), to: Number(x.to_price) }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------

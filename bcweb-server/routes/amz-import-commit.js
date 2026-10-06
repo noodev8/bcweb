@@ -20,6 +20,7 @@ Purpose: Update Amazon module, stage 2 — THE WRITE. Ingest the uploaded Amazon
 
 THE THREE PHASES (design doc §3.2). Order matters and is enforced here regardless of the order files were dropped:
     PHASE 1  INGEST   orders + returns -> sales | fee report -> skumap.fbafee | inventory -> amzfeed stock columns
+                      (and, first, prices changed by hand in Seller Central -> amz_price_log as 'Manual')
     PHASE 2  DERIVE   two grouped queries over sales — a FIXED 30-day window, plus 7 days
     PHASE 3  PROJECT  write those derived values onto amzfeed, for PowerBuilder
 
@@ -51,7 +52,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { buildPlan, readUploads, SOLD_WINDOW_DAYS } = require('../utils/amzImport');
 // The three write phases live in a util so they can be rehearsed directly against a BEGIN...ROLLBACK client, without an HTTP layer.
-const { insertSales, retractCancelled, applyFees, applyStock, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('../utils/amzImportApply');
+const { insertSales, retractCancelled, applyFees, logManualPriceChanges, applyStock, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('../utils/amzImportApply');
 const { shapePlan } = require('../utils/amzImportShape');
 const logger = require('../utils/logger');
 
@@ -110,8 +111,14 @@ router.post('/', (req, res) => {
 
         const feesUpdated = await applyFees(client, plan.fees);
 
+        // Prices changed by hand in Seller Central -> amz_price_log as 'Manual'. BEFORE applyStock: it compares the report against the
+        // amzfeed price the stock upsert is about to overwrite.
         let stockResult = { upserted: 0, zeroed: 0 };
-        if (parsed.INVENTORY) stockResult = await applyStock(client, parsed.INVENTORY.rows, plan.ref);
+        let manualPrices = 0;
+        if (parsed.INVENTORY) {
+          manualPrices = await logManualPriceChanges(client, plan.stock.manualPrices);
+          stockResult = await applyStock(client, parsed.INVENTORY.rows, plan.ref);
+        }
 
         // --- PHASES 2 + 3: derive from sales, project onto amzfeed (PowerBuilder only) ---------------------------------------
         // Always runs, whatever was uploaded: it reads `sales`, not any file, so the derived columns stay correct after a partial
@@ -127,10 +134,10 @@ router.post('/', (req, res) => {
           `INSERT INTO bclog (workstation, section, log, date, time, created_at)
            VALUES ($1, 'Amazon Update', $2,
                    (now() AT TIME ZONE 'Europe/London')::date, to_char(now() AT TIME ZONE 'Europe/London','HH24:MI'), now())`,
-          [req.user.display_name, `Amazon Update: +${salesInserted} sales, +${returnsInserted} returns, ${feesUpdated} fees, ${stockResult.upserted} stock rows`]
+          [req.user.display_name, `Amazon Update: +${salesInserted} sales, +${returnsInserted} returns, ${feesUpdated} fees, ${stockResult.upserted} stock rows, ${manualPrices} manual prices`]
         );
 
-        return { plan, retracted, salesInserted, returnsInserted, feesUpdated, stockResult, skusTouched, skumapTouched };
+        return { plan, retracted, salesInserted, returnsInserted, feesUpdated, stockResult, manualPrices, skusTouched, skumapTouched };
       });
 
       const summary = shapePlan(parsed, result.plan, { committed: true });
@@ -138,7 +145,7 @@ router.post('/', (req, res) => {
       logger.info(
         `[amz-import-commit] ${req.user.display_name}: +${result.salesInserted} sales, +${result.returnsInserted} returns, ` +
         `-${result.retracted} retracted, ${result.feesUpdated} fees, ${result.stockResult.upserted} stock rows ` +
-        `(${result.stockResult.zeroed} zeroed), ${result.skusTouched} amzfeed rows re-derived`
+        `(${result.stockResult.zeroed} zeroed), ${result.manualPrices} manual prices logged, ${result.skusTouched} amzfeed rows re-derived`
       );
 
       return res.json({
@@ -152,6 +159,7 @@ router.post('/', (req, res) => {
           feesUpdated: result.feesUpdated,
           stockRowsWritten: result.stockResult.upserted,
           stockRowsZeroed: result.stockResult.zeroed,
+          manualPricesLogged: result.manualPrices,
         },
         derived: { skusTouched: result.skusTouched, skumapTouched: result.skumapTouched, windowDays: SOLD_WINDOW_DAYS },
       });

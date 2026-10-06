@@ -281,6 +281,14 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
           <Card icon={CubeIcon} title="FBA stock">
             <div className="text-2xl font-semibold tabular-nums text-slate-900">{num(summary.stock.liveUnits)}</div>
             <div className="text-[11px] text-slate-400">sellable units</div>
+            {/* Prices set by hand in Seller Central — logged to the Amazon price log as 'Manual' on apply. */}
+            <Disclosure label="prices changed in Seller Central" count={summary.stock.manualPrices.length}>
+              <ul className="space-y-0.5 font-mono text-[11px]">
+                {summary.stock.manualPrices.map((m) => (
+                  <li key={m.code}>{m.code} — £{m.from.toFixed(2)} → £{m.to.toFixed(2)}</li>
+                ))}
+              </ul>
+            </Disclosure>
           </Card>
         </div>
       </section>

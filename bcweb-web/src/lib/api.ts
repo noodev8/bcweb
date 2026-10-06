@@ -2208,6 +2208,8 @@ export interface AmzImportSummary {
     // Products this import introduces — new to amzfeed, or with an fnsku Amazon has re-issued. The barcode panel keys off this and
     // stays hidden when it's empty, which is most imports.
     newBarcodes: { fnsku: string; sku: string; code: string }[]; newBarcodeCount: number;
+    // Prices changed outside BCWEB (in Seller Central) — logged to amz_price_log as 'Manual' on apply.
+    manualPrices: { code: string; sku: string; from: number; to: number }[];
   };
   reconciliation: {
     unknownSku: AmzUnknownSku[]; unknownSkuCount: number;
@@ -2221,7 +2223,7 @@ export interface AmzImportSummary {
 export interface AmzRejectedFile { filename: string; reason: string }
 export interface AmzImportPreview { rejected: AmzRejectedFile[]; summary: AmzImportSummary }
 export interface AmzImportCommit extends AmzImportPreview {
-  applied: { salesInserted: number; returnsInserted: number; salesRetracted: number; feesUpdated: number; stockRowsWritten: number; stockRowsZeroed: number };
+  applied: { salesInserted: number; returnsInserted: number; salesRetracted: number; feesUpdated: number; stockRowsWritten: number; stockRowsZeroed: number; manualPricesLogged: number };
   derived: { skusTouched: number; skumapTouched: number; windowDays: number };
 }
 

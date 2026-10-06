@@ -100,6 +100,26 @@ async function applyFees(client, feePlan) {
 }
 
 /**
+ * Prices changed by hand in Seller Central -> `amz_price_log` as 'Manual' (owner, 2026-10-06). The list is planned by
+ * amzImport.planManualPrices() — see there for the detection rule — so this writes exactly what the check step showed. MUST run before
+ * applyStock(): the plan's "from" price is the amzfeed.amzprice that the stock upsert overwrites.
+ *
+ * changed_at is the import time, not when the change was made (the report doesn't carry that — accepted by the owner). uploaded_at is
+ * stamped too, so the row never enters the upload basket (/amz-basket shows uploaded_at IS NULL): the price is already live, and an
+ * unstamped row would ride into the next Seller Central file.
+ */
+async function logManualPriceChanges(client, manualPrices) {
+  if (manualPrices.length === 0) return 0;
+  const res = await client.query(`
+    INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by, uploaded_at, uploaded_by)
+    SELECT v.code, v.old_price, v.new_price, 'Changed in Seller Central (detected on Amazon import)', 'Manual', now(), 'Manual'
+    FROM (SELECT UNNEST($1::text[]) AS code, UNNEST($2::numeric[]) AS old_price, UNNEST($3::numeric[]) AS new_price) v`,
+    [manualPrices.map((m) => m.code), manualPrices.map((m) => m.from), manualPrices.map((m) => m.to)]
+  );
+  return res.rowCount;
+}
+
+/**
  * Inventory report -> the `amzfeed` STOCK columns.
  *
  * The legacy code deleted the whole table and rebuilt it. That was only safe because it rebuilt every column in the same pass; here
@@ -247,6 +267,7 @@ module.exports = {
   insertSales,
   retractCancelled,
   applyFees,
+  logManualPriceChanges,
   applyStock,
   projectDerivedToAmzfeed,
   projectDerivedToSkumap,

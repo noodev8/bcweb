@@ -124,6 +124,8 @@ function shapePlan(parsed, plan, opts = {}) {
       // so it costs the operator nothing on an ordinary import. Capped like the other lists — it is a prompt, not a report.
       newBarcodes: plan.stock.newBarcodes.slice(0, 50),
       newBarcodeCount: plan.stock.newBarcodes.length,
+      // Prices changed outside BCWEB, logged to amz_price_log as 'Manual' on apply (amzImport.js -> planManualPrices).
+      manualPrices: plan.stock.manualPrices,
     },
 
     // Three buckets, not one list of ~109 "problems" (design doc 3.7 / 2.8). Only `unknownSku` is a to-do list.
