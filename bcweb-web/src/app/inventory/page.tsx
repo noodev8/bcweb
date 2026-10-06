@@ -453,8 +453,6 @@ function InventoryPageContent() {
   // made the screen feel switched off. So filters now narrow a list that is always there, and Reset returns to the whole catalogue
   // rather than to nothing. (Which is affordable because of the rendered window below — only a chunk is ever painted.)
   const activeQty = useMemo(() => activeQtyOf(qtyFilters), [qtyFilters]);
-  // Is anything narrowing the list? No longer gates the display — it only decides whether to show the "of N" total and the ✕ chips.
-  const filtering = steps.length > 0 || sizeFilter !== null || activeQty.length > 0 || seasonFilter !== null;
 
   const filtered = useMemo(
     () => applyCriteria(indexed, { steps, sizeTarget, sizeStrict, qty: activeQty, season: seasonFilter }).map((x) => x.row),
@@ -853,32 +851,21 @@ function InventoryPageContent() {
             </div>
           )}
 
-          {/* Breadcrumb of applied steps + the row count, at the top where the operator uses it to decide whether to narrow again. */}
+          {/* The style count + the applied steps, at the top where the operator uses them to decide whether to narrow again.
+              KEPT SPARE (owner, 2026-10-06 — "I don't think we need this much detail"): just "N styles", what is on screen now (a cut
+              moves it). The "Rows: N of 295" catalogue total, the keyboard hint and the | separators came out; the filter chips stay,
+              as the only record of WHY the list is what it is. */}
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 text-sm">
             <span className="mr-1 whitespace-nowrap text-slate-500">
-              {/* "N of 295" whenever the list is narrower than the catalogue — a filter OR a cut. Keyed on `filtering` alone, the
-                  unfiltered branch printed the catalogue total and a cut never moved the count (owner, 2026-10-06). */}
-              {filtering || visible.length !== rows.length ? (
-                <>Rows: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {rows.length}</span></>
-              ) : (
-                <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> styles</span></>
-              )}
+              <span className="font-semibold text-slate-800">{visible.length}</span>
+              <span className="text-slate-400"> {visible.length === 1 ? 'style' : 'styles'}</span>
             </span>
-            {/* Keyboard hint — only where the cursor actually works (cards painted). Nothing announces the gesture otherwise, and an
-                operator who never presses ↓ never discovers the thing that stops them losing their place. */}
-            {visible.length > 0 && (
-              <>
-                <span className="text-slate-300">|</span>
-                <span className="whitespace-nowrap text-xs text-slate-400">Click or ↑↓ to pick · Enter opens detail</span>
-              </>
-            )}
             {/* Only the STRICT size filter (typed in its own box) earns a removable chip here — it actually narrows the list, so its ✕
                 changes the result. A size split off a pasted SKU narrows nothing (it only leads the one card with that size), so a
                 removable "filter" chip would be a no-op affordance — ✕ leaves the same rows on screen (owner, 2026-07-23). That size is
                 shown ON the card instead ("Size 38 — 0 on the shelf"); to drop it, Reset. */}
             {sizeFilter && sizeStrict && (
               <>
-                <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">
                   Size {sizeFilter} · on the shelf
                   <button
@@ -897,7 +884,6 @@ function InventoryPageContent() {
                 styles are folded in, rather than being a rule you have to remember or go and read. */}
             {seasonFilter && (
               <>
-                <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
                   {seasonFilter} + year-round
                   <button
@@ -915,7 +901,6 @@ function InventoryPageContent() {
                 One chip per active metric; the ✕ clears just that metric and hands focus back to Contains for the next command (owner). */}
             {activeQty.map((f) => (
               <span key={f.metric} className="flex items-center gap-1.5">
-                <span className="text-slate-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
                   {f.metric === 'stock' ? 'Local' : 'Sold 30d'} {f.op === 'less' ? '<' : '>'} {f.n}
                   <button
@@ -931,7 +916,6 @@ function InventoryPageContent() {
             ))}
             {steps.length > 0 && (
               <>
-                <span className="text-slate-300">|</span>
                 {steps.map((s, i) => (
                   <span key={i} className="flex items-center gap-1.5">
                     {i > 0 && <span className="text-slate-300">›</span>}
@@ -990,15 +974,15 @@ function InventoryPageContent() {
           onLeave saves the whole view first (saveReturn), so either Back lands on the same cards, filter, scroll and selection. */}
       {!loading && !error && (
         <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-2">
-          <p className="mb-1.5 truncate text-xs text-slate-500">
-            {selectedRow ? (
+          {/* Names the selected product; EMPTY until one is picked (owner, 2026-10-06 — the "Click a product to choose…" prompt came
+              out: greyed buttons already say it). The line keeps its height either way, so picking a card never shifts the menu or the
+              cards under the pointer. */}
+          <p className="mb-1.5 h-4 truncate text-xs text-slate-500">
+            {selectedRow && (
               <>
                 <span className="font-mono text-slate-700">{selectedRow.groupid}</span>
                 {selectedRow.title && <span className="text-slate-700"> - {selectedRow.title}</span>}
-                <span className="text-slate-400"> · pick where to go</span>
               </>
-            ) : (
-              'Click a product to choose what to do with it'
             )}
           </p>
           <ProductNavCards
