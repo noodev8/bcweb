@@ -86,11 +86,11 @@ const ARCHIVE_COLS = [
  * Exact-match comparison, as the Python does: the amount arrives from Shopify as a string like '6.45' and is parsed to the same
  * double as the literal, so these are equal without rounding.
  *
- * Current prices for reference (2026-09-18): standard 4.45, next day 6.45. Both Royal Mail.
+ * Current prices for reference (2026-10-07): standard FREE (was 4.45), next day 6.50. Both Royal Mail.
  */
 const NEXT_DAY_POSTAGE = [
-  6.45,   // current   — from 2026-09-18
-  5.95,   // previous  — for orders paid just before the change; drop when the next change comes round
+  6.50,   // current   — from 2026-10-07
+  6.45,   // previous  — for orders paid just before the change; drop when the next change comes round
 ];
 
 // ---------------------------------------------------------------------------------------------------------------------------------
