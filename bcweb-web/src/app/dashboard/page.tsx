@@ -353,11 +353,11 @@ const PART_GROUPS: Group[] = [
     icon: ShoppingCartIcon,
     tiles: [
       {
-        title: 'Shopify Order',
-        subtitle: 'What to buy in for the shelf',
-        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
-        href: '/shopify-order',
-        icon: ShoppingBagIcon,
+        title: 'Customer Orders',
+        subtitle: 'Fulfil what customers bought',
+        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
+        href: '/customer-orders',
+        icon: UserGroupIcon,
       },
       {
         title: 'Amazon Order',
@@ -365,6 +365,13 @@ const PART_GROUPS: Group[] = [
         description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
         href: '/amazon-order',
         icon: ClipboardDocumentListIcon,
+      },
+      {
+        title: 'Shopify Order',
+        subtitle: 'What to buy in for the shelf',
+        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
+        href: '/shopify-order',
+        icon: ShoppingBagIcon,
       },
       {
         title: 'Supplier Orders',
