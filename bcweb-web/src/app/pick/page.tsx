@@ -22,15 +22,24 @@ is opened at the start of the day alongside the customer orders it picks against
 NO LABELS, NO CSV EXPORT, NO CHECK AMZ. The legacy screen's label machinery existed to assign picks to different pickers so they
 wouldn't cross-pick each other; that isn't how the work is done any more (owner). If picker assignment ever comes back, note that
 `localstock.assigned` is still there and still NULL on every live row.
+BACK LINK ONLY WHEN A SCREEN SENT YOU (owner, 2026-10-07 — "easily come back" to Customer Orders after pressing its pick button).
+PickLink adds ?from=/customer-orders&back=Customer Orders, so the trip there and back is one click each way. A dashboard arrival
+carries ?from=<group id> instead, which is not a path, so it gets no back link here and AppShell's logo does the return as it does on
+every dashboard screen. A plain visit or bookmark gets no back link either.
 =======================================================================================================================================
 */
 
 import AppShell from '@/components/AppShell';
 import PickList from '@/components/PickList';
+import { useUrlParam } from '@/lib/useUrlParam';
 
 export default function PickPage() {
+  const from = useUrlParam('from');
+  const backHref = from?.startsWith('/') ? from : undefined;
+  const backLabel = useUrlParam('back') || 'Back';
+
   return (
-    <AppShell>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       <PickList />
     </AppShell>
   );

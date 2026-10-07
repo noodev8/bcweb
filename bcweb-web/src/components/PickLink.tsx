@@ -30,7 +30,8 @@ export default function PickLink() {
 
   return (
     <Link
-      href="/pick"
+      // Return ticket: /pick shows "← Customer Orders" when it was opened from here (see the back note in app/pick/page.tsx).
+      href={`/pick?from=${encodeURIComponent('/customer-orders')}&back=${encodeURIComponent('Customer Orders')}`}
       className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
     >
       <HandRaisedIcon className="h-4 w-4 text-slate-400" />
