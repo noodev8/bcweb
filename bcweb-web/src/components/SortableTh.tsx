@@ -49,7 +49,10 @@ export function useTableSort<T, K extends string>(rows: T[], getters: Record<K, 
   return { sorted, sort, onSort };
 }
 
-export function SortableTh<K extends string>({ label, sortKey, sort, onSort, firstDir = 'desc', align = 'left', title }: {
+// `compact` (Shopify vs Amazon, 2026-10-07): px-3 to match px-3 cells, one-line label, and on a right-aligned column the sort arrow
+// goes BEFORE the label — its slot is reserved even when hidden, so on the right it pushed the label in off the numbers' edge.
+// Off by default, so the other lists look exactly as before.
+export function SortableTh<K extends string>({ label, sortKey, sort, onSort, firstDir = 'desc', align = 'left', title, compact = false }: {
   label: string;
   sortKey: K;
   sort: { key: K; dir: SortDir } | null;
@@ -57,17 +60,21 @@ export function SortableTh<K extends string>({ label, sortKey, sort, onSort, fir
   firstDir?: SortDir;
   align?: 'left' | 'right';
   title?: string;
+  compact?: boolean;
 }) {
   const active = sort?.key === sortKey;
+  const arrow = <span className={'text-[10px] ' + (active ? '' : 'invisible')}>{active && sort!.dir === 'asc' ? '▲' : '▼'}</span>;
+  const arrowFirst = compact && align === 'right';
   return (
-    <th className={'px-4 py-2 font-medium ' + (align === 'right' ? 'text-right' : '')} title={title} aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+    <th className={(compact ? 'px-3' : 'px-4') + ' py-2 font-medium ' + (align === 'right' ? 'text-right' : '')} title={title} aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
       <button
         type="button"
         onClick={() => onSort(sortKey, firstDir)}
-        className={'inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-800 ' + (active ? 'text-slate-800' : '')}
+        className={'inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-800 ' + (compact ? 'whitespace-nowrap ' : '') + (active ? 'text-slate-800' : '')}
       >
+        {arrowFirst && arrow}
         {label}
-        <span className={'text-[10px] ' + (active ? '' : 'invisible')}>{active && sort!.dir === 'asc' ? '▲' : '▼'}</span>
+        {!arrowFirst && arrow}
       </button>
     </th>
   );

@@ -10,7 +10,7 @@ Purpose: Stage 0 — the segment picker (CLAUDE.md). Lists segments from GET /pr
 
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MagnifyingGlassIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ChevronRightIcon, ScaleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getSegments, Segment } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -40,6 +40,16 @@ export default function PricingHome() {
         <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
         <span className="font-medium text-slate-700">Find a product</span>
         <span className="text-slate-400">— search by product name or code</span>
+      </Link>
+
+      {/* Shopify vs Amazon (owner, 2026-10-07) — styles live on Amazon, Shopify price against Amazon's per-size spread. */}
+      <Link
+        href="/pricing/vs-amazon"
+        className="-mt-4 mb-6 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:border-brand-500"
+      >
+        <ScaleIcon className="h-5 w-5 text-slate-400" />
+        <span className="font-medium text-slate-700">Shopify vs Amazon</span>
+        <span className="text-slate-400">— keep Shopify at or above Amazon&apos;s highest price</span>
       </Link>
 
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Segments</h2>

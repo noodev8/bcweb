@@ -644,6 +644,22 @@ export function findProducts(term: string) {
   return request<FindRow[]>({ url: '/pricing-find', method: 'GET', params: { term } }, (b) => b.results || []);
 }
 
+// Shopify vs Amazon (/pricing/vs-amazon): every style live on Amazon, its one Shopify price beside Amazon's per-size spread.
+// gap = price − amazon_highest (the owner's floor: Shopify never below Amazon's dearest live size). Advisory — writes go via applyPrice.
+export interface VsAmazonSize { size: string; qty: number; amz_price: number | null; amz_live: number; }
+export interface VsAmazonRow {
+  groupid: string; title: string | null; segment: string | null; supplier: string | null; codes: string | null;
+  price: number | null; cost: number | null; rrp: number | null; stock: number;
+  next_review: string | null;   // YYYY-MM-DD; a later date than the screen's own review is kept, never shortened
+  amazon_lowest: number | null; amazon_highest: number | null; amazon_live: number;
+  gap: number | null; shp_30d: number; amz_30d: number;
+  last_change: { date: string; by: string | null; note: string | null; price: number | null } | null;
+  sizes: VsAmazonSize[];
+}
+export function getVsAmazon() {
+  return request<VsAmazonRow[]>({ url: '/pricing-vs-amazon', method: 'GET' }, (b) => b.rows || []);
+}
+
 // Drill report: recent Shopify price changes for a style (audit log). Lazy — called when the "Price history" section is opened.
 export function getPriceHistory(groupid: string, limit?: number) {
   return request<PriceHistoryData>(

@@ -153,7 +153,7 @@ const CHUNK_ROOT_MARGIN = '800px';
 // Includes supplier (skusummary.supplier, e.g. "UKD") so typing the supplier code
 // finds every style under it — a brand name is already in the title, but a supplier that groups several brands (Goor, Roamers, Dek…
 // all UKD) isn't, and there was previously no way to pull that set up in one search (owner, 2026-09-07). Same rule as the other three
-// Contains sites (Amazon Order, amz-find.js, analytics-sales.js) — keep them in step.
+// Contains sites (Amazon Order, amz-find.js, analytics-sales.js, pricing/vs-amazon) — keep them in step.
 function haystack(r: InvStyleRow): string {
   return `${r.title || ''} ${r.groupid} ${r.segment || ''} ${r.codes || ''} ${r.supplier || ''}`.toLowerCase();
 }

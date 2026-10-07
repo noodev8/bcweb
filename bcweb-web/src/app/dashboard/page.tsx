@@ -410,6 +410,13 @@ const PART_GROUPS: Group[] = [
         icon: ShoppingCartIcon,
       },
       {
+        title: 'Shopify vs Amazon',
+        subtitle: 'Shopify never under Amazon',
+        description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread. Lift Shopify to Amazon’s highest price, one style or ticked in bulk.',
+        href: '/pricing/vs-amazon',
+        icon: ScaleIcon,
+      },
+      {
         title: 'Price Changes',
         subtitle: 'Recent moves, and what shifted',
         description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',

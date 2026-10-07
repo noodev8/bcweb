@@ -58,6 +58,7 @@ function DrillContent() {
   const backLabel = (() => {
     if (!backTo || backTo === '/pricing') return 'Shopify Pricing';
     if (backTo.startsWith('/pricing/find')) return 'Search';
+    if (backTo.startsWith('/pricing/vs-amazon')) return 'Shopify vs Amazon';
     // Reached from outside the pricing segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
     if (!backTo.startsWith('/pricing/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');

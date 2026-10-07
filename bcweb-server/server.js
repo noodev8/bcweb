@@ -109,6 +109,7 @@ app.use('/pricing-status-list', require('./routes/pricing-status-list'));       
 app.use('/amz-status-list', require('./routes/amz-status-list'));                 // GET ?status=: the Amazon (SKU) list behind a status
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
+app.use('/pricing-vs-amazon', require('./routes/pricing-vs-amazon')); // GET: every Amazon-live style, Shopify price vs Amazon spread
 app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-match-toggle', require('./routes/pricing-match-toggle')); // turn Shopify "match Amazon price" autopilot on/off for a style
 app.use('/pricing-park', require('./routes/pricing-park'));
