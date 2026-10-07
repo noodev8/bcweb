@@ -38,8 +38,8 @@ an fnsku to go in an amz box"). A refused scan goes in no box: the scan field tu
 and the browser beeps — the packer is looking at the shoe, not the screen. It clears on the next good scan. A line made by a good scan
 carries the product's code, Amazon SKU, FNSKU and title like a stored one, so an EAN and an FNSKU scan of the same shoe are one line.
 
-FNSKU LABELS (owner, 2026-10-02: "print a fnsku label when its scanned"). Every good scan prints one 50 × 25 mm label — barcode + FNSKU,
-nothing else — via src/lib/fnskuLabel.ts (silent on the packing PC's --kiosk-printing Chrome shortcut, a print dialog anywhere else).
+FNSKU LABELS (owner, 2026-10-02: "print a fnsku label when its scanned"). Every good scan prints one 54 × 25 mm Dymo label — FNSKU barcode +
+the Amazon SKU under it, nothing else (2026-10-07) — via src/lib/fnskuLabel.ts (silent on the packing PC's --kiosk-printing Chrome shortcut, a print dialog anywhere else).
 A refused scan prints nothing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
 it belongs to the bench, not the shipment. The printer icon on a line reprints that line's label (a jam, a smudge, a test).
 
@@ -353,12 +353,12 @@ function Packing({ initial, onShipped, onReload }: {
     setHistory((h) => [...h, { boxId, code }]);
     setLastScan({ boxId, code });
     setScanError(null);
-    if (printOn) printLabel(fnsku);
+    if (printOn) printLabel(fnsku, sku);
   }
 
   // Print, then hand focus back to the scan field (printing focuses the label's iframe).
-  function printLabel(fnsku: string) {
-    printFnskuLabel(fnsku, refocus);
+  function printLabel(fnsku: string, sku: string) {
+    printFnskuLabel(fnsku, sku, refocus);
   }
 
   function togglePrint() {
@@ -734,7 +734,7 @@ function Packing({ initial, onShipped, onReload }: {
                       {l.fnsku && (
                         <button
                           type="button"
-                          onClick={() => printLabel(l.fnsku!)}
+                          onClick={() => printLabel(l.fnsku!, l.sku || '')}
                           aria-label={`Print a label for ${l.code}`}
                           title={`Print one ${l.fnsku} label`}
                           className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"

@@ -2671,7 +2671,7 @@ export interface GoodsInBooking {
 }
 // What the AMZ box step did. `boxed: false` is a WARNING — the unit still booked in to the Amazon bay, it just isn't in a box.
 export type GoodsInAmzBox =
-  | { boxed: true; box: number; fnsku: string; qty: number }
+  | { boxed: true; box: number; sku?: string; fnsku: string; qty: number } // sku: printed on the label
   | { boxed: false; message: string };
 // What the Birk Tracker step did — it runs on every scan. A `marked: false` is a WARNING, not a failure: the unit was still
 // booked onto its shelf.

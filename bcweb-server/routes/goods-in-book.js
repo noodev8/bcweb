@@ -89,7 +89,7 @@ Success Response:
       // { "marked": true, "ordernum": "0001927328", "code": "…-38", "requested": 3, "invoiced": 3, "arrived": 2, "invoicenum": "5290103870" }
       // { "marked": false, "reason": "NOT_ON_TRACKER" | "ALL_ARRIVED" | "ERROR", "message": "…" }   -- the unit WAS still booked in
   "amzBox": null                    // null = not an Amazon unit. Otherwise ONE of:
-      // { "boxed": true, "box": 4, "fnsku": "X001L0082L", "qty": 2 }     -- qty = that code's line in the box after this unit
+      // { "boxed": true, "box": 4, "sku": "…", "fnsku": "X001L0082L", "qty": 2 }  -- qty = that code's line in the box after this unit; sku+fnsku print the label
       // { "boxed": false, "message": "…" }                               -- the unit WAS still booked in to C3-Amazon
 }
 =======================================================================================================================================
@@ -251,7 +251,7 @@ router.post('/', async (req, res) => {
             amzBox = { boxed: false, message: `${sku.code} has no FNSKU yet, so it wasn't put in an Amazon box — box it on AMZ Shipment once it has one` };
           } else {
             await client.query('RELEASE SAVEPOINT amz_box');
-            amzBox = { boxed: true, box, fnsku: added.fnsku, qty: Number(added.qty) };
+            amzBox = { boxed: true, box, sku: added.sku, fnsku: added.fnsku, qty: Number(added.qty) };
             logger.info(`[goods-in-book] ${sku.code} -> AMZ box ${box} (screen sent ${wantBox === null ? 'none' : wantBox})`);
           }
         } catch (err) {
