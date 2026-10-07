@@ -52,11 +52,25 @@ It runs INSIDE this transaction but behind a SAVEPOINT, and that asymmetry is th
 operator's hand and must get a shelf whatever the tracker thinks, so a tracker problem — no open line, not on the book, a database
 error — rolls back only the tracker step and comes back in `birk` as a message for the screen. The reverse is not true: if the
 booking fails, the tick goes with it, because a pair the tracker counts but no shelf holds is exactly the double-count this avoids.
+
+AMAZON UNITS GO STRAIGHT INTO AN AMZ BOX (owner, 2026-10-07: "if i scan 3 amz products on goods in and then go to the amz boxing
+screen those 3 will be in an amz box together ready"). A claimed AMAZON line also puts the unit into `amzshipment`, the table the AMZ
+Shipment screen packs from, and the screen prints its FNSKU label (the response's `amzBox.fnsku`). WHICH BOX: ONE BOX PER GOODS IN
+SESSION (owner, 2026-10-07: "each goods in session / screen is 1 box. only do a NEW box if its a new session"). The screen sends the
+box its session's Amazon units are going into (`amzBox`) and the unit goes in it, unconditionally — even if that box has since been
+emptied, the session keeps its number. Only when none is sent (the session's first Amazon unit) is a NEW box started, max(box) + 1, so
+a session never lands in a box someone is already packing. The new number is taken under a transaction-scoped advisory lock, so two
+benches starting boxes at once can't both pick the same one. Known edge, accepted: if AMZ Shipment deletes an EARLIER box mid-session,
+its renumbering moves this session's box down one and the session keeps writing to the old number. Same savepoint asymmetry as the Birk Tracker: the shoe still books in to C3-Amazon
+whatever the box step does (no FNSKU in amzfeed yet, a database error) and the reason comes back as `amzBox.message` — the operator can
+box it by hand on AMZ Shipment. Stock is untouched by boxing, as on that screen: the unit is still the C3-Amazon localstock row written
+here, and Mark shipped takes it off.
 =======================================================================================================================================
 Request Payload:
 {
-  "scan":  "5052149511232",     // required — a barcode or a SKU code, any case, trailing 'B' tolerated
-  "shelf": "C3-Back-Stage"      // required — where LOCAL stock goes. Ignored when an Amazon line is claimed.
+  "scan":   "5052149511232",    // required — a barcode or a SKU code, any case, trailing 'B' tolerated
+  "shelf":  "C3-Back-Stage",    // required — where LOCAL stock goes. Ignored when an Amazon line is claimed.
+  "amzBox": 4                   // optional — this session's AMZ box; omitted for its first Amazon unit (see above)
 }
 
 Success Response:
@@ -71,9 +85,12 @@ Success Response:
   "ordernum": "AMZ-O-WS7-4515",     // the claimed line, null when nothing was on order
   "incomingId": 16376,              // handles for /goods-in-cancel
   "localstockId": "WEB-8f2c…",
-  "birk": null                      // null = not a Birk and not on the book. Otherwise ONE of:
+  "birk": null,                     // null = not a Birk and not on the book. Otherwise ONE of:
       // { "marked": true, "ordernum": "0001927328", "code": "…-38", "requested": 3, "invoiced": 3, "arrived": 2, "invoicenum": "5290103870" }
       // { "marked": false, "reason": "NOT_ON_TRACKER" | "ALL_ARRIVED" | "ERROR", "message": "…" }   -- the unit WAS still booked in
+  "amzBox": null                    // null = not an Amazon unit. Otherwise ONE of:
+      // { "boxed": true, "box": 4, "fnsku": "X001L0082L", "qty": 2 }     -- qty = that code's line in the box after this unit
+      // { "boxed": false, "message": "…" }                               -- the unit WAS still booked in to C3-Amazon
 }
 =======================================================================================================================================
 Return Codes:
@@ -93,6 +110,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { placed } = require('../utils/orderStatus');
 const { markArrivedFromGoodsIn } = require('../utils/birkTracker');
+const { addUnitToBox } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -106,6 +124,7 @@ router.post('/', async (req, res) => {
     const body = req.body || {};
     const rawScan = typeof body.scan === 'string' ? body.scan.trim() : '';
     const shelf = typeof body.shelf === 'string' ? body.shelf.trim() : '';
+    const wantBox = body.amzBox == null ? null : Number(body.amzBox);
 
     if (!rawScan || !shelf) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'scan and shelf are required' });
@@ -215,6 +234,33 @@ router.post('/', async (req, res) => {
         birk = { marked: false, reason: 'ERROR', message: 'Could not update the Birk Tracker — mark this pair there by hand' };
       }
 
+      // --- 8. AMAZON -> AN AMZ BOX. Behind a savepoint so a failure here undoes only this step — see the header.
+      let amzBox = null;
+      if (amazon) {
+        await client.query('SAVEPOINT amz_box');
+        try {
+          // The session's box if it has one; a new box only for the session's first Amazon unit — see the header.
+          let box = Number.isInteger(wantBox) && wantBox >= 1 ? wantBox : null;
+          if (box === null) {
+            await client.query(`SELECT pg_advisory_xact_lock(hashtext('amzshipment:new-box'))`);
+            box = Number((await client.query(`SELECT COALESCE(MAX(box), 0) + 1 AS box FROM amzshipment`)).rows[0].box);
+          }
+          const added = await addUnitToBox(client, box, sku.code);
+          if (added.noSku) {
+            await client.query('ROLLBACK TO SAVEPOINT amz_box');
+            amzBox = { boxed: false, message: `${sku.code} has no FNSKU yet, so it wasn't put in an Amazon box — box it on AMZ Shipment once it has one` };
+          } else {
+            await client.query('RELEASE SAVEPOINT amz_box');
+            amzBox = { boxed: true, box, fnsku: added.fnsku, qty: Number(added.qty) };
+            logger.info(`[goods-in-book] ${sku.code} -> AMZ box ${box} (screen sent ${wantBox === null ? 'none' : wantBox})`);
+          }
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT amz_box');
+          logger.error('[goods-in-book] amz box step failed:', err.message);
+          amzBox = { boxed: false, message: 'Could not put it in an Amazon box — box it on AMZ Shipment' };
+        }
+      }
+
       return {
         code: sku.code,
         title: sku.title || null,
@@ -226,6 +272,7 @@ router.post('/', async (req, res) => {
         incomingId: Number(incRes.rows[0].id),
         localstockId,
         birk,
+        amzBox,
       };
     });
 

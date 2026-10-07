@@ -39,7 +39,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { cleanDims } = require('../utils/amzShipment');
+const { cleanDims, addUnitToBox, removeUnitFromBox } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -54,44 +54,14 @@ router.post('/', async (req, res) => {
     }
     const dims = cleanDims(req.body?.dims);
 
+    // The row writes are utils/amzShipment.js (shared with Goods In, which boxes the Amazon units it books in).
     const outcome = await withTransaction(async (client) => {
       if (delta < 0) {
-        const row = (await client.query(
-          `UPDATE amzshipment SET qty = COALESCE(qty, 0) - 1 WHERE box = $1 AND code = $2 RETURNING sku, qty`,
-          [box, code]
-        )).rows[0];
-        if (!row) return { code: 'NOT_FOUND' };
-        if (row.qty <= 0) await client.query(`DELETE FROM amzshipment WHERE box = $1 AND sku = $2`, [box, row.sku]);
-        return { code: 'SUCCESS', qty: Math.max(0, row.qty) };
+        const qty = await removeUnitFromBox(client, box, code);
+        return qty === null ? { code: 'NOT_FOUND' } : { code: 'SUCCESS', qty };
       }
-
-      const product = (await client.query(
-        `SELECT COALESCE(af.sku, '') AS sku, COALESCE(af.fnsku, '') AS fnsku, ss.supplier
-           FROM skumap m
-           LEFT JOIN skusummary ss ON ss.groupid = m.groupid
-           LEFT JOIN LATERAL (SELECT a.sku, a.fnsku FROM amzfeed a WHERE a.code = m.code AND COALESCE(a.fnsku, '') <> '' LIMIT 1) af ON true
-          WHERE m.code = $1
-          ORDER BY COALESCE(m.deleted, 0) ASC
-          LIMIT 1`,
-        [code]
-      )).rows[0];
-      if (!product || !product.sku || !product.fnsku) return { code: 'NO_SKU' };
-
-      // The box's stored measurements win over the client's, so a box's rows never disagree.
-      const stored = (await client.query(
-        `SELECT MAX(length) AS length, MAX(width) AS width, MAX(height) AS height, MAX(weight) AS weight FROM amzshipment WHERE box = $1`,
-        [box]
-      )).rows[0];
-      const d = stored.length || stored.width || stored.height || stored.weight ? stored : dims;
-
-      const row = (await client.query(
-        `INSERT INTO amzshipment (box, supplier, code, sku, fnsku, qty, weight, length, height, width)
-         VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9)
-         ON CONFLICT (box, sku) DO UPDATE SET qty = COALESCE(amzshipment.qty, 0) + 1
-         RETURNING qty`,
-        [box, product.supplier, code, product.sku, product.fnsku, d.weight || null, d.length || null, d.height || null, d.width || null]
-      )).rows[0];
-      return { code: 'SUCCESS', qty: row.qty };
+      const added = await addUnitToBox(client, box, code, dims);
+      return added.noSku ? { code: 'NO_SKU' } : { code: 'SUCCESS', qty: added.qty };
     });
 
     if (outcome.code === 'NOT_FOUND') {

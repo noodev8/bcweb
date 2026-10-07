@@ -45,6 +45,14 @@ season order. There is nothing to arm and nothing to forget. A tracker problem n
 to — so it gets its own small strip under the verdict instead of the red stop: a message to read when you next look up, not a reason to
 put the gun down. Undo takes the tick back off the same line.
 
+AMAZON UNITS ARE BOXED AND LABELLED HERE (owner, 2026-10-07). A unit that claims an Amazon line also goes into an AMZ box — the
+`amzshipment` table AMZ Shipment packs from — and its FNSKU label prints at once (src/lib/fnskuLabel.ts, same label and same silent
+kiosk printing as AMZ Shipment). ONE BOX PER SESSION (owner, 2026-10-07): the session's first Amazon unit starts a new box and the
+screen sends its number with every later scan, so three Amazon scans here are one box of three over there. Nothing mid-session starts
+another — not Clear screen, not undoing the box empty. A new box means a new session: opening the screen again (routes/goods-in-book.js,
+AMAZON UNITS). Undo takes the unit back out of its box. A unit that couldn't be boxed (no FNSKU yet) still books in to the
+bay; the warning strip under the verdict says so, and it gets boxed by hand on AMZ Shipment.
+
 THE RUN LIST IS THIS SESSION'S, THOUGH, and deliberately not persisted. It is the box in front of you, not an audit trail — bclog and
 incoming_stock are the audit trail. Undo works off the handles the book call returned, so it survives as long as the list does.
 =======================================================================================================================================
@@ -58,6 +66,7 @@ import {
   type GoodsInShelvesData, type GoodsInExpectedData, type GoodsInBirk,
 } from '@/lib/api';
 import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
+import { printFnskuLabel } from '@/lib/fnskuLabel';
 
 // The shelf the run puts local stock on. Legacy default, and the bay a delivery nearly always lands on.
 const DEFAULT_SHELF = 'C3-Back-Stage';
@@ -105,6 +114,7 @@ interface Row {
   incomingId: number | null;           // handles from the book call, for the undo
   localstockId: string | null;
   birk: GoodsInBirk | null;            // what the Birk Tracker step did — a marked line is what undo takes back off
+  amzBox: number | null;               // the AMZ box an Amazon unit went into — undo takes it back out
   cancelled: boolean;
 }
 
@@ -119,8 +129,14 @@ function remembered(key: string, fallback: string): string {
 export default function GoodsInStation() {
   const [shelf, setShelf] = useState(() => remembered(SHELF_KEY, DEFAULT_SHELF));
   const [sound, setSound] = useState(() => remembered(SOUND_KEY, 'on') !== 'off');
-  // The last Birk Tracker warning, shown under the verdict until the next scan or undo replaces it. See the header.
-  const [trackerNote, setTrackerNote] = useState<string | null>(null);
+  // The last side-step warning (Birk Tracker, AMZ box), shown under the verdict until the next scan or undo replaces it. See the header.
+  const [sideNote, setSideNote] = useState<{ label: string; text: string } | null>(null);
+  // This session's AMZ box — null until its first Amazon unit (the server then starts a new box). Never reset while the screen is
+  // open: one box per session, see the header.
+  const [amzBox, setAmzBox] = useState<number | null>(null);
+  // The same number, for submit() to SEND. A ref is set the instant the answer lands, so the next scan can't go out carrying the value
+  // from before a re-render (the state copy above is only for display).
+  const amzBoxRef = useRef<number | null>(null);
   const [value, setValue] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [verdict, setVerdict] = useState<Row | null>(null);
@@ -200,15 +216,19 @@ export default function GoodsInStation() {
     // up is the one way this screen can lie to someone who only glances at it. Cleared back to Ready, and the caret goes straight
     // back to the input rather than waiting on the round-trip, so the next scan lands whether or not the cancel has answered yet.
     setVerdict(null);
-    setTrackerNote(null);
+    setSideNote(null);
     focusInput();
 
     const res = await goodsInCancel({
       incomingId: row.incomingId, localstockId: row.localstockId, ordernum: row.ordernum, code: row.code || '',
       birk: row.birk?.marked ? { ordernum: row.birk.ordernum, code: row.birk.code } : null,
+      amzBox: row.amzBox,
     });
     if (res.success && res.data?.birk && !res.data.birk.undone) {
-      setTrackerNote(res.data.birk.message || 'The Birk Tracker was not updated by that undo — check it there');
+      setSideNote({ label: 'Birk Tracker not updated', text: res.data.birk.message || 'The Birk Tracker was not updated by that undo — check it there' });
+    }
+    if (res.success && res.data?.amzBox && !res.data.amzBox.undone) {
+      setSideNote({ label: 'AMZ box not updated', text: res.data.amzBox.message || `Take ${row.code} out of Box ${row.amzBox} on AMZ Shipment` });
     }
     // NOT_FOUND means it was already undone — the row is correctly struck through either way, so only a real failure is rolled back.
     if (!res.success && res.return_code !== 'NOT_FOUND') {
@@ -216,7 +236,7 @@ export default function GoodsInStation() {
       setVerdict({
         key: `${Date.now()}-${Math.random()}`, input: row.code || '', kind: 'error',
         message: res.error || 'Could not undo that unit', code: row.code, title: row.title, destination: null,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, amzBox: null, cancelled: false,
       });
     }
     await refreshNote();
@@ -251,7 +271,7 @@ export default function GoodsInStation() {
       setVerdict({
         key: `${Date.now()}-${Math.random()}`, input: typed, kind: 'shelf-set', message: null,
         code: null, title: null, destination: rack,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, amzBox: null, cancelled: false,
       });
       focusInput();
       return;
@@ -261,12 +281,17 @@ export default function GoodsInStation() {
     // guessed client-side: which order line got claimed is the server's call, and it is what determines the destination.
     inFlight.current = true;
     setBusy(true);
-    const res = await goodsInBook({ scan, shelf });
+    const res = await goodsInBook({ scan, shelf, amzBox: amzBoxRef.current });
     setBusy(false);
     inFlight.current = false;
-    // Every answer replaces the last tracker warning: it belongs to the scan before, and leaving it up would pin it on this shoe.
+    // Every answer replaces the last warning: it belongs to the scan before, and leaving it up would pin it on this shoe.
     const birk = res.data?.birk ?? null;
-    setTrackerNote(birk && !birk.marked ? birk.message : null);
+    const boxed = res.data?.amzBox ?? null;
+    setSideNote(
+      birk && !birk.marked ? { label: 'Birk Tracker not updated', text: birk.message }
+        : boxed && !boxed.boxed ? { label: 'Not in an AMZ box', text: boxed.message }
+          : null
+    );
 
     // A fresh key per scan remounts the verdict panel, which is what replays the flash — two identical scans still register as two.
     const key = `${Date.now()}-${Math.random()}`;
@@ -280,7 +305,7 @@ export default function GoodsInStation() {
       setVerdict({
         key, input: typed, kind: stop ? 'not-found' : 'error', message: stop ? null : (res.error || 'Could not book that in'),
         code: null, title: null, destination: null,
-        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, cancelled: false,
+        expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, amzBox: null, cancelled: false,
       });
       beep();
       focusInput();
@@ -302,10 +327,17 @@ export default function GoodsInStation() {
       incomingId: b.incomingId,
       localstockId: b.localstockId,
       birk: b.birk,
+      amzBox: b.amzBox?.boxed ? b.amzBox.box : null,
       cancelled: false,
     };
     setVerdict(row);
     setRows((prev) => [row, ...prev]);
+    // An Amazon unit went into this session's box: remember it for the next one, and print its FNSKU label (focus comes back after).
+    if (b.amzBox?.boxed) {
+      amzBoxRef.current = b.amzBox.box;
+      setAmzBox(b.amzBox.box);
+      printFnskuLabel(b.amzBox.fnsku, focusInput);
+    }
     focusInput();
     // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
     void refreshNote();
@@ -418,6 +450,7 @@ export default function GoodsInStation() {
                     : verdict.expected
                       ? <> · on order from {verdict.supplier}</>
                       : <> · <span className="font-semibold">nothing on order</span> — putting it away as free stock</>}
+                  {verdict.amzBox !== null && <> · <span className="font-semibold">AMZ Box {verdict.amzBox}</span>, label printed</>}
                 </p>
               </div>
               <p className={'shrink-0 font-mono text-sm tabular-nums tracking-tight ' + VERDICT[verdict.kind].sub}>{verdict.code}</p>
@@ -425,14 +458,14 @@ export default function GoodsInStation() {
           )}
         </div>
 
-        {/* --- BIRK TRACKER WARNING. Outside the verdict panel on purpose: the shoe DID book in and the panel says where it goes; this
-            only says the tracker did not follow. Never blocks the line. --- */}
-        {trackerNote && (
+        {/* --- SIDE-STEP WARNING (Birk Tracker, AMZ box). Outside the verdict panel on purpose: the shoe DID book in and the panel
+            says where it goes; this only says a side step did not follow. Never blocks the line. --- */}
+        {sideNote && (
           <div role="status" className="mt-2 flex items-center justify-between gap-4 rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-lg text-red-800">
-            <span><span className="font-bold">Birk Tracker not updated:</span> {trackerNote}</span>
+            <span><span className="font-bold">{sideNote.label}:</span> {sideNote.text}</span>
             <button
               type="button"
-              onClick={() => { setTrackerNote(null); focusInput(); }}
+              onClick={() => { setSideNote(null); focusInput(); }}
               className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-100"
             >
               Dismiss
@@ -471,7 +504,11 @@ export default function GoodsInStation() {
         <span className="font-semibold text-slate-700">
           {booked.length === 0 ? 'Nothing scanned yet' : `${booked.length} scanned`}
         </span>
-        {booked.length > 0 && <span>{toAmazon} to Amazon · {booked.length - toAmazon} to a shelf</span>}
+        {booked.length > 0 && (
+          <span>
+            {toAmazon} to Amazon{amzBox !== null && ` (AMZ Box ${amzBox})`} · {booked.length - toAmazon} to a shelf
+          </span>
+        )}
         {busy && <span className="text-slate-400">Working…</span>}
 
         {/* UNDO THE LAST SCAN — the cancel you actually reach for, since a mis-scan is noticed with the shoe still in your hand. The
@@ -501,7 +538,7 @@ export default function GoodsInStation() {
                 setVerdict(null);
                 focusInput();
               }}
-              title="Empties the list on screen. Nothing is un-booked."
+              title="Empties the list on screen. Nothing is un-booked. Amazon units keep going into this session's AMZ box."
               className="rounded border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
             >
               Clear screen
@@ -535,6 +572,7 @@ export default function GoodsInStation() {
                 <td className="hidden py-1.5 pr-3 sm:table-cell">{r.title}</td>
                 <td className="py-1.5 pr-3 text-right sm:text-left">
                   {r.destination}
+                  {r.amzBox !== null && !r.cancelled && <span className="ml-2 text-xs text-slate-400">Box {r.amzBox}</span>}
                   {!r.expected && !r.cancelled && !r.birk?.marked && <span className="ml-2 text-xs text-amber-700">not on order</span>}
                   {r.birk && !r.cancelled && (r.birk.marked
                     ? <span className="ml-2 text-xs text-slate-400">Birk order {r.birk.ordernum}</span>

@@ -1,0 +1,21 @@
+== BCWEB label-printing Chrome shortcut (FNSKU labels on Goods In and AMZ Shipment)
+
+Without this shortcut every label pops up Chrome's print dialog. With it, labels go straight to the default printer.
+
+-- Shortcut target (paste into "Target" when creating the shortcut):
+
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing --user-data-dir="C:\bcweb-chrome" https://bcweb.vercel.app
+
+Name it e.g. "BCWEB (labels)".
+
+-- Notes
+- If Chrome is installed elsewhere, check the path: right-click your normal Chrome shortcut > Properties > Target.
+  (Sometimes it is "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe".)
+- --user-data-dir gives this shortcut its own Chrome profile, so your normal Chrome keeps the print dialog. Log in to BCWEB once in it.
+- Close ALL Chrome windows before first use if you leave --user-data-dir off, or the flag is ignored.
+- --kiosk-printing sends EVERYTHING printed from this window to the Windows default printer, so:
+    1. Install the label printer's Windows driver.
+    2. Make the label printer the Windows default printer.
+    3. In the printer's Printing Preferences set the paper size to the label stock: 50 x 25 mm.
+- Test: open AMZ Shipment, scan a shoe with an FNSKU (or press a line's printer icon) - one label should print with no dialog.
+- For local dev use http://localhost:3000 instead of the vercel URL.

@@ -2667,14 +2667,19 @@ export interface GoodsInBooking {
   incomingId: number;         // handles for goodsInCancel
   localstockId: string;
   birk: GoodsInBirk | null;   // the Birk Tracker step — null when the toggle was off or the shoe is nothing to do with the book
+  amzBox: GoodsInAmzBox | null; // an Amazon unit also goes into an AMZ box — null when it isn't an Amazon unit
 }
+// What the AMZ box step did. `boxed: false` is a WARNING — the unit still booked in to the Amazon bay, it just isn't in a box.
+export type GoodsInAmzBox =
+  | { boxed: true; box: number; fnsku: string; qty: number }
+  | { boxed: false; message: string };
 // What the Birk Tracker step did — it runs on every scan. A `marked: false` is a WARNING, not a failure: the unit was still
 // booked onto its shelf.
 export type GoodsInBirk =
   | { marked: true; ordernum: string; code: string; requested: number; invoiced: number; arrived: number; invoicenum: string | null }
   | { marked: false; reason: 'NOT_ON_TRACKER' | 'ALL_ARRIVED' | 'ERROR'; message: string };
 
-export function goodsInBook(args: { scan: string; shelf: string }) {
+export function goodsInBook(args: { scan: string; shelf: string; amzBox?: number | null }) {
   return request<GoodsInBooking>(
     { url: '/goods-in-book', method: 'POST', data: args },
     (b) => ({
@@ -2683,6 +2688,7 @@ export function goodsInBook(args: { scan: string; shelf: string }) {
       supplier: b.supplier ?? null, ordernum: b.ordernum ?? null,
       incomingId: Number(b.incomingId), localstockId: String(b.localstockId),
       birk: (b.birk as GoodsInBirk | null) ?? null,
+      amzBox: (b.amzBox as GoodsInAmzBox | null) ?? null,
     })
   );
 }
@@ -2693,12 +2699,15 @@ export function goodsInBook(args: { scan: string; shelf: string }) {
 export function goodsInCancel(args: {
   incomingId: number; localstockId: string; ordernum: string | null; code: string;
   birk?: { ordernum: string; code: string } | null;
+  amzBox?: number | null;     // the AMZ box the booking put it in — it comes back out
 }) {
-  return request<{ code: string; target: string; reopened: boolean; birk: { undone: boolean; message?: string } | null }>(
+  type Undone = { undone: boolean; message?: string } | null;
+  return request<{ code: string; target: string; reopened: boolean; birk: Undone; amzBox: Undone }>(
     { url: '/goods-in-cancel', method: 'POST', data: args },
     (b) => ({
       code: b.code, target: b.target, reopened: Boolean(b.reopened),
-      birk: (b.birk as { undone: boolean; message?: string } | null) ?? null,
+      birk: (b.birk as Undone) ?? null,
+      amzBox: (b.amzBox as Undone) ?? null,
     })
   );
 }

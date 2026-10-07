@@ -26,6 +26,10 @@ stay in bclog — an undone scan is a thing that happened, and hiding it would m
 IT TAKES THE BIRK TRACKER TICK BACK TOO, when the booking made one (`birk` — the exact line /goods-in-book returned, never re-resolved;
 utils/birkTracker.js). Same savepoint asymmetry as the booking: the unit coming off the shelf is the undo the operator asked for, so a
 tracker line that can no longer be decremented comes back as a message rather than refusing the undo.
+
+AND THE AMZ BOX, when the booking put the unit in one (`amzBox` — the box /goods-in-book returned). One unit of the code comes out of
+that box, the row going at 0, exactly as − does on AMZ Shipment. Same savepoint: if the box no longer holds it (shipped, deleted, or
+already taken out on AMZ Shipment) the undo still happens and `amzBox.message` says to check the box there.
 =======================================================================================================================================
 Request Payload:
 {
@@ -33,12 +37,14 @@ Request Payload:
   "localstockId": "WEB-8f2c…",            // required — the shelf row that call created
   "ordernum":     "AMZ-O-WS7-4515",       // optional — the claimed order line; omitted when nothing was on order
   "code":         "FLE030-IVES-BLACKSOLE-06",
-  "birk": { "ordernum": "0001927328", "code": "0034703-MILANO-38" }   // optional — the Birk Tracker line the booking ticked
+  "birk": { "ordernum": "0001927328", "code": "0034703-MILANO-38" },  // optional — the Birk Tracker line the booking ticked
+  "amzBox": 4                                                          // optional — the AMZ box the booking put the unit in
 }
 
 Success Response:
 { "return_code": "SUCCESS", "code": "…", "target": "C3-Amazon", "reopened": true,
-  "birk": null }   // null = nothing to take back; else { "undone": true } or { "undone": false, "message": "…" }
+  "birk": null,    // null = nothing to take back; else { "undone": true } or { "undone": false, "message": "…" }
+  "amzBox": null }  // same shape as birk, for the AMZ box
   // reopened = an order line was put back to not-arrived
 =======================================================================================================================================
 Return Codes:
@@ -55,6 +61,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { unmarkArrivedFromGoodsIn } = require('../utils/birkTracker');
+const { removeUnitFromBox } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -68,6 +75,7 @@ router.post('/', async (req, res) => {
     const code = typeof body.code === 'string' ? body.code.trim() : '';
     const birkOrdernum = typeof body.birk?.ordernum === 'string' ? body.birk.ordernum.trim() : '';
     const birkCode = typeof body.birk?.code === 'string' ? body.birk.code.trim() : '';
+    const amzBoxNo = body.amzBox == null ? null : Number(body.amzBox);
 
     if (!Number.isInteger(incomingId) || incomingId <= 0 || !localstockId) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'incomingId and localstockId are required' });
@@ -120,7 +128,24 @@ router.post('/', async (req, res) => {
         }
       }
 
-      return { code: incCode, target, reopened, birk };
+      // Take it back out of the AMZ box, behind a savepoint — see the header.
+      let amzBox = null;
+      if (Number.isInteger(amzBoxNo) && amzBoxNo >= 1) {
+        await client.query('SAVEPOINT amz_box');
+        try {
+          const left = await removeUnitFromBox(client, amzBoxNo, incCode);
+          await client.query('RELEASE SAVEPOINT amz_box');
+          amzBox = left === null
+            ? { undone: false, message: `${incCode} is no longer in Box ${amzBoxNo} — check the boxes on AMZ Shipment` }
+            : { undone: true };
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT amz_box');
+          logger.error('[goods-in-cancel] amz box step failed:', err.message);
+          amzBox = { undone: false, message: `Could not take ${incCode} out of Box ${amzBoxNo} — do it on AMZ Shipment` };
+        }
+      }
+
+      return { code: incCode, target, reopened, birk, amzBox };
     });
 
     if (outcome === null) {
