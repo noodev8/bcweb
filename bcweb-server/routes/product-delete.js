@@ -11,6 +11,7 @@ Purpose: PERMANENTLY delete a product (one groupid) — the legacy "Delete" butt
              - Shopify listing  — deleted via the Admin API (utils/shopify.deleteByHandle) so a removed product is never left live on the
                                   store. Done FIRST; if it fails we ABORT and touch nothing in our DB (never orphan a live listing).
              - skusummary, title, attributes, skumap — the four tables product-create / product-sizes write. One transaction.
+             - shopify_description (cached Shopify description, keyed by handle) — same transaction.
              - the image file on one.com (best-effort cleanup, like a re-image).
            KEPT (owner rule — "keep all sales and report data"):
              - sales / offlinesold / shopifysold / performance* / snapshots / price_change_log / amz_price_log / price_track / shopprices…
@@ -119,12 +120,17 @@ router.post('/', async (req, res) => {
       logger.info(`[product-delete] Shopify not configured — skipping listing delete for ${groupid}`);
     }
 
-    // 2) DB — delete the four definition tables in one transaction. Order doesn't matter (no FKs), but skumap (N rows) first reads well.
+    // 2) DB — delete the four definition tables (+ the cached description) in one transaction. Order doesn't matter (no FKs), but skumap (N rows) first reads well.
     await withTransaction(async (client) => {
       await client.query(`DELETE FROM skumap     WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM attributes WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM title      WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM skusummary WHERE groupid = $1`, [groupid]);
+      // shopify_description (cached Shopify body HTML) is keyed by HANDLE, not groupid — handles are unique per product. Skip on a blank
+      // handle so we never match other blank-handle rows.
+      if (handle) {
+        await client.query(`DELETE FROM shopify_description WHERE handle = $1`, [handle]);
+      }
 
       // The product row is now gone for good, so the log row IS the only surviving record that it ever existed. Written in the same
       // transaction as the deletes: no orphan "deleted" event if the delete rolls back, no silent hole if it commits.
