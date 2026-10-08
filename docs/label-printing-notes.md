@@ -11,7 +11,7 @@ A web page cannot silently talk to a USB/LAN printer. The API runs on the VPS, s
 
 ## Proposed approach (current leaning): Chrome kiosk printing
 - Scanner = keyboard. A focused scan field; Enter triggers the print.
-- Label rendered as HTML/SVG at exact label size (Code128 FNSKU barcode + FNSKU text, optional title/size). CSS `@page { size: <w>mm <h>mm; margin: 0 }`, then `window.print()`.
+- Label = the FNSKU's `<FNSKU>.bmp` from the barcode folder (read via the browser folder handle; rebuilt by the same generator if not available), trimmed and placed at a whole-number scale on a page at exact label size. CSS `@page { size: <w>mm <h>mm; margin: 0 }`, then `window.print()`. (Drawn as HTML/SVG until 2026-10-08.)
 - Chrome started with `--kiosk-printing` skips the print dialog and prints to the default printer.
 
 One-time setup on the packing PC:
