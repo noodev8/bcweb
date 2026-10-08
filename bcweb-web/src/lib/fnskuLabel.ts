@@ -4,8 +4,8 @@ FNSKU label — print one Amazon label from the browser
 =======================================================================================================================================
 AMZ Shipment and Goods In print one of these per Amazon unit. The label IS THE FNSKU'S IMAGE FROM THE BARCODE FOLDER — `<FNSKU>.bmp`,
 the same file the old system printed (owner, 2026-10-08: "all we want is to print the image from the fnsku folder"). Until then the
-label was drawn here (barcode + FNSKU + Amazon SKU); that is gone, so the label carries what the folder image carries: the bars and
-the FNSKU caption, no SKU. Printed on the Dymo LabelWriter's 54 × 25 mm label (11352 / 30336 size). MEASURED, not taken from the paper
+label was drawn here (barcode + FNSKU + Amazon SKU). Under the image goes one line of text: the product CODE (skumap.code — owner,
+2026-10-08: "add the code under it"). Printed on the Dymo LabelWriter's 54 × 25 mm label (11352 / 30336 size). MEASURED, not taken from the paper
 name: a ruler printed on an 89 mm page (2026-10-07) ran across two labels with the gap at ~55 mm. The driver's paper must be a 54 mm
 one too — on a longer paper (e.g. 30252 Address, 89 mm) Chrome centres the 54 mm page on it and the label lands ~17 mm along, cut off.
 
@@ -18,9 +18,11 @@ generator that writes the folder's files, bars verified bit-for-bit against them
 PRINTED AT ITS OWN PIXELS. The current folder files are 300 dpi — the Dymo head's resolution — with 4-pixel modules. The image is
 trimmed to its ink (the files have a 129 px blank right margin and no left one, which would put the bars off-centre and too wide for
 54 mm), then placed on a page canvas of exactly the label's size in printer dots at a WHOLE-NUMBER scale (1 for the 300 dpi files; the
-2017-style 96 dpi files with 1 px modules come out at 3), centred. So every bar is a whole number of dots and nothing is resampled —
+2017-style 96 dpi files with 1 px modules come out at 3–4), centred. So every bar is a whole number of dots and nothing is resampled —
 the first label version stretched bars to 2.6 dots a module and the uneven rounding stopped it scanning (2026-10-08). The page is
-shown with image-rendering: pixelated for the same reason. Note there is no thermal bar-width reduction any more (the file's bars are
+shown with image-rendering: pixelated for the same reason. The image plus the code line don't fit 25 mm at 1:1 (the 2026 files are
+253 px of ink), so the BARS ARE SHORTENED from the top to make room — cropping rows off a barcode changes no bar width, and the folder
+images all have the bars at the top and the FNSKU caption underneath. The scale is chosen on width; height is what gets cropped. Note there is no thermal bar-width reduction any more (the file's bars are
 full width); at 4 dots a module the spread matters less than it did at 3, but if scans fail, that's where to look.
 
 HOW IT PRINTS (docs/label-printing-notes.md). A web page can't talk to the printer directly, so the label is an image on a page exactly
@@ -42,6 +44,11 @@ const dots = (mm: number) => Math.round((mm * 300) / 25.4);
 const LABEL_DOTS = { width: dots(LABEL_MM.width), height: dots(LABEL_MM.height) } as const;
 // Kept clear of ink at each end and edge, so the image never touches the label's edge.
 const MARGIN_DOTS = dots(1);
+// The code line under the image: its size, the gap above it, and the widest it may run before its font shrinks.
+const TEXT_SIZE_DOTS = dots(2.6);
+const TEXT_GAP_DOTS = dots(0.5);
+const TEXT_MAX_WIDTH_DOTS = LABEL_DOTS.width - 2 * MARGIN_DOTS;
+const FONT = 'Arial, Helvetica, sans-serif';
 // Which way the label is turned on the portrait page — decides only whether the caption reads upright on the roll.
 const ROTATE_CLOCKWISE = true;
 // The page as the driver sees it: portrait, the label's height across the head and its width along the feed.
@@ -90,15 +97,18 @@ function inkBox(bitmap: ImageBitmap): { x: number; y: number; w: number; h: numb
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-/** The label page as a canvas: the barcode image trimmed to its ink, at a whole-number scale, centred, turned onto the portrait page. */
-async function labelCanvas(image: Blob): Promise<HTMLCanvasElement> {
+/** The label page as a canvas: the barcode image trimmed to its ink at a whole-number scale, bars shortened if need be, with `code`
+ *  centred under it, all turned onto the portrait page. */
+async function labelCanvas(image: Blob, code: string): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(image);
   const box = inkBox(bitmap);
-  const fitW = (LABEL_DOTS.width - 2 * MARGIN_DOTS) / box.w;
-  const fitH = (LABEL_DOTS.height - 2 * MARGIN_DOTS) / box.h;
-  // Whole-number scale so each image pixel is a whole number of dots. An image too big at 1:1 is shrunk to fit as a last resort.
-  const fit = Math.min(fitW, fitH);
+  // Whole-number scale on width, so each image pixel is a whole number of dots. An image too wide at 1:1 is shrunk as a last resort.
+  const fit = (LABEL_DOTS.width - 2 * MARGIN_DOTS) / box.w;
   const scale = fit >= 1 ? Math.floor(fit) : fit;
+  // Height left for the image once the code line is in: if the image is taller, crop rows off its top (the bars).
+  const textBand = code ? TEXT_SIZE_DOTS + TEXT_GAP_DOTS : 0;
+  const maxH = Math.floor((LABEL_DOTS.height - 2 * MARGIN_DOTS - textBand) / scale);
+  if (box.h > maxH) { box.y += box.h - maxH; box.h = maxH; }
   const w = Math.round(box.w * scale);
   const h = Math.round(box.h * scale);
 
@@ -114,9 +124,21 @@ async function labelCanvas(image: Blob): Promise<HTMLCanvasElement> {
   // Label (x along, y down) → portrait page. Clockwise: label top lands on the page's right edge; anticlockwise: on its left.
   if (ROTATE_CLOCKWISE) { ctx.translate(canvas.width, 0); ctx.rotate(Math.PI / 2); }
   else { ctx.translate(0, canvas.height); ctx.rotate(-Math.PI / 2); }
-  ctx.drawImage(bitmap, box.x, box.y, box.w, box.h,
-    Math.round((LABEL_DOTS.width - w) / 2), Math.round((LABEL_DOTS.height - h) / 2), w, h);
+  // Image and code line as one block, centred top to bottom.
+  const top = Math.round((LABEL_DOTS.height - h - textBand) / 2);
+  ctx.drawImage(bitmap, box.x, box.y, box.w, box.h, Math.round((LABEL_DOTS.width - w) / 2), top, w, h);
   bitmap.close();
+
+  if (code) {
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `${TEXT_SIZE_DOTS}px ${FONT}`;
+    const width = ctx.measureText(code).width;
+    if (width > TEXT_MAX_WIDTH_DOTS) ctx.font = `${Math.floor((TEXT_SIZE_DOTS * TEXT_MAX_WIDTH_DOTS) / width)}px ${FONT}`;
+    // Baseline at ~0.75 em below the band's top: Arial's caps sit there, and codes are capitals, digits and hyphens.
+    ctx.fillText(code, LABEL_DOTS.width / 2, top + h + TEXT_GAP_DOTS + Math.round(TEXT_SIZE_DOTS * 0.75));
+  }
   return canvas;
 }
 
@@ -127,12 +149,12 @@ async function labelCanvas(image: Blob): Promise<HTMLCanvasElement> {
  * `onDone` runs once print() has returned — printing focuses the iframe, so the caller uses it to put focus back on its scan field
  * (otherwise the scanner's next code would be typed into nothing).
  */
-export function printFnskuLabel(fnsku: string, onDone?: () => void): void {
+export function printFnskuLabel(fnsku: string, code: string, onDone?: () => void): void {
   void (async () => {
     let url: string;
     try {
       const image = (await folderImage(fnsku)) ?? fnskuBarcodeBmp(fnsku);
-      const canvas = await labelCanvas(image);
+      const canvas = await labelCanvas(image, code);
       const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!png) return;
       url = URL.createObjectURL(png);

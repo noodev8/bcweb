@@ -336,7 +336,7 @@ export default function GoodsInStation() {
     if (b.amzBox?.boxed) {
       amzBoxRef.current = b.amzBox.box;
       setAmzBox(b.amzBox.box);
-      printFnskuLabel(b.amzBox.fnsku, focusInput);
+      printFnskuLabel(b.amzBox.fnsku, b.code, focusInput);
     }
     focusInput();
     // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
