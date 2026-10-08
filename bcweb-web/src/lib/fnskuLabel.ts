@@ -13,8 +13,12 @@ page exactly the label's size, in a hidden iframe, and that iframe is printed. O
 --kiosk-printing, which skips the dialog and sends it straight to the default printer (the label printer, its paper size set to the
 label stock in the driver). Anywhere else the normal print dialog appears — still correct, just not silent.
 
-GEOMETRY. The content is drawn small and centred, well inside the label: the bars are scaled to 32 mm wide whatever the FNSKU's
-length (~11 mm of quiet zone each side; Code 128 needs 10 modules), 10 mm tall, with the SKU under them. The SVG is sized to FILL THE
+GEOMETRY. The content is drawn centred, well inside the label: bars 14 mm tall (were 10 — taller reads at more angles) with the SKU under them. The bars are sized in
+PRINTER DOTS, not stretched to a width: every module is exactly MODULE_DOTS of the Dymo's 300 dpi head (3 dots = 0.254 mm, so a
+10-char FNSKU's 145 modules are ~36.8 mm, ~8.6 mm quiet zone each side; Code 128 needs 10 modules). The first version scaled the bars
+to 32 mm — 2.6 dots a module — so the driver rounded each bar and gap to 2 or 3 dots unevenly, and with thermal spread the narrow
+gaps closed up: printed dark and crowded, wouldn't scan (2026-10-08). Each bar is also drawn BAR_REDUCTION_DOTS (2 — 1 still printed merged, 2026-10-08) narrower than its
+modules (gaps that much wider) to cancel the spread — the usual thermal bar-width reduction. If scans still fail, that's the knob. The SVG is sized to FILL THE
 PRINTED PAGE (viewBox + "meet"), not pinned in mm — the first version was pinned at 50 × 25 mm and printed enlarged and cut off at the
 left when the driver's page didn't match, so now whatever page size the printer reports, the label scales into it and stays centred.
 A long SKU shrinks its font to stay inside the label rather than run off the edge.
@@ -30,10 +34,13 @@ the barcode-folder images (barcode128.ts), which is verified bit-for-bit against
 import { code128bModules } from './barcode128';
 
 export const LABEL_MM = { width: 54, height: 25 } as const;
-const BARS_WIDTH_MM = 32;
-const BAR_TOP_MM = 5;
-const BAR_HEIGHT_MM = 10;
-const TEXT_BASELINE_MM = 19.5;
+// The Dymo LabelWriter head is 300 dpi. Module and bar sizes are whole dots so the driver never has to round a bar.
+const DOT_MM = 25.4 / 300;
+const MODULE_DOTS = 3;
+const BAR_REDUCTION_DOTS = 2;
+const BAR_TOP_MM = 3;
+const BAR_HEIGHT_MM = 14;
+const TEXT_BASELINE_MM = 21;
 const TEXT_SIZE_MM = 3.2;
 const TEXT_MAX_WIDTH_MM = 40;
 // Arial's average glyph is ~0.6 em wide for codes (capitals and digits) — near enough to decide when to shrink.
@@ -51,16 +58,19 @@ function escapeXml(s: string): string {
  *  encoded (never, for a real FNSKU). */
 export function fnskuLabelSvg(fnsku: string, sku: string): string {
   const modules = code128bModules(fnsku);
-  const moduleMm = BARS_WIDTH_MM / modules.length;
-  const left = (LABEL_MM.width - BARS_WIDTH_MM) / 2;
+  const moduleMm = MODULE_DOTS * DOT_MM;
+  // Centred, then snapped to a whole dot so every bar edge lands on a dot boundary.
+  const left = Math.round((LABEL_MM.width - modules.length * moduleMm) / 2 / DOT_MM) * DOT_MM;
+  const reductionMm = BAR_REDUCTION_DOTS * DOT_MM;
 
-  // One rect per run of bar modules, not per module — fewer shapes and no hairline gaps between neighbours.
+  // One rect per run of bar modules, not per module — fewer shapes and no hairline gaps between neighbours. Trimmed on the right
+  // by the bar-width reduction.
   const rects: string[] = [];
   for (let i = 0; i < modules.length;) {
     if (modules[i] !== '1') { i += 1; continue; }
     let j = i;
     while (j < modules.length && modules[j] === '1') j += 1;
-    rects.push(`<rect x="${(left + i * moduleMm).toFixed(3)}" y="${BAR_TOP_MM}" width="${((j - i) * moduleMm).toFixed(3)}" height="${BAR_HEIGHT_MM}"/>`);
+    rects.push(`<rect x="${(left + i * moduleMm).toFixed(3)}" y="${BAR_TOP_MM}" width="${((j - i) * moduleMm - reductionMm).toFixed(3)}" height="${BAR_HEIGHT_MM}"/>`);
     i = j;
   }
 

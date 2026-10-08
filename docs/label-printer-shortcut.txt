@@ -19,9 +19,17 @@ Name it e.g. "BCWEB (labels)".
     3. In the Dymo's Printing Preferences set the paper to the label roll: a 54 mm long size to match the labels on the roll
        (25 x 54 mm - 11352 / 30336 "1 x 2-1/8 in"), orientation PORTRAIT. NOT 30252 Address: that's 89 mm long and the label
        prints ~17 mm along, cut off. The page is sent portrait with the label drawn sideways (the preview looks sideways - right).
+    4. Still in the Dymo's Printing Preferences > Advanced: Print Quality = "Barcodes and Graphics" (NOT Auto or Text - in text
+       mode the bars come out grey/streaky and won't scan), and print darkness on NORMAL (not light). The page already prints
+       the bars thinned to allow for thermal spread, so turning the darkness down as well makes them too faint.
 - Chrome REMEMBERS print settings per profile and --kiosk-printing reuses them. If labels come out enlarged, cut off, or with a
   "1/1" page number on them, set them once: start the shortcut WITHOUT --kiosk-printing, press a line's printer icon, and in the
   dialog choose  Destination: the Dymo · Paper size: the 54 mm one (not 30252) · Margins: None · Scale: Default · More settings > Headers and footers OFF.
   Print, close Chrome, put --kiosk-printing back.
 - Test: open AMZ Shipment, scan a shoe with an FNSKU (or press a line's printer icon) - one label should print with no dialog.
 - For local dev use http://localhost:3000 instead of the vercel URL.
+
+
+
+
+
