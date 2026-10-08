@@ -2,8 +2,9 @@
 =======================================================================================================================================
 FNSKU label — print one Amazon label from the browser
 =======================================================================================================================================
-AMZ Shipment and Goods In print one of these per Amazon unit. The label is the Code 128 barcode of the FNSKU with the Amazon SKU
-written under it — nothing else (owner, 2026-10-07; it was the FNSKU text until then) — on the Dymo LabelWriter's 54 × 25 mm label
+AMZ Shipment and Goods In print one of these per Amazon unit. The label is the Code 128 barcode of the FNSKU with two lines under
+it: the FNSKU text, then the Amazon SKU — nothing else (owner: SKU added 2026-10-07, replacing the FNSKU text; FNSKU text back above
+it 2026-10-08) — on the Dymo LabelWriter's 54 × 25 mm label
 (11352 / 30336 size). MEASURED, not taken from the paper name: a ruler printed on an 89 mm page (2026-10-07) ran across two labels
 with the gap at ~55 mm. The driver's paper must be a 54 mm one too — on a longer paper (e.g. 30252 Address, 89 mm) Chrome centres
 the 54 mm page on it and the label lands ~17 mm along, cut off at one end.
@@ -13,7 +14,7 @@ page exactly the label's size, in a hidden iframe, and that iframe is printed. O
 --kiosk-printing, which skips the dialog and sends it straight to the default printer (the label printer, its paper size set to the
 label stock in the driver). Anywhere else the normal print dialog appears — still correct, just not silent.
 
-GEOMETRY. The content is drawn centred, well inside the label: bars 14 mm tall (were 10 — taller reads at more angles) with the SKU under them. The bars are sized in
+GEOMETRY. The content is drawn centred, well inside the label: bars 13 mm tall (were 10 — taller reads at more angles; 14 until the FNSKU line came back) with the FNSKU and SKU under them. The bars are sized in
 PRINTER DOTS, not stretched to a width: every module is exactly MODULE_DOTS of the Dymo's 300 dpi head (3 dots = 0.254 mm, so a
 10-char FNSKU's 145 modules are ~36.8 mm, ~8.6 mm quiet zone each side; Code 128 needs 10 modules). The first version scaled the bars
 to 32 mm — 2.6 dots a module — so the driver rounded each bar and gap to 2 or 3 dots unevenly, and with thermal spread the narrow
@@ -21,7 +22,7 @@ gaps closed up: printed dark and crowded, wouldn't scan (2026-10-08). Each bar i
 modules (gaps that much wider) to cancel the spread — the usual thermal bar-width reduction. If scans still fail, that's the knob. The SVG is sized to FILL THE
 PRINTED PAGE (viewBox + "meet"), not pinned in mm — the first version was pinned at 50 × 25 mm and printed enlarged and cut off at the
 left when the driver's page didn't match, so now whatever page size the printer reports, the label scales into it and stays centred.
-A long SKU shrinks its font to stay inside the label rather than run off the edge.
+A long SKU or FNSKU shrinks its font to stay inside the label rather than run off the edge.
 
 PORTRAIT PAGE, ROTATED DRAWING. The Dymo driver's pages are PORTRAIT — the label's height across the head, its length along
 the feed. So the page is sent in the driver's own orientation, 25 × 54, and the label is drawn turned 90° on it: nothing for Chrome
@@ -38,10 +39,11 @@ export const LABEL_MM = { width: 54, height: 25 } as const;
 const DOT_MM = 25.4 / 300;
 const MODULE_DOTS = 3;
 const BAR_REDUCTION_DOTS = 2;
-const BAR_TOP_MM = 3;
-const BAR_HEIGHT_MM = 14;
-const TEXT_BASELINE_MM = 21;
-const TEXT_SIZE_MM = 3.2;
+const BAR_TOP_MM = 2;
+const BAR_HEIGHT_MM = 13;
+const FNSKU_BASELINE_MM = 18.2;
+const SKU_BASELINE_MM = 21.9;
+const TEXT_SIZE_MM = 2.9;
 const TEXT_MAX_WIDTH_MM = 40;
 // Arial's average glyph is ~0.6 em wide for codes (capitals and digits) — near enough to decide when to shrink.
 const GLYPH_EM = 0.6;
@@ -54,7 +56,7 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** The label as standalone SVG markup, drawn in label mm and turned onto the portrait page: the FNSKU's barcode over the Amazon `sku`. Throws if the FNSKU can't be
+/** The label as standalone SVG markup, drawn in label mm and turned onto the portrait page: the FNSKU's barcode over the FNSKU text and the Amazon `sku`. Throws if the FNSKU can't be
  *  encoded (never, for a real FNSKU). */
 export function fnskuLabelSvg(fnsku: string, sku: string): string {
   const modules = code128bModules(fnsku);
@@ -74,7 +76,10 @@ export function fnskuLabelSvg(fnsku: string, sku: string): string {
     i = j;
   }
 
-  const textSize = Math.min(TEXT_SIZE_MM, TEXT_MAX_WIDTH_MM / Math.max(1, sku.length * GLYPH_EM));
+  const textSize = (s: string) => Math.min(TEXT_SIZE_MM, TEXT_MAX_WIDTH_MM / Math.max(1, s.length * GLYPH_EM));
+  const textLine = (s: string, baseline: number) =>
+    `<text x="${LABEL_MM.width / 2}" y="${baseline}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" `
+    + `font-size="${textSize(s).toFixed(2)}" fill="#000">${escapeXml(s)}</text>`;
 
   // Label (x along, y down) → portrait page. Clockwise: label top lands on the page's right edge; anticlockwise: on its left.
   const turn = ROTATE_CLOCKWISE
@@ -84,8 +89,8 @@ export function fnskuLabelSvg(fnsku: string, sku: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" `
     + `viewBox="0 0 ${PAGE_MM.width} ${PAGE_MM.height}" shape-rendering="crispEdges"><g transform="${turn}">`
     + `<g fill="#000">${rects.join('')}</g>`
-    + `<text x="${LABEL_MM.width / 2}" y="${TEXT_BASELINE_MM}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" `
-    + `font-size="${textSize.toFixed(2)}" fill="#000">${escapeXml(sku)}</text>`
+    + textLine(fnsku, FNSKU_BASELINE_MM)
+    + textLine(sku, SKU_BASELINE_MM)
     + `</g></svg>`;
 }
 
