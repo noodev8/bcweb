@@ -2232,7 +2232,7 @@ function AmazonOrderContent() {
                       : 'border-transparent bg-white group-hover:bg-slate-50')
                   }>
                     <span className="inline-flex items-center gap-1">
-                      {r.code}
+                      <span title={r.title || undefined}>{r.code}</span>
                       {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
                           Still can't live. A lapsed mark gets a quieter tag: the style is back, the note says why it was away. */}
                       {(r.no_supply || r.no_supply_since) && (
