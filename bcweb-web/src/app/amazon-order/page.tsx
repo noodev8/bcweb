@@ -52,7 +52,7 @@ CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selectio
         - CTRL/CMD-click adds a row to the selection, or takes it back out.
         - SHIFT-click selects the range from the last row clicked (the anchor) to this one, replacing what was selected.
         - Clicking a row that is ALREADY selected unselects it (just that row).
-        - Any filter change — a search step, a preset, the Repricing or Can't get chip, Load basket, restoring cut rows, Reset —
+        - Any filter change — a search step, a preset, the Can't get chip, Load basket, restoring cut rows, Reset —
           clears the selection, so Cut / Can't get can never act on a row that has left the screen.
       ARROW KEYS walk the list: the one highlight moves and replaces the selection (Enter cuts it). THE CARET beside a SKU is the
       only thing that expands a row, and only ONE detail row is open at a time (opening another closes the first); it never touches
@@ -61,7 +61,7 @@ CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selectio
       was tried twice and both moved the screen on every click: "(n)" in the Cut / Can't get labels widened row 2 until the basket
       buttons wrapped, and a badge in the SKU header grew the header row. Cut and Can't get are a fixed width for the same reason.
 
-PANEL LAYOUT (2026-09-27): row 1 FINDS — search, Hot | Warm | Cold, the Repricing and Can't get chips, the row count (what the
+PANEL LAYOUT (2026-09-27): row 1 FINDS — search, Hot | Warm | Cold, the Can't get chip, the row count (what the
       finding produced), Reset. Row 2 ACTS — Order | Pick, the rates, Pick keep, then Can't get and Cut on the selection, then the
       basket actions on the right. Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
 
@@ -151,16 +151,13 @@ RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE 
       than the dead-stock problem a never-sold row represents.
 
 HOT / WARM / COLD — the three presets' ON-SCREEN names since 2026-09-27 (owner picked them from three sets). They were Winners /
-      Potential / Recycle, and "Winners" collided with the portfolio WINNERS status this screen is now opened from (see ARRIVING FROM
-      REPRICING). A temperature reads as "how is this SIZE selling on Amazon right now" — a 30-day, per-SKU reading — where the status
+      Potential / Recycle, and "Winners" collided with the portfolio WINNERS status (Repricing's Status tab). A temperature reads as "how is this SIZE selling on Amazon right now" — a 30-day, per-SKU reading — where the status
       is a style's 12 months. Labels only: the tests, the handlers and the code identifiers (winnersOnly, 'potential', …) keep the
       old words, the same labels-only rule as Repricing's Selling | Stuck.
 
-ARRIVING FROM REPRICING (owner, 2026-09-27 — "check and order Amazon products from the winners screen via repricer"): an Amazon
-      Repricing status list links here with ?status=<WINNERS|STEADY|NEW|LOSERS>[&bar=<tier>]&from=<that list>&back=<label>, the twin of
-      Shopify Order's arrival. The screen then shows only that list's SKUs — fetched from /amz-status-list, the very route the Repricing
-      list reads (parked included), so the two can't disagree. A chip names the list; its X shows every SKU and Reset brings the list
-      back. Search, presets and cut all work inside it; Load basket still reaches the whole basket, window or not.
+NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 an Amazon
+      Repricing status list linked here with ?status=&bar= and the screen showed only that list's SKUs behind a "Repricing: Winners"
+      chip. Both the link and this end of it are gone; the screen always opens on every SKU (a ?q= arrival still seeds a search).
 
 CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we can't get a style, we can't get it, regardless of where
       we're trying to sell it"): skusummary.no_supply_*, three months, via /no-supply-set and /no-supply-clear (utils/noSupply.js). Set
@@ -189,10 +186,9 @@ import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, getAmzStatusList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
+  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
   AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
 } from '@/lib/api';
-import { barLabel } from '@/lib/portfolioStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
@@ -662,58 +658,29 @@ function AmazonOrderContent() {
   const backHref = from || undefined;
   // An explicit ?back= wins; otherwise derive a readable name from the origin path.
   const backLabel = searchParams.get('back') || (from ? prettyPathLabel(from) : 'Back');
-  const { data, error: loadError, isLoading: listLoading, refresh } = useApiQuery(
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery(
     ['amazon-order-list'],
     () => getAmazonOrderList(),
   );
   const rows: AmazonOrderRow[] = data?.rows ?? NO_ROWS;
 
-  // ARRIVAL FROM REPRICING — see the header. Read once from the URL; the server validates status and bar (a bad one comes back as an
-  // error line, and the full list still shows).
-  const scopeStatus = (searchParams.get('status') || '').trim().toUpperCase() || null;
-  const barRaw = Number(searchParams.get('bar'));
-  const scopeBar = scopeStatus && barRaw > 0 ? barRaw : null;
-  // The status list's SKUs — the same call the Amazon Repricing list makes (parked included). null key = no scope, nothing fetched.
-  const { data: scopeData, error: scopeError, isLoading: scopeLoading } = useApiQuery(
-    scopeStatus ? ['amazon-order-scope', scopeStatus, scopeBar] : null,
-    () => getAmzStatusList(scopeStatus!, scopeBar),
-  );
-  const scopeCodes = useMemo(
-    () => (scopeData ? new Set(scopeData.rows.map((r) => r.code)) : null),
-    [scopeData],
-  );
-  // The chip's X turns the window off to show every SKU; Reset turns it back on (the screen as you arrived).
-  const [scopeOn, setScopeOn] = useState(true);
-  const scoped = scopeOn && scopeCodes !== null;
-  // The Repricing window alone — before the Can't get cut, so that chip can count what it hides from the list you'd otherwise see.
-  const scopeBase = useMemo(
-    () => (scoped && scopeCodes ? rows.filter((r) => scopeCodes.has(r.code)) : rows),
-    [rows, scoped, scopeCodes],
-  );
-  // "Winners over £2,500" — the list's name as the Repricing crumb gives it.
-  const scopeName = scopeStatus
-    ? scopeStatus.charAt(0) + scopeStatus.slice(1).toLowerCase() + (scopeBar ? ` ${barLabel(scopeBar)}` : '')
-    : null;
-
-  // CAN'T GET — sizes of a marked style with nothing on the local shelf are off the screen (supplyHidden; see the header). Counted
-  // inside the window, so the chip's number is what it's hiding from the list you'd otherwise see.
+  // CAN'T GET — sizes of a marked style with nothing on the local shelf are off the screen (supplyHidden; see the header). The chip's
+  // number is what it's hiding from the list you'd otherwise see.
   const [supplyOn, setSupplyOn] = useState(true);
-  const supplyHiddenCount = useMemo(() => scopeBase.filter(supplyHidden).length, [scopeBase]);
-  // The rows the screen works within: the window, less what you can neither order nor pick. Search and the presets narrow THIS.
+  const supplyHiddenCount = useMemo(() => rows.filter(supplyHidden).length, [rows]);
+  // The rows the screen works within: every SKU, less what you can neither order nor pick. Search and the presets narrow THIS.
   const baseRows = useMemo(
-    () => (supplyOn ? scopeBase.filter((r) => !supplyHidden(r)) : scopeBase),
-    [scopeBase, supplyOn],
+    () => (supplyOn ? rows.filter((r) => !supplyHidden(r)) : rows),
+    [rows, supplyOn],
   );
-  // Reset has something to do if the window or the Can't get cut was switched off — it's how you get back to either.
-  const leftScope = (scopeCodes !== null && !scopeOn) || !supplyOn;
+  // Reset has something to do if the Can't get cut was switched off — it's how you get back to it.
+  const leftSupply = !supplyOn;
   // How many sizes of each style are on the list — the Can't get confirm says the mark takes them all.
   const sizesByStyle = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.groupid, (m.get(r.groupid) || 0) + 1);
     return m;
   }, [rows]);
-  // Hold the whole screen until the scope has landed too, so arriving from Repricing never flashes all ~520 SKUs first.
-  const loading = listLoading || (!!scopeStatus && scopeLoading);
   // Amazon lines already queued to Order Status and still sitting un-placed — see the UNPLACED BACKLOG note in the header block.
   const toPlace: AmazonOrderToPlace | null = data?.to_place ?? null;
   // 3 days is the line between "sent it this morning" and "this has been sitting". Under it the indicator is quiet slate and says
@@ -914,8 +881,8 @@ function AmazonOrderContent() {
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
-    // Back into the Repricing window and the Can't get cut if either was switched off — the screen as you arrived.
-    setScopeOn(true); setSupplyOn(true);
+    // Back into the Can't get cut if it was switched off — the screen as you arrived.
+    setSupplyOn(true);
     setCoverageByView(NO_COVERAGE_BOTH);
     setManualOrder(null);
     // Reset drops the snapshot outright rather than re-taking it (clearManualOrder) — it's tearing down the very view the
@@ -936,7 +903,7 @@ function AmazonOrderContent() {
       return rows.filter((r) => r.code === focusedOrderCode
         || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(qty[r.code]) || 0) > 0));
     }
-    // Everything else narrows the working set: the Repricing window, less what Can't get hides (baseRows, above).
+    // Everything else narrows the working set: every SKU less what Can't get hides (baseRows, above).
     let out = seasonFilter ? baseRows.filter((r) => inSeason(r, seasonFilter)) : baseRows;
     if (includes.length > 0 || excludes.length > 0) {
       const incTerms = includes.map((t) => t.toLowerCase());
@@ -1782,31 +1749,7 @@ function AmazonOrderContent() {
             </button>
           </div>
 
-          {/* REPRICING WINDOW — which list this screen is scoped to (see ARRIVING FROM REPRICING). In row 1 because it decides which rows
-            are on screen, like the presets beside it — and row 2 is full (in row 2 it pushed the SKU count onto a line of its own, owner
-            2026-09-27). Slate, not brand: it's context you arrived with, not a control you're driving. X = show every SKU; once out,
-            the same slot offers the way back in. */}
-          {scopeName && scopeCodes !== null && (scopeOn ? (
-            <span
-              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
-            >
-              Repricing: <span className="font-semibold text-slate-800">{scopeName}</span>
-              <button
-                type="button"
-                onClick={() => { setScopeOn(false); deselectAll(); }}
-                aria-label="Show every SKU"
-                title="Show all"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </span>
-          ) : (
-            <button type="button" onClick={() => { setScopeOn(true); deselectAll(); }} className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
-              Back to {scopeName} only
-            </button>
-          ))}
-          {/* CAN'T GET — only when something is actually hidden; the same chip shell and X / way-back-in pair as the window's. */}
+          {/* CAN'T GET — only when something is actually hidden. X shows them; once out, the same slot offers the way back in. */}
           {supplyHiddenCount > 0 && (supplyOn ? (
             <span
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
@@ -1867,7 +1810,7 @@ function AmazonOrderContent() {
             <button
               type="button"
               onClick={onReset}
-              disabled={!filtering && cut.size === 0 && !anyCoverage && !leftScope}
+              disabled={!filtering && cut.size === 0 && !anyCoverage && !leftSupply}
               className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
             >
               <ArrowPathIcon className="h-4 w-4" />
@@ -2159,12 +2102,6 @@ function AmazonOrderContent() {
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {!loading && !error && scopeStatus && scopeError && (
-        <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Couldn&rsquo;t load the {scopeName} list from Repricing ({scopeError.message}) — showing every SKU.
-        </div>
-      )}
-
       {!loading && !error && (
         // No overflow of its own — see panelHeight above. Anything with overflow:auto here would become the sticky positioning
         // context again and put the second scrollbar back; the rows scroll with the page, and the header row below pins itself
@@ -2369,7 +2306,7 @@ function AmazonOrderContent() {
             <div className="px-4 py-6 text-center text-sm text-slate-400">
               {filtered.length === 0
                 // Everything in view is a size Can't get hides — say that, not "nothing".
-                ? (!ordersOnly && supplyOn && supplyHiddenCount > 0 && scopeBase.length === supplyHiddenCount
+                ? (!ordersOnly && supplyOn && supplyHiddenCount > 0 && rows.length === supplyHiddenCount
                   ? `Everything here is marked Can’t get with nothing to pick — ${supplyHiddenCount} hidden.`
                   : 'Nothing found.')
                 : 'Every matching SKU is cut.'}

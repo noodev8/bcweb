@@ -17,9 +17,9 @@ are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (serv
 Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb. `by` (and bar) ride along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
 campaign grouping on Amazon (campaigns are Shopify only).
 
-STOCK & ORDER (status lists only, owner 2026-09-27 — "check and order Amazon products from the winners screen via repricer"): the
-Amazon twin of the Shopify list's link. It opens /amazon-order?status=&bar= carrying the list's DEFINITION, not the codes on screen —
-Amazon Order asks /amz-status-list for the members itself (parked included), so the two screens can never disagree about who is in it.
+NO STOCK & ORDER LINK (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 a status list
+linked to /amazon-order?status=&bar=, scoping Amazon Order to the list; that arrival was taken out of Amazon Order the same day.
+Shopify's status lists keep their own link to Shopify Order.
 
 TWO CONTROLS, ONE TABLE (owner, 2026-09-23 — same layout as Shopify, shared via components/ListViewControls):
   - Selling | Stuck | Both (?mode=all) — on-screen names for WINNERS | LOSERS since 2026-09-23; code and URLs keep winners/losers.
@@ -36,8 +36,6 @@ the upload basket shows a "queued" badge.
 
 import { Suspense, useMemo, useState } from 'react';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
-import Link from 'next/link';
-import { ShoppingBagIcon } from '@heroicons/react/24/outline';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
@@ -224,13 +222,6 @@ function SegmentContent() {
     router.push(`/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(listHref())}`);
   }
 
-  // STATUS LIST -> AMAZON ORDER — see STOCK & ORDER in the header. The whole status, whatever the Due switch says: repricing parks what
-  // was just worked, and those are exactly the SKUs whose stock you'd look at next. Back returns to this list, view intact.
-  const amazonOrderHref = isStatus
-    ? `/amazon-order?status=${encodeURIComponent(segment)}${bar ? `&bar=${bar}` : ''}`
-      + `&from=${encodeURIComponent(listHref())}&back=${encodeURIComponent(segment.charAt(0) + segment.slice(1).toLowerCase())}`
-    : null;
-
   function toggle(code: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -371,23 +362,10 @@ function SegmentContent() {
         summary={data ? (
           // At the top, so it's seen without scrolling (owner, 2026-09-26): the STYLES in the table below as the header — as the
           // Repricing card counts them — and under it the items (sizes = table rows). Both follow the Due switch.
-          <>
-            <div className="text-sm text-slate-500">
-              <p><span className="text-2xl font-semibold tabular-nums text-slate-900">{view.styleCount}</span> style{view.styleCount === 1 ? '' : 's'}</p>
-              <p className="tabular-nums">{view.rows.length} item{view.rows.length === 1 ? '' : 's'} in list</p>
-            </div>
-            {/* The next step in the flow — see amazonOrderHref. Status lists only; the same quiet bordered link as Shopify's. */}
-            {amazonOrderHref && (
-              <Link
-                href={amazonOrderHref}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                <ShoppingBagIcon className="h-4 w-4" />
-                Stock &amp; order
-                <span aria-hidden>&rarr;</span>
-              </Link>
-            )}
-          </>
+          <div className="text-sm text-slate-500">
+            <p><span className="text-2xl font-semibold tabular-nums text-slate-900">{view.styleCount}</span> style{view.styleCount === 1 ? '' : 's'}</p>
+            <p className="tabular-nums">{view.rows.length} item{view.rows.length === 1 ? '' : 's'} in list</p>
+          </div>
         ) : null}
       />
 

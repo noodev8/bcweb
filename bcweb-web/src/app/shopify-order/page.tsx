@@ -39,15 +39,10 @@ SEND: Confirm Basket loops POST /order-status-add once per SKU with ordertype 2 
 DRAFT: the basket is saved to THIS browser (localStorage, debounced, 48h) under its own key, so a reload doesn't lose it — same rules
       and same trade-offs as Amazon Order's draft (per-browser, last tab to write wins).
 
-ARRIVING FROM REPRICING (owner, 2026-09-26 — the flow is Winners -> reprice -> "then think about stock and re-ordering"). A Repricing
-      status list links here with ?status=<WINNERS|STEADY|NEW|LOSERS>[&bar=<tier>]&from=<that list>&back=<label>, and the
-      screen opens as a DEDICATED WINDOW onto that list's styles: everything else is out of view, and search, sort and Load basket work
-      inside it. What arrives is the list's DEFINITION, not a list of groupids — membership comes from GET /pricing-status-list, the
-      very route the Repricing list itself reads, so the two can't disagree. It is the whole status, parked styles included (the Due
-      switch is a repricing cooldown, and the styles just repriced are the ones it hides — see the pricing page's shopifyOrderHref).
-      The scope chip's X shows every style; Reset puts the screen back how you arrived, scope included. The basket is the one basket
-      either way — scoping changes what you see, not what Confirm sends. ?from= is a path, so this page hands it to AppShell as the
-      back link (AppShell only resolves dashboard-group ?from= itself).
+NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-26 a Repricing
+      status list linked here with ?status=&bar= and the screen opened as a window onto that list's styles, behind a "Repricing:
+      Winners" chip. Both the link and this end of it are gone, the same day as Amazon Order's twin; the screen always opens on every
+      style. ?from=/?back= still give the back link (the product menu's ?q= arrival uses them).
 
 NO SEASON FILTER (removed 2026-09-26, the day it was added). An automatic in-season filter hid out-of-season styles here; it went
       when season left the portfolio status altogether (bcweb-server/utils/portfolioStatus.js). The owner's rule since: "for ordering,
@@ -78,12 +73,11 @@ import {
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import {
-  getShopifyOrderList, getStatusList, addOrderLine, setNoSupply, clearNoSupply,
+  getShopifyOrderList, addOrderLine, setNoSupply, clearNoSupply,
   ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
-import { barLabel } from '@/lib/portfolioStatusUi';
 
 const NO_STYLES: ShopifyOrderStyle[] = [];
 
@@ -338,56 +332,27 @@ export default function ShopifyOrderHome() {
 function ShopifyOrderContent() {
   const { logout } = useAuth();
   const searchParams = useSearchParams();
-  // ARRIVAL CONTEXT — see "ARRIVING FROM REPRICING" in the header. Read once from the URL; the server validates status and bar (a
-  // bad one comes back as an error line, and the full list still shows).
-  const scopeStatus = (searchParams.get('status') || '').trim().toUpperCase() || null;
-  const barRaw = Number(searchParams.get('bar'));
-  const scopeBar = scopeStatus && barRaw > 0 ? barRaw : null;
   // A PATH ?from= is this page's to hand to AppShell (a dashboard-group one AppShell resolves itself). '//' is refused so the back
   // link can only ever stay inside the app.
   const fromParam = searchParams.get('from');
   const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : undefined;
   const backLabel = searchParams.get('back') || 'Back';
 
-  const { data, error: loadError, isLoading: listLoading, refresh, mutate } = useApiQuery(
+  const { data, error: loadError, isLoading: loading, refresh, mutate } = useApiQuery(
     ['shopify-order-list'],
     () => getShopifyOrderList(),
   );
   const styles: ShopifyOrderStyle[] = data?.styles ?? NO_STYLES;
 
-  // The status list's members — the same call the Repricing list makes (parked included), so both screens hold the same styles.
-  // null key = no scope requested, nothing fetched.
-  const { data: scopeData, error: scopeError, isLoading: scopeLoading } = useApiQuery(
-    scopeStatus ? ['shopify-order-scope', scopeStatus, scopeBar] : null,
-    () => getStatusList(scopeStatus!, scopeBar),
-  );
-  const scopeIds = useMemo(
-    () => (scopeData ? new Set(scopeData.rows.map((r) => r.groupid)) : null),
-    [scopeData],
-  );
-  // The chip's X turns the window off to show every style; Reset turns it back on (the screen as you arrived).
-  const [scopeOn, setScopeOn] = useState(true);
-  const scoped = scopeOn && scopeIds !== null;
-  // The Repricing window alone — before the Can't get cut, so the chip can count what that hides from it.
-  const scopeBase = useMemo(
-    () => (scoped && scopeIds ? styles.filter((s) => scopeIds.has(s.groupid)) : styles),
-    [styles, scoped, scopeIds],
-  );
-  // Status styles that aren't on this screen's list (skusummary.shopify = 0) — said on the chip rather than silently missing.
-  const scopeMissing = scoped && scopeIds ? scopeIds.size - scopeBase.length : 0;
-
   // NO SUPPLY — styles marked "Can't get it" are off the screen until their re-check day (see the header). The ONLY thing that hides
-  // a style from ordering besides the Repricing window and the search (the season filter is gone — see the header). Counted inside
-  // the window, so the chip's number is what it's hiding from the list you'd otherwise see.
+  // a style from ordering besides the search (the season filter is gone — see the header).
   const [supplyOn, setSupplyOn] = useState(true);
-  const parkedCount = useMemo(() => scopeBase.filter((s) => s.no_supply).length, [scopeBase]);
-  // The styles the screen is working within: the window, less anything you can't get.
+  const parkedCount = useMemo(() => styles.filter((s) => s.no_supply).length, [styles]);
+  // The styles the screen is working within: every style, less anything you can't get.
   const base = useMemo(
-    () => (supplyOn ? scopeBase.filter((s) => !s.no_supply) : scopeBase),
-    [scopeBase, supplyOn],
+    () => (supplyOn ? styles.filter((s) => !s.no_supply) : styles),
+    [styles, supplyOn],
   );
-  // Hold the whole screen until the scope has landed too, so arriving from Repricing never flashes all ~300 styles first.
-  const loading = listLoading || (!!scopeStatus && scopeLoading);
   const error = loadError?.message ?? null;
 
   // Local lines already sitting in Order Status — see "already in Order Status" in the render. Same pair of figures, same 3-day
@@ -418,7 +383,7 @@ function ShopifyOrderContent() {
     const stacked = [...includes, t];
     // Stacks to nothing -> start again on this term alone, rather than an empty list that can't say "not found" apart from
     // "found, but ruled out by an earlier step" (owner, 2026-08-24 — the Amazon Order rule).
-    // Tested against `base`, the styles actually in view — inside a Repricing window, a term that only exists outside it is "not found".
+    // Tested against `base`, the styles actually in view (less Can't get).
     if (hasSearchMatch(base, stacked, excludes)) setIncludes(stacked);
     else { setIncludes([t]); setExcludes([]); }
   }
@@ -497,8 +462,8 @@ function ShopifyOrderContent() {
   }
 
   const filtered = useMemo(() => {
-    // Load basket reaches past the Repricing window as well as the search: it is "show me what I'm about to send", and Confirm sends
-    // the whole basket, so a line added outside this window must still be seen here.
+    // Load basket reaches past the search and the Can't get cut: it is "show me what I'm about to send", and Confirm sends the whole
+    // basket, so every line in it must be seen here.
     if (basketSnapshot) return styles.filter((s) => basketSnapshot.has(s.groupid));
     if (includes.length === 0 && excludes.length === 0) return base;
     const incTerms = includes.map((t) => t.toLowerCase());
@@ -626,26 +591,21 @@ function ShopifyOrderContent() {
     setBasketSnapshot(null);
   }
 
-  // RESET — a VIEW reset: search steps, Load basket, sort — and back into the Repricing window if you'd left it, i.e. the screen as
+  // RESET — a VIEW reset: search steps, Load basket, sort — and back into the Can't get cut if you'd left it, i.e. the screen as
   // you arrived. Leaves the basket alone on purpose (the Amazon Order rule, owner 2026-08-11 — the basket can be a draft built up
   // over several sittings; emptying it is Clear basket's job).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setBasketSnapshot(null);
-    setScopeOn(true);
     setSupplyOn(true);
     setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]);
     setConfirmingSend(false); setConfirmingClear(false); setSendError(null); setSentNote(null);
     includeInputRef.current?.focus();
   }
   const sorted = sortKey !== DEFAULT_SORT || sortDir !== DEFAULT_DIR[DEFAULT_SORT];
-  // Reset has something to do if the Repricing window or the Can't get cut was switched off, too — it's how you get back to either.
-  const leftScope = (scopeIds !== null && !scopeOn) || !supplyOn;
-  // "Winners over £2,500" — the list's name as the Repricing crumb gives it.
-  const scopeName = scopeStatus
-    ? scopeStatus.charAt(0) + scopeStatus.slice(1).toLowerCase() + (scopeBar ? ` ${barLabel(scopeBar)}` : '')
-    : null;
-  // What the count reads "of": the window's styles, or the whole list (Load basket reaches past the window, so it counts against all).
+  // Reset has something to do if the Can't get cut was switched off, too — it's how you get back to it.
+  const leftSupply = !supplyOn;
+  // What the count reads "of": the styles in view, or the whole list (Load basket reaches past the Can't get cut, so it counts against all).
   const countOf = loadBasketOn ? styles.length : base.length;
 
   return (
@@ -735,8 +695,8 @@ function ShopifyOrderContent() {
           <button
             type="button"
             onClick={onReset}
-            disabled={!filtering && !sorted && !leftScope}
-            title="Clear the search steps and Load basket, put the sort back, and return to the list you arrived with, less anything you can't get — the basket itself is kept"
+            disabled={!filtering && !sorted && !leftSupply}
+            title="Clear the search steps and Load basket, put the sort back, and hide what you can't get again — the basket itself is kept"
             className="ml-auto flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
           >
             <ArrowPathIcon className="h-4 w-4" />
@@ -745,39 +705,7 @@ function ShopifyOrderContent() {
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
-          {/* REPRICING WINDOW — which list this screen is scoped to, first in the row because it governs every count and style below it.
-              Slate, not brand: it's context you arrived with, not a control you're driving. X = show every style; once out, the same
-              slot offers the way back in. */}
-          {scopeName && scopeIds !== null && (scopeOn ? (
-            <span
-              title={
-                `Showing only the ${scopeData?.total ?? scopeIds.size} styles in Repricing's ${scopeName} list — parked ones included.`
-                + (scopeMissing > 0 ? ` ${scopeMissing} of them ${scopeMissing === 1 ? "isn't" : "aren't"} on Shopify, so ${scopeMissing === 1 ? "isn't" : "aren't"} listed here.` : '')
-                + (scopeData?.truncated ? ' The list was capped by the server, so some are missing.' : '')
-              }
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
-            >
-              Repricing: <span className="font-semibold text-slate-800">{scopeName}</span>
-              <button
-                type="button"
-                onClick={() => { setScopeOn(false); setBasketSnapshot(null); }}
-                aria-label="Show every style"
-                title="Show every style, not just this list (Reset brings the list back)"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setScopeOn(true)}
-              className="text-sm font-medium text-brand-600 hover:underline"
-            >
-              Back to {scopeName} only
-            </button>
-          ))}
-          {/* CAN'T GET — only when something is actually marked; the same chip shell and X / way-back-in pair as the Repricing one. */}
+          {/* CAN'T GET — only when something is actually marked. X shows them; once out, the same slot offers the way back in. */}
           {parkedCount > 0 && (supplyOn ? (
             <span
               title="Styles marked “Can’t get it” — hidden from ordering for three months, then back on their own. Still on every Repricing list."
@@ -915,13 +843,6 @@ function ShopifyOrderContent() {
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {/* The window failed but the list didn't: say so, and carry on with every style rather than show nothing. */}
-      {!loading && !error && scopeStatus && scopeError && (
-        <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Couldn&rsquo;t load the {scopeName} list from Repricing ({scopeError.message}) — showing every style.
-        </div>
-      )}
-
       {!loading && !error && (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           {visible.map((s) => (
@@ -940,7 +861,7 @@ function ShopifyOrderContent() {
               {loadBasketOn
                 ? 'The basket is empty.'
                 // Everything in view is marked Can't get — say that, not "nothing".
-                : supplyOn && parkedCount > 0 && scopeBase.length === parkedCount
+                : supplyOn && parkedCount > 0 && styles.length === parkedCount
                   ? `Everything here is marked Can’t get — ${parkedCount} hidden.`
                   : 'Nothing found.'}
             </div>
