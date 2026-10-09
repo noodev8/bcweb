@@ -5,10 +5,8 @@ Util: financeStock
 Purpose: The stock VALUATION shown on the Month End screen — units held and what they cost us. Spec: docs/finance-month-end-spec.md §3.6.
          Display only: it is not a QuickFile line. It replaces typing the figure into Brookfield-Finance.xls each month.
 
-NAME COLLISION — DO NOT CONFUSE THIS WITH utils/stockPosition.js
-Analytics already has a "Stock Position" module. That one COUNTS products that are commercially alive (a living-catalogue gauge, four
-buckets, per channel). This one is a VALUATION in pounds. Same words, different measures, and they will never agree — which is fine,
-because they are not measuring the same thing.
+         ALSO the nightly stock reading (scripts/stock-daily.js -> stock_daily, drawn on Reports -> Stock vs Sales). One definition of
+         "the stock we own" across the platform, so the trend line and the accounts can never disagree. Change it here and both move.
 
 WHAT COUNTS AS STOCK (agreed with the owner, ported from C:\scripts\month-end\stock_position.py)
   - Local: localstock where deleted = 0 AND ordernum = '#FREE'. Sellable, owned stock. Units allocated to an open order are NOT
@@ -20,7 +18,7 @@ The C3-Amazon staging location is deliberately NOT added on top. The legacy Powe
 those same units were already sitting in localstock as #FREE rows, so it double-counted them. This does not.
 =======================================================================================================================================
 Exports:
-  stockValue()  -> { units, value }   (async)
+  stockValue()  -> { units, value, local_units, amz_units }   (async)
 =======================================================================================================================================
 */
 
@@ -53,6 +51,8 @@ const STOCK_VALUE_SQL = `
   )
   SELECT
     COALESCE(SUM(COALESCE(lf.qty, 0) + COALESCE(a.qty, 0)), 0) AS units,
+    COALESCE(SUM(COALESCE(lf.qty, 0)), 0) AS local_units,
+    COALESCE(SUM(COALESCE(a.qty, 0)), 0) AS amz_units,
     COALESCE(SUM(
       (COALESCE(lf.qty, 0) + COALESCE(a.qty, 0)) * COALESCE(${safeNumeric('ss.cost')}, 0)
     ), 0) AS value
@@ -65,9 +65,11 @@ const STOCK_VALUE_SQL = `
 /** Units held and their cost value, right now. Read-only. */
 async function stockValue() {
   const res = await query(STOCK_VALUE_SQL);
-  const row = res.rows[0] || { units: 0, value: 0 };
+  const row = res.rows[0] || { units: 0, value: 0, local_units: 0, amz_units: 0 };
   return {
     units: Number(row.units) || 0,
+    local_units: Number(row.local_units) || 0,
+    amz_units: Number(row.amz_units) || 0,
     value: Math.round(Number(row.value) * 100) / 100 || 0,
   };
 }

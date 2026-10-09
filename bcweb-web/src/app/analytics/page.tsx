@@ -50,11 +50,12 @@ export default function AnalyticsPage() {
           live
         />
 
-        {/* Living-catalogue gauge — how many products are commercially alive right now, per channel, tracked over time. */}
+        {/* Is the stock we buy shifting? Units owned at the end of each week/month against units sold in it — the read on whether
+            to slow ordering down or speed it up. Replaced the Stock Position "alive products" gauge (owner, 2026-10-09). */}
         <ModuleTile
-          title="Stock Position"
-          description="How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time."
-          href="/analytics/stock-position"
+          title="Stock vs Sales"
+          description="Units in stock at the end of each week or month against units sold in it — all channels, net of returns. Is what we buy shifting?"
+          href="/analytics/stock-sales"
           icon={CubeIcon}
           live
         />

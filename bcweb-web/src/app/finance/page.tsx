@@ -797,7 +797,8 @@ export default function FinancePage() {
 
           {/* --- Stock value ----------------------------------------------------------------------------------------------
               Display only — not a QuickFile line. Replaces typing the figure into Brookfield-Finance.xls. Note this is a
-              VALUATION, not the Analytics "Stock Position" gauge, which counts live products and will never agree with it. */}
+              VALUATION, and the same figure (utils/financeStock.js) the nightly stock_daily reading behind Reports -> Stock vs
+              Sales records. */}
           {result.stock && (
             <p className="mt-4 text-sm text-slate-500">
               Stock value <span className="font-medium tabular-nums text-slate-900">{money(result.stock.value)}</span>

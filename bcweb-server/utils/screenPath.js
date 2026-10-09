@@ -50,7 +50,7 @@ const STATIC = new Set([
   '/analytics',
   '/analytics/sales',
   '/analytics/birk-availability',
-  '/analytics/stock-position',
+  '/analytics/stock-sales',
   '/analytics/new-additions',
   '/analytics/price-changes',
   '/analytics/ad-efficiency',

@@ -273,10 +273,8 @@ async function planProduct(client, report) {
 /**
  * Plan the per-campaign report (adcost_summary_30) into google_campaign_daily.
  *
- * This table is ALSO written by C:\scripts\google-ads\update_google_stock_track.py today. Both writers do the identical idempotent
- * upsert from the identical source, so they cannot disagree — but the Python's CSV half is being retired precisely so only one route
- * into this table remains (spec §6.6). Until that lands, re-importing a window the Python has already taken shows up here as
- * `unchanged`, which is exactly what it should be.
+ * This is the ONLY writer. Until 2026-10-09 C:\scripts\google-ads\update_google_stock_track.py also upserted it from the same CSV;
+ * that script is deleted (spec §6.6). Re-importing a window already taken still shows up as `unchanged`, which is what it should be.
  */
 async function planCampaign(client, report) {
   const { rows, window, rowCount, skipped, extraColumns, filename, label } = report;

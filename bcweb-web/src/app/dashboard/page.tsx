@@ -219,14 +219,14 @@ const GROUPS: Group[] = [
     // Email arrives, Facebook + Email become their own Marketing card. The id stays 'reports' so ?from=/?g= links keep working.
     tiles: [
       {
-        title: 'Stock Position',
-        subtitle: 'What’s commercially alive',
-        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
-        href: '/analytics/stock-position',
+        title: 'Stock vs Sales',
+        subtitle: 'Is the stock shifting?',
+        description: 'Units in stock at the end of each week or month against units sold in it — all channels, net of returns.',
+        href: '/analytics/stock-sales',
         icon: CubeIcon,
       },
       {
-        // Location and Inventory moved here from Operations (owner, 2026-09-26), beside Stock Position.
+        // Location and Inventory moved here from Operations (owner, 2026-09-26), beside Stock vs Sales (was Stock Position).
         title: 'Location',
         subtitle: "What's on a rack",
         description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
@@ -497,10 +497,10 @@ const PART_GROUPS: Group[] = [
         icon: CalendarIcon,
       },
       {
-        title: 'Stock Position',
-        subtitle: 'What’s commercially alive',
-        description: 'How many products are commercially alive right now (in stock or sold in 6 months) — Shopify styles and Amazon SKUs, tracked over time.',
-        href: '/analytics/stock-position',
+        title: 'Stock vs Sales',
+        subtitle: 'Is the stock shifting?',
+        description: 'Units in stock at the end of each week or month against units sold in it — all channels, net of returns.',
+        href: '/analytics/stock-sales',
         icon: CubeIcon,
       },
     ],

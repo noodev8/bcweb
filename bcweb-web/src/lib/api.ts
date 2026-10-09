@@ -1066,82 +1066,39 @@ export function updateBirkAvailability() {
 }
 
 // =============================================================================================================================
-// Analytics module — Stock Position (living-catalogue gauge per channel; the inventory-growth trend).
+// Analytics module — Stock vs Sales (is the stock we buy shifting?).
 // =============================================================================================================================
-// One snapshot row per channel. Four buckets that sum to `total` (the channel's universe); ALIVE = total - dormant:
-//   in_stock_selling  — in stock now AND sold in last 6 months
-//   in_stock_no_sale  — in stock now, no sale in 6 months
-//   oos_sold_recently — out of stock but sold in last 6 months
-//   dormant           — no stock AND no sale in 6 months (the "gone quiet" pile — NOT alive)
-// Shopify counts STYLES (groupid, shopify=1); Amazon counts SKUs (amzfeed.code). `date` is the snapshot day (YYYY-MM-DD).
-export interface StockPositionRow {
-  date: string;
-  in_stock_selling: number;
-  in_stock_no_sale: number;
-  oos_sold_recently: number;
-  dormant: number;
-  alive: number;
-  total: number;
+// One period (week from Monday, or month). stock = units owned at the END of it (its last nightly stock_daily reading; the open
+// period shows the latest) — null if no reading landed in it. sold = units sold in it, all channels, net of returns.
+export interface StockSalesPeriod {
+  start: string;          // YYYY-MM-DD, first day of the period
+  stock: number | null;
+  stock_date: string | null;
+  sold_shp: number;
+  sold_amz: number;
+  sold_shop: number;      // CM3 — the shop
+  sold: number;
+  partial: boolean;       // the current, still-open period
 }
 
-export interface StockPositionData {
-  days: number;
-  today: { shp: StockPositionRow; amz: StockPositionRow };
-  history: { shp: StockPositionRow[]; amz: StockPositionRow[] };  // each oldest -> newest
+export interface StockSalesData {
+  grain: 'week' | 'month';
+  expected_date: string;  // the reading the nightly job should have written by now (DB's yesterday)
+  latest: { date: string; units: number; value: number; local_units: number | null; amz_units: number | null } | null;
+  basis_from: string | null; // first reading on the Month End basis; earlier rows are the old google_stock_track backfill
+  periods: StockSalesPeriod[]; // oldest -> newest
 }
 
-// Load the Stock Position gauge. GET is read-only: it computes today's LIVE figures (the panels stay fresh) and returns the stored
-// trend (default last 90 days). Recording a trend point is the separate "Update now" call below.
-export function getStockPosition(days?: number) {
-  return request<StockPositionData>(
-    { url: '/analytics-stock-position', method: 'GET', params: { days } },
+export function getStockSales(grain: 'week' | 'month') {
+  return request<StockSalesData>(
+    { url: '/analytics-stock-sales', method: 'GET', params: { grain } },
     (b) => ({
-      days: b.days,
-      today: b.today,
-      history: { shp: b.history?.shp || [], amz: b.history?.amz || [] },
+      grain: b.grain,
+      expected_date: b.expected_date,
+      latest: b.latest ?? null,
+      basis_from: b.basis_from ?? null,
+      periods: b.periods || [],
     })
-  );
-}
-
-// The value of the stock we physically own, at cost, taken live at the moment "Update now" is pressed. Local = sellable #FREE
-// localstock; Amazon = Amazon-held (FBA) units. Same definition as the month-end accounting script, so it matches the accounts.
-export interface StockValue {
-  local_units: number;
-  amz_units: number;
-  units: number;
-  local_value: number;
-  amz_value: number;
-  value: number;
-}
-
-// "Update now" button — recompute both channels and upsert today's two rows (latest run of the day wins), prune rows older than 2
-// years. Returns the freshly-computed `today` plus the live `stock_value`; the page reloads via GET afterwards to pick up the new
-// history point. `stock_value` is only available here (the GET doesn't compute it), so the page holds onto it after the call.
-export function updateStockPosition() {
-  return request<{ today: { shp: StockPositionRow; amz: StockPositionRow }; pruned: number; stock_value: StockValue | null }>(
-    { url: '/analytics-stock-position-update', method: 'POST' },
-    (b) => ({ today: b.today, pruned: b.pruned ?? 0, stock_value: b.stock_value ?? null })
-  );
-}
-
-// One product row behind a bucket. `code`/`size` are Amazon-only (SKU grain); Shopify rows carry just groupid. stock = current units
-// (Shopify FREE stock / Amazon FBA); last_sold = most recent sale date on that channel (null = never) — how long it's been quiet.
-export interface StockListItem {
-  code?: string;
-  groupid: string;
-  size?: string;
-  title: string | null;
-  price: number | null;
-  stock: number;
-  last_sold: string | null;
-}
-export type StockBucket = 'in_stock_selling' | 'in_stock_no_sale' | 'oos_sold_recently' | 'dormant';
-
-// Drill: the actual products behind one bucket of one channel (e.g. everything Dormant on Amazon).
-export function getStockPositionList(channel: 'SHP' | 'AMZ', bucket: StockBucket) {
-  return request<{ channel: string; bucket: string; count: number; rows: StockListItem[] }>(
-    { url: '/analytics-stock-position-list', method: 'GET', params: { channel, bucket } },
-    (b) => ({ channel: b.channel, bucket: b.bucket, count: b.count ?? 0, rows: b.rows || [] })
   );
 }
 

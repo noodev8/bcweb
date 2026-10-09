@@ -10,7 +10,7 @@ Purpose: A single tile on the platform dashboard and on the Reports index. Live 
          description paragraph. The dashboard is compact and the Reports index is not, because they answer different questions: the
          dashboard is a menu you know by heart and want to cross in one glance, so a paragraph per tile is nine paragraphs you read
          past every time and a page twice as tall as it needs to be. The Reports index is a shelf of things you DON'T know by heart —
-         "what does Stock Position actually show me?" — and there the description is the point. A compact tile shows NO description at
+         "what does Ad Efficiency actually show me?" — and there the description is the point. A compact tile shows NO description at
          all — the hover tooltip it used to carry was removed (owner, 2026-09-24); the subtitle is the only explanation it gives.
          A live tile carries NO badge of its own (owner, 2026-08-27 — the old green "Live" / amber "In progress" pills went): every
          tile on the grid that isn't greyed out is live, so the pill repeated what the tile's own styling already said and put a

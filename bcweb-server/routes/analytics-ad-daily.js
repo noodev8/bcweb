@@ -71,7 +71,7 @@ It was measured and it is large — over 24 Aug to 6 Sep 2026, £449 of £947 (4
   1. The owner works thin styles on the Google Ads screen, which already flags them per style. A second place to read the same
      thing is a second place to disagree.
   2. IT CANNOT HONESTLY SIT ON A HISTORIC ROW. Shelf depth is a fact about NOW — per-style stock history is not kept anywhere
-     (google_stock_track is whole-book: 334 daily rows, no groupid). Top up sizes next week and every past row's thin figure would
+     (stock_daily is whole-book: one row a day, no groupid). Top up sizes next week and every past row's thin figure would
      silently rewrite itself, which is the same category error as the 1-day/30-day mix wearing a different hat: a column meaning a
      different period from its neighbours. Making it honest needs a per-style daily size snapshot, which was costed (~284 rows/day)
      and deliberately NOT built, because with the thin work living on the Google Ads screen it has no consumer.

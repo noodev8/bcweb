@@ -292,7 +292,7 @@ router.get('/', async (req, res) => {
         -- Sellable stock: local FREE rows PLUS live FBA units (owner, 2026-09-06 — a Shopify order can be dispatched from FBA via
         -- Amazon multi-channel fulfilment, so a unit sitting at Amazon is still sellable through the Shopify ad this screen is
         -- scoring, not a separate channel's stock. amzfeed already carries groupid, so it needs no join (same shape as
-        -- analytics-stock-position-list.js / analytics-new-additions.js, which sum the same two pools for the same reason).
+        -- analytics-new-additions.js, which sums the same two pools for the same reason).
         -- Deliberately narrower than Inventory's "Local" (which counts picked units) — a unit picked for a customer is sold, and
         -- this screen is deciding whether to advertise what is left.
         SELECT groupid, SUM(units) AS units FROM (

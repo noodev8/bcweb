@@ -280,9 +280,10 @@ Units and cost value of stock held, shown on the screen. Port the SQL from
 This is display only — it is not a QuickFile line, and it replaces typing the figure into
 `Brookfield-Finance.xls`.
 
-> **Name collision, do not confuse:** Analytics already has a *Stock Position* module. That
-> one counts how many products are commercially **alive** (a living-catalogue gauge). This
-> one is a **valuation** in pounds. Different measures, same words.
+> **Shared since 2026-10-09:** this exact figure (`utils/financeStock.js`) is also what the
+> nightly `stock_daily` reading records for Reports → Stock vs Sales, so the trend line and
+> Month End always agree. (The old Analytics *Stock Position* gauge it was once confused
+> with is deleted.)
 
 The PB window's *Sell through opening stock* button and the two blank fields beside
 *Stock Value* are **dead and not ported** (owner, 2026-09-11).

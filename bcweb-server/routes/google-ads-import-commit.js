@@ -22,13 +22,10 @@ THE WINDOW COMES FROM THE FILE
 Nothing here assumes 30 days. Change the saved report to Last 7, Last 90 or a custom range and this imports whatever days are in it —
 which is what makes "download it whenever I feel like it" work, and what let the 12 Jul - 2 Aug 2026 hole be filled after the fact.
 
-⚠ google_campaign_daily CURRENTLY HAS A SECOND WRITER
-C:\scripts\google-ads\update_google_stock_track.py also upserts this table from the same CSV, nightly. Both do the identical
-idempotent upsert from the identical source so they cannot produce conflicting rows — but that script's CSV half is being retired
-(docs/google-ads-spec.md §6.6) precisely so only one route into the table remains. Until it is, a window the Python already took
-shows up here as `unchanged`, which is correct. Do not "fix" that by making this route replace rows instead.
-
-google_product_daily has only ever had one writer: this route.
+ONE WRITER
+This route is the only writer of google_campaign_daily and google_product_daily. C:\scripts\google-ads\update_google_stock_track.py
+used to upsert google_campaign_daily from the same CSV too; it was deleted on 2026-10-09 (docs/google-ads-spec.md §6.6). A window
+already imported shows up as `unchanged`, which is correct. Do not "fix" that by making this route replace rows instead.
 =======================================================================================================================================
 Request: multipart/form-data with 1-2 files under the field name `files`.
 

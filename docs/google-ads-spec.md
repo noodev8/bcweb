@@ -210,8 +210,7 @@ if missed.
 - `google_campaign_daily` — 159 rows, 3 Apr – 3 Sep 2026, 3 campaigns ever
   (`STANDARD`, `BIRK-WINNER`, `IVES`). Already upserts idempotently on
   `(snapshot_date, campaign)`.
-- `google_stock_track` — daily stock/sales/ad snapshot. Written by
-  `update_google_stock_track.py`. **We do not touch this table.**
+- `google_stock_track` — daily stock/sales/ad snapshot. *(Dropped 2026-10-09 — see §6.6.)*
 - `C:\scripts\seo\weekly.py` reads `google_campaign_daily.clicks` for paid-vs-organic.
   Our writes are the same shape, so it is unaffected.
 
@@ -495,62 +494,21 @@ Match headers by **name**, case- and whitespace-insensitive. Required columns mi
 reject the file by name with the reason. Unrecognised extra columns → accept, list them
 in the preview. A report is a thing a human edits in a UI; it will drift.
 
-### 6.6 `update_google_stock_track.py` — KEEP IT. Remove only its CSV half.
+### 6.6 `update_google_stock_track.py` — RETIRED 2026-10-09 (superseded)
 
-**Do not delete this script or its cron entry.** It does two unrelated jobs and only
-one of them is being replaced.
+This section originally said to keep the script and strip only its CSV half. The owner
+retired it outright on 2026-10-09 instead:
 
-**Job 1 — the nightly stock snapshot. Irreplaceable, keep.**
-One row a day in `google_stock_track`: live stock units and value, total stock,
-Shopify sales, Birkenstock ad-readiness. **325 rows, 13 Oct 2025 → 3 Sep 2026, no gaps
-in the last 30 days.** It has nothing to do with the CSV, runs on the VPS at 2:45am,
-and is the only record of what stock was held on a given day. It cannot be rebuilt
-retrospectively — miss a day and that day is gone forever. Deleting the cron entry
-would silently end an eleven-month series.
+- **Ad data** — bcweb's import (`/google-ads-import-*`) is the only writer of
+  `google_campaign_daily`. The Downloads sweep race described here is gone with the script.
+- **The stock snapshot** — moved to `stock_daily`, written nightly by
+  `bcweb-server/scripts/stock-daily.js` on the Month End definition, with the
+  `google_stock_track` stock history backfilled into it. Read by Reports → Stock vs Sales.
+- **`google_stock_track`** — dropped. Its Shopify sales column duplicated `sales`; its ad
+  columns duplicated `google_campaign_daily`; its tROAS and Birk ad-readiness columns had
+  no reader.
 
-**Job 2 — the CSV ad import. This is what bcweb takes over.**
-Reads `adcost_summary_30.csv`, upserts `google_campaign_daily`, and sums the result
-into `google_stock_track`'s ad columns.
-
-**And it is still running.** The owner believed this had been abandoned; the log says
-otherwise:
-
-```
-2026-09-05 10:22:19 BST  Found CSV in Downloads: C:\Users\UserPC\Downloads\adcost_summary_30.csv
-2026-09-05 10:22:19 BST  Moved to: C:\scripts\google-ads\adcost_summary_30.csv
-2026-09-05 10:22:20 BST  Upserted 30 per-campaign rows into google_campaign_daily
-2026-09-05 10:22:21 BST  Deleted processed CSV
-```
-
-The script **sweeps `~/Downloads` on every run**, moves any `adcost_summary_30.csv` it
-finds into its own folder, imports it, and deletes it. That is why
-`google_campaign_daily` is current to 3 Sep despite nobody consciously feeding it, and
-why the file was not in Downloads when this spec's author looked three hours later.
-
-**⚠ That sweep collides with the new upload panel.** A file downloaded ready to upload
-through bcweb can be moved and deleted out from under the operator before they get to
-it. The sweep must be removed as part of this change, not left as a race.
-
-**The change, in full:**
-
-1. Delete the Downloads sweep, the file read, and the delete-after-import.
-2. Change `aggregate_by_date()` to read its per-date totals **from
-   `google_campaign_daily`** instead of from parsed CSV rows. It already sums
-   per-campaign rows by date; it just sums them from the table now.
-3. Leave job 1 and the 2:45am cron entry completely alone.
-
-**Result:** bcweb owns getting ad data in. The Python owns the daily rollup and the
-stock snapshot. One writer each, no duplicated logic, no file sweeping, and no
-eleven-month series quietly ending. This is a deliberate contrast with the
-`update_orders.py` situation in `CLAUDE.md`, where the same logic genuinely does live
-in two places.
-
-**Open question for the owner (§9):** nothing in bcweb reads `google_stock_track`.
-Its only consumers are `scale/SCALE_PLAN.md` as a documented source and
-`seo/weekly.py` (which reads `google_campaign_daily`, not this). Worth confirming it is
-still wanted before another year accumulates — but the answer is "keep collecting"
-unless the owner says otherwise, because the cost is nil and the data cannot be
-recovered later.
+Git history has the original section.
 
 ---
 
@@ -721,9 +679,7 @@ Each step leaves the tree working.
 5. **Write routes** — assign, campaign create/update.
 6. **The screen** — strip, campaign panel, filter bar, grid, bulk bar, import panel,
    drill.
-7. **`update_google_stock_track.py`** — §6.6: strip the Downloads sweep and the CSV
-   read, source the rollup from `google_campaign_daily`. The stock snapshot and its
-   cron entry stay.
+7. **`update_google_stock_track.py`** — §6.6: retired outright 2026-10-09 (superseded).
 8. **Docs** — §9.
 
 Steps 1–4 are useful on their own: once the import works, the data is in the database

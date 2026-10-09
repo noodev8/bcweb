@@ -312,11 +312,9 @@ app.use('/birk-tracker-restore', require('./routes/birk-tracker-restore'));     
 // Update). Called "Birk Tracker" until Sep 2026 — renamed to end the clash with the order-book module above.
 app.use('/birk-availability', require('./routes/birk-availability'));         // GET: stored daily snapshot history (trend)
 app.use('/birk-availability-update', require('./routes/birk-availability-update')); // POST: recompute + upsert today's snapshot, prune >2yr
-// Stock Position: living-catalogue gauge per channel (Shopify styles / Amazon SKUs). GET is read-only (today's live figures + stored
-// history); POST "Update now" upserts today's two rows + prunes >2yr (mirrors the Birk Availability read/update split).
-app.use('/analytics-stock-position', require('./routes/analytics-stock-position'));
-app.use('/analytics-stock-position-update', require('./routes/analytics-stock-position-update'));
-app.use('/analytics-stock-position-list', require('./routes/analytics-stock-position-list')); // GET: the products behind one bucket (drill)
+// Stock vs Sales: units owned at the end of each week/month (stock_daily, written nightly by scripts/stock-daily.js) beside units sold
+// (live from `sales`, all channels, net of returns). Replaced the Stock Position gauge and its "Update now" snapshot (2026-10-09).
+app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   // GET: READ ONLY
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.
