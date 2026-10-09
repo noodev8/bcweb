@@ -40,7 +40,8 @@ carries the product's code, Amazon SKU, FNSKU and title like a stored one, so an
 
 FNSKU LABELS (owner, 2026-10-02: "print a fnsku label when its scanned"). Every good scan prints one 54 × 25 mm Dymo label — the FNSKU's image from the
 barcode folder, as the old system printed, with our code under it (2026-10-08) — via src/lib/fnskuLabel.ts (silent on the packing PC's --kiosk-printing Chrome shortcut, a print dialog anywhere else).
-A refused scan prints nothing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
+A refused scan prints nothing, and NEITHER DOES SCANNING THE FNSKU ITSELF (owner, 2026-10-09): a shoe whose FNSKU barcode can be scanned
+is already labelled, so a scan that matches the product's FNSKU boxes it without printing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
 it belongs to the bench, not the shipment. The printer icon on a line reprints that line's label (a jam, a smudge, a test).
 
 MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in under its contents —
@@ -248,7 +249,8 @@ function Packing({ initial, onShipped, onReload }: {
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
-  const [lastScan, setLastScan] = useState<{ boxId: number; code: string } | null>(null);
+  // `printed` says whether that scan printed a label, so the confirmation line doesn't claim one when it didn't.
+  const [lastScan, setLastScan] = useState<{ boxId: number; code: string; printed?: boolean } | null>(null);
   // The last scan refused by SCAN CHECK — drives the red scan field and the message under it.
   const [scanError, setScanError] = useState<{ scan: string; message: string; title?: string } | null>(null);
   // Good lookups this visit, by what was scanned, so a run of the same shoe is one round trip. Only products WITH an FNSKU are kept:
@@ -351,9 +353,11 @@ function Packing({ initial, onShipped, onReload }: {
     const { code, sku, fnsku, title } = hit;
     addTo(boxId, code, 1, { sku, fnsku, title });
     setHistory((h) => [...h, { boxId, code }]);
-    setLastScan({ boxId, code });
+    // Scanned the FNSKU itself -> the shoe already wears its label; don't print another (see FNSKU LABELS in the header).
+    const printed = printOn && raw !== fnsku.toUpperCase();
+    setLastScan({ boxId, code, printed });
     setScanError(null);
-    if (printOn) printLabel(fnsku, code);
+    if (printed) printLabel(fnsku, code);
   }
 
   // Print, then hand focus back to the scan field (printing focuses the label's iframe).
@@ -701,7 +705,7 @@ function Packing({ initial, onShipped, onReload }: {
               ) : lastScan && (
                 <span className="text-emerald-700">
                   Added <span className="font-mono">{lastScan.code}</span> to Box {lastScan.boxId}
-                  {printOn && ' · label printed'}
+                  {lastScan.printed && ' · label printed'}
                 </span>
               )}
             </div>
