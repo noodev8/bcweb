@@ -112,11 +112,14 @@ function Hero({ value, label }: { value: string; label: string }) {
 
 // -------------------------------------------------------------------------------------------------------------------------------------
 // LIST — the numbers, newest first, Month | Week, so the seasons can be read down the page (owner: "I can see how it fluctuates
-// through the seasons"). Stock history starts Oct 2025, so the list grows a row a period.
+// through the seasons"). Stock history starts Oct 2025, so the list grows a row a period — capped at the newest LIST_ROWS so the card
+// never scrolls inside itself (owner: no scroll bar on this grid).
 // -------------------------------------------------------------------------------------------------------------------------------------
+const LIST_ROWS = 24;
+
 function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: StockSalesPeriod[] }) {
   const [grain, setGrain] = useState<'month' | 'week'>('month');
-  const rows = (grain === 'month' ? months : weeks).slice().reverse();
+  const rows = (grain === 'month' ? months : weeks).slice(-LIST_ROWS).reverse();
   const label = grain === 'month' ? monthLabel : weekLabel;
 
   return (
@@ -139,36 +142,34 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
           ))}
         </div>
       </div>
-      <div className="max-h-[30rem] overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white">
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-2.5 text-left font-semibold">{grain === 'month' ? 'Month' : 'Week'}</th>
-              <th className="px-5 py-2.5 text-right font-semibold">In stock</th>
-              <th className="px-5 py-2.5 text-right font-semibold">Sold</th>
-              <th className="px-5 py-2.5 text-right font-semibold">% sold</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p) => {
-              const pct = p.stock ? Math.round((p.sold / p.stock) * 100) : null;
-              return (
-                <tr key={p.start} className={`border-b border-slate-100 last:border-0 ${p.partial ? 'text-slate-400' : 'text-slate-700'}`}>
-                  <td className="whitespace-nowrap px-5 py-2">
-                    {label(p.start)}
-                    {p.partial && <span className="ml-2 text-xs">so far</span>}
-                  </td>
-                  <td className="px-5 py-2 text-right tabular-nums">{p.stock === null ? '—' : n(p.stock)}</td>
-                  <td className="px-5 py-2 text-right tabular-nums">{n(p.sold)}</td>
-                  <td className={`px-5 py-2 text-right tabular-nums ${p.partial ? '' : 'font-semibold text-slate-900'}`}>
-                    {pct === null ? '—' : `${pct}%`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+            <th className="px-5 py-2.5 text-left font-semibold">{grain === 'month' ? 'Month' : 'Week'}</th>
+            <th className="px-5 py-2.5 text-right font-semibold">In stock</th>
+            <th className="px-5 py-2.5 text-right font-semibold">Sold</th>
+            <th className="px-5 py-2.5 text-right font-semibold">% sold</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p) => {
+            const pct = p.stock ? Math.round((p.sold / p.stock) * 100) : null;
+            return (
+              <tr key={p.start} className={`border-b border-slate-100 last:border-0 ${p.partial ? 'text-slate-400' : 'text-slate-700'}`}>
+                <td className="whitespace-nowrap px-5 py-2">
+                  {label(p.start)}
+                  {p.partial && <span className="ml-2 text-xs">so far</span>}
+                </td>
+                <td className="px-5 py-2 text-right tabular-nums">{p.stock === null ? '—' : n(p.stock)}</td>
+                <td className="px-5 py-2 text-right tabular-nums">{n(p.sold)}</td>
+                <td className={`px-5 py-2 text-right tabular-nums ${p.partial ? '' : 'font-semibold text-slate-900'}`}>
+                  {pct === null ? '—' : `${pct}%`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
