@@ -1068,37 +1068,60 @@ export function updateBirkAvailability() {
 // =============================================================================================================================
 // Analytics module — Stock vs Sales (is the stock we buy shifting?).
 // =============================================================================================================================
-// One period (week from Monday, or month). stock = units owned at the END of it (its last nightly stock_daily reading; the open
-// period shows the latest) — null if no reading landed in it. sold = units sold in it, all channels, net of returns.
+// One month or week (weeks start Monday). stock = units owned at the END of it (its last nightly stock_daily reading; the open period
+// shows the latest) — null if no reading landed in it. sold = units sold in it, all channels, net of returns.
 export interface StockSalesPeriod {
   start: string;          // YYYY-MM-DD, first day of the period
   stock: number | null;
-  stock_date: string | null;
-  sold_shp: number;
-  sold_amz: number;
-  sold_shop: number;      // CM3 — the shop
   sold: number;
   partial: boolean;       // the current, still-open period
 }
 
 export interface StockSalesData {
-  grain: 'week' | 'month';
   expected_date: string;  // the reading the nightly job should have written by now (DB's yesterday)
-  latest: { date: string; units: number; value: number; local_units: number | null; amz_units: number | null } | null;
-  basis_from: string | null; // first reading on the Month End basis; earlier rows are the old google_stock_track backfill
-  periods: StockSalesPeriod[]; // oldest -> newest
+  latest: { date: string; units: number } | null;
+  sold_30d: number;       // all channels, net of returns — the Sales report's 30-day window
+  months: StockSalesPeriod[]; // oldest -> newest (the chart, and the list's Month view)
+  weeks: StockSalesPeriod[];  // oldest -> newest (the list's Week view)
 }
 
-export function getStockSales(grain: 'week' | 'month') {
+export function getStockSales() {
   return request<StockSalesData>(
-    { url: '/analytics-stock-sales', method: 'GET', params: { grain } },
+    { url: '/analytics-stock-sales', method: 'GET' },
     (b) => ({
-      grain: b.grain,
       expected_date: b.expected_date,
       latest: b.latest ?? null,
-      basis_from: b.basis_from ?? null,
-      periods: b.periods || [],
+      sold_30d: b.sold_30d ?? 0,
+      months: b.months || [],
+      weeks: b.weeks || [],
     })
+  );
+}
+
+// Stock depth — each style we hold, against its own pace of sales (12 months, or its life if younger). months = units ÷ units sold per
+// month; null for 'new' (too young to have a pace) and 'none' (no net sales in its window). excess = units beyond what the style needs
+// (Birkenstock 6 months of its own sales, everything else 2 — see routes/analytics-stock-depth.js); excess_units is their sum.
+export type StockDepthBand = 'under6' | '6to12' | 'over12' | 'none' | 'new';
+export interface StockDepthRow {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  units: number;
+  sold: number;
+  months: number | null;
+  band: StockDepthBand;
+  excess: number;
+}
+export interface StockDepthData {
+  bands: { band: StockDepthBand; styles: number; units: number }[]; // display order, zeros included
+  excess_units: number;
+  rows: StockDepthRow[];
+}
+
+export function getStockDepth() {
+  return request<StockDepthData>(
+    { url: '/analytics-stock-depth', method: 'GET' },
+    (b) => ({ bands: b.bands || [], excess_units: b.excess_units ?? 0, rows: b.rows || [] })
   );
 }
 

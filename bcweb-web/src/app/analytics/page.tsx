@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
             to slow ordering down or speed it up. Replaced the Stock Position "alive products" gauge (owner, 2026-10-09). */}
         <ModuleTile
           title="Stock vs Sales"
-          description="Units in stock at the end of each week or month against units sold in it — all channels, net of returns. Is what we buy shifting?"
+          description="Units in stock against units sold — month by month, all channels. Is what we buy shifting?"
           href="/analytics/stock-sales"
           icon={CubeIcon}
           live

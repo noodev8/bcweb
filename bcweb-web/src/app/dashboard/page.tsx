@@ -221,7 +221,7 @@ const GROUPS: Group[] = [
       {
         title: 'Stock vs Sales',
         subtitle: 'Is the stock shifting?',
-        description: 'Units in stock at the end of each week or month against units sold in it — all channels, net of returns.',
+        description: 'Units in stock against units sold — month by month, all channels.',
         href: '/analytics/stock-sales',
         icon: CubeIcon,
       },
@@ -499,7 +499,7 @@ const PART_GROUPS: Group[] = [
       {
         title: 'Stock vs Sales',
         subtitle: 'Is the stock shifting?',
-        description: 'Units in stock at the end of each week or month against units sold in it — all channels, net of returns.',
+        description: 'Units in stock against units sold — month by month, all channels.',
         href: '/analytics/stock-sales',
         icon: CubeIcon,
       },
