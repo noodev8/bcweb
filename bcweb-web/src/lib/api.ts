@@ -3938,6 +3938,44 @@ export function setProductSeasons(groupids: string[], season: SeasonName) {
   );
 }
 
+// ---- Shop Sale (/shop-sale) -----------------------------------------------------------------------------------------------------
+// Record an item sold in the shop (CM3). See routes/shop-sale-list.js and routes/shop-sale-record.js.
+
+// One size of a style, with its free units by shelf. Any size can be sold; with none free the sale moves no stock. When `lines` has
+// more than one shelf the screen asks which one the pair came off, so the right shelf's count drops.
+export interface ShopSaleSize { code: string; size: string; free: number; lines: { location: string; units: number }[] }
+
+export interface ShopSaleStyle {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  imagename: string | null;
+  rrp: number | null;     // the shop price default — the shop charges RRP
+  price: number | null;   // the WEBSITE price, shown for reference only
+  codes: string;          // every size code, space-joined, for the search box
+  sizes: ShopSaleSize[];
+}
+
+export function getShopSaleList() {
+  return request<{ styles: ShopSaleStyle[] }>(
+    { url: '/shop-sale-list', method: 'GET' },
+    (b) => ({ styles: b.styles || [] })
+  );
+}
+
+export type ShopPaytype = 'card' | 'cash';
+
+// WRITE — books one CM3 sale. Send `code` for a product (one free unit comes off the count if there is one — from `location` when the
+// size is on more than one shelf) or `description` for a misc item (groupid 'misc', no stock move). takenFrom = the shelf a unit came
+// off; null = no stock move. NO_STOCK = the named shelf has no free pair left.
+// noStock = book the sale with no stock move even though the system shows some (the pair was already taken off its shelf by hand).
+export function recordShopSale(args: { code?: string; location?: string; noStock?: boolean; description?: string; price: number; paytype: ShopPaytype }) {
+  return request<{ sale: { id: number; code: string; price: number; paytype: string; solddate: string; ordertime: string }; takenFrom: string | null }>(
+    { url: '/shop-sale-record', method: 'POST', data: args },
+    (b) => ({ sale: b.sale, takenFrom: b.takenFrom ?? null })
+  );
+}
+
 /*
 Usage telemetry — record that the signed-in operator opened a screen. Written by AppShell on every page (see the note there).
 

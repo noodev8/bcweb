@@ -186,6 +186,11 @@ app.use('/inv-stock', require('./routes/inv-stock'));    // one style's size gri
 app.use('/inv-adjust', require('./routes/inv-adjust'));  // phase 2: +/- local stock at one location, audited to bclog (WRITES)
 app.use('/inv-locations', require('./routes/inv-locations')); // phase 2: the real shelf locations, for the "add to a location" picker
 
+// Shop Sale — record an item sold in the shop (CM3): the sales row + one free unit off the count when there is one, in one
+// transaction. Misc items too. Replaces the PowerBuilder offline-sold window.
+app.use('/shop-sale-list', require('./routes/shop-sale-list'));     // every style with its sizes' free counts               READ ONLY
+app.use('/shop-sale-record', require('./routes/shop-sale-record')); // POST: book one CM3 sale (product or misc)              WRITES
+
 // Birkenstock module — the seasonal re-order screen (port of the legacy PowerBuilder Birkenstock grid). Sold 365 held against stock,
 // size by size, with a LIVE / FULL switch: LIVE = on the shelf now, FULL = shelf + what is still to come on the birktracker order
 // book (so an already-placed order can't be ordered twice). One call ships all ~176 styles; filtering/sorting is client-side.

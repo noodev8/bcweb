@@ -70,7 +70,7 @@ import {
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
-  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon,
+  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -159,6 +159,13 @@ const GROUPS: Group[] = [
         description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
         href: '/pick',
         icon: HandRaisedIcon,
+      },
+      {
+        title: 'Shop Sale',
+        subtitle: 'Record a sale in the shop',
+        description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.',
+        href: '/shop-sale',
+        icon: BuildingStorefrontIcon,
       },
       {
         title: 'Amazon Order',
@@ -358,6 +365,14 @@ const PART_GROUPS: Group[] = [
         description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
         href: '/customer-orders',
         icon: UserGroupIcon,
+      },
+      {
+        // Second home (owner, 2026-10-09) — also in Operations.
+        title: 'Shop Sale',
+        subtitle: 'Record a sale in the shop',
+        description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.',
+        href: '/shop-sale',
+        icon: BuildingStorefrontIcon,
       },
       {
         title: 'Amazon Order',

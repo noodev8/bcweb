@@ -31,6 +31,7 @@ const STATIC = new Set([
   '/segments',
   '/customer-orders',
   '/pick',
+  '/shop-sale',
   '/order-status',
   '/goods-in',
   '/amazon-order',
