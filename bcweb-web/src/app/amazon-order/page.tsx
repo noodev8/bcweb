@@ -18,24 +18,21 @@ SORT: every column header is clickable. Same click-to-reverse gesture as /invent
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
       the filter — the whole list is already in memory.
 
-ORDER / PICK MODE: one toggle, first control in row 2 of the panel. The screen is identical in both — same rows, same search,
-      same presets, same rate buttons, same Pick keep — and ONE column changes: Order (units to buy in from the supplier) becomes
-      Pick (units to send from the local shelf to Amazon). The two scratchpads are entirely separate and both saved to the browser
-      draft, so flipping over to work the other side and flipping back finds the first exactly as it was (owner, 2026-08-28).
+ORDER AND PICK, SIDE BY SIDE (owner, 2026-10-09 — "my old PowerBuilder screen had pick and order side by side"). Two input
+      columns, Order (units to buy in from the supplier) then Pick (units to send from the local shelf to Amazon), each its own
+      scratchpad, both saved to the browser draft. From 2026-08-28 to 2026-10-09 this was an Order | Pick MODE switch over one
+      column; it went because one rate click fills both halves, so the switch hid half of a single plan — a fill made while looking
+      at Pick put 61 units into an Order column that wasn't on screen. There is no mode any more: nothing changes out of sight.
+      A size with 0 local has its PICK box dimmed and disabled (nothing to pick from) — the row itself stays normal, it can still be
+      ordered. Cutting those rows is a deliberate press: the "0 local" button beside Cut (see cutNoLocal).
 
       ONE RATE CLICK FILLS BOTH (owner, 2026-08-28 — "when doing an order it should auto run the pick for it as well"). The
       shortfall is worked out once per row and split: Pick takes as much of it as local stock above the keep rate can cover, Order
-      buys whatever is left after that — pick 2 + order 3 for a shortfall of 5. The mode decides which half you're LOOKING at, not
-      which half is computed; flip over and the other one is already filled in, at the same rate, from the same numbers. Both
-      modes' rate highlights light up together for the same reason. A re-tap clears both, and so does Clear basket — half a plan
-      left behind in the mode you're not looking at is the one outcome worth designing against.
+      buys whatever is left after that — pick 2 + order 3 for a shortfall of 5. A re-tap clears both, and so does Clear basket.
 
-      AND NOT WHICH HALF IS SENT, since 2026-09-03 (owner: "confirm the picks at the same time"). Confirm Basket writes BOTH
-      baskets in one press — see SEND, below. The mode is now purely what you look at and edit; it decides nothing about the write.
+      AND ONE PRESS SENDS BOTH, since 2026-09-03 (owner: "confirm the picks at the same time") — see SEND, below.
 
-      THE ROW ORDER SURVIVES THE FLIP (owner, 2026-09-03) — same rows, same places, only the column changes. See switchMode.
-
-      Birkenstock is excluded in BOTH modes — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
+      Birkenstock is excluded from BOTH halves — it never goes to Amazon at all (owner, 2026-08-28), so neither an order nor a pick
       for it means anything here. Loss-makers are skipped by the auto-fill in both. The one rule that IS order-only is the
       supplier requirement: that's who an order line gets placed against, and a pick has nobody to place it with.
 
@@ -56,14 +53,15 @@ CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selectio
           clears the selection, so Cut / Can't get can never act on a row that has left the screen.
       ARROW KEYS walk the list: the one highlight moves and replaces the selection (Enter cuts it). THE CARET beside a SKU is the
       only thing that expands a row, and only ONE detail row is open at a time (opening another closes the first); it never touches
-      the selection. Typing in an Order box doesn't change the selection either — that row is tinted (focus-within) instead.
+      the selection. Typing in an Order or Pick box doesn't change the selection either — that row is tinted (focus-within) instead.
       NO SELECTED COUNT ANYWHERE (owner, 2026-09-27 — "no need to show a selected count at all"). The blue rows are the count. It
       was tried twice and both moved the screen on every click: "(n)" in the Cut / Can't get labels widened row 2 until the basket
       buttons wrapped, and a badge in the SKU header grew the header row. Cut and Can't get are a fixed width for the same reason.
 
-PANEL LAYOUT (2026-09-27): row 1 FINDS — search, Hot | Warm | Cold, the Can't get chip, the row count (what the
-      finding produced), Reset. Row 2 ACTS — Order | Pick, the rates, Pick keep, then Can't get and Cut on the selection, then the
-      basket actions on the right. Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
+PANEL LAYOUT (2026-09-27, row 3 added 2026-10-09): row 1 FINDS — search, Hot | Warm | Cold, the Can't get chip, the row
+      count (what the finding produced), Reset. Row 2 ACTS — the rates, Pick keep, then Can't get, Cut and "0 local". Row 3 is
+      THE BASKET — Clear order / Clear pick (rows on screen) on the left, Load basket, Confirm Basket and the bin on the right.
+      Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
 
 SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
       clicking sets it, Enter and the "Cut (n)" button both act on it. This screen used to run a keyboard cursor (a hairline on the
@@ -79,14 +77,14 @@ SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what 
       restores every cut row, same as it clears the search.
 
       useListCursor deliberately leaves a focused INPUT alone (arrows move its caret, not the list — the hook's normal, correct
-      behaviour everywhere else). The Order box is the one place that's wrong: it's a column of numbers down the row axis, so
-      Up/Down should walk rows exactly like it does on the row itself. It gets its own onKeyDown that intercepts ONLY
-      ArrowUp/ArrowDown, moves the shared cursor, and refocuses the box on the new row — typing, Tab, and every other key still
-      belong to the input untouched.
+      behaviour everywhere else). The Order and Pick boxes are the one place that's wrong: each is a column of numbers down the
+      row axis, so Up/Down should walk rows exactly like it does on the row itself. They get their own onKeyDown that intercepts
+      ONLY ArrowUp/ArrowDown, moves the shared cursor, and refocuses the SAME column's box on the new row — typing, Tab (Order ->
+      Pick), and every other key still belong to the input untouched.
 
 COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Targets every row CURRENTLY ON SCREEN (`visible`),
       ranks what it just filled and sorts the table to it (via the shared `manualOrder`), and is cleared by Reset. Fills Order
-      (what to buy from the supplier). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
+      and Pick together (see ONE RATE CLICK FILLS BOTH). The lit rate is remembered PER VIEW (coverageByView) — fill Winners at 2 months and
       Potential at 1/2 and each list shows its own rate still lit when you flick back to it.
 
       PICK KEEP (a dropdown naming itself: "Pick keep" = off, or "Pick keep 1/2/3") sits alongside the rate and modifies it: local stock ABOVE the keep rate is treated as available
@@ -98,31 +96,29 @@ COVERAGE FILL: one-click auto-fill, see applyCoverage for the exact numbers. Tar
 
 SEND: the "Confirm Basket" button turns BOTH scratchpads into real rows in one press (owner, 2026-09-03) — the Order half loops
       POST /order-status-add and the Pick half loops POST /amz-pick-allocate, order first, in a single run with one progress count.
-      One rate click has filled both baskets since 2026-08-28, so the two halves are one plan; confirming, flipping mode and
-      confirming again split one decision into two presses with the screen's own worst case sitting between them — the half left
-      behind in the mode you're not looking at. Failures are labelled with their half ("AB123 (pick)") when both are in flight,
+      One rate click has filled both baskets since 2026-08-28, so the two halves are one plan and one press sends it. Failures are labelled with their half ("AB123 (pick)") when both are in flight,
       since the same SKU can legitimately sit in both baskets. Each SKU is still its own call, so one failure takes down neither the
       rest of its half nor the other half's line for the same SKU.
 
       The Order half hits the same endpoint Order Status's own "add a line" uses, one un-placed orderstatus row per unit, ordertype
       3/Amazon. Both halves target EVERY row with a positive value, not just what's currently visible, so a value typed before a
       filter/cut isn't silently dropped. Birkenstock is never orderable here (isBirkenstock) — still ordered separately, in bulk,
-      ~6 months ahead (CLAUDE.md) — its Order box is disabled rather than silently zeroed, so it's clear why nothing happens. A
+      ~6 months ahead (CLAUDE.md) — its Order and Pick boxes are disabled rather than silently zeroed, so it's clear why nothing happens. A
       loss-making SKU (isLoss — last Amazon sale made £0 or less) is NOT blocked from a manual Order entry, only from the Rate Order
       auto-fill (applyCoverage, owner 2026-08-11). Inline confirm names every destination and its unit count before writing
       anything (this is a real DB write, not more scratchpad editing); a succeeding row clears its own box and bumps a session-only
       `orderedBump` on top of the displayed FBA Total, so re-checking the same SKU later in the sitting doesn't still read as needing
       an order — that bump is NOT a DB figure and is lost on reload, same as the rest of this scratchpad.
 
-      Pick (send local stock to Amazon) was pulled from this screen in 2026-08 and came back 2026-08-28 as a MODE rather than a
-      second column — see ORDER / PICK MODE above. Since 2026-09-02 it has its own write, /amz-pick-allocate, on the same button:
+      Pick (send local stock to Amazon) was pulled from this screen in 2026-08, came back 2026-08-28 as a mode, and has been its
+      own column since 2026-10-09 — see ORDER AND PICK above. Since 2026-09-02 it has its own write, /amz-pick-allocate, on the same button:
       the confirm names every destination it's about to write ("… to Order Status and … to Amazon, off the local shelf?") and the
       loop is per-SKU either way. A pick that the shelf can't fully supply comes back SHORT rather than failing — the mobile app and orderSync phase E are
       taking the same free rows, so the stock figure on screen is always a little old — and the shortfall is reported per SKU in
-      amber under the panel. There is no cost line in Pick mode: that stock is already paid for and on the shelf.
+      amber under the panel. The cost on the button is the Order half only: picked stock is already paid for and on the shelf.
 
 LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
-      positive number currently in Order, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential AND restoring every
+      positive number currently in Order OR Pick, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential AND restoring every
       cut row as it goes (owner, 2026-09-03: "just show what's in my basket") — it stands alone
       rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
       SNAPSHOT, not a live filter (owner, 2026-08-27): membership is fixed when the preset is switched on and only a bulk basket
@@ -376,6 +372,12 @@ function supplyHidden(r: AmazonOrderRow): boolean {
   return r.no_supply && r.local_stock === 0;
 }
 
+// NOTHING TO PICK — a size with an empty local shelf (owner, 2026-10-09). Its Pick box is dimmed and disabled; the row stays, since
+// it can still be ordered. A box that already holds a value stays live so it can be cleared.
+function nothingToPick(r: AmazonOrderRow, pickValue: string | undefined): boolean {
+  return r.local_stock === 0 && !pickValue;
+}
+
 // 'YYYY-MM-DD' -> '1 Apr' (with the year only when it isn't this one) — same helper as Shopify Order. Read straight off the string,
 // never through a Date, which would parse it as UTC midnight and can land on the day before in the browser's zone (the BST day-shift).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -449,31 +451,28 @@ const DRAFT_KEY = 'bcweb:amazon-order-draft';
 // A draft older than this is more likely to be stale (stock/sales have moved on) than useful — dropped silently on load rather than
 // resurrected, same as any other browser-only state that's outlived its relevance.
 const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
-// BASKET MODE — the screen runs one of two scratchpads in the same column: ORDER (buy these in from the supplier) or PICK (send
-// these from the local shelf to Amazon). Everything else about the screen is identical between the two — same rows, same search,
-// same presets, same rate buttons — only the column, and what a rate fill computes into it, differ (owner, 2026-08-28).
-type BasketMode = 'order' | 'pick';
-// Order = what to BUY IN from the supplier; Pick = what to SEND from the local shelf to Amazon. (No tooltips on the panel's
-// buttons since 2026-09-27 — owner: "training will sort that out".)
-const BASKET_MODES: { key: BasketMode; label: string }[] = [
-  { key: 'order', label: 'Order' },
-  { key: 'pick', label: 'Pick' },
-];
+// THE TWO HALVES of the basket, each its own column and scratchpad: ORDER (buy these in from the supplier) and PICK (send these
+// from the local shelf to Amazon). Side by side since 2026-10-09 — see ORDER AND PICK in the header.
+type BasketHalf = 'order' | 'pick';
 
-// One sendable line: a quantity against a SKU, tagged with the basket it came from so a single send loop can carry both halves and
-// still know which write each row belongs to (see submitBasket).
-interface BasketTarget { mode: BasketMode; code: string; qty: number; supplier: string }
+// One sendable line: a quantity against a SKU, tagged with the half it came from so a single send loop can carry both and still
+// know which write each row belongs to (see submitBasket).
+interface BasketTarget { half: BasketHalf; code: string; qty: number; supplier: string }
 
-// The two scratchpads are saved SEPARATELY in the one draft. `qty` keeps its original key so a draft written before Pick mode
-// existed still loads into the Order side rather than being silently dropped.
+// The two scratchpads are saved SEPARATELY in the one draft.
 interface AmazonOrderDraft {
   orderQty?: Record<string, string>;
   pickQty?: Record<string, string>;
   savedAt?: number;
 }
-// 'order_qty' is NOT a row field (it's the client-only Order scratchpad, keyed separately by code) — sortValue can't resolve it,
-// so `sorted` below special-cases it by reading the live qty state directly.
-type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty';
+// 'order_qty' / 'pick_qty' are NOT row fields (they're the client-only scratchpads, keyed by code) — sortValue can't resolve them,
+// so they only ever sort through a manualOrder snapshot (onSort).
+type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty' | 'pick_qty';
+// The sort key each half's column header carries.
+const HALF_SORT: Record<BasketHalf, SortKey> = { order: 'order_qty', pick: 'pick_qty' };
+function isQtySort(key: SortKey): boolean {
+  return key === 'order_qty' || key === 'pick_qty';
+}
 // Reading order: identity (SKU, then the Order scratchpad rendered right after it — see below) -> what's in stock (local, then
 // FBA) -> how it's selling -> what it's made -> the identifiers you'd look up but don't need to read every time (barcode/SKU/
 // brand), pushed to the end so they scroll off rather than crowd the working columns (owner request, 2026-08-07).
@@ -496,21 +495,21 @@ const DEFAULT_SORT: SortKey = 'profit_30d';
 
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
-  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', brand: 'asc', order_qty: 'desc',
+  unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', brand: 'asc', order_qty: 'desc', pick_qty: 'desc',
 };
 
-// COLUMN GROUPS — the table is really four blocks wearing ten columns: identity (SKU), stock on hand (Local / FBA Live / FBA
-// Total), demand (Sold 30 / Sold 7), the operator's own input (Order or Pick, depending on the mode), then money (Unit profit / Profit 30d). A hairline on the
-// FIRST column of each block gives the eye something to anchor on when reading across a ten-wide row, and it encodes the real
+// COLUMN GROUPS — the table is really four blocks wearing eleven columns: identity (SKU), stock on hand (Local / FBA Live / FBA
+// Total), demand (Sold 30 / Sold 7), the operator's own input (Order, Pick), then money (Unit profit / Profit 30d). A hairline on the
+// FIRST column of each block gives the eye something to anchor on when reading across an eleven-wide row, and it encodes the real
 // shape of the data rather than decorating it. Deliberately not zebra striping: the rows already carry three background states
 // (hover, selected, expanded) and alternating fills would fight all of them.
 const GROUP_START: ReadonlySet<SortKey> = new Set<SortKey>(['local_stock', 'units_30d', 'order_qty', 'unit_profit']);
 
 // The value a row sorts on for a given key. Nulls sort last regardless of direction (an unknown price/profit is not "small").
-// 'order_qty' isn't a row field — the `sorted` memo special-cases it before ever calling this — but is still a valid SortKey, so
-// it's guarded here too rather than left to fall through to an `r[key]` index TypeScript can't type against AmazonOrderRow.
+// The qty sorts aren't row fields — the `sorted` memo special-cases them before ever calling this — but are still valid SortKeys,
+// so they're guarded here too rather than left to fall through to an `r[key]` index TypeScript can't type against AmazonOrderRow.
 function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
-  if (key === 'order_qty') return null;
+  if (key === 'order_qty' || key === 'pick_qty') return null;
   if (key === 'barcode' || key === 'amz_sku' || key === 'brand') return r[key] ? r[key]!.toLowerCase() : null;
   return r[key];
 }
@@ -779,20 +778,12 @@ function AmazonOrderContent() {
   // is a SNAPSHOT taken when the preset goes on — see basketSnapshot just below.
 
   // THE SCRATCHPAD — quantities keyed by code, declared here (ahead of `filtered`/`sorted` below, which both need it) rather than
-  // down with the rest of the basket UI state. Held as one record PER MODE rather than as two independent states, so everything
-  // downstream reads `qty` and never has to know which mode is on; only this pair, the draft, and the rate maths do.
-  //
-  // The two baskets are fully independent: switching to Pick doesn't disturb what's been built up in Order, and back again. That's
-  // the point of a mode rather than a filter — an operator part-way through planning a buy can flip over to work out what can be
-  // covered from the shelf instead, and flip back to find the buy exactly as they left it.
-  const [mode, setMode] = useState<BasketMode>('order');
-  const [qtyByMode, setQtyByMode] = useState<Record<BasketMode, Record<string, string>>>({ order: {}, pick: {} });
-  const qty = qtyByMode[mode];
-  // Every write goes through here so no caller has to thread the mode through. Takes an updater (never a bare value) because the
-  // callers are event handlers that must not clobber a concurrent update — same reason the single-basket setter it replaced was always called that way.
-  const setQty = useCallback((update: (prev: Record<string, string>) => Record<string, string>) => {
-    setQtyByMode((prev) => ({ ...prev, [mode]: update(prev[mode]) }));
-  }, [mode]);
+  // down with the rest of the basket UI state. One record PER HALF (Order, Pick), each its own column.
+  const [qtyByHalf, setQtyByHalf] = useState<Record<BasketHalf, Record<string, string>>>({ order: {}, pick: {} });
+  // A box edit. Applied through the functional setter so it never clobbers a concurrent update to the other half.
+  const setHalfQty = useCallback((half: BasketHalf, code: string, value: string) => {
+    setQtyByHalf((prev) => ({ ...prev, [half]: { ...prev[half], [code]: value } }));
+  }, []);
   const [ordersOnly, setOrdersOnly] = useState(false);
   // MEMBERSHIP IS A SNAPSHOT, NOT LIVE (owner, 2026-08-27 — "don't auto filter with edits"). Load basket used to re-test every
   // row against the live qty on every keystroke, so editing quantities while it was on rearranged the list underneath the
@@ -800,9 +791,10 @@ function AmazonOrderContent() {
   // The set of rows is now fixed when the filter is switched on, and only a BULK basket action changes it (a rate fill/re-tap
   // clear, Clear basket, Reset, or toggling the filter off and on again) — typing never does. null = filter off.
   const [basketSnapshot, setBasketSnapshot] = useState<Set<string> | null>(null);
-  // The codes the basket holds a positive quantity for right now — what a fresh snapshot is taken from.
+  // The codes either half holds a positive quantity for right now — what a fresh snapshot is taken from.
   function basketCodes() {
-    return new Set(Object.entries(qty).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code));
+    const positive = (basket: Record<string, string>) => Object.entries(basket).filter(([, v]) => (Number(v) || 0) > 0).map(([code]) => code);
+    return new Set([...positive(qtyByHalf.order), ...positive(qtyByHalf.pick)]);
   }
   // TURNING IT ON RESTORES EVERY CUT ROW (owner, 2026-09-03 — "just show what's in my basket"). Load basket already overrides the
   // search steps and the other presets (see `filtered`), which left cuts as the one thing that could still hide a row the basket
@@ -831,21 +823,13 @@ function AmazonOrderContent() {
   //
   // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
   // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
-  // Keyed by MODE as well as by view, for the same reason it's keyed by view at all: a lit rate says "this list was filled at this
-  // rate", and an Order fill says nothing about the Pick basket. Flipping to Pick would otherwise show a rate still lit over an
-  // empty column.
-  const [coverageByView, setCoverageByView] = useState<Record<BasketMode, Record<ViewKey, number | null>>>({ order: NO_COVERAGE, pick: NO_COVERAGE });
+  const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
   const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : recycleOnly ? 'recycle' : ordersOnly ? 'basket' : 'all';
-  const coverageMonths = coverageByView[mode][viewKey];
-  const anyCoverage = useMemo(() => Object.values(coverageByView[mode]).some((m) => m !== null), [coverageByView, mode]);
-  // `scope` says which mode's highlight to move. A rate fill writes BOTH baskets (fillCoverage), so it lights both; anything that
-  // only touches the basket on screen passes 'current'.
-  function setCoverageForView(months: number | null, scope: 'current' | 'both' = 'current') {
-    setCoverageByView((prev) => (scope === 'both'
-      ? { order: { ...prev.order, [viewKey]: months }, pick: { ...prev.pick, [viewKey]: months } }
-      : { ...prev, [mode]: { ...prev[mode], [viewKey]: months } }));
+  const coverageMonths = coverageByView[viewKey];
+  const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
+  function setCoverageForView(months: number | null) {
+    setCoverageByView((prev) => ({ ...prev, [viewKey]: months }));
   }
-  const NO_COVERAGE_BOTH: Record<BasketMode, Record<ViewKey, number | null>> = { order: NO_COVERAGE, pick: NO_COVERAGE };
   // PICK KEEP — how many units a rate fill leaves on the local shelf before counting the rest against the Amazon order (see
   // PICK_KEEP_OPTIONS above and applyCoverage below). ONE setting for the whole screen, not per-view like the rate: it's a
   // standing stock policy ("always keep 1 back for Shopify"), not a property of the list you happen to be looking at. Always a
@@ -853,7 +837,7 @@ function AmazonOrderContent() {
   // (onPickKeep below). Deliberately NOT cleared by Reset — Reset is a VIEW reset, and this isn't a view filter.
   const [pickKeep, setPickKeep] = useState<number>(PICK_KEEP_DEFAULT);
 
-  // The row currently focused in an Order box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
+  // The row currently focused in an Order or Pick box is EXEMPT from the Orders-only filter below, regardless of what it currently reads —
   // otherwise backspacing a value down through 0 on the way to clearing it yanks the row (and the input you're typing into) out of
   // the list mid-edit, since the filter re-evaluates on every keystroke (owner, 2026-08-11 — "won't let me backspace to clear").
   const [focusedOrderCode, setFocusedOrderCode] = useState<string | null>(null);
@@ -883,12 +867,12 @@ function AmazonOrderContent() {
     setCut(new Set()); deselectAll();
     // Back into the Can't get cut if it was switched off — the screen as you arrived.
     setSupplyOn(true);
-    setCoverageByView(NO_COVERAGE_BOTH);
+    setCoverageByView(NO_COVERAGE);
     setManualOrder(null);
     // Reset drops the snapshot outright rather than re-taking it (clearManualOrder) — it's tearing down the very view the
-    // snapshot describes. That leaves the Order column with nothing to sort by, so the sort goes home to the default column
-    // too; anything else is a header still lit over rows it isn't ordering.
-    if (sortKey === 'order_qty') { setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]); }
+    // snapshot describes. That leaves an Order/Pick column sort with nothing to sort by, so the sort goes home to the default
+    // column too; anything else is a header still lit over rows it isn't ordering.
+    if (isQtySort(sortKey)) { setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]); }
     setConfirmingOrder(false); setConfirmingClear(false); setOrderError(null); setOrderedBump({});
     includeInputRef.current?.focus();
   }
@@ -896,12 +880,14 @@ function AmazonOrderContent() {
   const filtered = useMemo(() => {
     // Orders Only stands alone against the FULL row set — see its declaration above for why: it must not miss a row that has an
     // order just because search/Winners/Potential would otherwise have excluded it.
-    // basketSnapshot is the membership list (see toggleOrdersOnly) — a fixed set, so typing in an Order box never adds or removes
+    // basketSnapshot is the membership list (see toggleOrdersOnly) — a fixed set, so typing in a box never adds or removes
     // a row. The focused row stays exempt as a belt-and-braces guard, and the live test is the fallback if the filter is somehow
     // on with no snapshot taken.
     if (ordersOnly) {
       return rows.filter((r) => r.code === focusedOrderCode
-        || (basketSnapshot ? basketSnapshot.has(r.code) : (Number(qty[r.code]) || 0) > 0));
+        || (basketSnapshot
+          ? basketSnapshot.has(r.code)
+          : (Number(qtyByHalf.order[r.code]) || 0) > 0 || (Number(qtyByHalf.pick[r.code]) || 0) > 0));
     }
     // Everything else narrows the working set: every SKU less what Can't get hides (baseRows, above).
     let out = seasonFilter ? baseRows.filter((r) => inSeason(r, seasonFilter)) : baseRows;
@@ -930,31 +916,32 @@ function AmazonOrderContent() {
       });
     }
     return out;
-  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qty, basketSnapshot, focusedOrderCode]);
+  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
-  // Order box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
+  // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
   // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
   // when a snapshot is being taken (onSort), never from inside `sorted` — see byNormalSort for why that distinction is the whole
   // fix. Left as a useCallback so a comparator built in a memo could still name it as a dependency without the React Compiler
   // bailing out of that memo and everything derived from it.
-  const qtyValue = useCallback((code: string): number | null => {
-    const raw = qty[code];
+  const qtyValue = useCallback((half: BasketHalf, code: string): number | null => {
+    const raw = qtyByHalf[half][code];
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
-  }, [qty]);
+  }, [qtyByHalf]);
 
   const onSort = (key: SortKey) => {
-    if (key === 'order_qty') {
+    if (key === 'order_qty' || key === 'pick_qty') {
+      const half: BasketHalf = key === 'pick_qty' ? 'pick' : 'order';
       const newDir: 'asc' | 'desc' = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : DEFAULT_DIR[key];
       const dirMul = newDir === 'asc' ? 1 : -1;
       // Empty/unset boxes count as 0 here (not "sorts last" — see sortValue's rule for every other column), so ascending genuinely
       // starts with the untouched rows rather than burying them after every non-empty box (owner, 2026-08-13).
       const snapshot = [...filtered].sort((a, b) => {
-        const av = qtyValue(a.code) ?? 0;
-        const bv = qtyValue(b.code) ?? 0;
+        const av = qtyValue(half, a.code) ?? 0;
+        const bv = qtyValue(half, b.code) ?? 0;
         const d = av - bv;
         if (d === 0) return a.code.localeCompare(b.code);
         return d * dirMul;
@@ -972,12 +959,12 @@ function AmazonOrderContent() {
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const byNormalSort = (a: AmazonOrderRow, b: AmazonOrderRow) => {
-      // order_qty NEVER sorts live off the basket, here or anywhere (owner, 2026-09-23 — boxes re-ordering the table as they were
-      // typed into). Every route into that sort takes a `manualOrder` snapshot instead (onSort, applyCoverage, switchMode,
-      // clearManualOrder), for the reason on `manualOrder` itself: reading `qty` from a comparator makes every keystroke a
+      // order_qty / pick_qty NEVER sort live off the basket, here or anywhere (owner, 2026-09-23 — boxes re-ordering the table as
+      // they were typed into). Every route into those sorts takes a `manualOrder` snapshot instead (onSort, applyCoverage,
+      // clearManualOrder), for the reason on `manualOrder` itself: reading the basket from a comparator makes every keystroke a
       // re-sort of the row being edited. So this branch is only ever reached for a row the snapshot doesn't name — one filtered
       // in AFTER it was taken — and those append in a fixed, basket-independent order rather than joining the ranking.
-      if (sortKey === 'order_qty') return a.code.localeCompare(b.code);
+      if (isQtySort(sortKey)) return a.code.localeCompare(b.code);
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
       // Nulls always sort last, independent of direction.
@@ -1002,13 +989,12 @@ function AmazonOrderContent() {
     });
   }, [filtered, sortKey, sortDir, manualOrder]);
 
-  // DROPPING THE SNAPSHOT while the Order column is the active sort would leave that sort with nothing to sort BY (it has no row
-  // field behind it — see byNormalSort above), so the bulk basket edits that clear it re-snapshot the order on screen instead of
-  // clearing it outright. Same gesture switchMode uses, and for the same reason: the rows stay exactly where the operator left
-  // them, and a box edited afterwards doesn't move its own row. On any other sort there's a real column to fall back to, so the
-  // snapshot just goes.
+  // DROPPING THE SNAPSHOT while the Order or Pick column is the active sort would leave that sort with nothing to sort BY (it has
+  // no row field behind it — see byNormalSort above), so the bulk basket edits that clear it re-snapshot the order on screen
+  // instead of clearing it outright: the rows stay exactly where the operator left them, and a box edited afterwards doesn't
+  // move its own row. On any other sort there's a real column to fall back to, so the snapshot just goes.
   const clearManualOrder = () => {
-    setManualOrder(sortKey === 'order_qty' ? sorted.map((r) => r.code) : null);
+    setManualOrder(isQtySort(sortKey) ? sorted.map((r) => r.code) : null);
   };
 
   // Still NOT sent anywhere until the Order button is pressed (owner decision, 2026-08-07) — but now saved to THIS BROWSER (see
@@ -1022,7 +1008,7 @@ function AmazonOrderContent() {
   // The rule disable below is deliberate, not an oversight. This is the one case set-state-in-effect carves out in practice: a
   // mount-only read of an external store (localStorage) that can't move into a lazy useState initializer, because this page is
   // server-rendered and localStorage doesn't exist on the server — a lazy initializer would either throw during SSR or hydrate
-  // with different values than the server produced. setQtyByMode applies what was read, once, with [] deps, so there's no
+  // with different values than the server produced. setQtyByHalf applies what was read, once, with [] deps, so there's no
   // re-render cascade for the rule to protect against. (The Date.now() age check needs no disable: purity only fires on a clock
   // read during RENDER, and this one is inside an effect.)
   const loadedDraftRef = useRef(false);
@@ -1033,7 +1019,7 @@ function AmazonOrderContent() {
       if (raw) {
         const draft = JSON.parse(raw) as AmazonOrderDraft;
         if (draft.savedAt && Date.now() - draft.savedAt <= DRAFT_MAX_AGE_MS) {
-          setQtyByMode({ order: draft.orderQty ?? {}, pick: draft.pickQty ?? {} });
+          setQtyByHalf({ order: draft.orderQty ?? {}, pick: draft.pickQty ?? {} });
         } else {
           localStorage.removeItem(DRAFT_KEY);
         }
@@ -1054,25 +1040,22 @@ function AmazonOrderContent() {
     draftSaveTimer.current = setTimeout(() => {
       // Both baskets are saved together, and it takes BOTH being empty to clear the draft — otherwise emptying Order would throw
       // away a Pick basket that's still got numbers in it.
-      if (Object.keys(qtyByMode.order).length === 0 && Object.keys(qtyByMode.pick).length === 0) {
+      if (Object.keys(qtyByHalf.order).length === 0 && Object.keys(qtyByHalf.pick).length === 0) {
         localStorage.removeItem(DRAFT_KEY);
         return;
       }
       const savedAt = Date.now();
       localStorage.setItem(
         DRAFT_KEY,
-        JSON.stringify({ orderQty: qtyByMode.order, pickQty: qtyByMode.pick, savedAt } satisfies AmazonOrderDraft),
+        JSON.stringify({ orderQty: qtyByHalf.order, pickQty: qtyByHalf.pick, savedAt } satisfies AmazonOrderDraft),
       );
     }, 500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
-  }, [qtyByMode]);
+  }, [qtyByHalf]);
 
   // SEND — turns the scratchpad into real rows. BOTH SCRATCHPADS, in one press (owner, 2026-09-03: "confirm the picks at the same
   // time"). One rate click has filled both baskets since 2026-08-28 — the shortfall is worked out once and split, pick 2 + order 3
-  // for a shortfall of 5 — so the two halves are one plan, and making the operator confirm, flip mode, and confirm again split a
-  // single decision into two presses with a real failure mode between them: the half left behind in the mode you're not looking at
-  // is exactly what this screen's design notes already called the outcome worth designing against. The MODE still decides what you
-  // LOOK at and edit; it no longer decides what gets sent.
+  // for a shortfall of 5 — so the two halves are one plan, sent by one press.
   // These are the only two DB writes on this screen:
   //   order   /order-status-add    one un-placed orderstatus row per unit, ordertype 3 (Amazon) — the same route Order Status's own
   //                                "add a line" uses.
@@ -1086,25 +1069,22 @@ function AmazonOrderContent() {
   // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
   // auto-fill (applyCoverage, below) skips loss-makers on its own (owner, 2026-08-11).
   const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
-  // One basket's worth of sendable rows. Kept as a function of the mode so the same rules produce both halves — the only rule that
-  // differs between them is the supplier requirement, which is order-only.
-  const targetsFor = useCallback((m: BasketMode) => {
+  // One half's worth of sendable rows. A function of the half so the same rules produce both — the only rule that differs between
+  // them is the supplier requirement, which is order-only.
+  const targetsFor = useCallback((half: BasketHalf) => {
     const out: BasketTarget[] = [];
-    for (const [code, raw] of Object.entries(qtyByMode[m])) {
+    for (const [code, raw] of Object.entries(qtyByHalf[half])) {
       const n = Math.floor(Number(raw));
       const row = rowByCode.get(code);
       if (!row || !Number.isFinite(n) || n <= 0) continue;
-      // Birkenstock is out in both modes — it never goes to Amazon (owner, 2026-08-28). A supplier is an ORDER-only requirement:
+      // Birkenstock is out of both halves — it never goes to Amazon (owner, 2026-08-28). A supplier is an ORDER-only requirement:
       // that's who the line gets placed against, and a pick has nobody to place it with.
       if (isBirkenstock(row)) continue;
-      if (m === 'order' && !row.supplier) continue;
-      out.push({ mode: m, code, qty: n, supplier: row.supplier ?? '' });
+      if (half === 'order' && !row.supplier) continue;
+      out.push({ half, code, qty: n, supplier: row.supplier ?? '' });
     }
     return out;
-  }, [qtyByMode, rowByCode]);
-  // The half on screen — what the cost line and the on-screen count are about, since those describe the list you're looking at.
-  const basketTargets = useMemo(() => targetsFor(mode), [targetsFor, mode]);
-  const basketTotalUnits = useMemo(() => basketTargets.reduce((sum, t) => sum + t.qty, 0), [basketTargets]);
+  }, [qtyByHalf, rowByCode]);
   // BOTH halves, in send order: everything to buy in, then everything to pick. This is what the button actually writes — see
   // submitBasket. Order first so the slower, purely-additive write goes before the one that commits physical stock; if a run is
   // interrupted, un-placed order lines are editable in Order Status while an allocation has to be undone on /pick.
@@ -1145,9 +1125,7 @@ function AmazonOrderContent() {
     // Order: a style you've just ordered is plainly one you can get. A pick says nothing about the supplier, so it never clears one.
     const orderedFlagged = new Set<string>();
     for (let i = 0; i < sendTargets.length; i++) {
-      // `half` is the TARGET's own basket. The screen's `mode` state is not consulted anywhere in this loop any more, which is the
-      // whole point of the change: what you're looking at no longer decides what gets written.
-      const { mode: half, code, qty, supplier } = sendTargets[i];
+      const { half, code, qty, supplier } = sendTargets[i];
       const label = bothHalves ? `${code} (${half})` : code;
 
       // The two writes return different shapes, so each branch reduces to the same three answers: did it land, how many units to
@@ -1177,9 +1155,8 @@ function AmazonOrderContent() {
 
       if (landed) {
         queued++;
-        // Clears the box in the half it was SENT from, not the half on screen — setQty is bound to the current mode and would
-        // empty the wrong basket for one half of this loop.
-        setQtyByMode((prev) => {
+        // Clears the box in the half it was sent from.
+        setQtyByHalf((prev) => {
           const next = { ...prev[half] };
           delete next[code];
           return { ...prev, [half]: next };
@@ -1209,7 +1186,7 @@ function AmazonOrderContent() {
   // CUT — a view-only hide, same idea as /inventory's Cut: the row stays in the DB and in `rows`, it just drops off screen until
   // Reset brings it back. Applied last, after search + sort, so cutting never fights with either. Declared HERE, ahead of
   // applyCoverage below, because that reads `visible` — the React Compiler can't preserve a memo that's consumed above its own
-  // declaration (it assumes the value may still be mutated), and the bail-out cascades into basketOnScreenUnits and cursorKeys.
+  // declaration (it assumes the value may still be mutated), and the bail-out cascades into the on-screen basket counts and cursorKeys.
   const [cut, setCut] = useState<Set<string>>(new Set());
   const visible = useMemo(() => sorted.filter((r) => !cut.has(r.code)), [sorted, cut]);
 
@@ -1232,10 +1209,9 @@ function AmazonOrderContent() {
   function applyCoverage(months: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
     if (coverageMonths === months) {
-      // A re-tap clears BOTH baskets for these rows, because a fill wrote both (see fillCoverage) — clearing only the one on
-      // screen would leave the other half of the same plan behind, un-lit and easy to miss.
-      setCoverageForView(null, 'both');
-      setQtyByMode((prev) => {
+      // A re-tap clears BOTH halves for these rows, because a fill wrote both (see fillCoverage).
+      setCoverageForView(null);
+      setQtyByHalf((prev) => {
         const strip = (basket: Record<string, string>) => {
           const next = { ...basket };
           for (const code of visibleCodes) delete next[code];
@@ -1260,14 +1236,15 @@ function AmazonOrderContent() {
   // numbers are two halves of the same answer, not two separate jobs: the shortfall is computed once per row, Pick takes as much
   // of it as the local shelf can cover, and Order buys what's left. Working them out separately would mean clicking the same rate
   // twice and hoping the keep rate hadn't moved in between — and a pick that doesn't match the order it was derived from is worse
-  // than no pick at all, because the two would silently double-cover the same units. So the mode no longer decides WHAT is
-  // computed, only which half is on screen; flipping over shows the other half already filled in.
+  // than no pick at all, because the two would silently double-cover the same units.
   function fillCoverage(months: number, keep: number) {
     const visibleCodes = new Set(visible.map((r) => r.code));
     // Birkenstock is excluded from both halves: it never goes to Amazon at all (owner, 2026-08-28), so there is nothing to buy
     // for it here and nothing to send it either. A loss-making SKU (isLoss) is skipped the same way — no point buying more of
     // something that lost money last time it sold, and no point shipping the shelf's copy to Amazon to lose money on it there.
-    const filled: Record<BasketMode, { code: string; qty: number }[]> = { order: [], pick: [] };
+    const filled: Record<BasketHalf, { code: string; qty: number }[]> = { order: [], pick: [] };
+    // Each filled row's whole shortfall (pick + order) — what the table is ranked by afterwards.
+    const need: { code: string; qty: number }[] = [];
     for (const r of visible) {
       if (isLoss(r) || isBirkenstock(r)) continue;
       const demand = r.units_30d * months;
@@ -1283,8 +1260,9 @@ function AmazonOrderContent() {
       // A row with nothing to do on a given side is left OUT of that side rather than written as a 0.
       if (pick > 0) filled.pick.push({ code: r.code, qty: pick });
       if (order > 0) filled.order.push({ code: r.code, qty: order });
+      if (pick + order > 0) need.push({ code: r.code, qty: pick + order });
     }
-    setQtyByMode((prev) => {
+    setQtyByHalf((prev) => {
       const refill = (basket: Record<string, string>, rows: { code: string; qty: number }[]) => {
         const next = { ...basket };
         for (const code of visibleCodes) delete next[code]; // drop this view's old values before refilling
@@ -1293,22 +1271,19 @@ function AmazonOrderContent() {
       };
       return { order: refill(prev.order, filled.order), pick: refill(prev.pick, filled.pick) };
     });
-    // Both baskets were filled at this rate, so both light up — flipping to the other mode has to show the rate that produced the
-    // numbers sitting there, not an unlit strip over a full column.
-    setCoverageForView(months, 'both');
-    // Load basket follows the basket ON SCREEN: the visible rows this rate left empty on THIS side (Birkenstock, loss-makers,
-    // nothing to do) leave the snapshot, the rows it filled join it.
+    setCoverageForView(months);
+    // Load basket follows the fill: the visible rows this rate left empty in BOTH halves (Birkenstock, loss-makers, nothing to do)
+    // leave the snapshot, the rows it filled in either half join it.
     if (ordersOnly) {
       setBasketSnapshot((prev) => {
         const nextSet = new Set([...(prev ?? [])].filter((c) => !visibleCodes.has(c)));
-        filled[mode].forEach(({ code }) => nextSet.add(code));
+        need.forEach(({ code }) => nextSet.add(code));
         return nextSet;
       });
     }
-    // Ranked by the mode on screen — this sorts the table the operator is looking at, and the other half is ranked when they
-    // flip to it (a fill there re-ranks from its own numbers).
+    // Ranked by the whole shortfall, biggest first — pick and order together are what the row needs.
     setManualOrder(
-      [...filled[mode]].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
+      [...need].sort((a, b) => (b.qty - a.qty) || a.code.localeCompare(b.code)).map((f) => f.code),
     );
   }
 
@@ -1319,29 +1294,6 @@ function AmazonOrderContent() {
   function onPickKeep(next: number) {
     setPickKeep(next);
     if (coverageMonths !== null) fillCoverage(coverageMonths, next);
-  }
-
-  // MODE SWITCH — Order <-> Pick. The baskets themselves are untouched (that's the whole point of a mode: flip over, work the
-  // other side, flip back and find the first exactly as it was). What DOES get dropped is everything that describes the basket
-  // you're leaving rather than the rows: Load basket is a snapshot of the other basket's membership, so it would open the new mode
-  // onto a list filtered by a set of codes that has nothing to do with it. Confirm states drop too — a half-opened confirm belongs
-  // to the mode that raised it.
-  //
-  // THE ROWS THEMSELVES DO NOT MOVE (owner, 2026-09-03). A flip is a change of column, not of list — an operator working down the
-  // table has to find the same row in the same place on the other side. The only two things that would otherwise shuffle it are
-  // the quantity-driven sorts: a fill-ranked `manualOrder` ranks quantities the new column doesn't have, and sorting BY the Order
-  // column reads the live basket, which is the half we're leaving. Both are frozen by snapshotting the order on screen into
-  // `manualOrder` — the same snapshot gesture the Order header and a coverage fill already use, so editing after the flip doesn't
-  // reorder either. Any other sort is a row-field sort and lands identically in both modes, so it's left alone.
-  function switchMode(next: BasketMode) {
-    if (next === mode) return;
-    setMode(next);
-    if (manualOrder !== null || sortKey === 'order_qty') setManualOrder(sorted.map((r) => r.code));
-    setOrdersOnly(false);
-    setBasketSnapshot(null);
-    setConfirmingOrder(false);
-    setConfirmingClear(false);
-    setOrderError(null);
   }
 
   // Single-row X. Like the bulk Cut, it finishes with nothing selected (owner, 2026-08-27) — whether the X landed on the blue row
@@ -1379,7 +1331,7 @@ function AmazonOrderContent() {
     if (!res.success) return res.error || 'Couldn’t mark it';
     const marked = new Set(groupids);
     const codes = new Set(rows.filter((r) => marked.has(r.groupid)).map((r) => r.code));
-    setQtyByMode((prev) => {
+    setQtyByHalf((prev) => {
       if (!Object.keys(prev.order).some((c) => codes.has(c))) return prev;
       const order = { ...prev.order };
       codes.forEach((c) => { delete order[c]; });
@@ -1405,14 +1357,10 @@ function AmazonOrderContent() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   function clearBasket() {
     setConfirmingClear(false);
-    // BOTH baskets, not just the one on screen. A rate fill writes the pair (fillCoverage), so emptying one alone would leave the
-    // other half of the same plan sitting in the mode you're not looking at — an operator who clears out to start over would flip
-    // over later and find a full column they thought they'd binned. This is the deliberate, confirmed "start again" action, so it
-    // starts the whole thing again.
-    setQtyByMode({ order: {}, pick: {} });
-    // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's and both modes',
-    // since a fill lit both.
-    setCoverageByView(NO_COVERAGE_BOTH);
+    // BOTH halves — a rate fill writes the pair (fillCoverage), and this is the deliberate, confirmed "start again" action.
+    setQtyByHalf({ order: {}, pick: {} });
+    // The rate highlights and the fill-ranked sort all describe a basket that no longer exists — every view's.
+    setCoverageByView(NO_COVERAGE);
     clearManualOrder();
     // Load basket would otherwise leave the operator staring at an empty list, since everything it was showing just went — drop
     // back to the unfiltered view rather than an empty one that reads like a bug.
@@ -1421,31 +1369,57 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
-  // ON SCREEN / TOTAL — the visible subset of the basket half being looked at, so the send button can show "18 of 24" when 6 of
-  // the basket's 24 units are filtered or cut away (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all
-  // here or mostly hidden elsewhere). basketTargets itself deliberately reaches off-screen — a value typed before a filter/cut
-  // shouldn't silently drop out of the real submission — so this is display-only and must never gate what gets sent.
-  const basketOnScreen = useMemo(() => {
-    const visibleCodes = new Set(visible.map((r) => r.code));
-    return basketTargets.filter((t) => visibleCodes.has(t.code));
-  }, [basketTargets, visible]);
+  // ON SCREEN / TOTAL — the visible subset of each half, so the send button can show "18 of 24" when 6 of the half's 24 units are
+  // filtered or cut away (owner, 2026-08-20 — the flat count alone didn't say whether the basket was all here or mostly hidden
+  // elsewhere). The targets themselves deliberately reach off-screen — a value typed before a filter/cut shouldn't silently drop
+  // out of the real submission — so this is display-only and must never gate what gets sent.
+  const visibleCodeSet = useMemo(() => new Set(visible.map((r) => r.code)), [visible]);
+  const orderOnScreen = useMemo(() => orderTargets.filter((t) => visibleCodeSet.has(t.code)), [orderTargets, visibleCodeSet]);
   // UNITS, not SKUs (owner, 2026-09-03). A SKU count answers "how many lines am I about to write", which nobody is asking at the
   // point of pressing the button — two SKUs of 6 each is a very different commitment from two SKUs of 1.
-  const basketOnScreenUnits = useMemo(() => basketOnScreen.reduce((sum, t) => sum + t.qty, 0), [basketOnScreen]);
+  const orderOnScreenUnits = useMemo(() => orderOnScreen.reduce((sum, t) => sum + t.qty, 0), [orderOnScreen]);
+  const pickOnScreenUnits = useMemo(
+    () => pickTargets.reduce((sum, t) => sum + (visibleCodeSet.has(t.code) ? t.qty : 0), 0),
+    [pickTargets, visibleCodeSet],
+  );
 
-  // BASKET COST — total spend of the ON-SCREEN portion of the basket only (owner, 2026-08-20 — "the cost should only be for
-  // what's on the screen") rather than the whole basket — so it is deliberately NOT the cost of everything the button will send.
+  // CLEAR ORDER / CLEAR PICK (owner, 2026-10-09) — empties ONE half for the rows on screen, off-screen rows untouched. Any box
+  // with something in it counts, typed junk included, so the button can always tidy what it's showing.
+  const halfOnScreen = useMemo(() => ({
+    order: visible.some((r) => qtyByHalf.order[r.code]),
+    pick: visible.some((r) => qtyByHalf.pick[r.code]),
+  }), [visible, qtyByHalf]);
+  function clearHalfOnScreen(half: BasketHalf) {
+    const other: BasketHalf = half === 'order' ? 'pick' : 'order';
+    setQtyByHalf((prev) => {
+      const next = { ...prev[half] };
+      for (const code of visibleCodeSet) delete next[code];
+      return { ...prev, [half]: next };
+    });
+    // The lit rate described a fill of BOTH halves for this view; with one half gone it no longer does, so it goes out — and a
+    // tap on it then refills both rather than clearing what's left.
+    setCoverageForView(null);
+    // A bulk basket edit, so Load basket's snapshot moves with it: a row on screen with nothing left in the other half drops out.
+    if (ordersOnly) {
+      setBasketSnapshot((prev) => new Set([...(prev ?? [])].filter(
+        (c) => !visibleCodeSet.has(c) || (Number(qtyByHalf[other][c]) || 0) > 0,
+      )));
+    }
+  }
+
+  // BASKET COST — total spend of the ON-SCREEN portion of the ORDER half only (owner, 2026-08-20 — "the cost should only be for
+  // what's on the screen"), so it is deliberately NOT the cost of everything the button will send. A pick spends nothing.
   // cost = skusummary.cost (CLAUDE.md: never skumap.cost) — some SKUs carry no numeric cost, so those units are flagged as unpriced rather than silently free.
   const basketCost = useMemo(() => {
     let total = 0;
     let unpriced = 0;
-    for (const t of basketOnScreen) {
+    for (const t of orderOnScreen) {
       const row = rowByCode.get(t.code);
       if (row?.cost === null || row?.cost === undefined) { unpriced += t.qty; continue; }
       total += t.qty * row.cost;
     }
     return { total, unpriced };
-  }, [basketOnScreen, rowByCode]);
+  }, [orderOnScreen, rowByCode]);
 
   // Keyboard movement over the visible rows. Keys are the VISIBLE rows only, so a cut row can never be arrowed onto and every move
   // lands on something on screen.
@@ -1552,6 +1526,19 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
+  // CUT 0 LOCAL (owner, 2026-10-09): one press cuts every row on screen with nothing on the shelf to pick — the rows whose Pick
+  // box nothingToPick disables. A deliberate press, for working the picks, never automatic: a rate fill works over the rows on
+  // screen, so a fill AFTER this press leaves their Order half alone, exactly as any other cut does. Reset brings them back.
+  const noLocalCodes = useMemo(
+    () => visible.filter((r) => nothingToPick(r, qtyByHalf.pick[r.code])).map((r) => r.code),
+    [visible, qtyByHalf],
+  );
+  function cutNoLocal() {
+    if (noLocalCodes.length === 0) return;
+    setCut((prev) => new Set([...prev, ...noLocalCodes]));
+    deselectAll();
+  }
+
   // CAN'T GET FROM THE SELECTION (owner, 2026-09-27 — "am I not able to set Can't get from this screen?": the detail row alone was
   // too hidden). The button beside Cut acts on the STYLES of the selected rows — select the way you select for Cut — because the mark
   // is per style: three sizes of one style selected is one style marked. If every one of them is already marked it offers Release
@@ -1580,26 +1567,31 @@ function AmazonOrderContent() {
     deselectAll();
   }
 
-  // Order box: Up/Down walks rows and keeps focus in the box (see the header comment for why this needs its own handler rather
-  // than relying on useListCursor, which leaves focused inputs alone everywhere else).
+  // Order / Pick box: Up/Down walks rows and keeps focus in the SAME column (see the header comment for why this needs its own
+  // handler rather than relying on useListCursor, which leaves focused inputs alone everywhere else). Keyed `${half}:${code}`.
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
-  function setInputRef(code: string) {
+  function setInputRef(half: BasketHalf, code: string) {
+    const key = `${half}:${code}`;
     return (el: HTMLInputElement | null) => {
-      if (el) inputRefs.current.set(code, el); else inputRefs.current.delete(code);
+      if (el) inputRefs.current.set(key, el); else inputRefs.current.delete(key);
     };
   }
-  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, code: string) {
+  function onEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, half: BasketHalf, code: string) {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     const i = cursorKeys.indexOf(code);
     if (i < 0) return;
-    const nextI = e.key === 'ArrowUp' ? Math.max(i - 1, 0) : Math.min(i + 1, cursorKeys.length - 1);
-    const nextCode = cursorKeys[nextI];
-    if (nextCode === code) return; // already at an end — leave the caret alone rather than eat the keystroke for nothing
+    const step = e.key === 'ArrowUp' ? -1 : 1;
+    // Skips rows whose box in this column is disabled (Birkenstock; a Pick box with 0 local) — focus can't land on those, so
+    // stopping there would strand the caret in the box being left.
+    let nextI = i + step;
+    while (nextI >= 0 && nextI < cursorKeys.length && inputRefs.current.get(`${half}:${cursorKeys[nextI]}`)?.disabled) nextI += step;
+    if (nextI < 0 || nextI >= cursorKeys.length) return; // already at an end — leave the caret alone rather than eat the keystroke
     e.preventDefault();
+    const nextCode = cursorKeys[nextI];
     // Moves the keyboard position only — typing never changes the selection (see CLICK, SELECT, EXPAND in the header). The row
     // being typed in is tinted by its own focus-within instead.
     cursor.setCursor(nextCode);
-    const nextInput = inputRefs.current.get(nextCode);
+    const nextInput = inputRefs.current.get(`${half}:${nextCode}`);
     nextInput?.focus();
     nextInput?.select();
   }
@@ -1819,33 +1811,12 @@ function AmazonOrderContent() {
           </div>
         </div>
 
-        {/* ROW 2 — FILL, then the state of what you've built, then SEND: the rest of the loop, reading left to right. The rate
-            strip used to sit alone on its own divided row as if it were unrelated furniture, when it's really the second half of
-            the core gesture (narrow the list in row 1, then fill what's left). Since 2026-09-27 the selection actions (Can't get,
-            Cut) sit after the fill controls and the row count has moved up to row 1 — see PANEL LAYOUT in the header. */}
+        {/* ROW 2 — FILL, then act on the rows. The rate strip used to sit alone on its own divided row as if it were unrelated
+            furniture, when it's really the second half of the core gesture (narrow the list in row 1, then fill what's left).
+            Since 2026-09-27 the selection actions (Can't get, Cut) sit after the fill controls and the row count has moved up to
+            row 1; since 2026-10-09 the basket actions have row 3 — see PANEL LAYOUT in the header. */}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
-          {/* MODE — Order / Pick. First in the row because it governs everything to its right: the rate buttons, the keep rate and
-              the column they all write into mean something different depending on which of these is lit. Same segmented shell as
-              the presets and the rate strip (they're all "pick one"), but deliberately NOT the brand fill those use — a preset is
-              a filter over the same job, this changes what the job IS, and if it wore the same blue as Winners it would read as a
-              fourth preset. Slate-800 says "this is the mode you're in" without joining that family or borrowing emerald, which is
-              reserved for the write. */}
-          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
-            {BASKET_MODES.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                onClick={() => switchMode(m.key)}
-                aria-pressed={mode === m.key}
-                className={
-                  'rounded px-2.5 py-1 text-sm font-medium ' +
-                  (mode === m.key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')
-                }
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {/* The Order | Pick mode switch that led this row went 2026-10-09 — both columns are on screen now (see ORDER AND PICK). */}
 
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             {COVERAGE_OPTIONS.map((months) => (
@@ -1916,6 +1887,37 @@ function AmazonOrderContent() {
               <XMarkIcon className="h-4 w-4" />
               Cut
             </button>
+            <button
+              type="button"
+              onClick={cutNoLocal}
+              disabled={noLocalCodes.length === 0}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <XMarkIcon className="h-4 w-4" />
+              0 local
+            </button>
+          </div>
+        </div>
+
+        {/* ROW 3 — THE BASKET (2026-10-09). With Order and Pick side by side row 2 no longer fitted, and the basket actions
+            wrapped onto a stray line of their own; this gives that line a job. Left: clear ONE half for the rows on screen. Right:
+            Load basket, Send, Clear basket (both halves, every row). */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+          {/* CLEAR ORDER / CLEAR PICK — empties that column for the rows ON SCREEN only (owner, 2026-10-09), the half-sized
+              version of a rate re-tap (which clears both). No confirm, same as the re-tap: it's scoped to what you can see. */}
+          <div className="flex items-center gap-2">
+            {(['order', 'pick'] as const).map((half) => (
+              <button
+                key={half}
+                type="button"
+                onClick={() => clearHalfOnScreen(half)}
+                disabled={ordering || !halfOnScreen[half]}
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+              >
+                <XMarkIcon className="h-4 w-4" />
+                {half === 'order' ? 'Clear order' : 'Clear pick'}
+              </button>
+            ))}
           </div>
 
           {/* BASKET ACTIONS — the two things you can do with what you've built, anchored right as a pair: send it, or throw it
@@ -1956,8 +1958,8 @@ function AmazonOrderContent() {
                 The only SOLID button on the screen. Everything else is a bordered or tinted control of equal weight, which left the
                 one irreversible action looking like just another view toggle; a single filled control spends the page's whole colour
                 budget in the one place it's earned. The LABEL is the action, not the noun: "basket" is the generic name for what
-                you've built up (the "Load basket" preset, the Clear bin, this button's own count), while the COLUMN is named for
-                the mode — Order or Pick. Calling the write "Basket" too gave the one irreversible action the same word as two
+                you've built up (the "Load basket" preset, the Clear bin, this button's own count), while the COLUMNS are named
+                for their halves — Order and Pick. Calling the write "Basket" too gave the one irreversible action the same word as two
                 harmless things. The same verb now carries through the confirm ("Send … to Order Status?" / "Send"), the progress
                 ("Sending 3/5…") and the result ("Sent 5 SKUs"). */}
             {/* PICK NOW WRITES TOO (owner, 2026-09-02), via /amz-pick-allocate — it flags that many free shelf rows allocated='amz',
@@ -1965,9 +1967,8 @@ function AmazonOrderContent() {
                 confirm, same per-SKU loop; only the destination and the wording change. Worth knowing at the point of pressing it:
                 a pick is a REAL COMMITMENT OF PHYSICAL STOCK, not more scratchpad — orderSync phase E only allocates 'unallocated'
                 rows, so a unit flagged for Amazon is a unit a Shopify customer order can no longer be picked from. That is what the
-                Pick keep rate is protecting, and why the confirm states units rather than just SKUs — and why, now that one press
-                sends both halves (owner, 2026-09-03), the confirm and the button's own second line both name the half you can't
-                currently see. A button that writes a basket its label never mentioned is the one thing this control must not do. */}
+                Pick keep rate is protecting, and why the confirm states units rather than just SKUs — and why, since one press
+                sends both halves (owner, 2026-09-03), the confirm and the button's own second line both name each half. */}
             {!confirmingOrder ? (
               <button
                 type="button"
@@ -1982,27 +1983,23 @@ function AmazonOrderContent() {
                       ? `Sending ${orderProgress.done}/${orderProgress.total}…`
                       : 'Confirm Basket'}
                   </span>
-                  {/* Second line: "18 of 24 units · £412.50 · +9 to pick". Suppressed while the button is disabled (nothing in
-                      either basket) and while a send is in flight, where the progress count above is the only number that matters.
+                  {/* Second line: "Order 18 of 24 · £412.50 · Pick 12 of 12" — each half that holds anything, Order first as
+                      the columns are. Suppressed while the button is disabled (nothing in either half) and while a send is in
+                      flight, where the progress count above is the only number that matters.
 
                       THE FRACTION STAYS, THE WORDS "ON SCREEN" DON'T (owner, 2026-09-03 — "still do 18 out of 20"). The gap between
-                      the two numbers is the whole point of it: it says whether the basket is all here in front of you or mostly
+                      the two numbers is the whole point of it: it says whether the half is all here in front of you or mostly
                       filtered/cut away elsewhere, which matters precisely because the send ignores the filter and writes all 24. The
                       two words were spelling out what the shape "18 of 24" already says, on the widest control in the row.
                       The cost is ORDER-only — it's what the basket will cost to BUY IN, and a pick spends nothing, that stock is
-                      already paid for and on the shelf — and it covers on-screen rows only, which the tooltip spells out.
-                      The other basket is a flat unit count with no fraction of its own: "on screen" means nothing for rows in a
-                      column that isn't currently rendered. It's here because the button sends that half too, and a button that
-                      writes a basket its label never mentioned is the one thing this control must not be. */}
+                      already paid for and on the shelf — and it covers on-screen rows only. */}
                   {!ordering && sendTargets.length > 0 && (
-                    <span className="text-xs font-normal text-emerald-100">
-                      {basketTotalUnits > 0
-                        ? <>{basketOnScreenUnits} of {basketTotalUnits} unit{basketTotalUnits === 1 ? '' : 's'}</>
-                        : <>nothing in {mode === 'pick' ? 'Pick' : 'Order'}</>}
-                      {mode === 'order' && basketCost.total > 0 && ` · ${money(basketCost.total)}`}
-                      {mode === 'order' && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
-                      {(mode === 'pick' ? orderUnits : pickUnits) > 0
-                        && ` · +${mode === 'pick' ? orderUnits : pickUnits} to ${mode === 'pick' ? 'order' : 'pick'}`}
+                    <span className="whitespace-nowrap text-xs font-normal text-emerald-100">
+                      {orderUnits > 0 && <>Order {orderOnScreenUnits} of {orderUnits}</>}
+                      {orderUnits > 0 && basketCost.total > 0 && ` · ${money(basketCost.total)}`}
+                      {orderUnits > 0 && basketCost.unpriced > 0 && ` +${basketCost.unpriced} unpriced`}
+                      {orderUnits > 0 && pickUnits > 0 && ' · '}
+                      {pickUnits > 0 && <>Pick {pickOnScreenUnits} of {pickUnits}</>}
                     </span>
                   )}
                 </span>
@@ -2011,9 +2008,8 @@ function AmazonOrderContent() {
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 {/* Every destination that's actually going to be written is named, because that's the one thing that differs
                     between the two writes and it's what makes the sentence checkable: Order Status is a queue you can still edit,
-                    a pick commits stock off the Shopify shelf. Since the send covers BOTH baskets (owner, 2026-09-03), a plan with
-                    both halves filled reads as one sentence with two clauses rather than the mode's half alone — the whole reason
-                    to name a destination is lost if the sentence omits the half you can't currently see. */}
+                    a pick commits stock off the Shopify shelf. Since the send covers BOTH halves (owner, 2026-09-03), a plan with
+                    both filled reads as one sentence with two clauses. */}
                 <span className="text-slate-700">
                   Confirm
                   {orderUnits > 0 && ` ${orderUnits} unit${orderUnits === 1 ? '' : 's'} to Order Status`}
@@ -2116,20 +2112,26 @@ function AmazonOrderContent() {
               className="sticky z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"
             >
               <tr>
-                {/* Order sits right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/units_7d
-                    (6 columns), then the scratchpad, then unit_profit/profit_30d. Barcode/Amazon SKU/Brand (COLUMNS[8..10])
-                    are looked up rarely enough that they're no longer columns at all — click the caret next to a SKU to reveal
-                    them inline instead (see the `expanded` detail row in the body below) — so only COLUMNS.slice(6, 8) renders
-                    here now. */}
+                {/* Order and Pick sit right after Sold (7d) — COLUMNS[0..5] is code/local_stock/fba_live/fba_total/units_30d/
+                    units_7d (6 columns), then the two scratchpads, then unit_profit/profit_30d. Barcode/Amazon SKU/Brand
+                    (COLUMNS[8..10]) are looked up rarely enough that they're no longer columns at all — click the caret next to a
+                    SKU to reveal them inline instead (see the `expanded` detail row in the body below) — so only
+                    COLUMNS.slice(6, 8) renders here now. */}
                 {COLUMNS.slice(0, 6).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
-                {/* The one column that changes with the mode — see BasketMode. Everything else in the table is the same either way. */}
                 {renderColumnHeader(
                   {
-                    key: 'order_qty',
-                    label: mode === 'pick' ? 'Pick' : 'Order',
-                    title: mode === 'pick'
-                      ? 'Units to send from the local shelf to Amazon — a scratchpad until Confirm Basket, which flags them on the shelf and puts them on the Pick screen to be gathered'
-                      : 'Units to buy in from the supplier — planning scratchpad, not saved server-side, this browser only',
+                    key: HALF_SORT.order,
+                    label: 'Order',
+                    title: 'Units to buy in from the supplier — planning scratchpad, not saved server-side, this browser only',
+                    align: 'right',
+                  },
+                  sortKey, sortDir, onSort,
+                )}
+                {renderColumnHeader(
+                  {
+                    key: HALF_SORT.pick,
+                    label: 'Pick',
+                    title: 'Units to send from the local shelf to Amazon — a scratchpad until Confirm Basket, which flags them on the shelf and puts them on the Pick screen to be gathered',
                     align: 'right',
                   },
                   sortKey, sortDir, onSort,
@@ -2150,7 +2152,7 @@ function AmazonOrderContent() {
                     'group cursor-pointer select-none ' +
                     // The one highlight on the screen. A step up from the old brand-50 because it's now carrying the job the
                     // hairline cursor used to share — you have to be able to find it after looking away, not just notice it.
-                    // focus-within = the row whose Order box is being typed in, which no longer selects it (see the header).
+                    // focus-within = the row whose Order or Pick box is being typed in, which no longer selects it (see the header).
                     (selected.has(r.code) ? 'bg-brand-100' : 'hover:bg-slate-50 focus-within:bg-slate-50')
                     // A size Can't get would hide, on screen only because its chip's X was pressed — dimmed, as on Shopify Order.
                     + (supplyHidden(r) ? ' opacity-50' : '')
@@ -2204,30 +2206,40 @@ function AmazonOrderContent() {
                   </td>
                   <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
-                  <td className="whitespace-nowrap border-l border-slate-100 px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      ref={setInputRef(r.code)}
-                      value={qty[r.code] || ''}
-                      onChange={(e) => setQty((prev) => ({ ...prev, [r.code]: e.target.value }))}
-                      onKeyDown={(e) => onEditKeyDown(e, r.code)}
-                      onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
-                      onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
-                      inputMode="numeric"
-                      style={{ scrollMarginTop: stickyOffset }}
-                      /* Birkenstock's box is disabled in BOTH modes: it never goes to Amazon (owner, 2026-08-28) — it's bought
-                         separately, in bulk, six months ahead (CLAUDE.md) and sold elsewhere — so neither an order nor a pick for
-                         it means anything on this screen. */
-                      disabled={isBirkenstock(r)}
-                      placeholder="—"
-                      title={isBirkenstock(r) ? 'Birkenstock — not sold on Amazon' : undefined}
-                      className={
-                        'w-16 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 ' +
-                        (isBirkenstock(r)
-                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300'
-                          : 'border-slate-200 focus:border-brand-500 focus:ring-brand-500')
-                      }
-                    />
-                  </td>
+                  {(['order', 'pick'] as const).map((half) => {
+                    const value = qtyByHalf[half][r.code];
+                    /* Birkenstock's boxes are disabled in BOTH halves: it never goes to Amazon (owner, 2026-08-28) — it's bought
+                       separately, in bulk, six months ahead (CLAUDE.md) and sold elsewhere — so neither an order nor a pick for
+                       it means anything on this screen. A Pick box with 0 local is disabled too: nothing on the shelf to pick. */
+                    const off = isBirkenstock(r) || (half === 'pick' && nothingToPick(r, value));
+                    return (
+                      <td
+                        key={half}
+                        className={'whitespace-nowrap px-2 py-1.5' + (half === 'order' ? ' border-l border-slate-100' : '')}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          ref={setInputRef(half, r.code)}
+                          value={value || ''}
+                          onChange={(e) => setHalfQty(half, r.code, e.target.value)}
+                          onKeyDown={(e) => onEditKeyDown(e, half, r.code)}
+                          onFocus={() => { cursor.setCursor(r.code); setFocusedOrderCode(r.code); }}
+                          onBlur={() => setFocusedOrderCode((c) => (c === r.code ? null : c))}
+                          inputMode="numeric"
+                          style={{ scrollMarginTop: stickyOffset }}
+                          disabled={off}
+                          placeholder="—"
+                          title={isBirkenstock(r) ? 'Birkenstock — not sold on Amazon' : undefined}
+                          className={
+                            'w-16 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 ' +
+                            (off
+                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300'
+                              : 'border-slate-200 focus:border-brand-500 focus:ring-brand-500')
+                          }
+                        />
+                      </td>
+                    );
+                  })}
                   <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{money(r.unit_profit)}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
                   <td className="whitespace-nowrap px-2 py-1.5">
@@ -2243,12 +2255,12 @@ function AmazonOrderContent() {
                 </tr>
                 {/* Detail row — thumbnail, price control, RRP/last sold/brand, barcode/Amazon SKU, toggled by the caret next to the SKU above (see toggleExpanded). Not a
                     real column anymore (rarely needed, and was most of why the table needed side-scrolling); colSpan covers every
-                    column: 6 (code..units_7d) + 1 (Order) + 2 (unit_profit, profit_30d) + 1 (Cut) = 10. Each value gets its own
+                    column: 6 (code..units_7d) + 2 (Order, Pick) + 2 (unit_profit, profit_30d) + 1 (Cut) = 11. Each value gets its own
                     CopyButton (same component/pattern as the style drill-down's groupid) rather than making the whole line
                     clickable — a bare click target you can't see the boundary of invites mis-clicks on a line with three values. */}
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
-                    <td colSpan={10} className="px-3 py-2">
+                    <td colSpan={11} className="px-3 py-2">
                       {/* Five blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
                           went for, the codes you copy, and Can't get. Label beside value at text-sm (owner, 2026-09-28: "easier to
                           read") rather than one run-on xs line. */}
