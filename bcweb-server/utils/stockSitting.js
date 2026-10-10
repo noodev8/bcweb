@@ -40,7 +40,12 @@ SALES are `sales` rows with qty > 0 on any channel — Shopify, Amazon, the shop
 Exports:
   SITTING_DAYS
   loadStockSplit() -> { days, new_days, total_units, selling_units, new_units, sitting_units,
-                        styles: [{ groupid, title, brand, units, last_sale, idle_days }] }   // sitting only, most pairs first
+                        styles: [{ groupid, title, brand, units, last_sale, idle_days, cut }] }   // sitting only, most pairs first
+
+CUT (owner, 2026-10-11): skusummary.sitting_cut_at set = the style was cut from the working set on Selling vs Sitting. It is STILL
+         sitting — it stays in `styles` and in every count here (the box is a fact). The ACTIONS skip it: the clearance tag
+         (utils/clearanceTag.js), the Repricing list (routes/pricing-sitting-list.js) and the Google Ads Sitting chip filter on `cut`.
+         Written by POST /stock-sitting-cut. migrations/20261011_sitting_cut.sql has the why.
 =======================================================================================================================================
 */
 
@@ -78,6 +83,7 @@ const SPLIT_SQL = `
          to_char(s.d, 'YYYY-MM-DD') AS last_sale,
          CURRENT_DATE - s.d AS idle_days,
          (s.d IS NOT NULL AND s.d >= CURRENT_DATE - $1::int) AS selling,
+         ss.sitting_cut_at IS NOT NULL AS cut,
          COALESCE(ss.created_at >= now() - make_interval(days => $1::int), false) AS is_new
   FROM held h
   LEFT JOIN last_sale s   ON s.groupid  = h.groupid
@@ -105,6 +111,7 @@ async function loadStockSplit() {
       units,
       last_sale: x.last_sale,
       idle_days: x.idle_days === null ? null : Number(x.idle_days),
+      cut: x.cut === true,
     });
   }
 

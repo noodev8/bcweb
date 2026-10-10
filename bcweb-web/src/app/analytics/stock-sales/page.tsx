@@ -48,8 +48,12 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); "Update collection" syncs the Shopify `clearance` tag to it (one click, see SittingListBody); pairs are one number, no
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
+         Tick rows and "Cut" them to narrow the working set (2026-10-11, see the CUT note above SittingList): still sitting, but
+         Update collection, Reprice and the Google Ads chip skip them until released.
 
-Guarded by AppShell. Consumes GET /analytics-stock-sitting, and GET /analytics-stock-sales only while STOCK_SALES_FLOW is on.
+Guarded by AppShell. Consumes GET /analytics-stock-sitting, POST /stock-sitting-cut, and GET /analytics-stock-sales only while
+STOCK_SALES_FLOW is on.
+
 =======================================================================================================================================
 */
 
@@ -60,7 +64,7 @@ import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { STOCK_SALES_FLOW } from '@/lib/features';
 import {
-  getStockSales, getStockSitting, applyClearanceTags, StockSalesPeriod, StockSittingData,
+  getStockSales, getStockSitting, applyClearanceTags, setSittingCut, StockSalesPeriod, StockSittingData,
 } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -97,7 +101,17 @@ export default function StockSalesPage() {
 
       {sq.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sq.error.message}</div>}
       {sit && <StockSplit data={sit} />}
-      {sit && <SittingList data={sit} />}
+      {sit && (
+        <SittingList
+          data={sit}
+          // After a cut / release, write the new flags straight into the cache (no refetch — membership and counts don't change).
+          // Google Ads reads the same SWR key, so its Sitting chip follows without a reload.
+          onCutChange={(ids, cut) => {
+            const set = new Set(ids);
+            sq.mutate({ ...sit, styles: sit.styles.map((s) => (set.has(s.groupid) ? { ...s, cut } : s)) }, { revalidate: false });
+          }}
+        />
+      )}
 
       {/* Background: how stock and sales flow through the year — HIDDEN while STOCK_SALES_FLOW is false (lib/features.ts). */}
       {d && d.months.length > 0 && <div className="mt-8"><Chart months={d.months} /></div>}
@@ -355,15 +369,22 @@ const REPRICE_HREF =
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
 // wait on Days (Infinity) rather than sinking as blanks; on Last sale they sink ("never" has no date).
 // useTableSort reads useSearchParams, so the list renders inside a Suspense boundary (Next's build requires one).
-function SittingList({ data }: { data: StockSittingData }) {
+// CUT (owner, 2026-10-11: "can I cut some items from the rows so that I update collection and price to a set few?"). Tick rows and
+// "Cut" them: they drop to a greyed section at the foot of the table with a Release link. A cut style is STILL SITTING — it stays in the
+// box and the header count — but Update collection, Reprice and the Google Ads chip skip it. Saved team-wide on skusummary until
+// released (POST /stock-sitting-cut; the owner chose that over "this visit only", because Update collection would otherwise re-tag a
+// cut style on the next press). Selection is local and clears after each cut.
+type CutChange = (ids: string[], cut: boolean) => void;
+
+function SittingList({ data, onCutChange }: { data: StockSittingData; onCutChange: CutChange }) {
   return (
     <Suspense fallback={null}>
-      <SittingListBody data={data} />
+      <SittingListBody data={data} onCutChange={onCutChange} />
     </Suspense>
   );
 }
 
-function SittingListBody({ data }: { data: StockSittingData }) {
+function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutChange: CutChange }) {
   const { sorted, sort, onSort } = useTableSort(data.styles, {
     groupid: (s) => s.groupid,
     brand: (s) => s.brand,
@@ -392,6 +413,28 @@ function SittingListBody({ data }: { data: StockSittingData }) {
   // This page's own URL WITH the current sort, so the drill's ← Back lands on the list as it was left.
   const self = encodeURIComponent(`/analytics/stock-sales${sort ? `?sort=${sort.key}.${sort.dir}` : ''}`);
 
+  // CUT — see the note above SittingList. The working set leads in the chosen sort; cut styles follow, in the same sort.
+  const active = sorted.filter((s) => !s.cut);
+  const cutRows = sorted.filter((s) => s.cut);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [cutBusy, setCutBusy] = useState(false);
+  const [cutErr, setCutErr] = useState<string | null>(null);
+  const pickedActive = active.filter((s) => picked.has(s.groupid)).map((s) => s.groupid);
+  const allPicked = active.length > 0 && pickedActive.length === active.length;
+  function togglePick(id: string) {
+    setPicked((p) => { const nx = new Set(p); if (nx.has(id)) nx.delete(id); else nx.add(id); return nx; });
+  }
+  async function changeCut(ids: string[], cut: boolean) {
+    if (ids.length === 0) return;
+    setCutBusy(true); setCutErr(null);
+    const r = await setSittingCut(ids, cut);
+    setCutBusy(false);
+    if (!r.success) { setCutErr(r.error || 'Cut failed'); return; }
+    onCutChange(ids, cut);
+    setPicked(new Set());
+    setSyncMsg(null);   // an earlier +N −N no longer describes what Update collection would do
+  }
+
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-100 px-5 py-3">
@@ -399,15 +442,23 @@ function SittingListBody({ data }: { data: StockSittingData }) {
           Sitting — no sale in {data.days} days
           <span className="font-normal text-slate-500">
             {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
+            {cutRows.length > 0 && <>{' · '}{cutRows.length} cut</>}
           </span>
         </div>
         <div className="flex items-center gap-5">
+          {cutErr && <span className="text-sm text-red-700">{cutErr}</span>}
+          {pickedActive.length > 0 && (
+            <button type="button" onClick={() => changeCut(pickedActive, true)} disabled={cutBusy}
+              className="text-sm font-medium text-slate-900 hover:underline disabled:opacity-50">
+              {cutBusy ? 'Cutting…' : `Cut ${pickedActive.length}`}
+            </button>
+          )}
           {syncMsg && <span className={`text-sm ${syncMsg.bad ? 'text-red-700' : 'text-slate-500'}`}>{syncMsg.text}</span>}
           <button type="button" onClick={updateCollection} disabled={syncing}
             className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50">
             {syncing ? 'Updating…' : 'Update collection'}
           </button>
-          {data.styles.length > 0 && (
+          {active.length > 0 && (
             <>
               <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Selling vs Sitting')}`}
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
@@ -427,6 +478,11 @@ function SittingListBody({ data }: { data: StockSittingData }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                <th className="w-8 py-2 pl-4 pr-0">
+                  <input type="checkbox" aria-label="Select all" checked={allPicked} disabled={active.length === 0 || cutBusy}
+                    onChange={() => setPicked(allPicked ? new Set() : new Set(active.map((s) => s.groupid)))}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
+                </th>
                 <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
                 <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
                 <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
@@ -435,8 +491,13 @@ function SittingListBody({ data }: { data: StockSittingData }) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((s) => (
+              {active.map((s) => (
                 <tr key={s.groupid} className="border-b border-slate-100 text-slate-700 last:border-0">
+                  <td className="w-8 py-2 pl-4 pr-0">
+                    <input type="checkbox" aria-label={`Select ${s.groupid}`} checked={picked.has(s.groupid)} disabled={cutBusy}
+                      onChange={() => togglePick(s.groupid)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
+                  </td>
                   <td className="px-4 py-2">
                     <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
                       className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
@@ -447,6 +508,32 @@ function SittingListBody({ data }: { data: StockSittingData }) {
                   <td className="px-4 py-2 text-right tabular-nums">
                     <span className="font-semibold text-slate-900">{n(s.units)}</span>
                   </td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
+                </tr>
+              ))}
+              {cutRows.length > 0 && (
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <td colSpan={6} className="px-4 py-1.5 text-xs font-medium text-slate-500">
+                    Cut — skipped by Update collection, Reprice and Google Ads
+                  </td>
+                </tr>
+              )}
+              {cutRows.map((s) => (
+                <tr key={s.groupid} className="border-b border-slate-100 text-slate-400 last:border-0">
+                  <td className="w-8 py-2 pl-4 pr-0" />
+                  <td className="px-4 py-2">
+                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
+                      className="hover:text-slate-700 hover:underline">
+                      {s.groupid}
+                    </Link>
+                    <button type="button" onClick={() => changeCut([s.groupid], false)} disabled={cutBusy}
+                      className="ml-3 text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50">
+                      Release
+                    </button>
+                  </td>
+                  <td className="px-4 py-2">{s.brand || '—'}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{n(s.units)}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
                 </tr>

@@ -9,7 +9,8 @@ Purpose: Keep the Shopify `clearance` TAG in step with the SITTING list (Reports
 
 THE LIST OWNS THE TAG (owner's choice, 2026-10-10). After a sync, the products tagged `clearance` are EXACTLY the sitting styles that
          are live on Shopify — no more, no less:
-           ADD    = sitting (utils/stockSitting.js), skusummary.shopify = 1, found on Shopify by handle, NOT already tagged
+           ADD    = sitting (utils/stockSitting.js) and NOT cut (2026-10-11), skusummary.shopify = 1, found on Shopify by handle, NOT
+                    already tagged
            REMOVE = tagged `clearance` on Shopify, NOT in that sitting set — INCLUDING anything tagged by hand in Shopify admin (the
                     owner accepted that: hand-tagging `clearance` doesn't survive the next sync). At build time 30 of the 50 tagged
                     products were leftovers from the retired excess list and came off on the first sync.
@@ -76,7 +77,8 @@ async function idsByHandle(handles) {
 
 /** What a sync would do right now. Read-only (Shopify reads + DB reads). */
 async function planSync() {
-  const { styles } = await loadStockSplit();
+  // CUT styles are left out (owner, 2026-10-11): still sitting, but not on the collection — so a cut style that is tagged comes OFF.
+  const styles = (await loadStockSplit()).styles.filter((s) => !s.cut);
   const sittingIds = styles.map((s) => s.groupid);
 
   // Sitting styles that are live on Shopify, with their handle (no handle = can't be on Shopify, reported as missing).

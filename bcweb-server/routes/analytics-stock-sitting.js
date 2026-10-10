@@ -29,7 +29,8 @@ Success Response:
   "styles": [
     { "groupid": "1017722-BEND", "title": "Birkenstock Bend Low Natural", "brand": "Birkenstock",
       "units": 24, "last_sale": "2026-06-02" | null,
-      "idle_days": 130 }               // days since the last sale; null = never sold
+      "idle_days": 130,                // days since the last sale; null = never sold
+      "cut": false }                   // cut from the working set (POST /stock-sitting-cut) — still sitting, skipped by the actions
   ]
 }
 =======================================================================================================================================

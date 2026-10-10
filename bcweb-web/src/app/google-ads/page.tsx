@@ -550,7 +550,8 @@ function GoogleAdsScreen() {
     // Until the sitting data lands the chip matches nothing rather than everything — a flash of the full grid under a "Sitting"
     // chip would invite a selection the chip was meant to prevent.
     if (!sitQ.data) return new Set<string>();
-    return new Set(sitQ.data.styles.map((r) => r.groupid));
+    // CUT styles are left out (owner, 2026-10-11) — the chip is the working set, like Update collection and Reprice.
+    return new Set(sitQ.data.styles.filter((r) => !r.cut).map((r) => r.groupid));
   }, [sitting, sitQ.data]);
 
   // ---- data ---------------------------------------------------------------------------------------------------------------

@@ -1119,6 +1119,7 @@ export interface SittingStyle {
   units: number;             // local + Amazon, one number
   last_sale: string | null;  // YYYY-MM-DD
   idle_days: number | null;  // days since the last sale; null = never sold
+  cut: boolean;              // cut from the working set — still sitting, but Update collection / Reprice / Google Ads chip skip it
 }
 
 // Stock now split three ways that add up to total_units: selling (sold in `days`) | new (unsold, created under `new_days` ago) | sitting.
@@ -1142,8 +1143,17 @@ export function getStockSitting() {
       selling_units: b.selling_units ?? 0,
       new_units: b.new_units ?? 0,
       sitting_units: b.sitting_units ?? 0,
-      styles: b.styles || [],
+      styles: (b.styles || []).map((s: SittingStyle) => ({ ...s, cut: s.cut === true })),
     })
+  );
+}
+
+// Cut sitting styles from the working set (cut=true) or release them (cut=false). Saved team-wide on skusummary until released; the
+// server's clearance tag, Repricing list and the Google Ads chip all skip cut styles. Writes nothing to Shopify.
+export function setSittingCut(groupids: string[], cut: boolean) {
+  return request<{ updated: number }>(
+    { url: '/stock-sitting-cut', method: 'POST', data: { groupids, cut } },
+    (b) => ({ updated: b.updated ?? 0 })
   );
 }
 
