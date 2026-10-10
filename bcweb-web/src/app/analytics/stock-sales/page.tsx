@@ -342,7 +342,10 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 // /pricing-sitting-list reads the same rule), with the bulk bar and the per-style drill. Same tab, Due OFF (most sitting styles carry a
 // review date ahead — 49 of 52 at build time — and Due on would hide them), ← Back returns here.
 // Each GROUPID opens that style's SHOPIFY price drill (/pricing/style), same tab, ← Back returns here with the sort kept — taken off
-// while the owner decided, put back the same day ("Put the link back on groupid to the Shopify Price screen"). Title on hover. Google Ads and collections are the next conversation (the excess-era Google Ads chip is in git: dd28eb4).
+// while the owner decided, put back the same day ("Put the link back on groupid to the Shopify Price screen"). Title on hover.
+// "Google Ads →" opens the Google Ads grid narrowed to these styles by a "Sitting" chip (/google-ads?sitting=1, same tab, ← Back
+// returns here with the sort kept) — owner: "send me to the screen with the list already filtered, for me to choose a campaign if I
+// wanted". Nothing is selected or moved there; see SITTING ARRIVAL in google-ads/page.tsx.
 // -------------------------------------------------------------------------------------------------------------------------------------
 const REPRICE_HREF =
   `/pricing/sitting?by=sitting&pending=1&from=${encodeURIComponent('/analytics/stock-sales')}&back=${encodeURIComponent('Stock vs Sales')}`;
@@ -404,9 +407,15 @@ function SittingListBody({ data }: { data: StockSittingData }) {
             {syncing ? 'Updating…' : 'Update collection'}
           </button>
           {data.styles.length > 0 && (
-            <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
-              Reprice &rarr;
-            </Link>
+            <>
+              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Stock vs Sales')}`}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+                Google Ads &rarr;
+              </Link>
+              <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+                Reprice &rarr;
+              </Link>
+            </>
           )}
         </div>
       </div>

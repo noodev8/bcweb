@@ -54,7 +54,7 @@ import GoogleAdsCampaignPanel from '@/components/GoogleAdsCampaignPanel';
 import GoogleAdsImport from '@/components/GoogleAdsImport';
 import GoogleAdsDrill from '@/components/GoogleAdsDrill';
 import {
-  getGoogleAdsStyles, getGoogleAdsCampaigns, googleAdsAssign,
+  getGoogleAdsStyles, getGoogleAdsCampaigns, googleAdsAssign, getStockSitting,
   GoogleAdsStyleRow, GoogleAdsWindow, GoogleAdsWindowKey,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -120,6 +120,9 @@ interface Criteria {
   // clearing their own ad cost, which is where a "what does good look like, do more of it" pass starts. Styles with NO floor
   // (adFloor null — too little ad data to say) are in NEITHER list, never silently swept into 'above'.
   floorSide: 'below' | 'above' | null;
+  // The SITTING chip (see SITTING ARRIVAL below): the groupids on the Stock vs Sales sitting list, or null when the chip is off.
+  // A set of ids rather than a rule, because the rule lives on the server (utils/stockSitting.js) and the list is what it must match.
+  members: Set<string> | null;
 }
 
 // How far the price sits from the ad floor, in pounds. NEGATIVE = under it (losing money on the click), positive = clear of it.
@@ -154,6 +157,7 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
   // the campaign name arrives shouted (STANDARD). The two name the same thing and must narrow the grid the same way.
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign.toLowerCase() === c.bucket!.toLowerCase());
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
+  if (c.members !== null) out = out.filter((x) => c.members!.has(x.row.groupid));
   for (const f of c.qty) {
     out = out.filter((x) => {
       const v = metricValue(x.row, w, f.metric);
@@ -438,6 +442,28 @@ const GOOGLE_ADS_BACK = encodeURIComponent('/google-ads');
 // list as before. Restoring unconditionally would be the same confusion in the other direction — opening the screen to find it
 // silently narrowed to fifteen styles, with no memory of why.
 const VIEW_KEY = 'bc_googleads_view';
+
+// =====================================================================================================================================
+// SITTING ARRIVAL (owner, 2026-10-10)
+// =====================================================================================================================================
+// Reports → Stock vs Sales links here with ?sitting=1&from=&back= — "send me to the screen with the list already filtered, for me to
+// choose a campaign if I wanted". It becomes a chip ("Sitting · 52") narrowing the grid to the styles on the sitting list (no sale on
+// any channel in 60 days). NOTHING IS PRE-SELECTED OR MOVED: the operator picks rows and a bucket as always.
+//
+// Membership is the list's own: the same GET /analytics-stock-sitting (and SWR key) Stock vs Sales reads, so chip and list agree.
+//
+// THE CHIP IS THE BASE OF THE VIEW, NOT ONE MORE STEP. Every other narrowing stacks on top of it and comes off without disturbing
+// it, and RESET RETURNS TO IT (owner: "Reset keeps the chip") — a refresh would land on the chip too, since ?sitting=1 is in the URL,
+// so this is still "as though we refreshed the screen". Only the chip's own ✕ removes it, and it takes ?sitting= out of the URL with
+// it so that from then on Reset is the plain full-list Reset again. Arriving with ?sitting=1 is a FRESH screen (no ?restore=1), so a
+// saved view from earlier work never mixes into it. The chip, its Reset target and the back link ride in the snapshot, because the
+// return trip from a style's price comes back on /google-ads?restore=1 without the arrival params.
+//
+// Same plumbing as the EXCESS chip it replaces (git dd28eb4 — excess was retired the same day), with one list instead of four bands.
+// A path only, the same rule AppShell applies — never an off-site URL.
+function parseFrom(v: string | null | undefined): string | null {
+  return v && v.startsWith('/') && !v.startsWith('//') ? v : null;
+}
 // What the drill's back arrow returns to. The `?restore=1` is the whole difference from GOOGLE_ADS_BACK above (the two analytics
 // reports keep the plain path: they are read-and-return trips that do not touch this screen's filter).
 const GOOGLE_ADS_RETURN = encodeURIComponent('/google-ads?restore=1');
@@ -460,6 +486,11 @@ interface ViewSnapshot {
   // The style whose price screen this trip was for. Not a selection — see `visited` — but the answer to "which one was I on?",
   // which the scroll position alone does not give on a list of near-identical rows.
   lastStyle: string | null;
+  // SITTING ARRIVAL — optional, so a snapshot saved by an older build still restores.
+  sitting?: boolean;
+  sittingHome?: boolean;
+  backHref?: string | null;
+  backLabel?: string | null;
 }
 
 // Read the snapshot IF this load is a return trip. The snapshot is LEFT IN PLACE: the same trip can be made twice from the same
@@ -499,8 +530,28 @@ function readSnapshot(isReturnTrip: boolean): ViewSnapshot | null {
 function GoogleAdsScreen() {
   // The view we are coming back to, if this is a return trip from a style's price screen. Read ONCE, in a lazy initialiser, so
   // every piece of state below can open on the restored value rather than being corrected by an effect after first paint.
-  const isReturnTrip = useSearchParams().get('restore') === '1';
+  const searchParams = useSearchParams();
+  const isReturnTrip = searchParams.get('restore') === '1';
   const [restored] = useState(() => readSnapshot(isReturnTrip));
+
+  // ---- sitting arrival (see SITTING ARRIVAL above) ------------------------------------------------------------------------
+  // From the URL on arrival, from the snapshot on a return trip. `sittingHome` is what Reset returns to; the chip's ✕ clears both.
+  const [sitting, setSitting] = useState<boolean>(() =>
+    restored ? !!restored.sitting : searchParams.get('sitting') === '1');
+  const [sittingHome, setSittingHome] = useState<boolean>(() =>
+    restored ? !!restored.sittingHome : searchParams.get('sitting') === '1');
+  const [back] = useState(() => (restored
+    ? { href: parseFrom(restored.backHref), label: restored.backLabel || null }
+    : { href: parseFrom(searchParams.get('from')), label: searchParams.get('back') }));
+  // Only fetched while the chip is on. Same call (and SWR key) as Stock vs Sales, so the list and the chip read one answer.
+  const sitQ = useApiQuery(sitting ? 'analytics-stock-sitting' : null, () => getStockSitting());
+  const sittingIds = useMemo(() => {
+    if (!sitting) return null;
+    // Until the sitting data lands the chip matches nothing rather than everything — a flash of the full grid under a "Sitting"
+    // chip would invite a selection the chip was meant to prevent.
+    if (!sitQ.data) return new Set<string>();
+    return new Set(sitQ.data.styles.map((r) => r.groupid));
+  }, [sitting, sitQ.data]);
 
   // ---- data ---------------------------------------------------------------------------------------------------------------
   const stylesQ = useApiQuery('google-ads-styles', getGoogleAdsStyles);
@@ -555,10 +606,11 @@ function GoogleAdsScreen() {
   const indexed = useMemo<IndexedRow[]>(() => rows.map((row) => ({ row, hay: haystack(row) })), [rows]);
 
   const criteria: Criteria = useMemo(
-    () => ({ steps, qty, season, bucket, thin, floorSide }),
-    [steps, qty, season, bucket, thin, floorSide]
+    () => ({ steps, qty, season, bucket, thin, floorSide, members: sittingIds }),
+    [steps, qty, season, bucket, thin, floorSide, sittingIds]
   );
-  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || floorSide !== null || cut.size > 0;
+  const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || floorSide !== null || cut.size > 0
+    || sitting;
 
   const matched = useMemo(
     () => applyCriteria(indexed, criteria, win).map((x) => x.row),
@@ -651,9 +703,10 @@ function GoogleAdsScreen() {
       win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide,
       cut: [...cut], sortKey, sortDir, lastStyle,
       scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
+      sitting, sittingHome, backHref: back.href, backLabel: back.label,
     };
     try { window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(snap)); } catch { /* position only — never worth failing the click */ }
-  }, [win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide, cut, sortKey, sortDir]);
+  }, [win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide, cut, sortKey, sortDir, sitting, sittingHome, back]);
 
   // Put the page back where it was, once there are rows to scroll through — the filters are restored during render, but the height
   // they produce only exists after the grid has painted. One shot: after that the operator owns the scroll position.
@@ -720,8 +773,15 @@ function GoogleAdsScreen() {
     // anywhere near a render — this only runs when the operator presses the button.
     try { window.sessionStorage.removeItem(VIEW_KEY); } catch { /* position only */ }
     const url = new URL(window.location.href);
-    if (url.searchParams.has('restore')) {
+    // With a sitting chip to return to, the URL says so again — a return trip arrives on ?restore=1 alone, and without this a
+    // refresh after Reset would drop the chip that Reset just kept (see SITTING ARRIVAL).
+    if (url.searchParams.has('restore') || (url.searchParams.get('sitting') === '1') !== sittingHome) {
       url.searchParams.delete('restore');
+      if (sittingHome) url.searchParams.set('sitting', '1'); else url.searchParams.delete('sitting');
+      if (sittingHome && back.href && !url.searchParams.has('from')) {
+        url.searchParams.set('from', back.href);
+        if (back.label) url.searchParams.set('back', back.label);
+      }
       window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
     }
     // EVERYTHING THE SCREEN OPENS ON, not just the filters (owner, 2026-09-15: "as though we refreshed the screen"). That means the
@@ -731,14 +791,17 @@ function GoogleAdsScreen() {
     setWin('d30'); setSortKey('kept'); setSortDir('asc'); setVisited(null);
     setSteps([]); setQty([]); setSeason(null); setBucket(null); setBucketSide(null); setThin(false); setFloorSide(null); setCut(new Set());
     setContains(''); setNotContains(''); setDrill(null);
+    // Back to the sitting chip the screen was opened on, if any (owner, 2026-10-10: "Reset keeps the chip") — see SITTING ARRIVAL.
+    setSitting(sittingHome);
     clearSelection();
     stylesQ.refresh();
+    if (sittingHome) sitQ.refresh();
     campaignsQ.refresh();
     // NO FOCUS ON THE SEARCH BOX, AND BACK TO THE TOP. Focusing the Contains input is what made Reset "jump to the middle": the
     // browser scrolls a focused field into view, so pressing a button at the top of the page threw the operator halfway down it. A
     // refreshed screen has nothing focused either, so the two now agree.
     window.scrollTo(0, 0);
-  }, [clearSelection, stylesQ, campaignsQ]);
+  }, [clearSelection, stylesQ, campaignsQ, sitQ, sittingHome, back]);
 
   // THIN SHELF — the one narrowing on this screen that gets a button instead of a typed command (owner, 2026-09-06).
   // It is exactly `SIZES LESS 5` and composes with everything else, so it is not a special case in the filter; it is a shortcut to
@@ -868,7 +931,7 @@ function GoogleAdsScreen() {
     `/analytics/ad-daily?${win === 'd365' ? '' : `days=${days}&`}from=${GOOGLE_ADS_BACK}&back=Google%20Ads`;
 
   return (
-    <AppShell>
+    <AppShell backHref={back.href ?? undefined} backLabel={back.href ? back.label || 'Back' : undefined}>
       {/* ---- Window switch + import ------------------------------------------------------------------------------------ */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* The period, and beside it the way back to a clean screen. */}
@@ -1094,6 +1157,22 @@ function GoogleAdsScreen() {
               <><span className="font-semibold text-slate-800">{rows.length}</span><span className="text-slate-400"> styles</span></>
             )}
           </span>
+          {/* First, because it is the base of the view the rest stack on (see SITTING ARRIVAL). Its ✕ is the only thing that removes it:
+              it clears Reset's target too and takes ?sitting= off the URL, so a refresh does not bring it back. */}
+          {sitting && (
+            <Chip
+              label={`Sitting${sittingIds && sitQ.data ? ` · ${sittingIds.size}` : ''}`}
+              onClear={() => {
+                setSitting(false); setSittingHome(false); clearSelection();
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('sitting')) {
+                  url.searchParams.delete('sitting');
+                  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+                }
+                containsRef.current?.focus();
+              }}
+            />
+          )}
           {bucket && (
             <Chip label={`Campaign: ${bucket}`} onClear={() => { setBucket(null); setBucketSide(null); clearSelection(); containsRef.current?.focus(); }} />
           )}
