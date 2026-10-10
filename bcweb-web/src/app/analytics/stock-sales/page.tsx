@@ -9,9 +9,13 @@ Purpose: Is the stock we buy shifting? The owner's read on whether to slow order
 HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          The first cut had weekly panels, a Shopify/Amazon/Shop split, a hover readout, a Week|Month switch on the chart and a full
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
-           1. three big numbers — units in stock, sold in 30 days, % of stock sold
+           1. stock now, split SELLING | NEW | SITTING in one 60-day window (adds to 100%; see SITTING below)
            2. a monthly chart — closing stock as a line over units sold as columns
            3. the numbers as a list, Month | Week, with % sold (also the chart's table view)
+           4. the sitting styles
+         The top was three numbers (stock, sold 30d, % sold 30d) plus a 60-day sitting % until 2026-10-10 — owner: the 30- and 60-day
+         numbers side by side "feel mixed". Sold/% sold measure flow, not stock, so they can't be part of a split that adds to 100%;
+         they live in the list (the current month, so far, is its top row).
          Per-channel detail already lives on the Sales report; don't grow this page back into it.
 
 NO EXCESS (removed 2026-10-10, owner: "Let's not have anything regarding EXCESS")
@@ -32,14 +36,24 @@ CHART (back 2026-10-10, owner asked for it)
          Sold in the period ÷ stock at the end of it. It swings with the season (≈8% in January, ≈42% in June 2026), so it is read down
          the list against the same month a year earlier, not against a fixed target. No verdict tile: the owner asked for the list.
 
-Guarded by AppShell. Consumes GET /analytics-stock-sales.
+SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so I push it.")
+         Stock in styles with no sale on any channel for 60 days (deliveries ignored — owner: "my fault if I'm still ordering while
+         they are not selling"), except NEW products — created under 90 days ago and not yet sold, the NEW portfolio-status rule — which
+         are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
+         stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
+         The list: most pairs first, GROUPID leading with the title on hover, each opening its pricing drill; pairs are one number, no
+         Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
+         fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
+
+Guarded by AppShell. Consumes GET /analytics-stock-sales and GET /analytics-stock-sitting.
 =======================================================================================================================================
 */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStockSales, StockSalesPeriod } from '@/lib/api';
+import { getStockSales, getStockSitting, StockSalesPeriod, StockSittingData } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -56,6 +70,8 @@ const weekLabel = (s: string) => `${dayLabel(s)} ${String(ymd(s).y).slice(2)}`; 
 export default function StockSalesPage() {
   const q = useApiQuery('analytics-stock-sales', () => getStockSales());
   const d = q.data;
+  const sq = useApiQuery('analytics-stock-sitting', () => getStockSitting());
+  const sit = sq.data;
   const stale = d?.latest && d.latest.date < d.expected_date;
 
   return (
@@ -70,26 +86,62 @@ export default function StockSalesPage() {
         </div>
       )}
 
-      {/* The three numbers to watch. % sold is the owner's own measure (sold in 30 days ÷ stock now) — push it up. */}
-      {d && d.latest && (
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Hero value={n(d.latest.units)} label="units in stock" />
-          <Hero value={n(d.sold_30d)} label="sold in the last 30 days" />
-          <Hero value={d.latest.units ? `${Math.round((d.sold_30d / d.latest.units) * 100)}%` : '—'} label="of stock sold in 30 days" />
-        </div>
-      )}
+      {sq.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sq.error.message}</div>}
+      {sit && <StockSplit data={sit} />}
 
       {d && d.months.length > 0 && <Chart months={d.months} />}
       {d && d.months.length > 0 && <PeriodList months={d.months} weeks={d.weeks} />}
+      {sit && <SittingList data={sit} />}
     </AppShell>
   );
 }
 
-function Hero({ value, label }: { value: string; label: string }) {
+// -------------------------------------------------------------------------------------------------------------------------------------
+// STOCK SPLIT — the top of the page: stock now, split three ways that add up to the whole — SELLING (sold in `days`) | NEW (unsold but
+// created under `new_days` ago — giving it a chance) | SITTING (owner, 2026-10-10: the old 30-day sold + 60-day sitting numbers "feel
+// mixed"; then "Is NEW factored?"). Live stock, from the same read as the sitting list, so the parts and the total always agree. Each %
+// is rounded and selling takes the remainder, so the % always make 100.
+// -------------------------------------------------------------------------------------------------------------------------------------
+const NEW_COLOR = '#cbd5e1';     // slate-300: not judged yet
+const SITTING_COLOR = '#64748b'; // slate-500: stalled stock reads grey against the stock blue, darker than NEW so it's the one you see
+
+function StockSplit({ data }: { data: StockSittingData }) {
+  const total = data.total_units;
+  const pct = (v: number) => (total ? Math.round((v / total) * 100) : 0);
+  const newPct = pct(data.new_units);
+  const sitPct = pct(data.sitting_units);
+  const parts = [
+    { key: 'selling', label: 'Selling', units: data.selling_units, pct: total ? 100 - newPct - sitPct : 0, color: STOCK_COLOR,
+      note: `sold in the last ${data.days} days` },
+    { key: 'new', label: 'New', units: data.new_units, pct: newPct, color: NEW_COLOR,
+      note: `not sold yet, under ${data.new_days} days old` },
+    { key: 'sitting', label: 'Sitting', units: data.sitting_units, pct: sitPct, color: SITTING_COLOR,
+      note: `no sale in ${data.days} days` },
+  ];
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div className="text-4xl font-semibold tabular-nums text-slate-900">{value}</div>
-      <div className="mt-1 text-sm text-slate-500">{label}</div>
+    <div className="mb-4 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="text-4xl font-semibold tabular-nums text-slate-900">{n(total)}</div>
+      <div className="mt-1 text-sm text-slate-500">units in stock</div>
+
+      <div className="mt-4 flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-slate-100" role="img"
+        aria-label={parts.map((p) => `${p.pct}% ${p.label.toLowerCase()}`).join(', ')}>
+        {parts.map((p) => p.units > 0 && (
+          <div key={p.key} style={{ width: `${(p.units / total) * 100}%`, backgroundColor: p.color }} />
+        ))}
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+        {parts.map((p, i) => (
+          <div key={p.key} className={i === 1 ? 'sm:text-center' : i === 2 ? 'sm:text-right' : ''}>
+            <div className={`flex items-center gap-2 text-slate-600 ${i === 1 ? 'sm:justify-center' : i === 2 ? 'sm:justify-end' : ''}`}>
+              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.color }} />
+              {p.label} <span className="font-semibold tabular-nums text-slate-900">{n(p.units)} · {p.pct}%</span>
+            </div>
+            <div className="mt-0.5 text-xs text-slate-400">{p.note}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -277,6 +329,60 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------
+// SITTING — the styles behind the fourth number: held, with no sale for `days`. Most pairs first; each opens its pricing
+// drill (and comes back here). The whole set, not a top-N — the count is the job.
+// -------------------------------------------------------------------------------------------------------------------------------------
+const SELF = encodeURIComponent('/analytics/stock-sales');
+
+function SittingList({ data }: { data: StockSittingData }) {
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">
+        Sitting — no sale in {data.days} days
+        <span className="font-normal text-slate-500">
+          {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
+        </span>
+      </div>
+      {data.styles.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-slate-500">Nothing sitting.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-5 py-2.5 text-left font-semibold">Style</th>
+                <th className="px-5 py-2.5 text-left font-semibold">Brand</th>
+                <th className="px-5 py-2.5 text-right font-semibold">Pairs</th>
+                <th className="px-5 py-2.5 text-right font-semibold">Last sale</th>
+                <th className="px-5 py-2.5 text-right font-semibold">Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.styles.map((s) => (
+                <tr key={s.groupid} className="border-b border-slate-100 text-slate-700 last:border-0">
+                  <td className="px-5 py-2">
+                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${SELF}`} title={s.title ?? undefined}
+                      className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                      {s.groupid}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-2 text-slate-500">{s.brand || '—'}</td>
+                  <td className="px-5 py-2 text-right tabular-nums">
+                    <span className="font-semibold text-slate-900">{n(s.units)}</span>
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
+                  <td className="px-5 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

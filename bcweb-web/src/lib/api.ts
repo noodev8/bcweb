@@ -1080,7 +1080,6 @@ export interface StockSalesPeriod {
 export interface StockSalesData {
   expected_date: string;  // the reading the nightly job should have written by now (DB's yesterday)
   latest: { date: string; units: number } | null;
-  sold_30d: number;       // all channels, net of returns — the Sales report's 30-day window
   months: StockSalesPeriod[]; // oldest -> newest (the chart, and the list's Month view)
   weeks: StockSalesPeriod[];  // oldest -> newest (the list's Week view)
 }
@@ -1091,9 +1090,44 @@ export function getStockSales() {
     (b) => ({
       expected_date: b.expected_date,
       latest: b.latest ?? null,
-      sold_30d: b.sold_30d ?? 0,
       months: b.months || [],
       weeks: b.weeks || [],
+    })
+  );
+}
+
+// Sitting stock — styles held with no sale on any channel for `days` (or never sold). Live, per style.
+export interface SittingStyle {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  units: number;             // local + Amazon, one number
+  last_sale: string | null;  // YYYY-MM-DD
+  idle_days: number | null;  // days since the last sale; null = never sold
+}
+
+// Stock now split three ways that add up to total_units: selling (sold in `days`) | new (unsold, created under `new_days` ago) | sitting.
+export interface StockSittingData {
+  days: number;
+  new_days: number;
+  total_units: number;    // all stock, live (can differ from last night's stock_daily reading by today's movement)
+  selling_units: number;
+  new_units: number;
+  sitting_units: number;
+  styles: SittingStyle[]; // the sitting styles only, most pairs first
+}
+
+export function getStockSitting() {
+  return request<StockSittingData>(
+    { url: '/analytics-stock-sitting', method: 'GET' },
+    (b) => ({
+      days: b.days ?? 60,
+      new_days: b.new_days ?? 90,
+      total_units: b.total_units ?? 0,
+      selling_units: b.selling_units ?? 0,
+      new_units: b.new_units ?? 0,
+      sitting_units: b.sitting_units ?? 0,
+      styles: b.styles || [],
     })
   );
 }

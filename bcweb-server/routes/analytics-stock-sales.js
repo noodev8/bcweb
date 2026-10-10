@@ -5,14 +5,15 @@ API Route: analytics_stock_sales
 Method: GET
 Purpose: Reports -> Stock vs Sales. Is the stock we buy shifting? Owner, 2026-10-09: "Just sales against stock position" — the read on
          whether to slow ordering down or speed it up. Deliberately high level (owner, same day, after the first cut showed weekly
-         panels, a channel split and a table: "too many things going on"): two numbers and one monthly trend.
+         panels, a channel split and a table: "too many things going on"): one monthly trend. The page's top number (stock split
+         Selling | Sitting) comes from /analytics-stock-sitting; a sold-in-30-days figure was dropped from here 2026-10-10 with the
+         old hero numbers (the list's current month, so far, carries sold).
 
          STOCK  = stock_daily (one reading per night, scripts/stock-daily.js; the Month End definition, utils/financeStock.js). A month's
                   stock is its CLOSING stock — the last reading inside it. The current month is open, so it shows the latest reading.
          SOLD   = `sales`, live, ALL channels (Shopify, Amazon, the shop), NET of returns (return rows carry negative qty — SUM nets
                   them). Whole-book because the stock figure includes Amazon-held units. Read live rather than stored with the stock:
                   `sales` already keeps the whole history, and a stored copy would freeze before late-booked orders and refunds land.
-         sold_30d uses the Sales report's window (solddate >= CURRENT_DATE - 29, today included) so the two screens agree.
 
          Months (and weeks, for the list under the chart — owner asked for weekly too) run from the first stock reading (Oct 2025) to now.
 
@@ -28,7 +29,6 @@ Success Response:
   "return_code": "SUCCESS",
   "expected_date": "2026-10-08",       // the reading the nightly job should have written by now (DB's CURRENT_DATE - 1)
   "latest": { "date": "2026-10-08", "units": 2850 } | null,
-  "sold_30d": 437,
   "months": [                          // oldest -> newest
     { "start": "2026-09-01", "stock": 2954, "sold": 437, "partial": false }, ...
   ],
@@ -98,7 +98,6 @@ router.get('/', async (req, res) => {
 
     const metaQ = query(
       `SELECT to_char(CURRENT_DATE - 1, 'YYYY-MM-DD') AS expected_date,
-              (SELECT COALESCE(SUM(qty), 0)::int FROM sales WHERE solddate >= CURRENT_DATE - 29) AS sold_30d,
               l.date, l.units
        FROM (SELECT 1) one
        LEFT JOIN LATERAL (
@@ -113,7 +112,6 @@ router.get('/', async (req, res) => {
       return_code: 'SUCCESS',
       expected_date: meta.expected_date,
       latest: meta.date ? { date: meta.date, units: Number(meta.units) } : null,
-      sold_30d: Number(meta.sold_30d),
       months: mo.rows.map(shape),
       weeks: wk.rows.map(shape),
     });

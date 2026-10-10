@@ -320,6 +320,7 @@ app.use('/birk-availability-update', require('./routes/birk-availability-update'
 // Stock vs Sales: units owned at the end of each week/month (stock_daily, written nightly by scripts/stock-daily.js) beside units sold
 // (live from `sales`, all channels, net of returns). Replaced the Stock Position gauge and its "Update now" snapshot (2026-10-09).
 app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   // GET: READ ONLY
+app.use('/analytics-stock-sitting', require('./routes/analytics-stock-sitting'));   // GET: READ ONLY
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.
