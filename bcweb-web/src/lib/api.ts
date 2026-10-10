@@ -302,12 +302,14 @@ export function getSegments() {
 // shape but the server refuses a campaign there.
 // A status is NOT read through the Selling/Stuck pair: it is one unsplit list, out-of-stock included (getStatusList /
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
-export type PricingGroupBy = 'segment' | 'campaign' | 'status';
+// 'sitting' (2026-10-10, SHOPIFY ONLY) = the sitting styles from Reports → Stock vs Sales (path name 'sitting'), also one unsplit
+// list (getSittingList). Reached ONLY from the Stock vs Sales link — no tab or tile on Repricing (owner: don't disturb navigation).
+export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'status' ? v : 'segment';
+  return v === 'campaign' || v === 'status' || v === 'sitting' ? v : 'segment';
 }
 
 // Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
@@ -380,6 +382,19 @@ export function getStatusList(status: string, bar?: number | null) {
       total: Number(b.total) || 0,
       truncated: !!b.truncated,
       outOfStock: Number(b.out_of_stock) || 0,
+      rows: b.rows || [],
+    })
+  );
+}
+
+// The ONE Shopify list of the SITTING styles — the same styles as the Stock vs Sales Sitting box (server: utils/stockSitting.js), most
+// pairs first, Shopify-live only. Same row shape as getStatusList; stock = local + Amazon. Parked included; the Due switch filters.
+export function getSittingList() {
+  return request<{ total: number; truncated: boolean; rows: LoserRow[] }>(
+    { url: '/pricing-sitting-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
       rows: b.rows || [],
     })
   );

@@ -44,7 +44,7 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          they are not selling"), except NEW products — created under 60 days ago and not yet sold (same window; NOT Repricing's 90-day NEW status) — which
          are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
          stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
-         The list: most pairs first, GROUPID leading with the title on hover, each opening its pricing drill; pairs are one number, no
+         The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); pairs are one number, no
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
 
@@ -52,8 +52,9 @@ Guarded by AppShell. Consumes GET /analytics-stock-sitting, and GET /analytics-s
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { SortableTh, useTableSort } from '@/components/SortableTh';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { STOCK_SALES_FLOW } from '@/lib/features';
@@ -332,19 +333,56 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------
-// SITTING — the styles behind the fourth number: held, with no sale for `days`. Most pairs first; each opens its pricing
-// drill (and comes back here). The whole set, not a top-N — the count is the job.
+// SITTING — the styles behind the Sitting box: held, with no sale on any channel for `days`. Most pairs first. The whole set, not a
+// top-N — the count is the job.
+// ACT ON THE LIST, NOT ROW BY ROW (owner, 2026-10-10: "SHOPIFY only. My intention is to clear the crap. I will want to be able to price
+// them"). The header's "Reprice →" opens the same styles as a Shopify Repricing list (/pricing/sitting?by=sitting — server
+// /pricing-sitting-list reads the same rule), with the bulk bar and the per-style drill. Same tab, Due OFF (most sitting styles carry a
+// review date ahead — 49 of 52 at build time — and Due on would hide them), ← Back returns here.
+// Each GROUPID opens that style's SHOPIFY price drill (/pricing/style), same tab, ← Back returns here with the sort kept — taken off
+// while the owner decided, put back the same day ("Put the link back on groupid to the Shopify Price screen"). Title on hover. Google Ads and collections are the next conversation (the excess-era Google Ads chip is in git: dd28eb4).
 // -------------------------------------------------------------------------------------------------------------------------------------
-const SELF = encodeURIComponent('/analytics/stock-sales');
+const REPRICE_HREF =
+  `/pricing/sitting?by=sitting&pending=1&from=${encodeURIComponent('/analytics/stock-sales')}&back=${encodeURIComponent('Stock vs Sales')}`;
 
+// Sortable headers (components/SortableTh — the Repricing lists' own): opens in the server's order (most pairs first); a click sorts,
+// a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
+// wait on Days (Infinity) rather than sinking as blanks; on Last sale they sink ("never" has no date).
+// useTableSort reads useSearchParams, so the list renders inside a Suspense boundary (Next's build requires one).
 function SittingList({ data }: { data: StockSittingData }) {
   return (
+    <Suspense fallback={null}>
+      <SittingListBody data={data} />
+    </Suspense>
+  );
+}
+
+function SittingListBody({ data }: { data: StockSittingData }) {
+  const { sorted, sort, onSort } = useTableSort(data.styles, {
+    groupid: (s) => s.groupid,
+    brand: (s) => s.brand,
+    units: (s) => s.units,
+    last_sale: (s) => s.last_sale,
+    days: (s) => s.idle_days ?? Infinity,
+  });
+  const th = { sort, onSort };
+  // This page's own URL WITH the current sort, so the drill's ← Back lands on the list as it was left.
+  const self = encodeURIComponent(`/analytics/stock-sales${sort ? `?sort=${sort.key}.${sort.dir}` : ''}`);
+
+  return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">
-        Sitting — no sale in {data.days} days
-        <span className="font-normal text-slate-500">
-          {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-100 px-5 py-3">
+        <div className="text-sm font-semibold text-slate-800">
+          Sitting — no sale in {data.days} days
+          <span className="font-normal text-slate-500">
+            {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
+          </span>
+        </div>
+        {data.styles.length > 0 && (
+          <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+            Reprice &rarr;
+          </Link>
+        )}
       </div>
       {data.styles.length === 0 ? (
         <p className="px-5 py-4 text-sm text-slate-500">Nothing sitting.</p>
@@ -352,29 +390,29 @@ function SittingList({ data }: { data: StockSittingData }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-2.5 text-left font-semibold">Style</th>
-                <th className="px-5 py-2.5 text-left font-semibold">Brand</th>
-                <th className="px-5 py-2.5 text-right font-semibold">Pairs</th>
-                <th className="px-5 py-2.5 text-right font-semibold">Last sale</th>
-                <th className="px-5 py-2.5 text-right font-semibold">Days</th>
+              <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
+                <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
+                <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
+                <SortableTh {...th} sortKey="last_sale" label="Last sale" align="right" />
+                <SortableTh {...th} sortKey="days" label="Days" align="right" />
               </tr>
             </thead>
             <tbody>
-              {data.styles.map((s) => (
+              {sorted.map((s) => (
                 <tr key={s.groupid} className="border-b border-slate-100 text-slate-700 last:border-0">
-                  <td className="px-5 py-2">
-                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${SELF}`} title={s.title ?? undefined}
+                  <td className="px-4 py-2">
+                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
                       className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
                       {s.groupid}
                     </Link>
                   </td>
-                  <td className="px-5 py-2 text-slate-500">{s.brand || '—'}</td>
-                  <td className="px-5 py-2 text-right tabular-nums">
+                  <td className="px-4 py-2 text-slate-500">{s.brand || '—'}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
                     <span className="font-semibold text-slate-900">{n(s.units)}</span>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
-                  <td className="px-5 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

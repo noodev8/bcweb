@@ -30,6 +30,13 @@ switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status 
 stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
 both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 
+?by=sitting (2026-10-10) — the SITTING styles from Reports → Stock vs Sales (path name 'sitting'): held, no sale on any channel in 60
+days, most pairs first, from GET /pricing-sitting-list (rule: bcweb-server/utils/stockSitting.js — the same function as the Sitting box,
+so the counts match). One unsplit list like a status (tabs hidden, mode pinned to 'all'). SHOPIFY ONLY — the owner clears on Shopify
+("my intention is to clear the crap"). Reached ONLY from the "Reprice these" link on Stock vs Sales (same tab, Due off, ?from= back
+there) — deliberately no tab or tile on Repricing (owner: don't disturb navigation). The Stock column is local + Amazon. It replaces the
+?by=excess list removed the same day (git e4f91fd), same plumbing.
+
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
 browser; when that cap bites the page says so.
@@ -43,7 +50,7 @@ import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getTriage, getLosers, getStatusList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
+import { getTriage, getLosers, getStatusList, getSittingList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -96,8 +103,11 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   segment: undefined,
   campaign: 'Google campaign',
   status: 'status',
+  sitting: 'no sale in 60 days',
 };
-const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status' };
+const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list' };
+// The sitting list's path name is 'sitting'; the crumb shows the Stock vs Sales box's own word.
+const SITTING_LABEL = 'Sitting';
 
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
@@ -111,6 +121,8 @@ function SegmentContent() {
   const by = parseGroupBy(searchParams.get('by'));
   const group: PricingGroup = { by, name: segment };
   const isStatus = by === 'status';
+  const isSitting = by === 'sitting';
+  const oneList = isStatus || isSitting;   // no Selling / Stuck split — one list, view pinned to 'all'
   // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
   const barRaw = Number(searchParams.get('bar'));
   const bar = isStatus && barRaw > 0 ? barRaw : null;
@@ -120,7 +132,7 @@ function SegmentContent() {
 
   // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
   const [modeState, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
-  const mode: ListView = isStatus ? 'all' : modeState;
+  const mode: ListView = oneList ? 'all' : modeState;
   const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
   // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments heatmap returns you there — not to /pricing
@@ -152,6 +164,22 @@ function SegmentContent() {
           success: true,
           return_code: 'SUCCESS',
           data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
+        };
+      }
+      // The SITTING list is one unsplit list too (GET /pricing-sitting-list — the styles behind the Stock vs Sales Sitting box), same
+      // treatment as a status: rows in `winners`, view pinned to 'all'. kind 'loser' — every row has sold nothing.
+      if (isSitting) {
+        const x = await getSittingList();
+        if (x.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(x.success && x.data)) return { success: false, return_code: x.return_code, error: x.error || 'Failed to load list' };
+        const rows: ListRow[] = x.data.rows.map((r) => ({
+          kind: 'loser', groupid: r.groupid, title: r.title, brand: r.brand, units: r.u30, stock: r.stock, price: r.price, rrp: r.rrp,
+          match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: x.data.truncated, partialError: null, outOfStock: null as number | null },
         };
       }
       const [w, l] = await Promise.all([
@@ -319,14 +347,14 @@ function SegmentContent() {
   const ready = !loading && !error && !!data;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isSitting ? SITTING_LABEL : segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}
         counts={data ? view.counts : null}
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
-        showTabs={!isStatus}
+        showTabs={!oneList}
         summary={data ? (
           // At the top, so it's seen without scrolling: ONE number, the rows in the table below (owner, 2026-09-26). It follows
           // the Due switch — Due on counts the due rows, Due off counts everything shown.
