@@ -16,15 +16,16 @@ Purpose: Reports -> Stock vs Sales, the "how deep is the stock?" card. For every
                       younger than that (a style added in June is judged on June->now, not diluted by months it didn't exist). 12 months
                       on purpose: a full season cycle, so a summer sandal isn't condemned for not selling in October.
          MONTHS     = units / pace.
-         BANDS      new      created under NEW_DAYS ago — too young to have a pace; shown apart so it is never read as stuck
-                    none     no net sales in its window — not selling
+         BANDS      new      created under NEW_DAYS ago — too young to have a pace; 0 excess, so the page leaves it off the card
                     under6   up to 6 months of its own sales
                     6to12    6 to 12 months
-                    over12   more than a year — the over-deep pile
+                    over12   more than a year — the over-deep pile. INCLUDES styles with no net sales in their window (months null):
+                             that is the same pile at its extreme, and a separate "not selling" band (merged 2026-10-10, owner) only
+                             meant one sale flipped a 15-unit style from one tile to the other.
          EXCESS     = units beyond what the style NEEDS: units - NEED_MONTHS x pace, floored at 0. Need depends on how fast more can be
                       had (owner, 2026-10-09): Birkenstock is bought ~6 months ahead and cannot be re-ordered mid-season, so it needs 6
-                      months; everything else (Lunar/IVES etc.) can be re-ordered any week, so 2 months. A 'none' style needs nothing —
-                      all its units are excess. A 'new' style has no pace yet — counted as 0 excess, never guessed.
+                      months; everything else (Lunar/IVES etc.) can be re-ordered any week, so 2 months. A style with no sales needs
+                      nothing — all its units are excess. A 'new' style has no pace yet — counted as 0 excess, never guessed.
                       The page's "excess units" number is the sum: the stock bought beyond need, which the owner wants driven down.
          Thresholds are business judgements and live here as constants, not in the SQL.
 
@@ -41,7 +42,7 @@ Success Response:
   "rows":  [ { "groupid": "...", "title": "...", "brand": "Birkenstock", "units": 40, "sold": 12, "months": 40.0,
                "band": "over12", "excess": 34 }, ... ]
 }
-"months" is null for the new and none bands. "sold" is net units in the style's window (12 months, or its life if younger).
+"months" is null for the new band, and for over12 styles with no sales. "sold" is net units in the style's window (12 months, or its life if younger).
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -59,7 +60,7 @@ const logger = require('../utils/logger');
 router.use(verifyToken);
 
 const NEW_DAYS = 56;          // 8 weeks — long enough for a fresh style to have shown some pace
-const BAND_ORDER = ['under6', '6to12', 'over12', 'none', 'new'];
+const BAND_ORDER = ['under6', '6to12', 'over12', 'new'];
 // Months of its own sales a style NEEDS to hold, by brand (how long until more can land). Anything not listed can be re-ordered weekly.
 const NEED_MONTHS = { Birkenstock: 6 };
 const NEED_MONTHS_DEFAULT = 2;
@@ -107,7 +108,7 @@ router.get('/', async (req, res) => {
       if (s.age_days !== null && Number(s.age_days) < NEW_DAYS) {
         band = 'new';
       } else if (sold <= 0) {
-        band = 'none';
+        band = 'over12';
         excess = units;
       } else {
         const perMonth = sold / (Number(s.window_days) / 30.44);

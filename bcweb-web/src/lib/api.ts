@@ -1099,9 +1099,10 @@ export function getStockSales() {
 }
 
 // Stock depth — each style we hold, against its own pace of sales (12 months, or its life if younger). months = units ÷ units sold per
-// month; null for 'new' (too young to have a pace) and 'none' (no net sales in its window). excess = units beyond what the style needs
-// (Birkenstock 6 months of its own sales, everything else 2 — see routes/analytics-stock-depth.js); excess_units is their sum.
-export type StockDepthBand = 'under6' | '6to12' | 'over12' | 'none' | 'new';
+// month; null for 'new' (too young to have a pace) and for an 'over12' style with no net sales in its window (no sales = the deepest
+// over-a-year stock). excess = units beyond what the style needs (Birkenstock 6 months of its own sales, everything else 2 — see
+// routes/analytics-stock-depth.js); excess_units is their sum.
+export type StockDepthBand = 'under6' | '6to12' | 'over12' | 'new';
 export interface StockDepthRow {
   groupid: string;
   title: string | null;

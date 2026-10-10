@@ -11,8 +11,9 @@ HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
            1. four big numbers — units in stock, sold in 30 days, % of stock sold, excess units
            2. the numbers as a list, Month | Week, with % sold
-           3. how deep the stock is — each style against its own pace of sales
-           4. the same, by brand (on trial)
+           3. how deep the stock is — EXCESS units by depth band plus a Total tile (owner, 2026-10-10: excess instead of all units,
+              not as well as — both on a tile was too many numbers), so this card adds up to the hero
+           4. by brand (on trial), with a Total row whose Excess is the hero's too; the excess rule is footnoted there
          Per-channel detail already lives on the Sales report; don't grow this page back into it.
 
 NO CHART (removed 2026-10-09, owner)
@@ -175,74 +176,94 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------
-// DEPTH — how many months of its OWN sales each style's stock represents. One bar of all units split by depth, then the styles behind
+// DEPTH — how many months of its OWN sales each style's stock represents. One bar of EXCESS units split by depth, then the styles behind
 // whichever band is picked (Over a year by default — the over-deep pile). Depth bands are ordinal, so they share one blue ramp, lighter
-// = shallower; "not selling" and "new" are a different kind of thing and sit in neutral greys. Every segment is labelled, so colour
-// never carries the meaning alone.
+// = shallower. Every segment is labelled, so colour never carries the meaning alone. Over a year includes styles with NO sales
+// (owner, 2026-10-10: the same pile at its extreme — a separate "Not selling" tile only meant one sale moved a style between tiles);
+// they sort to the top of its list as "No sales".
+// The server's 'new' band (under 8 weeks, no pace yet) is not shown: its excess is 0 by definition, so on an excess card it was a
+// tile that always read 0. Its place is a Total tile, which lines up with the "excess units" hero (owner, 2026-10-10).
 // -------------------------------------------------------------------------------------------------------------------------------------
-const BANDS: Record<StockDepthBand, { label: string; color: string }> = {
+type DepthBand = Exclude<StockDepthBand, 'new'>;
+const BANDS: Record<DepthBand, { label: string; color: string }> = {
   under6: { label: 'Under 6 months', color: '#86b6ef' },
   '6to12': { label: '6–12 months', color: '#3987e5' },
   over12: { label: 'Over a year', color: '#184f95' },
-  none: { label: 'Not selling', color: '#64748b' },
-  new: { label: 'New, under 8 weeks', color: '#cbd5e1' },
 };
+const DEPTH_BANDS = Object.keys(BANDS) as DepthBand[];
 
-// Months of stock as a reader would say it: "8 mo" up to two years, then years.
+// Months of stock as a reader would say it: "8 mo" up to two years, then years. No pace (new styles are not listed) = no sales at all.
 function depthLabel(m: number | null) {
-  if (m === null) return '—';
+  if (m === null) return 'No sales';
   if (m < 24) return `${m < 10 ? m.toFixed(1) : Math.round(m)} mo`;
   return `${(m / 12).toFixed(1)} yrs`;
 }
 
 function Depth({ data }: { data: StockDepthData }) {
-  const [sel, setSel] = useState<StockDepthBand>('over12');
+  const [sel, setSel] = useState<DepthBand | 'total'>('over12');
   const actions = useProductActions();
-  const total = data.bands.reduce((s, b) => s + b.units, 0);
-  const rows = data.rows
-    .filter((r) => r.band === sel)
-    .sort((a, b) => (b.months ?? 0) - (a.months ?? 0) || b.units - a.units);
+  // The bar and tiles count EXCESS units, not all units (owner, 2026-10-10) — so the card adds up to the "excess units" hero and
+  // shows where it sits. It isn't all in Over a year: a 9-month Birkenstock style is 6–12 months with 3 months spare, a 4-month Lunar
+  // style is Under 6 with 2 spare. Only styles WITH excess are counted and listed, so the tiles' style counts add up to the Total's.
+  const withExcess = data.rows.filter((r) => r.excess > 0);
+  const tiles = [
+    ...DEPTH_BANDS.map((band) => {
+      const rs = withExcess.filter((r) => r.band === band);
+      return { key: band as DepthBand | 'total', label: BANDS[band].label, color: BANDS[band].color as string | null,
+               excess: rs.reduce((s, r) => s + r.excess, 0), styles: rs.length };
+    }),
+    { key: 'total' as const, label: 'Total', color: null, excess: data.excess_units, styles: withExcess.length },
+  ];
+  const total = data.excess_units;
+  const rows = withExcess
+    .filter((r) => sel === 'total' || r.band === sel)
+    .sort((a, b) => (b.months ?? Infinity) - (a.months ?? Infinity) || b.units - a.units);
 
   return (
     <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="px-5 pt-4">
         <h2 className="text-sm font-semibold text-slate-800">How deep is the stock?</h2>
-        <p className="mt-0.5 text-xs text-slate-500">Each style&rsquo;s stock against its own pace of selling over the last 12 months.</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Excess units, by how long each style&rsquo;s stock lasts at its own pace of selling over the last 12 months.
+        </p>
 
-        {/* One bar: all units, split by depth. 2px surface gap between segments. */}
+        {/* One bar: all excess units, split by depth. 2px surface gap between segments. */}
         <div className="mt-3 flex h-7 w-full gap-0.5 overflow-hidden rounded-md">
-          {data.bands.filter((b) => b.units > 0).map((b) => (
+          {tiles.filter((t) => t.color && t.excess > 0).map((t) => (
             <button
-              key={b.band}
+              key={t.key}
               type="button"
-              onClick={() => setSel(b.band)}
-              title={`${BANDS[b.band].label}: ${n(b.units)} units`}
-              className={`h-full transition ${sel === b.band ? '' : 'opacity-60 hover:opacity-90'}`}
-              style={{ width: `${(b.units / total) * 100}%`, backgroundColor: BANDS[b.band].color }}
+              onClick={() => setSel(t.key)}
+              title={`${t.label}: ${n(t.excess)} excess`}
+              className={`h-full transition ${sel === t.key || sel === 'total' ? '' : 'opacity-60 hover:opacity-90'}`}
+              style={{ width: `${(t.excess / total) * 100}%`, backgroundColor: t.color! }}
             />
           ))}
         </div>
 
-        {/* The bands as labelled choices — the readable half of the bar. */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {data.bands.map((b) => (
+        {/* The bands as labelled choices — the readable half of the bar — then the Total, which is the hero's number. */}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {tiles.map((t) => (
             <button
-              key={b.band}
+              key={t.key}
               type="button"
-              onClick={() => setSel(b.band)}
-              aria-pressed={sel === b.band}
+              onClick={() => setSel(t.key)}
+              aria-pressed={sel === t.key}
               className={`rounded-md border px-3 py-2 text-left transition ${
-                sel === b.band ? 'border-slate-400 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'
+                sel === t.key ? 'border-slate-400 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: BANDS[b.band].color }} />
-                {BANDS[b.band].label}
+                {t.color && <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: t.color }} />}
+                {t.label}
               </div>
               <div className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
-                {n(b.units)} <span className="text-sm font-normal text-slate-500">units · {total ? Math.round((b.units / total) * 100) : 0}%</span>
+                {n(t.excess)}{' '}
+                <span className="text-sm font-normal text-slate-500">
+                  excess{t.color ? ` · ${total ? Math.round((t.excess / total) * 100) : 0}%` : ''}
+                </span>
               </div>
-              <div className="text-xs text-slate-400">{n(b.styles)} {b.styles === 1 ? 'style' : 'styles'}</div>
+              <div className="text-xs text-slate-400">{n(t.styles)} {t.styles === 1 ? 'style' : 'styles'}</div>
             </button>
           ))}
         </div>
@@ -284,8 +305,7 @@ function Depth({ data }: { data: StockDepthData }) {
         )}
       </div>
       <p className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-400">
-        Styles under a year old are judged on their sales since they were added. Excess = units beyond what the style needs:
-        6 months of its own sales for Birkenstock (bought a season ahead), 2 months for brands that can be re-ordered any week.
+        Styles under a year old are judged on their sales since they were added.
       </p>
       {actions.node}
     </div>
@@ -310,6 +330,11 @@ function Brands({ rows }: { rows: StockDepthData['rows'] }) {
     by.set(k, b);
   }
   const list = Array.from(by, ([brand, b]) => ({ brand, ...b })).sort((a, b) => b.units - a.units);
+  // Total row — its Excess is the "excess units" hero, so the big number can be traced to the brands behind it.
+  const tot = list.reduce(
+    (t, b) => ({ units: t.units + b.units, sold: t.sold + b.sold, over12: t.over12 + b.over12, excess: t.excess + b.excess }),
+    { units: 0, sold: 0, over12: 0, excess: 0 },
+  );
 
   return (
     <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -339,7 +364,22 @@ function Brands({ rows }: { rows: StockDepthData['rows'] }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t border-slate-300 font-semibold text-slate-900">
+            <td className="px-5 py-2">Total</td>
+            <td className="px-3 py-2 text-right tabular-nums">{n(tot.units)}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{n(tot.sold)}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{tot.units ? `${(tot.sold / tot.units).toFixed(1)}×` : '—'}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{n(tot.over12)}</td>
+            <td className="px-5 py-2 text-right tabular-nums">{n(tot.excess)}</td>
+          </tr>
+        </tfoot>
       </table>
+      {/* The excess rule lives here, beside the total it explains (moved from the depth card, 2026-10-10). */}
+      <p className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-400">
+        Excess = units beyond what each style needs: 6 months of its own sales for Birkenstock (bought a season ahead), 2 months for
+        brands that can be re-ordered any week. A style with no sales needs none.
+      </p>
     </div>
   );
 }
