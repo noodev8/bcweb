@@ -10,7 +10,8 @@ HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          The first cut had weekly panels, a Shopify/Amazon/Shop split, a hover readout, a Week|Month switch on the chart and a full
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
            1. three big numbers — units in stock, sold in 30 days, % of stock sold
-           2. the numbers as a list, Month | Week, with % sold
+           2. a monthly chart — closing stock as a line over units sold as columns
+           3. the numbers as a list, Month | Week, with % sold (also the chart's table view)
          Per-channel detail already lives on the Sales report; don't grow this page back into it.
 
 NO EXCESS (removed 2026-10-10, owner: "Let's not have anything regarding EXCESS")
@@ -22,10 +23,10 @@ NO EXCESS (removed 2026-10-10, owner: "Let's not have anything regarding EXCESS"
          something I feel will sell well"). The code is in git history (commits f0ed513, e4f91fd, dd28eb4). Don't put a stock-needs rule
          back without the owner.
 
-NO CHART (removed 2026-10-09, owner)
-         There was a monthly stock-line-over-sold-bars chart. The owner's verdict: "it just looks obvious" — it showed the seasons he
-         already knows, and the decisions came from the list's % sold. Don't add it back without a question it
-         answers that the list doesn't.
+CHART (back 2026-10-10, owner asked for it)
+         A monthly stock-line-over-sold-columns chart was removed on 2026-10-09 ("it just looks obvious") and brought back the next day
+         once the excess cards were gone. Monthly only — the Month | Week switch belongs to the list. ONE units axis: stock and sold are
+         the same unit (pairs of shoes), so a shared scale is honest, never a second y-axis. The open month's column is faded ("so far").
 
 % SOLD — THE OWNER'S MEASURE ("buy it, sell it, quick")
          Sold in the period ÷ stock at the end of it. It swings with the season (≈8% in January, ≈42% in June 2026), so it is read down
@@ -78,6 +79,7 @@ export default function StockSalesPage() {
         </div>
       )}
 
+      {d && d.months.length > 0 && <Chart months={d.months} />}
       {d && d.months.length > 0 && <PeriodList months={d.months} weeks={d.weeks} />}
     </AppShell>
   );
@@ -88,6 +90,129 @@ function Hero({ value, label }: { value: string; label: string }) {
     <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div className="text-4xl font-semibold tabular-nums text-slate-900">{value}</div>
       <div className="mt-1 text-sm text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------
+// CHART — monthly closing stock (line) over units sold (columns), one shared units axis. Colours are the dataviz reference palette's
+// categorical slots 1 and 2 (a validated pair); every number is also in the list below, which is the chart's table view. Hover a month
+// for its readout. Text stays in slate ink, never the series colour.
+// -------------------------------------------------------------------------------------------------------------------------------------
+const STOCK_COLOR = '#2a78d6';
+const SOLD_COLOR = '#eb6834';
+
+// A 1/2/5 x 10^n step, so the axis reads in round numbers.
+function niceStep(raw: number) {
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+
+// A column with a 4px rounded top and a square foot on the baseline.
+function columnPath(x: number, top: number, w: number, base: number) {
+  const r = Math.min(4, w / 2, base - top);
+  return `M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${base} Z`;
+}
+
+function Chart({ months }: { months: StockSalesPeriod[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 720, H = 260, M = { t: 12, r: 12, b: 34, l: 52 };
+  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+  const max = Math.max(1, ...months.map((p) => Math.max(p.stock ?? 0, p.sold)));
+  const step = niceStep(max / 4);
+  const top = Math.ceil(max / step) * step;
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
+  const base = M.t + ph;
+  const y = (v: number) => base - (v / top) * ph;
+  const band = pw / months.length;
+  const cx = (i: number) => M.l + band * i + band / 2;
+  const colW = Math.min(24, band * 0.55);
+
+  // The stock line, broken where a month has no reading.
+  let line = '';
+  months.forEach((p, i) => {
+    if (p.stock === null) return;
+    const prevMissing = i === 0 || months[i - 1].stock === null;
+    line += `${prevMissing ? 'M' : 'L'}${cx(i)},${y(p.stock)} `;
+  });
+
+  const h = hover !== null ? months[hover] : null;
+  const pct = h && h.stock ? Math.round((h.sold / h.stock) * 100) : null;
+
+  return (
+    <div className="mb-4 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-600">
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-0.5 w-4 rounded" style={{ backgroundColor: STOCK_COLOR }} />In stock (month end)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-3 w-2.5 rounded-t-sm" style={{ backgroundColor: SOLD_COLOR }} />Sold in the month
+        </span>
+      </div>
+
+      <div className="relative mt-3 overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 520 }} role="img"
+          aria-label="Monthly stock at month end and units sold. The same numbers are in the list below."
+          onPointerLeave={() => setHover(null)}>
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={M.l} x2={W - M.r} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeWidth={1} />
+              <text x={M.l - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill="#64748b">{n(t)}</text>
+            </g>
+          ))}
+
+          {/* the hovered month's band, behind the marks */}
+          {hover !== null && <rect x={M.l + band * hover} y={M.t} width={band} height={ph} fill="#f1f5f9" />}
+
+          {months.map((p, i) => (
+            <path key={p.start} d={columnPath(cx(i) - colW / 2, y(p.sold), colW, base)} fill={SOLD_COLOR}
+              opacity={p.partial ? 0.45 : 1} />
+          ))}
+
+          <path d={line} fill="none" stroke={STOCK_COLOR} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {h && h.stock !== null && (
+            <circle cx={cx(hover!)} cy={y(h.stock)} r={4.5} fill={STOCK_COLOR} stroke="#ffffff" strokeWidth={2} />
+          )}
+
+          {months.map((p, i) => {
+            const { m, y: yr } = ymd(p.start);
+            return (
+              <text key={p.start} x={cx(i)} y={base + 16} textAnchor="middle" fontSize={11} fill="#64748b">
+                {MONTHS[m - 1]}
+                {(i === 0 || m === 1) && <tspan x={cx(i)} dy={13}>{yr}</tspan>}
+              </text>
+            );
+          })}
+
+          {/* hit targets: the whole month band, bigger than any mark */}
+          {months.map((p, i) => (
+            <rect key={p.start} x={M.l + band * i} y={M.t} width={band} height={ph} fill="transparent"
+              onPointerEnter={() => setHover(i)} />
+          ))}
+        </svg>
+
+        {h && (
+          <div className="pointer-events-none absolute top-0 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-md"
+            style={{
+              left: `${(cx(hover!) / W) * 100}%`,
+              transform: hover! > months.length / 2 ? 'translateX(calc(-100% - 12px))' : 'translateX(12px)',
+            }}>
+            <div className="font-medium text-slate-800">{monthLabel(h.start)}{h.partial ? ' (so far)' : ''}</div>
+            <div className="mt-1 flex items-center gap-2 text-slate-600">
+              <span className="inline-block h-0.5 w-3 rounded" style={{ backgroundColor: STOCK_COLOR }} />
+              <span className="font-semibold tabular-nums text-slate-900">{h.stock === null ? '—' : n(h.stock)}</span> in stock
+            </div>
+            <div className="flex items-center gap-2 text-slate-600">
+              <span className="inline-block h-0.5 w-3 rounded" style={{ backgroundColor: SOLD_COLOR }} />
+              <span className="font-semibold tabular-nums text-slate-900">{n(h.sold)}</span> sold
+            </div>
+            {pct !== null && (
+              <div className="mt-1 text-slate-500"><span className="font-semibold tabular-nums text-slate-900">{pct}%</span> sold</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
