@@ -1137,13 +1137,35 @@ export function getStockSitting() {
     { url: '/analytics-stock-sitting', method: 'GET' },
     (b) => ({
       days: b.days ?? 60,
-      new_days: b.new_days ?? 90,
+      new_days: b.new_days ?? 60,
       total_units: b.total_units ?? 0,
       selling_units: b.selling_units ?? 0,
       new_units: b.new_units ?? 0,
       sitting_units: b.sitting_units ?? 0,
       styles: b.styles || [],
     })
+  );
+}
+
+// Shopify `clearance` tag kept in step with the sitting list (server: utils/clearanceTag.js — the list owns the tag). One call: the
+// server plans and writes the tags to the LIVE shop, then says what it did. groupid null = a tagged Shopify product we don't know.
+export interface ClearanceItem { groupid: string | null; handle: string; title: string | null }
+export interface ClearanceResult {
+  tag: string;
+  added: ClearanceItem[];
+  removed: ClearanceItem[];
+  failed: (ClearanceItem & { action: 'add' | 'remove'; error: string })[];
+  missing: ClearanceItem[];
+}
+
+// 120s, not the shared 15s: the server makes one Shopify call per product, and the first live run (+32 −30, 2026-10-10) outlasted 15s —
+// the browser reported a network error while the server finished the job. A big swing after a season turn would be slower still.
+const CLEARANCE_TIMEOUT = 120000;
+
+export function applyClearanceTags() {
+  return request<ClearanceResult>(
+    { url: '/shopify-clearance-apply', method: 'POST', data: {}, timeout: CLEARANCE_TIMEOUT },
+    (b) => ({ tag: b.tag || 'clearance', added: b.added || [], removed: b.removed || [], failed: b.failed || [], missing: b.missing || [] })
   );
 }
 

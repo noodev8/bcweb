@@ -44,7 +44,7 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          they are not selling"), except NEW products — created under 60 days ago and not yet sold (same window; NOT Repricing's 90-day NEW status) — which
          are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
          stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
-         The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); pairs are one number, no
+         The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); "Update collection" syncs the Shopify `clearance` tag to it (one click, see SittingListBody); pairs are one number, no
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
 
@@ -58,7 +58,9 @@ import { SortableTh, useTableSort } from '@/components/SortableTh';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { STOCK_SALES_FLOW } from '@/lib/features';
-import { getStockSales, getStockSitting, StockSalesPeriod, StockSittingData } from '@/lib/api';
+import {
+  getStockSales, getStockSitting, applyClearanceTags, StockSalesPeriod, StockSittingData,
+} from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -366,6 +368,23 @@ function SittingListBody({ data }: { data: StockSittingData }) {
     days: (s) => s.idle_days ?? Infinity,
   });
   const th = { sort, onSort };
+  // UPDATE COLLECTION — one click syncs the Shopify `clearance` tag to this list and says what changed, nothing more (owner,
+  // 2026-10-10: a preview panel was "too much text. Leads to confusion. Just do the update"). The list OWNS the tag: afterwards exactly
+  // the sitting styles live on Shopify carry it, hand-tagged ones included. Writes the LIVE shop; rules in
+  // bcweb-server/utils/clearanceTag.js. The owner builds the smart collection in Shopify admin (tag is equal to clearance).
+  // A click handler, never a useEffect (docs/maintenance-notes.md).
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ text: string; bad: boolean } | null>(null);
+  async function updateCollection() {
+    setSyncing(true);
+    setSyncMsg(null);
+    const r = await applyClearanceTags();
+    setSyncing(false);
+    if (!(r.success && r.data)) { setSyncMsg({ text: r.error || 'Update failed', bad: true }); return; }
+    const d = r.data;
+    const failed = d.failed.length ? ` · ${d.failed.length} failed, try again` : '';
+    setSyncMsg({ text: `+${d.added.length} −${d.removed.length}${failed}`, bad: d.failed.length > 0 });
+  }
   // This page's own URL WITH the current sort, so the drill's ← Back lands on the list as it was left.
   const self = encodeURIComponent(`/analytics/stock-sales${sort ? `?sort=${sort.key}.${sort.dir}` : ''}`);
 
@@ -378,11 +397,18 @@ function SittingListBody({ data }: { data: StockSittingData }) {
             {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
           </span>
         </div>
-        {data.styles.length > 0 && (
-          <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
-            Reprice &rarr;
-          </Link>
-        )}
+        <div className="flex items-center gap-5">
+          {syncMsg && <span className={`text-sm ${syncMsg.bad ? 'text-red-700' : 'text-slate-500'}`}>{syncMsg.text}</span>}
+          <button type="button" onClick={updateCollection} disabled={syncing}
+            className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50">
+            {syncing ? 'Updating…' : 'Update collection'}
+          </button>
+          {data.styles.length > 0 && (
+            <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+              Reprice &rarr;
+            </Link>
+          )}
+        </div>
       </div>
       {data.styles.length === 0 ? (
         <p className="px-5 py-4 text-sm text-slate-500">Nothing sitting.</p>
