@@ -23,13 +23,14 @@ STOCK is the utils/financeStock.js definition (local #FREE, not deleted + amzfee
          Month End and the nightly stock_daily line. Read LIVE here (stock_daily is a total, not per style), so it can differ from the
          page's "units in stock" number (last night's reading) by today's movement. Only styles with stock > 0 can be sitting.
 
-NEW PRODUCTS GET THEIR CHANCE (owner, 2026-10-10: "Is NEW factored, to give it a chance?"). A style created in the last NEW_DAYS (90)
-         days that hasn't sold in the window is NEW, not sitting — its own third part of the split, and off the list. The PRODUCT's
-         age, skusummary.created_at — the same rule and constant as the NEW portfolio status (utils/portfolioStatus.js), so the two
-         agree — never a delivery date: a re-order of a non-seller is still sitting (above). After 90 days an unsold new style becomes
-         sitting with no action needed. A new style that HAS sold is just selling.
+NEW PRODUCTS GET THEIR CHANCE (owner, 2026-10-10: "Is NEW factored, to give it a chance?"). A style created in the last 60 days (the
+         SAME window as the sale test) that hasn't sold is NEW, not sitting — its own part of the split, and off the list. The PRODUCT's
+         age, skusummary.created_at — never a delivery date: a re-order of a non-seller is still sitting (above). After 60 days an
+         unsold new style becomes sitting with no action needed. A new style that HAS sold is just selling.
+         NOT the portfolio NEW status's 90 days (utils/portfolioStatus.js NEW_DAYS) — first built on it, switched the same day (owner:
+         "switch to 60") so every number on the screen reads one window. It differed by one style then. Don't re-point it at NEW_DAYS.
 
-         So stock splits three ways and always adds to 100%: SELLING (sold in 60 days) | NEW (unsold, under 90 days old) | SITTING.
+         So stock splits three ways and always adds to 100%: SELLING (sold in 60 days) | SITTING | NEW (unsold, under 60 days old).
 
 SALES are `sales` rows with qty > 0 on any channel (a return is not a sale). Units are local + Amazon as ONE number — the owner
          doesn't want the split on this list.
@@ -44,7 +45,7 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "days": 60,
-  "new_days": 90,
+  "new_days": 60,                     // = days; kept separate so the screen never assumes it
   "total_units": 2917,                 // all stock, live — the three parts below always add up to it
   "selling_units": 2527,
   "new_units": 93,
@@ -68,11 +69,10 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { NEW_DAYS } = require('../utils/portfolioStatus');
 
 router.use(verifyToken);
 
-const SITTING_DAYS = 60;   // see header — the owner's pick between 30/60/90
+const SITTING_DAYS = 60;   // see header — the owner's pick between 30/60/90; also the NEW age (one window)
 
 router.get('/', async (req, res) => {
   try {
@@ -117,7 +117,7 @@ router.get('/', async (req, res) => {
        LEFT JOIN skusummary ss ON ss.groupid = d.groupid
        LEFT JOIN title t       ON t.groupid  = d.groupid
        ORDER BY d.local_units + d.amz_units DESC, d.groupid`,
-      [SITTING_DAYS, NEW_DAYS]
+      [SITTING_DAYS, SITTING_DAYS]
     );
 
     // Selling wins over NEW: a new style that has sold is simply selling. NEW is only the not-yet-sold-in-the-window new ones.
@@ -141,7 +141,7 @@ router.get('/', async (req, res) => {
     return res.json({
       return_code: 'SUCCESS',
       days: SITTING_DAYS,
-      new_days: NEW_DAYS,
+      new_days: SITTING_DAYS,
       total_units: total,
       selling_units: selling,
       new_units: newUnits,

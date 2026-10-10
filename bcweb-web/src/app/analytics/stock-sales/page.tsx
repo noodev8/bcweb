@@ -9,10 +9,13 @@ Purpose: Is the stock we buy shifting? The owner's read on whether to slow order
 HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          The first cut had weekly panels, a Shopify/Amazon/Shop split, a hover readout, a Week|Month switch on the chart and a full
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
-           1. stock now, split SELLING | NEW | SITTING in one 60-day window (adds to 100%; see SITTING below)
-           2. a monthly chart — closing stock as a line over units sold as columns
-           3. the numbers as a list, Month | Week, with % sold (also the chart's table view)
-           4. the sitting styles
+           1. THE TRACK — three boxes SELLING (biggest) | SITTING | NEW (60-day window, adds to 100%; boxes, not a bar)
+           2. the sitting styles — the "crap list" the owner works to keep the track up
+           3. (HIDDEN, lib/features.ts STOCK_SALES_FLOW) a monthly chart — closing stock line over sold columns
+           4. (HIDDEN, same switch) the numbers as a list, Month | Week, with % sold (also the chart's table view)
+         Selling % leads (owner, 2026-10-10: "use the positive 87%... I don't want this number to go too low"), chosen knowing it reads
+         generously — a style's WHOLE stock counts as selling if it sold one pair in 60 days — so it's labelled "in styles that sold",
+         never "% sold". The split is TODAY only — per-style stock history isn't stored and the owner doesn't want it stored.
          The top was three numbers (stock, sold 30d, % sold 30d) plus a 60-day sitting % until 2026-10-10 — owner: the 30- and 60-day
          numbers side by side "feel mixed". Sold/% sold measure flow, not stock, so they can't be part of a split that adds to 100%;
          they live in the list (the current month, so far, is its top row).
@@ -38,14 +41,14 @@ CHART (back 2026-10-10, owner asked for it)
 
 SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so I push it.")
          Stock in styles with no sale on any channel for 60 days (deliveries ignored — owner: "my fault if I'm still ordering while
-         they are not selling"), except NEW products — created under 90 days ago and not yet sold, the NEW portfolio-status rule — which
+         they are not selling"), except NEW products — created under 60 days ago and not yet sold (same window; NOT Repricing's 90-day NEW status) — which
          are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
          stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
          The list: most pairs first, GROUPID leading with the title on hover, each opening its pricing drill; pairs are one number, no
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
 
-Guarded by AppShell. Consumes GET /analytics-stock-sales and GET /analytics-stock-sitting.
+Guarded by AppShell. Consumes GET /analytics-stock-sitting, and GET /analytics-stock-sales only while STOCK_SALES_FLOW is on.
 =======================================================================================================================================
 */
 
@@ -53,6 +56,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { STOCK_SALES_FLOW } from '@/lib/features';
 import { getStockSales, getStockSitting, StockSalesPeriod, StockSittingData } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -68,7 +72,8 @@ const monthLabel = (s: string) => `${MONTHS[ymd(s).m - 1]} ${ymd(s).y}`;
 const weekLabel = (s: string) => `${dayLabel(s)} ${String(ymd(s).y).slice(2)}`; // the Monday the week starts
 
 export default function StockSalesPage() {
-  const q = useApiQuery('analytics-stock-sales', () => getStockSales());
+  // The flow half (chart + Month | Week list) is behind STOCK_SALES_FLOW; switched off, its query never runs (null key = don't fetch).
+  const q = useApiQuery(STOCK_SALES_FLOW ? 'analytics-stock-sales' : null, () => getStockSales());
   const d = q.data;
   const sq = useApiQuery('analytics-stock-sitting', () => getStockSitting());
   const sit = sq.data;
@@ -76,7 +81,7 @@ export default function StockSalesPage() {
 
   return (
     <AppShell backHref="/analytics" backLabel="Reports">
-      {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+      {(sq.isLoading || q.isLoading) && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
 
       {stale && (
@@ -88,60 +93,53 @@ export default function StockSalesPage() {
 
       {sq.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sq.error.message}</div>}
       {sit && <StockSplit data={sit} />}
-
-      {d && d.months.length > 0 && <Chart months={d.months} />}
-      {d && d.months.length > 0 && <PeriodList months={d.months} weeks={d.weeks} />}
       {sit && <SittingList data={sit} />}
+
+      {/* Background: how stock and sales flow through the year — HIDDEN while STOCK_SALES_FLOW is false (lib/features.ts). */}
+      {d && d.months.length > 0 && <div className="mt-8"><Chart months={d.months} /></div>}
+      {d && d.months.length > 0 && <PeriodList months={d.months} weeks={d.weeks} />}
     </AppShell>
   );
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------
-// STOCK SPLIT — the top of the page: stock now, split three ways that add up to the whole — SELLING (sold in `days`) | NEW (unsold but
-// created under `new_days` ago — giving it a chance) | SITTING (owner, 2026-10-10: the old 30-day sold + 60-day sitting numbers "feel
-// mixed"; then "Is NEW factored?"). Live stock, from the same read as the sitting list, so the parts and the total always agree. Each %
-// is rounded and selling takes the remainder, so the % always make 100.
+// STOCK SPLIT — the top of the page: stock now, split three ways that add up to the whole, as THREE BOXES — SELLING (sold in `days`) |
+// SITTING | NEW (unsold but created under `new_days` ago — giving it a chance; last, owner 2026-10-10). Live stock, from the same read
+// as the sitting list, so the parts and the total always agree. Each % is rounded and selling takes the remainder, so they make 100.
+// Boxes, not a bar (owner, 2026-10-10: "the blue overrides too many") — neutral slate, no series colour; SELLING is the track, so its
+// number is the biggest on the page.
+// SELLING % — the owner's number, keep it high ("I don't want this number to go too low"); the sitting list below is how it's worked
+// up. Worded "in styles that sold" on purpose: a style's WHOLE stock counts as selling if it sold one pair in the window, so it is not
+// "% of stock sold".
 // -------------------------------------------------------------------------------------------------------------------------------------
-const NEW_COLOR = '#cbd5e1';     // slate-300: not judged yet
-const SITTING_COLOR = '#64748b'; // slate-500: stalled stock reads grey against the stock blue, darker than NEW so it's the one you see
-
 function StockSplit({ data }: { data: StockSittingData }) {
   const total = data.total_units;
   const pct = (v: number) => (total ? Math.round((v / total) * 100) : 0);
   const newPct = pct(data.new_units);
   const sitPct = pct(data.sitting_units);
-  const parts = [
-    { key: 'selling', label: 'Selling', units: data.selling_units, pct: total ? 100 - newPct - sitPct : 0, color: STOCK_COLOR,
-      note: `sold in the last ${data.days} days` },
-    { key: 'new', label: 'New', units: data.new_units, pct: newPct, color: NEW_COLOR,
-      note: `not sold yet, under ${data.new_days} days old` },
-    { key: 'sitting', label: 'Sitting', units: data.sitting_units, pct: sitPct, color: SITTING_COLOR,
-      note: `no sale in ${data.days} days` },
-  ];
 
   return (
-    <div className="mb-4 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div className="text-4xl font-semibold tabular-nums text-slate-900">{n(total)}</div>
-      <div className="mt-1 text-sm text-slate-500">units in stock</div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <SplitBox hero label="of stock selling" pct={total ? 100 - newPct - sitPct : 0}
+        detail={`${n(data.selling_units)} of ${n(total)} pairs in styles that sold in the last ${data.days} days`} />
+      <SplitBox label="sitting" pct={sitPct}
+        detail={`${n(data.sitting_units)} pairs — no sale in ${data.days} days`} />
+      <SplitBox label="new" pct={newPct}
+        detail={`${n(data.new_units)} pairs — not sold yet, under ${data.new_days} days old`} />
+    </div>
+  );
+}
 
-      <div className="mt-4 flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-slate-100" role="img"
-        aria-label={parts.map((p) => `${p.pct}% ${p.label.toLowerCase()}`).join(', ')}>
-        {parts.map((p) => p.units > 0 && (
-          <div key={p.key} style={{ width: `${(p.units / total) * 100}%`, backgroundColor: p.color }} />
-        ))}
+function SplitBox({ hero, label, pct, detail }: { hero?: boolean; label: string; pct: number; detail: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-baseline gap-2">
+        <span className={`font-semibold leading-none tabular-nums ${hero ? 'text-6xl text-slate-900' : 'text-4xl text-slate-700'}`}>
+          {pct}%
+        </span>
+        <span className={hero ? 'text-base font-medium text-slate-700' : 'text-sm text-slate-500'}>{label}</span>
       </div>
-
-      <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-        {parts.map((p, i) => (
-          <div key={p.key} className={i === 1 ? 'sm:text-center' : i === 2 ? 'sm:text-right' : ''}>
-            <div className={`flex items-center gap-2 text-slate-600 ${i === 1 ? 'sm:justify-center' : i === 2 ? 'sm:justify-end' : ''}`}>
-              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.color }} />
-              {p.label} <span className="font-semibold tabular-nums text-slate-900">{n(p.units)} · {p.pct}%</span>
-            </div>
-            <div className="mt-0.5 text-xs text-slate-400">{p.note}</div>
-          </div>
-        ))}
-      </div>
+      <div className="mt-2 text-sm text-slate-500">{detail}</div>
     </div>
   );
 }
@@ -341,7 +339,7 @@ const SELF = encodeURIComponent('/analytics/stock-sales');
 
 function SittingList({ data }: { data: StockSittingData }) {
   return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="mt-3 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">
         Sitting — no sale in {data.days} days
         <span className="font-normal text-slate-500">
