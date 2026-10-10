@@ -15,7 +15,7 @@ Purpose: The reduced-typing price control. Layout mirrors the owner's desktop ap
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
   - Nudge buttons step the editable price.
-  - Disable Apply if price < cost. Warn (but allow) if price > rrp. (min/max shopify-price bounds removed per owner.)
+  - Warn (but allow) if price < cost (a hard block until 2026-10-11) or price > rrp. (min/max shopify-price bounds removed per owner.)
   - Amazon's live price spread is shown on the reference line, and going under its lowest raises a note. Both ADVISORY, neither blocks:
     Shopify is priced independently of Amazon (2026-09-15, replacing the autopilot that pinned it to Amazon's cheapest in-stock size).
   - Review is OPTIONAL (None by default): a day chip parks the style out of triage until today+N; None leaves the review date untouched.
@@ -86,7 +86,8 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
   const priceValid = Number.isFinite(price) && price > 0;
   const changed = now === null || (Number.isFinite(price) && Math.round(price * 100) !== Math.round(now * 100));
 
-  const applyDisabled = applying || !priceValid || belowCost || !changed;
+  // Below cost WARNS but no longer blocks (owner, 2026-10-11: "I need to apply any price I want") — the server flags it too.
+  const applyDisabled = applying || !priceValid || !changed;
 
   function nudge(delta: number) {
     const base = Number.isFinite(price) ? price : (now ?? 0);
@@ -265,7 +266,7 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
 
       {/* Bound feedback */}
       <div className="mb-4 min-h-[1.25rem] text-xs">
-        {belowCost && <span className="text-red-600">Below cost (£{header.cost!.toFixed(2)}) — can&apos;t apply.</span>}
+        {belowCost && <span className="text-red-600">Below cost (£{header.cost!.toFixed(2)}) — you&apos;d sell at a loss.</span>}
         {!belowCost && aboveRrp && (
           <span className="text-amber-600">Above RRP (£{header.rrp!.toFixed(2)}) — allowed, but check.</span>
         )}

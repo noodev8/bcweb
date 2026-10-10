@@ -16,10 +16,10 @@ Purpose: The Amazon Pricing write (W-A1, docs/amz-pricing-spec.md §4; auto-park
          WITHOUT pricing, the operator uses the batch POST /amz-review instead.
 
 Rules enforced here (never trust the client):
-  - BLOCK  newPrice < hard-floor (cost + FBA fee)      -> PRICE_BELOW_FLOOR   (breakeven; can't knowingly sell at a loss)
+  - ALLOW+FLAG newPrice < breakeven (cost + FBA fee)   -> warnings:['BELOW_FLOOR']  (a hard block until 2026-10-11 — owner wants to
+                                                           apply any price)
   - ALLOW+FLAG newPrice > RRP                            -> warnings:['ABOVE_RRP']
-    (The tidy working-floor and any discovered ceiling are *guidance in the suggestion*, not hard write bounds — the playbook
-     deliberately clears dead piles below the tidy floor and harvests above prior levels. Only breakeven and RRP are hard here.)
+    (The tidy working-floor and any discovered ceiling are *guidance in the suggestion*, not hard write bounds. Nothing blocks here.)
   - Money rounded to 2dp. amz_price_log.old_price/new_price are numeric columns, so numbers are written (not strings).
   - NEVER write amzfeed (it is refreshed nightly from Amazon — any write is clobbered; hard rule from AMZ_PRICING.md).
   - The optional `note` carries the operator's rationale (the row's suggestion "why" is a good default the client can pass). Capped.
@@ -39,7 +39,7 @@ Success Response:
   // let the client basket build the upload file from this response.
 =======================================================================================================================================
 Return Codes:
-"SUCCESS" · "MISSING_FIELDS" · "INVALID_PRICE" · "INVALID_REVIEW_DAYS" · "PRICE_BELOW_FLOOR" · "NOT_FOUND" · "UNAUTHORIZED" · "SERVER_ERROR"
+"SUCCESS" · "MISSING_FIELDS" · "INVALID_PRICE" · "INVALID_REVIEW_DAYS" ·"NOT_FOUND" · "UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -108,15 +108,13 @@ router.post('/', async (req, res) => {
     const fbafee = num(row.fbafee);
     const rrp = num(row.rrp);
 
-    // BLOCK below breakeven (only when both parts are known — can't enforce what we can't read).
+    // FLAG below breakeven (only when both parts are known — can't check what we can't read). Was a hard block (PRICE_BELOW_FLOOR) until
+    // 2026-10-11, when the owner asked to be able to apply any price, same as Shopify W1.
+    const warnings = [];
     if (cost !== null && fbafee !== null) {
       const hardFloor = Math.round((cost + fbafee) * 100) / 100;
-      if (rounded < hardFloor) {
-        return res.json({ return_code: 'PRICE_BELOW_FLOOR', message: `Price ${rounded.toFixed(2)} is below the floor ${hardFloor.toFixed(2)} (cost + FBA fee)` });
-      }
+      if (rounded < hardFloor) warnings.push('BELOW_FLOOR');
     }
-
-    const warnings = [];
     if (rrp !== null && rounded > rrp) warnings.push('ABOVE_RRP');
 
     // old_price is NOT NULL on amz_price_log, but the live amzprice can read back NULL (a junk/blank VARCHAR that safeNumeric couldn't

@@ -16,7 +16,7 @@ Purpose: The SKU-grain price control on the Amazon drill. Leaner than the Shopif
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
   - Nudge buttons step the editable price (the engine's typical £0.30 / £0.50 / £1.00 moves); net margin updates live.
-  - Disable Apply if price < floor (cost + FBA fee — breakeven). Warn (but allow) if price > RRP.
+  - Warn (but allow) if price < floor (cost + FBA fee — breakeven; a hard block until 2026-10-11) or price > RRP.
   - Note is optional; it's saved to the amz_price_log row as the rationale.
   - Review period is OPTIONAL (None by default), mirroring the Shopify setter: None leaves the review date untouched and the SKU stays in
     the list; a period parks it out of the winners/losers queue until today+N. To review WITHOUT pricing, use the list's batch "mark reviewed".
@@ -75,7 +75,8 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
   const priceValid = Number.isFinite(price) && price > 0;
   const changed = now === null || (Number.isFinite(price) && Math.round(price * 100) !== Math.round(now * 100));
 
-  const applyDisabled = applying || !priceValid || belowFloor || !changed;
+  // Below floor WARNS but no longer blocks (owner, 2026-10-11 — apply any price, same as Shopify). The server flags it too.
+  const applyDisabled = applying || !priceValid || !changed;
 
   function nudge(delta: number) {
     const base = Number.isFinite(price) ? price : (now ?? 0);
@@ -144,7 +145,7 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
 
       {/* Bound feedback */}
       <div className="mb-4 min-h-[1.25rem] text-xs">
-        {belowFloor && <span className="text-red-600">Below floor (£{header.floor!.toFixed(2)} = cost + FBA fee) — can&apos;t apply.</span>}
+        {belowFloor && <span className="text-red-600">Below floor (£{header.floor!.toFixed(2)} = cost + FBA fee) — you&apos;d sell at a loss.</span>}
         {!belowFloor && aboveRrp && (
           <span className="text-amber-600">Above RRP (£{header.rrp!.toFixed(2)}) — allowed, but check.</span>
         )}

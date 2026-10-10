@@ -12,8 +12,8 @@ Rules enforced here:
     CLAUDE.md W1 updated to match.)
   - An optional free-text `note` is stored in price_change_log.reason_notes (was hardcoded '' before). It's length-capped server-side.
   - Server-side bounds (never trust the client, which also enforces them for UX):
-        BLOCK    newPrice < cost           -> PRICE_BELOW_COST
-        ALLOW+FLAG newPrice > rrp              (returned in `warnings`)
+        ALLOW+FLAG newPrice < cost             (returned in `warnings` as BELOW_COST — was a hard block until 2026-10-11, owner)
+        ALLOW+FLAG newPrice > rrp              (returned in `warnings` as ABOVE_RRP)
     (A bound that is NULL/blank in the DB is simply not checked. The min/maxshopifyprice bounds were removed per owner — unused.)
   - Money: round to 2dp before writing; shopifyprice is VARCHAR so write it as a 2dp STRING (e.g. '36.95') (CLAUDE.md).
   - shopifychange is deliberately NOT set. This route now pushes the new price to Shopify IMMEDIATELY via the Admin API
@@ -42,7 +42,7 @@ Success Response:
   "new_price": "37.95",            // the 2dp string actually written
   "old_price": 36.95,             // previous numeric price (null if none)
   "next_review": "2026-07-11",    // CURRENT_DATE + reviewDays, or null when review was None / left untouched
-  "warnings": ["ABOVE_RRP"],       // any non-blocking flags (ABOVE_RRP); [] if none
+  "warnings": ["ABOVE_RRP"],       // any non-blocking flags (BELOW_COST, ABOVE_RRP); [] if none
   "shopify": { "pushed": true, "isNew": false, "variantCount": 11 }  // direct Shopify push outcome (see below); null if not live
 }
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
@@ -55,7 +55,6 @@ Return Codes:
 "MISSING_FIELDS"
 "INVALID_PRICE"
 "INVALID_REVIEW_DAYS"
-"PRICE_BELOW_COST"
 "MATCH_LOCKED"        // style is auto-matched to Amazon — turn matching off to price manually
 "NOT_FOUND"
 "UNAUTHORIZED"
@@ -136,13 +135,10 @@ router.post('/', async (req, res) => {
     const cost = num(row.cost);
     const rrp = num(row.rrp);
 
-    // 5) BLOCKING bound (only checked when cost is known). Enforced here regardless of the client. (min bound removed per owner.)
-    if (cost !== null && roundedPrice < cost) {
-      return res.json({ return_code: 'PRICE_BELOW_COST', message: `Price ${priceString} is below cost ${cost.toFixed(2)}` });
-    }
-
-    // 6) NON-blocking flag — allowed but surfaced so the UI can warn. (max bound removed per owner; only ABOVE_RRP remains.)
+    // 5) NON-blocking flags — allowed but surfaced so the UI can warn. (min/max bounds removed per owner.) BELOW_COST was a hard
+    //    block (PRICE_BELOW_COST) until 2026-10-11, when the owner asked to be able to apply any price — e.g. to clear stock at a loss.
     const warnings = [];
+    if (cost !== null && roundedPrice < cost) warnings.push('BELOW_COST');
     if (rrp !== null && roundedPrice > rrp) warnings.push('ABOVE_RRP');
 
     const isHold = oldPrice !== null && oldPrice === roundedPrice;   // same price as now = a hold, nothing to push anywhere

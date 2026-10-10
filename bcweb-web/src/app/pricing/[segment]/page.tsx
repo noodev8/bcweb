@@ -272,8 +272,8 @@ function SegmentContent() {
 
   // BULK PRICE MOVE — loop POST /pricing-apply (W1) per ticked style (newPrice = its current price + delta), exactly like applying one at
   // a time, so each write runs the same server bounds AND the live Shopify push. reviewDays rides along as an optional park (mirrors the
-  // drill). Styles with an unknown current price (junk VARCHAR -> null) are skipped; the server may also block one below cost — both are
-  // reported in the summary, not surfaced as hard errors (owner: "ignore blocked/below-min for now").
+  // drill). Styles with an unknown current price (junk VARCHAR -> null) are skipped and reported in the summary, not surfaced as hard
+  // errors. Below cost is NOT blocked any more (owner, 2026-10-11) — the server only flags it, so a bulk cut can take a style under cost.
   async function bulkApplyPrice(delta: number, reviewDays: number | null, note: string) {
     const targets = view.rows.filter((r) => selected.has(r.groupid));
     if (targets.length === 0 || Math.abs(delta) < 0.005) return;

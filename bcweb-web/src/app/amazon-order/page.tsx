@@ -217,8 +217,8 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
  * The write is the Amazon Pricing one, POST /amz-apply (W-A1): it LOGS the price to amz_price_log and nothing more — no live push. The
  * price reaches Amazon through the upload basket on Amazon Pricing, which is rebuilt from that log team-wide, so a price set here is in
  * the next Seller Central file without this screen touching the basket itself. The review date is left alone (no reviewDays), exactly
- * as a "None" apply on the pricing screens. The server enforces the bounds: below the floor (cost + FBA fee) is blocked — mirrored here
- * so Set greys out rather than bouncing — and above RRP is allowed but flagged.
+ * as a "None" apply on the pricing screens. Nothing blocks: below the floor (cost + FBA fee) is warned here (a hard block until
+ * 2026-10-11 — owner wants to apply any price) and above RRP is flagged by the server.
  *
  * The box starts from the QUEUED price when there is one (set, not yet uploaded), else the live one, so a second nudge builds on the
  * first rather than on a live price Amazon hasn't caught up with.
@@ -245,7 +245,7 @@ function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
     setMsg(null);
   }
   async function submit() {
-    if (!changed || belowFloor || busy || price === null) return;
+    if (!changed || busy || price === null) return;
     setBusy(true); setMsg(null);
     const res = await onSetPrice(row.code, price);
     setBusy(false);
@@ -288,7 +288,7 @@ function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
         <button
           type="button"
           onClick={submit}
-          disabled={!changed || belowFloor || busy}
+          disabled={!changed || busy}
           className="ml-1 h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {busy ? 'Setting…' : 'Set'}
@@ -299,8 +299,8 @@ function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
           Live {money(row.price)}
           {row.floor !== null && <span className="text-slate-400"> · floor {money(row.floor)}</span>}
         </div>
-        {belowFloor && <div className="text-red-600">Below the floor (cost + FBA fee) — can&rsquo;t be set.</div>}
-        {!belowFloor && msg && (
+        {belowFloor && <div className="text-red-600">Below the floor (cost + FBA fee) — you&rsquo;d sell at a loss.</div>}
+        {msg && (
           <div className={msg.tone === 'err' ? 'text-red-600' : msg.tone === 'warn' ? 'text-amber-700' : 'text-emerald-700'}>{msg.text}</div>
         )}
         {queued !== null && (
