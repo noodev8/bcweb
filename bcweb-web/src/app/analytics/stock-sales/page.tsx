@@ -289,7 +289,15 @@ function Depth({ data, initialBand }: { data: StockDepthData; initialBand: strin
             here on the same tile. It is the only way into that list — Repricing itself has no tab for it. Opens with Due OFF (?pending=1) so the list holds every style the
             tile counts: on the day it was built 49 of the 51 Over a year styles had a review date ahead, and Due on would have shown 2. */}
         {rows.length > 0 && (
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex justify-end gap-5">
+            {/* Google Ads opens on the same styles as an "Excess" chip; the operator picks rows and a bucket there (owner, 2026-10-10 —
+                no campaign move from here: live bucket tests). Same tab, same ?from= return ticket as Reprice. */}
+            <Link
+              href={`/google-ads?excess=${sel}&from=${encodeURIComponent(`/analytics/stock-sales?band=${sel}`)}&back=${encodeURIComponent('Stock vs Sales')}`}
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
+            >
+              Open in Google Ads &rarr;
+            </Link>
             <Link
               href={`/pricing/${sel}?by=excess&pending=1&from=${encodeURIComponent(`/analytics/stock-sales?band=${sel}`)}&back=${encodeURIComponent('Stock vs Sales')}`}
               className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
