@@ -107,7 +107,6 @@ app.use('/pricing-campaigns', require('./routes/pricing-campaigns'));  // Segmen
 app.use('/pricing-status-overview', require('./routes/pricing-status-overview')); // GET: per-status, per-channel due / parked counts
 app.use('/pricing-status-list', require('./routes/pricing-status-list'));         // GET ?status=: the Shopify list behind a status
 app.use('/amz-status-list', require('./routes/amz-status-list'));                 // GET ?status=: the Amazon (SKU) list behind a status
-app.use('/pricing-excess-list', require('./routes/pricing-excess-list'));         // GET ?band=: the Shopify list behind a Stock vs Sales depth tile
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-vs-amazon', require('./routes/pricing-vs-amazon')); // GET: every Amazon-live style, Shopify price vs Amazon spread
@@ -321,8 +320,6 @@ app.use('/birk-availability-update', require('./routes/birk-availability-update'
 // Stock vs Sales: units owned at the end of each week/month (stock_daily, written nightly by scripts/stock-daily.js) beside units sold
 // (live from `sales`, all channels, net of returns). Replaced the Stock Position gauge and its "Update now" snapshot (2026-10-09).
 app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   // GET: READ ONLY
-// The same screen's depth card: each style's stock against its own pace of sales, bucketed by months held. READ ONLY.
-app.use('/analytics-stock-depth', require('./routes/analytics-stock-depth'));
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.

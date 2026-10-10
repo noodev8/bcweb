@@ -302,14 +302,12 @@ export function getSegments() {
 // shape but the server refuses a campaign there.
 // A status is NOT read through the Selling/Stuck pair: it is one unsplit list, out-of-stock included (getStatusList /
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
-// 'excess' (2026-10-10, SHOPIFY ONLY) = a Stock vs Sales depth band (name under6 | 6to12 | over12 | total), also one unsplit list
-// (getExcessList). Reached ONLY from the Stock vs Sales link — no tab or tile on Repricing (owner: don't disturb navigation).
-export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'excess';
+export type PricingGroupBy = 'segment' | 'campaign' | 'status';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'status' || v === 'excess' ? v : 'segment';
+  return v === 'campaign' || v === 'status' ? v : 'segment';
 }
 
 // Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
@@ -382,21 +380,6 @@ export function getStatusList(status: string, bar?: number | null) {
       total: Number(b.total) || 0,
       truncated: !!b.truncated,
       outOfStock: Number(b.out_of_stock) || 0,
-      rows: b.rows || [],
-    })
-  );
-}
-
-// The ONE Shopify list behind a Stock vs Sales depth tile — the same styles the tile counts (server: utils/stockDepth.js), deepest
-// first. Same row shape as getStatusList; stock = the depth card's units (local + Amazon). Parked included; the Due switch filters.
-export type ExcessBand = 'under6' | '6to12' | 'over12' | 'total';
-export function getExcessList(band: ExcessBand) {
-  return request<{ band: ExcessBand; total: number; truncated: boolean; rows: LoserRow[] }>(
-    { url: '/pricing-excess-list', method: 'GET', params: { band, limit: STATUS_LIST_LIMIT, parked: 'include' } },
-    (b) => ({
-      band: (b.band as ExcessBand) || band,
-      total: Number(b.total) || 0,
-      truncated: !!b.truncated,
       rows: b.rows || [],
     })
   );
@@ -1112,34 +1095,6 @@ export function getStockSales() {
       months: b.months || [],
       weeks: b.weeks || [],
     })
-  );
-}
-
-// Stock depth — each style we hold, against its own pace of sales (12 months, or its life if younger). months = units ÷ units sold per
-// month; null for 'new' (too young to have a pace) and for an 'over12' style with no net sales in its window (no sales = the deepest
-// over-a-year stock). excess = units beyond what the style needs (Birkenstock 6 months of its own sales, everything else 2 — see
-// routes/analytics-stock-depth.js); excess_units is their sum.
-export type StockDepthBand = 'under6' | '6to12' | 'over12' | 'new';
-export interface StockDepthRow {
-  groupid: string;
-  title: string | null;
-  brand: string | null;
-  units: number;
-  sold: number;
-  months: number | null;
-  band: StockDepthBand;
-  excess: number;
-}
-export interface StockDepthData {
-  bands: { band: StockDepthBand; styles: number; units: number }[]; // display order, zeros included
-  excess_units: number;
-  rows: StockDepthRow[];
-}
-
-export function getStockDepth() {
-  return request<StockDepthData>(
-    { url: '/analytics-stock-depth', method: 'GET' },
-    (b) => ({ bands: b.bands || [], excess_units: b.excess_units ?? 0, rows: b.rows || [] })
   );
 }
 

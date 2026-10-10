@@ -9,45 +9,36 @@ Purpose: Is the stock we buy shifting? The owner's read on whether to slow order
 HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          The first cut had weekly panels, a Shopify/Amazon/Shop split, a hover readout, a Week|Month switch on the chart and a full
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
-           1. four big numbers — units in stock, sold in 30 days, % of stock sold, excess units
+           1. three big numbers — units in stock, sold in 30 days, % of stock sold
            2. the numbers as a list, Month | Week, with % sold
-           3. how deep the stock is — EXCESS units by depth band plus a Total tile (owner, 2026-10-10: excess instead of all units,
-              not as well as — both on a tile was too many numbers), so this card adds up to the hero
-           4. by brand (on trial), with a Total row whose Excess is the hero's too; the excess rule is footnoted there
          Per-channel detail already lives on the Sales report; don't grow this page back into it.
+
+NO EXCESS (removed 2026-10-10, owner: "Let's not have anything regarding EXCESS")
+         A depth card (stock as months of each style's own sales), an "excess units" number (stock beyond 6 months' need for
+         Birkenstock, 2 for the rest), a by-brand card, a Repricing excess list, a Google Ads excess chip and a Shopify clearance tag
+         built on them all went the same day. Every version of the rule forecast from past pace, and seasonal buying beats that: a
+         Zermatt bought in August for the winter run, selling well, read as 29 excess and a clearance candidate. 12-month pace, 30/90-day
+         pace, last year's same months and 12 months' need were all tried and rejected; so was "aged stock" (owner: "I can easily order
+         something I feel will sell well"). The code is in git history (commits f0ed513, e4f91fd, dd28eb4). Don't put a stock-needs rule
+         back without the owner.
 
 NO CHART (removed 2026-10-09, owner)
          There was a monthly stock-line-over-sold-bars chart. The owner's verdict: "it just looks obvious" — it showed the seasons he
-         already knows, and the decisions came from the list's % sold and the depth card. Don't add it back without a question it
+         already knows, and the decisions came from the list's % sold. Don't add it back without a question it
          answers that the list doesn't.
 
 % SOLD — THE OWNER'S MEASURE ("buy it, sell it, quick")
          Sold in the period ÷ stock at the end of it. It swings with the season (≈8% in January, ≈42% in June 2026), so it is read down
          the list against the same month a year earlier, not against a fixed target. No verdict tile: the owner asked for the list.
 
-STOCK DEPTH — WHY THE CARD EXISTS
-         Asked "have I over-ordered?", the whole-book numbers said no: stock turned 3.1x in the year, up from 2.6x. Splitting it per
-         style said otherwise — a third of all units sat in styles holding more than a year of their own sales. The fast half carried
-         the average. Owner: "over-deep stock … I could have done just as much with less invoices", and "we should be able to see it in
-         the data". The card shows units by depth band and lists the styles behind each; a row opens the usual product actions (reprice
-         etc.). Right NOW only — there is no per-style stock history to trend. The list works by Group ID (title on hover) with a brand
-         column, and a By brand card follows it (on trial — the owner may drop it).
-
-EXCESS UNITS (owner, 2026-10-09) — the target to drive down: stock beyond what each style needs (Birkenstock 6 months of its own
-         sales, re-orderable brands 2). Shown as the fourth big number. Counts only stock we HOLD (local + Amazon), never Birk Tracker
-         orders — those count once they land.
-
-Guarded by AppShell. Consumes GET /analytics-stock-sales and GET /analytics-stock-depth.
+Guarded by AppShell. Consumes GET /analytics-stock-sales.
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import AppShell from '@/components/AppShell';
-import { useProductActions } from '@/components/ProductActions';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStockSales, getStockDepth, StockSalesPeriod, StockDepthBand, StockDepthData } from '@/lib/api';
+import { getStockSales, StockSalesPeriod } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -61,21 +52,8 @@ const dayLabel = (s: string) => `${ymd(s).d} ${MONTHS[ymd(s).m - 1]}`;
 const monthLabel = (s: string) => `${MONTHS[ymd(s).m - 1]} ${ymd(s).y}`;
 const weekLabel = (s: string) => `${dayLabel(s)} ${String(ymd(s).y).slice(2)}`; // the Monday the week starts
 
-// useSearchParams must sit inside a Suspense boundary for Next's build.
 export default function StockSalesPage() {
-  return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
-      <StockSalesContent />
-    </Suspense>
-  );
-}
-
-function StockSalesContent() {
-  // ?band= — the depth tile to open on. Set by the Repricing list's "← Back" (the link below puts it in ?from=), so returning from
-  // repricing lands on the tile you left, not the default.
-  const bandParam = useSearchParams().get('band');
   const q = useApiQuery('analytics-stock-sales', () => getStockSales());
-  const depthQ = useApiQuery('analytics-stock-depth', () => getStockDepth());
   const d = q.data;
   const stale = d?.latest && d.latest.date < d.expected_date;
 
@@ -91,27 +69,16 @@ function StockSalesContent() {
         </div>
       )}
 
-      {/* The four numbers to watch. % sold is the owner's own measure (sold in 30 days ÷ stock now) — push it up. Excess is stock bought
-          beyond what each style needs (Birkenstock 6 months of its own sales, everything else 2) — drive it down. Both move the right
-          way by selling deep stock OR by not re-buying it. */}
+      {/* The three numbers to watch. % sold is the owner's own measure (sold in 30 days ÷ stock now) — push it up. */}
       {d && d.latest && (
-        <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Hero value={n(d.latest.units)} label="units in stock" />
           <Hero value={n(d.sold_30d)} label="sold in the last 30 days" />
           <Hero value={d.latest.units ? `${Math.round((d.sold_30d / d.latest.units) * 100)}%` : '—'} label="of stock sold in 30 days" />
-          <Hero value={depthQ.data ? n(depthQ.data.excess_units) : '…'} label="excess units, beyond need" />
         </div>
       )}
 
       {d && d.months.length > 0 && <PeriodList months={d.months} weeks={d.weeks} />}
-
-      {depthQ.error && <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{depthQ.error.message}</div>}
-      {depthQ.data && depthQ.data.rows.length > 0 && (
-        <>
-          <Depth data={depthQ.data} initialBand={bandParam} />
-          <Brands rows={depthQ.data.rows} />
-        </>
-      )}
     </AppShell>
   );
 }
@@ -185,263 +152,6 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// -------------------------------------------------------------------------------------------------------------------------------------
-// DEPTH — how many months of its OWN sales each style's stock represents. One bar of EXCESS units split by depth, then the styles behind
-// whichever band is picked (Over a year by default — the over-deep pile). Depth bands are ordinal, so they share one blue ramp, lighter
-// = shallower. Every segment is labelled, so colour never carries the meaning alone. Over a year includes styles with NO sales
-// (owner, 2026-10-10: the same pile at its extreme — a separate "Not selling" tile only meant one sale moved a style between tiles);
-// they sort to the top of its list as "No sales".
-// The server's 'new' band (under 8 weeks, no pace yet) is not shown: its excess is 0 by definition, so on an excess card it was a
-// tile that always read 0. Its place is a Total tile, which lines up with the "excess units" hero (owner, 2026-10-10).
-// -------------------------------------------------------------------------------------------------------------------------------------
-type DepthBand = Exclude<StockDepthBand, 'new'>;
-const BANDS: Record<DepthBand, { label: string; color: string }> = {
-  under6: { label: 'Under 6 months', color: '#86b6ef' },
-  '6to12': { label: '6–12 months', color: '#3987e5' },
-  over12: { label: 'Over a year', color: '#184f95' },
-};
-const DEPTH_BANDS = Object.keys(BANDS) as DepthBand[];
-
-// Months of stock as a reader would say it: "8 mo" up to two years, then years. No pace (new styles are not listed) = no sales at all.
-function depthLabel(m: number | null) {
-  if (m === null) return 'No sales';
-  if (m < 24) return `${m < 10 ? m.toFixed(1) : Math.round(m)} mo`;
-  return `${(m / 12).toFixed(1)} yrs`;
-}
-
-function Depth({ data, initialBand }: { data: StockDepthData; initialBand: string | null }) {
-  const [sel, setSel] = useState<DepthBand | 'total'>(
-    initialBand === 'total' || (initialBand !== null && initialBand in BANDS) ? (initialBand as DepthBand | 'total') : 'over12',
-  );
-  const actions = useProductActions();
-  // The bar and tiles count EXCESS units, not all units (owner, 2026-10-10) — so the card adds up to the "excess units" hero and
-  // shows where it sits. It isn't all in Over a year: a 9-month Birkenstock style is 6–12 months with 3 months spare, a 4-month Lunar
-  // style is Under 6 with 2 spare. Only styles WITH excess are counted and listed, so the tiles' style counts add up to the Total's.
-  const withExcess = data.rows.filter((r) => r.excess > 0);
-  const tiles = [
-    ...DEPTH_BANDS.map((band) => {
-      const rs = withExcess.filter((r) => r.band === band);
-      return { key: band as DepthBand | 'total', label: BANDS[band].label, color: BANDS[band].color as string | null,
-               excess: rs.reduce((s, r) => s + r.excess, 0), styles: rs.length };
-    }),
-    { key: 'total' as const, label: 'Total', color: null, excess: data.excess_units, styles: withExcess.length },
-  ];
-  const total = data.excess_units;
-  const rows = withExcess
-    .filter((r) => sel === 'total' || r.band === sel)
-    .sort((a, b) => (b.months ?? Infinity) - (a.months ?? Infinity) || b.units - a.units);
-
-  return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="px-5 pt-4">
-        <h2 className="text-sm font-semibold text-slate-800">How deep is the stock?</h2>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Excess units, by how long each style&rsquo;s stock lasts at its own pace of selling over the last 12 months.
-        </p>
-
-        {/* One bar: all excess units, split by depth. 2px surface gap between segments. */}
-        <div className="mt-3 flex h-7 w-full gap-0.5 overflow-hidden rounded-md">
-          {tiles.filter((t) => t.color && t.excess > 0).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setSel(t.key)}
-              title={`${t.label}: ${n(t.excess)} excess`}
-              className={`h-full transition ${sel === t.key || sel === 'total' ? '' : 'opacity-60 hover:opacity-90'}`}
-              style={{ width: `${(t.excess / total) * 100}%`, backgroundColor: t.color! }}
-            />
-          ))}
-        </div>
-
-        {/* The bands as labelled choices — the readable half of the bar — then the Total, which is the hero's number. */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {tiles.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setSel(t.key)}
-              aria-pressed={sel === t.key}
-              className={`rounded-md border px-3 py-2 text-left transition ${
-                sel === t.key ? 'border-slate-400 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                {t.color && <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: t.color }} />}
-                {t.label}
-              </div>
-              <div className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
-                {n(t.excess)}{' '}
-                <span className="text-sm font-normal text-slate-500">
-                  excess{t.color ? ` · ${total ? Math.round((t.excess / total) * 100) : 0}%` : ''}
-                </span>
-              </div>
-              <div className="text-xs text-slate-400">{n(t.styles)} {t.styles === 1 ? 'style' : 'styles'}</div>
-            </button>
-          ))}
-        </div>
-
-        {/* The door into Repricing (owner, 2026-10-10): the picked tile's styles as a Shopify Repricing list — bulk price, review, live
-            push. SAME TAB (owner, 2026-10-10); ?from= carries this page with the picked tile (?band=), so that list's "← Back" returns
-            here on the same tile. It is the only way into that list — Repricing itself has no tab for it. Opens with Due OFF (?pending=1) so the list holds every style the
-            tile counts: on the day it was built 49 of the 51 Over a year styles had a review date ahead, and Due on would have shown 2. */}
-        {rows.length > 0 && (
-          <div className="mt-3 flex justify-end gap-5">
-            {/* Google Ads opens on the same styles as an "Excess" chip; the operator picks rows and a bucket there (owner, 2026-10-10 —
-                no campaign move from here: live bucket tests). Same tab, same ?from= return ticket as Reprice. */}
-            <Link
-              href={`/google-ads?excess=${sel}&from=${encodeURIComponent(`/analytics/stock-sales?band=${sel}`)}&back=${encodeURIComponent('Stock vs Sales')}`}
-              className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
-            >
-              Open in Google Ads &rarr;
-            </Link>
-            <Link
-              href={`/pricing/${sel}?by=excess&pending=1&from=${encodeURIComponent(`/analytics/stock-sales?band=${sel}`)}&back=${encodeURIComponent('Stock vs Sales')}`}
-              className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
-            >
-              Reprice these {n(rows.length)} styles &rarr;
-            </Link>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 max-h-[28rem] overflow-auto border-t border-slate-100">
-        {rows.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-400">Nothing in this band.</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-2.5 text-left font-semibold">Group ID</th>
-                <th className="px-3 py-2.5 text-left font-semibold">Brand</th>
-                <th className="px-3 py-2.5 text-right font-semibold">In stock</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Sold, 12 months</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Stock lasts</th>
-                <th className="px-5 py-2.5 text-right font-semibold">Excess</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.groupid}
-                  onClick={(e) => actions.open(e, r.groupid, { title: r.title })}
-                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                >
-                  {/* Group ID is what the owner works by; the title rides on hover (owner, 2026-10-09). */}
-                  <td className="whitespace-nowrap px-5 py-2 text-slate-700" title={r.title || undefined}>{r.groupid}</td>
-                  <td className="px-3 py-2 text-slate-500">{r.brand || '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{n(r.units)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{n(r.sold)}</td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{depthLabel(r.months)}</td>
-                  <td className="px-5 py-2 text-right tabular-nums text-slate-700">{r.excess ? n(r.excess) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-      <p className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-400">
-        Styles under a year old are judged on their sales since they were added.
-      </p>
-      {actions.node}
-    </div>
-  );
-}
-
-// -------------------------------------------------------------------------------------------------------------------------------------
-// BRANDS — the same stock, per brand. Built 2026-10-09 because the first split by brand answered "how did I get so deep?": 855 of the
-// 954 over-a-year units were Birkenstock (season buys, 1.6 turns a year) while Lunar, ordered weekly, turned 7x. On trial — the owner
-// may drop it if the page gets busy, so it is its own card, removable in one line above.
-// Turns a year = sold ÷ stock. Sold uses each style's own window (12 months, or its life if younger), as on the depth card.
-// -------------------------------------------------------------------------------------------------------------------------------------
-function Brands({ rows }: { rows: StockDepthData['rows'] }) {
-  const by = new Map<string, { units: number; sold: number; over12: number; excess: number }>();
-  for (const r of rows) {
-    const k = r.brand || '—';
-    const b = by.get(k) ?? { units: 0, sold: 0, over12: 0, excess: 0 };
-    b.units += r.units;
-    b.sold += r.sold;
-    if (r.band === 'over12') b.over12 += r.units;
-    b.excess += r.excess;
-    by.set(k, b);
-  }
-  const list = Array.from(by, ([brand, b]) => ({ brand, ...b })).sort((a, b) => b.units - a.units);
-  // Total row — its Excess is the "excess units" hero, so the big number can be traced to the brands behind it.
-  const tot = list.reduce(
-    (t, b) => ({ units: t.units + b.units, sold: t.sold + b.sold, over12: t.over12 + b.over12, excess: t.excess + b.excess }),
-    { units: 0, sold: 0, over12: 0, excess: 0 },
-  );
-
-  return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800">By brand</h2>
-      <table className="mt-2 w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-            <th className="px-5 py-2.5 text-left font-semibold">Brand</th>
-            <th className="px-3 py-2.5 text-right font-semibold">In stock</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Sold, 12 months</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Turns a year</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Over a year</th>
-            <th className="px-5 py-2.5 text-right font-semibold">Excess</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((b) => (
-            <tr key={b.brand} className="border-b border-slate-100 text-slate-700 last:border-0">
-              <td className="px-5 py-2">{b.brand}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{n(b.units)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{n(b.sold)}</td>
-              <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
-                {b.units ? `${(b.sold / b.units).toFixed(1)}×` : '—'}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{b.over12 ? n(b.over12) : '—'}</td>
-              <td className="px-5 py-2 text-right tabular-nums">{b.excess ? n(b.excess) : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-slate-300 font-semibold text-slate-900">
-            <td className="px-5 py-2">Total</td>
-            <td className="px-3 py-2 text-right tabular-nums">{n(tot.units)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{n(tot.sold)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{tot.units ? `${(tot.sold / tot.units).toFixed(1)}×` : '—'}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{n(tot.over12)}</td>
-            <td className="px-5 py-2 text-right tabular-nums">{n(tot.excess)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      {/* The excess rule lives here, beside the total it explains — collapsed, so it is there when asked for (owner, 2026-10-10). */}
-      <details className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">
-        <summary className="cursor-pointer select-none text-slate-400 hover:text-slate-600">How excess is worked out</summary>
-        <div className="mt-2 space-y-2 pb-1">
-          <p className="font-semibold text-slate-700">Excess = what you hold − what you need</p>
-          <ol className="list-decimal space-y-1 pl-5">
-            <li>
-              <span className="font-medium text-slate-700">Pace</span> — units sold per month over the last 12 months, all channels,
-              net of returns. A style younger than a year is judged on the months since it was added.
-            </li>
-            <li>
-              <span className="font-medium text-slate-700">Need</span> — pace × months of cover:{' '}
-              <span className="font-medium text-slate-700">Birkenstock 6</span> (bought a season ahead, no re-order mid-season),{' '}
-              <span className="font-medium text-slate-700">everything else 2</span> (re-orderable any week).
-            </li>
-            <li>
-              <span className="font-medium text-slate-700">Excess</span> — units in stock (local + Amazon) − need, never below 0.
-            </li>
-          </ol>
-          <ul className="space-y-0.5 pl-5 text-slate-500">
-            <li>Birkenstock, 24 in stock, sells 2/month → needs 12 → excess 12</li>
-            <li>Lunar, 10 in stock, sells 4/month → needs 8 → excess 2</li>
-            <li>No sales in 12 months → needs nothing → all of it is excess</li>
-            <li>Under 8 weeks old → no pace yet → excess 0</li>
-          </ul>
-          <p>Every style added up = the excess units at the top.</p>
-        </div>
-      </details>
     </div>
   );
 }
