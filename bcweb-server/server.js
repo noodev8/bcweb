@@ -107,6 +107,7 @@ app.use('/pricing-campaigns', require('./routes/pricing-campaigns'));  // Segmen
 app.use('/pricing-status-overview', require('./routes/pricing-status-overview')); // GET: per-status, per-channel due / parked counts
 app.use('/pricing-status-list', require('./routes/pricing-status-list'));         // GET ?status=: the Shopify list behind a status
 app.use('/amz-status-list', require('./routes/amz-status-list'));                 // GET ?status=: the Amazon (SKU) list behind a status
+app.use('/pricing-excess-list', require('./routes/pricing-excess-list'));         // GET ?band=: the Shopify list behind a Stock vs Sales depth tile
 app.use('/pricing-drill', require('./routes/pricing-drill'));
 app.use('/pricing-find', require('./routes/pricing-find'));
 app.use('/pricing-vs-amazon', require('./routes/pricing-vs-amazon')); // GET: every Amazon-live style, Shopify price vs Amazon spread

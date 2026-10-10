@@ -30,6 +30,11 @@ switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status 
 stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
 both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 
+?by=excess (2026-10-10) — a STOCK DEPTH band from Reports → Stock vs Sales (path name under6 | 6to12 | over12 | total), the styles
+behind that card's tile, deepest first, from GET /pricing-excess-list. One unsplit list like a status (tabs hidden, mode pinned to
+'all'). Shopify only. Reached ONLY from the Stock vs Sales "Reprice" link (new tab, ?from= back there) — there is deliberately no tab
+or tile for it on Repricing (owner: don't disturb navigation). The Stock column is the depth card's units (local + Amazon).
+
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
 browser; when that cap bites the page says so.
@@ -43,7 +48,9 @@ import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getTriage, getLosers, getStatusList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
+import {
+  getTriage, getLosers, getStatusList, getExcessList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy, ExcessBand,
+} from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -96,8 +103,11 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   segment: undefined,
   campaign: 'Google campaign',
   status: 'status',
+  excess: 'excess stock',
 };
-const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status' };
+const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', excess: 'list' };
+// An excess list's path name is the band key; the crumb shows the Stock vs Sales tile's own label.
+const EXCESS_LABEL: Record<string, string> = { under6: 'Under 6 months', '6to12': '6–12 months', over12: 'Over a year', total: 'All excess' };
 
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
@@ -111,6 +121,8 @@ function SegmentContent() {
   const by = parseGroupBy(searchParams.get('by'));
   const group: PricingGroup = { by, name: segment };
   const isStatus = by === 'status';
+  const isExcess = by === 'excess';
+  const oneList = isStatus || isExcess;   // no Selling / Stuck split — one list, view pinned to 'all'
   // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
   const barRaw = Number(searchParams.get('bar'));
   const bar = isStatus && barRaw > 0 ? barRaw : null;
@@ -120,7 +132,7 @@ function SegmentContent() {
 
   // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
   const [modeState, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
-  const mode: ListView = isStatus ? 'all' : modeState;
+  const mode: ListView = oneList ? 'all' : modeState;
   const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
   // Where "← back" returns to. Threaded via ?from=/&back= so arriving from the Segments heatmap returns you there — not to /pricing
@@ -152,6 +164,22 @@ function SegmentContent() {
           success: true,
           return_code: 'SUCCESS',
           data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
+        };
+      }
+      // An EXCESS band is one unsplit list too (GET /pricing-excess-list — the styles behind a Stock vs Sales depth tile), same
+      // treatment as a status: rows in `winners`, view pinned to 'all'.
+      if (isExcess) {
+        const x = await getExcessList(segment as ExcessBand);
+        if (x.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(x.success && x.data)) return { success: false, return_code: x.return_code, error: x.error || 'Failed to load list' };
+        const rows: ListRow[] = x.data.rows.map((r) => ({
+          kind: 'winner', groupid: r.groupid, title: r.title, brand: r.brand, units: r.u30, stock: r.stock, price: r.price, rrp: r.rrp,
+          match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: x.data.truncated, partialError: null, outOfStock: null as number | null },
         };
       }
       const [w, l] = await Promise.all([
@@ -319,14 +347,14 @@ function SegmentContent() {
   const ready = !loading && !error && !!data;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isExcess ? EXCESS_LABEL[segment] ?? segment : segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}
         counts={data ? view.counts : null}
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
-        showTabs={!isStatus}
+        showTabs={!oneList}
         summary={data ? (
           // At the top, so it's seen without scrolling: ONE number, the rows in the table below (owner, 2026-09-26). It follows
           // the Due switch — Due on counts the due rows, Due off counts everything shown.

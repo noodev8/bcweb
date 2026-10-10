@@ -27,7 +27,7 @@ Purpose: Reports -> Stock vs Sales, the "how deep is the stock?" card. For every
                       months; everything else (Lunar/IVES etc.) can be re-ordered any week, so 2 months. A style with no sales needs
                       nothing — all its units are excess. A 'new' style has no pace yet — counted as 0 excess, never guessed.
                       The page's "excess units" number is the sum: the stock bought beyond need, which the owner wants driven down.
-         Thresholds are business judgements and live here as constants, not in the SQL.
+         Thresholds are business judgements and live as constants in utils/stockDepth.js (shared with the Repricing excess list).
 
          Right NOW only — there is no per-style stock history, so this cannot be shown as a trend.
          READ-ONLY. Requires auth.
@@ -53,77 +53,18 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
+const { loadStockDepth } = require('../utils/stockDepth');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-const NEW_DAYS = 56;          // 8 weeks — long enough for a fresh style to have shown some pace
-const BAND_ORDER = ['under6', '6to12', 'over12', 'new'];
-// Months of its own sales a style NEEDS to hold, by brand (how long until more can land). Anything not listed can be re-ordered weekly.
-const NEED_MONTHS = { Birkenstock: 6 };
-const NEED_MONTHS_DEFAULT = 2;
-
+// The rule itself (bands, need months, excess) lives in utils/stockDepth.js since 2026-10-10, shared with routes/pricing-excess-list.js
+// so a depth tile and the Repricing list it opens always hold the same styles.
 router.get('/', async (req, res) => {
   try {
-    const r = await query(
-      `WITH stock AS (
-         SELECT groupid, SUM(qty)::int AS units FROM (
-           SELECT groupid, qty FROM localstock WHERE COALESCE(deleted, 0) = 0 AND ordernum = '#FREE'
-           UNION ALL
-           SELECT groupid, amztotal FROM amzfeed WHERE groupid IS NOT NULL
-         ) x
-         GROUP BY groupid
-         HAVING SUM(qty) > 0
-       ),
-       styles AS (
-         -- Window = the last 365 days, or the style's life if shorter (min 1 day). created_at is authoritative (backfilled 2026-07).
-         SELECT s.groupid, s.units, t.shopifytitle AS title, ss.brand,
-                CURRENT_DATE - ss.created_at::date AS age_days,
-                LEAST(365, GREATEST(COALESCE(CURRENT_DATE - ss.created_at::date, 365), 1)) AS window_days
-         FROM stock s
-         LEFT JOIN skusummary ss ON ss.groupid = s.groupid
-         LEFT JOIN title t ON t.groupid = s.groupid
-       ),
-       sold AS (
-         SELECT st.groupid, SUM(sa.qty) AS sold
-         FROM styles st
-         JOIN sales sa ON sa.groupid = st.groupid AND sa.solddate > CURRENT_DATE - st.window_days
-         GROUP BY st.groupid
-       )
-       SELECT st.groupid, st.title, st.brand, st.units, st.age_days, st.window_days, COALESCE(so.sold, 0)::int AS sold
-       FROM styles st
-       LEFT JOIN sold so ON so.groupid = st.groupid`
-    );
-
-    const counts = Object.fromEntries(BAND_ORDER.map((b) => [b, { band: b, styles: 0, units: 0 }]));
-    let excessUnits = 0;
-    const rows = r.rows.map((s) => {
-      const units = Number(s.units);
-      const sold = Number(s.sold);
-      let band;
-      let months = null;
-      let excess = 0;
-      if (s.age_days !== null && Number(s.age_days) < NEW_DAYS) {
-        band = 'new';
-      } else if (sold <= 0) {
-        band = 'over12';
-        excess = units;
-      } else {
-        const perMonth = sold / (Number(s.window_days) / 30.44);
-        months = Math.round((units / perMonth) * 10) / 10;
-        band = months <= 6 ? 'under6' : months <= 12 ? '6to12' : 'over12';
-        const need = (NEED_MONTHS[s.brand] ?? NEED_MONTHS_DEFAULT) * perMonth;
-        excess = Math.max(0, Math.round(units - need));
-      }
-      counts[band].styles += 1;
-      counts[band].units += units;
-      excessUnits += excess;
-      return { groupid: s.groupid, title: s.title, brand: s.brand || null, units, sold, months, band, excess };
-    });
-
-    return res.json({ return_code: 'SUCCESS', bands: BAND_ORDER.map((b) => counts[b]), excess_units: excessUnits, rows });
+    const { bands, excessUnits, rows } = await loadStockDepth();
+    return res.json({ return_code: 'SUCCESS', bands, excess_units: excessUnits, rows });
   } catch (err) {
     logger.error('[analytics-stock-depth] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load stock depth' });
