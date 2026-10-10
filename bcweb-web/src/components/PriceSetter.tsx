@@ -47,10 +47,11 @@ interface PriceSetterProps {
   onApply: (newPrice: number, reviewDays: number | null, note: string) => void;
   onPark: (reviewDays: number) => void;
   onCancel: () => void;
+  amazonHref?: string;                                          // where the Amazon spread links to (the Amazon pricing screen); omitted = plain text
 }
 
 
-export default function PriceSetter({ header, sizes, applying, onApply, onPark, onCancel }: PriceSetterProps) {
+export default function PriceSetter({ header, sizes, applying, onApply, onPark, onCancel, amazonHref }: PriceSetterProps) {
   const now = header.now;
 
   // Every size the style comes in (skumap's full range — sold-out sizes are rows with qty 0), in size order.
@@ -164,12 +165,22 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
             }
           >
             Amazon:{' '}
-            <span className="font-semibold text-slate-800">
-              £{header.amazon_lowest.toFixed(2)}
-              {header.amazon_highest !== null && Math.round(header.amazon_highest * 100) !== Math.round(header.amazon_lowest * 100)
-                ? `–£${header.amazon_highest.toFixed(2)}`
-                : ''}
-            </span>
+            {/* The spread is the way into Amazon pricing for this style (owner, 2026-10-11). It lands on the Amazon search pre-filled
+                with the groupid rather than one SKU's drill: Amazon prices per SIZE, so the operator picks which size to price. */}
+            {(() => {
+              const spread =
+                `£${header.amazon_lowest.toFixed(2)}` +
+                (header.amazon_highest !== null && Math.round(header.amazon_highest * 100) !== Math.round(header.amazon_lowest * 100)
+                  ? `–£${header.amazon_highest.toFixed(2)}`
+                  : '');
+              return amazonHref ? (
+                <a href={amazonHref} className="font-semibold text-slate-800 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600">
+                  {spread}
+                </a>
+              ) : (
+                <span className="font-semibold text-slate-800">{spread}</span>
+              );
+            })()}
           </span>
         )}
         {/* Ad floor. A number ONLY when the server could actually derive one — a floor built on a handful of clicks reads as
@@ -223,14 +234,32 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         <button onClick={() => nudge(0.5)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+50p</button>
         <button onClick={() => nudge(1)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+£1</button>
         <button onClick={() => nudge(2)} className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50">+£2</button>
-        {/* Reset to RRP — fills the box with the style's RRP; nothing is written until Apply, so the usual bounds still speak. */}
+        {/* RRP — fills the box with the style's RRP; nothing is written until Apply, so the usual bounds still speak. */}
         <button
           onClick={() => header.rrp !== null && setPriceStr(header.rrp.toFixed(2))}
           disabled={header.rrp === null}
-          title={header.rrp === null ? 'No RRP on file' : `Reset to RRP (£${header.rrp.toFixed(2)})`}
+          title={header.rrp === null ? 'No RRP on file' : `£${header.rrp.toFixed(2)}`}
           className="ml-1 rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
         >
-          Reset to RRP
+          RRP
+        </button>
+        {/* Match Amazon's HIGHEST live size (owner, 2026-10-11) — the floor Shopify vs Amazon works to (Shopify never under Amazon's
+            dearest live size). Like Reset to RRP it only fills the box; nothing is written until Apply. Hidden when no size is live. */}
+        {header.amazon_highest !== null && (
+          <button
+            onClick={() => setPriceStr(header.amazon_highest!.toFixed(2))}
+            className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Amazon high
+          </button>
+        )}
+        {/* Reset — puts the box back to the current (saved) price, undoing any nudges or fills before Apply. */}
+        <button
+          onClick={() => setPriceStr(now !== null ? now.toFixed(2) : '')}
+          disabled={!changed}
+          className="rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Reset
         </button>
       </div>
 

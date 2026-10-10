@@ -214,6 +214,7 @@ function DrillContent() {
                 onApply={handleApply}
                 onPark={handlePark}
                 onCancel={() => router.push(backTo)}
+                amazonHref={`/amz/find?q=${encodeURIComponent(groupid)}&from=${encodeURIComponent(priceHref)}`}
               />
             )}
           </section>
