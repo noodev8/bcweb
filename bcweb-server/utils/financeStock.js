@@ -5,7 +5,7 @@ Util: financeStock
 Purpose: The stock VALUATION shown on the Month End screen — units held and what they cost us. Spec: docs/finance-month-end-spec.md §3.6.
          Display only: it is not a QuickFile line. It replaces typing the figure into Brookfield-Finance.xls each month.
 
-         ALSO the nightly stock reading (scripts/stock-daily.js -> stock_daily, drawn on Reports -> Stock vs Sales). One definition of
+         ALSO the nightly stock reading (scripts/stock-daily.js -> stock_daily, drawn on Reports -> Selling vs Sitting, chart currently hidden). One definition of
          "the stock we own" across the platform, so the trend line and the accounts can never disagree. Change it here and both move.
 
 WHAT COUNTS AS STOCK (agreed with the owner, ported from C:\scripts\month-end\stock_position.py)

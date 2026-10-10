@@ -30,10 +30,10 @@ switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status 
 stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
 both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 
-?by=sitting (2026-10-10) — the SITTING styles from Reports → Stock vs Sales (path name 'sitting'): held, no sale on any channel in 60
+?by=sitting (2026-10-10) — the SITTING styles from Reports → Selling vs Sitting (path name 'sitting'): held, no sale on any channel in 60
 days, most pairs first, from GET /pricing-sitting-list (rule: bcweb-server/utils/stockSitting.js — the same function as the Sitting box,
 so the counts match). One unsplit list like a status (tabs hidden, mode pinned to 'all'). SHOPIFY ONLY — the owner clears on Shopify
-("my intention is to clear the crap"). Reached ONLY from the "Reprice these" link on Stock vs Sales (same tab, Due off, ?from= back
+("my intention is to clear the crap"). Reached ONLY from the "Reprice these" link on Selling vs Sitting (same tab, Due off, ?from= back
 there) — deliberately no tab or tile on Repricing (owner: don't disturb navigation). The Stock column is local + Amazon. It replaces the
 ?by=excess list removed the same day (git e4f91fd), same plumbing.
 
@@ -106,7 +106,7 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   sitting: 'no sale in 60 days',
 };
 const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list' };
-// The sitting list's path name is 'sitting'; the crumb shows the Stock vs Sales box's own word.
+// The sitting list's path name is 'sitting'; the crumb shows the Selling vs Sitting box's own word.
 const SITTING_LABEL = 'Sitting';
 
 function money(v: number | null): string {
@@ -166,7 +166,7 @@ function SegmentContent() {
           data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
         };
       }
-      // The SITTING list is one unsplit list too (GET /pricing-sitting-list — the styles behind the Stock vs Sales Sitting box), same
+      // The SITTING list is one unsplit list too (GET /pricing-sitting-list — the styles behind the Selling vs Sitting Sitting box), same
       // treatment as a status: rows in `winners`, view pinned to 'all'. kind 'loser' — every row has sold nothing.
       if (isSitting) {
         const x = await getSittingList();

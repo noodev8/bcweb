@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Util: clearanceTag
 =======================================================================================================================================
-Purpose: Keep the Shopify `clearance` TAG in step with the SITTING list (Reports → Stock vs Sales). Owner, 2026-10-10: "Back comes the
+Purpose: Keep the Shopify `clearance` TAG in step with the SITTING list (Reports → Selling vs Sitting). Owner, 2026-10-10: "Back comes the
          collection functionality. We need to set a tag on these. But be able to remove tags for items that drop out of here." The tag
          is what a Shopify smart collection keys on (rule "Product tag is equal to clearance"); the OWNER creates and names that
          collection in Shopify admin — this util only manages the tag. At build time no collection used the tag yet.
@@ -16,7 +16,7 @@ THE LIST OWNS THE TAG (owner's choice, 2026-10-10). After a sync, the products t
          Only the `clearance` tag is touched: tagsAdd / tagsRemove change just that tag, every other tag on a product is left alone.
 
 ONE CLICK (owner, 2026-10-10). First built as a preview panel then confirm; the owner found it "too much text. Leads to confusion. Just
-         do the update", so "Update collection" on Stock vs Sales runs applySync() straight away and the screen shows only +added
+         do the update", so "Update collection" on Selling vs Sitting runs applySync() straight away and the screen shows only +added
          -removed. planSync() is still the single place the plan is worked out (applySync calls it first), and it is read-only if you
          ever want a dry run from a script.
 

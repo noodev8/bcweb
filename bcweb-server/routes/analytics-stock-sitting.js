@@ -3,7 +3,7 @@
 API Route: analytics_stock_sitting
 =======================================================================================================================================
 Method: GET
-Purpose: Reports -> Stock vs Sales: stock now split SELLING | SITTING | NEW (the three boxes) and the sitting styles (the list under
+Purpose: Reports -> Selling vs Sitting: stock now split SELLING | SITTING | NEW (the three boxes) and the sitting styles (the list under
          them). Owner, 2026-10-10: "Stock comes in, goes out, happy. Sits, not happy so I push it."
 
          THE RULE LIVES IN utils/stockSitting.js — read its header for what sitting / new mean and why (60 days, any channel, deliveries

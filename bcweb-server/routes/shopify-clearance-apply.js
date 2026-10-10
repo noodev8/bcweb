@@ -3,7 +3,7 @@
 API Route: shopify_clearance_apply
 =======================================================================================================================================
 Method: POST
-Purpose: Reports → Stock vs Sales, "Update collection" (one click, no preview — owner, 2026-10-10). Syncs the Shopify `clearance` tag
+Purpose: Reports → Selling vs Sitting, "Update collection" (one click, no preview — owner, 2026-10-10). Syncs the Shopify `clearance` tag
          to the sitting list: tags the sitting styles that aren't tagged, untags every tagged product that isn't sitting. WRITES TO THE LIVE SHOP (product tags only).
          The rules live in utils/clearanceTag.js.
 

@@ -302,8 +302,8 @@ export function getSegments() {
 // shape but the server refuses a campaign there.
 // A status is NOT read through the Selling/Stuck pair: it is one unsplit list, out-of-stock included (getStatusList /
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
-// 'sitting' (2026-10-10, SHOPIFY ONLY) = the sitting styles from Reports → Stock vs Sales (path name 'sitting'), also one unsplit
-// list (getSittingList). Reached ONLY from the Stock vs Sales link — no tab or tile on Repricing (owner: don't disturb navigation).
+// 'sitting' (2026-10-10, SHOPIFY ONLY) = the sitting styles from Reports → Selling vs Sitting (path name 'sitting'), also one unsplit
+// list (getSittingList). Reached ONLY from the Selling vs Sitting link — no tab or tile on Repricing (owner: don't disturb navigation).
 export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
@@ -387,7 +387,7 @@ export function getStatusList(status: string, bar?: number | null) {
   );
 }
 
-// The ONE Shopify list of the SITTING styles — the same styles as the Stock vs Sales Sitting box (server: utils/stockSitting.js), most
+// The ONE Shopify list of the SITTING styles — the same styles as the Selling vs Sitting Sitting box (server: utils/stockSitting.js), most
 // pairs first, Shopify-live only. Same row shape as getStatusList; stock = local + Amazon. Parked included; the Due switch filters.
 export function getSittingList() {
   return request<{ total: number; truncated: boolean; rows: LoserRow[] }>(
@@ -1081,7 +1081,7 @@ export function updateBirkAvailability() {
 }
 
 // =============================================================================================================================
-// Analytics module — Stock vs Sales (is the stock we buy shifting?).
+// Analytics module — Selling vs Sitting (is the stock we buy shifting?).
 // =============================================================================================================================
 // One month or week (weeks start Monday). stock = units owned at the END of it (its last nightly stock_daily reading; the open period
 // shows the latest) — null if no reading landed in it. sold = units sold in it, all channels, net of returns.

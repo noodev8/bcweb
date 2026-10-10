@@ -50,11 +50,11 @@ export default function AnalyticsPage() {
           live
         />
 
-        {/* Is the stock we buy shifting? Units owned at the end of each week/month against units sold in it — the read on whether
-            to slow ordering down or speed it up. Replaced the Stock Position "alive products" gauge (owner, 2026-10-09). */}
+        {/* Selling vs Sitting (renamed from Stock vs Sales 2026-10-10, owner — the page became the stock split + sitting list).
+            Replaced the Stock Position "alive products" gauge (owner, 2026-10-09). Route kept: /analytics/stock-sales. */}
         <ModuleTile
-          title="Stock vs Sales"
-          description="Units in stock against units sold — month by month, all channels. Is what we buy shifting?"
+          title="Selling vs Sitting"
+          description="Stock split into selling, sitting and new — and the styles that haven’t sold in 60 days, to clear."
           href="/analytics/stock-sales"
           icon={CubeIcon}
           live

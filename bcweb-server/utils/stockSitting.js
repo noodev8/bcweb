@@ -4,9 +4,9 @@ Util: stockSitting
 =======================================================================================================================================
 Purpose: THE SITTING RULE — stock now, split SELLING | SITTING | NEW, and the sitting styles. Owner, 2026-10-10: "Stock comes in, goes
          out, happy. Sits, not happy so I push it." Defined ONCE here and read by:
-           - GET /analytics-stock-sitting  (Reports -> Stock vs Sales: the three boxes and the sitting list)
+           - GET /analytics-stock-sitting  (Reports -> Selling vs Sitting: the three boxes and the sitting list)
            - GET /pricing-sitting-list     (Repricing: the same styles as a Shopify list, to clear them)
-         so the box, the list on Stock vs Sales and the Repricing list can never disagree about which styles are sitting.
+         so the box, the list on Selling vs Sitting and the Repricing list can never disagree about which styles are sitting.
 
 SITTING = a style we hold stock of with NO SALE ON ANY CHANNEL FOR 60 DAYS (or never sold). That single test is the whole rule.
          Deliveries are deliberately ignored (owner, 2026-10-10: "We shouldn't care about delivery. My fault if I'm still ordering

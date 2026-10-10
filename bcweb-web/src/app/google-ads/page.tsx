@@ -120,7 +120,7 @@ interface Criteria {
   // clearing their own ad cost, which is where a "what does good look like, do more of it" pass starts. Styles with NO floor
   // (adFloor null — too little ad data to say) are in NEITHER list, never silently swept into 'above'.
   floorSide: 'below' | 'above' | null;
-  // The SITTING chip (see SITTING ARRIVAL below): the groupids on the Stock vs Sales sitting list, or null when the chip is off.
+  // The SITTING chip (see SITTING ARRIVAL below): the groupids on the Selling vs Sitting sitting list, or null when the chip is off.
   // A set of ids rather than a rule, because the rule lives on the server (utils/stockSitting.js) and the list is what it must match.
   members: Set<string> | null;
 }
@@ -446,11 +446,11 @@ const VIEW_KEY = 'bc_googleads_view';
 // =====================================================================================================================================
 // SITTING ARRIVAL (owner, 2026-10-10)
 // =====================================================================================================================================
-// Reports → Stock vs Sales links here with ?sitting=1&from=&back= — "send me to the screen with the list already filtered, for me to
+// Reports → Selling vs Sitting links here with ?sitting=1&from=&back= — "send me to the screen with the list already filtered, for me to
 // choose a campaign if I wanted". It becomes a chip ("Sitting · 52") narrowing the grid to the styles on the sitting list (no sale on
 // any channel in 60 days). NOTHING IS PRE-SELECTED OR MOVED: the operator picks rows and a bucket as always.
 //
-// Membership is the list's own: the same GET /analytics-stock-sitting (and SWR key) Stock vs Sales reads, so chip and list agree.
+// Membership is the list's own: the same GET /analytics-stock-sitting (and SWR key) Selling vs Sitting reads, so chip and list agree.
 //
 // THE CHIP IS THE BASE OF THE VIEW, NOT ONE MORE STEP. Every other narrowing stacks on top of it and comes off without disturbing
 // it, and RESET RETURNS TO IT (owner: "Reset keeps the chip") — a refresh would land on the chip too, since ?sitting=1 is in the URL,
@@ -543,7 +543,7 @@ function GoogleAdsScreen() {
   const [back] = useState(() => (restored
     ? { href: parseFrom(restored.backHref), label: restored.backLabel || null }
     : { href: parseFrom(searchParams.get('from')), label: searchParams.get('back') }));
-  // Only fetched while the chip is on. Same call (and SWR key) as Stock vs Sales, so the list and the chip read one answer.
+  // Only fetched while the chip is on. Same call (and SWR key) as Selling vs Sitting, so the list and the chip read one answer.
   const sitQ = useApiQuery(sitting ? 'analytics-stock-sitting' : null, () => getStockSitting());
   const sittingIds = useMemo(() => {
     if (!sitting) return null;

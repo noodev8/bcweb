@@ -3,7 +3,7 @@
 API Route: pricing_sitting_list
 =======================================================================================================================================
 Method: GET
-Purpose: Repricing — the SITTING styles from Reports → Stock vs Sales as a Shopify list, to clear them (owner, 2026-10-10: "Let's go
+Purpose: Repricing — the SITTING styles from Reports → Selling vs Sitting as a Shopify list, to clear them (owner, 2026-10-10: "Let's go
          with SHOPIFY only. My intention is to clear the crap. I will want to be able to price them"). The "Reprice these" link on the
          sitting list opens it, so the styles can be cut in bulk with the usual drill, bulk bar and live Shopify push — instead of one
          style at a time.
@@ -23,7 +23,7 @@ Purpose: Repricing — the SITTING styles from Reports → Stock vs Sales as a S
          Order: most pairs first — the sitting list's own order.
 
          NO ENTRY ON THE REPRICING SCREEN — same call as the excess version this replaces (owner, 2026-10-10: "in case we mess
-         navigation"). The only way in is the link on Stock vs Sales; there is no tab or tile for it on /segments.
+         navigation"). The only way in is the link on Selling vs Sitting; there is no tab or tile for it on /segments.
 
 Requires auth. READ-ONLY.
 =======================================================================================================================================

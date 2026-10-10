@@ -3,7 +3,7 @@
 API Route: analytics_stock_sales
 =======================================================================================================================================
 Method: GET
-Purpose: Reports -> Stock vs Sales. Is the stock we buy shifting? Owner, 2026-10-09: "Just sales against stock position" — the read on
+Purpose: Reports -> Selling vs Sitting. Is the stock we buy shifting? Owner, 2026-10-09: "Just sales against stock position" — the read on
          whether to slow ordering down or speed it up. Deliberately high level (owner, same day, after the first cut showed weekly
          panels, a channel split and a table: "too many things going on"): one monthly trend. The page's top number (stock split
          Selling | Sitting) comes from /analytics-stock-sitting; a sold-in-30-days figure was dropped from here 2026-10-10 with the
@@ -117,7 +117,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     logger.error('[analytics-stock-sales] error:', err.message);
-    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Stock vs Sales' });
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Selling vs Sitting' });
   }
 });
 

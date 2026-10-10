@@ -1,7 +1,8 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /analytics/stock-sales  (Reports — Stock vs Sales)
+Page: /analytics/stock-sales  (Reports — Selling vs Sitting; was Selling vs Sitting until 2026-10-10 — owner: the page is no longer
+      sales against stock, it's the stock split and the sitting list. The route keeps its old name.)
 =======================================================================================================================================
 Purpose: Is the stock we buy shifting? The owner's read on whether to slow ordering down or speed it up (2026-10-09: "Just sales
          against stock position"). Replaced the Stock Position gauge (a count of "alive" products, recorded by an Update button).
@@ -348,7 +349,7 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 // wanted". Nothing is selected or moved there; see SITTING ARRIVAL in google-ads/page.tsx.
 // -------------------------------------------------------------------------------------------------------------------------------------
 const REPRICE_HREF =
-  `/pricing/sitting?by=sitting&pending=1&from=${encodeURIComponent('/analytics/stock-sales')}&back=${encodeURIComponent('Stock vs Sales')}`;
+  `/pricing/sitting?by=sitting&pending=1&from=${encodeURIComponent('/analytics/stock-sales')}&back=${encodeURIComponent('Selling vs Sitting')}`;
 
 // Sortable headers (components/SortableTh — the Repricing lists' own): opens in the server's order (most pairs first); a click sorts,
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
@@ -408,7 +409,7 @@ function SittingListBody({ data }: { data: StockSittingData }) {
           </button>
           {data.styles.length > 0 && (
             <>
-              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Stock vs Sales')}`}
+              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Selling vs Sitting')}`}
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
                 Google Ads &rarr;
               </Link>

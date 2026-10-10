@@ -23,7 +23,7 @@ exercise in git history. A switch lives here only while the feature behind it is
 export const AMZ_MATCH_UI = false;
 
 /*
- * Stock vs Sales — the monthly chart and the Month | Week list — HIDDEN 2026-10-10 (owner: "hide the chart and grid, in case I want
+ * Selling vs Sitting — the monthly chart and the Month | Week list — HIDDEN 2026-10-10 (owner: "hide the chart and grid, in case I want
  * it back later"). The page now leads with the stock split (Selling % as the track) and the sitting list. With this false the page
  * doesn't render either piece AND doesn't fetch /analytics-stock-sales (nor shows its stale-reading banner). The components, the route
  * and the nightly stock_daily job are all kept. Set true to bring both back, below the sitting list.
