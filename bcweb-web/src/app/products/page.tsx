@@ -162,6 +162,7 @@ const PRODUCT_TYPE_DEFAULTS: Record<string, { gender: string; season: string }> 
   Sandals: { gender: 'Womens', season: 'Summer' },
   Boots: { gender: 'Womens', season: 'Winter' },
   Shoes: { gender: 'Womens', season: 'Any' },
+  Slippers: { gender: 'Womens', season: 'Any' },
 };
 
 // Create-a-new-product form. Shown in place of the "no match" dead-end: the searched term seeds the Group ID (editable, upper-cased),
