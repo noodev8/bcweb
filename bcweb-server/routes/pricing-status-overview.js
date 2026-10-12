@@ -31,6 +31,14 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
          STAMPED portfolio_revenue_12m is over the mark. That revenue is ALL-CHANNEL — the Amazon row at £5,000 is the winners whose
          total 12m turnover beats £5,000, not their Amazon turnover. At bars[0] (= WINNER_BAR) the counts equal the WINNERS tile.
 
+         WINNERS' SHARE (2026-10-12, owner: Slow shows "10% of stock" sitting — "is there a percentage we can put on the winners, just
+         to compare?"). Each dial mark also carries `share`: the pairs held in those winner styles and their stamped 12m revenue, with
+         `share_totals` as the denominators — drawn in the Slow card beside its %. ALL-CHANNEL, like Slow's 10% — stock is
+         one pool. STOCK is utils/stockSitting.js's definition (local #FREE + amzfeed
+         amztotal, styles with stock > 0) so the denominator is the same total Slow divides by. REVENUE is the stamped
+         portfolio_revenue_12m (net of returns, all-channel — what the tier itself reads) over every tagged style. STYLES is how many
+         winners over every tagged style — the "N% of styles earn N% of revenue" (80/20) line under the figures.
+
 Requires auth.
 =======================================================================================================================================
 Success Response:
@@ -43,8 +51,10 @@ Success Response:
       "amazon":  { "total": 131, "due": 78, "parked": 53, "out_of_stock": 54, "styles": 23, "due_styles": 18 } }, ...
   ],
   "winner_bars": [                    // one per dial mark, ascending; zeros included
-    { "bar": 1500, "shopify": { "total": 50, "due": 24, "styles": 50 }, "amazon": { "total": 131, "due": 66, "styles": 23 } }, ...
-  ]
+    { "bar": 1500, "shopify": { "total": 50, "due": 24, "styles": 50 }, "amazon": { "total": 131, "due": 66, "styles": 23 },
+      "share": { "units": 1573, "revenue": 298738.30, "styles": 63 } }, ...  // all-channel: pairs held / 12m revenue / styles
+  ],
+  "share_totals": { "units": 2889, "revenue": 408264.12, "styles": 296 }  // denominators: all stock / tagged styles' revenue / tagged styles
 }
 =======================================================================================================================================
 Return Codes:
@@ -69,7 +79,7 @@ const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0, styles: 0, due_styl
 router.get('/', async (req, res) => {
   try {
     // Independent reads, run together: the four statuses per channel, then the WINNERS counts at each dial mark per channel.
-    const [shp, amz, shpBars, amzBars] = await Promise.all([
+    const [shp, amz, shpBars, amzBars, share] = await Promise.all([
       query(`
         WITH stk AS (
           SELECT groupid FROM localstock
@@ -141,6 +151,41 @@ router.get('/', async (req, res) => {
           AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY b.bar
       `, [WINNER_BAR_LADDER]),
+      // Winners' share at each mark (see the header). Totals ride on every row (CROSS JOIN) so it is one read.
+      query(`
+        WITH local_free AS (
+          SELECT groupid, SUM(qty) AS qty FROM localstock
+          WHERE COALESCE(deleted, 0) = 0 AND ordernum = '#FREE'
+          GROUP BY groupid
+        ),
+        amz AS (
+          SELECT groupid, SUM(amztotal) AS qty FROM amzfeed WHERE groupid IS NOT NULL GROUP BY groupid
+        ),
+        stock AS (
+          SELECT groupid, SUM(qty) AS qty
+          FROM (SELECT groupid, qty FROM local_free UNION ALL SELECT groupid, qty FROM amz) x
+          GROUP BY groupid
+          HAVING SUM(qty) > 0
+        ),
+        tot AS (
+          SELECT (SELECT COALESCE(SUM(qty), 0) FROM stock)::int AS units,
+                 (SELECT COALESCE(SUM(portfolio_revenue_12m), 0) FROM skusummary
+                  WHERE portfolio_status IS NOT NULL)::float8 AS revenue,
+                 (SELECT COUNT(*) FROM skusummary WHERE portfolio_status IS NOT NULL)::int AS styles
+        )
+        SELECT b.bar::int AS bar,
+               COALESCE(SUM(st.qty), 0)::int                    AS units,
+               COALESCE(SUM(ss.portfolio_revenue_12m), 0)::float8 AS revenue,
+               COUNT(ss.groupid)::int                            AS styles,
+               MAX(tot.units)   AS total_units,
+               MAX(tot.revenue) AS total_revenue,
+               MAX(tot.styles)  AS total_styles
+        FROM unnest($1::numeric[]) AS b(bar)
+        CROSS JOIN tot
+        LEFT JOIN skusummary ss ON ss.portfolio_status = 'WINNERS' AND ss.portfolio_revenue_12m > b.bar
+        LEFT JOIN stock st      ON st.groupid = ss.groupid
+        GROUP BY b.bar
+      `, [WINNER_BAR_LADDER]),
     ]);
 
     const pick = (rows, status) => {
@@ -152,10 +197,18 @@ router.get('/', async (req, res) => {
       const x = rows.find((r) => r.bar === bar);
       return x ? { total: x.total, due: x.due, styles: x.styles, due_styles: x.due_styles } : { total: 0, due: 0, styles: 0, due_styles: 0 };
     };
-    const winnerBars = WINNER_BAR_LADDER.map((bar) => ({ bar, shopify: atBar(shpBars.rows, bar), amazon: atBar(amzBars.rows, bar) }));
+    const shareAt = (bar) => {
+      const x = share.rows.find((r) => r.bar === bar);
+      return { units: x ? x.units : 0, revenue: x ? Math.round(x.revenue * 100) / 100 : 0, styles: x ? x.styles : 0 };
+    };
+    const winnerBars = WINNER_BAR_LADDER.map((bar) => ({
+      bar, shopify: atBar(shpBars.rows, bar), amazon: atBar(amzBars.rows, bar), share: shareAt(bar),
+    }));
+    const t = share.rows[0];
+    const shareTotals = { units: t ? t.total_units : 0, revenue: t ? Math.round(t.total_revenue * 100) / 100 : 0, styles: t ? t.total_styles : 0 };
     const updatedAt = shp.rows.map((x) => x.last_at).filter(Boolean).sort().pop() || null;
 
-    return res.json({ return_code: 'SUCCESS', updated_at: updatedAt, statuses, winner_bars: winnerBars });
+    return res.json({ return_code: 'SUCCESS', updated_at: updatedAt, statuses, winner_bars: winnerBars, share_totals: shareTotals });
   } catch (err) {
     logger.error('[pricing-status-overview] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load status overview' });

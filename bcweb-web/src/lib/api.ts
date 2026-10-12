@@ -331,7 +331,10 @@ export interface StatusOverviewRow {
 // The WINNERS tile at one dial mark (£1,500 / £2,500 / …): tagged winners whose STAMPED all-channel 12m revenue is over `bar`. Same
 // unit rules as StatusChannelCounts (Amazon total/due are sizes, styles are styles). bars[0] equals the WINNERS tile.
 export interface WinnerBarCounts { total: number; due: number; styles: number; dueStyles: number }
-export interface WinnerBarRow { bar: number; shopify: WinnerBarCounts; amazon: WinnerBarCounts }
+// `share`: ALL-CHANNEL pairs held in those winners and their stamped 12m revenue; ShareTotals are the denominators (all stock — the
+// same total Slow divides by — and every tagged style's 12m revenue). Drives "N% of stock · N% of revenue".
+export interface WinnerShare { units: number; revenue: number; styles: number }
+export interface WinnerBarRow { bar: number; shopify: WinnerBarCounts; amazon: WinnerBarCounts; share: WinnerShare }
 
 function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannelCounts {
   return {
@@ -347,7 +350,8 @@ function mapChannelCounts(c: Record<string, unknown> | undefined): StatusChannel
 export function getStatusOverview() {
   const bar = (c: Record<string, unknown> | undefined): WinnerBarCounts =>
     ({ total: Number(c?.total) || 0, due: Number(c?.due) || 0, styles: Number(c?.styles) || 0, dueStyles: Number(c?.due_styles) || 0 });
-  return request<{ updatedAt: string | null; statuses: StatusOverviewRow[]; winnerBars: WinnerBarRow[] }>(
+  const share = (c: Record<string, unknown> | undefined): WinnerShare => ({ units: Number(c?.units) || 0, revenue: Number(c?.revenue) || 0, styles: Number(c?.styles) || 0 });
+  return request<{ updatedAt: string | null; statuses: StatusOverviewRow[]; winnerBars: WinnerBarRow[]; shareTotals: WinnerShare }>(
     { url: '/pricing-status-overview', method: 'GET' },
     (b) => ({
       updatedAt: (b.updated_at as string | null) ?? null,
@@ -360,7 +364,9 @@ export function getStatusOverview() {
         bar: Number(w.bar) || 0,
         shopify: bar(w.shopify as Record<string, unknown> | undefined),
         amazon: bar(w.amazon as Record<string, unknown> | undefined),
+        share: share(w.share as Record<string, unknown> | undefined),
       })),
+      shareTotals: share(b.share_totals as Record<string, unknown> | undefined),
     })
   );
 }

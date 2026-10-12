@@ -38,7 +38,7 @@ import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, getStockSitting, type PortfolioChannel, type PortfolioChannelKey, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts, type StockSittingData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowPathIcon, CheckIcon, Squares2X2Icon } from '@heroicons/react/20/solid';
+import { ArrowPathIcon, CheckIcon, Squares2X2Icon, TrophyIcon } from '@heroicons/react/20/solid';
 import { STATUS_COLOR, STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
 
 // 'YYYY-MM-DD HH:MM' -> '24 Sep, 22:44', from the string parts (never new Date — CLAUDE.md dates).
@@ -67,6 +67,14 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const raised = bar !== null && bar !== bars[0];              // a higher tier than the tag: only WINNERS can answer it
   const barRow = data?.winnerBars.find((w) => w.bar === bar);
   const viewPath = raised ? `/segments?bar=${bar}` : '/segments';
+  // WINNERS' SHARE at the tier (owner, 2026-10-12 — beside Slow's "10% of stock", for comparison), drawn in its own all-channel Winners
+  // card above Slow: it was tried on the WINNERS tiles (all-channel figures repeated on both channel rows) and inside the Slow card. Rounded as Slow rounds its %. Stock divides by the same total Slow does (see routes/pricing-status-overview.js).
+  const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : null);
+  const share: WinnersShare | undefined = barRow && data
+    ? { styles: barRow.share.styles, units: barRow.share.units, revenue: barRow.share.revenue, totalRevenue: data.shareTotals.revenue,
+        stockPct: pct(barRow.share.units, data.shareTotals.units), revenuePct: pct(barRow.share.revenue, data.shareTotals.revenue),
+        stylesPct: pct(barRow.share.styles, data.shareTotals.styles) }
+    : undefined;
   // Each channel's winners by brand, at the tier — drawn INSIDE that channel's WINNERS tile (owner, 2026-09-25: "I am changing the
   // tier and scrolling"), so the number and its brands change together right under the toggle.
   const winnerBrands = useMemo(
@@ -118,6 +126,8 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
       {isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {actionError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error.message}</div>}
+      {/* Winners, all channels, LEADS the page (owner, 2026-10-12: "put the winners at the top as the main header"). */}
+      {data && <WinnersCard share={share} rule={raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS} />}
       {data && (['shopify', 'amazon'] as const).map((ch) => (
         <section key={ch}>
           <h2 className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-slate-900">
@@ -155,20 +165,61 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   );
 }
 
+// WINNERS, ALL CHANNELS (owner, 2026-10-12: "a percentage we can put on the winners, just to compare" with Slow's 10% — then "give
+// the winners its own whole card section ... above the slow section. Same format"). The Slow card's layout with Winners' figures:
+// styles | pairs | share of the SAME stock total Slow divides by | share of 12m revenue. Exact figures, not "the 80/20 rule" (printed
+// and taken off: the real split isn't 80/20). THE REVENUE BOX reads "73% — of 12m revenue, from 21% of styles" (owner found "winners 12m revenue" hard to
+// read — "I struggle to understand it, but I want it" — then a longer sentence with the pounds was too many words). Sales are net of returns,
+// all channels — the stamped revenue the tier reads. Follows the tier dial. Leads the page, above the channel rows. Not a link: the per-channel WINNERS tiles above are the way into the lists.
+type WinnersShare = { styles: number; units: number; revenue: number; totalRevenue: number; stockPct: number | null; revenuePct: number | null; stylesPct: number | null };
+function WinnersCard({ share, rule }: { share?: WinnersShare; rule: string }) {
+  const fmt = (n: number | null | undefined) => (n != null ? `${n}%` : '–');
+  const boxes = [
+    { value: share ? share.styles.toLocaleString('en-GB') : '–', label: share?.stylesPct != null ? `styles · ${share.stylesPct}% of all` : 'styles' },
+    { value: share ? share.units.toLocaleString('en-GB') : '–', label: 'pairs' },
+    { value: fmt(share?.stockPct), label: 'winners stock' },
+    { value: fmt(share?.revenuePct),
+      label: share?.stylesPct != null ? `of 12m revenue, from ${share.stylesPct}% of styles` : 'of 12m revenue' },
+  ];
+  return (
+    <section>
+      <h2 className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-semibold text-slate-900">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white shadow-sm ring-1 ring-slate-200">
+          <TrophyIcon className="h-4 w-4 text-slate-500" aria-hidden="true" />
+        </span>
+        All channels
+        <span className="text-slate-300" aria-hidden="true">·</span>
+        <span>Winners</span>
+        <span className="text-sm font-normal text-slate-400">{rule}</span>
+      </h2>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {boxes.map((b) => (
+            <span key={b.label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
+              <span className="block text-3xl font-bold leading-none tabular-nums text-slate-900">{b.value}</span>
+              <span className="mt-1.5 block text-xs text-slate-500">{b.label}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // SLOW — the way from here to Slow (see the header); "Slow" on screen is that page's SITTING list (owner,
-// 2026-10-12, renamed from "Clearance"), with its 60-day rule beside the name. The whole card is the link, marked "Manage →" (owner,
-// same day — a bare card was tried and the indicator brought back). Inside, three boxes of EQUAL weight: sitting styles | pairs |
+// 2026-10-12, renamed from "Clearance"), with its 60-day rule beside the name. The whole card is the link, unmarked (a bare card,
+// then "Manage →" brought back, then removed again — owner, 2026-10-12). Inside, three boxes of EQUAL weight: sitting styles | pairs |
 // % of stock sitting. The % is the SITTING share, not selling (owner: "I'd rather see the 10%... it matches the card on Selling vs
 // Sitting"), rounded exactly as that page's sitting box. Cut styles are still sitting and still counted, as on that page.
 // The heading carries a small icon tile in the channel logos' frame (ChannelLogo md) — a four-square grid for ALL channels (a clock was tried and read as timing) — so the section sits in line with Shopify and
-// Amazon above it. ← Back from Manage returns to /segments#slow — the card, not the top of the page (owner, 2026-10-12).
+// Amazon above it. ← Back from Slow returns to /segments#slow — the card, not the top of the page (owner, 2026-10-12).
 const SLOW_HREF = `/analytics/stock-sales?from=${encodeURIComponent('/segments#slow')}&back=${encodeURIComponent('Winners')}`;
 function SlowCard({ data }: { data?: StockSittingData }) {
   const pct = data && data.total_units ? Math.round((data.sitting_units / data.total_units) * 100) : null;
   const boxes = [
     { value: data ? data.styles.length.toLocaleString('en-GB') : '–', label: 'styles' },
     { value: data ? data.sitting_units.toLocaleString('en-GB') : '–', label: 'pairs' },
-    { value: pct !== null ? `${pct}%` : '–', label: 'of stock' },
+    { value: pct !== null ? `${pct}%` : '–', label: 'slow stock' },
   ];
   return (
     <section id="slow" className="scroll-mt-6">
@@ -192,7 +243,6 @@ function SlowCard({ data }: { data?: StockSittingData }) {
             </span>
           ))}
         </span>
-        <span className="ml-auto px-2 text-sm font-medium text-slate-600">Manage &rarr;</span>
       </Link>
     </section>
   );
