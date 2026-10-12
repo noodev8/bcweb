@@ -65,6 +65,13 @@ interface BulkActionBarProps {
   // OPTIONAL "Reset to RRP" — writes each selected row's OWN RRP (the rows carry it; RRPs differ per style, so this is neither a move
   // nor one set price). Passing it reveals the button; the page owns the loop, skipping rows with no RRP or already at it.
   onResetToRrp?: (reviewDays: number | null, note: string) => void;
+  // OPTIONAL "% off RRP" (owner, 2026-10-12 — clearing the Slow list at 50% off). Each selected row goes to its OWN RRP less the
+  // percentage, to the penny (no .99/.95 rounding — owner's call). Passing it reveals the control under the actions; the page owns the
+  // loop. `percentOffPreview` lets the bar warn BEFORE the click which selected rows that would put UP (a style already priced below
+  // the target) or can't price (no RRP) — % off RRP is not a cut for a style already under it. The UP rows are NAMED with now -> target
+  // (owner, 2026-10-12: a count alone was ignored — "I didn't know which ones they were" — and 3 clearance styles went up).
+  onPercentOffRrp?: (pct: number, reviewDays: number | null, note: string) => void;
+  percentOffPreview?: (pct: number) => { up: { groupid: string; price: number; target: number }[]; noRrp: number };
 }
 
 // Format a signed delta as "+£1.00" / "−£0.50" / "£0.00" (proper minus sign, matching the drill's button glyphs).
@@ -84,7 +91,7 @@ function parseDelta(raw: string): number {
 
 export default function BulkActionBar({
   channel, count, nudges, reviewChips, tone, busy, progress, resultSummary, error, noteEnabled = true, onApplyPrice, onSetReview,
-  onApplySetPrice, onResetToRrp,
+  onApplySetPrice, onResetToRrp, onPercentOffRrp, percentOffPreview,
 }: BulkActionBarProps) {
   const banner = CHANNEL_BANNER[channel];
   const [open, setOpen] = useState(false);
@@ -103,6 +110,8 @@ export default function BulkActionBar({
   const [moveText, setMoveText] = useState('0.00');
   const [setText, setSetText] = useState('');
   const [note, setNote] = useState('');
+  // % off RRP box — a percent, 1–99 (0 is Reset to RRP; 100 would be free). Text for the same reason as the £ boxes.
+  const [pctText, setPctText] = useState('');
   // Review period the actions use. null = None (default) — Apply won't park; "Set review" is disabled (needs a real period).
   const [reviewDays, setReviewDays] = useState<number | null>(null);
 
@@ -129,8 +138,12 @@ export default function BulkActionBar({
   const priceDisabled = busy || count === 0 || !priceStaged;
   const reviewOnlyDisabled = busy || count === 0 || reviewDays === null;
   const canResetRrp = typeof onResetToRrp === 'function';
-  // The note rides a reset too (it is a price change like any other), so it unlocks when either action is available.
-  const noteDisabled = busy || !(priceStaged || (canResetRrp && count > 0));
+  const canPctOff = typeof onPercentOffRrp === 'function';
+  const pctRaw = Number.parseFloat(pctText.replace(/[%\s]/g, ''));
+  const pct = Number.isFinite(pctRaw) && pctRaw > 0 && pctRaw < 100 ? Math.round(pctRaw * 100) / 100 : null;
+  const pctWarn = pct !== null && count > 0 && percentOffPreview ? percentOffPreview(pct) : null;
+  // The note rides a reset / % off too (each is a price change like any other), so it unlocks when any of them is available.
+  const noteDisabled = busy || !(priceStaged || ((canResetRrp || canPctOff) && count > 0));
 
   // Header summary line — count + a hint of what's staged.
   const staged = useMemo(() => {
@@ -300,6 +313,56 @@ export default function BulkActionBar({
               Set review on {count} (no price change)
             </button>
           </div>
+
+          {/* % OFF RRP — its own line under the actions: the box is a PERCENT of each row's RRP, not £, so it is kept well away from the
+              price box above. The button states the outcome, like Apply. Same review chip and note as the other actions. */}
+          {canPctOff && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="mb-1 text-sm font-medium text-slate-700">% off RRP <span className="font-normal text-slate-400">(each selected row is set to its own RRP less this — to the penny)</span></div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex w-28 items-center rounded-md border-2 border-slate-300 bg-white px-2 py-2">
+                  <input
+                    value={pctText}
+                    onChange={(e) => setPctText(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    inputMode="decimal"
+                    disabled={busy}
+                    placeholder="50"
+                    aria-label="Percent off each row's RRP"
+                    className="w-full min-w-0 bg-transparent text-center text-xl font-semibold text-slate-900 outline-none placeholder:text-slate-300 disabled:text-slate-400"
+                  />
+                  <span className="pr-0.5 text-xl font-semibold text-slate-400">%</span>
+                </div>
+                <button
+                  onClick={() => pct !== null && onPercentOffRrp && onPercentOffRrp(pct, reviewDays, note.trim())}
+                  disabled={busy || count === 0 || pct === null}
+                  className={'rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ' + tone.applyBtn}
+                >
+                  {busy && progress ? 'Applying…' : `Set ${count} to ${pct !== null ? `${pct}%` : '…%'} off RRP`}
+                </button>
+              </div>
+              {pctWarn && (pctWarn.up.length > 0 || pctWarn.noRrp > 0) && (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  {pctWarn.up.length > 0 && (
+                    <>
+                      <div>
+                        <strong>{pctWarn.up.length}</strong> selected {pctWarn.up.length === 1 ? 'style is' : 'styles are'} already below {pct}% off
+                        RRP — {pctWarn.up.length === 1 ? 'its price' : 'their prices'} would go <strong>UP</strong>. Untick to leave as is:
+                      </div>
+                      <ul className="mt-1 space-y-0.5">
+                        {pctWarn.up.map((u) => (
+                          <li key={u.groupid} className="font-mono">
+                            {u.groupid} <span className="font-sans">£{u.price.toFixed(2)} → <strong>£{u.target.toFixed(2)}</strong></span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {pctWarn.noRrp > 0 && <div className={pctWarn.up.length > 0 ? 'mt-1' : ''}><strong>{pctWarn.noRrp}</strong> with no RRP will be skipped.</div>}
+                </div>
+              )}
+            </div>
+          )}
 
           {resultSummary && !progress && <div className="mt-3 text-xs text-slate-500">{resultSummary}</div>}
           {error && <div className="mt-2 text-xs text-red-600">{error}</div>}

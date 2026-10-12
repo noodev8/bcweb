@@ -326,6 +326,50 @@ function SegmentContent() {
     await loadLists();
   }
 
+  // BULK % OFF RRP (owner, 2026-10-12 — "50% off" on the Slow list, as a % of RRP). The same W1 loop, each style to its OWN RRP less
+  // pct, rounded to the penny only (no .99 — owner). Skips: no RRP, or already at the target. A style already BELOW the target is NOT
+  // skipped — it goes up; the bar warns of those before the click (percentOffPreview). Blank note -> "N% off RRP".
+  const percentOffTarget = (rrp: number, pct: number) => Math.round(rrp * (100 - pct)) / 100;
+  function percentOffPreview(pct: number) {
+    const up: { groupid: string; price: number; target: number }[] = [];
+    let noRrp = 0;
+    for (const r of view.rows) {
+      if (!selected.has(r.groupid)) continue;
+      if (r.rrp === null) { noRrp++; continue; }
+      const target = percentOffTarget(r.rrp, pct);
+      if (r.price !== null && target > r.price + 0.004) up.push({ groupid: r.groupid, price: r.price, target });
+    }
+    return { up, noRrp };
+  }
+  async function bulkPercentOffRrp(pct: number, reviewDays: number | null, note: string) {
+    const targets = view.rows.filter((r) => selected.has(r.groupid));
+    if (targets.length === 0 || !(pct > 0 && pct < 100)) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, noRrp = 0, already = 0, skipped = 0, pushIssues = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.rrp === null) noRrp++;
+      else {
+        const target = percentOffTarget(row.rrp, pct);
+        if (row.price !== null && Math.round(row.price * 100) === Math.round(target * 100)) already++;
+        else {
+          const res = await applyPrice(row.groupid, target, reviewDays, note || `${pct}% off RRP`);
+          if (res.success && res.data) {
+            applied++;
+            if (res.data.shopify && res.data.shopify.pushed === false) pushIssues++;
+          } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+          else { skipped++; }
+        }
+      }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Set ${applied} to ${pct}% off RRP${already ? ` · ${already} already there` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${pushIssues ? ` · ${pushIssues} push issue${pushIssues > 1 ? 's' : ''}` : ''}`);
+    setSelected(new Set());
+    await loadLists();
+  }
+
   // BULK REVIEW ONLY — park the ticked styles with no price change (batch POST /pricing-park-bulk, W2). On success clear + refetch so
   // parked styles move to "pending review" (hidden unless that toggle is on).
   async function bulkSetReview(days: number) {
@@ -389,6 +433,8 @@ function SegmentContent() {
           error={markError}
           onApplyPrice={bulkApplyPrice}
           onResetToRrp={bulkResetToRrp}
+          onPercentOffRrp={bulkPercentOffRrp}
+          percentOffPreview={percentOffPreview}
           onSetReview={bulkSetReview}
         />
       )}
