@@ -28,7 +28,7 @@ ORDER AND PICK, SIDE BY SIDE (owner, 2026-10-09 — "my old PowerBuilder screen 
 
       ONE RATE CLICK FILLS BOTH (owner, 2026-08-28 — "when doing an order it should auto run the pick for it as well"). The
       shortfall is worked out once per row and split: Pick takes as much of it as local stock above the keep rate can cover, Order
-      buys whatever is left after that — pick 2 + order 3 for a shortfall of 5. A re-tap clears both, and so does Clear basket.
+      buys whatever is left after that — pick 2 + order 3 for a shortfall of 5. A re-tap clears both, and so does Delete basket.
 
       AND ONE PRESS SENDS BOTH, since 2026-09-03 (owner: "confirm the picks at the same time") — see SEND, below.
 
@@ -60,7 +60,7 @@ CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selectio
 
 PANEL LAYOUT (2026-09-27, row 3 added 2026-10-09): row 1 FINDS — search, Hot | Warm | Cold, the Can't get chip, the row
       count (what the finding produced), Reset. Row 2 ACTS — the rates, Pick keep, then Can't get, Cut and "0 local". Row 3 is
-      THE BASKET — Clear order / Clear pick (rows on screen) on the left, Load basket, Confirm Basket and the bin on the right.
+      THE BASKET — Reset order on screen / Reset pick on screen on the left, Load basket, Confirm Basket and the bin on the right.
       Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
 
 SELECTION + CUT: ONE highlight, not two. The blue row is where you are AND what an action will hit — arrowing Up/Down moves it,
@@ -122,7 +122,7 @@ LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recy
       cut row as it goes (owner, 2026-09-03: "just show what's in my basket") — it stands alone
       rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
       SNAPSHOT, not a live filter (owner, 2026-08-27): membership is fixed when the preset is switched on and only a bulk basket
-      action (rate fill/clear, Clear basket, Reset, re-toggle) moves it — editing quantities never reshuffles the list under the
+      action (rate fill/clear, Delete basket, Reset, re-toggle) moves it — editing quantities never reshuffles the list under the
       hands doing the editing. The row currently FOCUSED is exempt from the filter as well, regardless of what it reads
       (focusedOrderCode).
 
@@ -808,7 +808,7 @@ function AmazonOrderContent() {
   // row against the live qty on every keystroke, so editing quantities while it was on rearranged the list underneath the
   // hands doing the editing: zeroing a row made it vanish the moment focus left, and a row typed up elsewhere appeared mid-list.
   // The set of rows is now fixed when the filter is switched on, and only a BULK basket action changes it (a rate fill/re-tap
-  // clear, Clear basket, Reset, or toggling the filter off and on again) — typing never does. null = filter off.
+  // clear, Delete basket, Reset, or toggling the filter off and on again) — typing never does. null = filter off.
   const [basketSnapshot, setBasketSnapshot] = useState<Set<string> | null>(null);
   // The codes either half holds a positive quantity for right now — what a fresh snapshot is taken from.
   function basketCodes() {
@@ -1928,7 +1928,7 @@ function AmazonOrderContent() {
                 className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
               >
                 <XMarkIcon className="h-4 w-4" />
-                {half === 'order' ? 'Clear order' : 'Clear pick'}
+                {half === 'order' ? 'Reset order on screen' : 'Reset pick on screen'}
               </button>
             ))}
           </div>
@@ -2042,8 +2042,8 @@ function AmazonOrderContent() {
                 type="button"
                 onClick={() => { setConfirmingOrder(false); setConfirmingClear(true); }}
                 disabled={ordering || sendTargets.length === 0}
-                aria-label="Clear basket"
-                title="Clear basket"
+                aria-label="Delete basket"
+                title="Delete basket"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
               >
                 <TrashIcon className="h-5 w-5" />
@@ -2051,9 +2051,9 @@ function AmazonOrderContent() {
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
                 <span className="text-slate-700">
-                  Clear both baskets — Order and Pick — for every SKU?
+                  Delete basket — Order and Pick — for every SKU?
                 </span>
-                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
+                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Delete Basket</button>
                 <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}

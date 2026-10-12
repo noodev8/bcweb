@@ -12,7 +12,7 @@ Purpose: The local-shelf counterpart of /amazon-order (owner, 2026-09-26): every
          Single GET via useApiQuery; the whole ~300-style list ships once and is searched CLIENT-SIDE (routes/shopify-order-list.js).
 
 A SIMPLER SCREEN THAN AMAZON ORDER, ON PURPOSE (owner, 2026-09-26 — "a simpler version of the Amazon screen"). Kept: the Include /
-      Exclude search steps, the per-SKU basket with its browser draft, Load basket, Clear basket, Confirm Basket, and the "already in
+      Exclude search steps, the per-SKU basket with its browser draft, Load basket, Delete basket, Confirm Basket, and the "already in
       Order Status" signals. Left out: Pick mode and Pick keep (there's nowhere to pick TO — this IS the shelf), the Winners /
       Potential / Recycle presets, row cutting, and the rate fill. The rate fill in particular was a deliberate "manual first": outside
       Birkenstock, Shopify sells ~10 units a MONTH across ~120 styles, so a months-of-cover fill would come out 0 on nearly every size.
@@ -593,7 +593,7 @@ function ShopifyOrderContent() {
 
   // RESET — a VIEW reset: search steps, Load basket, sort — and back into the Can't get cut if you'd left it, i.e. the screen as
   // you arrived. Leaves the basket alone on purpose (the Amazon Order rule, owner 2026-08-11 — the basket can be a draft built up
-  // over several sittings; emptying it is Clear basket's job).
+  // over several sittings; emptying it is Delete basket's job).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setBasketSnapshot(null);
@@ -794,16 +794,16 @@ function ShopifyOrderContent() {
                 type="button"
                 onClick={() => { setConfirmingSend(false); setConfirmingClear(true); }}
                 disabled={sending || targets.length === 0}
-                aria-label="Clear basket"
-                title="Empty the basket — every size with a value, not just the ones on screen — and discard the saved draft"
+                aria-label="Delete basket"
+                title="Delete basket — every size with a value, not just the ones on screen — and discard the saved draft"
                 className="flex items-center rounded-md border border-red-200 px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
               >
                 <TrashIcon className="h-5 w-5" />
               </button>
             ) : (
               <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
-                <span className="text-slate-700">Clear the whole basket?</span>
-                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Clear</button>
+                <span className="text-slate-700">Delete the whole basket?</span>
+                <button type="button" onClick={clearBasket} className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white">Delete Basket</button>
                 <button type="button" onClick={() => setConfirmingClear(false)} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Cancel</button>
               </span>
             )}
