@@ -287,7 +287,8 @@ const GROUPS: Group[] = [
         icon: CalendarIcon,
       },
       {
-        // Price stickers for the shop floor (CM3) on an Avery L7160 sheet (owner, 2026-10-10). Also beside Shop Sale in Orders.
+        // Price stickers for the shop floor (CM3) on an Avery L7160 sheet (owner, 2026-10-10). Back Office only — its
+        // second tile in the Orders card was removed (owner, 2026-10-12: "Back office is enough for it").
         title: 'Shop Labels',
         subtitle: 'Print shop price labels',
         description: 'Pick styles and print their price labels for the shop — RRP, or RRP struck through with the website price.',
@@ -381,14 +382,6 @@ const PART_GROUPS: Group[] = [
         description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.',
         href: '/shop-sale',
         icon: BuildingStorefrontIcon,
-      },
-      {
-        // Second home, beside Shop Sale — its main tile is in Back Office.
-        title: 'Shop Labels',
-        subtitle: 'Print shop price labels',
-        description: 'Pick styles and print their price labels for the shop — RRP, or RRP struck through with the website price.',
-        href: '/shop-labels',
-        icon: PrinterIcon,
       },
       {
         title: 'Amazon Order',
