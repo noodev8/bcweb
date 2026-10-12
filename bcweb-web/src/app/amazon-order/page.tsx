@@ -620,7 +620,7 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
           </button>
         </span>
       ) : choosing ? (
-        <span className="inline-flex items-center gap-1.5 text-slate-700">
+        <span className="inline-flex flex-wrap items-center gap-1.5 text-slate-700">
           Can&rsquo;t get {row.groupid} ({sizes === 1 ? 'its one size' : `all ${sizes} sizes`}, Shopify too) — stop ordering until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
           <button type="button" disabled={busy} onClick={() => run(() => onPark([row.groupid]))} className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
             Yes
@@ -2288,8 +2288,8 @@ function AmazonOrderContent() {
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
                     <td colSpan={11} className="px-3 py-2">
-                      {/* Five blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
-                          went for, the codes you copy, and Can't get. Label beside value at text-sm (owner, 2026-09-28: "easier to
+                      {/* Four blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
+                          went for, and the codes you copy; Can't get and Inventory sit on the action line below. Label beside value at text-sm (owner, 2026-09-28: "easier to
                           read") rather than one run-on xs line. */}
                       <div className="flex flex-wrap items-start gap-x-10 gap-y-4 py-1 pl-3">
                         <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
@@ -2324,37 +2324,34 @@ function AmazonOrderContent() {
                             {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
                           </dd>
                         </dl>
-                        {/* WHERE THE STOCK IS (owner, 2026-10-12). FBA Total quietly includes units committed to a pick but still on a
-                            local shelf (pick_pending), so a SKU can read FBA Total 1 while Seller Central says 0 — say so here, and hand
-                            off to Inventory (sizes and racks) to find the unit. ?from=/&back= is Inventory's Back convention. */}
-                        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
-                          {r.pick_pending > 0 && (
-                            <>
-                              <dt className="text-slate-500">Pick pending</dt>
-                              <dd className="text-amber-700" title="Committed to an Amazon pick but not yet gathered onto C3-Amazon — counted in FBA Total, not at Amazon yet">
-                                <span className="font-medium tabular-nums">{r.pick_pending}</span> on a local shelf, not at Amazon yet
-                              </dd>
-                            </>
-                          )}
-                          <dt className="text-slate-500">Stock</dt>
-                          <dd>
-                            <Link
-                              href={`/inventory?q=${encodeURIComponent(r.code)}&from=${encodeURIComponent(selfHref)}&back=${encodeURIComponent('Amazon Order')}`}
-                              className="font-medium text-brand-600 hover:underline"
-                            >
-                              Inventory →
-                            </Link>
-                          </dd>
-                        </dl>
-                        <div className="text-sm">
-                          <SupplyControl
-                            row={r}
-                            sizes={sizesByStyle.get(r.groupid) ?? 1}
-                            parkUntil={data?.no_supply_default_until ?? null}
-                            onPark={onPark}
-                            onClearSupply={onClearSupply}
-                          />
-                        </div>
+                      </div>
+                      {/* THE ACTION LINE (owner, 2026-10-12) — under the blocks, full width, so nothing here can widen the detail row past
+                          the table (Can't get's confirm sentence and the pick note both did, side by side). Can't get first; then WHERE
+                          THE STOCK IS: FBA Total quietly includes units committed to a pick but still on a local shelf (pick_pending), so a
+                          SKU can read FBA Total 1 while Seller Central says 0 — say so, and hand off to Inventory (sizes and racks) to find
+                          the unit. ?from=/&back= is Inventory's Back convention. */}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-200 pl-3 pt-2 text-sm">
+                        <SupplyControl
+                          row={r}
+                          sizes={sizesByStyle.get(r.groupid) ?? 1}
+                          parkUntil={data?.no_supply_default_until ?? null}
+                          onPark={onPark}
+                          onClearSupply={onClearSupply}
+                        />
+                        {r.pick_pending > 0 && (
+                          <span
+                            className="rounded bg-amber-50 px-2 py-0.5 text-amber-800 ring-1 ring-amber-200"
+                            title="Committed to an Amazon pick but not yet gathered onto C3-Amazon — counted in FBA Total, not at Amazon yet"
+                          >
+                            <span className="font-medium tabular-nums">{r.pick_pending}</span> pick pending — on a local shelf, not at Amazon yet
+                          </span>
+                        )}
+                        <Link
+                          href={`/inventory?q=${encodeURIComponent(r.code)}&from=${encodeURIComponent(selfHref)}&back=${encodeURIComponent('Amazon Order')}`}
+                          className="font-medium text-brand-600 hover:underline"
+                        >
+                          Find in Inventory →
+                        </Link>
                       </div>
                     </td>
                   </tr>
