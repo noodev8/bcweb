@@ -57,7 +57,11 @@ no extra steps for the packer.
    3. Fetch the label PDF and return it to the browser.
    4. In one transaction: `batch = '2'` on the order's lines, `orderstatus.weight` = the order weight, plus the shipment row (below).
    5. The browser loads the PDF in a hidden iframe and prints it. Kiosk printing sends it to the Zebra.
-5. **"Print label" / "Reprint label"** button in the existing per-order action bar, for when nobody scans and for reprints.
+5. **Labels come off the scan only — there is NO Print button (owner, 2026-10-12).** Clicking an order and pressing Print is how
+   the wrong shoes get sent; the scan is the check. The label route must enforce it too (refuse a first print unless the stored scans
+   cover the order). An order whose last scan was blocked (no courier, no postcode) is fixed, then any of its shoes re-scanned to
+   print. **Reprint** and **Cancel label** (printed by mistake — void the C&D order, clear the scans) show in the action bar only on
+   an order that has a label, i.e. a packed one.
    **If a Click & Drop order already exists for the ordernum, re-fetch its label. Never create a second one** (that pays postage twice).
 6. **Refused with a reason, no label:** pack only (`'0'`), non-GB country (customs is a separate job), missing postcode/address1.
 

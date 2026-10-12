@@ -40,15 +40,24 @@ TWO REFRESH-SHAPED THINGS, AND THEY ARE NOT THE SAME (see the Refresh button for
 free, read-only, press it all day. UPDATE ORDERS in the title row calls Shopify and writes. Only the second one can make a packed
 order leave the list, because that's the archive phase of the sync.
 
+SCAN TO LABEL (docs/clickdrop-labels-plan.md — UI ONLY SO FAR, 2026-10-12). A scan field sits beside the find box: a scanner types
+the code and presses Enter, focus stays, scan scan scan. A scan finds the OLDEST open order still needing that shoe, selects it, and
+ticks the unit off; a scan nothing is waiting for turns the field red and beeps, as on AMZ Shipment. When every unit of an order is
+scanned its label prints. The action bar then offers Reprint (a jam, a smudge) and Cancel label (printed by mistake — voids it so the
+order can be scanned again). NOTHING IS WIRED YET: scan progress and label state live in this component's memory and are lost on
+reload, and "print" only records that it happened. The plan's server half (order-status-customer-scan / -label, customer_shipment,
+the Click & Drop client) replaces the three stubs marked CLICK & DROP STUB below; the screen shouldn't need to change shape when it does.
+Scans match OUR code only for now — EAN resolution is the server's job (the AMZ Shipment lookup), so it arrives with the scan route.
+
 DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenance-notes.md.
 =======================================================================================================================================
 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowPathIcon, ChevronDownIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, TrashIcon,
+  ArrowPathIcon, ChevronDownIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
-import { ChatBubbleLeftEllipsisIcon } from '@heroicons/react/24/solid';
+import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
   CustomerOrderLine, CustomerOrderState, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
   setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote, setCustomerOrderWaiting,
@@ -67,6 +76,45 @@ const NO_LINES: CustomerOrderLine[] = [];
 // render 'Pack', and the server still validates '0' like any other code.
 const PACK_ONLY = '0';
 const SHIPPING = COURIERS.filter((c) => c.code !== PACK_ONLY);
+
+// Scanned units per order: ordernum -> code -> units scanned. Counts, not line keys, because one order can hold two identical pairs
+// (two rows, same code) and either physical shoe is the right one.
+type ScanMap = Map<string, Map<string, number>>;
+// A printed label, per order. `reprints` is shown so a third reprint of the same order reads as "something's wrong with the printer".
+interface LabelInfo { printedAt: Date; reprints: number }
+
+// Can this line still take a scan? Open = still on our packing job (isOutstanding) and not 'Do not order' — PLUS Waiting (owner,
+// 2026-10-12): Waiting is set aside on the customer's say-so, not unpackable, so when the shoe is in hand it scans and packs like
+// any other. It stays out of isOutstanding (the Pending count and progress bar), which is a different question.
+const scannable = (l: CustomerOrderLine) => (isOutstanding(l.state) || isWaiting(l.state)) && l.state !== 'parked';
+
+// Why an order can't have a label, or null if it can. The plan's refusals that the list payload can see; non-GB country is checked
+// server-side once the route exists (country isn't on the line).
+function labelBlock(o: { courier: string | null; postcode: string | null }): string | null {
+  if (o.courier === PACK_ONLY) return 'Pack only — no label';
+  if (!SHIPPING.some((c) => c.code === o.courier)) return 'Choose a courier first';
+  if (!o.postcode?.trim()) return 'No postcode on this order';
+  return null;
+}
+
+// Same two low beeps as AMZ Shipment's refused scan, so the bench learns one sound for "no". Failures (no audio device, autoplay
+// policy before the first click) are ignored — the red field still says it.
+function beepError() {
+  try {
+    const ctx = new AudioContext();
+    for (const at of [0, 0.22]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 220;
+      gain.gain.value = 0.15;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.15);
+    }
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* silent; the screen still goes red */ }
+}
 
 export default function CustomerOrderList() {
   // Same SWR key the module home uses to headline the counts on the stage switch. SWR dedupes by key, so the two call sites share
@@ -88,6 +136,13 @@ export default function CustomerOrderList() {
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+
+  // --- scan to label (CLICK & DROP STUB: both maps move server-side, see the header) ---------------------------------------------
+  const [scan, setScan] = useState('');
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scans, setScans] = useState<ScanMap>(() => new Map());
+  const [labels, setLabels] = useState<Map<string, LabelInfo>>(() => new Map());
+  const scanRef = useRef<HTMLInputElement | null>(null);
 
   // How tall the pinned control block currently is, so the table's heading row can stick directly underneath it instead of behind it.
   // Measured rather than assumed because the block changes height in normal use: selecting an order fills the bar, a failed write adds
@@ -162,6 +217,28 @@ export default function CustomerOrderList() {
 
   const active = selected ? orders.get(selected) ?? null : null;
 
+  // Which LINES carry a scan tick, and each order's n-of-m. Ticks go on the first n scannable rows of each code in the order, so two
+  // identical pairs fill in one at a time. Lines that aren't scannable (already packed, FBA, do not order) are out of the count entirely —
+  // they aren't going in this box.
+  const scanState = useMemo(() => {
+    const ticked = new Set<CustomerOrderLine>();
+    const progress = new Map<string, { scanned: number; total: number; missing: string[] }>();
+    for (const o of orders.values()) {
+      const done = scans.get(o.ordernum);
+      const used = new Map<string, number>();
+      const p = { scanned: 0, total: 0, missing: [] as string[] };
+      for (const l of o.lines) {
+        if (!scannable(l)) continue;
+        p.total += l.qty;
+        const n = used.get(l.code) ?? 0;
+        if (n < (done?.get(l.code) ?? 0)) { ticked.add(l); p.scanned += l.qty; used.set(l.code, n + 1); }
+        else p.missing.push(l.code);
+      }
+      progress.set(o.ordernum, p);
+    }
+    return { ticked, progress };
+  }, [orders, scans]);
+
   // Read off the per-order roll-up rather than the line being rendered: the note may sit on any line of the group (PowerBuilder wrote
   // only the clicked row), so testing the current line would hide the marker whenever the noted line isn't the one on top.
   const noteFor = (ordernum: string) => orders.get(ordernum)?.note || '';
@@ -202,6 +279,101 @@ export default function CustomerOrderList() {
     URL.revokeObjectURL(url);
     await refresh();
     setWorking(false);
+  }
+
+  // --- scan to label -----------------------------------------------------------------------------------------------------------
+
+  // CLICK & DROP STUB. Becomes: POST order-status-customer-label (create-or-reprint, idempotent on ordernum — never a second C&D
+  // order, that pays postage twice), then the PDF into a hidden iframe and print(). For now it only records that a label exists.
+  function printLabel(ordernum: string) {
+    setLabels((prev) => {
+      const next = new Map(prev);
+      const had = prev.get(ordernum);
+      next.set(ordernum, had ? { ...had, reprints: had.reprints + 1 } : { printedAt: new Date(), reprints: 0 });
+      return next;
+    });
+  }
+
+  // CLICK & DROP STUB. Becomes: the server deletes the C&D order (only possible before it's manifested — after that Royal Mail
+  // refuses and the error shows in the bar) and drops the shipment row. The order's scans clear with it, so the packer starts the
+  // order again from the first shoe rather than half-way through a box they may have just unpacked.
+  function cancelLabel(ordernum: string) {
+    setLabels((prev) => { const next = new Map(prev); next.delete(ordernum); return next; });
+    setScans((prev) => { const next = new Map(prev); next.delete(ordernum); return next; });
+  }
+
+  // A scanner types the code and presses Enter. The OLDEST open order still short of this shoe takes it — first come, first boxed,
+  // the same rule the shelf follows. Orders already labelled are out: their box is shut.
+  function onScan() {
+    const code = scan.trim().toUpperCase();
+    setScan('');
+    if (!code) return;
+
+    let best: { ordernum: string; created: string } | null = null;
+    for (const o of orders.values()) {
+      if (labels.has(o.ordernum)) continue;
+      const match = o.lines.find((l) => l.code.toUpperCase() === code);
+      if (!match) continue;
+      const wanted = o.lines.filter((l) => scannable(l) && l.code === match.code).length;
+      if (wanted <= (scans.get(o.ordernum)?.get(match.code) ?? 0)) continue;
+      const created = o.lines.reduce((m, l) => (l.created < m ? l.created : m), o.lines[0].created);
+      if (!best || created < best.created) best = { ordernum: o.ordernum, created };
+    }
+
+    if (!best) {
+      // RETRY BY RE-SCAN. With no Print button, an order whose last scan was blocked (no courier, no postcode) gets its label by
+      // fixing the order and scanning one of its shoes again: a fully scanned, unlabelled order holding this shoe takes the scan as
+      // "try the label now" rather than a refusal.
+      const retry = [...orders.values()].find((o) => {
+        if (labels.has(o.ordernum) || !o.lines.some((l) => scannable(l) && l.code.toUpperCase() === code)) return false;
+        const p = scanState.progress.get(o.ordernum);
+        return !!p && p.total > 0 && p.scanned >= p.total;
+      });
+      if (retry) {
+        setScanError(null);
+        setSelected(retry.ordernum);
+        const block = labelBlock(retry);
+        if (block) { setActionError(`All scanned, but no label: ${block}`); beepError(); }
+        else { setActionError(null); printLabel(retry.ordernum); }
+        return;
+      }
+
+      // Three different "no"s, worded apart so the packer knows whether to look for a mistake or put the shoe back: no order wants
+      // it at all, every order that wants it is already scanned, or the only orders for it aren't open (packed, FBA, do not order).
+      const hits = lines.filter((l) => l.code.toUpperCase() === code);
+      setScanError(
+        hits.length === 0 ? `${code} — no customer order waiting for this shoe`
+        : hits.some(scannable) ? `${code} — every order for this shoe is already scanned`
+        : `${code} — its order isn’t open for packing (${[...new Set(hits.map((l) => CUSTOMER_STATES[l.state].label))].join(', ')})`
+      );
+      beepError();
+      return;
+    }
+
+    const o = orders.get(best.ordernum)!;
+    const realCode = o.lines.find((l) => l.code.toUpperCase() === code)!.code;
+    const next = new Map(scans);
+    const perCode = new Map(next.get(o.ordernum) ?? []);
+    perCode.set(realCode, (perCode.get(realCode) ?? 0) + 1);
+    next.set(o.ordernum, perCode);
+    setScans(next);
+    setScanError(null);
+    setActionError(null);
+    // The order must be on screen: drop a filter or search that would hide it, then bring its first row into view.
+    setFilter('all');
+    setTerm('');
+    setSelected(o.ordernum);
+    requestAnimationFrame(() => document.getElementById(`order-${o.ordernum}`)?.scrollIntoView({ block: 'center' }));
+
+    // Last shoe in: print straight away, no click — the packer's hands are full. A blocked order says why in the bar instead.
+    const p = { scanned: 0, total: 0 };
+    for (const l of o.lines) if (scannable(l)) p.total += l.qty;
+    for (const n of perCode.values()) p.scanned += n;
+    if (p.scanned >= p.total) {
+      const block = labelBlock(o);
+      if (block) setActionError(`All scanned, but no label: ${block}`);
+      else printLabel(o.ordernum);
+    }
   }
 
   // --- render ------------------------------------------------------------------------------------------------------------------
@@ -285,6 +457,31 @@ export default function CustomerOrderList() {
           Refresh
         </button>
 
+        {/* --- scan --------------------------------------------------------------------------------------------------------------
+            Beside the find box, not instead of it: the find box FILTERS the list as you type, the scan box ACTS on Enter — mixing
+            the two would narrow the grid to one shoe on every scan. Brand-ringed so the eye finds it first; red after a refusal. */}
+        <div className="relative">
+          <QrCodeIcon className={'pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 ' +
+            (scanError ? 'text-red-500' : 'text-brand-500')} />
+          <input
+            ref={scanRef}
+            // Focused on arrival: the first thing done on this screen is pick up a shoe and scan it, no click first. It mounts with
+            // the grid (after the loading render), so autoFocus fires once the list is there.
+            autoFocus
+            value={scan}
+            onChange={(e) => setScan(e.target.value.toUpperCase())}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onScan(); } }}
+            placeholder="Scan a shoe…"
+            aria-label="Scan a shoe"
+            aria-invalid={!!scanError}
+            autoComplete="off"
+            className={'w-48 rounded-md border py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:outline-none ' +
+              (scanError
+                ? 'border-red-400 bg-red-50 ring-1 ring-red-300'
+                : 'border-brand-500/50 focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30')}
+          />
+        </div>
+
         <div className="relative">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           {/* Forced UPPERCASE, like the Pricing and Inventory find boxes (owner) — order numbers and SKUs are uppercase, so typing
@@ -298,6 +495,13 @@ export default function CustomerOrderList() {
           />
         </div>
       </div>
+
+      {/* The refusal, under the chips row. Clears on the next good scan, like AMZ Shipment's. */}
+      {scanError && (
+        <p className="-mt-1 mb-2 flex items-center gap-1.5 text-sm font-medium text-red-700" role="alert">
+          <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />{scanError}
+        </p>
+      )}
 
       {/* --- the action bar: the legacy screen's top strip ---------------------------------------------------------------------
           ALWAYS RENDERED, never conditionally mounted. Showing it only when a row was selected made the whole grid jump down the
@@ -319,6 +523,11 @@ export default function CustomerOrderList() {
         }}
         onFbaFile={() => active && downloadFbaFile(active.ordernum)}
         onDelete={async () => { if (active && await run(() => deleteCustomerOrder(active.ordernum))) setSelected(null); }}
+        progress={active ? scanState.progress.get(active.ordernum) ?? null : null}
+        label={active ? labels.get(active.ordernum) ?? null : null}
+        // Each label action hands focus back to the scan box: the next thing the packer does is scan the next shoe.
+        onPrint={() => { if (active) { printLabel(active.ordernum); scanRef.current?.focus(); } }}
+        onCancelLabel={() => { if (active) { cancelLabel(active.ordernum); scanRef.current?.focus(); } }}
       />
       </div>
 
@@ -369,6 +578,7 @@ export default function CustomerOrderList() {
               return (
                 <tr
                   key={`${l.ordernum}|${l.code}`}
+                  id={firstOfGroup ? `order-${l.ordernum}` : undefined}
                   onClick={() => { setSelected(isSelected ? null : l.ordernum); setActionError(null); }}
                   className={
                     'cursor-pointer ' +
@@ -405,7 +615,15 @@ export default function CustomerOrderList() {
                       </span>
                     )}
                   </td>
-                  <td className="max-w-[220px] truncate px-2 py-1.5 text-slate-600" title={l.title || l.code}>{l.code}</td>
+                  {/* The scan tick rides on the code because the code is what was scanned. Always reserving the icon's width would
+                      shift every code right for a feature most rows never use, so it's drawn only on a scanned line. */}
+                  <td className="max-w-[220px] truncate px-2 py-1.5 text-slate-600" title={l.title || l.code}>
+                    {scanState.ticked.has(l) ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+                        <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" aria-label="Scanned" />{l.code}
+                      </span>
+                    ) : l.code}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{l.qty}</td>
                   <td className="max-w-[120px] truncate px-2 py-1.5 text-slate-500">{l.supplier || '—'}</td>
                   <td className="max-w-[150px] truncate px-2 py-1.5 text-slate-600">{l.customer || '—'}</td>
@@ -419,6 +637,13 @@ export default function CustomerOrderList() {
                   <td className="whitespace-nowrap px-2 py-1.5">
                     {(l.state === 'packed' || l.state === 'waiting') && (
                       <span className={'rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ' + s.pill}>{s.label}</span>
+                    )}
+                    {/* Once per ORDER (a label is one parcel), on the group's first row. Sky outline: done-ish but not Packed's
+                        solid green — until the server writes batch='2', a printed label is not the same as packed. */}
+                    {firstOfGroup && labels.has(l.ordernum) && (
+                      <span className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-300">
+                        <PrinterIcon className="h-3 w-3" />Label
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -547,8 +772,10 @@ function Chip({ label, count, active, onClick, tone = 'slate' }: {
  * is selected, which keeps the footprint identical between the two states; that is the whole point, so don't "tidy" this into an
  * early return.
  */
-function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete }: {
-  order: { ordernum: string; customer: string | null; postcode: string | null; courier: string | null; note: string;
+function OrderActionBar({
+  order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete, progress, label, onPrint, onCancelLabel,
+}: {
+  order: { ordernum: string; state: CustomerOrderState; customer: string | null; postcode: string | null; courier: string | null; note: string;
            waiting: boolean; lines: CustomerOrderLine[] } | null;
   working: boolean;
   error: string | null;
@@ -559,13 +786,17 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   onFba: () => void;
   onFbaFile: () => void;
   onDelete: () => void;
+  progress: { scanned: number; total: number; missing: string[] } | null;
+  label: LabelInfo | null;
+  onPrint: () => void;
+  onCancelLabel: () => void;
 }) {
   // Keyed on ordernum so selecting a different order re-seeds the field instead of carrying the previous order's note across.
   // Deriving state during render like this is the sanctioned React pattern for "reset when a prop changes" — note it sets THIS
   // component's own state, which is exactly what made the earlier parent-notifying version illegal.
   const [note, setNote] = useState(order?.note ?? '');
   const [noteFor, setNoteFor] = useState(order?.ordernum ?? null);
-  const [confirm, setConfirm] = useState<'fba' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<'fba' | 'delete' | 'cancelLabel' | null>(null);
   const [more, setMore] = useState(false);
 
   if (noteFor !== (order?.ordernum ?? null)) {
@@ -588,6 +819,12 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
   // upload can be re-downloaded (the server keeps the first file's stamp). `fileMade` only changes the wording.
   const hasFba = order?.lines.some((l) => l.fba > 0) ?? false;
   const fileMade = hasFba && !order!.lines.some((l) => isFba(l.state));
+  // Does this order have a label to reprint or cancel? One printed this session, or a PACKED order — once the server writes
+  // batch='2' at print time, packed is what a labelled order looks like after a reload. Not an FBA order (packed by its Amazon file)
+  // or a pack-only one: neither ever had a Royal Mail label.
+  const hasLabel = !!label || (order?.state === 'packed' && !hasFba && !packOnly);
+  // Only worth saying once a scan has started on this order; "0 of 1 scanned" on every click would be noise.
+  const showProgress = !!progress && progress.total > 0 && progress.scanned > 0 && !label;
 
   return (
     // No bottom margin: the pinned block that wraps this owns the gap to the grid, and a margin here would be dead pinned pixels.
@@ -605,6 +842,16 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
           {order ? (order.customer || '—') : 'Select an order below'}
         </span>
         <span className="text-sm text-slate-400">{order?.postcode || ''}</span>
+        {/* n of m, and WHICH shoe is still missing — the packer has the box open and needs the code to go and find, not a count. */}
+        {showProgress && (
+          <span className={'text-sm font-medium ' +
+            (progress!.scanned >= progress!.total ? 'text-emerald-700' : 'text-brand-700')}>
+            {progress!.scanned} of {progress!.total} scanned
+            {progress!.missing.length > 0 && (
+              <span className="font-normal text-slate-500"> · still need {progress!.missing.join(', ')}</span>
+            )}
+          </span>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -680,6 +927,50 @@ function OrderActionBar({ order, working, error, onClose, onNote, onWaiting, onC
             {SHIPPING.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
+
+        {/* --- label ---------------------------------------------------------------------------------------------------------- */}
+        {/* NO PRINT BUTTON (owner, 2026-10-12): labels come off the scan and nothing else — clicking an order and pressing Print is
+            how the wrong shoes get sent, because the scan is the check that what's in hand is what was ordered. So before a label
+            exists this slot is empty, and an order whose last scan was blocked (no courier, say) is fixed and then re-scanned (see
+            onScan). Once there IS a label, two controls: Reprint for a jam or a smudge, which re-fetches the SAME label and never
+            buys postage twice; and Cancel label for a print made by mistake, behind a confirm because it voids the shipment. */}
+        {hasLabel && (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-sm font-medium text-sky-700"
+              title={label ? label.printedAt.toLocaleString('en-GB') : undefined}>
+              <PrinterIcon className="h-4 w-4" />
+              {label
+                ? <>Printed {label.printedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</>
+                : 'Packed'}
+              {label && label.reprints > 0 && <span className="font-normal text-slate-500">· reprinted {label.reprints}×</span>}
+            </span>
+            <button
+              type="button"
+              disabled={off}
+              onClick={onPrint}
+              className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-40"
+            >
+              Reprint
+            </button>
+            {confirm === 'cancelLabel' ? (
+              <ConfirmBox
+                message="Cancel this label?"
+                onYes={() => { setConfirm(null); onCancelLabel(); }}
+                onNo={() => setConfirm(null)}
+              />
+            ) : (
+              <button
+                type="button"
+                disabled={off}
+                onClick={() => setConfirm('cancelLabel')}
+                title="Printed by mistake — void the label and start this order's scans again"
+                className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+              >
+                Cancel label
+              </button>
+            )}
+          </div>
+        )}
 
         {/* --- Amazon order file -------------------------------------------------------------------------------------------- */}
         {/* Only on an FBA order, and on the FACE of the bar rather than behind More: an FBA order's whole outstanding job is this
