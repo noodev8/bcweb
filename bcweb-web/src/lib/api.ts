@@ -461,6 +461,9 @@ export function getAmazonOrderList() {
   return request<{
     count: number; no_supply_default_until: string | null; rows: AmazonOrderRow[];
     to_place: AmazonOrderToPlace; on_order: AmazonOrderOnOrder;
+    // The Hot | Warm bars (server utils/portfolio.js). hot_bar = the 30-day profit at the top-20% line of sizes that sold in 30
+    // days — Hot is profit_30d >= it; null when nothing sold (Hot empty). warm_min_unit_profit = Warm's unit-profit floor.
+    hot_bar: number | null; warm_min_unit_profit: number;
   }>(
     { url: '/amazon-order-list', method: 'GET' },
     (b) => ({
@@ -488,6 +491,8 @@ export function getAmazonOrderList() {
         oldest_days: b.to_place?.oldest_days === null || b.to_place?.oldest_days === undefined ? null : Number(b.to_place.oldest_days),
       },
       on_order: { units: Number(b.on_order?.units) || 0, skus: Number(b.on_order?.skus) || 0 },
+      hot_bar: b.hot_bar === null || b.hot_bar === undefined ? null : Number(b.hot_bar),
+      warm_min_unit_profit: Number(b.warm_min_unit_profit) || 3,
     })
   );
 }

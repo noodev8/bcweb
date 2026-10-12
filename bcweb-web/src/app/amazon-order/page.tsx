@@ -148,8 +148,12 @@ RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE 
 
 HOT / WARM / COLD — the three presets' ON-SCREEN names since 2026-09-27 (owner picked them from three sets). They were Winners /
       Potential / Recycle, and "Winners" collided with the portfolio WINNERS status (Repricing's Status tab). A temperature reads as "how is this SIZE selling on Amazon right now" — a 30-day, per-SKU reading — where the status
-      is a style's 12 months. Labels only: the tests, the handlers and the code identifiers (winnersOnly, 'potential', …) keep the
+      is a style's 12 months. Labels only: the handlers and the code identifiers (winnersOnly, 'potential', …) keep the
       old words, the same labels-only rule as Repricing's Selling | Stuck.
+      THE TESTS (owner, 2026-10-12 — isHot / isWarm; bars from the server, utils/portfolio.js): HOT = the top 20% of sizes that sold
+      in 30 days, ranked by 30-day profit (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit profit
+      over £3, sold in 6 months. COLD = sold before, not in 6 months — every such size (until 2026-10-12 a slip in its "would be
+      Warm" check also dropped the ones with a > £3 unit profit, half of Cold on the day).
 
 NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 an Amazon
       Repricing status list linked here with ?status=&bar= and the screen showed only that list's SKUs behind a "Repricing: Winners"
@@ -404,6 +408,18 @@ const RECENT_SALE_CUTOFF_MS = Date.now() - SIX_MONTHS_MS;
 function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
   if (!r.last_sold) return false;
   return new Date(r.last_sold + 'T00:00:00Z').getTime() >= cutoffMs;
+}
+
+// HOT / WARM — the presets' tests, in one place so Cold's "not already Hot or Warm" can't drift from them. The bars come from the
+// server (utils/portfolio.js, owner 2026-10-12): hotBar is the 30-day profit at the top-20% line of sizes that sold in 30 days,
+// ranked over EVERY row, so Hot is the same set whatever search or cut is on screen. units_30d > 0 matches the server's ranking
+// pool — without it a quiet month with a line at £0 would turn every unsold size Hot.
+function isHot(r: AmazonOrderRow, hotBar: number | null): boolean {
+  return hotBar !== null && r.units_30d > 0 && r.profit_30d !== null && r.profit_30d >= hotBar;
+}
+// Warm = not Hot, last-sale unit profit over the floor (£3), and an Amazon sale in 6 months (the sticky-figure guard above).
+function isWarm(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
+  return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
 }
 
 // A ref callback that keeps `set` fed with the element's live height, and zeroed when it unmounts. Used for the two pieces of
@@ -662,6 +678,9 @@ function AmazonOrderContent() {
     () => getAmazonOrderList(),
   );
   const rows: AmazonOrderRow[] = data?.rows ?? NO_ROWS;
+  // The Hot | Warm bars, from the server (see isHot / isWarm). hotBar null = nothing sold in 30 days, so Hot is empty.
+  const hotBar = data?.hot_bar ?? null;
+  const warmMin = data?.warm_min_unit_profit ?? 3;
 
   // CAN'T GET — sizes of a marked style with nothing on the local shelf are off the screen (supplyHidden; see the header). The chip's
   // number is what it's hiding from the list you'd otherwise see.
@@ -744,16 +763,16 @@ function AmazonOrderContent() {
   function onIncludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setIncludeInput(e.target.value.toUpperCase()); }
   function onExcludeInputChange(e: React.ChangeEvent<HTMLInputElement>) { setExcludeInput(e.target.value.toUpperCase()); }
 
-  // WINNERS / POTENTIAL WINNERS — quick presets, not stacked steps: numeric tests on profit_30d/unit_profit, not text search terms.
-  // Both are this screen's OWN thresholds (owner, 2026-08-07), deliberately NOT the shared Shopify/Amazon "≥2 units AND ≥£2/unit"
-  // WINNERS test the pricing modules use:
-  //   WINNERS            profit_30d > £30 — already making good money this month.
-  //   POTENTIAL WINNERS  profit_30d < £30 BUT unit_profit > £3 AND sold within the last 6mo — the margin is there, it just hasn't
-  //                      sold enough yet this month to show up as a winner; a candidate to push (stock/visibility), not a pricing
-  //                      problem. The 6mo check guards against unit_profit's STICKY figure (see isRecentlySold) passing the margin
-  //                      test on a sale from a year+ ago that's never repeated (owner, 2026-08-20).
-  // Mutually exclusive (turning one on turns the other off): the two tests are opposite sides of the £30 line, so having both on at
-  // once would always return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
+  // HOT / WARM (identifiers: winners / potential) — quick presets, not stacked steps: numeric tests on profit_30d/unit_profit, not
+  // text search terms. This screen's OWN tests, deliberately NOT the pricing modules' Selling test ("≥2 units AND ≥£2/unit") and not
+  // the portfolio WINNERS status. The tests are isHot / isWarm (module level); the bars live on the server (utils/portfolio.js):
+  //   HOT   the top 20% of sizes that sold in 30 days, by profit_30d (owner, 2026-10-12 — was profit_30d > £30, which emptied the
+  //         list in winter; a ranking keeps a Hot list all year).
+  //   WARM  not Hot, unit_profit > £3 AND sold within the last 6mo — the margin is there, it just isn't among this month's best
+  //         sellers; a candidate to push (stock/visibility), not a pricing problem. The 6mo check guards against unit_profit's
+  //         STICKY figure (see isRecentlySold) passing the margin test on a sale from a year+ ago that's never repeated (2026-08-20).
+  // Mutually exclusive (turning one on turns the other off): Warm is defined as not-Hot, so having both on at once would always
+  // return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
   // RECYCLE — the mirror of Potential's 6mo check: SKUs that HAVE sold at some point, but not within the last 6 months, and don't
@@ -896,27 +915,21 @@ function AmazonOrderContent() {
       const excTerms = excludes.map((t) => t.toLowerCase());
       out = out.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
     }
-    if (winnersOnly) out = out.filter((r) => r.profit_30d !== null && r.profit_30d > 30);
-    if (potentialOnly) {
-      // Potential Winners also requires a genuinely recent sale (owner, 2026-08-20) — unit_profit is STICKY (see isRecentlySold
-      // above), so without this a SKU that sold once over a year ago and never since could still pass the >£3 margin test on a
-      // stale figure.
-      out = out.filter((r) => r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3
-        && isRecentlySold(r, RECENT_SALE_CUTOFF_MS));
-    }
+    if (winnersOnly) out = out.filter((r) => isHot(r, hotBar));
+    // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
+    if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
     if (recycleOnly) {
       // RECYCLE — see its declaration above: HAS sold before, just not within the last 6 months, and isn't already claimed by
-      // Winners or Potential. last_sold === null (never sold at all) is excluded — that's dead stock with no track record, not
-      // something that "used to move".
+      // Hot or Warm. last_sold === null (never sold at all) is excluded — that's dead stock with no track record, not
+      // something that "used to move". Until 2026-10-12 the "would be Warm" check here left out Warm's 6-month test, so every
+      // stale size with a >£3 unit profit was dropped from Cold as well — half of them on the day (27 of 54).
       out = out.filter((r) => {
         if (!r.last_sold || isRecentlySold(r, RECENT_SALE_CUTOFF_MS)) return false;
-        if (r.profit_30d !== null && r.profit_30d > 30) return false; // would be Winners
-        if (r.profit_30d !== null && r.profit_30d < 30 && r.unit_profit !== null && r.unit_profit > 3) return false; // would be Potential
-        return true;
+        return !isHot(r, hotBar) && !isWarm(r, hotBar, warmMin);
       });
     }
     return out;
-  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode]);
+  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
@@ -1706,7 +1719,7 @@ function AmazonOrderContent() {
             <button
               type="button"
               onClick={toggleWinners}
-              title="Over £30 profit in 30 days"
+              title={hotBar !== null ? `Top 20% by 30-day profit (£${hotBar.toFixed(2)}+)` : 'Top 20% by 30-day profit'}
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (winnersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
@@ -1718,7 +1731,7 @@ function AmazonOrderContent() {
             <button
               type="button"
               onClick={togglePotential}
-              title="Under £30 in 30 days, over £3 a unit"
+              title={`Not Hot, over £${warmMin} a unit`}
               className={
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
                 (potentialOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')

@@ -50,7 +50,7 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          placeholder on many rows). Used by the web page to total up what the on-screen proposed Order would cost to buy in.
 
          last_sold = MAX(sales.solddate) WHERE channel='AMZ' AND qty>0, same shape as routes/amz-losers.js's own `ls` CTE. Exists
-         because unit_profit (skumap.amzprofit) is STICKY — it can be a year+ old and still pass the Potential Winners £3 test — so
+         because unit_profit (skumap.amzprofit) is STICKY — it can be a year+ old and still pass Warm's £3 test — so
          the web page's optional "Sold in 6mo" toggle uses this to tell a genuinely recent sale apart from a stale one. Null when
          the SKU has never sold on Amazon.
 
@@ -61,6 +61,11 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          deliberately its OWN aggregate over orderstatus rather than a sum of the row set: a queued line whose SKU has since left
          amzfeed would be invisible in `rows`, and the one thing this figure must never do is under-report. `oldest_days` is the age
          of the longest-waiting line, which is what makes it worth acting on rather than just true.
+
+         `hot_bar` / `warm_min_unit_profit` are the page's Hot | Warm bars (utils/portfolio.js, owner 2026-10-12). Hot is the top
+         20% of sizes that sold in 30 days by profit_30d, so its £ line is computed here, over EVERY row, from the same rounded
+         profit_30d the page tests — the page never ranks a filtered subset. Warm's £3 is a fixed floor, sent so the page holds no
+         copy of it.
 
          `on_order` is the other half of the same question: Amazon lines (ordertype=3, arrived=0) that HAVE been placed with a
          supplier and have not turned up yet. Together with `to_place` it drives the dismissible "there are Amazon orders in Order
@@ -94,6 +99,8 @@ Success Response:
   "no_supply_default_until": "2026-12-27",                                   // what "Can't get it" would set today
   "to_place": { "units": 14, "skus": 6, "suppliers": 2, "oldest_days": 9 },   // Amazon lines queued here but not yet placed
   "on_order": { "units": 20, "skus": 11 },                                    // Amazon lines placed with a supplier, not yet arrived
+  "hot_bar": 15.36,                         // Hot = profit_30d >= this among sizes sold in 30d (top 20%); null if nothing sold
+  "warm_min_unit_profit": 3,                // Warm = not Hot, unit_profit > this, sold on Amazon in 6 months
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
@@ -120,6 +127,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
 const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
+const { HOT_SHARE, WARM_MIN_UNIT_PROFIT } = require('../utils/portfolio');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -289,8 +297,19 @@ router.get('/', async (req, res) => {
     const pu = await query(`SELECT (${NO_SUPPLY_UNTIL_SQL})::text AS until`);
     const parkUntil = (pu.rows[0] && pu.rows[0].until) || null;
 
+    // HOT's line (utils/portfolio.js → HOT_SHARE): the 30-day profit of the size at the top-20% mark among sizes that SOLD in the
+    // last 30 days. Taken over EVERY row here, before the page applies Can't get or search, so the line is the same whatever is on
+    // screen. Ties at the line are all Hot (the page tests >=). Read from the same rounded profit_30d the page compares against.
+    // Null when nothing sold — Hot is then empty rather than "everything".
+    const sold = rows
+      .filter((r) => r.units_30d > 0 && r.profit_30d !== null)
+      .map((r) => r.profit_30d)
+      .sort((a, b) => b - a);
+    const hotBar = sold.length > 0 ? sold[Math.max(1, Math.round(sold.length * HOT_SHARE)) - 1] : null;
+
     return res.json({
-      return_code: 'SUCCESS', count: rows.length, no_supply_default_until: parkUntil, to_place: toPlace, on_order: onOrder, rows,
+      return_code: 'SUCCESS', count: rows.length, no_supply_default_until: parkUntil, to_place: toPlace, on_order: onOrder,
+      hot_bar: hotBar, warm_min_unit_profit: WARM_MIN_UNIT_PROFIT, rows,
     });
   } catch (err) {
     logger.error('[amazon-order-list] error:', err.message);

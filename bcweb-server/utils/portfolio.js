@@ -2,11 +2,12 @@
 =======================================================================================================================================
 Module: utils/portfolio.js
 =======================================================================================================================================
-Purpose: The winner BAR, in one place:
+Purpose: The winner BAR, in one place — and Amazon Order's Hot | Warm bars beside it:
 
            WINNER_BAR         — utils/portfolioStatus.js, the rule that tags a style WINNERS
            WINNER_BAR_LADDER  — the Winners screen's dial (routes/portfolio-status.js) and the status lists' ?bar=
                                 (routes/pricing-status-list.js, routes/amz-status-list.js)
+           HOT_SHARE / WARM_MIN_UNIT_PROFIT — Amazon Order's presets (routes/amazon-order-list.js); see the note above them
 
          ⚠ WHAT USED TO LIVE HERE (removed 2026-09-25, git history has it): computeWinners() — a live winner count including deleted
            styles, the profit ladder and band-movement report, behind GET /portfolio-winners and the portfolio_snapshot trend — and
@@ -22,7 +23,7 @@ THE DEFINITION (THE CODE IS THE SPEC):
 =======================================================================================================================================
 */
 
-// GROSS REVENUE (GBP) in the rolling 12 months that makes a style a winner. THIS BAR, OVER THAT WINDOW, IS THE WHOLE TEST — there
+// REVENUE NET OF RETURNS (GBP) in the rolling 12 months that makes a style a winner. THIS BAR, OVER THAT WINDOW, IS THE WHOLE TEST — there
 // is no age condition.
 //
 // NO AGE TEST, and putting one back would be a regression, not a tightening. The original spec said "age >= 180 days AND over the
@@ -48,9 +49,20 @@ THE DEFINITION (THE CODE IS THE SPEC):
 // drop it. A bar that mixes the two lets a thin-margin style that sells brilliantly fall out of the count when it is exactly the
 // kind of product we want to load and build.
 //
-// WHERE £1,500 CAME FROM: the 80 winners under the old £200 profit bar turned over £367,545 on £52,130 of contribution, a ratio of
-// about 7.05x, which puts £200 of contribution at roughly £1,410 of revenue. Rounded to £1,500 — the ladder exists to be read as a
-// spread, not to reproduce the old counts exactly, and a round number reads better in the sentence on screen.
+// WHY £1,500 — THE TOP 20% OF STYLES (owner, 2026-10-12: "It's that 20% I want to keep feeding"). The bar is the 12-month net revenue
+// of the style at the top-20% line, among styles with any net revenue in the window, rounded to the nearest £50. On 2026-10-12 that
+// line was £1,530: 64 of 320 selling styles, 70.7% of revenue, 73.6% of profit. The business runs 70/20, not 80/20 — it held at
+// 68-71% at every quarterly point back a year, and 80% of revenue takes ~31% of styles (a ~£950 bar). The owner chose the 20% of
+// STYLES as the anchor, not the 80% of revenue.
+//
+// IT IS A FIXED NUMBER, REVIEWED ON REQUEST — never computed live. A winner should change because the owner moved the bar, not
+// because the calendar did. The line drifts DOWN as the range grows (£2,060 a year earlier, on 164 selling styles), so it does go
+// stale: `node scripts/winner-bar-review.js` prints the current line, its count and share, and who would join or leave. Leave it
+// alone inside ~10% (styles near the line would otherwise flip in and out every review); outside that, the owner decides, the
+// constant changes here, and "Update now" on the Status tab re-tags. Last review: 2026-10-12, line £1,530 -> kept £1,500.
+//
+// (History: £1,500 was first set on 2026-09-22 as a conversion of the old £200 profit bar — the 80 winners under it turned over
+// ~7.05x their contribution, ~£1,410, rounded up. The 20% reason above came later and happened to land on the same figure.)
 //
 // ⚠ This bar sets the stored WINNERS tag (utils/portfolioStatus.js) — moving it re-draws who is a winner at the next Update.
 const WINNER_BAR = 1500;
@@ -67,7 +79,30 @@ const WINNER_BAR = 1500;
 // amounts do that better than amounts that carry the fingerprint of a bar we no longer use. The owner chose the shape directly.
 const WINNER_BAR_LADDER = [WINNER_BAR, 2500, 5000, 10000];
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// AMAZON ORDER'S HOT | WARM — a 30-day, per-SIZE reading of how a SKU is selling on Amazon right now. NOT a winner definition: a
+// WINNER is a style's 12 months ("is it worth having?"), a temperature is a size's last 30 days ("is it moving?"). They sit here so
+// every bar the business ranks by is in one file. Read by routes/amazon-order-list.js, which sends both to the page.
+//
+// HOT = the top HOT_SHARE of the sizes that SOLD in the last 30 days (net units > 0), ranked by 30-day profit (owner, 2026-10-12 —
+// "Hot is 20% of the top sellers by profit in 30 days"). Was profit_30d > £30 until then. Profit, not revenue, because this screen
+// spends money on stock, and Amazon's thin margin is the question there.
+//
+// UNLIKE WINNER_BAR, THIS IS COMPUTED LIVE, not a reviewed constant: a 30-day line swings ~2.5x with the season (the top-20% line ran
+// £12-£31 across the year to 2026-10-12, and a fixed £30 left Hot with 0-4 sizes through winter — empty exactly when knowing what is
+// still moving matters). The 20% is the fixed part; the £ line is a result. Ranking also makes it immune to the known ~20%
+// understatement of booked Amazon profit. On the day: 147 sizes sold, 29 Hot at £15.36+, 57.5% of the 30-day profit.
+const HOT_SHARE = 0.2;
+
+// WARM = not Hot, last-sale unit profit over this, and an Amazon sale in the last 6 months (the page's guard on the sticky
+// unit_profit — see isRecentlySold there). A margin FLOOR, not a ranking, so the 20% idea doesn't apply. Why £3: on 2026-10-12
+// the median recently-sold size made £4.52 a unit and £3 cut the bottom third (129 of 356). Owner's original figure (2026-08-07),
+// kept with that reason on 2026-10-12.
+const WARM_MIN_UNIT_PROFIT = 3;
+
 module.exports = {
   WINNER_BAR,
   WINNER_BAR_LADDER,
+  HOT_SHARE,
+  WARM_MIN_UNIT_PROFIT,
 };
