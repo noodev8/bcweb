@@ -1458,6 +1458,10 @@ function AmazonOrderContent() {
   // table needed side-scrolling); the caret beside a SKU reveals them inline instead (owner request, 2026-08-13), with the style's
   // Can't get line. ONE row at a time since 2026-09-27 (see CLICK, SELECT, EXPAND in the header): opening another closes the first.
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
+  // The Amazon price screen for one SKU, reached from either Profit figure. ?from= is this screen's own URL (its ?q/?from kept) so
+  // the price screen's Back and Apply land back here — the basket survives (localStorage draft), the search steps don't.
+  const selfHref = '/amazon-order' + (searchParams.toString() ? '?' + searchParams.toString() : '');
+  const priceHref = (code: string) => `/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(selfHref)}`;
   function toggleExpanded(code: string) {
     setExpandedCode((prev) => (prev === code ? null : code));
   }
@@ -2253,8 +2257,18 @@ function AmazonOrderContent() {
                       </td>
                     );
                   })}
-                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{money(r.unit_profit)}</td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">{money(r.profit_30d)}</td>
+                  {/* PROFIT -> the Amazon price screen for this SKU (owner, 2026-10-12), carrying ?from= so its Back, and Apply, come
+                      straight back here. A link, so the click doesn't also select the row. */}
+                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">
+                    <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
+                      {money(r.unit_profit)}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">
+                    <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
+                      {money(r.profit_30d)}
+                    </Link>
+                  </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     <button
                       type="button"
@@ -2308,6 +2322,28 @@ function AmazonOrderContent() {
                           <dd className="flex items-center gap-0.5 font-mono text-slate-900">
                             {r.amz_sku || '—'}
                             {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
+                          </dd>
+                        </dl>
+                        {/* WHERE THE STOCK IS (owner, 2026-10-12). FBA Total quietly includes units committed to a pick but still on a
+                            local shelf (pick_pending), so a SKU can read FBA Total 1 while Seller Central says 0 — say so here, and hand
+                            off to Inventory (sizes and racks) to find the unit. ?from=/&back= is Inventory's Back convention. */}
+                        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
+                          {r.pick_pending > 0 && (
+                            <>
+                              <dt className="text-slate-500">Pick pending</dt>
+                              <dd className="text-amber-700" title="Committed to an Amazon pick but not yet gathered onto C3-Amazon — counted in FBA Total, not at Amazon yet">
+                                <span className="font-medium tabular-nums">{r.pick_pending}</span> on a local shelf, not at Amazon yet
+                              </dd>
+                            </>
+                          )}
+                          <dt className="text-slate-500">Stock</dt>
+                          <dd>
+                            <Link
+                              href={`/inventory?q=${encodeURIComponent(r.code)}&from=${encodeURIComponent(selfHref)}&back=${encodeURIComponent('Amazon Order')}`}
+                              className="font-medium text-brand-600 hover:underline"
+                            >
+                              Inventory →
+                            </Link>
                           </dd>
                         </dl>
                         <div className="text-sm">
