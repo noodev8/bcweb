@@ -51,6 +51,11 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          Tick rows and "Cut" them to narrow the working set (2026-10-11, see the CUT note above SittingList): still sitting, but
          Update collection, Reprice and the Google Ads chip skip them until released.
 
+ARRIVAL FROM REPRICING (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back"; the card is "Slow").
+         Repricing's Status tab (the owner's "WINNERS" screen) has a Slow card that opens this page with ?from=/segments&back=Winners;
+         ← Back then returns there, and the origin rides along on every link out (drill, Reprice, Google Ads) so coming back through
+         them keeps it. With no ?from= it is the Reports page it always was.
+
 Guarded by AppShell. Consumes GET /analytics-stock-sitting, POST /stock-sitting-cut, and GET /analytics-stock-sales only while
 STOCK_SALES_FLOW is on.
 
@@ -59,6 +64,7 @@ STOCK_SALES_FLOW is on.
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -79,7 +85,34 @@ const dayLabel = (s: string) => `${ymd(s).d} ${MONTHS[ymd(s).m - 1]}`;
 const monthLabel = (s: string) => `${MONTHS[ymd(s).m - 1]} ${ymd(s).y}`;
 const weekLabel = (s: string) => `${dayLabel(s)} ${String(ymd(s).y).slice(2)}`; // the Monday the week starts
 
+// Where ← Back goes: ?from= when a screen sent us here (Repricing's Slow card), else Reports. Same-site paths only.
+function useOrigin() {
+  const sp = useSearchParams();
+  const raw = sp.get('from');
+  const from = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null;
+  return { from, back: from ? sp.get('back') || 'Back' : null };
+}
+
+// This page's own path with the sort and the origin kept, so a link out (drill, Reprice, Google Ads) comes back to it as it was left.
+function selfPath(origin: { from: string | null; back: string | null }, sort?: string) {
+  const q = new URLSearchParams();
+  if (sort) q.set('sort', sort);
+  if (origin.from) { q.set('from', origin.from); q.set('back', origin.back || 'Back'); }
+  const qs = q.toString();
+  return `/analytics/stock-sales${qs ? `?${qs}` : ''}`;
+}
+
+// useSearchParams (the ← Back origin) needs a Suspense boundary for Next's build.
 export default function StockSalesPage() {
+  return (
+    <Suspense fallback={null}>
+      <StockSalesBody />
+    </Suspense>
+  );
+}
+
+function StockSalesBody() {
+  const origin = useOrigin();
   // The flow half (chart + Month | Week list) is behind STOCK_SALES_FLOW; switched off, its query never runs (null key = don't fetch).
   const q = useApiQuery(STOCK_SALES_FLOW ? 'analytics-stock-sales' : null, () => getStockSales());
   const d = q.data;
@@ -88,7 +121,7 @@ export default function StockSalesPage() {
   const stale = d?.latest && d.latest.date < d.expected_date;
 
   return (
-    <AppShell backHref="/analytics" backLabel="Reports">
+    <AppShell backHref={origin.from ?? '/analytics'} backLabel={origin.back ?? 'Reports'}>
       {(sq.isLoading || q.isLoading) && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
 
@@ -362,8 +395,8 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 // returns here with the sort kept) — owner: "send me to the screen with the list already filtered, for me to choose a campaign if I
 // wanted". Nothing is selected or moved there; see SITTING ARRIVAL in google-ads/page.tsx.
 // -------------------------------------------------------------------------------------------------------------------------------------
-const REPRICE_HREF =
-  `/pricing/sitting?by=sitting&pending=1&from=${encodeURIComponent('/analytics/stock-sales')}&back=${encodeURIComponent('Selling vs Sitting')}`;
+const repriceHref = (self: string) =>
+  `/pricing/sitting?by=sitting&pending=1&from=${self}&back=${encodeURIComponent('Selling vs Sitting')}`;
 
 // Sortable headers (components/SortableTh — the Repricing lists' own): opens in the server's order (most pairs first); a click sorts,
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
@@ -410,8 +443,9 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
     const failed = d.failed.length ? ` · ${d.failed.length} failed, try again` : '';
     setSyncMsg({ text: `+${d.added.length} −${d.removed.length}${failed}`, bad: d.failed.length > 0 });
   }
-  // This page's own URL WITH the current sort, so the drill's ← Back lands on the list as it was left.
-  const self = encodeURIComponent(`/analytics/stock-sales${sort ? `?sort=${sort.key}.${sort.dir}` : ''}`);
+  // This page's own URL WITH the current sort (and the Repricing origin, if any), so ← Back from a link out lands on the list as it was left.
+  const origin = useOrigin();
+  const self = encodeURIComponent(selfPath(origin, sort ? `${sort.key}.${sort.dir}` : undefined));
 
   // CUT — see the note above SittingList. The working set leads in the chosen sort; cut styles follow, in the same sort.
   const active = sorted.filter((s) => !s.cut);
@@ -464,7 +498,7 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
                 Google Ads &rarr;
               </Link>
-              <Link href={REPRICE_HREF} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+              <Link href={repriceHref(self)} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
                 Reprice &rarr;
               </Link>
             </>

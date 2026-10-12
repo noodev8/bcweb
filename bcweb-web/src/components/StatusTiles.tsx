@@ -22,7 +22,12 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the 
          style; no success banner — the tiles and stamp change when the refresh lands), the tier toggle and winners by brand, all
          re-cut per channel. The status trend came too and was removed 2026-09-25 (see routes/portfolio-snapshot-update.js).
 
-Consumes GET /pricing-status-overview, GET /portfolio-status and POST /portfolio-snapshot-update.
+         SLOW (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back" — then named "Slow"). Under the two
+         channel rows, a card opens Reports → Selling vs Sitting — the sitting list is clearance across ALL channels (no sale anywhere in 60 days), so
+         it sits below the per-channel rows rather than in either. ← Back there returns here.
+
+Consumes GET /pricing-status-overview, GET /portfolio-status, POST /portfolio-snapshot-update and GET /analytics-stock-sitting
+(the Slow card — the same call and SWR key Selling vs Sitting reads, so the card and the page agree).
 =======================================================================================================================================
 */
 
@@ -31,9 +36,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, type PortfolioChannel, type PortfolioChannelKey, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts } from '@/lib/api';
+import { getStatusOverview, getPortfolioStatus, updatePortfolioSnapshot, getStockSitting, type PortfolioChannel, type PortfolioChannelKey, type TaggedWinner, type PortfolioStatusName, type StatusChannelCounts, type StockSittingData } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowPathIcon, CheckIcon } from '@heroicons/react/20/solid';
+import { ArrowPathIcon, CheckIcon, Squares2X2Icon } from '@heroicons/react/20/solid';
 import { STATUS_COLOR, STATUS_RULE, statusListHref, barLabel } from '@/lib/portfolioStatusUi';
 
 // 'YYYY-MM-DD HH:MM' -> '24 Sep, 22:44', from the string parts (never new Date — CLAUDE.md dates).
@@ -48,6 +53,8 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
   // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
+  // The Slow card's numbers (see the header). Same SWR key as Selling vs Sitting, so opening it after is instant.
+  const sitting = useApiQuery('analytics-stock-sitting', () => getStockSitting());
   const { logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -131,8 +138,8 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
                   status={s.status}
                   counts={counts}
                   hero={isWin}
-                  // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other three are
-                  // printed once, in the key under the last row (owner, 2026-09-25: the same text twice per status was noise).
+                  // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other three were
+                  // printed once in a key under the last row, removed 2026-10-12 (owner asked; the rules are in lib/portfolioStatusUi).
                   rule={isWin ? (raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS) : null}
                   href={statusListHref(s.status, viewPath, 'Back', ch, { bar: isWin && raised ? bar : null })}
                   dimmed={raised && !isWin}
@@ -143,17 +150,51 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
           </div>
         </section>
       ))}
-      {data && (
-        <p className="text-xs text-slate-400">
-          {data.statuses.filter((s) => s.status !== 'WINNERS').map((s, i) => (
-            <span key={s.status}>
-              {i > 0 && ' · '}
-              <span className="font-medium text-slate-500">{s.status.charAt(0) + s.status.slice(1).toLowerCase()}</span> — {STATUS_RULE[s.status]}
+      {data && <SlowCard data={sitting.data} />}
+    </div>
+  );
+}
+
+// SLOW — the way from here to Reports → Selling vs Sitting (see the header); "Slow" on screen is that page's SITTING list (owner,
+// 2026-10-12, renamed from "Clearance"), with its 60-day rule beside the name. The whole card is the link, marked "Manage →" (owner,
+// same day — a bare card was tried and the indicator brought back). Inside, three boxes of EQUAL weight: sitting styles | pairs |
+// % of stock sitting. The % is the SITTING share, not selling (owner: "I'd rather see the 10%... it matches the card on Selling vs
+// Sitting"), rounded exactly as that page's sitting box. Cut styles are still sitting and still counted, as on that page.
+// The heading carries a small icon tile in the channel logos' frame (ChannelLogo md) — a four-square grid for ALL channels (a clock was tried and read as timing) — so the section sits in line with Shopify and
+// Amazon above it. ← Back from Manage returns to /segments#slow — the card, not the top of the page (owner, 2026-10-12).
+const SLOW_HREF = `/analytics/stock-sales?from=${encodeURIComponent('/segments#slow')}&back=${encodeURIComponent('Winners')}`;
+function SlowCard({ data }: { data?: StockSittingData }) {
+  const pct = data && data.total_units ? Math.round((data.sitting_units / data.total_units) * 100) : null;
+  const boxes = [
+    { value: data ? data.styles.length.toLocaleString('en-GB') : '–', label: 'styles' },
+    { value: data ? data.sitting_units.toLocaleString('en-GB') : '–', label: 'pairs' },
+    { value: pct !== null ? `${pct}%` : '–', label: 'of stock' },
+  ];
+  return (
+    <section id="slow" className="scroll-mt-6">
+      <h2 className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-semibold text-slate-900">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white shadow-sm ring-1 ring-slate-200">
+          <Squares2X2Icon className="h-4 w-4 text-slate-500" aria-hidden="true" />
+        </span>
+        All channels
+        {/* SLOW and its rule live in the header, not the card (owner, 2026-10-12) — the card is only the numbers. */}
+        <span className="text-slate-300" aria-hidden="true">·</span>
+        <span>Slow</span>
+        <span className="text-sm font-normal text-slate-400">no sale on any channel in {data?.days ?? 60} days</span>
+      </h2>
+      <Link href={SLOW_HREF}
+        className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:bg-slate-50">
+        <span className="grid flex-1 grid-cols-3 gap-3">
+          {boxes.map((b) => (
+            <span key={b.label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
+              <span className="block text-3xl font-bold leading-none tabular-nums text-slate-900">{b.value}</span>
+              <span className="mt-1.5 block text-xs text-slate-500">{b.label}</span>
             </span>
           ))}
-        </p>
-      )}
-    </div>
+        </span>
+        <span className="ml-auto px-2 text-sm font-medium text-slate-600">Manage &rarr;</span>
+      </Link>
+    </section>
   );
 }
 
