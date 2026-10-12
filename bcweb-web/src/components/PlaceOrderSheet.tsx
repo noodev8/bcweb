@@ -80,6 +80,32 @@ interface Props {
 // What the last successful placement did — drives the confirmation strip and its Undo.
 interface Placement { placed: number; ponumber: string; time: string; ordernums: string[]; }
 
+// The style heading's Group ID — click it to copy (same pattern as the Products page hero). A quiet "Copy" hint on hover, "Copied" for a
+// moment after. Clipboard blocked (insecure context) -> no-op.
+function CopyGroupId({ groupid, gone }: { groupid: string; gone: boolean }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(groupid); } catch { return; }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="Click to copy the Group ID"
+      className={'group inline-flex shrink-0 items-baseline gap-1.5 font-mono text-sm font-semibold ' +
+        (gone ? 'text-slate-400' : 'text-slate-900 hover:text-brand-700')}
+    >
+      <span>{groupid}</span>
+      <span className={'font-sans text-[11px] font-normal transition-opacity ' +
+        (copied ? 'text-green-600 opacity-100' : 'text-slate-400 opacity-0 group-hover:opacity-100')}>
+        {copied ? 'Copied' : 'Copy'}
+      </span>
+    </button>
+  );
+}
+
 export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onUnauthorized }: Props) {
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
@@ -395,8 +421,15 @@ export default function PlaceOrderSheet({ supplier, rows, totals, onChanged, onU
           return (
             <div key={s.key} className={'rounded-lg border border-slate-200 shadow-sm ' + (gone ? 'bg-slate-50' : 'bg-white')}>
               <div className="flex items-baseline gap-3 border-b border-slate-100 px-4 py-2.5">
-                <span className={'flex-1 truncate text-sm font-medium ' + (gone ? 'text-slate-400 line-through' : 'text-slate-800')}>
-                  {s.title || <span className="text-slate-400">{s.groupid}</span>}
+                {/* Group ID leads (owner, 2026-10-12): it's what gets pasted into the supplier's system, so it is the heading AND the
+                    copy control; the title trails as a quiet reminder of what the style is. */}
+                <span className={'flex min-w-0 flex-1 items-baseline gap-2 ' + (gone ? 'line-through' : '')}>
+                  {s.groupid ? (
+                    <CopyGroupId groupid={s.groupid} gone={gone} />
+                  ) : (
+                    <span className={'text-sm font-medium ' + (gone ? 'text-slate-400' : 'text-slate-800')}>{s.title}</span>
+                  )}
+                  {s.groupid && s.title && <span className="truncate text-xs text-slate-400">{s.title}</span>}
                 </span>
                 {!gone && <span className="text-xs text-slate-400">{styleUnits} unit{styleUnits === 1 ? '' : 's'}</span>}
                 <span className={'text-sm font-medium ' + (gone ? 'text-slate-300' : 'text-slate-600')}>{gone ? '—' : money(styleCost)}</span>
