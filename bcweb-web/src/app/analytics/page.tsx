@@ -20,7 +20,7 @@ Purpose: The reporting front door — a tile grid matching the dashboard pattern
 import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
-  PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
+  PresentationChartLineIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
   ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon, TrophyIcon,
 } from '@heroicons/react/24/outline';
 
@@ -50,15 +50,8 @@ export default function AnalyticsPage() {
           live
         />
 
-        {/* Selling vs Sitting (renamed from Stock vs Sales 2026-10-10, owner — the page became the stock split + sitting list).
-            Replaced the Stock Position "alive products" gauge (owner, 2026-10-09). Route kept: /analytics/stock-sales. */}
-        <ModuleTile
-          title="Selling vs Sitting"
-          description="Stock split into selling, sitting and new — and the styles that haven’t sold in 60 days, to clear."
-          href="/analytics/stock-sales"
-          icon={CubeIcon}
-          live
-        />
+        {/* Selling vs Sitting (/analytics/stock-sales) is no longer a Reports tile: renamed Slow and reached only from the Slow card on
+            Winners (owner, 2026-10-12: "Remove the menu option for Selling v Sitting completely"). */}
 
         {/* Catalogue-growth pulse — what's been added lately and how the new lines are selling. */}
         <ModuleTile

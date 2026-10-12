@@ -3,7 +3,7 @@
 API Route: pricing_sitting_list
 =======================================================================================================================================
 Method: GET
-Purpose: Repricing — the SITTING styles from Reports → Selling vs Sitting as a Shopify list, to clear them (owner, 2026-10-10: "Let's go
+Purpose: Repricing — the SITTING styles from Winners → Slow as a Shopify list, to clear them (owner, 2026-10-10: "Let's go
          with SHOPIFY only. My intention is to clear the crap. I will want to be able to price them"). The "Reprice these" link on the
          sitting list opens it, so the styles can be cut in bulk with the usual drill, bulk bar and live Shopify push — instead of one
          style at a time.
@@ -11,7 +11,7 @@ Purpose: Repricing — the SITTING styles from Reports → Selling vs Sitting as
          SAME STYLES AS STOCK VS SALES. Membership and order come from utils/stockSitting.js — the very function the Sitting box and
          list read — so a list showing 52 styles there opens these 52 here (Due switch off; Due on hides the ones with a review date
          still ahead, as on every Repricing list — at build time 49 of 52 had one). EXCEPT CUT styles (2026-10-11): a style cut on
-         Selling vs Sitting (skusummary.sitting_cut_at) is still sitting there but is left off here.
+         Slow (skusummary.sitting_cut_at) is still sitting there but is left off here.
 
          SHOPIFY ONLY (owner's call — clearance is done on Shopify). Styles not live on Shopify (skusummary.shopify <> 1) are left off:
          a Shopify price can't clear them. At build time all 52 were live, so the list matched the box exactly; if that ever stops being
@@ -24,7 +24,7 @@ Purpose: Repricing — the SITTING styles from Reports → Selling vs Sitting as
          Order: most pairs first — the sitting list's own order.
 
          NO ENTRY ON THE REPRICING SCREEN — same call as the excess version this replaces (owner, 2026-10-10: "in case we mess
-         navigation"). The only way in is the link on Selling vs Sitting; there is no tab or tile for it on /segments.
+         navigation"). The only way in is the link on Slow; there is no tab or tile for it on /segments.
 
 Requires auth. READ-ONLY.
 =======================================================================================================================================
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
 
     // Membership + order from the shared rule (see header), then the pricing fields for just those styles in one query.
-    // CUT styles are skipped (owner, 2026-10-11 — cut on Selling vs Sitting so only "a set few" are repriced).
+    // CUT styles are skipped (owner, 2026-10-11 — cut on Slow so only "a set few" are repriced).
     const members = (await loadStockSplit()).styles.filter((s) => !s.cut);
     if (members.length === 0) {
       return res.json({ return_code: 'SUCCESS', total: 0, truncated: false, rows: [] });

@@ -3,7 +3,7 @@
 API Route: stock_sitting_cut
 =======================================================================================================================================
 Method: POST
-Purpose: Reports → Selling vs Sitting — CUT styles from the sitting list's working set, or RELEASE them back (owner, 2026-10-11: "can I
+Purpose: Winners → Slow — CUT styles from the sitting list's working set, or RELEASE them back (owner, 2026-10-11: "can I
          cut some items from the rows so that I update collection and price to a set few?").
 
          A cut style is STILL SITTING: it stays on the list (greyed, in a Cut section) and in the Sitting box. What changes is that the

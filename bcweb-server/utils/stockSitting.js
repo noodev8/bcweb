@@ -4,9 +4,9 @@ Util: stockSitting
 =======================================================================================================================================
 Purpose: THE SITTING RULE — stock now, split SELLING | SITTING | NEW, and the sitting styles. Owner, 2026-10-10: "Stock comes in, goes
          out, happy. Sits, not happy so I push it." Defined ONCE here and read by:
-           - GET /analytics-stock-sitting  (Reports -> Selling vs Sitting: the three boxes and the sitting list)
+           - GET /analytics-stock-sitting  (Winners -> Slow: the three boxes and the sitting list)
            - GET /pricing-sitting-list     (Repricing: the same styles as a Shopify list, to clear them)
-         so the box, the list on Selling vs Sitting and the Repricing list can never disagree about which styles are sitting.
+         so the box, the list on Slow and the Repricing list can never disagree about which styles are sitting.
 
 SITTING = a style we hold stock of with NO SALE ON ANY CHANNEL FOR 60 DAYS (or never sold). That single test is the whole rule.
          Deliveries are deliberately ignored (owner, 2026-10-10: "We shouldn't care about delivery. My fault if I'm still ordering
@@ -42,7 +42,7 @@ Exports:
   loadStockSplit() -> { days, new_days, total_units, selling_units, new_units, sitting_units,
                         styles: [{ groupid, title, brand, units, last_sale, idle_days, cut }] }   // sitting only, most pairs first
 
-CUT (owner, 2026-10-11): skusummary.sitting_cut_at set = the style was cut from the working set on Selling vs Sitting. It is STILL
+CUT (owner, 2026-10-11): skusummary.sitting_cut_at set = the style was cut from the working set on Slow. It is STILL
          sitting — it stays in `styles` and in every count here (the box is a fact). The ACTIONS skip it: the clearance tag
          (utils/clearanceTag.js), the Repricing list (routes/pricing-sitting-list.js) and the Google Ads Sitting chip filter on `cut`.
          Written by POST /stock-sitting-cut. migrations/20261011_sitting_cut.sql has the why.

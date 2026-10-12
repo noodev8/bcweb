@@ -1,8 +1,9 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /analytics/stock-sales  (Reports — Selling vs Sitting; was Selling vs Sitting until 2026-10-10 — owner: the page is no longer
-      sales against stock, it's the stock split and the sitting list. The route keeps its old name.)
+Page: /analytics/stock-sales  (SLOW — on screen since 2026-10-12, reached ONLY from the Slow card on Winners, with no menu entry
+      (owner: "Replace all 'Selling vs Sitting' words and navigation to 'Slow'. Remove the menu option for Selling v Sitting
+      completely"). Was Slow (2026-10-10), before that Stock vs Sales — the route keeps its old name.)
 =======================================================================================================================================
 Purpose: Is the stock we buy shifting? The owner's read on whether to slow ordering down or speed it up (2026-10-09: "Just sales
          against stock position"). Replaced the Stock Position gauge (a count of "alive" products, recorded by an Update button).
@@ -54,7 +55,7 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
 ARRIVAL FROM REPRICING (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back"; the card is "Slow").
          Repricing's Status tab (the owner's "WINNERS" screen) has a Slow card that opens this page with ?from=/segments&back=Winners;
          ← Back then returns there, and the origin rides along on every link out (drill, Reprice, Google Ads) so coming back through
-         them keeps it. With no ?from= it is the Reports page it always was.
+         them keeps it. With no ?from= (a bookmark) ← Back still goes to Winners.
 
 Guarded by AppShell. Consumes GET /analytics-stock-sitting, POST /stock-sitting-cut, and GET /analytics-stock-sales only while
 STOCK_SALES_FLOW is on.
@@ -85,7 +86,8 @@ const dayLabel = (s: string) => `${ymd(s).d} ${MONTHS[ymd(s).m - 1]}`;
 const monthLabel = (s: string) => `${MONTHS[ymd(s).m - 1]} ${ymd(s).y}`;
 const weekLabel = (s: string) => `${dayLabel(s)} ${String(ymd(s).y).slice(2)}`; // the Monday the week starts
 
-// Where ← Back goes: ?from= when a screen sent us here (Repricing's Slow card), else Reports. Same-site paths only.
+// Where ← Back goes: ?from= when a screen sent us here, else the Slow card on Winners — the only way in since the menu entries went
+// (2026-10-12). Same-site paths only.
 function useOrigin() {
   const sp = useSearchParams();
   const raw = sp.get('from');
@@ -121,7 +123,7 @@ function StockSalesBody() {
   const stale = d?.latest && d.latest.date < d.expected_date;
 
   return (
-    <AppShell backHref={origin.from ?? '/analytics'} backLabel={origin.back ?? 'Reports'}>
+    <AppShell backHref={origin.from ?? '/segments#slow'} backLabel={origin.back ?? 'Winners'}>
       {(sq.isLoading || q.isLoading) && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
 
@@ -154,13 +156,15 @@ function StockSalesBody() {
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------
-// STOCK SPLIT — the top of the page: stock now, split three ways that add up to the whole, as THREE BOXES — SELLING (sold in `days`) |
-// SITTING | NEW (unsold but created under `new_days` ago — giving it a chance; last, owner 2026-10-10). Live stock, from the same read
+// STOCK SPLIT — the top of the page: stock now, split three ways that add up to the whole, as THREE BOXES — SITTING | SELLING (sold in `days`) |
+// NEW (unsold but created under `new_days` ago — giving it a chance; last, owner 2026-10-10). Live stock, from the same read
 // as the sitting list, so the parts and the total always agree. Each % is rounded and selling takes the remainder, so they make 100.
-// Boxes, not a bar (owner, 2026-10-10: "the blue overrides too many") — neutral slate, no series colour; SELLING is the track, so its
-// number is the biggest on the page.
-// SELLING % — the owner's number, keep it high ("I don't want this number to go too low"); the sitting list below is how it's worked
-// up. Worded "in styles that sold" on purpose: a style's WHOLE stock counts as selling if it sold one pair in the window, so it is not
+// Boxes, not a bar (owner, 2026-10-10: "the blue overrides too many") — neutral slate, no series colour; SITTING is the
+// headline, so its number is the biggest on the page.
+// SITTING % LEADS since 2026-10-12 (owner: "make the 10% as the MAIN headline figure. No longer about the ones that are selling") —
+// the page is Slow now, and the number to push down is the headline; the sitting list below is how it's worked down. It was SELLING %
+// first (owner, 2026-10-10: "I don't want this number to go too low"). Selling keeps the remainder so the three still make 100.
+// SELLING is worded "in styles that sold" on purpose: a style's WHOLE stock counts as selling if it sold one pair in the window, so it is not
 // "% of stock sold".
 // -------------------------------------------------------------------------------------------------------------------------------------
 function StockSplit({ data }: { data: StockSittingData }) {
@@ -171,21 +175,27 @@ function StockSplit({ data }: { data: StockSittingData }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <SplitBox hero label="of stock selling" pct={total ? 100 - newPct - sitPct : 0}
-        detail={`${n(data.selling_units)} of ${n(total)} pairs in styles that sold in the last ${data.days} days`} />
-      <SplitBox label="sitting" pct={sitPct}
-        detail={`${n(data.sitting_units)} pairs — no sale in ${data.days} days`} />
+      {/* Numbers only, lined up (owner, 2026-10-12: "Simply interested in the numbers and want them lined up") — just "N pairs";
+          the 60-day rule is on the Winners card's header. Boxes align to the BOTTOM so the % and pairs lines sit level across
+          all three even though slow's number is the biggest. */}
+      <SplitBox hero label="slow" pct={sitPct}
+        detail={`${n(data.sitting_units)} pairs`} />
+      <SplitBox label="selling" pct={total ? 100 - newPct - sitPct : 0}
+        detail={`${n(data.selling_units)} pairs`} />
       <SplitBox label="new" pct={newPct}
-        detail={`${n(data.new_units)} pairs — not sold yet, under ${data.new_days} days old`} />
+        detail={`${n(data.new_units)} pairs`} />
     </div>
   );
 }
 
 function SplitBox({ hero, label, pct, detail }: { hero?: boolean; label: string; pct: number; detail: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
+    <div className="flex flex-col justify-end rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div className="flex items-baseline gap-2">
-        <span className={`font-semibold leading-none tabular-nums ${hero ? 'text-6xl text-slate-900' : 'text-4xl text-slate-700'}`}>
+        {/* No tabular-nums here: a lone figure needs no column alignment, and the tabular "1" is padded to a full digit width, which
+            pushed "10%" visibly right of the pairs line under it (owner, 2026-10-12). -ml-0.5 on the 60px hero takes off the rest of
+            the glyph's side bearing so its ink starts where the pairs line does. */}
+        <span className={`font-semibold leading-none ${hero ? '-ml-0.5 text-6xl text-slate-900' : 'text-4xl text-slate-700'}`}>
           {pct}%
         </span>
         <span className={hero ? 'text-base font-medium text-slate-700' : 'text-sm text-slate-500'}>{label}</span>
@@ -396,7 +406,7 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 // wanted". Nothing is selected or moved there; see SITTING ARRIVAL in google-ads/page.tsx.
 // -------------------------------------------------------------------------------------------------------------------------------------
 const repriceHref = (self: string) =>
-  `/pricing/sitting?by=sitting&pending=1&from=${self}&back=${encodeURIComponent('Selling vs Sitting')}`;
+  `/pricing/sitting?by=sitting&pending=1&from=${self}&back=${encodeURIComponent('Slow')}`;
 
 // Sortable headers (components/SortableTh — the Repricing lists' own): opens in the server's order (most pairs first); a click sorts,
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
@@ -472,13 +482,9 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-100 px-5 py-3">
-        <div className="text-sm font-semibold text-slate-800">
-          Sitting — no sale in {data.days} days
-          <span className="font-normal text-slate-500">
-            {' · '}{data.styles.length} {data.styles.length === 1 ? 'style' : 'styles'}, {n(data.sitting_units)} pairs
-            {cutRows.length > 0 && <>{' · '}{cutRows.length} cut</>}
-          </span>
-        </div>
+        {/* Only the cut count stays (owner, 2026-10-12: "no need for all of this but keep cut somewhere") — the rule, styles and pairs
+            are already in the headline box above and on the Winners card. */}
+        <div className="text-sm text-slate-500">{cutRows.length > 0 && <>{cutRows.length} cut</>}</div>
         <div className="flex items-center gap-5">
           {cutErr && <span className="text-sm text-red-700">{cutErr}</span>}
           {pickedActive.length > 0 && (
@@ -494,7 +500,7 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
           </button>
           {active.length > 0 && (
             <>
-              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Selling vs Sitting')}`}
+              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`}
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
                 Google Ads &rarr;
               </Link>

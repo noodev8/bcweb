@@ -23,11 +23,11 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the 
          re-cut per channel. The status trend came too and was removed 2026-09-25 (see routes/portfolio-snapshot-update.js).
 
          SLOW (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back" — then named "Slow"). Under the two
-         channel rows, a card opens Reports → Selling vs Sitting — the sitting list is clearance across ALL channels (no sale anywhere in 60 days), so
+         channel rows, a card opens Slow (/analytics/stock-sales) — the sitting list is clearance across ALL channels (no sale anywhere in 60 days), so
          it sits below the per-channel rows rather than in either. ← Back there returns here.
 
 Consumes GET /pricing-status-overview, GET /portfolio-status, POST /portfolio-snapshot-update and GET /analytics-stock-sitting
-(the Slow card — the same call and SWR key Selling vs Sitting reads, so the card and the page agree).
+(the Slow card — the same call and SWR key Slow reads, so the card and the page agree).
 =======================================================================================================================================
 */
 
@@ -53,7 +53,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
   // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
-  // The Slow card's numbers (see the header). Same SWR key as Selling vs Sitting, so opening it after is instant.
+  // The Slow card's numbers (see the header). Same SWR key as Slow, so opening it after is instant.
   const sitting = useApiQuery('analytics-stock-sitting', () => getStockSitting());
   const { logout } = useAuth();
   const router = useRouter();
@@ -155,7 +155,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   );
 }
 
-// SLOW — the way from here to Reports → Selling vs Sitting (see the header); "Slow" on screen is that page's SITTING list (owner,
+// SLOW — the way from here to Slow (see the header); "Slow" on screen is that page's SITTING list (owner,
 // 2026-10-12, renamed from "Clearance"), with its 60-day rule beside the name. The whole card is the link, marked "Manage →" (owner,
 // same day — a bare card was tried and the indicator brought back). Inside, three boxes of EQUAL weight: sitting styles | pairs |
 // % of stock sitting. The % is the SITTING share, not selling (owner: "I'd rather see the 10%... it matches the card on Selling vs
