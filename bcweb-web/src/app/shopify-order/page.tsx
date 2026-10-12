@@ -21,7 +21,8 @@ A SIMPLER SCREEN THAN AMAZON ORDER, ON PURPOSE (owner, 2026-09-26 — "a simpler
 STYLE BLOCKS, NOT A TABLE (owner picked the "size strip per style" layout, 2026-09-26). The decision on this screen is "which sizes of
       this style are running thin", which needs the curve side by side and visible without a click. The sizes can't share columns
       across styles (UK 03-14 and EU 36-46 families, halves in both), so each style draws its own small grid: Size / Stock (+ on order)
-      / Sold 12m / Order. The per-size 90-day figure is on the Stock cell's tooltip; the style's 90d total is in its header.
+      / Sold 30d / Order (30d replaced 12m in the strip, and became the default sort, owner 2026-10-12 — what is selling NOW). The
+      per-size 90-day and 12-month figures are on the cells' tooltip; the style's 30d / 90d / 12m totals are in its header.
 
 BIRKENSTOCK IS AN ORDINARY ROW HERE (owner, 2026-09-26 — "some may be ordered from stock but show them all as standard, no special case
       yet"). Unlike Amazon Order, which disables it (Birkenstock never goes to Amazon). The seasonal ~6-months-ahead buy still lives on
@@ -106,15 +107,16 @@ function hasSearchMatch(styles: ShopifyOrderStyle[], includes: string[], exclude
 
 // SORT — a style block has no column headers to click, so the sort is a small segmented control. Clicking the lit one flips its
 // direction. Numbers start high-to-low (the interesting end), A-Z starts at A.
-type SortKey = 'sold_365' | 'sold_90' | 'stock' | 'title';
+type SortKey = 'sold_365' | 'sold_90' | 'sold_30' | 'stock' | 'title';
 const SORTS: { key: SortKey; label: string; title: string }[] = [
-  { key: 'sold_365', label: 'Sold 12m', title: 'Shopify units sold in the last 12 months' },
+  { key: 'sold_30', label: 'Sold 30d', title: 'Shopify units sold in the last 30 days' },
   { key: 'sold_90', label: 'Sold 90d', title: 'Shopify units sold in the last 90 days' },
+  { key: 'sold_365', label: 'Sold 12m', title: 'Shopify units sold in the last 12 months' },
   { key: 'stock', label: 'Stock', title: 'Sellable units on the shelf' },
   { key: 'title', label: 'A–Z', title: 'Product name' },
 ];
-const DEFAULT_SORT: SortKey = 'sold_365';
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { sold_365: 'desc', sold_90: 'desc', stock: 'desc', title: 'asc' };
+const DEFAULT_SORT: SortKey = 'sold_30';
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { sold_365: 'desc', sold_90: 'desc', sold_30: 'desc', stock: 'desc', title: 'asc' };
 
 // DRAFT — see the header. Its own key: this basket and Amazon Order's are different orders and must never load into each other.
 const DRAFT_KEY = 'bcweb:shopify-order-draft';
@@ -169,7 +171,7 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
   const status = statusLabel(style.status);
   const sizeTip = (z: ShopifyOrderSize) =>
     `Size ${z.size} — ${z.stock} on the shelf` + (z.on_order > 0 ? `, ${z.on_order} on order` : '')
-    + ` · Shopify sold ${z.sold_90} in 90 days, ${z.sold_365} in 12 months`;
+    + ` · Shopify sold ${z.sold_30} in 30 days, ${z.sold_90} in 90 days, ${z.sold_365} in 12 months`;
   // The confirm is this block's own business: open, busy, or showing why the last write failed. A confirm and not a straight click
   // because parking takes the style off the screen — a stray click on a quiet link would otherwise make it vanish unexplained.
   const [choosing, setChoosing] = useState(false);
@@ -201,7 +203,8 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
         <div className="flex items-baseline gap-4 whitespace-nowrap text-xs text-slate-500">
           <Stat label="Stock" value={style.stock} />
           <Stat label="On order" value={style.on_order} />
-          <Stat label="Sold 90d" value={style.sold_90} />
+          <Stat label="Sold 30d" value={style.sold_30} />
+          <Stat label="90d" value={style.sold_90} />
           <Stat label="12m" value={style.sold_365} />
           {/* Only once there's something in it — an empty "Basket 0" on 300 blocks is noise. Brand, not emerald: emerald is the write. */}
           {basketUnits > 0 && <span className="font-semibold text-brand-700">Basket {basketUnits}</span>}
@@ -278,10 +281,10 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
               ))}
             </tr>
             <tr>
-              <th scope="row" className="pr-2 text-left font-normal text-slate-400">Sold 12m</th>
+              <th scope="row" className="pr-2 text-left font-normal text-slate-400">Sold 30d</th>
               {style.sizes.map((z) => (
-                <td key={z.code} title={sizeTip(z)} className={'text-center tabular-nums ' + (z.sold_365 === 0 ? 'text-slate-300' : 'text-slate-600')}>
-                  {z.sold_365}
+                <td key={z.code} title={sizeTip(z)} className={'text-center tabular-nums ' + (z.sold_30 === 0 ? 'text-slate-300' : 'text-slate-600')}>
+                  {z.sold_30}
                 </td>
               ))}
             </tr>
@@ -461,15 +464,20 @@ function ShopifyOrderContent() {
     setBasketSnapshot(loadBasketOn ? null : basketStyleIds());
   }
 
+  // SOLD IN 30D — an on/off filter (owner, 2026-10-12: "filter by 30 days, not just sort"): only styles with at least one Shopify
+  // unit sold in the last 30 days. Stacks with the search steps like another Include; Load basket reaches past it, as it does the search.
+  const [sold30On, setSold30On] = useState(false);
+
   const filtered = useMemo(() => {
     // Load basket reaches past the search and the Can't get cut: it is "show me what I'm about to send", and Confirm sends the whole
     // basket, so every line in it must be seen here.
     if (basketSnapshot) return styles.filter((s) => basketSnapshot.has(s.groupid));
-    if (includes.length === 0 && excludes.length === 0) return base;
+    const pool = sold30On ? base.filter((s) => s.sold_30 > 0) : base;
+    if (includes.length === 0 && excludes.length === 0) return pool;
     const incTerms = includes.map((t) => t.toLowerCase());
     const excTerms = excludes.map((t) => t.toLowerCase());
-    return base.filter((s) => matchesSearch(haystack(s), incTerms, excTerms));
-  }, [styles, base, includes, excludes, basketSnapshot]);
+    return pool.filter((s) => matchesSearch(haystack(s), incTerms, excTerms));
+  }, [styles, base, includes, excludes, basketSnapshot, sold30On]);
 
   const visible = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -481,7 +489,7 @@ function ShopifyOrderContent() {
     });
   }, [filtered, sortKey, sortDir]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || loadBasketOn;
+  const filtering = includes.length > 0 || excludes.length > 0 || sold30On || loadBasketOn;
 
   // WHAT THE BUTTON WILL SEND — every positive box, on screen or not (see SEND in the header).
   const targets = useMemo(() => {
@@ -591,13 +599,14 @@ function ShopifyOrderContent() {
     setBasketSnapshot(null);
   }
 
-  // RESET — a VIEW reset: search steps, Load basket, sort — and back into the Can't get cut if you'd left it, i.e. the screen as
+  // RESET — a VIEW reset: search steps, Sold in 30d, Load basket, sort — and back into the Can't get cut if you'd left it, i.e. the screen as
   // you arrived. Leaves the basket alone on purpose (the Amazon Order rule, owner 2026-08-11 — the basket can be a draft built up
   // over several sittings; emptying it is Delete basket's job).
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput('');
     setBasketSnapshot(null);
     setSupplyOn(true);
+    setSold30On(false);
     setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]);
     setConfirmingSend(false); setConfirmingClear(false); setSendError(null); setSentNote(null);
     includeInputRef.current?.focus();
@@ -671,6 +680,19 @@ function ShopifyOrderContent() {
             />
           </div>
 
+          <button
+            type="button"
+            onClick={() => { setSold30On((v) => !v); setBasketSnapshot(null); }}
+            aria-pressed={sold30On}
+            title="Show only styles that sold at least one unit on Shopify in the last 30 days"
+            className={
+              'rounded-md border px-3 py-1.5 text-sm font-medium '
+              + (sold30On ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+            }
+          >
+            Sold in 30d
+          </button>
+
           <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
             {SORTS.map((s) => (
               <button
@@ -696,7 +718,7 @@ function ShopifyOrderContent() {
             type="button"
             onClick={onReset}
             disabled={!filtering && !sorted && !leftSupply}
-            title="Clear the search steps and Load basket, put the sort back, and hide what you can't get again — the basket itself is kept"
+            title="Clear the search steps, Sold in 30d and Load basket, put the sort back, and hide what you can't get again — the basket itself is kept"
             className="ml-auto flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
           >
             <ArrowPathIcon className="h-4 w-4" />

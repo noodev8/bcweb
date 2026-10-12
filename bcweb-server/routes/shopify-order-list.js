@@ -29,10 +29,11 @@ PER SIZE:
                Amazon lines (ordertype 3) are NOT counted: they are bought for FBA. Note Goods In books an arriving unit against an
                Amazon line BEFORE a local one (routes/goods-in-book.js), so for a SKU with both kinds open, the local line is the one
                still waiting when the first unit lands.
-  - sold_90 / sold_365 = Shopify units sold (sales.channel = 'SHP', qty > 0 — returns don't read as negative sales), last 90 / 365
-               days. NOT 30 days: outside Birkenstock, Shopify demand is thin (10 units in 30d, 64 in 90d, 383 in 12m across 123 styles
-               on 2026-09-26), so a 30-day per-size figure is almost always 0 and says nothing. 12m is the size curve; 90d says whether
-               the style is still moving.
+  - sold_30 / sold_90 / sold_365 = Shopify units sold (sales.channel = 'SHP', qty > 0 — returns don't read as negative sales), last
+               30 / 90 / 365 days. Outside Birkenstock, Shopify demand is thin (10 units in 30d, 64 in 90d, 383 in 12m across 123 styles
+               on 2026-09-26), so a 30-day per-size figure is mostly 0 — but the owner wants the strip to show what is selling NOW, so
+               since 2026-10-12 the size strip shows 30d (not 12m) and "Sold 30d" is the page's default sort. 90d / 12m stay on the
+               tooltip and in the style header.
   - supplier = skumap.supplier — what POST /order-status-add validates the line against (verified identical to skusummary.supplier
                on every live Shopify variant, 2026-09-26, but the write checks skumap, so that is what is shipped).
 
@@ -70,9 +71,9 @@ Success Response:
     { "groupid": "ELZ006-BLACK", "title": "...", "brand": "Lunar", "supplier": "Lunar", "season": "Winter", "status": "STEADY",
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,
       "price": 49.99, "cost": 21.50,
-      "stock": 7, "on_order": 2, "sold_90": 3, "sold_365": 18,
+      "stock": 7, "on_order": 2, "sold_30": 1, "sold_90": 3, "sold_365": 18,
       "sizes": [
-        { "code": "ELZ006-BLACK-03", "size": "03", "supplier": "Lunar", "stock": 0, "on_order": 0, "sold_90": 0, "sold_365": 1 },
+        { "code": "ELZ006-BLACK-03", "size": "03", "supplier": "Lunar", "stock": 0, "on_order": 0, "sold_30": 0, "sold_90": 0, "sold_365": 1 },
         ...   // every live size, numeric order
       ] },
     ...   // sold_365 desc, then title
@@ -122,9 +123,10 @@ router.get('/', async (req, res) => {
         GROUP BY o.shopifysku
       ),
       sold AS (
-        -- Shopify units, gross of returns (qty > 0), over the two windows the page shows. The outer 365-day bound keeps the scan to
+        -- Shopify units, gross of returns (qty > 0), over the three windows the page shows. The outer 365-day bound keeps the scan to
         -- the year the wider window needs.
         SELECT code,
+               SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - 30) AS u30,
                SUM(qty) FILTER (WHERE solddate >= CURRENT_DATE - 90) AS u90,
                SUM(qty) AS u365
         FROM sales
@@ -143,6 +145,7 @@ router.get('/', async (req, res) => {
              m.supplier AS supplier,
              COALESCE(loc.units,0) AS stock,
              COALESCE(ord.units,0) AS on_order,
+             COALESCE(sold.u30,0) AS sold_30,
              COALESCE(sold.u90,0) AS sold_90,
              COALESCE(sold.u365,0) AS sold_365
       FROM skusummary s
@@ -174,7 +177,7 @@ router.get('/', async (req, res) => {
           ...noSupplyFields(r),
           price: num(r.price),
           cost: num(r.cost),
-          stock: 0, on_order: 0, sold_90: 0, sold_365: 0,
+          stock: 0, on_order: 0, sold_30: 0, sold_90: 0, sold_365: 0,
           sizes: [],
         };
         byStyle.set(r.groupid, st);
@@ -185,12 +188,14 @@ router.get('/', async (req, res) => {
         supplier: r.supplier || null,
         stock: Number(r.stock) || 0,
         on_order: Number(r.on_order) || 0,
+        sold_30: Number(r.sold_30) || 0,
         sold_90: Number(r.sold_90) || 0,
         sold_365: Number(r.sold_365) || 0,
       };
       st.sizes.push(size);
       st.stock += size.stock;
       st.on_order += size.on_order;
+      st.sold_30 += size.sold_30;
       st.sold_90 += size.sold_90;
       st.sold_365 += size.sold_365;
     }

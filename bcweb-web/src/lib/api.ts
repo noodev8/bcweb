@@ -499,11 +499,11 @@ export function getAmazonOrderList() {
 
 // Shopify Order — the local-shelf counterpart of Amazon Order, at STYLE grain with the full size curve nested (routes/shopify-order-list.js).
 // stock = sellable shelf (#FREE, less anything committed to Amazon); on_order = un-arrived LOCAL lines (ordertype 2, TO PLACE + ON ORDER);
-// sold_90 / sold_365 = Shopify units (SHP, qty > 0). Per-style figures are the sum of the sizes. supplier on a size is skumap.supplier —
+// sold_30 / sold_90 / sold_365 = Shopify units (SHP, qty > 0). Per-style figures are the sum of the sizes. supplier on a size is skumap.supplier —
 // what /order-status-add validates the line against. Order quantities are the page's own scratchpad, not a server field.
 export interface ShopifyOrderSize {
   code: string; size: string; supplier: string | null;
-  stock: number; on_order: number; sold_90: number; sold_365: number;
+  stock: number; on_order: number; sold_30: number; sold_90: number; sold_365: number;
 }
 export interface ShopifyOrderStyle {
   groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
@@ -514,7 +514,7 @@ export interface ShopifyOrderStyle {
   no_supply_until: string | null;
   no_supply_by: string | null;
   price: number | null; cost: number | null;
-  stock: number; on_order: number; sold_90: number; sold_365: number;
+  stock: number; on_order: number; sold_30: number; sold_90: number; sold_365: number;
   sizes: ShopifyOrderSize[];
 }
 // Same two screen-level backlog figures as Amazon Order, for ordertype 2 (local) instead of 3.
