@@ -57,7 +57,7 @@ DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenan
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowPathIcon, ChevronDownIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon,
+  ArrowPathIcon, ArrowUturnLeftIcon, ChevronDownIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
@@ -71,6 +71,9 @@ import {
   courierShort, isFba, isOutstanding, isWaiting, orderedAt, worstCustomerState,
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
+
+// localStorage key for the "Last order" button (see lastPacked).
+const LAST_PACKED_KEY = 'customerOrders.lastPacked';
 
 // Stable "nothing loaded yet" identity so the derived memos below aren't invalidated on every render.
 const NO_LINES: CustomerOrderLine[] = [];
@@ -148,6 +151,16 @@ export default function CustomerOrderList() {
   const [labels, setLabels] = useState<Map<string, LabelInfo>>(() => new Map());
   // The order waiting on a typed parcel weight (the server said WEIGHT_NEEDED), with the server's message naming the shoes.
   const [weightAsk, setWeightAsk] = useState<{ ordernum: string; message: string } | null>(null);
+  // The last order THIS packer labelled, for the "Last order" button — a click elsewhere loses the selection, and this brings it back.
+  // Kept in localStorage so it survives a refresh; per browser, not shared (each bench has its own last box). Read lazily and every
+  // access guarded, because storage can be unavailable (private window, blocked site data).
+  const [lastPacked, setLastPacked] = useState<string | null>(() => {
+    try { return typeof window === 'undefined' ? null : window.localStorage.getItem(LAST_PACKED_KEY); } catch { return null; }
+  });
+  const rememberPacked = (ordernum: string) => {
+    setLastPacked(ordernum);
+    try { window.localStorage.setItem(LAST_PACKED_KEY, ordernum); } catch { /* not remembered across a reload; fine */ }
+  };
   const scanRef = useRef<HTMLInputElement | null>(null);
   // Scans arrive faster than the server answers, so they run one at a time through this chain, and read the latest scans from a
   // ref rather than a render's closure — two quick scans of a 2-pair order must tick two units, not the same one twice.
@@ -334,6 +347,7 @@ export default function CustomerOrderList() {
     }
     setWeightAsk(null);
     printPdfBase64(res.data.pdf);
+    rememberPacked(ordernum);
     setLabels((prev) => {
       const next = new Map(prev);
       const had = prev.get(ordernum);
@@ -475,7 +489,7 @@ export default function CustomerOrderList() {
           below are what say otherwise. */}
       <PackSummary left={job.left} done={job.done} total={job.total} />
 
-      {/* --- filter chips + find box ------------------------------------------------------------------------------------------ */}
+      {/* --- filter chips, Last order, Refresh (rightmost) — then scan and find, a row each -------------------------------------- */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* TWO CHIPS. Pending is always rendered, even at zero — a day finished is worth seeing as "Pending 0", and a chip that
             disappears when it empties takes the reassurance with it. */}
@@ -512,6 +526,29 @@ export default function CustomerOrderList() {
           />
         )}
 
+        {/* --- last order ------------------------------------------------------------------------------------------------------
+            Re-selects the last order this packer labelled (owner, 2026-10-13) — for the click off it that wasn't meant. Clears a
+            filter or search that would hide it and scrolls to it, like a scan does. Disabled once that order has left the list
+            (archived after Shopify fulfilment) or before anything has been labelled. */}
+        <button
+          type="button"
+          onClick={() => {
+            if (!lastPacked) return;
+            setFilter('all');
+            setTerm('');
+            setSelected(lastPacked);
+            setActionError(null);
+            requestAnimationFrame(() => document.getElementById(`order-${lastPacked}`)?.scrollIntoView({ block: 'center' }));
+            scanRef.current?.focus();
+          }}
+          disabled={!lastPacked || !orders.has(lastPacked)}
+          title={lastPacked ? `Select ${lastPacked}, the last order you printed a label for` : 'No label printed yet'}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+        >
+          <ArrowUturnLeftIcon className="h-4 w-4" />
+          Last order{lastPacked && orders.has(lastPacked) ? ` · ${lastPacked}` : ''}
+        </button>
+
         {/* --- refresh ---------------------------------------------------------------------------------------------------------
             NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
             that checking pick progress through the busy part of the day — which is done constantly — costs nothing and can't hammer
@@ -529,16 +566,18 @@ export default function CustomerOrderList() {
           onClick={() => refresh()}
           disabled={busy}
           title="Re-read our order list. Doesn't contact Shopify."
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
         >
           <ArrowPathIcon className={'h-4 w-4 ' + (busy ? 'animate-spin' : '')} />
           Refresh
         </button>
+      </div>
 
-        {/* --- scan --------------------------------------------------------------------------------------------------------------
-            Beside the find box, not instead of it: the find box FILTERS the list as you type, the scan box ACTS on Enter — mixing
-            the two would narrow the grid to one shoe on every scan. Brand-ringed so the eye finds it first; red after a refusal. */}
-        <div className="relative">
+      {/* --- scan --------------------------------------------------------------------------------------------------------------
+          Scan and find share one full-width row below the chips, half each (owner, 2026-10-13). Separate boxes, not one: the find box FILTERS the list as you type, the scan box ACTS on Enter — mixing the two would narrow the grid to one
+          shoe on every scan. Brand-ringed so the eye finds it first; red after a refusal. */}
+      <div className="mb-2 flex gap-2">
+        <div className="relative flex-1">
           <QrCodeIcon className={'pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 ' +
             (scanError ? 'text-red-500' : 'text-brand-500')} />
           <input
@@ -553,14 +592,14 @@ export default function CustomerOrderList() {
             aria-label="Scan a shoe"
             aria-invalid={!!scanError}
             autoComplete="off"
-            className={'w-48 rounded-md border py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:outline-none ' +
+            className={'w-full rounded-md border py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:outline-none ' +
               (scanError
                 ? 'border-red-400 bg-red-50 ring-1 ring-red-300'
                 : 'border-brand-500/50 focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30')}
           />
         </div>
 
-        <div className="relative">
+        <div className="relative flex-1">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           {/* Forced UPPERCASE, like the Pricing and Inventory find boxes (owner) — order numbers and SKUs are uppercase, so typing
               matches what's on the screen and on the picking note. Purely cosmetic to the filter: `shown` lowercases both sides, so
@@ -569,14 +608,14 @@ export default function CustomerOrderList() {
             value={term}
             onChange={(e) => setTerm(e.target.value.toUpperCase())}
             placeholder="Order, customer, postcode, SKU…"
-            className="w-64 rounded-md border border-slate-200 py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:border-brand-500 focus:outline-none"
+            className="w-full rounded-md border border-slate-200 py-1.5 pl-8 pr-3 text-sm uppercase placeholder:normal-case placeholder:text-slate-400 focus:border-brand-500 focus:outline-none"
           />
         </div>
       </div>
 
-      {/* The refusal, under the chips row. Clears on the next good scan, like AMZ Shipment's. */}
+      {/* The refusal, right under the scan row. Clears on the next good scan, like AMZ Shipment's. */}
       {scanError && (
-        <p className="-mt-1 mb-2 flex items-center gap-1.5 text-sm font-medium text-red-700" role="alert">
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-red-700" role="alert">
           <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />{scanError}
         </p>
       )}
