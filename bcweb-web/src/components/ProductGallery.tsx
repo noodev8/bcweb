@@ -10,6 +10,9 @@ Purpose: The EXTRA images of a product (product_images positions 2..N — docs/p
 
          The main image stays with ImageUploader (Replace) — it is never moved or deleted here. Delete is two clicks (× then "Delete")
          rather than a browser confirm dialog; the armed state has its own cancel ×.
+
+         TEMPORARY (owner, 2026-10-13): with only the main image, "Only one image available" marks the product done for the Missing
+         Images counter when no second picture exists (skusummary.single_image_ok_at). Goes with that column after the re-imaging push.
 =======================================================================================================================================
 */
 
@@ -18,7 +21,7 @@ import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroico
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getProductImages, addProductImages, deleteProductImage, moveProductImage, GalleryResult, ShopifyPushResult,
+  getProductImages, addProductImages, deleteProductImage, moveProductImage, setSingleImageOk, GalleryResult, ShopifyPushResult,
 } from '@/lib/api';
 import ZoomableThumb from '@/components/ZoomableThumb';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
@@ -49,7 +52,7 @@ export default function ProductGallery({ groupid, title }: { groupid: string; ti
     setConfirmId(null);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return null; }
     if (!res.success || !res.data) { setError(res.error || 'Something went wrong'); return null; }
-    await mutate({ groupid, images: res.data.images }, { revalidate: false });
+    await mutate({ groupid, images: res.data.images, single_ok: data?.single_ok }, { revalidate: false });
     setPush(res.data.shopify ?? null);
     return res.data;
   }
@@ -63,6 +66,16 @@ export default function ProductGallery({ groupid, title }: { groupid: string; ti
     if (res && 'failed' in res && Array.isArray(res.failed) && res.failed.length) {
       setError(`Not added: ${res.failed.map((f) => `${f.name} (${f.message})`).join(', ')}`);
     }
+  }
+
+  async function markSingle(ok: boolean) {
+    setBusy('single');
+    setError(null);
+    const res = await setSingleImageOk(groupid, ok);
+    setBusy(null);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+    if (!res.success) { setError(res.error || 'Something went wrong'); return; }
+    await mutate({ groupid, images, single_ok: ok }, { revalidate: false });
   }
 
   const iconBtn = 'rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent';
@@ -123,6 +136,17 @@ export default function ProductGallery({ groupid, title }: { groupid: string; ti
         </button>
       </div>
 
+      {data && total === 1 && (
+        <p className="mt-1.5 text-[11px] text-slate-500">
+          {data.single_ok ? (
+            <>Only one image available · <button type="button" disabled={busy !== null} onClick={() => markSingle(false)}
+              className="text-slate-500 underline hover:text-slate-800">Undo</button></>
+          ) : (
+            <button type="button" disabled={busy !== null} onClick={() => markSingle(true)}
+              className="text-slate-500 underline hover:text-slate-800">Only one image available</button>
+          )}
+        </p>
+      )}
       {(error || loadError) && <p className="mt-1.5 text-[11px] text-red-600">{error || loadError?.message}</p>}
       {!error && <ShopifyPushNote result={push} />}
     </div>

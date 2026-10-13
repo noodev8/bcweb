@@ -37,7 +37,7 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
   words, drops garbage (`Screenshot_2025-…`, uuids). View word stored in its own column.
 - **No Birkenstock portal login** → no bulk fetch; staff source images manually, tracked on the Missing Images screen.
 
-## Status 2026-10-13 — steps 1–3 BUILT, committed, NOT yet deployed
+## Status 2026-10-13 — steps 1–3 BUILT and deployed
 
 - **Migration applied** (owner) and the follow-up applied by Claude: `UNIQUE(filename)` and `UNIQUE(shopify_media_id)` DROPPED — width
   twins share one main file (10 pairs) and Shopify media can be shared across products (M620A/XM620A). Every one.com delete now checks
@@ -63,10 +63,19 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
    **Push** (`utils/shopify.js buildFiles`): our rows → `{id}` when the media is still live, else `originalSource` (one.com URL — BCWEB wins);
    live Shopify media we don't hold → kept at the end, except `dropMediaIds` (what BCWEB just removed/replaced). New media ids are recorded
    from the productSet response (same order as `files`). No rows yet → keep Shopify's media as is.
+4. **"Only one image available"** (TEMPORARY, counter only): link under the strip when a product has just the main; sets
+   `skusummary.single_image_ok_at` and the product counts as done (marked today counts in "done today"). "One image only" chip on
+   Missing Images lists them for checking / undo. Route `product-images-single-ok`.
+
+## When the re-imaging push is finished
+
+- `ALTER TABLE skusummary DROP COLUMN single_image_ok_at;` and remove its code (grep `single_image_ok` / `single_ok` / `setSingleImageOk`):
+  routes/product-images-single-ok.js + its server.js mount, routes/images-missing.js, routes/product-images.js, api.ts,
+  ProductGallery.tsx, images-missing/page.tsx.
 
 ## Not done
 
-4. Google feed: `additional_image_link` (up to 10) in `C:\scripts\merchant-feed\merchant_feed.py`.
+5. Google feed: `additional_image_link` (up to 10) in `C:\scripts\merchant-feed\merchant_feed.py`.
 - Raise "done" from 2 to 4 images later: `MIN_IMAGES` in `utils/productImage.js`.
 
 ## Useful

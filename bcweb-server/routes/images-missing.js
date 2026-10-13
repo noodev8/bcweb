@@ -13,6 +13,9 @@ Purpose: The Missing Images screen (Back Office) — every product live on Shopi
          shopify_count = media on the live Shopify product (one cheap products query). shopify_count > image_count means images were
          added in the Shopify UI that we don't hold ("Added in Shopify") — a push keeps them, but they belong in BCWEB; re-running
          scripts/import-shopify-galleries.js brings them in. If Shopify can't be reached the screen still works (shopify_count null).
+
+         single_ok = TEMPORARY "only one image available" mark (skusummary.single_image_ok_at, owner 2026-10-13): no second picture
+         exists, so it counts as done; marked today counts in done_today. Goes with the column when the re-imaging push is finished.
          Requires auth.
 =======================================================================================================================================
 Request Query Params: none
@@ -26,7 +29,7 @@ Success Response:
   "rows": [
     { "groupid": "0051791-ARIZONA", "title": "Birkenstock Arizona …", "brand": "Birkenstock", "imagename": "….jpg",
       "status": "WINNERS", "stock": 12, "image_count": 1, "main_side": 800, "low_res_main": true, "done": false,
-      "added_today": false, "shopify_count": 1 }
+      "added_today": false, "single_ok": false, "shopify_count": 1 }
   ]
 }
 =======================================================================================================================================
@@ -75,7 +78,9 @@ router.get('/', verifyToken, async (req, res) => {
                COALESCE(st.units, 0)::int AS stock,
                COALESCE(pi.n, 0)::int AS image_count,
                GREATEST(m.width, m.height) AS main_side,
-               COALESCE(pi.added_today, false) AS added_today
+               COALESCE(pi.added_today, false) AS added_today,
+               ss.single_image_ok_at IS NOT NULL AS single_ok,
+               COALESCE((ss.single_image_ok_at AT TIME ZONE 'Europe/London')::date = (now() AT TIME ZONE 'Europe/London')::date, false) AS marked_today
         FROM skusummary ss
         LEFT JOIN title t ON t.groupid = ss.groupid
         LEFT JOIN (
@@ -104,8 +109,9 @@ router.get('/', verifyToken, async (req, res) => {
         image_count: imageCount,
         main_side: r.main_side === null ? null : Number(r.main_side),
         low_res_main: isLowResMain(r.main_side),
-        done: isDone(imageCount),
-        added_today: r.added_today,
+        done: isDone(imageCount) || r.single_ok,
+        added_today: (r.added_today && isDone(imageCount)) || (r.single_ok && r.marked_today),
+        single_ok: r.single_ok,
         shopify_count: shopifyCount
       };
     });
@@ -114,7 +120,7 @@ router.get('/', verifyToken, async (req, res) => {
       products: rows.length,
       single: rows.filter((r) => !r.done).length,
       single_in_stock: rows.filter((r) => !r.done && r.stock > 0).length,
-      done_today: rows.filter((r) => r.added_today && r.done).length,
+      done_today: rows.filter((r) => r.added_today).length,
       added_in_shopify: rows.filter((r) => r.shopify_count !== null && r.shopify_count > r.image_count).length,
       shopify_ok: counts !== null
     };

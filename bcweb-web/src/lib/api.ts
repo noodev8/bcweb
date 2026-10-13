@@ -796,13 +796,14 @@ export interface GalleryImage {
   height: number | null;
   on_shopify: boolean;         // linked to a Shopify media item
 }
-export interface GalleryResult { groupid: string; images: GalleryImage[]; shopify?: ShopifyPushResult | null; }
+// single_ok (GET only): the TEMPORARY "only one image available" mark — see setSingleImageOk.
+export interface GalleryResult { groupid: string; images: GalleryImage[]; shopify?: ShopifyPushResult | null; single_ok?: boolean; }
 export interface GalleryAddResult extends GalleryResult { added: number; failed: { name: string; message: string }[]; }
 
 export function getProductImages(groupid: string) {
   return request<GalleryResult>(
     { url: '/product-images', method: 'GET', params: { groupid } },
-    (b) => ({ groupid: b.groupid, images: b.images || [] })
+    (b) => ({ groupid: b.groupid, images: b.images || [], single_ok: !!b.single_ok })
   );
 }
 export function addProductImages(groupid: string, files: File[], title?: string) {
@@ -827,12 +828,21 @@ export function moveProductImage(groupid: string, id: number, direction: 'left' 
     (b) => ({ groupid: b.groupid, images: b.images || [], shopify: b.shopify })
   );
 }
+// TEMPORARY (owner, 2026-10-13): mark a product "only one image available" so the Missing Images counter treats it as done. Goes with
+// skusummary.single_image_ok_at once the re-imaging push is finished.
+export function setSingleImageOk(groupid: string, ok: boolean) {
+  return request<{ single_ok: boolean }>(
+    { url: '/product-images-single-ok', method: 'POST', data: { groupid, ok } },
+    (b) => ({ single_ok: !!b.single_ok })
+  );
+}
 
-// Missing Images screen (Back Office): every Shopify-live product with how many images we hold. done = image_count >= min_images;
-// low_res_main is an optional filter only. shopify_count > image_count = images added in the Shopify UI we don't hold.
+// Missing Images screen (Back Office): every Shopify-live product with how many images we hold. done = image_count >= min_images, or
+// single_ok (marked "only one image available" — temporary); low_res_main is an optional filter only. shopify_count > image_count = images added in the Shopify UI we don't hold.
 export interface MissingImageRow {
   groupid: string; title: string | null; brand: string | null; imagename: string | null; status: string | null; stock: number;
-  image_count: number; main_side: number | null; low_res_main: boolean; done: boolean; added_today: boolean; shopify_count: number | null;
+  image_count: number; main_side: number | null; low_res_main: boolean; done: boolean; added_today: boolean; single_ok: boolean;
+  shopify_count: number | null;
 }
 export interface MissingImagesData {
   min_images: number; min_main_side: number;

@@ -20,15 +20,19 @@ Purpose: The work list for re-imaging the store (docs/product-images-plan.md). F
          Under the hero: the date the in-stock list would be clear at ONE A DAY (calendar days, from today). A target, not a quota —
          doing more just brings it forward, and it moves on its own as the count drops.
 
+         TEMPORARY (owner, 2026-10-13): a product marked "Only one image available" on Add / Modify counts as done (no second picture
+         exists). The "One image only" chip lists the marked ones so a mark can be checked or undone. Goes with skusummary.single_image_ok_at.
+
          Row → the product on Add / Modify, with a Back link here. The whole list (~300) comes back once and filters run client-side.
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useImageSlot } from '@/lib/imageSlot';
 import { getImagesMissing, MissingImageRow } from '@/lib/api';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
@@ -61,12 +65,39 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
+// one.com answers a burst of image fetches with 429 (seen 2026-10-13: a screen of thumbnails, a dozen refused). So, as on Inventory
+// (InvStyleCard / lib/imageSlot): load only when near the viewport, through the app-wide lane (5 at a time), and retry an error with a
+// growing pause before showing the empty box. Once Vercel has optimised a file it's cached a year, so this is a first-view problem.
+const MAX_RETRIES = 3;
+
 function Thumb({ imagename }: { imagename: string | null }) {
-  const [failed, setFailed] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [near, setNear] = useState(false);
+  const [errors, setErrors] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
+  const failed = errors >= MAX_RETRIES;
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) { setNear(true); io.disconnect(); } }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const { granted, done } = useImageSlot(near && !!imagename && !failed);
+  const onError = () => {
+    done();
+    const n = errors + 1;   // one error per mount (the retry remounts), so the render's value is current
+    setErrors(n);
+    if (n < MAX_RETRIES) window.setTimeout(() => setReloadKey((k) => k + 1), 800 * n);
+  };
+
   return (
-    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
-      {imagename && !failed && (
-        <Image src={IMAGE_BASE + encodeURIComponent(imagename)} alt="" fill sizes="40px" onError={() => setFailed(true)} className="object-contain" />
+    <div ref={boxRef} className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
+      {imagename && granted && !failed && (
+        <Image key={reloadKey} src={IMAGE_BASE + encodeURIComponent(imagename)} alt="" fill sizes="40px" loading="eager"
+          onLoad={done} onError={onError} className="object-contain" />
       )}
     </div>
   );
@@ -80,6 +111,7 @@ export default function ImagesMissingPage() {
   const [brand, setBrand] = useState<string>('');
   const [lowRes, setLowRes] = useState(false);
   const [inShopify, setInShopify] = useState(false);
+  const [marked, setMarked] = useState(false);
   const [term, setTerm] = useState('');
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
@@ -89,7 +121,7 @@ export default function ImagesMissingPage() {
   const visible = useMemo(() => {
     const t = term.trim().toLowerCase();
     return rows
-      .filter((r) => (show === 'single' ? !r.done : true))
+      .filter((r) => (marked ? r.single_ok : show === 'single' ? !r.done : true))
       .filter((r) => (stock === 'in' ? r.stock > 0 : true))
       .filter((r) => (status ? r.status === status : true))
       .filter((r) => (brand ? r.brand === brand : true))
@@ -100,7 +132,7 @@ export default function ImagesMissingPage() {
         Number(a.brand === LATER_BRAND) - Number(b.brand === LATER_BRAND)
         || (STATUS_ORDER[a.status || ''] ?? 9) - (STATUS_ORDER[b.status || ''] ?? 9)
         || b.stock - a.stock || a.groupid.localeCompare(b.groupid));
-  }, [rows, show, stock, status, brand, lowRes, inShopify, term]);
+  }, [rows, show, stock, status, brand, lowRes, inShopify, marked, term]);
 
   const s = data?.summary;
   const back = `&from=${encodeURIComponent('/images-missing')}&back=${encodeURIComponent('Missing Images')}`;
@@ -146,6 +178,7 @@ export default function ImagesMissingPage() {
             <Chip on={stock === 'all'} onClick={() => setStock('all')}>Any stock</Chip>
             <span className="mx-1 h-4 w-px bg-slate-200" />
             <Chip on={lowRes} onClick={() => setLowRes((v) => !v)}>Low-res main</Chip>
+            <Chip on={marked} onClick={() => setMarked((v) => !v)}>One image only</Chip>
             {inShopify && <Chip on onClick={() => setInShopify(false)}>Added in Shopify ×</Chip>}
             <select value={status} onChange={(e) => setStatus(e.target.value)}
               className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">
@@ -166,7 +199,9 @@ export default function ImagesMissingPage() {
           <>
             <h2 className="text-sm font-medium text-slate-700">{visible.length} {visible.length === 1 ? 'product' : 'products'}</h2>
             {visible.length === 0 ? (
-              <p className="text-sm text-slate-500">Nothing here — every product in this view has {data.min_images}+ images.</p>
+              <p className="text-sm text-slate-500">
+                {marked ? 'Nothing marked as one image only.' : `Nothing here — every product in this view has ${data.min_images}+ images.`}
+              </p>
             ) : (
               <table className="w-full overflow-hidden rounded-lg border border-slate-200 bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -196,6 +231,7 @@ export default function ImagesMissingPage() {
                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.stock}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         <span className={r.done ? 'text-slate-700' : 'font-medium text-slate-900'}>{r.image_count}</span>
+                        {r.single_ok && r.image_count < data.min_images && <span className="ml-1 text-xs text-slate-400">only</span>}
                         {addedInShopify(r) && <span className="ml-1 text-xs text-amber-700" title="On Shopify">({r.shopify_count})</span>}
                       </td>
                       <td className={'hidden px-3 py-1.5 text-right tabular-nums sm:table-cell ' + (r.low_res_main ? 'text-slate-400' : 'text-slate-700')}>
