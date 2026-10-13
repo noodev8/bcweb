@@ -683,6 +683,9 @@ export default function CustomerOrderList() {
                     (isSelected ? 'bg-brand-50'
                       : isWaiting(l.state) ? 'bg-amber-50/70 hover:bg-amber-100/70'
                       : l.state === 'packed' ? 'bg-emerald-50 hover:bg-emerald-100/70'
+                      // FBA in sky, to match its stripe and chip — Amazon's to ship, not ours to pack. Once the Amazon file is made the
+                      // line reads Packed and turns green with the rest of the done work.
+                      : isFba(l.state) ? 'bg-sky-50 hover:bg-sky-100/70'
                       : 'hover:bg-slate-50')
                   }
                 >
