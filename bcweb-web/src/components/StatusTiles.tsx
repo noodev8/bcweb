@@ -206,8 +206,7 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
           <Squares2X2Icon className="h-4 w-4 text-slate-500" aria-hidden="true" />
         </span>
         All channels
-        <span className="text-slate-300" aria-hidden="true">·</span>
-        <span>Stock now</span>
+        {/* No card name after "All channels": "Stock now" then "Winners vs Slow" were tried and removed (owner, 2026-10-13). */}
       </h2>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         {/* A GRID THAT READS LEFT TO RIGHT (owner, 2026-10-13: "258 styles to the left of the 22% of winners in its own box as a
@@ -245,7 +244,7 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
                 const box = (
                   <FigureGroup pct={pct(v, l.total)} color={c.color}>
                     <Figure value={pctText(v, l.total)} strong />
-                    <Figure value={n(v)} label={l.unit} />
+                    <Figure value={n(v)} />{/* no unit under the count: the total on the left names it (owner, 2026-10-13) */}
                   </FigureGroup>
                 );
                 return c.href
@@ -257,9 +256,10 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
           {totals && totals.revenue > 0 && winners && (
             <>
               <TotalBox value={gbp(totals.revenue)} label="12m revenue" />
+              {/* Winners' column only (stretching it under Slow too was tried and reverted, owner 2026-10-13: it is only for winners). */}
               <FigureGroup pct={pct(winners.revenue, totals.revenue)} color={STATUS_COLOR.WINNERS}>
                 <Figure value={pctText(winners.revenue, totals.revenue)} strong />
-                <Figure value={gbp(winners.revenue)} label="revenue" />
+                <Figure value={gbp(winners.revenue)} />
               </FigureGroup>
               <span />
             </>
@@ -285,7 +285,7 @@ function TotalBox({ value, label }: { value: string; label: string }) {
 // A light box of figures, with the box's own % drawn as a small bar filling the space to the right (white track on the grey box).
 function FigureGroup({ children, pct, color }: { children: ReactNode; pct?: number | null; color?: string }) {
   return (
-    <span className="flex items-center gap-x-2 rounded-lg bg-slate-100/70 px-3 py-2 ring-1 ring-slate-200/80">
+    <span className="flex h-full items-center gap-x-2 rounded-lg bg-slate-100/70 px-3 py-2 ring-1 ring-slate-200/80">
       {children}
       {pct != null && color && (
         <span className="ml-2 h-2.5 min-w-[3rem] flex-1 overflow-hidden rounded-full bg-white ring-1 ring-slate-200/80" aria-hidden="true">
