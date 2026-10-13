@@ -147,6 +147,8 @@ export default function CustomerOrderList() {
   // --- scan to label (see the header: scans live here, the label lives in Click & Drop) -----------------------------------------
   const [scan, setScan] = useState('');
   const [scanError, setScanError] = useState<string | null>(null);
+  // An amber note under the scan row — currently only "a part-scanned order was dropped" (see ONE ORDER AT A TIME in handleScan).
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [scans, setScans] = useState<ScanMap>(() => new Map());
   const [labels, setLabels] = useState<Map<string, LabelInfo>>(() => new Map());
   // The order waiting on a typed parcel weight (the server said WEIGHT_NEEDED), with the server's message naming the shoes.
@@ -387,6 +389,25 @@ export default function CustomerOrderList() {
     updateScans(next);
   }
 
+  // Drop every other order's scans (ONE ORDER AT A TIME, see handleScan), saying so if one was part-scanned — the packer needs to
+  // know those shoes have to be scanned again, together.
+  function keepOnly(ordernum: string) {
+    const { orders } = latest.current;
+    const dropped: string[] = [];
+    for (const [other, perCode] of scansRef.current) {
+      if (other === ordernum) continue;
+      const o = orders.get(other);
+      const total = o ? o.lines.reduce((n, l) => n + (scannable(l) ? l.qty : 0), 0) : 0;
+      const scanned = [...perCode.values()].reduce((n, c) => n + c, 0);
+      if (o && scanned < total) dropped.push(`${other} (${scanned} of ${total})`);
+    }
+    setScanNote(dropped.length
+      ? `Scans cleared on ${dropped.join(', ')} — an order's shoes are scanned together, so scan all of it again.`
+      : null);
+    const kept = scansRef.current.get(ordernum);
+    updateScans(kept ? new Map([[ordernum, kept]]) : new Map());
+  }
+
   // Enter in the scan box. Queued so scans are handled strictly in order (see scanQueue).
   function onScan() {
     const raw = scan.trim().toUpperCase();
@@ -408,13 +429,18 @@ export default function CustomerOrderList() {
     const scans = scansRef.current;
     const { orders, labels, lines } = latest.current;
 
+    // ONE ORDER AT A TIME (owner, 2026-10-13): a group order's shoes are scanned together, into one box. So the order already being
+    // scanned gets first claim on the shoe; only if it doesn't want it does the oldest open order take it — and then the part-scanned
+    // one is dropped (below), not left half ticked to be finished later from a box that's been put aside.
     let best: { ordernum: string; created: string } | null = null;
     for (const o of orders.values()) {
       if (labels.has(o.ordernum)) continue;
       const match = o.lines.find((l) => l.code.toUpperCase() === code);
       if (!match) continue;
       const wanted = o.lines.filter((l) => scannable(l) && l.code === match.code).length;
-      if (wanted <= (scans.get(o.ordernum)?.get(match.code) ?? 0)) continue;
+      const have = scans.get(o.ordernum)?.get(match.code) ?? 0;
+      if (wanted <= have) continue;
+      if (scans.has(o.ordernum)) { best = { ordernum: o.ordernum, created: '' }; break; }   // the order in hand
       const created = o.lines.reduce((m, l) => (l.created < m ? l.created : m), o.lines[0].created);
       if (!best || created < best.created) best = { ordernum: o.ordernum, created };
     }
@@ -430,6 +456,7 @@ export default function CustomerOrderList() {
         return total > 0 && scanned >= total;
       });
       if (retry) {
+        keepOnly(retry.ordernum);
         setScanError(null);
         setSelected(retry.ordernum);
         const block = labelBlock(retry);
@@ -452,7 +479,8 @@ export default function CustomerOrderList() {
 
     const o = orders.get(best.ordernum)!;
     const realCode = o.lines.find((l) => l.code.toUpperCase() === code)!.code;
-    const next = new Map(scans);
+    keepOnly(o.ordernum);
+    const next = new Map(scansRef.current);
     const perCode = new Map(next.get(o.ordernum) ?? []);
     perCode.set(realCode, (perCode.get(realCode) ?? 0) + 1);
     next.set(o.ordernum, perCode);
@@ -625,6 +653,12 @@ export default function CustomerOrderList() {
           />
         </div>
       </div>
+
+      {scanNote && (
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-amber-800" role="status">
+          <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />{scanNote}
+        </p>
+      )}
 
       {/* The refusal, right under the scan row. Clears on the next good scan, like AMZ Shipment's. */}
       {scanError && (

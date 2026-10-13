@@ -27,9 +27,10 @@ can't both get past the check.
 The C&D call runs INSIDE the transaction, so the packed write commits only if the shipment exists. If the commit then fails, the
 shipment exists and the order isn't packed; the next scan finds it by reference and reuses it — no second postage.
 
-WEIGHT is the whole parcel (one order = one parcel): sum of skumap.weight (varchar, kg per variant) over the order's open units. If any
-unit has no stored weight the route answers WEIGHT_NEEDED with the codes missing one, and the screen asks for the whole-order weight in
-kg, sent back as weightKg. An entered weight is for this label only — it is NOT written back to skumap. skumap.weight is read with its
+WEIGHT is the whole parcel (one order = one parcel). A SINGLE-PAIR order uses its stored skumap.weight (varchar, kg per variant); if it
+has none the route answers WEIGHT_NEEDED. A GROUP order (more than one open unit) ALWAYS answers WEIGHT_NEEDED (owner, 2026-10-13):
+the parcel is weighed, never added up from the shoes. Either way the screen asks for the whole-order weight in kg, sent back as
+weightKg. It is written to every packed line's orderstatus.weight, as PowerBuilder does (BC19297: two lines, both '1.1'). An entered weight is for this label only — it is NOT written back to skumap. skumap.weight is read with its
 own pattern rather than utils/sql.js safeNumeric(), because the stored values start with a bare point ('.54') and safeNumeric's
 pattern needs a leading digit.
 
@@ -148,6 +149,9 @@ router.post('/', async (req, res) => {
       if (weightIn !== undefined && weightIn !== null && weightIn !== '') {
         weightKg = Number(weightIn);
         entered = true;
+      } else if (open.length > 1) {
+        // GROUP ORDER (owner, 2026-10-13): always weighed as the parcel it is, never added up from the shoes' stored weights.
+        throw new Refusal('WEIGHT_NEEDED', `Group order (${open.length} pairs) — weigh the parcel and enter its weight`, { missing: [] });
       } else {
         const missing = [...new Set(open.filter((r) => r.weight_kg === null || Number(r.weight_kg) <= 0).map((r) => r.code))];
         if (missing.length) {
