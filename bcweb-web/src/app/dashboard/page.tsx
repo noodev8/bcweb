@@ -70,7 +70,7 @@ import {
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
-  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon,
+  ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -248,6 +248,15 @@ const GROUPS: Group[] = [
         description: 'Find an existing product to edit, or create a new one.',
         href: '/products',
         icon: TagIcon,
+      },
+      {
+        // The re-imaging work list (owner, 2026-10-13): price pushes wiped Shopify galleries from 2026-07-09 to 2026-10-13, so staff
+        // add pictures again on Add / Modify — beside it. docs/product-images-plan.md.
+        title: 'Missing Images',
+        subtitle: 'Products with one image',
+        description: 'Every Shopify product with a single image, Winners and in-stock first — open one to add its pictures.',
+        href: '/images-missing',
+        icon: PhotoIcon,
       },
       {
         title: 'New Products',

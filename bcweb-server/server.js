@@ -128,6 +128,12 @@ app.use('/product-update', require('./routes/product-update'));    // edit: save
 app.use('/product-price', require('./routes/product-price'));      // edit: save price fields (cost/rrp/tax/shopifyprice)
 app.use('/product-sizes', require('./routes/product-sizes'));      // edit: save the size list (skumap) + re-push if live on Shopify
 app.use('/product-image', require('./routes/product-image'));     // edit: upload/convert/SFTP the main image + set imagename
+// Product gallery (product_images — docs/product-images-plan.md): list / add extra images / delete / reorder, each re-pushing if live.
+app.use('/product-images', require('./routes/product-images'));               // GET: the whole gallery, main first
+app.use('/product-images-add', require('./routes/product-images-add'));       // POST multipart: add extra images
+app.use('/product-images-delete', require('./routes/product-images-delete')); // POST {groupid, id}: remove an extra image
+app.use('/product-images-move', require('./routes/product-images-move'));     // POST {groupid, id, direction}: reorder an extra image
+app.use('/images-missing', require('./routes/images-missing'));               // GET: Missing Images screen (single-image products)
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
 app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
 

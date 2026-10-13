@@ -32,12 +32,14 @@ function slugify(s) {
 }
 
 /**
- * imageFilename(title, groupid, version?) -> "<slug(title)>-<slug(groupid)>-brookfield-comfort[-<version>].jpg".
+ * imageFilename(title, groupid, version?, view?) -> "<slug(title)>-<slug(groupid)>-brookfield-comfort[-<view>][-<version>].jpg".
  * If the title is blank we still produce a valid name from the groupid alone. `version` (optional) is appended for cache-busting
- * uniqueness. Always lower-case, always .jpg.
+ * uniqueness. `view` (optional) names a gallery image — a whitelisted view word ('sole') or its position ('3'); see utils/productImage.js.
+ * Always lower-case, always .jpg.
  */
-function imageFilename(title, groupid, version) {
+function imageFilename(title, groupid, version, view) {
   const parts = [slugify(title), slugify(groupid), SUFFIX];
+  if (view) parts.push(slugify(view));
   if (version) parts.push(slugify(version));
   return `${parts.filter(Boolean).join('-')}.jpg`;
 }

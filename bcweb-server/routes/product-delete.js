@@ -12,7 +12,8 @@ Purpose: PERMANENTLY delete a product (one groupid) — the legacy "Delete" butt
                                   store. Done FIRST; if it fails we ABORT and touch nothing in our DB (never orphan a live listing).
              - skusummary, title, attributes, skumap — the four tables product-create / product-sizes write. One transaction.
              - shopify_description (cached Shopify description, keyed by handle) — same transaction.
-             - the image file on one.com (best-effort cleanup, like a re-image).
+             - product_images rows — same transaction.
+             - the image files on one.com, main + gallery (best-effort cleanup, like a re-image).
            KEPT (owner rule — "keep all sales and report data"):
              - sales / offlinesold / shopifysold / performance* / snapshots / price_change_log / amz_price_log / price_track / shopprices…
              - live-stock & operational tables (localstock, incoming_stock, orderstatus, amzfeed, …) — owned by the owner's Python + nightly
@@ -57,6 +58,7 @@ const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { deleteImage } = require('../utils/sftp');
+const { fileInUseElsewhere } = require('../utils/productGallery');
 const shopify = require('../utils/shopify');
 const logger = require('../utils/logger');
 const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
@@ -93,6 +95,10 @@ router.post('/', async (req, res) => {
     const title = prod.rows[0].shopifytitle || '';
     const productCreatedAt = prod.rows[0].created_at || null;
 
+    // Every file we hold for the product (main + gallery), read before the rows go. imagename is included in case the main has no row.
+    const imgRes = await query(`SELECT filename FROM product_images WHERE groupid = $1`, [groupid]);
+    const imageFiles = [...new Set([imagename, ...imgRes.rows.map((r) => r.filename)].filter(Boolean))];
+
     // STOCK GUARD (owner): never delete a product that still has sellable stock — the operator must clear it physically first. Sellable
     // stock = localstock rows with ordernum='#FREE', not deleted, qty>0 (the CLAUDE.md definition of current stock). Block on >0 units,
     // BEFORE any Shopify/DB change so a stocked product is left completely intact.
@@ -126,6 +132,7 @@ router.post('/', async (req, res) => {
       await client.query(`DELETE FROM attributes WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM title      WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM skusummary WHERE groupid = $1`, [groupid]);
+      await client.query(`DELETE FROM product_images WHERE groupid = $1`, [groupid]);
       // shopify_description (cached Shopify body HTML) is keyed by HANDLE, not groupid — handles are unique per product. Skip on a blank
       // handle so we never match other blank-handle rows.
       if (handle) {
@@ -142,11 +149,12 @@ router.post('/', async (req, res) => {
       });
     });
 
-    // 3) IMAGE — best-effort cleanup (an orphaned file is harmless; never fail the delete over it).
+    // 3) IMAGES — best-effort cleanup (an orphaned file is harmless; never fail the delete over it). imageDeleted = at least one removed.
     let imageDeleted = false;
-    if (imagename) {
-      try { await deleteImage(imagename); imageDeleted = true; }
-      catch (delErr) { logger.error(`[product-delete] could not delete image ${imagename} for ${groupid}:`, delErr.message); }
+    // A file another product still uses (width twins share a main) is left alone.
+    for (const file of imageFiles) {
+      try { if (!(await fileInUseElsewhere({ query }, file, groupid))) { await deleteImage(file); imageDeleted = true; } }
+      catch (delErr) { logger.error(`[product-delete] could not delete image ${file} for ${groupid}:`, delErr.message); }
     }
 
     logger.info(`[product-delete] deleted ${groupid} (shopify=${shopifyDeleted}, image=${imageDeleted})`);

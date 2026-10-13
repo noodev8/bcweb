@@ -4,14 +4,16 @@ API Route: product_image
 =======================================================================================================================================
 Method: POST  (multipart/form-data)
 Purpose: Upload / replace a product's MAIN image. The whole pipeline runs server-side (the web app just posts the raw file):
-           1. Accept an upload in any common format (jpeg / png / webp / avif) — held in memory (multer), size-capped.
-           2. Convert it CLEANLY to 800x800 JPEG with sharp: auto-orient (EXIF), resize to FIT inside 800x800 (no crop, no
-              distortion), pad the remainder to a square on a WHITE background, flatten away any transparency, encode JPEG q85.
+           1. Accept an upload in any common format (jpeg / png / webp / avif) — held in memory, 25MB cap (utils/imageUpload.js).
+           2. Convert it with the shared utils/productImage.js processImage: auto-orient (EXIF), square on a WHITE background, longest
+              side capped at 2048 and NEVER enlarged (an 800 source stays 800), transparency flattened, JPEG. (800x800 q85 until
+              2026-10-13 — see docs/product-images-plan.md.)
            3. Generate the SEO filename from the product title + groupid, with a fresh per-upload version token (utils/imageName.js)
               so every upload has a UNIQUE filename/URL — this sidesteps the one.com CDN cache (a same-name overwrite would be served
               stale) and makes the new image appear immediately.
            4. SFTP the JPEG to the one.com host that backs images.brookfieldcomfort.com (utils/sftp.js).
-           5. UPDATE skusummary.imagename, then delete the previous file from one.com (best-effort cleanup — one image per product).
+           5. UPDATE skusummary.imagename AND the product_images position-1 (main) row in one transaction — the two are kept in step
+              by their writers, no triggers — then delete the previous file from one.com (best-effort cleanup).
          The site and the Google Merchant feed both read images.brookfieldcomfort.com/<imagename>, so no separate push to Google is
          needed. This route does NOT touch price/shopifychange.
 
@@ -46,110 +48,99 @@ Return Codes:
 */
 
 const express = require('express');
-const multer = require('multer');
-const sharp = require('sharp');
 const router = express.Router();
 const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { imageFilename } = require('../utils/imageName');
+const { processImage, imageAlt } = require('../utils/productImage');
 const { putImage, deleteImage } = require('../utils/sftp');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
+const { runUpload } = require('../utils/imageUpload');
+const { fileInUseElsewhere } = require('../utils/productGallery');
 
 const UPDATED_EXPR = `to_char(now() AT TIME ZONE 'Europe/London', 'YYYYMMDD HH24:MI:SS')`;
 const PUBLIC_BASE = 'https://images.brookfieldcomfort.com/';
 
-// In-memory upload (we hand the buffer straight to sharp — nothing hits disk). 15MB cap; only the formats we can convert.
-const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (ALLOWED.has(file.mimetype)) return cb(null, true);
-    // Signal an unsupported type; the wrapper below turns this into INVALID_IMAGE.
-    const e = new Error('Unsupported image type — use JPEG, PNG, WebP or AVIF');
-    e.code = 'UNSUPPORTED_TYPE';
-    cb(e);
-  }
-});
+router.post('/', verifyToken, async (req, res) => {
+  try {
+    const uploadErr = await runUpload(req, res, 'image');
+    if (uploadErr) return res.json(uploadErr);
 
-router.post('/', verifyToken, (req, res) => {
-  // Run multer ourselves so its errors become our JSON envelope (never a raw 4xx).
-  upload.single('image')(req, res, async (uploadErr) => {
-    try {
-      if (uploadErr) {
-        if (uploadErr.code === 'LIMIT_FILE_SIZE') {
-          return res.json({ return_code: 'IMAGE_TOO_LARGE', message: 'Image exceeds the 15MB limit' });
-        }
-        return res.json({ return_code: 'INVALID_IMAGE', message: uploadErr.message || 'Invalid image upload' });
-      }
-
-      const groupid = (req.body.groupid || '').trim();
-      const bodyTitle = (req.body.title || '').trim();
-      if (!groupid || !req.file) {
-        return res.json({ return_code: 'MISSING_FIELDS', message: 'groupid and an image file are required' });
-      }
-
-      // Load the product (existence + stored title + current image, for the filename and old-file cleanup).
-      const prod = await query(`
-        SELECT ss.groupid, ss.imagename, t.shopifytitle
-        FROM skusummary ss LEFT JOIN title t ON t.groupid = ss.groupid
-        WHERE ss.groupid = $1
-      `, [groupid]);
-      if (prod.rows.length === 0) {
-        return res.json({ return_code: 'NOT_FOUND', message: 'Product not found' });
-      }
-      const oldName = prod.rows[0].imagename || '';
-      const title = bodyTitle || prod.rows[0].shopifytitle || '';
-      // Fresh version token per upload -> a unique filename/URL every time. This dodges the one.com CDN cache (a same-name overwrite
-      // would serve stale) and means the old file is always superseded and cleaned up below.
-      const version = Date.now().toString(36);
-      const newName = imageFilename(title, groupid, version);
-
-      // Convert to a clean 800x800 white-padded JPEG. failOn:'none' tolerates minor corruption; a hard decode failure -> INVALID_IMAGE.
-      let jpeg;
-      try {
-        jpeg = await sharp(req.file.buffer, { failOn: 'none' })
-          .rotate()                                                    // honour EXIF orientation before resizing
-          .resize(800, 800, { fit: 'contain', background: { r: 255, g: 255, b: 255 } })
-          .flatten({ background: { r: 255, g: 255, b: 255 } })         // drop alpha (JPEG) -> white
-          .jpeg({ quality: 85 })
-          .toBuffer();
-      } catch (imgErr) {
-        logger.error('[product-image] sharp decode failed:', imgErr.message);
-        return res.json({ return_code: 'INVALID_IMAGE', message: 'Could not read that image file' });
-      }
-
-      // Push the new file FIRST (so a failure here never leaves the DB pointing at a missing image).
-      try {
-        await putImage(newName, jpeg);
-      } catch (sftpErr) {
-        logger.error('[product-image] sftp upload failed:', sftpErr.message);
-        return res.json({ return_code: 'SFTP_ERROR', message: 'Could not upload the image to the server' });
-      }
-
-      // Point the product at the new file.
-      await withTransaction(async (client) => {
-        await client.query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid, newName]);
-      });
-
-      // Best-effort: remove the previous file if the name changed (don't fail the request over cleanup).
-      if (oldName && oldName !== newName) {
-        try { await deleteImage(oldName); }
-        catch (delErr) { logger.error(`[product-image] could not delete old image ${oldName}:`, delErr.message); }
-      }
-
-      // If the product is live on Shopify, re-push so the new image reaches the store (best-effort — never fails the upload).
-      // replaceMainImage: the new image takes the main slot; the rest of the Shopify gallery is kept.
-      const shopifyResult = await shopify.pushIfLive(groupid, { replaceMainImage: true });
-
-      return res.json({ return_code: 'SUCCESS', groupid, imagename: newName, url: PUBLIC_BASE + newName, shopify: shopifyResult });
-    } catch (err) {
-      logger.error('[product-image] error:', err.message);
-      return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to process image' });
+    const groupid = (req.body.groupid || '').trim();
+    const bodyTitle = (req.body.title || '').trim();
+    if (!groupid || !req.file) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'groupid and an image file are required' });
     }
-  });
+
+    // Load the product (existence + stored title + current image, for the filename and old-file cleanup) and the old main's Shopify
+    // media id — the push must drop it, or it would be kept as "media we don't hold" (utils/shopify.js buildFiles).
+    const prod = await query(`
+      SELECT ss.groupid, ss.imagename, t.shopifytitle,
+             (SELECT pi.shopify_media_id FROM product_images pi WHERE pi.groupid = ss.groupid AND pi.position = 1) AS old_media_id
+      FROM skusummary ss LEFT JOIN title t ON t.groupid = ss.groupid
+      WHERE ss.groupid = $1
+    `, [groupid]);
+    if (prod.rows.length === 0) {
+      return res.json({ return_code: 'NOT_FOUND', message: 'Product not found' });
+    }
+    const oldName = prod.rows[0].imagename || '';
+    const title = bodyTitle || prod.rows[0].shopifytitle || '';
+    // Fresh version token per upload -> a unique filename/URL every time. This dodges the one.com CDN cache (a same-name overwrite
+    // would serve stale) and means the old file is always superseded and cleaned up below.
+    const version = Date.now().toString(36);
+    const newName = imageFilename(title, groupid, version);
+
+    // Convert to our stored form (2048 max, never enlarged). A hard decode failure -> INVALID_IMAGE.
+    let jpeg;
+    let dims;
+    try {
+      const processed = await processImage(req.file.buffer);
+      jpeg = processed.buffer;
+      dims = { width: processed.width, height: processed.height };
+    } catch (imgErr) {
+      logger.error('[product-image] sharp decode failed:', imgErr.message);
+      return res.json({ return_code: 'INVALID_IMAGE', message: 'Could not read that image file' });
+    }
+
+    // Push the new file FIRST (so a failure here never leaves the DB pointing at a missing image).
+    try {
+      await putImage(newName, jpeg);
+    } catch (sftpErr) {
+      logger.error('[product-image] sftp upload failed:', sftpErr.message);
+      return res.json({ return_code: 'SFTP_ERROR', message: 'Could not upload the image to the server' });
+    }
+
+    // Point the product at the new file — skusummary.imagename and the main product_images row together. shopify_media_id resets:
+    // the push below uploads the new file to Shopify and records the new id.
+    await withTransaction(async (client) => {
+      await client.query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid, newName]);
+      await client.query(`
+        INSERT INTO product_images (groupid, position, filename, view, alt, width, height, shopify_media_id, source_name, created_by)
+        VALUES ($1, 1, $2, NULL, $3, $4, $5, NULL, $6, $7)
+        ON CONFLICT (groupid, position) DO UPDATE SET
+          filename = EXCLUDED.filename, view = NULL, alt = EXCLUDED.alt, width = EXCLUDED.width, height = EXCLUDED.height,
+          shopify_media_id = NULL, source_name = EXCLUDED.source_name, created_at = now(), created_by = EXCLUDED.created_by
+      `, [groupid, newName, imageAlt(title), dims.width, dims.height, req.file.originalname || null, req.user.display_name]);
+    });
+
+    // Best-effort: remove the previous file if the name changed and no other product (a width twin) still uses it.
+    if (oldName && oldName !== newName) {
+      try { if (!(await fileInUseElsewhere({ query }, oldName, groupid))) await deleteImage(oldName); }
+      catch (delErr) { logger.error(`[product-image] could not delete old image ${oldName}:`, delErr.message); }
+    }
+
+    // If the product is live on Shopify, re-push so the new image reaches the store (best-effort — never fails the upload). The old
+    // main's media is dropped; the rest of the gallery is untouched.
+    const oldMediaId = prod.rows[0].old_media_id;
+    const shopifyResult = await shopify.pushIfLive(groupid, { dropMediaIds: oldMediaId ? [oldMediaId] : [] });
+
+    return res.json({ return_code: 'SUCCESS', groupid, imagename: newName, url: PUBLIC_BASE + newName, shopify: shopifyResult });
+  } catch (err) {
+    logger.error('[product-image] error:', err.message);
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to process image' });
+  }
 });
 
 module.exports = router;

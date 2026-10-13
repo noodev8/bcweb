@@ -27,42 +27,47 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
   `next.config.js minimumCacheTTL`). New screens must use `<Image>` with a small `sizes`, never a plain `<img>` of the original.
 - Storage on one.com (existing SFTP, `utils/sftp.js`). ~250–400 KB/image → ~700 MB for the catalogue, ~+400 MB/yr. Shopify copies
   images to its own CDN, so the storefront never loads from one.com.
-- **Existing 800 mains are NOT enlarged.** During this exercise each product gets a NEW 2048 main sourced alongside its gallery.
-- **"Done" for a product = main ≥ 1500 px AND ≥ 4 images** (main + 3). Below that it's on the Missing Images list.
+- **Existing 800 mains are NOT enlarged and NOT required to be replaced.** They stay live on Shopify/Google; a main is replaced at
+  2048 only when someone sources new pictures for that product anyway.
+- **"Done" for a product = ≥ 2 images** (owner: start with the single-image products; raise to 4 later). Main size is NOT part of
+  it — "low-res main" (< 1500 px) is an optional filter on the screen only.
 - **SEO naming:** `<existing SEO base from utils/imageName.js>-<view>.jpg`, e.g. `birkenstock-arizona-birko-flor-black-0151181-sole.jpg`;
   alt text "<title> – sole view". The view word is taken from the source filename ONLY if it's on a whitelist (side, sole, top, front,
   back, heel, inside, detail, pair, look, worn, campaign); otherwise a position number (`-2`, `-3`). Keeps Birkenstock's useful view
   words, drops garbage (`Screenshot_2025-…`, uuids). View word stored in its own column.
 - **No Birkenstock portal login** → no bulk fetch; staff source images manually, tracked on the Missing Images screen.
 
-## Step 1 — table, shared processing, import
+## Status 2026-10-13 — steps 1–3 BUILT, committed, NOT yet deployed
 
-1. Migration: `product_images`
-   - `groupid`, `position` (1 = main), `filename` (on one.com), `view` (whitelisted word or NULL), `alt`, `width`, `height`,
-     `shopify_media_id` (NULL until pushed — lets a push send `{id}` instead of re-downloading/duplicating), `created_at`, `created_by`.
-   - Main image: keep `skusummary.imagename` in step (Google feed, Inventory, every screen reads it). Writers update both — no triggers.
-2. `utils/productImage.js` (name TBD): sharp → 2048 contain/white/flatten, `withoutEnlargement`, JPEG q80; returns buffer + dims;
-   SEO filename + view whitelist. `routes/product-image.js` switches to it (new + existing products → 2048).
-3. One-off import script (`scripts/import-shopify-galleries.js`): for every Shopify product, read media in order; for each image not
-   already held: download (Shopify keeps originals at upload size), process (cap 2048), SFTP to one.com, insert row with
-   `shopify_media_id`. Also measure current one.com mains for `width/height`. **Dry run first (read-only, prints what it would do),
-   then a real run on the owner's OK.**
-   - Must run BEFORE any push switches to "send our DB gallery", or pushes would wipe galleries again.
-   - Staff uploads made in Shopify before the import get picked up by it.
+- **Migration applied** (owner) and the follow-up applied by Claude: `UNIQUE(filename)` and `UNIQUE(shopify_media_id)` DROPPED — width
+  twins share one main file (10 pairs) and Shopify media can be shared across products (M620A/XM620A). Every one.com delete now checks
+  `fileInUseElsewhere` first (utils/productGallery.js), which also fixes the old "replace main deletes the twin's picture" bug.
+- **Import run** (`--apply`): 294 mains + 279 gallery images in `product_images`, linked to their Shopify media ids. Re-runnable — it
+  adopts anything added in the Shopify UI since.
+- **Deploy the server, then the web** (Vercel). Until the server deploys, the live site still runs the 2026-10-13 "keep Shopify's media"
+  push and uploads at 800.
+- Tested on M113BT (R21, unsold since 2025-11): add (3 images, new media id recorded), reorder, price apply 50.00 → 49.99 → 50.00
+  (gallery ids unchanged; both test log rows deleted), main replace (old main dropped from Shopify, extras kept), delete. Product left as
+  it was except the main now has a new filename (same picture).
 
-## Step 2 — Missing Images screen (Back Office)
+## What was built
 
-- One row per active product: thumbnail, title, image count, main size, flags (`low-res main`, `< 4 images`, `added in Shopify`).
-- Filters: in stock, brand, status (Winners first). Default sort: Winners → stock → worst first.
-- Progress: remaining count + done today (rows whose `created_at` is today and that now meet "done").
-- Reads our table only (no live Shopify calls). Uses next/image with small `sizes`.
-- Until the Images panel exists, staff upload in the Shopify UI; re-run the import to pull new images in.
+1. `product_images` (position 1 = main, mirrored in `skusummary.imagename`; writers: product-image, product-copy; product-delete removes
+   rows + files). `utils/productImage.js` = processing (2048, never enlarged, JPEG q80, mozjpeg), view whitelist, `isDone` (>= 2 images),
+   `isLowResMain` (< 1500). `utils/imageUpload.js` = shared multer, **25MB**. `scripts/import-shopify-galleries.js` = the seed (dry run default).
+2. **Missing Images** — Back Office tile → `/images-missing` (`routes/images-missing.js`). Hero = in-stock single-image count; filters
+   Single image | All, In stock | Any stock, Low-res main, status, brand, search; Winners → Steady → New → Losers, then stock. "Added in
+   Shopify" appears when Shopify's media count > ours (fix: re-run the import). Rows open Add / Modify with a Back link.
+3. **Images strip on Add / Modify** (`components/ProductGallery.tsx`, under the Group ID): add up to 10 at once, move left/right, delete
+   (two-click). Routes `product-images`, `-add`, `-delete`, `-move`. The main stays with Replace image.
+   **Push** (`utils/shopify.js buildFiles`): our rows → `{id}` when the media is still live, else `originalSource` (one.com URL — BCWEB wins);
+   live Shopify media we don't hold → kept at the end, except `dropMediaIds` (what BCWEB just removed/replaced). New media ids are recorded
+   from the productSet response (same order as `files`). No rows yet → keep Shopify's media as is.
 
-## Later (not started)
+## Not done
 
-3. Images panel on the product screen (multi upload, reorder, set main, delete) + switch push to send the DB gallery
-   (`{id}` for known media, `originalSource` for new, unknown Shopify media kept at the end).
 4. Google feed: `additional_image_link` (up to 10) in `C:\scripts\merchant-feed\merchant_feed.py`.
+- Raise "done" from 2 to 4 images later: `MIN_IMAGES` in `utils/productImage.js`.
 
 ## Useful
 

@@ -119,7 +119,7 @@ async function shopifyGraphQL(queryStr, variables = {}) {
  *   - one Option: "Size"; its values are the size-display strings in saved order.
  *   - one variant per size: SKU = code (on inventoryItem), price = the product price, compareAtPrice = rrp (only if > price),
  *     barcode = the (already 'B'-stripped) barcode, inventory policy DENY, taxable false, requires shipping, weight 0 kg, tracked.
- *   - images: main image from imagename on a create; on an edit the existing Shopify gallery is preserved (see the images note below).
+ *   - images: our product_images gallery, keeping live Shopify media we don't hold (see buildFiles).
  *
  * NEW vs EDIT — the ONE real difference (owner's legacy "Full" vs "Standard" CSV):
  *   - NEW (isNew): include descriptionHtml — see buildSeedDescription (delivery promise, Birkenstock collection link, then the legacy
@@ -149,7 +149,7 @@ function buildSeedDescription(product) {
   return parts.join('\n');
 }
 
-function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null, existingMedia = null, replaceMainImage = false } = {}) {
+function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null, gallery = [], liveMedia = null, dropMediaIds = [] } = {}) {
   const priceStr = Number(product.price).toFixed(2);
   const hasRrp = product.rrp !== null && product.rrp !== undefined && Number(product.rrp) > Number(product.price);
   const compareAt = hasRrp ? Number(product.rrp).toFixed(2) : null;
@@ -192,30 +192,48 @@ function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true,
   // NEW only: seed the placeholder description. On EDIT we deliberately send nothing here so the owner's real Shopify description stays.
   if (isNew) input.descriptionHtml = buildSeedDescription(product);
 
-  /*
-   * Images. productSet treats `files` as the product's WHOLE gallery: whatever is not in the list is deleted from Shopify. Until
-   * 2026-10-13 we always sent just the one DB main image, so every price apply (pushIfLive) silently wiped the extra images added in the
-   * Shopify UI — 171 of 196 repriced in-stock products were down to one image before it was caught. Our DB only knows the main image
-   * (skusummary.imagename); the gallery lives on Shopify, so on an EDIT we send the product's existing media back BY ID (keeps them,
-   * in order) rather than relying on how an omitted `files` is read:
-   *   - NEW: the main image only (nothing else exists yet).
-   *   - EDIT, normal save: existingMedia unchanged. A product with no media at all gets the main image (fills the gap).
-   *   - EDIT, replaceMainImage (product-image upload): the new main image first, then the existing gallery minus the old main (slot 0).
-   *   - existingMedia === null means the gallery couldn't be represented safely (see readProductMedia) -> send no `files` at all.
-   */
+  const files = buildFiles({ isNew, product, gallery, liveMedia, dropMediaIds });
+  if (files) input.files = files;
+
+  return input;
+}
+
+/*
+ * buildFiles({ isNew, product, gallery, liveMedia, dropMediaIds }) -> the productSet `files` list, or undefined to leave images alone.
+ *
+ * productSet treats `files` as the product's WHOLE gallery: whatever is not in the list is deleted from Shopify. Until 2026-10-13 we sent
+ * just the DB main image, so every price apply silently wiped the extra images added in the Shopify UI (171 of 196 repriced in-stock
+ * products were down to one image). Since then OUR table product_images holds the gallery (docs/product-images-plan.md) and is what we send:
+ *   - gallery row already on Shopify (shopify_media_id still live)  -> { id }  (kept as is — no re-download, no duplicate)
+ *   - gallery row not on Shopify yet / its media was removed there   -> { originalSource: our one.com URL }  (BCWEB wins: it comes back)
+ *   - live Shopify media we DON'T hold (added in the Shopify UI)      -> { id } at the END — never deleted by a push (owner's safety net).
+ *     Except dropMediaIds: media BCWEB itself just removed or replaced, which must go.
+ * Fallbacks: liveMedia === null (gallery can't be passed back whole, see readProductMedia) -> undefined (touch nothing). No gallery rows
+ * (product not seeded yet) -> keep Shopify's media as they are, or the main image if it has none. NEW product -> our rows, else the main.
+ * PURE — the caller records the media ids Shopify hands back (upsertProduct), so the next push can send { id }.
+ */
+function buildFiles({ isNew, product, gallery, liveMedia, dropMediaIds }) {
+  const ours = (r) => ({ originalSource: `${IMAGE_BASE}/${r.filename}`, contentType: 'IMAGE', alt: r.alt || product.title || '' });
   const mainFile = product.imagename
     ? { originalSource: `${IMAGE_BASE}/${product.imagename}`, contentType: 'IMAGE', alt: product.title || '' }
     : null;
+
   if (isNew) {
-    if (mainFile) input.files = [mainFile];
-  } else if (existingMedia) {
-    const kept = existingMedia.map((id) => ({ id }));
-    if (replaceMainImage && mainFile) input.files = [mainFile, ...kept.slice(1)];
-    else if (kept.length) input.files = kept;
-    else if (mainFile) input.files = [mainFile];
+    if (gallery.length) return gallery.map(ours);
+    return mainFile ? [mainFile] : undefined;
+  }
+  if (liveMedia === null) return undefined;
+  if (!gallery.length) {
+    if (liveMedia.length) return liveMedia.map((id) => ({ id }));
+    return mainFile ? [mainFile] : undefined;
   }
 
-  return input;
+  const live = new Set(liveMedia);
+  const held = new Set(gallery.map((r) => r.shopify_media_id).filter(Boolean));
+  const drop = new Set(dropMediaIds || []);
+  const fromGallery = gallery.map((r) => (r.shopify_media_id && live.has(r.shopify_media_id) ? { id: r.shopify_media_id } : ours(r)));
+  const unknown = liveMedia.filter((id) => !held.has(id) && !drop.has(id)).map((id) => ({ id }));
+  return [...fromGallery, ...unknown];
 }
 
 const PRODUCT_BY_HANDLE_QUERY = `
@@ -270,6 +288,7 @@ const PRODUCT_SET_MUTATION = `
         id
         handle
         variants(first: 250) { nodes { id sku } }
+        media(first: 250) { nodes { id } }
       }
       userErrors { field message code }
     }
@@ -355,7 +374,7 @@ async function publishToAllChannels(productId) {
  * NOTE: DB and Shopify cannot share one transaction (different systems). The DB is already the source of truth by the time this runs;
  * this pushes that truth outward. If the push fails the DB is untouched and the caller can safely retry (productSet is idempotent).
  */
-async function upsertProduct(groupid, { status = 'ACTIVE', replaceMainImage = false } = {}) {
+async function upsertProduct(groupid, { status = 'ACTIVE', dropMediaIds = [] } = {}) {
   requireConfig(); // fail fast with SHOPIFY_NOT_CONFIGURED before doing DB work
 
   // Header — same tables/derivations as product-get. safeNumeric guards the legacy VARCHAR price columns (NULL on junk).
@@ -419,10 +438,14 @@ async function upsertProduct(groupid, { status = 'ACTIVE', replaceMainImage = fa
   const existingId = await findProductIdByHandle(product.handle);
   const isNew = !existingId;
 
-  // EDIT: read the live gallery so the push keeps it (see the images note in buildProductSetInput).
-  const existingMedia = isNew ? null : await readProductMedia(existingId);
+  // Images: our gallery (product_images, main first) + on an edit the live Shopify media, so the push keeps what we don't hold (buildFiles).
+  const galleryRes = await query(`
+    SELECT id, position, filename, alt, shopify_media_id FROM product_images WHERE groupid = $1 ORDER BY position
+  `, [groupid]);
+  const gallery = galleryRes.rows;
+  const liveMedia = isNew ? [] : await readProductMedia(existingId);
 
-  const input = buildProductSetInput(product, sizes, { status, isNew, productId: existingId, existingMedia, replaceMainImage });
+  const input = buildProductSetInput(product, sizes, { status, isNew, productId: existingId, gallery, liveMedia, dropMediaIds });
   const data = await shopifyGraphQL(PRODUCT_SET_MUTATION, { input });
 
   const result = data.productSet;
@@ -433,6 +456,20 @@ async function upsertProduct(groupid, { status = 'ACTIVE', replaceMainImage = fa
 
   const shopProduct = result.product;
   const returnedVariants = (shopProduct.variants && shopProduct.variants.nodes) || [];
+
+  // Record the media id Shopify gave each gallery row, so the next push sends { id } instead of re-uploading (which would duplicate).
+  // Shopify returns media in `files` order and our rows lead that list. Only when the gallery was actually sent.
+  const returnedMedia = (shopProduct.media && shopProduct.media.nodes) || [];
+  if (input.files && gallery.length && returnedMedia.length >= gallery.length) {
+    for (let i = 0; i < gallery.length; i++) {
+      if (gallery[i].shopify_media_id === returnedMedia[i].id) continue;
+      try {
+        await query(`UPDATE product_images SET shopify_media_id = $2 WHERE id = $1`, [gallery[i].id, returnedMedia[i].id]);
+      } catch (err) {
+        logger.error(`[shopify] failed to record media id for image ${gallery[i].id}: ${err.message}`);
+      }
+    }
+  }
 
   // Cache variant ids back into skumap.variantlink ('<numericId>V'), matched by SKU = code. Best-effort: a failure here does not
   // undo a successful Shopify push (the product is live; the cache just repopulates on the next lookup).
@@ -508,12 +545,12 @@ async function deleteByHandle(handle) {
  *    { pushed: false, error, message }              -> live but the push failed (caller surfaces it; the DB save still stands)
  * Call it AFTER the DB write has committed.
  */
-async function pushIfLive(groupid, { status = 'ACTIVE', replaceMainImage = false } = {}) {
+async function pushIfLive(groupid, { status = 'ACTIVE', dropMediaIds = [] } = {}) {
   if (!isConfigured()) return null;
   const r = await query(`SELECT shopify FROM skusummary WHERE groupid = $1`, [groupid]);
   if (!r.rows.length || r.rows[0].shopify !== 1) return null;
   try {
-    const res = await upsertProduct(groupid, { status, replaceMainImage });
+    const res = await upsertProduct(groupid, { status, dropMediaIds });
     return { pushed: true, isNew: res.isNew, variantCount: res.variantCount, published: res.published };
   } catch (err) {
     logger.error(`[shopify] pushIfLive failed for ${groupid}: ${err.code || ''} ${err.message}`);
@@ -521,4 +558,4 @@ async function pushIfLive(groupid, { status = 'ACTIVE', replaceMainImage = false
   }
 }
 
-module.exports = { isConfigured, buildProductSetInput, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive };
+module.exports = { isConfigured, buildProductSetInput, buildFiles, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive };

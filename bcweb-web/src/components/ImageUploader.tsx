@@ -4,8 +4,9 @@
 Component: ImageUploader
 =======================================================================================================================================
 Purpose: The main product image: shows the current image (from images.brookfieldcomfort.com) and lets the user replace it with a
-         file-picker. Picking a file uploads it straight away (POST /product-image) — the server converts it to a clean 800x800 JPEG,
-         SFTPs it to the image host, and returns the new filename, which we hand back to the page via onUploaded.
+         file-picker. Picking a file uploads it straight away (POST /product-image) — the server converts it to a square JPEG (2048 max,
+         never enlarged), SFTPs it to the image host, and returns the new filename, which we hand back to the page via onUploaded.
+         Extra images live in ProductGallery.
 
          No in-browser editing/cropping — just select a file. After an upload we bump a cache-buster on the <img> src so a
          same-named (overwritten) image refreshes instead of showing the stale cached one.

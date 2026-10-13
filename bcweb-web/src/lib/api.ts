@@ -764,8 +764,12 @@ export function updateProduct(groupid: string, fields: ProductEditFields) {
   );
 }
 
-// Upload/replace a product's main image (multipart). The server converts it to 800x800 JPEG, SFTPs it to the image host, and updates
-// skusummary.imagename — returning the new filename + public URL. `title` (the on-screen title) seeds the SEO filename server-side.
+// Image uploads carry up to 25MB per file, then process + SFTP + a Shopify push server-side — far past the shared 15s timeout.
+const IMAGE_UPLOAD_TIMEOUT = 120000;
+
+// Upload/replace a product's main image (multipart). The server converts it to a square JPEG (2048 max, never enlarged), SFTPs it to
+// the image host, and updates skusummary.imagename + the main product_images row — returning the new filename + public URL. `title`
+// (the on-screen title) seeds the SEO filename server-side.
 // NOTE: Content-Type is set to multipart/form-data so axios keeps the FormData intact (the shared instance defaults to JSON) and adds
 // the multipart boundary itself.
 export interface ProductImageData { groupid: string; imagename: string; url: string; shopify?: ShopifyPushResult; }
@@ -775,8 +779,70 @@ export function uploadProductImage(groupid: string, file: File, title?: string) 
   form.append('groupid', groupid);
   if (title) form.append('title', title);
   return request<ProductImageData>(
-    { url: '/product-image', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' } },
+    { url: '/product-image', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: IMAGE_UPLOAD_TIMEOUT },
     (b) => ({ groupid: b.groupid, imagename: b.imagename, url: b.url, shopify: b.shopify })
+  );
+}
+
+// --- Product gallery (product_images — docs/product-images-plan.md). Position 1 = the main image (changed only via uploadProductImage);
+// 2.. = extra images, added / deleted / moved here. Every write returns the whole gallery and re-pushes to Shopify when the product is live.
+export interface GalleryImage {
+  id: number;
+  position: number;            // 1 = main
+  filename: string;            // served at https://images.brookfieldcomfort.com/<filename>
+  view: string | null;         // whitelisted view word from the source filename ('sole', 'side', …)
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  on_shopify: boolean;         // linked to a Shopify media item
+}
+export interface GalleryResult { groupid: string; images: GalleryImage[]; shopify?: ShopifyPushResult | null; }
+export interface GalleryAddResult extends GalleryResult { added: number; failed: { name: string; message: string }[]; }
+
+export function getProductImages(groupid: string) {
+  return request<GalleryResult>(
+    { url: '/product-images', method: 'GET', params: { groupid } },
+    (b) => ({ groupid: b.groupid, images: b.images || [] })
+  );
+}
+export function addProductImages(groupid: string, files: File[], title?: string) {
+  const form = new FormData();
+  files.forEach((f) => form.append('images', f));
+  form.append('groupid', groupid);
+  if (title) form.append('title', title);
+  return request<GalleryAddResult>(
+    { url: '/product-images-add', method: 'POST', data: form, headers: { 'Content-Type': 'multipart/form-data' }, timeout: IMAGE_UPLOAD_TIMEOUT },
+    (b) => ({ groupid: b.groupid, images: b.images || [], shopify: b.shopify, added: b.added || 0, failed: b.failed || [] })
+  );
+}
+export function deleteProductImage(groupid: string, id: number) {
+  return request<GalleryResult>(
+    { url: '/product-images-delete', method: 'POST', data: { groupid, id }, timeout: IMAGE_UPLOAD_TIMEOUT },
+    (b) => ({ groupid: b.groupid, images: b.images || [], shopify: b.shopify })
+  );
+}
+export function moveProductImage(groupid: string, id: number, direction: 'left' | 'right') {
+  return request<GalleryResult>(
+    { url: '/product-images-move', method: 'POST', data: { groupid, id, direction }, timeout: IMAGE_UPLOAD_TIMEOUT },
+    (b) => ({ groupid: b.groupid, images: b.images || [], shopify: b.shopify })
+  );
+}
+
+// Missing Images screen (Back Office): every Shopify-live product with how many images we hold. done = image_count >= min_images;
+// low_res_main is an optional filter only. shopify_count > image_count = images added in the Shopify UI we don't hold.
+export interface MissingImageRow {
+  groupid: string; title: string | null; brand: string | null; imagename: string | null; status: string | null; stock: number;
+  image_count: number; main_side: number | null; low_res_main: boolean; done: boolean; added_today: boolean; shopify_count: number | null;
+}
+export interface MissingImagesData {
+  min_images: number; min_main_side: number;
+  summary: { products: number; single: number; single_in_stock: number; done_today: number; added_in_shopify: number; shopify_ok: boolean };
+  rows: MissingImageRow[];
+}
+export function getImagesMissing() {
+  return request<MissingImagesData>(
+    { url: '/images-missing', method: 'GET', timeout: 30000 },
+    (b) => ({ min_images: b.min_images, min_main_side: b.min_main_side, summary: b.summary, rows: b.rows || [] })
   );
 }
 

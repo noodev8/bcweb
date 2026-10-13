@@ -61,6 +61,7 @@ const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { imageFilename } = require('../utils/imageName');
+const { measureImage, imageAlt } = require('../utils/productImage');
 const { getImage, putImage } = require('../utils/sftp');
 const logger = require('../utils/logger');
 const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
@@ -205,7 +206,16 @@ router.post('/', async (req, res) => {
         const version = Date.now().toString(36);
         const newName = imageFilename(cleanTitle, newGroupid, version);
         await putImage(newName, buf);
-        await query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [newGroupid, newName]);
+        // Only the MAIN image is cloned (a new colourway needs its own gallery). skusummary.imagename + the product_images main row move
+        // together, as in product-image.js.
+        const dims = await measureImage(buf);
+        await withTransaction(async (client) => {
+          await client.query(`UPDATE skusummary SET imagename = $2, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [newGroupid, newName]);
+          await client.query(`
+            INSERT INTO product_images (groupid, position, filename, alt, width, height, source_name, created_by)
+            VALUES ($1, 1, $2, $3, $4, $5, $6, $7)
+          `, [newGroupid, newName, imageAlt(cleanTitle), dims.width, dims.height, sourceImageName, req.user.display_name]);
+        });
         image = { copied: true, imagename: newName };
       } catch (imgErr) {
         // Non-fatal: the clone is already committed. Log and report copied:false so the UI can hint "add an image".

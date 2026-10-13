@@ -26,6 +26,7 @@ import AppShell from '@/components/AppShell';
 import SizeEditor from '@/components/SizeEditor';
 import PriceEditor from '@/components/PriceEditor';
 import ImageUploader from '@/components/ImageUploader';
+import ProductGallery from '@/components/ProductGallery';
 import ShopifyToggle from '@/components/ShopifyToggle';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 import AmazonExport from '@/components/AmazonExport';
@@ -680,6 +681,8 @@ function ProductsContent() {
                           {detail.imagename || 'No image set'}
                         </div>
                       )}
+                      {/* Extra images (gallery) — beside the main image they belong with; the main stays with ImageUploader. */}
+                      <ProductGallery key={`gal-${detail.groupid}`} groupid={detail.groupid} title={edit?.title ?? detail.title ?? ''} />
                     </div>
                     {/* Main image + upload/replace. Uses the on-screen title (edit form) to seed the SEO filename server-side. */}
                     <ImageUploader
