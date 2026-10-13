@@ -56,7 +56,7 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
    rows + files). `utils/productImage.js` = processing (2048, never enlarged, JPEG q80, mozjpeg), view whitelist, `isDone` (>= 2 images),
    `isLowResMain` (< 1500). `utils/imageUpload.js` = shared multer, **25MB**. `scripts/import-shopify-galleries.js` = the seed (dry run default).
 2. **Missing Images** — Back Office tile → `/images-missing` (`routes/images-missing.js`). Hero = in-stock single-image count; filters
-   Single image | All, In stock | Any stock, Low-res main, status, brand, search; Winners → Steady → New → Losers, then stock. "Added in
+   Single image | All, In stock | Any stock, Low-res main, status, brand, search; non-Birkenstock first, then Birkenstock (no conversion drop seen on Birk after the wipe); New → Winners → Steady → Losers, then stock; "done by" date at one a day. "Added in
    Shopify" appears when Shopify's media count > ours (fix: re-run the import). Rows open Add / Modify with a Back link.
 3. **Images strip on Add / Modify** (`components/ProductGallery.tsx`, under the Group ID): add up to 10 at once, move left/right, delete
    (two-click). Routes `product-images`, `-add`, `-delete`, `-move`. The main stays with Replace image.

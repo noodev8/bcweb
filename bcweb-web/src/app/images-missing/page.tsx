@@ -11,7 +11,15 @@ Purpose: The work list for re-imaging the store (docs/product-images-plan.md). F
          part of it — "Low-res main" (< 1500 px) is an optional filter, for when someone is sourcing pictures for a product anyway.
          The hero number is the in-stock single-image count — the one figure that should go down (in-stock first: those can sell today).
 
-         Default order: Winners → Steady → New → Losers, then most stock — the styles that earn most get fixed first (owner priority).
+         Default order (owner, 2026-10-13): everything NOT Birkenstock first, then Birkenstock; within each, New → Winners → Steady →
+         Losers, then most stock. Why: the wipe weeks showed no conversion drop on Birkenstock (159 styles, mostly price RISES at the
+         time, which should have hurt) — buyers already know what an Arizona looks like and the main image never went. Unfamiliar
+         brands and trial products have no picture in the buyer's head, so the gallery is the pitch; too few sales to measure, so they
+         go first on judgement. Birkenstock is still on the list, just later.
+
+         Under the hero: the date the in-stock list would be clear at ONE A DAY (calendar days, from today). A target, not a quota —
+         doing more just brings it forward, and it moves on its own as the count drops.
+
          Row → the product on Add / Modify, with a Back link here. The whole list (~300) comes back once and filters run client-side.
 =======================================================================================================================================
 */
@@ -24,8 +32,16 @@ import { useApiQuery } from '@/lib/useApiQuery';
 import { getImagesMissing, MissingImageRow } from '@/lib/api';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
-const STATUS_ORDER: Record<string, number> = { WINNERS: 0, STEADY: 1, NEW: 2, LOSERS: 3 };
+const STATUS_ORDER: Record<string, number> = { NEW: 0, WINNERS: 1, STEADY: 2, LOSERS: 3 };
 const STATUS_LABEL: Record<string, string> = { WINNERS: 'Winner', STEADY: 'Steady', NEW: 'New', LOSERS: 'Loser' };
+const LATER_BRAND = 'Birkenstock';   // familiar to buyers — after every other brand (see header)
+
+// Today + n days, e.g. "4 Apr 2027".
+function dateInDays(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 type Show = 'single' | 'all';
 type Stock = 'in' | 'all';
@@ -81,7 +97,9 @@ export default function ImagesMissingPage() {
       .filter((r) => (inShopify ? addedInShopify(r) : true))
       .filter((r) => !t || r.groupid.toLowerCase().includes(t) || (r.title || '').toLowerCase().includes(t))
       .sort((a, b) =>
-        (STATUS_ORDER[a.status || ''] ?? 9) - (STATUS_ORDER[b.status || ''] ?? 9) || b.stock - a.stock || a.groupid.localeCompare(b.groupid));
+        Number(a.brand === LATER_BRAND) - Number(b.brand === LATER_BRAND)
+        || (STATUS_ORDER[a.status || ''] ?? 9) - (STATUS_ORDER[b.status || ''] ?? 9)
+        || b.stock - a.stock || a.groupid.localeCompare(b.groupid));
   }, [rows, show, stock, status, brand, lowRes, inShopify, term]);
 
   const s = data?.summary;
@@ -98,6 +116,9 @@ export default function ImagesMissingPage() {
             <div>
               <div className="text-4xl font-semibold tabular-nums text-slate-900">{s.single_in_stock}</div>
               <div className="text-sm text-slate-500">in stock with a single image</div>
+              {s.single_in_stock > 0 && (
+                <div className="text-xs text-slate-400">At one a day: done by {dateInDays(s.single_in_stock)}</div>
+              )}
             </div>
             <div className="pb-1 text-sm text-slate-500">
               {s.single} single-image of {s.products} on Shopify
