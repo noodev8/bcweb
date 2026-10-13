@@ -205,6 +205,19 @@ export default function CustomerOrderList() {
   const fbaCount = useMemo(() => lines.reduce((n, l) => n + (isFba(l.state) ? 1 : 0), 0), [lines]);
   const waitingCount = useMemo(() => lines.reduce((n, l) => n + (isWaiting(l.state) ? 1 : 0), 0), [lines]);
 
+  // The headline, in ORDERS — one order is one box and one label, which is how the bench counts what's left. An order is in today's
+  // job if any line is ours to pack or already packed (FBA and Waiting lines are out, as in the line counts above); it's left to do
+  // while any of its lines is outstanding.
+  const job = useMemo(() => {
+    let left = 0, done = 0;
+    for (const o of orders.values()) {
+      const out = o.lines.some((l) => isOutstanding(l.state));
+      const packed = o.lines.some((l) => l.state === 'packed' && l.fba === 0);
+      if (out) left += 1; else if (packed) done += 1;
+    }
+    return { left, done, total: left + done };
+  }, [orders]);
+
   // Search spans everything you'd have in your hand when looking an order up: the order number off a picking note, the customer's
   // name off an email, a postcode off a label, or the SKU. Case-insensitive substring, no term parsing — this is a find box, not a
   // query language (contrast the Inventory/Sales modules, where stepwise Contains filters earn their complexity).
@@ -456,6 +469,12 @@ export default function CustomerOrderList() {
           it rather than showing through at the edges. -top-px kills the hairline gap some browsers leave at fractional scroll
           offsets. z-30 keeps it above the table's own sticky heading row (z-10). */}
       <div ref={controlsRef} className="sticky -top-px z-30 -mx-4 border-b border-slate-200 bg-white px-4 pb-3 pt-1">
+      {/* --- what's left: the headline -----------------------------------------------------------------------------------------
+          First and biggest in the pinned block, so "how much is left" is answered from across the room. Over OUR work only — FBA and
+          Waiting are out, so it can say "All packed" on a day with an MCF order to place or a customer on backorder; the chips
+          below are what say otherwise. */}
+      <PackSummary left={job.left} done={job.done} total={job.total} />
+
       {/* --- filter chips + find box ------------------------------------------------------------------------------------------ */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* TWO CHIPS. Pending is always rendered, even at zero — a day finished is worth seeing as "Pending 0", and a chip that
@@ -492,14 +511,6 @@ export default function CustomerOrderList() {
             tone="amber"
           />
         )}
-
-        {/* Progress is over OUR work only — FBA and Waiting lines are out of both halves, so the bar can reach "All packed" on a day
-            that has an MCF order still to place or a customer sitting on backorder. That is deliberate: the chips beside it are what
-            say otherwise. */}
-        <PackProgress
-          packed={lines.length - outstanding - fbaCount - waitingCount}
-          total={lines.length - fbaCount - waitingCount}
-        />
 
         {/* --- refresh ---------------------------------------------------------------------------------------------------------
             NOT "Update orders". This re-reads OUR database and nothing else: one query, no Shopify call, no writes. It's here so
@@ -667,7 +678,12 @@ export default function CustomerOrderList() {
                     // the whole row — the 1px stripe alone is easy to skim past when you're scanning for what's left to do, and
                     // this is the state you most need to not pick up by mistake. Selection still wins, so the row you clicked is
                     // never ambiguous.
-                    (isSelected ? 'bg-brand-50' : isWaiting(l.state) ? 'bg-amber-50/70 hover:bg-amber-100/70' : 'hover:bg-slate-50')
+                    // Packed gets the same treatment in green (owner, 2026-10-13): done rows read as done across the whole width, so
+                    // what's left to pack is the white that remains.
+                    (isSelected ? 'bg-brand-50'
+                      : isWaiting(l.state) ? 'bg-amber-50/70 hover:bg-amber-100/70'
+                      : l.state === 'packed' ? 'bg-emerald-50 hover:bg-emerald-100/70'
+                      : 'hover:bg-slate-50')
                   }
                 >
                   {/* The stripe is the whole point of the screen: state read by colour, at a glance, without reading a word. */}
@@ -752,47 +768,58 @@ export default function CustomerOrderList() {
 // ---------------------------------------------------------------------------------------------------------------------------------
 
 /*
- * PackProgress — how much of today's list is boxed, as a bar.
+ * PackSummary — what's left to pack today, as the headline of the screen.
  *
- * Pure decoration in the sense that it adds no information: `All` and `Pending` already carry both numbers. It earns its place by
- * making them a SHAPE. "Pending 9" is a number you have to think about; a bar two-thirds full is a glance, and on a screen worked
- * all day in short visits, the glance is what you actually want.
+ * Big number first: ORDERS LEFT (one order = one box = one label), because the packer asks "how many more boxes" and the number has
+ * to be readable from the bench, not just from the chair. Then a thick bar and "x of y packed", which turns the same fact into a shape. At zero the whole strip goes green and says All packed — the end of the job is
+ * worth seeing, not just the absence of work.
  *
- * Kept to the height of the chips beside it and given a fixed-ish width so the row it sits in doesn't reflow every time the count
- * changes — this block is pinned to the top of the viewport, and anything that resizes in place makes the whole grid twitch.
- *
- * The fill animates its width rather than snapping, which is the entire "nice" of it: press Refresh after packing a couple and the
- * bar visibly moves. `transition-[width]` and not `transition-all`, so only the geometry animates and the colour swap at 100% lands
- * at once instead of fading through a muddy in-between.
- *
- * Hidden entirely on an empty list: a 0-of-0 bar is a progress indicator for no work, which reads as broken rather than as done.
+ * Fixed height and tabular figures so the pinned block — and so the grid under it — never shifts as the numbers change. The fill
+ * animates its width (transition-[width], not -all, so the colour swap at 100% lands at once). Hidden on an empty list: a 0-of-0
+ * bar reads as broken rather than done.
  */
-function PackProgress({ packed, total }: { packed: number; total: number }) {
+function PackSummary({ left, done, total }: { left: number; done: number; total: number }) {
   if (total === 0) return null;
 
-  const pct = Math.round((packed / total) * 100);
-  const done = packed === total;
+  const pct = Math.round((done / total) * 100);
+  const finished = left === 0;
 
   return (
     <div
-      className="ml-1 flex min-w-[150px] max-w-[240px] flex-1 items-center gap-2"
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={packed}
-      aria-label={`${packed} of ${total} packed`}
+      className={'mb-3 flex h-16 items-center gap-5 rounded-lg border px-4 transition-colors ' +
+        (finished ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50')}
     >
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
-        <div
-          className={'h-full rounded-full transition-[width] duration-700 ease-out ' +
-            (done ? 'bg-emerald-500' : 'bg-emerald-400')}
-          style={{ width: `${pct}%` }}
-        />
+      <div className="flex shrink-0 items-baseline gap-2">
+        {finished ? (
+          <span className="flex items-center gap-2 text-2xl font-bold text-emerald-700">
+            <CheckCircleIcon className="h-7 w-7" />All packed
+          </span>
+        ) : (
+          <>
+            <span className="text-4xl font-bold tabular-nums leading-none text-slate-900">{left}</span>
+            <span className="text-sm font-semibold text-slate-700">order{left === 1 ? '' : 's'} left to pack</span>
+          </>
+        )}
       </div>
-      {/* tabular-nums so the label can't change width as the digits change and nudge the bar — same reason as the fixed track. */}
-      <span className={'shrink-0 text-xs font-medium tabular-nums ' + (done ? 'text-emerald-700' : 'text-slate-400')}>
-        {done ? 'All packed' : `${packed}/${total}`}
-      </span>
+
+      <div
+        className="flex min-w-0 flex-1 items-center gap-3"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+        aria-label={`${done} of ${total} orders packed`}
+      >
+        <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className={'h-full rounded-full transition-[width] duration-700 ease-out ' + (finished ? 'bg-emerald-500' : 'bg-emerald-400')}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className={'shrink-0 text-sm font-semibold tabular-nums ' + (finished ? 'text-emerald-700' : 'text-slate-600')}>
+          {done} of {total} packed
+        </span>
+      </div>
     </div>
   );
 }
