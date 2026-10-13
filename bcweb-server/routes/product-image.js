@@ -141,7 +141,8 @@ router.post('/', verifyToken, (req, res) => {
       }
 
       // If the product is live on Shopify, re-push so the new image reaches the store (best-effort — never fails the upload).
-      const shopifyResult = await shopify.pushIfLive(groupid);
+      // replaceMainImage: the new image takes the main slot; the rest of the Shopify gallery is kept.
+      const shopifyResult = await shopify.pushIfLive(groupid, { replaceMainImage: true });
 
       return res.json({ return_code: 'SUCCESS', groupid, imagename: newName, url: PUBLIC_BASE + newName, shopify: shopifyResult });
     } catch (err) {
