@@ -616,6 +616,7 @@ export default function CustomerOrderList() {
         onDelete={async () => { if (active && await run(() => deleteCustomerOrder(active.ordernum))) setSelected(null); }}
         progress={active ? scanState.progress.get(active.ordernum) ?? null : null}
         label={active ? labels.get(active.ordernum) ?? null : null}
+        ticked={scanState.ticked}
         // Each label action hands focus back to the scan box: the next thing the packer does is scan the next shoe.
         onPrint={() => { if (active) printLabel(active.ordernum, { reprint: true }); }}
         onCancelLabel={async () => { if (active) { await cancelLabel(active.ordernum); scanRef.current?.focus(); } }}
@@ -883,7 +884,7 @@ function Chip({ label, count, active, onClick, tone = 'slate' }: {
  * early return.
  */
 function OrderActionBar({
-  order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete, progress, label, onPrint, onCancelLabel,
+  order, working, error, onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete, progress, label, ticked, onPrint, onCancelLabel,
 }: {
   order: { ordernum: string; state: CustomerOrderState; customer: string | null; postcode: string | null; courier: string | null; note: string;
            waiting: boolean; lines: CustomerOrderLine[] } | null;
@@ -897,6 +898,7 @@ function OrderActionBar({
   onFbaFile: () => void;
   onDelete: () => void;
   progress: { scanned: number; total: number; missing: string[] } | null;
+  ticked: Set<CustomerOrderLine>;
   label: LabelInfo | null;
   onPrint: () => void;
   onCancelLabel: () => void;
@@ -952,14 +954,11 @@ function OrderActionBar({
           {order ? (order.customer || '—') : 'Select an order below'}
         </span>
         <span className="text-sm text-slate-400">{order?.postcode || ''}</span>
-        {/* n of m, and WHICH shoe is still missing — the packer has the box open and needs the code to go and find, not a count. */}
+        {/* n of m. WHICH shoes are still missing is the chip row below. */}
         {showProgress && (
           <span className={'text-sm font-medium ' +
             (progress!.scanned >= progress!.total ? 'text-emerald-700' : 'text-brand-700')}>
             {progress!.scanned} of {progress!.total} scanned
-            {progress!.missing.length > 0 && (
-              <span className="font-normal text-slate-500"> · still need {progress!.missing.join(', ')}</span>
-            )}
           </span>
         )}
         <button
@@ -970,6 +969,15 @@ function OrderActionBar({
         >
           Close
         </button>
+      </div>
+
+      {/* --- the shoes in this order (owner, 2026-10-13) ----------------------------------------------------------------------
+          One chip per unit: the code to go and find, the name to check it against, and whether it's been scanned. Packed and FBA
+          units aren't going in this box, so they say so instead. Always rendered at a minimum height (empty when nothing is
+          selected) so selecting an order doesn't push the grid down. ONE SHOE PER ROW, full width (owner) — a list to tick down, not a
+          row of tags; a bigger order makes the bar taller, which only happens on a click or a scan. */}
+      <div className="mb-3 flex min-h-[2.25rem] flex-col gap-1.5">
+        {order?.lines.map((l, i) => <ShoeChip key={`${l.code}|${i}`} line={l} scanned={ticked.has(l)} />)}
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -1180,6 +1188,37 @@ function OrderActionBar({
         </p>
       )}
     </div>
+  );
+}
+
+/*
+ * ShoeChip — one unit of the selected order in the action bar: code (bold — it's what's on the box), name, and its scan state.
+ *   scanned     green with a tick
+ *   to scan     white with an empty ring — what's still to find
+ *   packed/FBA  done or Amazon's; not going in this box, labelled as such
+ */
+function ShoeChip({ line, scanned }: { line: CustomerOrderLine; scanned: boolean }) {
+  const open = scannable(line);
+  const tone = scanned ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+    : line.state === 'packed' ? 'border-emerald-200 bg-emerald-50/60 text-emerald-700'
+    : isFba(line.state) ? 'border-sky-200 bg-sky-50 text-sky-700'
+    : open ? 'border-slate-300 bg-white text-slate-700'
+    : 'border-slate-200 bg-slate-50 text-slate-500';
+  const status = scanned ? null
+    : line.state === 'packed' ? 'Packed'
+    : isFba(line.state) ? 'FBA'
+    : open ? null
+    : CUSTOMER_STATES[line.state].label;
+  return (
+    <span className={'flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-sm ' + tone}
+      title={`${line.code}${line.title ? ' — ' + line.title : ''}${scanned ? ' (scanned)' : open ? ' (to scan)' : ''}`}>
+      {scanned
+        ? <CheckCircleIcon className="h-5 w-5 shrink-0 text-emerald-600" aria-label="Scanned" />
+        : open && <span className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-300" aria-label="To scan" />}
+      <span className="font-semibold tabular-nums">{line.code}</span>
+      {line.title && <span className="truncate opacity-75">{line.title}</span>}
+      {status && <span className="shrink-0 font-medium">· {status}</span>}
+    </span>
   );
 }
 
