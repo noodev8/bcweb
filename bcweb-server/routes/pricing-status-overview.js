@@ -39,6 +39,11 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
          portfolio_revenue_12m (net of returns, all-channel — what the tier itself reads) over every tagged style. STYLES is how many
          winners over every tagged style — the "N% of styles earn N% of revenue" (80/20) line under the figures.
 
+         HELD STYLES (2026-10-13, owner: "I want them to line up ... glance at the screen and see it"). `held_styles` = winner styles
+         WITH STOCK, over `share_totals.held_styles` = every style with stock. That is the base Slow's styles sit on, so the
+         Stock now card can print Winners and Slow as shares of the same 258 styles / 2,917 pairs. `styles` (all tagged, out of stock
+         included) stays for the revenue line's context but is no longer printed as a %.
+
 Requires auth.
 =======================================================================================================================================
 Success Response:
@@ -52,9 +57,9 @@ Success Response:
   ],
   "winner_bars": [                    // one per dial mark, ascending; zeros included
     { "bar": 1500, "shopify": { "total": 50, "due": 24, "styles": 50 }, "amazon": { "total": 131, "due": 66, "styles": 23 },
-      "share": { "units": 1573, "revenue": 298738.30, "styles": 63 } }, ...  // all-channel: pairs held / 12m revenue / styles
+      "share": { "units": 1573, "revenue": 298738.30, "styles": 63, "held_styles": 58 } }, ...  // all-channel: pairs held / 12m revenue / styles / styles with stock
   ],
-  "share_totals": { "units": 2889, "revenue": 408264.12, "styles": 296 }  // denominators: all stock / tagged styles' revenue / tagged styles
+  "share_totals": { "units": 2889, "revenue": 408264.12, "styles": 296, "held_styles": 258 }  // denominators: all stock / tagged styles' revenue / tagged styles / styles with stock
 }
 =======================================================================================================================================
 Return Codes:
@@ -171,15 +176,18 @@ router.get('/', async (req, res) => {
           SELECT (SELECT COALESCE(SUM(qty), 0) FROM stock)::int AS units,
                  (SELECT COALESCE(SUM(portfolio_revenue_12m), 0) FROM skusummary
                   WHERE portfolio_status IS NOT NULL)::float8 AS revenue,
-                 (SELECT COUNT(*) FROM skusummary WHERE portfolio_status IS NOT NULL)::int AS styles
+                 (SELECT COUNT(*) FROM skusummary WHERE portfolio_status IS NOT NULL)::int AS styles,
+                 (SELECT COUNT(*) FROM stock)::int AS held_styles
         )
         SELECT b.bar::int AS bar,
                COALESCE(SUM(st.qty), 0)::int                    AS units,
                COALESCE(SUM(ss.portfolio_revenue_12m), 0)::float8 AS revenue,
                COUNT(ss.groupid)::int                            AS styles,
+               COUNT(st.groupid)::int                            AS held_styles,
                MAX(tot.units)   AS total_units,
                MAX(tot.revenue) AS total_revenue,
-               MAX(tot.styles)  AS total_styles
+               MAX(tot.styles)  AS total_styles,
+               MAX(tot.held_styles) AS total_held_styles
         FROM unnest($1::numeric[]) AS b(bar)
         CROSS JOIN tot
         LEFT JOIN skusummary ss ON ss.portfolio_status = 'WINNERS' AND ss.portfolio_revenue_12m > b.bar
@@ -199,13 +207,14 @@ router.get('/', async (req, res) => {
     };
     const shareAt = (bar) => {
       const x = share.rows.find((r) => r.bar === bar);
-      return { units: x ? x.units : 0, revenue: x ? Math.round(x.revenue * 100) / 100 : 0, styles: x ? x.styles : 0 };
+      return { units: x ? x.units : 0, revenue: x ? Math.round(x.revenue * 100) / 100 : 0, styles: x ? x.styles : 0, held_styles: x ? x.held_styles : 0 };
     };
     const winnerBars = WINNER_BAR_LADDER.map((bar) => ({
       bar, shopify: atBar(shpBars.rows, bar), amazon: atBar(amzBars.rows, bar), share: shareAt(bar),
     }));
     const t = share.rows[0];
-    const shareTotals = { units: t ? t.total_units : 0, revenue: t ? Math.round(t.total_revenue * 100) / 100 : 0, styles: t ? t.total_styles : 0 };
+    const shareTotals = { units: t ? t.total_units : 0, revenue: t ? Math.round(t.total_revenue * 100) / 100 : 0, styles: t ? t.total_styles : 0,
+                          held_styles: t ? t.total_held_styles : 0 };
     const updatedAt = shp.rows.map((x) => x.last_at).filter(Boolean).sort().pop() || null;
 
     return res.json({ return_code: 'SUCCESS', updated_at: updatedAt, statuses, winner_bars: winnerBars, share_totals: shareTotals });
