@@ -281,6 +281,10 @@ app.use('/order-status-customer-courier', require('./routes/order-status-custome
 app.use('/order-status-customer-fba', require('./routes/order-status-customer-fba'));         // re-route to FBA (ONE-WAY: no Reset)
 app.use('/order-status-customer-fba-file', require('./routes/order-status-customer-fba-file')); // Amazon MCF order file (read only)
 app.use('/order-status-customer-delete', require('./routes/order-status-customer-delete'));   // plain delete; Shopify re-feeds it
+// Scan to label (Royal Mail Click & Drop). No bcweb table: packed = batch '2', the label lives in Click & Drop (utils/clickDrop.js).
+app.use('/order-status-customer-scan', require('./routes/order-status-customer-scan'));       // barcode -> our code (read only)
+app.use('/order-status-customer-label', require('./routes/order-status-customer-label'));     // WRITES: first print (packs) / reprint
+app.use('/order-status-customer-label-cancel', require('./routes/order-status-customer-label-cancel')); // WRITES: void + un-pack
 
 // --- Pick module (the physical shelf: localstock rows someone has to walk to and take) ---
 // Ported from the legacy PowerBuilder Pick screen, which is STILL LIVE, as is the mobile app that does the actual picking — so these

@@ -40,14 +40,16 @@ TWO REFRESH-SHAPED THINGS, AND THEY ARE NOT THE SAME (see the Refresh button for
 free, read-only, press it all day. UPDATE ORDERS in the title row calls Shopify and writes. Only the second one can make a packed
 order leave the list, because that's the archive phase of the sync.
 
-SCAN TO LABEL (docs/clickdrop-labels-plan.md — UI ONLY SO FAR, 2026-10-12). A scan field sits beside the find box: a scanner types
-the code and presses Enter, focus stays, scan scan scan. A scan finds the OLDEST open order still needing that shoe, selects it, and
-ticks the unit off; a scan nothing is waiting for turns the field red and beeps, as on AMZ Shipment. When every unit of an order is
-scanned its label prints. The action bar then offers Reprint (a jam, a smudge) and Cancel label (printed by mistake — voids it so the
-order can be scanned again). NOTHING IS WIRED YET: scan progress and label state live in this component's memory and are lost on
-reload, and "print" only records that it happened. The plan's server half (order-status-customer-scan / -label, customer_shipment,
-the Click & Drop client) replaces the three stubs marked CLICK & DROP STUB below; the screen shouldn't need to change shape when it does.
-Scans match OUR code only for now — EAN resolution is the server's job (the AMZ Shipment lookup), so it arrives with the scan route.
+SCAN TO LABEL (docs/clickdrop-labels-plan.md, wired 2026-10-13). A scan field sits beside the find box: a scanner types the code or
+EAN and presses Enter, focus stays, scan scan scan. The server resolves it to our code (/order-status-customer-scan); the OLDEST open
+order still needing that shoe takes it, is selected, and the unit is ticked; a scan nothing is waiting for turns the field red and
+beeps, as on AMZ Shipment. When every unit of an order is scanned, /order-status-customer-label creates the Royal Mail shipment in
+Click & Drop, marks the order packed (batch '2') and returns the label PDF, which prints straight away (lib/printPdf.ts). If a shoe
+has no stored weight the server says WEIGHT_NEEDED and a kg box appears for the whole parcel. The action bar then offers Reprint
+(a jam, a smudge — the SAME Click & Drop label) and Cancel label (printed by mistake — voids it in Click & Drop and un-packs the order).
+NO bcweb TABLE (owner, 2026-10-13): scan progress lives here, in this component, while the box is being filled — a reload starts the
+order's scans again — and the label route checks the scanned codes cover the order before it buys postage. "Printed 10:42 /
+reprinted 2×" is this session's memory only; after a reload a labelled order simply reads Packed.
 
 DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenance-notes.md.
 =======================================================================================================================================
@@ -59,9 +61,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
-  CustomerOrderLine, CustomerOrderState, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
-  setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote, setCustomerOrderWaiting,
+  CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
+  printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
+  setCustomerOrderWaiting,
 } from '@/lib/api';
+import { printPdfBase64 } from '@/lib/printPdf';
 import {
   COURIERS, CUSTOMER_ORDERS_KEY, CUSTOMER_STATES,
   courierShort, isFba, isOutstanding, isWaiting, orderedAt, worstCustomerState,
@@ -137,12 +141,19 @@ export default function CustomerOrderList() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
-  // --- scan to label (CLICK & DROP STUB: both maps move server-side, see the header) ---------------------------------------------
+  // --- scan to label (see the header: scans live here, the label lives in Click & Drop) -----------------------------------------
   const [scan, setScan] = useState('');
   const [scanError, setScanError] = useState<string | null>(null);
   const [scans, setScans] = useState<ScanMap>(() => new Map());
   const [labels, setLabels] = useState<Map<string, LabelInfo>>(() => new Map());
+  // The order waiting on a typed parcel weight (the server said WEIGHT_NEEDED), with the server's message naming the shoes.
+  const [weightAsk, setWeightAsk] = useState<{ ordernum: string; message: string } | null>(null);
   const scanRef = useRef<HTMLInputElement | null>(null);
+  // Scans arrive faster than the server answers, so they run one at a time through this chain, and read the latest scans from a
+  // ref rather than a render's closure — two quick scans of a 2-pair order must tick two units, not the same one twice.
+  const scanQueue = useRef<Promise<void>>(Promise.resolve());
+  const scansRef = useRef(scans);
+  const updateScans = (next: ScanMap) => { scansRef.current = next; setScans(next); };
 
   // How tall the pinned control block currently is, so the table's heading row can stick directly underneath it instead of behind it.
   // Measured rather than assumed because the block changes height in normal use: selecting an order fills the bar, a failed write adds
@@ -239,6 +250,11 @@ export default function CustomerOrderList() {
     return { ticked, progress };
   }, [orders, scans]);
 
+  // The list as of the last render, for a queued scan: it may run after a print has refreshed the list, and must see the order as it
+  // is now (Packed), not as it was when Enter was pressed.
+  const latest = useRef({ orders, labels, lines });
+  useEffect(() => { latest.current = { orders, labels, lines }; }, [orders, labels, lines]);
+
   // Read off the per-order roll-up rather than the line being rendered: the note may sit on any line of the group (PowerBuilder wrote
   // only the clicked row), so testing the current line would hide the marker whenever the noted line isn't the one on top.
   const noteFor = (ordernum: string) => orders.get(ordernum)?.note || '';
@@ -283,31 +299,74 @@ export default function CustomerOrderList() {
 
   // --- scan to label -----------------------------------------------------------------------------------------------------------
 
-  // CLICK & DROP STUB. Becomes: POST order-status-customer-label (create-or-reprint, idempotent on ordernum — never a second C&D
-  // order, that pays postage twice), then the PDF into a hidden iframe and print(). For now it only records that a label exists.
-  function printLabel(ordernum: string) {
+  // The order's scanned codes, one entry per unit — what the label route checks against the order before it buys postage.
+  const scannedCodes = (ordernum: string) =>
+    [...(scansRef.current.get(ordernum) ?? new Map<string, number>())].flatMap(([code, n]) => Array<string>(n).fill(code));
+
+  // First print (the last shoe went in) or reprint. The server never makes a second Click & Drop order for an ordernum — a first
+  // print of an order Click & Drop already has (PowerBuilder's, or an attempt whose reply was lost) reuses that label.
+  async function printLabel(ordernum: string, opts: { weightKg?: number; reprint?: boolean } = {}) {
+    setWorking(true);
+    setActionError(null);
+    const res = await printCustomerLabel(ordernum, opts.reprint ? { reprint: true } : { codes: scannedCodes(ordernum), weightKg: opts.weightKg });
+    setWorking(false);
+    if (!res.success || !res.data) {
+      if (res.return_code === 'WEIGHT_NEEDED') {
+        setWeightAsk({ ordernum, message: res.error || 'No stored weight — enter the parcel weight' });
+        return;
+      }
+      setActionError(res.error || 'The label didn’t print');
+      beepError();
+      return;
+    }
+    setWeightAsk(null);
+    printPdfBase64(res.data.pdf);
     setLabels((prev) => {
       const next = new Map(prev);
       const had = prev.get(ordernum);
       next.set(ordernum, had ? { ...had, reprints: had.reprints + 1 } : { printedAt: new Date(), reprints: 0 });
       return next;
     });
+    if (res.data.existing && !res.data.reprint) {
+      setActionError('Click & Drop already had this order (made elsewhere) — its existing label was printed');
+    }
+    // A first print packed the order on the server; re-read so it shows Packed.
+    if (!res.data.reprint) await refresh();
+    scanRef.current?.focus();
   }
 
-  // CLICK & DROP STUB. Becomes: the server deletes the C&D order (only possible before it's manifested — after that Royal Mail
-  // refuses and the error shows in the bar) and drops the shipment row. The order's scans clear with it, so the packer starts the
-  // order again from the first shoe rather than half-way through a box they may have just unpacked.
-  function cancelLabel(ordernum: string) {
+  // Voids the Click & Drop order (refused once Royal Mail has manifested it — the error shows in the bar) and un-packs the order.
+  // Its scans clear with it, so the packer starts the order again from the first shoe rather than half-way through a box they may
+  // have just unpacked.
+  async function cancelLabel(ordernum: string) {
+    const ok = await run(() => cancelCustomerLabel(ordernum));
+    if (!ok) return;
     setLabels((prev) => { const next = new Map(prev); next.delete(ordernum); return next; });
-    setScans((prev) => { const next = new Map(prev); next.delete(ordernum); return next; });
+    const next = new Map(scansRef.current);
+    next.delete(ordernum);
+    updateScans(next);
   }
 
-  // A scanner types the code and presses Enter. The OLDEST open order still short of this shoe takes it — first come, first boxed,
-  // the same rule the shelf follows. Orders already labelled are out: their box is shut.
+  // Enter in the scan box. Queued so scans are handled strictly in order (see scanQueue).
   function onScan() {
-    const code = scan.trim().toUpperCase();
+    const raw = scan.trim().toUpperCase();
     setScan('');
-    if (!code) return;
+    if (!raw) return;
+    scanQueue.current = scanQueue.current.then(() => handleScan(raw)).catch(() => {});
+  }
+
+  // A scanner types the code or EAN. The OLDEST open order still short of this shoe takes it — first come, first boxed, the same
+  // rule the shelf follows. Orders already labelled are out: their box is shut.
+  async function handleScan(raw: string) {
+    const resolved = await resolveCustomerScan(raw);
+    if (!resolved.success || !resolved.data) {
+      setScanError(`${raw} — ${resolved.error || 'couldn’t look it up'}`);
+      beepError();
+      return;
+    }
+    const code = resolved.data.code.toUpperCase();
+    const scans = scansRef.current;
+    const { orders, labels, lines } = latest.current;
 
     let best: { ordernum: string; created: string } | null = null;
     for (const o of orders.values()) {
@@ -326,15 +385,16 @@ export default function CustomerOrderList() {
       // "try the label now" rather than a refusal.
       const retry = [...orders.values()].find((o) => {
         if (labels.has(o.ordernum) || !o.lines.some((l) => scannable(l) && l.code.toUpperCase() === code)) return false;
-        const p = scanState.progress.get(o.ordernum);
-        return !!p && p.total > 0 && p.scanned >= p.total;
+        const total = o.lines.reduce((n, l) => n + (scannable(l) ? l.qty : 0), 0);
+        const scanned = [...(scans.get(o.ordernum)?.values() ?? [])].reduce((n, c) => n + c, 0);
+        return total > 0 && scanned >= total;
       });
       if (retry) {
         setScanError(null);
         setSelected(retry.ordernum);
         const block = labelBlock(retry);
         if (block) { setActionError(`All scanned, but no label: ${block}`); beepError(); }
-        else { setActionError(null); printLabel(retry.ordernum); }
+        else await printLabel(retry.ordernum);
         return;
       }
 
@@ -356,7 +416,8 @@ export default function CustomerOrderList() {
     const perCode = new Map(next.get(o.ordernum) ?? []);
     perCode.set(realCode, (perCode.get(realCode) ?? 0) + 1);
     next.set(o.ordernum, perCode);
-    setScans(next);
+    updateScans(next);
+    setWeightAsk(null);
     setScanError(null);
     setActionError(null);
     // The order must be on screen: drop a filter or search that would hide it, then bring its first row into view.
@@ -372,8 +433,14 @@ export default function CustomerOrderList() {
     if (p.scanned >= p.total) {
       const block = labelBlock(o);
       if (block) setActionError(`All scanned, but no label: ${block}`);
-      else printLabel(o.ordernum);
+      else await printLabel(o.ordernum);
     }
+  }
+
+  // The parcel weight typed in after WEIGHT_NEEDED. Whole order, kg, this label only.
+  async function submitWeight(kg: number) {
+    if (!weightAsk) return;
+    await printLabel(weightAsk.ordernum, { weightKg: kg });
   }
 
   // --- render ------------------------------------------------------------------------------------------------------------------
@@ -503,6 +570,19 @@ export default function CustomerOrderList() {
         </p>
       )}
 
+      {/* The parcel weight, only when a shoe in the order has none stored. Whole order, kg. Enter prints; Not now leaves the order
+          fully scanned, so re-scanning any of its shoes asks again. */}
+      {weightAsk && (
+        <WeightPrompt
+          key={weightAsk.ordernum}
+          ordernum={weightAsk.ordernum}
+          message={weightAsk.message}
+          working={working}
+          onSubmit={submitWeight}
+          onCancel={() => { setWeightAsk(null); scanRef.current?.focus(); }}
+        />
+      )}
+
       {/* --- the action bar: the legacy screen's top strip ---------------------------------------------------------------------
           ALWAYS RENDERED, never conditionally mounted. Showing it only when a row was selected made the whole grid jump down the
           page on the click that selected it — and then jump back up on deselect, moving the row you were aiming at. With nothing
@@ -526,8 +606,8 @@ export default function CustomerOrderList() {
         progress={active ? scanState.progress.get(active.ordernum) ?? null : null}
         label={active ? labels.get(active.ordernum) ?? null : null}
         // Each label action hands focus back to the scan box: the next thing the packer does is scan the next shoe.
-        onPrint={() => { if (active) { printLabel(active.ordernum); scanRef.current?.focus(); } }}
-        onCancelLabel={() => { if (active) { cancelLabel(active.ordernum); scanRef.current?.focus(); } }}
+        onPrint={() => { if (active) printLabel(active.ordernum, { reprint: true }); }}
+        onCancelLabel={async () => { if (active) { await cancelLabel(active.ordernum); scanRef.current?.focus(); } }}
       />
       </div>
 
@@ -1070,6 +1150,45 @@ function OrderActionBar({
         </p>
       )}
     </div>
+  );
+}
+
+/*
+ * WeightPrompt — the whole parcel's weight in kg, asked only when a shoe in the order has no stored weight (skumap.weight). Focused
+ * on arrival so the packer can put the box on the scale, type, Enter. Used for this label only; not saved back to the product.
+ */
+function WeightPrompt({ ordernum, message, working, onSubmit, onCancel }: {
+  ordernum: string; message: string; working: boolean; onSubmit: (kg: number) => void; onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const kg = Number(value);
+  const valid = value.trim() !== '' && Number.isFinite(kg) && kg > 0 && kg <= 20;
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); if (valid && !working) onSubmit(kg); }}
+      className="-mt-1 mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm"
+    >
+      <span className="font-medium text-amber-900">{ordernum}</span>
+      <span className="text-amber-800">{message}</span>
+      <input
+        autoFocus
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => setValue(e.target.value.replace(',', '.'))}
+        placeholder="kg"
+        aria-label="Parcel weight in kg"
+        className="w-20 rounded-md border border-amber-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-amber-500 focus:outline-none"
+      />
+      <span className="text-amber-800">kg</span>
+      <button
+        type="submit"
+        disabled={!valid || working}
+        className="rounded-md bg-slate-800 px-3 py-1 text-sm font-medium text-white disabled:opacity-40"
+      >
+        {working ? 'Printing…' : 'Print label'}
+      </button>
+      <button type="button" onClick={onCancel} className="text-xs text-amber-800 hover:text-amber-950">Not now</button>
+    </form>
   );
 }
 

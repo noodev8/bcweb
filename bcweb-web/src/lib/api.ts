@@ -2304,6 +2304,48 @@ export function deleteCustomerOrder(ordernum: string) {
   );
 }
 
+// --- Scan to label (Royal Mail Click & Drop) — docs/clickdrop-labels-plan.md --------------------------------------------------
+// Nothing about a label is stored in bcweb: packed is batch '2', the label lives in Click & Drop, found by ordernum.
+
+// Barcode (our code or EAN) -> our code. Read only. An unknown value comes back as-is with known=false.
+export function resolveCustomerScan(scan: string) {
+  return request<{ code: string; known: boolean }>(
+    { url: '/order-status-customer-scan', method: 'GET', params: { scan } },
+    (b) => ({ code: String(b.code || ''), known: !!b.known })
+  );
+}
+
+export interface CustomerLabel {
+  pdf: string;                   // base64 PDF
+  reprint: boolean;
+  existing: boolean;             // Click & Drop already had the order (PowerBuilder's, or an earlier attempt) — its label was reused
+  trackingNumber: string | null;
+  weightKg: number | null;
+}
+
+// First print: `codes` are the order's scanned codes (the server checks they cover it). return_code WEIGHT_NEEDED means no stored
+// weight for some shoe — ask for the parcel's kg and call again with weightKg. Reprint: just the ordernum.
+export function printCustomerLabel(ordernum: string, opts: { codes?: string[]; weightKg?: number; reprint?: boolean }) {
+  return request<CustomerLabel>(
+    { url: '/order-status-customer-label', method: 'POST', data: { ordernum, ...opts }, timeout: 60000 },
+    (b) => ({
+      pdf: String(b.pdf || ''),
+      reprint: !!b.reprint,
+      existing: !!b.existing,
+      trackingNumber: b.trackingNumber || null,
+      weightKg: b.weightKg == null ? null : Number(b.weightKg),
+    })
+  );
+}
+
+// Voids the Click & Drop order (refused once Royal Mail has manifested it) and un-packs the order so it can be scanned again.
+export function cancelCustomerLabel(ordernum: string) {
+  return request<{ unpacked: number }>(
+    { url: '/order-status-customer-label-cancel', method: 'POST', data: { ordernum }, timeout: 60000 },
+    (b) => ({ unpacked: Number(b.unpacked) || 0 })
+  );
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------
 // Update Amazon — the data-ingest module (_amz-port/design/update-amazon-port.md).
 //

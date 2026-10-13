@@ -1,6 +1,17 @@
 # Royal Mail labels from Customer Orders (Click & Drop) — PLAN
 
-Status: **plan only, nothing built** (agreed with owner 2026-10-09). Read this before starting; the decisions below are the owner's, don't re-ask them.
+Status: **built 2026-10-13, not yet live-tested** (agreed with owner 2026-10-09). The decisions below are the owner's, don't re-ask them.
+
+**As built (2026-10-13) — supersedes the Build list below where they differ:**
+- **NO new table (owner).** Packed = `batch = '2'` + `orderstatus.weight`. The label lives in Click & Drop, found by orderReference =
+  ordernum (`utils/clickDrop.js → findByReference`) for reprint, cancel and the never-twice check. Scan progress lives on the screen;
+  the scanned codes go with the print request and the server checks they cover the order. A reload restarts an order's scans.
+- Routes: `order-status-customer-scan` (GET, barcode → code, read only), `order-status-customer-label` (first print / `reprint`),
+  `order-status-customer-label-cancel` (C&D delete, then batch '2' → '0', weight '').
+- Services (owner): '4' → **TPN24**, '5' → **TPS48**, whatever the weight. Package format **always `parcel`** (owner,
+  2026-10-13 — never small/medium). Billing address = the delivery address (C&D requires one).
+- PowerBuilder ALSO sends orders to Click & Drop (owner). An order already there is reused, never re-created.
+- Account: `GET /orders/{id}/full` is Forbidden on this plan.
 
 ## The job
 On the **Customer Orders** screen, scan a shoe that belongs to a customer order. When every item in that order has been scanned, bcweb
