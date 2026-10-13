@@ -31,7 +31,7 @@ Consumes GET /pricing-status-overview, GET /portfolio-status, POST /portfolio-sn
 =======================================================================================================================================
 */
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChannelLogo } from '@/components/ChannelBadge';
@@ -69,10 +69,11 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
   const viewPath = raised ? `/segments?bar=${bar}` : '/segments';
   // WINNERS' SHARE at the tier, for the Stock now card (see StockNowCard): styles and pairs WITH STOCK, on the same base as Slow.
   const winnersShare: WinnersShare | undefined = barRow && data
-    ? { styles: barRow.share.heldStyles, units: barRow.share.units,
-        revenuePct: data.shareTotals.revenue > 0 ? Math.round((barRow.share.revenue / data.shareTotals.revenue) * 100) : null }
+    ? { styles: barRow.share.heldStyles, units: barRow.share.units, revenue: barRow.share.revenue }
     : undefined;
-  const stockTotals: StockTotals | undefined = data ? { styles: data.shareTotals.heldStyles, units: data.shareTotals.units } : undefined;
+  const stockTotals: StockTotals | undefined = data
+    ? { styles: data.shareTotals.heldStyles, units: data.shareTotals.units, revenue: data.shareTotals.revenue }
+    : undefined;
   // Each channel's winners by brand, at the tier — drawn INSIDE that channel's WINNERS tile (owner, 2026-09-25: "I am changing the
   // tier and scrolling"), so the number and its brands change together right under the toggle.
   const winnerBrands = useMemo(
@@ -179,20 +180,24 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
 //     the per-channel WINNERS tiles are the way into those lists.
 const SLOW_HREF = `/analytics/stock-sales?from=${encodeURIComponent('/segments#slow')}&back=${encodeURIComponent('Winners')}`;
 const SLOW_COLOR = '#b91c1c';   // not a status colour: Slow is a fact about sales, not a portfolio status (LOSERS is pink)
-type WinnersShare = { styles: number; units: number; revenuePct: number | null };
-type StockTotals = { styles: number; units: number };
+type WinnersShare = { styles: number; units: number; revenue: number };
+type StockTotals = { styles: number; units: number; revenue: number };
 function StockNowCard({ winners, winnersRule, slow, totals }: {
   winners?: WinnersShare; winnersRule: string; slow?: StockSittingData; totals?: StockTotals;
 }) {
   const pct = (v: number | undefined, d: number | undefined) => (v != null && d ? Math.round((v / d) * 100) : null);
   const n = (v: number | undefined) => (v != null ? v.toLocaleString('en-GB') : '–');
   const pctText = (v: number | undefined, d: number | undefined) => { const x = pct(v, d); return x !== null ? `${x}%` : '–'; };
-  const slowUnits = slow?.sitting_units;
-  const rows = [
+  const gbp = (v: number) => `£${Math.round(v / 1000).toLocaleString('en-GB')}k`;   // whole thousands: £408k (owner, 2026-10-13)
+  const cols = [
     { key: 'winners', name: 'Winners', rule: winnersRule, color: STATUS_COLOR.WINNERS, styles: winners?.styles, units: winners?.units,
-      revenuePct: winners?.revenuePct ?? null },
+      href: null as string | null },
     { key: 'slow', name: 'Slow', rule: `no sale on any channel in ${slow?.days ?? 60} days`, color: SLOW_COLOR,
-      styles: slow?.styles.length, units: slowUnits, revenuePct: null },
+      styles: slow?.styles.length, units: slow?.sitting_units, href: SLOW_HREF as string | null },
+  ];
+  const lines = [
+    { key: 'styles', total: totals?.styles, unit: 'styles' },
+    { key: 'units', total: totals?.units, unit: 'pairs' },
   ];
   return (
     <section id="slow" className="scroll-mt-6">
@@ -205,58 +210,75 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
         <span>Stock now</span>
       </h2>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        {/* THE TOTALS, the baseline every % below divides by, styles first as in the boxes. Two big share bars sat here (styles,
-            pairs) until the boxes got bars of their own; then they repeated them and were removed (owner, 2026-10-13: "remove the top
-            bars. But find somewhere to show the totals clear"). */}
-        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1">
-          <span className="text-sm font-medium text-slate-500">In stock</span>
-          <span className="tabular-nums text-slate-500"><span className="text-2xl font-bold text-slate-900">{n(totals?.styles)}</span> styles</span>
-          <span className="tabular-nums text-slate-500"><span className="text-2xl font-bold text-slate-900">{n(totals?.units)}</span> pairs</span>
-        </div>
-
-        {/* TWO COLUMNS, WINNERS | SLOW (owner, 2026-10-13: "WINNERS and under it the Styles winners and the stock winners. The next
-            column will have SLOW and under it, styles and stock"). Was two ROWS (name | styles | stock across), which read the wrong way.
-            Now the styles boxes sit side by side and the stock boxes sit side by side, so across compares Winners with Slow on one base,
-            and down reads one group, in the bars' order (styles, then stock). Each box is % then the number it comes from, as before.
-            Revenue sits last under Winners (Winners only, and a different base, so boxed alone). The totals are beside the bars. */}
-        <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2">
-          {rows.map((r) => {
-            const body = (
+        {/* A GRID THAT READS LEFT TO RIGHT (owner, 2026-10-13: "258 styles to the left of the 22% of winners in its own box as a
+            total. Same below for pairs. So it reads left to right"): TOTAL | WINNERS | SLOW, one line for styles, one for pairs,
+            then a REVENUE line, Winners only: total = 12m revenue (net of returns, all channels) of every tagged style, out of stock
+            included, and the winners' share of it (owner, 2026-10-13: "give the 73% some kind of total indication"). Before this it
+            was two columns, Winners | Slow, each holding its styles box over its stock box, with the totals in a header line above
+            (removed once the totals had their own column). Each box is % then the number it comes from, with a small bar of its own
+            % in the column's colour.
+            Slow's cells are each the link to Slow: a grid laid out by line can't wrap one column in a single link. */}
+        {/* Three columns of boxes don't fit a phone: there the grid scrolls sideways inside the card, never the page. */}
+        <div className="overflow-x-auto">
+        <div className="grid min-w-[44rem] grid-cols-[auto_1fr_1fr] items-stretch gap-x-3 gap-y-3 p-px">
+          {/* No head over the totals column: a "Total" label was tried and removed (owner, 2026-10-13). */}
+          <span />
+          {cols.map((c) => {
+            const head = (
               <>
-                <span className="block">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
-                    {r.name}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-slate-400">{r.rule}</span>
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                  {c.name}
                 </span>
-                {/* Each box carries a small bar of its own % in the column's colour (owner, 2026-10-13: too much clear space to the
-                    right of the numbers). The revenue box has an empty slot where the count would be, so all three bars start in line. */}
-                <FigureGroup pct={pct(r.styles, totals?.styles)} color={r.color}>
-                  <Figure value={pctText(r.styles, totals?.styles)} strong />
-                  <Figure value={n(r.styles)} label="styles" />
-                </FigureGroup>
-                <FigureGroup pct={pct(r.units, totals?.units)} color={r.color}>
-                  <Figure value={pctText(r.units, totals?.units)} strong />
-                  <Figure value={n(r.units)} label="pairs" />
-                </FigureGroup>
-                {r.revenuePct !== null && (
-                  <FigureGroup pct={r.revenuePct} color={r.color}>
-                    <Figure value={`${r.revenuePct}%`} label="of 12m revenue" />
-                    <span className="block w-24" aria-hidden="true" />
-                  </FigureGroup>
-                )}
+                <span className="mt-0.5 block text-xs text-slate-400">{c.rule}</span>
               </>
             );
-            const cls = 'flex flex-col gap-3';
-            // Slow's column is the link to Slow (see the header); its hover sits just outside the boxes.
-            return r.key === 'slow'
-              ? <Link key={r.key} href={SLOW_HREF} className={cls + ' -m-2 rounded-xl p-2 transition hover:bg-slate-50'}>{body}</Link>
-              : <div key={r.key} className={cls}>{body}</div>;
+            return c.href
+              ? <Link key={c.key} href={c.href} className="block self-end rounded-lg transition hover:opacity-80">{head}</Link>
+              : <span key={c.key} className="block self-end">{head}</span>;
           })}
+          {lines.map((l) => (
+            <Fragment key={l.key}>
+              <TotalBox value={n(l.total)} label={l.unit} />
+              {cols.map((c) => {
+                const v = l.key === 'styles' ? c.styles : c.units;
+                const box = (
+                  <FigureGroup pct={pct(v, l.total)} color={c.color}>
+                    <Figure value={pctText(v, l.total)} strong />
+                    <Figure value={n(v)} label={l.unit} />
+                  </FigureGroup>
+                );
+                return c.href
+                  ? <Link key={c.key} href={c.href} className="block rounded-lg transition hover:opacity-80">{box}</Link>
+                  : <Fragment key={c.key}>{box}</Fragment>;
+              })}
+            </Fragment>
+          ))}
+          {totals && totals.revenue > 0 && winners && (
+            <>
+              <TotalBox value={gbp(totals.revenue)} label="12m revenue" />
+              <FigureGroup pct={pct(winners.revenue, totals.revenue)} color={STATUS_COLOR.WINNERS}>
+                <Figure value={pctText(winners.revenue, totals.revenue)} strong />
+                <Figure value={gbp(winners.revenue)} label="revenue" />
+              </FigureGroup>
+              <span />
+            </>
+          )}
+        </div>
         </div>
       </div>
     </section>
+  );
+}
+
+// A line's TOTAL, first on the left: the baseline the two boxes to its right divide by. Plain (white, outlined) so it reads as the
+// whole, not as a share.
+function TotalBox({ value, label }: { value: string; label: string }) {
+  return (
+    <span className="flex flex-col justify-center rounded-lg px-4 py-2 ring-1 ring-slate-200">
+      <span className="block text-xl font-bold leading-none tabular-nums text-slate-900">{value}</span>
+      <span className="mt-1 block text-xs text-slate-500">{label}</span>
+    </span>
   );
 }
 
