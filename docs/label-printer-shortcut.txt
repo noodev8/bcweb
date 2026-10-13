@@ -1,4 +1,4 @@
-== BCWEB label-printing Chrome shortcut (FNSKU labels on Goods In and AMZ Shipment)
+== BCWEB label-printing Chrome shortcuts: FNSKU labels (Dymo — Goods In, AMZ Shipment) and Royal Mail labels (Zebra — Customer Orders, at the bottom)
 
 Without this shortcut every label pops up Chrome's print dialog. With it, labels go straight to the default printer.
 
@@ -28,6 +28,41 @@ Name it e.g. "BCWEB (labels)".
   Print, close Chrome, put --kiosk-printing back.
 - Test: open AMZ Shipment, scan a shoe with an FNSKU (or press a line's printer icon) - one label should print with no dialog.
 - For local dev use http://localhost:3000 instead of the vercel URL.
+
+
+
+== ROYAL MAIL LABELS (Zebra) — Customer Orders scan-to-label
+
+Scanning the last shoe of a customer order prints its Royal Mail label (a PDF from Click & Drop) with no dialog. Same idea as the
+Dymo shortcut above, but its OWN shortcut and OWN Chrome profile, so it can point at the Zebra while the Dymo shortcut keeps the Dymo.
+
+-- Shortcut target (paste into "Target"):
+
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing --user-data-dir="C:\bcweb-chrome-zebra" https://bcweb.vercel.app/customer-orders
+
+Name it e.g. "BCWEB (Royal Mail labels)".
+
+-- One-time setup on each machine
+1. Install the Zebra's Windows driver (zebra.com, "ZDesigner" driver for the model).
+2. In the Zebra's Printing Preferences: paper/stock 4 x 6 in (101.6 x 152.4 mm), orientation PORTRAIT, and the media type that
+   matches the roll (direct thermal labels, with gaps).
+3. Click & Drop (one-off, account-wide, probably already set): Settings > label format = thermal 6 x 4 label, so the PDF's page is
+   the label's size.
+4. Set the Zebra as Chrome's printer for this profile:
+     a. Start the shortcut WITHOUT --kiosk-printing (edit the Target, or run the same line without it) and log in to BCWEB.
+     b. Print any page (Ctrl+P) and in the dialog choose  Destination: the Zebra · Paper size: 4 x 6 · Margins: None ·
+        Scale: Default / Actual size (NOT "Fit to page") · More settings > Headers and footers OFF.
+     c. Print, close Chrome, put --kiosk-printing back.
+   Chrome remembers the last printer and settings per profile and kiosk printing reuses them — that's why the Zebra shortcut gets
+   its own --user-data-dir. If this PC has NO other label printer you can instead just make the Zebra the Windows default printer.
+5. Test: on Customer Orders scan the shoe of a single-pair order. One label should print, no dialog.
+
+-- If it goes wrong
+- Print dialog still appears: --kiosk-printing is missing, or another Chrome window with the same profile was already open (close
+  ALL windows of this shortcut and start it again).
+- Label goes to the Dymo / wrong printer: redo step 4 in THIS shortcut's window.
+- Label shrunk, cut off or on two labels: the paper size or scale in step 4b, or the Zebra driver's stock size (step 2), isn't 4 x 6.
+- Nothing prints and no error on screen: try it without --kiosk-printing to see what Chrome is doing.
 
 
 
