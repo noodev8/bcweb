@@ -117,7 +117,7 @@ async function shopifyGraphQL(queryStr, variables = {}) {
  * buildProductSetInput(product, sizes, { status, isNew, productId })
  * PURE mapping from our DB shape to a ProductSetInput. No network — unit-testable in isolation. Faithful to the legacy CSV:
  *   - one Option: "Size"; its values are the size-display strings in saved order.
- *   - one variant per size: SKU = code (on inventoryItem), price = the product price, compareAtPrice = rrp (only if > price),
+ *   - one variant per size: SKU = code (on inventoryItem), price = the product price, compareAtPrice = rrp (only if > price, else null to clear),
  *     barcode = the (already 'B'-stripped) barcode, inventory policy DENY, taxable false, requires shipping, weight 0 kg, tracked.
  *   - images: our product_images gallery, keeping live Shopify media we don't hold (see buildFiles).
  *
@@ -171,7 +171,9 @@ function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true,
         measurement: { weight: { value: 0, unit: 'KILOGRAMS' } }
       }
     };
-    if (compareAt) variant.compareAtPrice = compareAt;
+    // Always send it: null CLEARS a stale "was" price. Omitting it left Shopify's old value in place, so an RRP lowered to (or below)
+    // the price never reached the store — M291AP showed "was £40" against a £50 price for a week (fixed 2026-10-13).
+    variant.compareAtPrice = compareAt;
     if (s.barcode) variant.barcode = s.barcode;
     return variant;
   });
