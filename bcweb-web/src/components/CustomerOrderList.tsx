@@ -325,6 +325,19 @@ export default function CustomerOrderList() {
 
   // --- scan to label -----------------------------------------------------------------------------------------------------------
 
+  // Put the cursor back in the scan box after a print, so the next order's first shoe scans without a click (owner, 2026-10-13).
+  // Printing takes focus into the hidden label frame — and with kiosk printing the PDF viewer can take it again a moment later — so
+  // this runs at once and twice more. It only takes focus back from the label frame or from nowhere (body), never from a box the
+  // packer has clicked into meanwhile (the weight prompt, the note, the find box).
+  function refocusScan() {
+    for (const ms of [0, 500, 1500]) {
+      setTimeout(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body || el.tagName === 'IFRAME') scanRef.current?.focus();
+      }, ms);
+    }
+  }
+
   // The order's scanned codes, one entry per unit — what the label route checks against the order before it buys postage.
   const scannedCodes = (ordernum: string) =>
     [...(scansRef.current.get(ordernum) ?? new Map<string, number>())].flatMap(([code, n]) => Array<string>(n).fill(code));
@@ -346,7 +359,7 @@ export default function CustomerOrderList() {
       return;
     }
     setWeightAsk(null);
-    printPdfBase64(res.data.pdf);
+    printPdfBase64(res.data.pdf, refocusScan);
     rememberPacked(ordernum);
     setLabels((prev) => {
       const next = new Map(prev);

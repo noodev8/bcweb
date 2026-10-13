@@ -14,7 +14,9 @@ too soon cancels the job. Each print replaces the previous frame.
 
 const FRAME_ID = 'pdf-print-frame';
 
-export function printPdfBase64(base64: string) {
+// `onPrinted` runs once print() has been called. Printing moves keyboard focus into the frame (it has to — the frame is focused so
+// its document is what prints), so a caller with a scan box hands focus back here; see CustomerOrderList's refocusScan.
+export function printPdfBase64(base64: string, onPrinted?: () => void) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
 
@@ -28,6 +30,7 @@ export function printPdfBase64(base64: string) {
     // The PDF viewer needs a moment after load before print() catches the document rather than a blank page.
     setTimeout(() => {
       try { frame.contentWindow?.focus(); frame.contentWindow?.print(); } catch { /* cross-origin viewer quirks: the PDF is still open */ }
+      onPrinted?.();
     }, 300);
   };
   frame.src = url;
