@@ -10,8 +10,8 @@ Purpose: Repricing — the SITTING styles from Winners → Slow as a Shopify lis
 
          SAME STYLES AS STOCK VS SALES. Membership and order come from utils/stockSitting.js — the very function the Sitting box and
          list read — so a list showing 52 styles there opens these 52 here (Due switch off; Due on hides the ones with a review date
-         still ahead, as on every Repricing list — at build time 49 of 52 had one). EXCEPT CUT styles (2026-10-11): a style cut on
-         Slow (skusummary.sitting_cut_at) is still sitting there but is left off here.
+         still ahead, as on every Repricing list — at build time 49 of 52 had one). (Cut styles were left off here 2026-10-11 to 14; the
+         cut was removed — every sitting style is listed.)
 
          SHOPIFY ONLY (owner's call — clearance is done on Shopify). Styles not live on Shopify (skusummary.shopify <> 1) are left off:
          a Shopify price can't clear them. At build time all 52 were live, so the list matched the box exactly; if that ever stops being
@@ -66,8 +66,7 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
 
     // Membership + order from the shared rule (see header), then the pricing fields for just those styles in one query.
-    // CUT styles are skipped (owner, 2026-10-11 — cut on Slow so only "a set few" are repriced).
-    const members = (await loadStockSplit()).styles.filter((s) => !s.cut);
+    const members = (await loadStockSplit()).styles;
     if (members.length === 0) {
       return res.json({ return_code: 'SUCCESS', total: 0, truncated: false, rows: [] });
     }

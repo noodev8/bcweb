@@ -3,8 +3,9 @@
 API Route: shopify_clearance_apply
 =======================================================================================================================================
 Method: POST
-Purpose: Winners → Slow, "Update collection" (one click, no preview — owner, 2026-10-10). Syncs the Shopify `clearance` tag
-         to the sitting list: tags the sitting styles that aren't tagged, untags every tagged product that isn't sitting. WRITES TO THE LIVE SHOP (product tags only).
+Purpose: Winners → Slow, "Update collection" (one click, no preview — owner, 2026-10-10). ADDS the Shopify `clearance` tag to the
+         sitting styles that aren't in the collection yet. NEVER REMOVES (2026-10-14 — a sale used to untag a style mid-campaign; taking
+         a style out is now only the owner's Remove, POST /shopify-clearance-set). WRITES TO THE LIVE SHOP (product tags only).
          The rules live in utils/clearanceTag.js.
 
          PLANS ON THE SERVER at the moment of the click — the request carries no list, so the browser can't tag something the rule
@@ -23,8 +24,7 @@ Success Response:
   "return_code": "SUCCESS",
   "tag": "clearance",
   "added":   [ { "groupid": "…", "handle": "…", "title": "…" } ],
-  "removed": [ { "groupid": "…" | null, "handle": "…", "title": "…" } ],
-  "failed":  [ { "groupid": "…", "handle": "…", "title": "…", "action": "add" | "remove", "error": "…" } ],
+  "failed":  [ { "groupid": "…", "handle": "…", "title": "…", "error": "…" } ],
   "missing": [ { "groupid": "…", "handle": "…", "title": "…" } ]
 }
 SUCCESS even when some products failed — the run happened; `failed` says which.
@@ -55,7 +55,6 @@ router.post('/', async (req, res) => {
       return_code: 'SUCCESS',
       tag: r.tag,
       added: r.added.map(strip),
-      removed: r.removed.map(strip),
       failed: r.failed.map(strip),
       missing: r.missing.map(strip),
     });

@@ -46,24 +46,25 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          they are not selling"), except NEW products — created under 60 days ago and not yet sold (same window; NOT Repricing's 90-day NEW status) — which
          are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
          stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
-         The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); "Update collection" syncs the Shopify `clearance` tag to it (one click, see SittingListBody); pairs are one number, no
+         The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); the clearance collection is the owner's choice — each row shows In collection / Not in with
+         Add / Remove, and nothing goes in or out on its own (2026-10-14, see THE COLLECTION above SittingList); pairs are one number, no
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
-         Tick rows and "Cut" them to narrow the working set (2026-10-11, see the CUT note above SittingList): still sitting, but
-         Update collection, Reprice and the Google Ads chip skip them until released.
+         Cut hides ticked rows from the display only, until Reset or a reload (2026-10-14) — nothing is stored and no action skips them.
 
 ARRIVAL FROM REPRICING (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back"; the card is "Slow").
          Repricing's Status tab (the owner's "WINNERS" screen) has a Slow card that opens this page with ?from=/segments&back=Winners;
          ← Back then returns there, and the origin rides along on every link out (drill, Reprice, Google Ads) so coming back through
          them keeps it. With no ?from= (a bookmark) ← Back still goes to Winners.
 
-Guarded by AppShell. Consumes GET /analytics-stock-sitting, POST /stock-sitting-cut, and GET /analytics-stock-sales only while
+Guarded by AppShell. Consumes GET /analytics-stock-sitting, GET /shopify-clearance-list, POST /shopify-clearance-apply,
+POST /shopify-clearance-set, POST /pricing-apply (Remove's optional price), and GET /analytics-stock-sales only while
 STOCK_SALES_FLOW is on.
 
 =======================================================================================================================================
 */
 
-import { Suspense, useState } from 'react';
+import { Fragment, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
@@ -71,7 +72,8 @@ import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { STOCK_SALES_FLOW } from '@/lib/features';
 import {
-  getStockSales, getStockSitting, applyClearanceTags, setSittingCut, StockSalesPeriod, StockSittingData,
+  getStockSales, getStockSitting, applyClearanceTags, StockSalesPeriod, StockSittingData,
+  getClearanceCollection, setClearance, applyPrice, ClearanceCollectionItem,
 } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -120,6 +122,8 @@ function StockSalesBody() {
   const d = q.data;
   const sq = useApiQuery('analytics-stock-sitting', () => getStockSitting());
   const sit = sq.data;
+  // What is in the clearance collection — read live from Shopify, its own query so a slow Shopify never holds up the list.
+  const cq = useApiQuery('shopify-clearance-list', () => getClearanceCollection());
   const stale = d?.latest && d.latest.date < d.expected_date;
 
   return (
@@ -139,12 +143,9 @@ function StockSalesBody() {
       {sit && (
         <SittingList
           data={sit}
-          // After a cut / release, write the new flags straight into the cache (no refetch — membership and counts don't change).
-          // Google Ads reads the same SWR key, so its Sitting chip follows without a reload.
-          onCutChange={(ids, cut) => {
-            const set = new Set(ids);
-            sq.mutate({ ...sit, styles: sit.styles.map((s) => (set.has(s.groupid) ? { ...s, cut } : s)) }, { revalidate: false });
-          }}
+          collection={cq.data ?? null}
+          collectionError={cq.error ? cq.error.message : null}
+          onCollectionChange={() => cq.mutate()}
         />
       )}
 
@@ -412,22 +413,39 @@ const repriceHref = (self: string) =>
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
 // wait on Days (Infinity) rather than sinking as blanks; on Last sale they sink ("never" has no date).
 // useTableSort reads useSearchParams, so the list renders inside a Suspense boundary (Next's build requires one).
-// CUT (owner, 2026-10-11: "can I cut some items from the rows so that I update collection and price to a set few?"). Tick rows and
-// "Cut" them: they drop to a greyed section at the foot of the table with a Release link. A cut style is STILL SITTING — it stays in the
-// box and the header count — but Update collection, Reprice and the Google Ads chip skip it. Saved team-wide on skusummary until
-// released (POST /stock-sitting-cut; the owner chose that over "this visit only", because Update collection would otherwise re-tag a
-// cut style on the next press). Selection is local and clears after each cut.
-type CutChange = (ids: string[], cut: boolean) => void;
+//
+// THE COLLECTION (2026-10-14, owner: "The slow screen simply shows what is SLOW and whether it is in a clearance collection or not. Then
+// its up to me to choose what is in or out the collection. Simple."). Every row carries an In collection / Not in pill and its own Add
+// or Remove; tick rows to Add / Remove in bulk. Nothing goes in or out by itself — "Update collection" still adds every slow style
+// not yet in, but never removes (a sale used to untag a style, which pulled 9 out mid-campaign while their 50% price stayed). Styles
+// still IN the collection that have sold (no longer slow) get their own section, so they can be seen and taken out.
+// Remove on one row opens a small inline form with an OPTIONAL new price ("Perhaps continue to allow repricing if I remove from a
+// collection"): the tag comes off (POST /shopify-clearance-set), then, if a price was typed, a normal W1 (applyPrice) with the note
+// "Removed from clearance" and no review date. Any other pricing goes through the GROUPID link to the price drill, as everywhere.
+//
+// CUT is DISPLAY ONLY (owner, 2026-10-14: "all it does is simply remove from the display. I need a reset/refresh to bring all back").
+// Tick rows, Cut, they leave the screen; Reset (or a reload) brings every row back. Nothing is stored and no action skips a cut row.
+// Until that day it was a stored team-wide mark that Update collection / Reprice / Google Ads skipped — removed with its columns
+// ("Cut is mixing the logic"); don't bring the storage back.
+// Click handlers only, never a useEffect (docs/maintenance-notes.md).
+interface SittingListProps {
+  data: StockSittingData;
+  collection: ClearanceCollectionItem[] | null;   // null while loading or if Shopify couldn't be read — pills hidden, list still works
+  collectionError: string | null;
+  onCollectionChange: () => void;
+}
 
-function SittingList({ data, onCutChange }: { data: StockSittingData; onCutChange: CutChange }) {
+const REMOVE_NOTE = 'Removed from clearance';
+
+function SittingList(props: SittingListProps) {
   return (
     <Suspense fallback={null}>
-      <SittingListBody data={data} onCutChange={onCutChange} />
+      <SittingListBody {...props} />
     </Suspense>
   );
 }
 
-function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutChange: CutChange }) {
+function SittingListBody({ data, collection, collectionError, onCollectionChange }: SittingListProps) {
   const { sorted, sort, onSort } = useTableSort(data.styles, {
     groupid: (s) => s.groupid,
     brand: (s) => s.brand,
@@ -436,91 +454,143 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
     days: (s) => s.idle_days ?? Infinity,
   });
   const th = { sort, onSort };
-  // UPDATE COLLECTION — one click syncs the Shopify `clearance` tag to this list and says what changed, nothing more (owner,
-  // 2026-10-10: a preview panel was "too much text. Leads to confusion. Just do the update"). The list OWNS the tag: afterwards exactly
-  // the sitting styles live on Shopify carry it, hand-tagged ones included. Writes the LIVE shop; rules in
-  // bcweb-server/utils/clearanceTag.js. The owner builds the smart collection in Shopify admin (tag is equal to clearance).
-  // A click handler, never a useEffect (docs/maintenance-notes.md).
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<{ text: string; bad: boolean } | null>(null);
-  async function updateCollection() {
-    setSyncing(true);
-    setSyncMsg(null);
-    const r = await applyClearanceTags();
-    setSyncing(false);
-    if (!(r.success && r.data)) { setSyncMsg({ text: r.error || 'Update failed', bad: true }); return; }
-    const d = r.data;
-    const failed = d.failed.length ? ` · ${d.failed.length} failed, try again` : '';
-    setSyncMsg({ text: `+${d.added.length} −${d.removed.length}${failed}`, bad: d.failed.length > 0 });
-  }
   // This page's own URL WITH the current sort (and the Repricing origin, if any), so ← Back from a link out lands on the list as it was left.
   const origin = useOrigin();
   const self = encodeURIComponent(selfPath(origin, sort ? `${sort.key}.${sort.dir}` : undefined));
 
-  // CUT — see the note above SittingList. The working set leads in the chosen sort; cut styles follow, in the same sort.
-  const active = sorted.filter((s) => !s.cut);
-  const cutRows = sorted.filter((s) => s.cut);
+  // Collection membership by groupid; the members that are no longer slow (they sold), most pairs first.
+  const inColl = new Map((collection ?? []).filter((c) => c.groupid).map((c) => [c.groupid as string, c]));
+  const soldAll = (collection ?? []).filter((c) => !c.sitting).sort((a, b) => (b.units ?? 0) - (a.units ?? 0));
+
+  // CUT — display only (see above). Applies to both sections.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const rows = sorted.filter((s) => !hidden.has(s.groupid));
+  const sold = soldAll.filter((c) => !hidden.has(c.groupid ?? c.handle));
+
+  // Ticked rows — by groupid, or the handle for a hand-tagged product we don't know (those can only be cut, not added / removed).
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [cutBusy, setCutBusy] = useState(false);
-  const [cutErr, setCutErr] = useState<string | null>(null);
-  const pickedActive = active.filter((s) => picked.has(s.groupid)).map((s) => s.groupid);
-  const allPicked = active.length > 0 && pickedActive.length === active.length;
-  function togglePick(id: string) {
-    setPicked((p) => { const nx = new Set(p); if (nx.has(id)) nx.delete(id); else nx.add(id); return nx; });
+  const visibleKeys = [...rows.map((s) => s.groupid), ...sold.map((c) => c.groupid ?? c.handle)];
+  const pickedKeys = visibleKeys.filter((k) => picked.has(k));
+  const pickedIn = pickedKeys.filter((k) => inColl.has(k));
+  const pickedOut = pickedKeys.filter((k) => !inColl.has(k) && rows.some((s) => s.groupid === k));
+  const allPicked = visibleKeys.length > 0 && pickedKeys.length === visibleKeys.length;
+  function togglePick(k: string) {
+    setPicked((p) => { const nx = new Set(p); if (nx.has(k)) nx.delete(k); else nx.add(k); return nx; });
   }
-  async function changeCut(ids: string[], cut: boolean) {
-    if (ids.length === 0) return;
-    setCutBusy(true); setCutErr(null);
-    const r = await setSittingCut(ids, cut);
-    setCutBusy(false);
-    if (!r.success) { setCutErr(r.error || 'Cut failed'); return; }
-    onCutChange(ids, cut);
+  function cutPicked() {
+    setHidden((h) => new Set([...h, ...pickedKeys]));
     setPicked(new Set());
-    setSyncMsg(null);   // an earlier +N −N no longer describes what Update collection would do
+  }
+
+  // ADD / REMOVE — one row or the ticked ones. A message says what happened; the collection is re-read from Shopify after.
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);   // groupid with the Remove-with-price form open
+  function reset() {
+    setHidden(new Set());
+    setPicked(new Set());
+    setMsg(null);
+  }
+  async function setIn(ids: string[], inCollection: boolean) {
+    if (ids.length === 0) return;
+    setBusy(true); setMsg(null);
+    const r = await setClearance(ids, inCollection);
+    setBusy(false);
+    if (!(r.success && r.data)) { setMsg({ text: r.error || 'Update failed', bad: true }); return; }
+    const d = r.data;
+    const failed = d.failed.length ? ` · ${d.failed.length} failed (${d.failed.map((f) => f.groupid).join(', ')})` : '';
+    setMsg({ text: `${inCollection ? '+' : '−'}${d.done.length} ${inCollection ? 'added' : 'removed'}${failed}`, bad: d.failed.length > 0 });
+    setPicked(new Set());
+    onCollectionChange();
+  }
+  // UPDATE COLLECTION — one click adds every slow style not yet in (owner, 2026-10-10: one click, no preview). Never removes.
+  async function addAll() {
+    setBusy(true); setMsg(null);
+    const r = await applyClearanceTags();
+    setBusy(false);
+    if (!(r.success && r.data)) { setMsg({ text: r.error || 'Update failed', bad: true }); return; }
+    const d = r.data;
+    const failed = d.failed.length ? ` · ${d.failed.length} failed, try again` : '';
+    setMsg({ text: `+${d.added.length} added${failed}`, bad: d.failed.length > 0 });
+    onCollectionChange();
+  }
+
+  const link = 'text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50';
+  const pickLink = 'text-sm font-medium text-slate-900 hover:underline disabled:opacity-50';
+  const rowAction = 'ml-3 text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50';
+  function pill(groupid: string) {
+    if (!collection) return null;
+    return inColl.has(groupid)
+      ? <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-white">In collection</span>
+      : <span className="ml-2 rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-400">Not in</span>;
+  }
+  function rowButton(groupid: string) {
+    if (!collection || removing === groupid) return null;
+    return inColl.has(groupid)
+      ? <button type="button" onClick={() => setRemoving(groupid)} disabled={busy} className={rowAction}>Remove</button>
+      : <button type="button" onClick={() => setIn([groupid], true)} disabled={busy} className={rowAction}>Add</button>;
+  }
+  function removeRow(groupid: string) {
+    if (removing !== groupid) return null;
+    return (
+      <tr className="border-b border-slate-100 bg-slate-50">
+        <td colSpan={6} className="px-4 py-2">
+          <RemoveForm groupid={groupid} price={inColl.get(groupid)?.price ?? null}
+            onCancel={() => setRemoving(null)}
+            onDone={(text) => { setRemoving(null); setMsg({ text, bad: false }); onCollectionChange(); }} />
+        </td>
+      </tr>
+    );
+  }
+  function checkbox(k: string) {
+    return (
+      <td className="w-8 py-2 pl-4 pr-0">
+        <input type="checkbox" aria-label={`Select ${k}`} checked={picked.has(k)} disabled={busy} onChange={() => togglePick(k)}
+          className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
+      </td>
+    );
   }
 
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-100 px-5 py-3">
-        {/* Only the cut count stays (owner, 2026-10-12: "no need for all of this but keep cut somewhere") — the rule, styles and pairs
-            are already in the headline box above and on the Winners card. */}
-        <div className="text-sm text-slate-500">{cutRows.length > 0 && <>{cutRows.length} cut</>}</div>
-        <div className="flex items-center gap-5">
-          {cutErr && <span className="text-sm text-red-700">{cutErr}</span>}
-          {pickedActive.length > 0 && (
-            <button type="button" onClick={() => changeCut(pickedActive, true)} disabled={cutBusy}
-              className="text-sm font-medium text-slate-900 hover:underline disabled:opacity-50">
-              {cutBusy ? 'Cutting…' : `Cut ${pickedActive.length}`}
-            </button>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-100 px-5 py-3">
+        <div className="text-sm text-slate-500">
+          {collection && <>{collection.length} in collection</>}
+          {hidden.size > 0 && <>{collection && ' · '}{hidden.size} cut</>}
+          {collectionError && <span className="text-red-700">Collection: {collectionError}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          {msg && <span className={`text-sm ${msg.bad ? 'text-red-700' : 'text-slate-500'}`}>{msg.text}</span>}
+          {/* What the ticked rows can do — only the buttons that apply. */}
+          {pickedOut.length > 0 && (
+            <button type="button" onClick={() => setIn(pickedOut, true)} disabled={busy} className={pickLink}>Add {pickedOut.length}</button>
           )}
-          {syncMsg && <span className={`text-sm ${syncMsg.bad ? 'text-red-700' : 'text-slate-500'}`}>{syncMsg.text}</span>}
-          <button type="button" onClick={updateCollection} disabled={syncing}
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50">
-            {syncing ? 'Updating…' : 'Update collection'}
-          </button>
-          {active.length > 0 && (
+          {pickedIn.length > 0 && (
+            <button type="button" onClick={() => setIn(pickedIn, false)} disabled={busy} className={pickLink}>Remove {pickedIn.length}</button>
+          )}
+          {pickedKeys.length > 0 && (
+            <button type="button" onClick={cutPicked} disabled={busy} className={pickLink}>Cut {pickedKeys.length}</button>
+          )}
+          {hidden.size > 0 && <button type="button" onClick={reset} className={link}>Reset</button>}
+          <button type="button" onClick={addAll} disabled={busy} className={link}>{busy ? 'Updating…' : 'Update collection'}</button>
+          {data.styles.length > 0 && (
             <>
-              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`}
-                className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
-                Google Ads &rarr;
-              </Link>
-              <Link href={repriceHref(self)} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
-                Reprice &rarr;
-              </Link>
+              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Google Ads &rarr;</Link>
+              <Link href={repriceHref(self)} className={link}>Reprice &rarr;</Link>
             </>
           )}
         </div>
       </div>
-      {data.styles.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-slate-500">Nothing sitting.</p>
+      {rows.length === 0 && sold.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-slate-500">{hidden.size > 0 ? 'Every row is cut — Reset to bring them back.' : 'Nothing slow.'}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                 <th className="w-8 py-2 pl-4 pr-0">
-                  <input type="checkbox" aria-label="Select all" checked={allPicked} disabled={active.length === 0 || cutBusy}
-                    onChange={() => setPicked(allPicked ? new Set() : new Set(active.map((s) => s.groupid)))}
+                  <input type="checkbox" aria-label="Select all" checked={allPicked} disabled={visibleKeys.length === 0 || busy}
+                    onChange={() => setPicked(allPicked ? new Set() : new Set(visibleKeys))}
                     className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
                 </th>
                 <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
@@ -531,57 +601,121 @@ function SittingListBody({ data, onCutChange }: { data: StockSittingData; onCutC
               </tr>
             </thead>
             <tbody>
-              {active.map((s) => (
-                <tr key={s.groupid} className="border-b border-slate-100 text-slate-700 last:border-0">
-                  <td className="w-8 py-2 pl-4 pr-0">
-                    <input type="checkbox" aria-label={`Select ${s.groupid}`} checked={picked.has(s.groupid)} disabled={cutBusy}
-                      onChange={() => togglePick(s.groupid)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
-                      className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
-                      {s.groupid}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">{s.brand || '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    <span className="font-semibold text-slate-900">{n(s.units)}</span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
-                </tr>
+              {rows.map((s) => (
+                <Fragment key={s.groupid}>
+                  <tr className="border-b border-slate-100 text-slate-700 last:border-0">
+                    {checkbox(s.groupid)}
+                    <td className="whitespace-nowrap px-4 py-2">
+                      <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
+                        className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                        {s.groupid}
+                      </Link>
+                      {pill(s.groupid)}
+                      {rowButton(s.groupid)}
+                    </td>
+                    <td className="px-4 py-2 text-slate-500">{s.brand || '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      <span className="font-semibold text-slate-900">{n(s.units)}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
+                  </tr>
+                  {removeRow(s.groupid)}
+                </Fragment>
               ))}
-              {cutRows.length > 0 && (
+              {sold.length > 0 && (
                 <tr className="border-b border-slate-100 bg-slate-50">
                   <td colSpan={6} className="px-4 py-1.5 text-xs font-medium text-slate-500">
-                    Cut — skipped by Update collection, Reprice and Google Ads
+                    In collection, no longer slow — sold in the last {data.days} days
                   </td>
                 </tr>
               )}
-              {cutRows.map((s) => (
-                <tr key={s.groupid} className="border-b border-slate-100 text-slate-400 last:border-0">
-                  <td className="w-8 py-2 pl-4 pr-0" />
-                  <td className="px-4 py-2">
-                    <Link href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
-                      className="hover:text-slate-700 hover:underline">
-                      {s.groupid}
-                    </Link>
-                    <button type="button" onClick={() => changeCut([s.groupid], false)} disabled={cutBusy}
-                      className="ml-3 text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50">
-                      Release
-                    </button>
-                  </td>
-                  <td className="px-4 py-2">{s.brand || '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{n(s.units)}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
-                </tr>
+              {sold.map((c) => (
+                <Fragment key={c.handle}>
+                  <tr className="border-b border-slate-100 text-slate-700 last:border-0">
+                    {checkbox(c.groupid ?? c.handle)}
+                    <td className="whitespace-nowrap px-4 py-2">
+                      {c.groupid ? (
+                        <Link href={`/pricing/style/${encodeURIComponent(c.groupid)}?from=${self}`} title={c.title ?? undefined}
+                          className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                          {c.groupid}
+                        </Link>
+                      ) : (
+                        <span title="Tagged in Shopify admin — not a style here" className="text-slate-500">{c.title || c.handle}</span>
+                      )}
+                      {c.price != null && <span className="ml-2 text-slate-500">£{c.price.toFixed(2)}</span>}
+                      {c.groupid && rowButton(c.groupid)}
+                    </td>
+                    <td className="px-4 py-2 text-slate-500">—</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      <span className="font-semibold text-slate-900">{c.units == null ? '—' : n(c.units)}</span>
+                    </td>
+                    <td className="px-4 py-2" />
+                    <td className="px-4 py-2" />
+                  </tr>
+                  {c.groupid && removeRow(c.groupid)}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// REMOVE (one style) — take it out of the collection, optionally with a new price (blank = keep the current price). The tag comes off
+// first; the price only goes if that worked, so a failed remove never leaves a style re-priced but still in the collection.
+function RemoveForm({ groupid, price, onCancel, onDone }:
+  { groupid: string; price: number | null; onCancel: () => void; onDone: (text: string) => void }) {
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const typed = value.trim();
+  const newPrice = typed === '' ? null : Number(typed);
+  const bad = newPrice !== null && !(Number.isFinite(newPrice) && newPrice > 0);
+
+  async function submit() {
+    if (bad || busy) return;
+    setBusy(true); setErr(null);
+    const r = await setClearance([groupid], false);
+    if (!(r.success && r.data && r.data.done.length === 1)) {
+      setBusy(false);
+      setErr(r.data?.failed[0]?.error || r.error || 'Remove failed');
+      return;
+    }
+    if (newPrice !== null) {
+      const rounded = Math.round(newPrice * 100) / 100;
+      const p = await applyPrice(groupid, rounded, null, REMOVE_NOTE);
+      setBusy(false);
+      if (!p.success) { setErr(`Removed from the collection, but the price didn't save: ${p.error || 'error'}`); return; }
+      onDone(`−1 removed · ${groupid} now £${rounded.toFixed(2)}`);
+      return;
+    }
+    setBusy(false);
+    onDone(`−1 removed · ${groupid}`);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <span className="font-medium text-slate-700">Remove {groupid} from the collection</span>
+      <label className="flex items-center gap-1.5 text-slate-500">
+        New price £
+        <input type="text" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} autoFocus
+          placeholder={price != null ? price.toFixed(2) : ''}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+          className="w-20 rounded border border-slate-300 px-2 py-1 text-right tabular-nums text-slate-900 focus:border-slate-500 focus:outline-none" />
+      </label>
+      <span className="text-xs text-slate-400">blank = keep {price != null ? `£${price.toFixed(2)}` : 'the price'}</span>
+      <button type="button" onClick={submit} disabled={busy || bad}
+        className="rounded bg-slate-800 px-3 py-1 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-50">
+        {busy ? 'Removing…' : newPrice !== null && !bad ? `Remove & set £${newPrice.toFixed(2)}` : 'Remove'}
+      </button>
+      <button type="button" onClick={onCancel} disabled={busy}
+        className="text-xs font-medium text-slate-500 hover:text-slate-900 hover:underline">
+        Cancel
+      </button>
+      {err && <span className="text-red-700">{err}</span>}
     </div>
   );
 }

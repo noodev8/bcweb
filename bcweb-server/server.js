@@ -334,8 +334,9 @@ app.use('/birk-availability-update', require('./routes/birk-availability-update'
 app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   // GET: READ ONLY
 app.use('/analytics-stock-sitting', require('./routes/analytics-stock-sitting'));   // GET: READ ONLY
 app.use('/pricing-sitting-list', require('./routes/pricing-sitting-list'));         // GET: READ ONLY — Repricing list of the sitting styles
-app.use('/shopify-clearance-apply', require('./routes/shopify-clearance-apply'));     // POST: WRITES SHOPIFY TAGS — sync clearance tag to sitting (one click)
-app.use('/stock-sitting-cut', require('./routes/stock-sitting-cut'));                 // POST: cut / release sitting styles (skusummary.sitting_cut_*)
+app.use('/shopify-clearance-apply', require('./routes/shopify-clearance-apply'));     // POST: WRITES SHOPIFY TAGS — ADD sitting styles to the clearance collection (never removes)
+app.use('/shopify-clearance-list', require('./routes/shopify-clearance-list'));       // GET: what is in the clearance collection now (Shopify tag, live)
+app.use('/shopify-clearance-set', require('./routes/shopify-clearance-set'));         // POST: WRITES SHOPIFY TAGS — put chosen styles in / take them out of the clearance collection
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.

@@ -1208,7 +1208,6 @@ export interface SittingStyle {
   units: number;             // local + Amazon, one number
   last_sale: string | null;  // YYYY-MM-DD
   idle_days: number | null;  // days since the last sale; null = never sold
-  cut: boolean;              // cut from the working set — still sitting, but Update collection / Reprice / Google Ads chip skip it
 }
 
 // Stock now split three ways that add up to total_units: selling (sold in `days`) | new (unsold, created under `new_days` ago) | sitting.
@@ -1232,28 +1231,18 @@ export function getStockSitting() {
       selling_units: b.selling_units ?? 0,
       new_units: b.new_units ?? 0,
       sitting_units: b.sitting_units ?? 0,
-      styles: (b.styles || []).map((s: SittingStyle) => ({ ...s, cut: s.cut === true })),
+      styles: b.styles || [],
     })
   );
 }
 
-// Cut sitting styles from the working set (cut=true) or release them (cut=false). Saved team-wide on skusummary until released; the
-// server's clearance tag, Repricing list and the Google Ads chip all skip cut styles. Writes nothing to Shopify.
-export function setSittingCut(groupids: string[], cut: boolean) {
-  return request<{ updated: number }>(
-    { url: '/stock-sitting-cut', method: 'POST', data: { groupids, cut } },
-    (b) => ({ updated: b.updated ?? 0 })
-  );
-}
-
-// Shopify `clearance` tag kept in step with the sitting list (server: utils/clearanceTag.js — the list owns the tag). One call: the
-// server plans and writes the tags to the LIVE shop, then says what it did. groupid null = a tagged Shopify product we don't know.
+// The Shopify `clearance` collection (server: utils/clearanceTag.js). Since 2026-10-14 Update collection only ADDS sitting styles; only
+// the owner takes one out (setClearance). One call: the server plans and writes the tags to the LIVE shop, then says what it did.
 export interface ClearanceItem { groupid: string | null; handle: string; title: string | null }
 export interface ClearanceResult {
   tag: string;
   added: ClearanceItem[];
-  removed: ClearanceItem[];
-  failed: (ClearanceItem & { action: 'add' | 'remove'; error: string })[];
+  failed: (ClearanceItem & { error: string })[];
   missing: ClearanceItem[];
 }
 
@@ -1264,7 +1253,26 @@ const CLEARANCE_TIMEOUT = 120000;
 export function applyClearanceTags() {
   return request<ClearanceResult>(
     { url: '/shopify-clearance-apply', method: 'POST', data: {}, timeout: CLEARANCE_TIMEOUT },
-    (b) => ({ tag: b.tag || 'clearance', added: b.added || [], removed: b.removed || [], failed: b.failed || [], missing: b.missing || [] })
+    (b) => ({ tag: b.tag || 'clearance', added: b.added || [], failed: b.failed || [], missing: b.missing || [] })
+  );
+}
+
+// What is in the collection now (read live from Shopify). groupid null = tagged in Shopify admin, not a style we know.
+// units = live pairs (local + Amazon); sitting = still on the sitting list.
+export interface ClearanceCollectionItem {
+  groupid: string | null; handle: string; title: string | null; price: number | null; units: number | null; sitting: boolean;
+}
+export function getClearanceCollection() {
+  return request<ClearanceCollectionItem[]>({ url: '/shopify-clearance-list', method: 'GET' }, (b) => b.items || []);
+}
+
+// Put chosen styles into the collection (inCollection=true) or take them out (false). A new price on Remove is a separate applyPrice the
+// screen sends after. failed = styles Shopify didn't take (sending them again is safe).
+export interface ClearanceSetResult { done: string[]; failed: { groupid: string; error: string }[] }
+export function setClearance(groupids: string[], inCollection: boolean) {
+  return request<ClearanceSetResult>(
+    { url: '/shopify-clearance-set', method: 'POST', data: { groupids, in: inCollection }, timeout: CLEARANCE_TIMEOUT },
+    (b) => ({ done: b.done || [], failed: b.failed || [] })
   );
 }
 
@@ -1673,7 +1681,6 @@ export function getSalesReport(params: {
     })
   );
 }
-
 
 // =============================================================================================================================
 // Inventory Management (docs/inventory-spec.md) — read-only stock lookup.
