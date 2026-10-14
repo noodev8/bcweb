@@ -4,7 +4,7 @@ API Route: order_status_customer_manifest
 =======================================================================================================================================
 Method: POST
 Purpose: The "Fulfill" button on Customer Orders, step one only (docs/fulfil-plan.md): manifest EVERYTHING Click & Drop has waiting —
-         bcweb's labels and PowerBuilder's alike (owner, 2026-10-14) — and return the manifest PDF(s) for the browser to print.
+         bcweb's labels and PowerBuilder's alike (owner, 2026-10-14) — and return the manifest PDF(s) for the browser to save to Downloads.
          The Shopify fulfil step is not built yet.
 
 ASYNCHRONOUS IN CLICK & DROP: POST /manifests only starts the work and hands back ids; the PDF appears on GET /manifests/{id} once

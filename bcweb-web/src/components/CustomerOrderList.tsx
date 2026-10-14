@@ -383,9 +383,8 @@ export default function CustomerOrderList() {
     scanRef.current?.focus();
   }
 
-  // Fulfill, manifest step (see the button). Prints each finished manifest; one still processing at Click & Drop is kept so the next
-  // press collects it rather than starting another. Several manifests (one per carrier) print a few seconds apart, because each print
-  // replaces the last one's frame (lib/printPdf.ts) and an early replace would cancel the job.
+  // Manifest and fulfil, manifest step (see the button). Downloads each finished manifest; one still processing at Click & Drop is kept so
+  // the next press collects it rather than starting another.
   async function manifest() {
     setManifesting(true);
     setManifestNote(null);
@@ -403,12 +402,24 @@ export default function CustomerOrderList() {
     const failed = all.filter((m) => m.failed);
     setPendingManifests(pending.map((m) => m.id));
 
-    done.filter((m) => m.pdf).forEach((m, i) => setTimeout(() => printPdfBase64(m.pdf!, refocusScan), i * 8000));
+    // Saved to Downloads, not printed (owner, 2026-10-14). Named by date + the manifest id's first block, so two in a day don't clash.
+    const day = new Date().toISOString().slice(0, 10);
+    for (const m of done) {
+      if (!m.pdf) continue;
+      const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(m.pdf), (c) => c.charCodeAt(0))], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `manifest-${day}-${m.id.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
 
     const orders = done.reduce((n, m) => n + m.orders.length, 0);
     const parts: string[] = [];
-    if (done.length) parts.push(`Manifested ${orders} order${orders === 1 ? '' : 's'} — printing the manifest`);
-    if (done.some((m) => !m.pdf)) parts.push('a manifest came back with no PDF — print it from Click & Drop');
+    if (done.length) parts.push(`Manifested ${orders} order${orders === 1 ? '' : 's'} — manifest saved to Downloads`);
+    if (done.some((m) => !m.pdf)) parts.push('a manifest came back with no PDF — download it from Click & Drop');
     if (pending.length) parts.push('Click & Drop is still making the manifest — press Collect manifest in a minute to collect it');
     if (failed.length) parts.push(`manifest failed at Click & Drop (ref ${failed.map((m) => m.errorReference || m.id).join(', ')})`);
     setManifestNote({ ok: !failed.length && done.every((m) => m.pdf), text: parts.join('; ') });
@@ -606,7 +617,7 @@ export default function CustomerOrderList() {
 
         {/* --- fulfill ---------------------------------------------------------------------------------------------------------
             Acts on the list, not on one order (owner, 2026-10-14). For now it MANIFESTS only — everything Click & Drop has waiting,
-            then prints the manifest; the Shopify fulfil step comes later (docs/fulfil-plan.md). Behind a confirm: a manifest can't be
+            then saves the manifest PDF to Downloads; the Shopify fulfil step comes later (docs/fulfil-plan.md). Behind a confirm: a manifest can't be
             undone. While a manifest is still processing at Click & Drop the button collects it instead of starting another. */}
         <span className="ml-auto">
           {manifestConfirm ? (
@@ -620,7 +631,7 @@ export default function CustomerOrderList() {
               type="button"
               disabled={manifesting}
               onClick={() => (pendingManifests.length ? manifest() : setManifestConfirm(true))}
-              title={pendingManifests.length ? 'Collect the manifest Click & Drop is still making' : 'Manifest everything waiting on Click & Drop and print the manifest'}
+              title={pendingManifests.length ? 'Collect the manifest Click & Drop is still making' : 'Manifest everything waiting on Click & Drop and download the manifest'}
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
             >
               {manifesting && <ArrowPathIcon className="h-4 w-4 animate-spin" />}

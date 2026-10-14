@@ -4,20 +4,20 @@ Status: **plan only, not built** (agreed with owner 2026-10-14). The decisions b
 The button already sits in the top row of Customer Orders (list-wide, not per order) and does nothing yet.
 
 ## The job
-One press: manifest everything on Click & Drop that needs manifesting, print the manifest, then fulfil every PACKED customer order on
+One press: manifest everything on Click & Drop that needs manifesting, save the manifest to Downloads, then fulfil every PACKED customer order on
 Shopify with its Royal Mail tracking number, so Shopify emails the customer.
 
 ## Owner decisions (2026-10-14)
 - **Manifest = everything Click & Drop has waiting**, whoever created it (PowerBuilder orders included). Don't worry about PowerBuilder.
 - **Send Shopify's shipping confirmation email** (`notifyCustomer: true`).
 - **Only fulfil a PACKED order.** Never a Waiting order (`customerwaiting = 1`) and never Pack only (courier `'0'`).
-- **Print the manifest.**
+- **Save the manifest PDF to Downloads** (owner, 2026-10-14 — changed from printing it).
 
 ## Flow
 1. **Confirm** ("Manifest and fulfil N packed orders?") — same ConfirmBox pattern as Cancel label. A manifest can't be undone.
 2. **Manifest** on Click & Drop (`clickDrop.js → manifest()`; `POST /manifests` from memory — check the exact path/body/response in the
    C&D API docs before building). Returns the manifest number + PDF.
-3. **Print the manifest PDF** (same hidden-iframe print helper as labels).
+3. **Download the manifest PDF** to the browser's Downloads folder.
 4. **Pick the orders to fulfil:** customer orders (ordertype 1) where EVERY line is packed (`batch = '2'`), none is Waiting, courier is
    not `'0'`. A partly packed order is skipped.
 5. **Per order:** `findByReference(ordernum)` → `trackingNumber` (+ `manifestedOn`). No C&D order or no tracking number → skip, report why.
