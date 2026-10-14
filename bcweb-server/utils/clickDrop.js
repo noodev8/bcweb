@@ -53,16 +53,25 @@ async function call(method, path, { body, binary = false } = {}) {
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON error body */ }
-  if (!res.ok) throw new ClickDropError(errorText(json) || `Click & Drop returned HTTP ${res.status}`, res.status, json ?? text);
+  // No readable message: show the raw body and the call, so a refusal like the manifest's bare 400 can be diagnosed from the screen.
+  if (!res.ok) {
+    throw new ClickDropError(
+      errorText(json) || `HTTP ${res.status} on ${method} ${path.split('?')[0]}${text ? `: ${text.slice(0, 300)}` : ' (empty reply)'}`,
+      res.status, json ?? text
+    );
+  }
   return json;
 }
 
 // Click & Drop errors come in a few shapes: an array of {code,message}, {message}, or a failedOrders list. One readable line.
 function errorText(json) {
   if (!json) return '';
-  if (Array.isArray(json)) return json.map((e) => e.message || e.errorMessage).filter(Boolean).join('; ');
+  if (Array.isArray(json)) return json.map((e) => e.message || e.errorMessage || e.description).filter(Boolean).join('; ');
   if (json.message) return json.message;
-  if (json.errors) return errorText(json.errors);
+  if (Array.isArray(json.errors)) return errorText(json.errors);
+  // ASP.NET validation shape: { title, errors: { Field: ["msg", ...] } }
+  if (json.errors && typeof json.errors === 'object') return Object.values(json.errors).flat().join('; ') || json.title || '';
+  if (json.title || json.detail) return [json.title, json.detail].filter(Boolean).join(' — ');
   return '';
 }
 
@@ -147,6 +156,44 @@ async function deleteOrder(orderIdentifier) {
   return result;
 }
 
+/*
+MANIFEST (OBA only — 403 otherwise). Asynchronous in Click & Drop: POST /manifests starts one manifest per carrier over EVERY order on
+the account that's ready (whoever created it — PowerBuilder's too, owner 2026-10-14) and returns their ids; GET /manifests/{id} reports
+progress and, once documentStatus is Completed, carries the manifest PDF (base64). An empty `manifests` list (HTTP 200) means nothing
+was waiting to be manifested. Can't be undone: a manifested order can no longer be deleted.
+
+CARRIER NAME IS REQUIRED on this account (C&D: "The CarrierName field is required", 2026-10-14 — it has one carrier, "Royal Mail OBA",
+but the field is mandatory when there are several postage location numbers). It must match the name in Click & Drop's carrier settings,
+so it's read from GET /carriers each time (the active RoyalMailOba carrier) rather than hard-coded — a rename there doesn't break this.
+*/
+
+/** The name of the account's active Royal Mail OBA carrier, as Click & Drop's carrier settings spell it. */
+async function obaCarrierName() {
+  const carriers = await call('GET', '/carriers');
+  const oba = (Array.isArray(carriers) ? carriers : [])
+    .find((c) => c.carrierType === 'RoyalMailOba' && c.carrierStatus === 'Active');
+  if (!oba?.carrierName) throw new ClickDropError('no active Royal Mail OBA carrier on the account', 200, carriers);
+  return oba.carrierName;
+}
+
+/** Start manifesting everything that's ready. Returns the manifest ids — [] when there was nothing to manifest. */
+async function createManifests() {
+  // Nothing to manifest: the spec says HTTP 200 + empty list, but the live API answers 400 NO_ELIGIBLE_ORDERS (seen 2026-10-14).
+  // Both mean the same thing, so both come back as [].
+  try {
+    const result = await call('POST', '/manifests', { body: { carrierName: await obaCarrierName() } });
+    return Array.isArray(result?.manifests) ? result.manifests : [];
+  } catch (err) {
+    if (err.status === 400 && (err.body?.errors || []).some((e) => e.code === 'NO_ELIGIBLE_ORDERS')) return [];
+    throw err;
+  }
+}
+
+/** { manifestStatus: InProgress|Completed|Failed, documentStatus, orders: [{orderIdentifier, orderReference}], pdf, errorReference } */
+function getManifest(manifestId) {
+  return call('GET', `/manifests/${encodeURIComponent(manifestId)}`);
+}
+
 module.exports = {
-  SERVICE_CODES, MAX_KG, ClickDropError, findByReference, getLabel, createOrder, deleteOrder,
+  SERVICE_CODES, MAX_KG, ClickDropError, findByReference, getLabel, createOrder, deleteOrder, createManifests, getManifest,
 };

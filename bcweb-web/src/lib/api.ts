@@ -2340,6 +2340,33 @@ export function printCustomerLabel(ordernum: string, opts: { codes?: string[]; w
   );
 }
 
+export interface CustomerManifest {
+  id: string;
+  status: string;                // InProgress | Completed | Failed
+  orders: string[];              // ordernums on this manifest
+  pdf: string | null;            // base64, once Click & Drop has made the document
+  pending: boolean;              // still processing when the server stopped waiting — collect it with its id
+  failed: boolean;
+  errorReference: string | null;
+}
+
+// The Fulfill button, manifest step: manifests everything Click & Drop has waiting (irreversible). Pass `manifestIds` to collect
+// manifests a previous call left pending instead of starting a new one. return_code NOTHING_TO_MANIFEST = nothing was waiting.
+export function manifestCustomerOrders(manifestIds?: string[]) {
+  return request<CustomerManifest[]>(
+    { url: '/order-status-customer-manifest', method: 'POST', data: manifestIds?.length ? { manifestIds } : {}, timeout: 90000 },
+    (b) => (Array.isArray(b.manifests) ? b.manifests : []).map((m: any) => ({
+      id: String(m.id || ''),
+      status: String(m.status || ''),
+      orders: Array.isArray(m.orders) ? m.orders.map(String) : [],
+      pdf: m.pdf || null,
+      pending: !!m.pending,
+      failed: !!m.failed,
+      errorReference: m.errorReference || null,
+    }))
+  );
+}
+
 // Voids the Click & Drop order (refused once Royal Mail has manifested it) and un-packs the order so it can be scanned again.
 export function cancelCustomerLabel(ordernum: string) {
   return request<{ unpacked: number }>(

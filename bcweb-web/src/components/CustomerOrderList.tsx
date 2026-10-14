@@ -62,7 +62,7 @@ import {
 import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
   CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
-  printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
+  manifestCustomerOrders, printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
   setCustomerOrderWaiting,
 } from '@/lib/api';
 import { printPdfBase64 } from '@/lib/printPdf';
@@ -143,6 +143,12 @@ export default function CustomerOrderList() {
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+
+  // --- Fulfill (manifest step) — see manifest() -----------------------------------------------------------------------------------
+  const [manifestConfirm, setManifestConfirm] = useState(false);
+  const [manifesting, setManifesting] = useState(false);
+  const [manifestNote, setManifestNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pendingManifests, setPendingManifests] = useState<string[]>([]);
 
   // --- scan to label (see the header: scans live here, the label lives in Click & Drop) -----------------------------------------
   const [scan, setScan] = useState('');
@@ -377,6 +383,37 @@ export default function CustomerOrderList() {
     scanRef.current?.focus();
   }
 
+  // Fulfill, manifest step (see the button). Prints each finished manifest; one still processing at Click & Drop is kept so the next
+  // press collects it rather than starting another. Several manifests (one per carrier) print a few seconds apart, because each print
+  // replaces the last one's frame (lib/printPdf.ts) and an early replace would cancel the job.
+  async function manifest() {
+    setManifesting(true);
+    setManifestNote(null);
+    const res = await manifestCustomerOrders(pendingManifests);
+    setManifesting(false);
+    if (!res.success || !res.data) {
+      const nothing = res.return_code === 'NOTHING_TO_MANIFEST';
+      setManifestNote({ ok: nothing, text: res.error || 'The manifest didn’t go through' });
+      if (nothing) setPendingManifests([]);
+      return;
+    }
+    const all = res.data;
+    const done = all.filter((m) => !m.pending && !m.failed);
+    const pending = all.filter((m) => m.pending);
+    const failed = all.filter((m) => m.failed);
+    setPendingManifests(pending.map((m) => m.id));
+
+    done.filter((m) => m.pdf).forEach((m, i) => setTimeout(() => printPdfBase64(m.pdf!, refocusScan), i * 8000));
+
+    const orders = done.reduce((n, m) => n + m.orders.length, 0);
+    const parts: string[] = [];
+    if (done.length) parts.push(`Manifested ${orders} order${orders === 1 ? '' : 's'} — printing the manifest`);
+    if (done.some((m) => !m.pdf)) parts.push('a manifest came back with no PDF — print it from Click & Drop');
+    if (pending.length) parts.push('Click & Drop is still making the manifest — press Collect manifest in a minute to collect it');
+    if (failed.length) parts.push(`manifest failed at Click & Drop (ref ${failed.map((m) => m.errorReference || m.id).join(', ')})`);
+    setManifestNote({ ok: !failed.length && done.every((m) => m.pdf), text: parts.join('; ') });
+  }
+
   // Voids the Click & Drop order (refused once Royal Mail has manifested it — the error shows in the bar) and un-packs the order.
   // Its scans clear with it, so the packer starts the order again from the first shoe rather than half-way through a box they may
   // have just unpacked.
@@ -568,13 +605,29 @@ export default function CustomerOrderList() {
         )}
 
         {/* --- fulfill ---------------------------------------------------------------------------------------------------------
-            Acts on the list, not on one order (owner, 2026-10-14). Placeholder: the button only — no action wired yet. */}
-        <button
-          type="button"
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
-        >
-          Fulfill
-        </button>
+            Acts on the list, not on one order (owner, 2026-10-14). For now it MANIFESTS only — everything Click & Drop has waiting,
+            then prints the manifest; the Shopify fulfil step comes later (docs/fulfil-plan.md). Behind a confirm: a manifest can't be
+            undone. While a manifest is still processing at Click & Drop the button collects it instead of starting another. */}
+        <span className="ml-auto">
+          {manifestConfirm ? (
+            <ConfirmBox
+              message="Manifest everything on Click & Drop? This can’t be undone."
+              onYes={() => { setManifestConfirm(false); manifest(); }}
+              onNo={() => setManifestConfirm(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={manifesting}
+              onClick={() => (pendingManifests.length ? manifest() : setManifestConfirm(true))}
+              title={pendingManifests.length ? 'Collect the manifest Click & Drop is still making' : 'Manifest everything waiting on Click & Drop and print the manifest'}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {manifesting && <ArrowPathIcon className="h-4 w-4 animate-spin" />}
+              {manifesting ? 'Manifesting…' : pendingManifests.length ? 'Collect manifest' : 'Manifest and fulfil'}
+            </button>
+          )}
+        </span>
 
         {/* --- last order ------------------------------------------------------------------------------------------------------
             Re-selects the last order this packer labelled (owner, 2026-10-13) — for the click off it that wasn't meant. Clears a
@@ -662,6 +715,16 @@ export default function CustomerOrderList() {
           />
         </div>
       </div>
+
+      {manifestNote && (
+        <p className={'mb-2 flex items-center gap-1.5 text-sm font-medium ' + (manifestNote.ok ? 'text-emerald-700' : 'text-red-700')}
+          role={manifestNote.ok ? 'status' : 'alert'}>
+          {manifestNote.ok
+            ? <CheckCircleIcon className="h-4 w-4 shrink-0" />
+            : <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />}
+          {manifestNote.text}
+        </p>
+      )}
 
       {scanNote && (
         <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-amber-800" role="status">
