@@ -424,7 +424,7 @@ const repriceHref = (self: string) =>
 // "Removed from clearance" and no review date. Any other pricing goes through the GROUPID link to the price drill, as everywhere.
 //
 // CUT is DISPLAY ONLY (owner, 2026-10-14: "all it does is simply remove from the display. I need a reset/refresh to bring all back").
-// Tick rows, Cut, they leave the screen; Reset (or a reload) brings every row back. Nothing is stored and no action skips a cut row.
+// Tick rows and Cut, or click a row's own ×, and they leave the screen; Reset (or a reload) brings every row back. Nothing is stored and no action skips a cut row.
 // Until that day it was a stored team-wide mark that Update collection / Reprice / Google Ads skipped — removed with its columns
 // ("Cut is mixing the logic"); don't bring the storage back.
 // Click handlers only, never a useEffect (docs/maintenance-notes.md).
@@ -481,6 +481,12 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
     setHidden((h) => new Set([...h, ...pickedKeys]));
     setPicked(new Set());
   }
+  // The row's own × — cut just that one line, no ticking (owner, 2026-10-14: "cut single lines quickly"). Same display-only cut.
+  function cutOne(k: string) {
+    setHidden((h) => new Set([...h, k]));
+    setPicked((p) => { if (!p.has(k)) return p; const nx = new Set(p); nx.delete(k); return nx; });
+    if (removing === k) setRemoving(null);
+  }
 
   // ADD / REMOVE — one row or the ticked ones. A message says what happened; the collection is re-read from Shopify after.
   const [busy, setBusy] = useState(false);
@@ -534,12 +540,20 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
     if (removing !== groupid) return null;
     return (
       <tr className="border-b border-slate-100 bg-slate-50">
-        <td colSpan={6} className="px-4 py-2">
+        <td colSpan={7} className="px-4 py-2">
           <RemoveForm groupid={groupid} price={inColl.get(groupid)?.price ?? null}
             onCancel={() => setRemoving(null)}
             onDone={(text) => { setRemoving(null); setMsg({ text, bad: false }); onCollectionChange(); }} />
         </td>
       </tr>
+    );
+  }
+  function cutCell(k: string) {
+    return (
+      <td className="w-8 py-2 pl-0 pr-4 text-right">
+        <button type="button" onClick={() => cutOne(k)} aria-label={`Cut ${k}`} title="Cut this row (Reset brings it back)"
+          className="px-1 text-base leading-none text-slate-300 hover:text-slate-700">&times;</button>
+      </td>
     );
   }
   function checkbox(k: string) {
@@ -598,6 +612,7 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
                 <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
                 <SortableTh {...th} sortKey="last_sale" label="Last sale" align="right" />
                 <SortableTh {...th} sortKey="days" label="Days" align="right" />
+                <th className="w-8 py-2 pl-0 pr-4" />
               </tr>
             </thead>
             <tbody>
@@ -619,13 +634,14 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{s.last_sale ? weekLabel(s.last_sale) : 'never'}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.idle_days ?? '—'}</td>
+                    {cutCell(s.groupid)}
                   </tr>
                   {removeRow(s.groupid)}
                 </Fragment>
               ))}
               {sold.length > 0 && (
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  <td colSpan={6} className="px-4 py-1.5 text-xs font-medium text-slate-500">
+                  <td colSpan={7} className="px-4 py-1.5 text-xs font-medium text-slate-500">
                     In collection, no longer slow — sold in the last {data.days} days
                   </td>
                 </tr>
@@ -652,6 +668,7 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
                     </td>
                     <td className="px-4 py-2" />
                     <td className="px-4 py-2" />
+                    {cutCell(c.groupid ?? c.handle)}
                   </tr>
                   {c.groupid && removeRow(c.groupid)}
                 </Fragment>
