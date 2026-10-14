@@ -567,6 +567,15 @@ export default function CustomerOrderList() {
           />
         )}
 
+        {/* --- fulfill ---------------------------------------------------------------------------------------------------------
+            Acts on the list, not on one order (owner, 2026-10-14). Placeholder: the button only — no action wired yet. */}
+        <button
+          type="button"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          Fulfill
+        </button>
+
         {/* --- last order ------------------------------------------------------------------------------------------------------
             Re-selects the last order this packer labelled (owner, 2026-10-13) — for the click off it that wasn't meant. Clears a
             filter or search that would hide it and scrolls to it, like a scan does. Disabled once that order has left the list
@@ -584,7 +593,7 @@ export default function CustomerOrderList() {
           }}
           disabled={!lastPacked || !orders.has(lastPacked)}
           title={lastPacked ? `Select ${lastPacked}, the last order you printed a label for` : 'No label printed yet'}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
         >
           <ArrowUturnLeftIcon className="h-4 w-4" />
           Last order{lastPacked && orders.has(lastPacked) ? ` · ${lastPacked}` : ''}
