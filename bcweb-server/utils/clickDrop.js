@@ -36,7 +36,8 @@ class ClickDropError extends Error {
   constructor(message, status, body) { super(message); this.status = status; this.body = body; }
 }
 
-async function call(method, path, { body, binary = false } = {}) {
+// `raw`: return { status, json, text, location } on success instead of just the JSON — for replies whose shape we don't trust.
+async function call(method, path, { body, binary = false, raw = false } = {}) {
   const key = process.env.CLICKDROP_API_KEY;
   if (!key) throw new ClickDropError('CLICKDROP_API_KEY is not set on the server', 0, null);
   const res = await fetch(BASE + path, {
@@ -60,6 +61,7 @@ async function call(method, path, { body, binary = false } = {}) {
       res.status, json ?? text
     );
   }
+  if (raw) return { status: res.status, json, text, location: res.headers?.get?.('location') || null };
   return json;
 }
 
@@ -176,17 +178,41 @@ async function obaCarrierName() {
   return oba.carrierName;
 }
 
-/** Start manifesting everything that's ready. Returns the manifest ids — [] when there was nothing to manifest. */
+// Manifest ids out of whatever a successful POST /manifests sent back. The spec says { manifests: ["<uuid>"] }, but on the first live
+// manifest (2026-10-14) the reply had no such list — the manifest happened and bcweb said "nothing to manifest". So every plausible
+// shape is tried: a bare array, `manifests`/`manifestIds`/`manifestGuids`, items as strings or objects, and a Location header.
+const ID_KEYS = ['manifestGuid', 'manifestIdentifier', 'manifestId', 'guid', 'id'];
+function manifestIds(json, location) {
+  const list = Array.isArray(json) ? json : (json?.manifests ?? json?.manifestIds ?? json?.manifestGuids ?? (json ? [json] : []));
+  const ids = (Array.isArray(list) ? list : [list])
+    .map((m) => (typeof m === 'string' ? m : ID_KEYS.map((k) => m?.[k]).find(Boolean)))
+    .filter((v) => typeof v === 'string' && v.trim());
+  if (!ids.length && location) {
+    const last = String(location).split('/').filter(Boolean).pop();
+    if (last) ids.push(last);
+  }
+  return ids;
+}
+
+/**
+ * Start manifesting everything that's ready. Returns { ids, nothing, reply }:
+ *   nothing  true ONLY when Click & Drop said so — the live 400 NO_ELIGIBLE_ORDERS, or the spec's HTTP 200 with an explicit empty list.
+ *   ids      the manifests started. Can be [] with nothing=false: Click & Drop accepted (so it DID manifest) but sent no id we can read —
+ *            `reply` then carries its raw answer so the caller can show it, and the PDF is on the Click & Drop website.
+ * Never reads an unrecognised success as "nothing": that's the bug this replaced.
+ */
 async function createManifests() {
-  // Nothing to manifest: the spec says HTTP 200 + empty list, but the live API answers 400 NO_ELIGIBLE_ORDERS (seen 2026-10-14).
-  // Both mean the same thing, so both come back as [].
+  let r;
   try {
-    const result = await call('POST', '/manifests', { body: { carrierName: await obaCarrierName() } });
-    return Array.isArray(result?.manifests) ? result.manifests : [];
+    r = await call('POST', '/manifests', { body: { carrierName: await obaCarrierName() }, raw: true });
   } catch (err) {
-    if (err.status === 400 && (err.body?.errors || []).some((e) => e.code === 'NO_ELIGIBLE_ORDERS')) return [];
+    if (err.status === 400 && (err.body?.errors || []).some((e) => e.code === 'NO_ELIGIBLE_ORDERS')) return { ids: [], nothing: true, reply: null };
     throw err;
   }
+  const ids = manifestIds(r.json, r.location);
+  const reply = `HTTP ${r.status}${r.location ? ` Location ${r.location}` : ''}: ${r.text ? r.text.slice(0, 500) : '(empty)'}`;
+  const nothing = !ids.length && r.status === 200 && Array.isArray(r.json?.manifests) && r.json.manifests.length === 0;
+  return { ids, nothing, reply };
 }
 
 /** { manifestStatus: InProgress|Completed|Failed, documentStatus, orders: [{orderIdentifier, orderReference}], pdf, errorReference } */

@@ -16,6 +16,10 @@ the Click & Drop website.)
 
 NO DB WRITES. A manifest changes Click & Drop only; nothing in orderstatus records it.
 
+MANIFEST_NO_ID: Click & Drop accepted the manifest (it IS done) but its reply carried no id this route could read, so there's no PDF to
+collect here — the message says so, includes the raw reply, and points at the Click & Drop website. The first live manifest
+(2026-10-14) hit exactly this and was wrongly reported as "nothing to manifest"; utils/clickDrop.js → createManifests has the detail.
+
 IRREVERSIBLE: a manifested order can no longer be cancelled in Click & Drop. The client asks for a confirm before calling.
 =======================================================================================================================================
 Request Payload:
@@ -28,7 +32,7 @@ Success Response:
                    "pending": false, "failed": false, "errorReference": null } ] }
 =======================================================================================================================================
 Return Codes:
-"SUCCESS" · "NOTHING_TO_MANIFEST" · "CLICKDROP_ERROR" · "UNAUTHORIZED" · "SERVER_ERROR"
+"SUCCESS" · "NOTHING_TO_MANIFEST" · "MANIFEST_NO_ID" · "CLICKDROP_ERROR" · "UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -54,11 +58,23 @@ router.post('/', async (req, res) => {
     : [];
 
   try {
-    const ids = given.length ? given : await clickDrop.createManifests();
-    if (!ids.length) {
-      return res.json({ return_code: 'NOTHING_TO_MANIFEST', message: 'Nothing on Click & Drop is waiting to be manifested' });
+    let ids = given;
+    if (!given.length) {
+      const started = await clickDrop.createManifests();
+      // Always logged: the reply's shape is what broke the first live manifest (see createManifests).
+      logger.info(`[order-status-customer-manifest] POST /manifests by ${req.user.display_name} -> ${started.reply || 'NO_ELIGIBLE_ORDERS'}`);
+      if (started.nothing) {
+        return res.json({ return_code: 'NOTHING_TO_MANIFEST', message: 'Nothing on Click & Drop is waiting to be manifested' });
+      }
+      if (!started.ids.length) {
+        // Click & Drop ACCEPTED — the manifest happened — but gave no id to collect the PDF with. Say so; never "nothing".
+        return res.json({
+          return_code: 'MANIFEST_NO_ID',
+          message: `Manifested on Click & Drop, but it didn't say which manifest — download the PDF from the Click & Drop website (Manifests). Click & Drop replied ${started.reply}`,
+        });
+      }
+      ids = started.ids;
     }
-    if (!given.length) logger.info(`[order-status-customer-manifest] started ${ids.join(', ')} by ${req.user.display_name}`);
 
     // Poll every manifest until all are finished or the wait runs out.
     const latest = new Map();
