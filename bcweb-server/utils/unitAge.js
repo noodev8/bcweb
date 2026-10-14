@@ -36,7 +36,7 @@ Exports:
   BANDS                     ['m0_3','m3_6','m6_12','m12','pre']
   loadUnitLedger() -> {
     today,                                   // UK date, YYYY-MM-DD
-    months: [{ month, end, partial, in, sold, profit, held, bands: {m0_3..pre} }],   // oldest -> newest, from Jan 2025
+    months: [{ month, end, partial, in, sold, profit, held, bands: {m0_3..pre} }],   // oldest -> newest, rolling 24 months
     cohorts: [{ month, in, left_3m, left_6m, left_now }],    // pairs of each arrival month still held (null = not reached yet)
     styles: [{ groupid, title, brand, units, bands, oldest, sold_90 }],              // held now, oldest-heavy first
     recent: { d1: {in, sold}, d7: {...}, d30: {...} }
@@ -47,6 +47,10 @@ Exports:
 const { query } = require('../database');
 
 const LOG_START = '2025-01';   // first full month of incoming_stock (the first row is 31 Dec 2024)
+// ROLLING 24 MONTHS (owner, 2026-10-14). Enough for every row of the last year to carry its year-earlier compare, and it bounds the
+// rebuild: held is reconstructed backwards from today and the error grows ~40 pairs a month back (see PAST MONTH ENDS above), so an
+// ever-growing history would get ever rougher at its far end. The window starts at LOG_START until that is over 24 months ago.
+const WINDOW_MONTHS = 24;
 const BANDS = ['m0_3', 'm3_6', 'm6_12', 'm12', 'pre'];
 
 // 'YYYY-MM-DD' -> whole days since epoch, in UTC so BST never shifts a day (CLAUDE.md: never hand a pg DATE to the JS Date parser).
@@ -67,11 +71,14 @@ function band(arr, at) {
 
 const emptyBands = () => ({ m0_3: 0, m3_6: 0, m6_12: 0, m12: 0, pre: 0 });
 
-// Month list LOG_START .. the current month, each with its last day (the current month ends "today").
+// Month list from the later of LOG_START and WINDOW_MONTHS back, to the current month, each with its last day (the current month ends
+// "today"). Arrivals before the window still date held pairs; they just get no month row or delivery row of their own.
 function monthList(today) {
   const out = [];
-  let [y, m] = LOG_START.split('-').map(Number);
   const [ty, tm] = today.split('-').map(Number);
+  const [ly, lm] = LOG_START.split('-').map(Number);
+  const first = Math.max(ty * 12 + (tm - 1) - (WINDOW_MONTHS - 1), ly * 12 + (lm - 1));   // months since year 0
+  let y = Math.floor(first / 12), m = (first % 12) + 1;
   while (y < ty || (y === ty && m <= tm)) {
     const key = `${y}-${String(m).padStart(2, '0')}`;
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();   // day 0 of next month = last day of this one
@@ -100,10 +107,10 @@ async function loadUnitLedger() {
     query(`SELECT code, to_char(arrival_date, 'YYYY-MM-DD') AS d, GREATEST(quantity_added, 1)::int AS q
            FROM incoming_stock WHERE code IS NOT NULL AND arrival_date IS NOT NULL
            ORDER BY code, arrival_date DESC, id DESC`),
-    // OUT — net units per code per month since the log began (returns are negative rows, SUM nets them).
+    // OUT — net units per code per month across the window (returns are negative rows, SUM nets them).
     query(`SELECT code, to_char(solddate, 'YYYY-MM') AS m, SUM(qty)::int AS q, COALESCE(SUM(profit), 0)::float AS profit
            FROM sales WHERE solddate >= $1::date AND code IS NOT NULL
-           GROUP BY code, 2`, [`${LOG_START}-01`]),
+           GROUP BY code, 2`, [`${months[0].month}-01`]),
     // The top boxes: today / 7 / 30 days, in and out. UK dates throughout.
     query(`WITH d AS (SELECT (now() AT TIME ZONE 'Europe/London')::date AS today)
            SELECT
@@ -130,7 +137,7 @@ async function loadUnitLedger() {
   const inByMonth = new Array(months.length).fill(0);
   for (const r of arrQ.rows) {
     if (!arrivals.has(r.code)) arrivals.set(r.code, []);
-    const mi = mIndex.has(r.d.slice(0, 7)) ? mIndex.get(r.d.slice(0, 7)) : -1;   // -1 = the 31 Dec 2024 rows, before month 0
+    const mi = mIndex.has(r.d.slice(0, 7)) ? mIndex.get(r.d.slice(0, 7)) : -1;   // -1 = before the window (or the 31 Dec 2024 rows)
     arrivals.get(r.code).push({ day: dayNum(r.d), date: r.d, mi, q: r.q });
     if (mi >= 0) inByMonth[mi] += r.q;
   }

@@ -9,7 +9,7 @@ Purpose: Reports -> Sell-through. Units only — "We bought it, we sell it. How 
 
          Everything comes from utils/unitAge.js (the unit ledger: FIFO-dated pairs, nothing stored — rules and the why are there):
            recent   today / 7 / 30 days: pairs in (Goods In) and pairs out (sales, net of returns)
-           months   from Jan 2025: in, sold, profit, pairs held at month end split by age band
+           months   rolling 24 months (from Jan 2025 until then): in, sold, profit, pairs held at month end split by age band
            cohorts  each arrival month: pairs in, and how many were still held 3 and 6 month-ends later, and now
            styles   every style held now, its pairs by age band, oldest-heavy first
 
