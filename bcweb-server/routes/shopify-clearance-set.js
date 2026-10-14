@@ -5,17 +5,18 @@ API Route: shopify_clearance_set
 Method: POST
 Purpose: Winners → Slow: put the owner's CHOSEN styles into the clearance collection, or take them out (the Shopify `clearance` tag).
          Owner, 2026-10-14: "The slow screen simply shows what is SLOW and whether it is in a clearance collection or not. Then its up
-         to me to choose what is in or out the collection." One style (the row's Add / Remove) or ticked rows in bulk. Any style can go
-         in — sitting or not. Update collection (POST /shopify-clearance-apply) stays as "add every sitting style"; nothing removes
+         to me to choose what is in or out the collection." One style (the row's Add / Remove) or ticked rows in bulk. Any style LIVE ON
+         SHOPIFY can go in — sitting or not; an OFF style is refused for its row, but Remove always works (the Collections screen's
+         rules, utils/collectionTags.js, since 2026-10-14 — the database row and the Shopify tag change together). Slow's one-click "Update collection" (POST /shopify-clearance-apply) was removed 2026-10-14; nothing removes
          automatically any more. WRITES TO THE LIVE SHOP (the `clearance` tag only; every other tag is left alone). One bclog line,
-         section 'Clearance Tags'. Rules in utils/clearanceTag.js.
+         section 'Collections'. Rules in utils/clearanceTag.js.
 
          THE PRICE IS NOT HERE. Remove on one style offers an optional new price ("Perhaps continue to allow repricing if I remove from a
          collection"); the screen sends a normal W1 (POST /pricing-apply) AFTER this succeeds — same bounds, log and Shopify push as any
          price change. Kept apart so a price change never rides on a tag call.
 
-         NOT A DB TRANSACTION: one Shopify call per style; a failure on one doesn't stop the rest — `failed` says which, and sending them
-         again is safe (adding a tag twice / removing an absent tag is a no-op).
+         ONE STYLE AT A TIME: each style's row and Shopify tag change together in their own small transaction; a failure on one doesn't
+         stop the rest — `failed` says which, and sending them again is safe (adding a tag twice / removing an absent tag is a no-op).
 
          Requires auth.
 =======================================================================================================================================

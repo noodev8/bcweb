@@ -4,10 +4,11 @@ API Route: shopify_clearance_list
 =======================================================================================================================================
 Method: GET
 Purpose: Winners → Slow: what is IN the clearance collection right now (every product tagged `clearance` on Shopify). Since 2026-10-14
-         being in the collection and being sitting are separate facts — Update collection only adds, and only the owner takes a style
+         being in the collection and being sitting are separate facts — only the owner puts a style in or takes a style
          out (POST /shopify-clearance-set). Slow uses this for the "In collection" pill on the sitting rows and for the list of styles
          still in the collection that are no longer sitting (they sold — the campaign is working — but stay in until the owner says).
-         Shopify is the store of membership (no DB column), so this reads Shopify live. Rules in utils/clearanceTag.js.
+         Since 2026-10-14 the DATABASE is the record (collection_member, tag 'clearance' — the Collections screen), so this is a
+         database read; it read Shopify live until then. Rules in utils/clearanceTag.js and utils/collectionTags.js.
 
          READ-ONLY. Requires auth.
 =======================================================================================================================================
@@ -17,7 +18,7 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "items": [
-    { "groupid": "1019051-ARIZONA" | null,   // null = tagged on Shopify but not a style we know (hand-tagged in admin)
+    { "groupid": "1019051-ARIZONA",          // never null since 2026-10-14 (membership is by groupid)
       "handle": "…", "title": "…",
       "price": 25.00 | null,                 // skusummary.shopifyprice (null if blank/junk)
       "units": 6 | null,                     // live pairs, local #FREE + Amazon (the Slow definition)
@@ -28,7 +29,7 @@ Success Response:
 Return Codes:
 "SUCCESS"
 "SHOPIFY_NOT_CONFIGURED"
-"SHOPIFY_PUSH_FAILED"      // Shopify couldn't be read
+"SHOPIFY_PUSH_FAILED"      // kept for the client; a database read no longer raises it
 "UNAUTHORIZED"
 "SERVER_ERROR"
 =======================================================================================================================================

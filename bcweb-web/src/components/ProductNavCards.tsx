@@ -132,6 +132,9 @@ interface Props {
   /** Card labels to leave out — the screen you are ON (e.g. Sales hides 'Sales'), so no card links to the page it sits on. Matches
    *  general cards only: grouped labels ('Order', 'Price') are not unique. */
   exclude?: string[];
+  /** Leave off the Amazon group — for a Shopify-only screen (Collections, owner 2026-10-14: "standard routes … apart from Amazon").
+   *  Its own flag because `exclude` can't name a channel group: 'Order' and 'Price' are on both sides. */
+  shopifyOnly?: boolean;
   // NO BARCODE CARD. It had one, toggling a column on the drill; the owner cut it (2026-09-22 — "no point having barcode button, may
   // as well just show the barcode"), and the drill now prints the column unconditionally. Nothing to reinstate here if it ever comes
   // back — a barcode belongs beside its size, not behind a button on this row.
@@ -144,14 +147,15 @@ const BASE =
 const ENABLED = 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900';
 const DISABLED = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400';
 
-export default function ProductNavCards({ groupid, from, showProduct, exclude, onLeave }: Props) {
+export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave }: Props) {
   const encodedFrom = encodeURIComponent(from);
   // The destination's back-link label names where you actually came from ("Inventory", "New Additions"), not a fixed label.
   const encodedBack = encodeURIComponent(prettyPathLabel(from));
 
   const all = showProduct ? [{ ...PRODUCT_TARGET, group: 'general' as Group }, ...TARGETS] : TARGETS;
   const visible = all.filter((t) =>
-    t.group !== 'general' || !(exclude?.includes(t.label) || (showProduct && t.label === 'Edit Product')));
+    !(shopifyOnly && t.group === 'Amazon')
+    && (t.group !== 'general' || !(exclude?.includes(t.label) || (showProduct && t.label === 'Edit Product'))));
 
   const card = (t: NavTarget & { group: Group }) => {
     const Icon = t.icon;

@@ -58,6 +58,7 @@ import {
   GoogleAdsStyleRow, GoogleAdsWindow, GoogleAdsWindowKey,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { readCollectionHandoff } from '@/lib/collectionHandoff';
 
 // ---- Filtering ------------------------------------------------------------------------------------------------------------------
 // One applied narrowing step. `has` keeps matching rows; `not` drops them. Same contract as Inventory.
@@ -123,6 +124,8 @@ interface Criteria {
   // The SITTING chip (see SITTING ARRIVAL below): the groupids on the Slow sitting list, or null when the chip is off.
   // A set of ids rather than a rule, because the rule lives on the server (utils/stockSitting.js) and the list is what it must match.
   members: Set<string> | null;
+  // The COLLECTIONS chip (see COLLECTIONS ARRIVAL below): the exact groupids handed over from the Collections screen, or null.
+  listIds: Set<string> | null;
 }
 
 // How far the price sits from the ad floor, in pounds. NEGATIVE = under it (losing money on the click), positive = clear of it.
@@ -158,6 +161,7 @@ function applyCriteria(indexed: IndexedRow[], c: Criteria, w: GoogleAdsWindowKey
   if (c.bucket !== null) out = out.filter((x) => x.row.campaign.toLowerCase() === c.bucket!.toLowerCase());
   if (c.season !== null) out = out.filter((x) => inSeason(x.row, c.season));
   if (c.members !== null) out = out.filter((x) => c.members!.has(x.row.groupid));
+  if (c.listIds !== null) out = out.filter((x) => c.listIds!.has(x.row.groupid));
   for (const f of c.qty) {
     out = out.filter((x) => {
       const v = metricValue(x.row, w, f.metric);
@@ -448,7 +452,7 @@ const VIEW_KEY = 'bc_googleads_view';
 // =====================================================================================================================================
 // Winners → Slow links here with ?sitting=1&from=&back= — "send me to the screen with the list already filtered, for me to
 // choose a campaign if I wanted". It becomes a chip ("Sitting · 52") narrowing the grid to the styles on the sitting list (no sale on
-// any channel in 60 days). NOTHING IS PRE-SELECTED OR MOVED: the operator picks rows and a bucket as always.
+// any channel in 90 days). NOTHING IS PRE-SELECTED OR MOVED: the operator picks rows and a bucket as always.
 //
 // Membership is the list's own: the same GET /analytics-stock-sitting (and SWR key) Slow reads, so chip and list agree.
 //
@@ -460,6 +464,13 @@ const VIEW_KEY = 'bc_googleads_view';
 // return trip from a style's price comes back on /google-ads?restore=1 without the arrival params.
 //
 // Same plumbing as the EXCESS chip it replaces (git dd28eb4 — excess was retired the same day), with one list instead of four bands.
+//
+// COLLECTIONS ARRIVAL (owner, 2026-10-14: "I want to navigate from here to Google Ads with the list intact"). The Collections screen
+// links here with ?list=1&from=&back= after writing the exact groupids on its screen to sessionStorage (lib/collectionHandoff.ts — the
+// LIST, not the search: this screen searches different fields, and a cut can't be re-run). Same rules as the sitting chip in every
+// way — base of the view, kept by Reset, removed only by its own ✕, nothing pre-selected or moved — with one addition: a style that
+// isn't in this grid can't be shown, so the chip says "37 of 40" rather than letting it vanish silently.
+//
 // A path only, the same rule AppShell applies — never an off-site URL.
 function parseFrom(v: string | null | undefined): string | null {
   return v && v.startsWith('/') && !v.startsWith('//') ? v : null;
@@ -489,6 +500,9 @@ interface ViewSnapshot {
   // SITTING ARRIVAL — optional, so a snapshot saved by an older build still restores.
   sitting?: boolean;
   sittingHome?: boolean;
+  // COLLECTIONS ARRIVAL — the handed-over ids ride in the snapshot so a return trip from a style's price keeps the chip.
+  listIds?: string[] | null;
+  listHome?: boolean;
   backHref?: string | null;
   backLabel?: string | null;
 }
@@ -540,6 +554,13 @@ function GoogleAdsScreen() {
     restored ? !!restored.sitting : searchParams.get('sitting') === '1');
   const [sittingHome, setSittingHome] = useState<boolean>(() =>
     restored ? !!restored.sittingHome : searchParams.get('sitting') === '1');
+  // ---- collections arrival (see COLLECTIONS ARRIVAL above) --------------------------------------------------------------
+  // The handed-over list (null = no chip). listHome = what Reset returns to; the chip's ✕ clears both.
+  const [handoff, setHandoff] = useState<string[] | null>(() =>
+    restored ? (restored.listIds ?? null) : (searchParams.get('list') === '1' ? readCollectionHandoff() : null));
+  const [listHome, setListHome] = useState<string[] | null>(() =>
+    restored ? (restored.listHome ? restored.listIds ?? null : null) : (searchParams.get('list') === '1' ? readCollectionHandoff() : null));
+  const listIds = useMemo(() => (handoff ? new Set(handoff) : null), [handoff]);
   const [back] = useState(() => (restored
     ? { href: parseFrom(restored.backHref), label: restored.backLabel || null }
     : { href: parseFrom(searchParams.get('from')), label: searchParams.get('back') }));
@@ -606,11 +627,16 @@ function GoogleAdsScreen() {
   const indexed = useMemo<IndexedRow[]>(() => rows.map((row) => ({ row, hay: haystack(row) })), [rows]);
 
   const criteria: Criteria = useMemo(
-    () => ({ steps, qty, season, bucket, thin, floorSide, members: sittingIds }),
-    [steps, qty, season, bucket, thin, floorSide, sittingIds]
+    () => ({ steps, qty, season, bucket, thin, floorSide, members: sittingIds, listIds }),
+    [steps, qty, season, bucket, thin, floorSide, sittingIds, listIds]
   );
   const filtering = steps.length > 0 || qty.length > 0 || season !== null || bucket !== null || thin || floorSide !== null || cut.size > 0
-    || sitting;
+    || sitting || listIds !== null;
+  // How many of the handed-over styles this grid actually has (see COLLECTIONS ARRIVAL — the chip says "37 of 40").
+  const listPresent = useMemo(
+    () => (listIds ? rows.reduce((n, r) => n + (listIds.has(r.groupid) ? 1 : 0), 0) : 0),
+    [listIds, rows]
+  );
 
   const matched = useMemo(
     () => applyCriteria(indexed, criteria, win).map((x) => x.row),
@@ -704,9 +730,11 @@ function GoogleAdsScreen() {
       cut: [...cut], sortKey, sortDir, lastStyle,
       scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
       sitting, sittingHome, backHref: back.href, backLabel: back.label,
+      listIds: handoff, listHome: listHome !== null,
     };
     try { window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(snap)); } catch { /* position only — never worth failing the click */ }
-  }, [win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide, cut, sortKey, sortDir, sitting, sittingHome, back]);
+  }, [win, contains, notContains, steps, qty, season, bucket, bucketSide, thin, floorSide, cut, sortKey, sortDir, sitting, sittingHome, back,
+    handoff, listHome]);
 
   // Put the page back where it was, once there are rows to scroll through — the filters are restored during render, but the height
   // they produce only exists after the grid has painted. One shot: after that the operator owns the scroll position.
@@ -775,10 +803,13 @@ function GoogleAdsScreen() {
     const url = new URL(window.location.href);
     // With a sitting chip to return to, the URL says so again — a return trip arrives on ?restore=1 alone, and without this a
     // refresh after Reset would drop the chip that Reset just kept (see SITTING ARRIVAL).
-    if (url.searchParams.has('restore') || (url.searchParams.get('sitting') === '1') !== sittingHome) {
+    // The same for the Collections chip (?list=1) — the ids themselves stay in sessionStorage (lib/collectionHandoff.ts).
+    if (url.searchParams.has('restore') || (url.searchParams.get('sitting') === '1') !== sittingHome
+      || (url.searchParams.get('list') === '1') !== (listHome !== null)) {
       url.searchParams.delete('restore');
       if (sittingHome) url.searchParams.set('sitting', '1'); else url.searchParams.delete('sitting');
-      if (sittingHome && back.href && !url.searchParams.has('from')) {
+      if (listHome !== null) url.searchParams.set('list', '1'); else url.searchParams.delete('list');
+      if ((sittingHome || listHome !== null) && back.href && !url.searchParams.has('from')) {
         url.searchParams.set('from', back.href);
         if (back.label) url.searchParams.set('back', back.label);
       }
@@ -793,6 +824,7 @@ function GoogleAdsScreen() {
     setContains(''); setNotContains(''); setDrill(null);
     // Back to the sitting chip the screen was opened on, if any (owner, 2026-10-10: "Reset keeps the chip") — see SITTING ARRIVAL.
     setSitting(sittingHome);
+    setHandoff(listHome);
     clearSelection();
     stylesQ.refresh();
     if (sittingHome) sitQ.refresh();
@@ -801,7 +833,7 @@ function GoogleAdsScreen() {
     // browser scrolls a focused field into view, so pressing a button at the top of the page threw the operator halfway down it. A
     // refreshed screen has nothing focused either, so the two now agree.
     window.scrollTo(0, 0);
-  }, [clearSelection, stylesQ, campaignsQ, sitQ, sittingHome, back]);
+  }, [clearSelection, stylesQ, campaignsQ, sitQ, sittingHome, listHome, back]);
 
   // THIN SHELF — the one narrowing on this screen that gets a button instead of a typed command (owner, 2026-09-06).
   // It is exactly `SIZES LESS 5` and composes with everything else, so it is not a special case in the filter; it is a shortcut to
@@ -1167,6 +1199,22 @@ function GoogleAdsScreen() {
                 const url = new URL(window.location.href);
                 if (url.searchParams.has('sitting')) {
                   url.searchParams.delete('sitting');
+                  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+                }
+                containsRef.current?.focus();
+              }}
+            />
+          )}
+          {/* The Collections hand-off — same treatment as Sitting (see COLLECTIONS ARRIVAL). "37 of 40" when some of the list isn't in
+              this grid, so nothing goes missing silently. */}
+          {listIds && (
+            <Chip
+              label={`Collections · ${listPresent}${listPresent < listIds.size ? ` of ${listIds.size}` : ''}`}
+              onClear={() => {
+                setHandoff(null); setListHome(null); clearSelection();
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('list')) {
+                  url.searchParams.delete('list');
                   window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
                 }
                 containsRef.current?.focus();

@@ -30,7 +30,7 @@ switch, table, drill and bulk bar are unchanged. Opened from Repricing's Status 
 stamped at the last Update), shown in the crumb and kept through the drill round-trip. Only styles whose LEAD CHANNEL is Shopify or
 both are listed (server, 2026-09-25) — an Amazon-led winner is on the Amazon list, where the money is.
 
-?by=sitting (2026-10-10) — the SITTING styles from Winners → Slow (path name 'sitting'): held, no sale on any channel in 60
+?by=sitting (2026-10-10) — the SITTING styles from Winners → Slow (path name 'sitting'): held, no sale on any channel in 90
 days, most pairs first, from GET /pricing-sitting-list (rule: bcweb-server/utils/stockSitting.js — the same function as the Sitting box,
 so the counts match). One unsplit list like a status (tabs hidden, mode pinned to 'all'). SHOPIFY ONLY — the owner clears on Shopify
 ("my intention is to clear the crap"). Reached ONLY from the "Reprice these" link on Slow (same tab, Due off, ?from= back
@@ -103,7 +103,7 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   segment: undefined,
   campaign: 'Google campaign',
   status: 'status',
-  sitting: 'no sale in 60 days',
+  sitting: 'no sale in 90 days',
 };
 const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list' };
 // The sitting list's path name is 'sitting'; the crumb shows the word on Slow's sitting box.

@@ -1225,8 +1225,8 @@ export function getStockSitting() {
   return request<StockSittingData>(
     { url: '/analytics-stock-sitting', method: 'GET' },
     (b) => ({
-      days: b.days ?? 60,
-      new_days: b.new_days ?? 60,
+      days: b.days ?? 90,
+      new_days: b.new_days ?? 90,
       total_units: b.total_units ?? 0,
       selling_units: b.selling_units ?? 0,
       new_units: b.new_units ?? 0,
@@ -1236,29 +1236,16 @@ export function getStockSitting() {
   );
 }
 
-// The Shopify `clearance` collection (server: utils/clearanceTag.js). Since 2026-10-14 Update collection only ADDS sitting styles; only
-// the owner takes one out (setClearance). One call: the server plans and writes the tags to the LIVE shop, then says what it did.
-export interface ClearanceItem { groupid: string | null; handle: string; title: string | null }
-export interface ClearanceResult {
-  tag: string;
-  added: ClearanceItem[];
-  failed: (ClearanceItem & { error: string })[];
-  missing: ClearanceItem[];
-}
+// The Shopify `clearance` collection (server: utils/clearanceTag.js). Only the owner puts styles in or takes them out (setClearance);
+// Slow's one-click "Update collection" (POST /shopify-clearance-apply) was removed 2026-10-14 — the Collections screen does it with
+// the list in view.
 
 // 120s, not the shared 15s: the server makes one Shopify call per product, and the first live run (+32 −30, 2026-10-10) outlasted 15s —
-// the browser reported a network error while the server finished the job. A big swing after a season turn would be slower still.
+// the browser reported a network error while the server finished the job. A big bulk tag would be slower still.
 const CLEARANCE_TIMEOUT = 120000;
 
-export function applyClearanceTags() {
-  return request<ClearanceResult>(
-    { url: '/shopify-clearance-apply', method: 'POST', data: {}, timeout: CLEARANCE_TIMEOUT },
-    (b) => ({ tag: b.tag || 'clearance', added: b.added || [], failed: b.failed || [], missing: b.missing || [] })
-  );
-}
-
-// What is in the collection now (read live from Shopify). groupid null = tagged in Shopify admin, not a style we know.
-// units = live pairs (local + Amazon); sitting = still on the sitting list.
+// What is in the collection now — from the database since 2026-10-14 (collection_member; it was a live Shopify read before). groupid
+// is never null any more (the type keeps it for old callers). units = live pairs (local + Amazon); sitting = still on the sitting list.
 export interface ClearanceCollectionItem {
   groupid: string | null; handle: string; title: string | null; price: number | null; units: number | null; sitting: boolean;
 }
@@ -1273,6 +1260,60 @@ export function setClearance(groupids: string[], inCollection: boolean) {
   return request<ClearanceSetResult>(
     { url: '/shopify-clearance-set', method: 'POST', data: { groupids, in: inCollection }, timeout: CLEARANCE_TIMEOUT },
     (b) => ({ done: b.done || [], failed: b.failed || [] })
+  );
+}
+
+// ---- Collections (server: utils/collectionTags.js) ------------------------------------------------------------------------------
+// The Shopify collection tags, stored in the database (owner, 2026-10-14). Up to max_tags per style. The owner builds each smart
+// collection in Shopify admin; these calls only manage the tags.
+export interface CollectionSummary { tag: string; styles: number; off: number }   // off = members not live on Shopify
+export interface CollectionListData { collections: CollectionSummary[]; max_tags: number }
+export function getCollections() {
+  return request<CollectionListData>(
+    { url: '/collection-list', method: 'GET' },
+    (b) => ({ collections: b.collections || [], max_tags: b.max_tags ?? 3 })
+  );
+}
+
+// Every style the Collections screen can work on: live on Shopify OR tagged (a tagged style switched OFF must stay visible so its tag
+// can come off). slow / new = the Slow screen's 90-day rule. pairs = local #FREE + Amazon; sold30 = all channels, 30 days.
+export interface CollectionStyleRow {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  segment: string | null;
+  supplier: string | null;
+  season: string | null;      // 'Summer' | 'Winter' | 'Any' | null
+  codes: string | null;       // internal size codes + Amazon SKUs, space-joined — for the Contains search
+  price: number | null;
+  pairs: number;
+  sold30: number;
+  created: string;            // 'YYYYMMDD HH24:MI:SS' (sortable text); '' if unstamped
+  shopify: boolean;
+  in_bcweb: boolean;          // false = a tagged groupid no longer in skusummary
+  slow: boolean;
+  new: boolean;
+  tags: string[];
+}
+export function getCollectionStyles() {
+  return request<CollectionStyleRow[]>({ url: '/collection-styles', method: 'GET' }, (b) => b.rows || []);
+}
+
+export function createCollection(tag: string) {
+  return request<{ tag: string }>({ url: '/collection-create', method: 'POST', data: { tag } }, (b) => ({ tag: b.tag }));
+}
+
+// Tag (inCollection=true) or untag chosen styles. failed = refused / not taken by Shopify, per row (sending again is safe);
+// notes = removed here only because Shopify no longer has the product. One Shopify call per style, so the long timeout.
+export interface CollectionSetResult {
+  done: string[];
+  failed: { groupid: string; error: string }[];
+  notes: { groupid: string; note: string }[];
+}
+export function setCollectionTag(groupids: string[], tag: string, inCollection: boolean) {
+  return request<CollectionSetResult>(
+    { url: '/collection-tag-set', method: 'POST', data: { groupids, tag, in: inCollection }, timeout: CLEARANCE_TIMEOUT },
+    (b) => ({ done: b.done || [], failed: b.failed || [], notes: b.notes || [] })
   );
 }
 

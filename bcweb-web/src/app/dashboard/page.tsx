@@ -71,6 +71,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
+  RectangleStackIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -197,6 +198,14 @@ const GROUPS: Group[] = [
         description: 'See which segment needs attention next, and track who worked what.',
         href: '/segments',
         icon: Squares2X2Icon,
+      },
+      {
+        // Beside Repricing (owner, 2026-10-14): pick a group of styles and put it in a Shopify collection to get it selling.
+        title: 'Collections',
+        subtitle: 'Shopify collection tags',
+        description: 'Pick styles with the usual filters and put them in Shopify collections, or take them out — up to 3 per style.',
+        href: '/collections',
+        icon: RectangleStackIcon,
       },
       {
         title: 'Update Shopify',

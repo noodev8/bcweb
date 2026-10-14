@@ -23,7 +23,7 @@ Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the 
          re-cut per channel. The status trend came too and was removed 2026-09-25 (see routes/portfolio-snapshot-update.js).
 
          SLOW (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back" — then named "Slow"). Its column in the
-         Stock now card opens Slow (/analytics/stock-sales), the sitting list across ALL channels (no sale anywhere in 60 days).
+         Stock now card opens Slow (/analytics/stock-sales), the sitting list across ALL channels (no sale anywhere in 90 days).
          ← Back there returns here. STOCK NOW (2026-10-13) leads the page and puts Winners and Slow on one base. See StockNowCard.
 
 Consumes GET /pricing-status-overview, GET /portfolio-status, POST /portfolio-snapshot-update and GET /analytics-stock-sitting
@@ -192,7 +192,7 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
   const cols = [
     { key: 'winners', name: 'Winners', rule: winnersRule, color: STATUS_COLOR.WINNERS, styles: winners?.styles, units: winners?.units,
       href: null as string | null },
-    { key: 'slow', name: 'Slow', rule: `no sale on any channel in ${slow?.days ?? 60} days`, color: SLOW_COLOR,
+    { key: 'slow', name: 'Slow', rule: `no sale on any channel in ${slow?.days ?? 90} days`, color: SLOW_COLOR,
       styles: slow?.styles.length, units: slow?.sitting_units, href: SLOW_HREF as string | null },
   ];
   const lines = [

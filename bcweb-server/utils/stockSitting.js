@@ -8,26 +8,29 @@ Purpose: THE SITTING RULE — stock now, split SELLING | SITTING | NEW, and the 
            - GET /pricing-sitting-list     (Repricing: the same styles as a Shopify list, to clear them)
          so the box, the list on Slow and the Repricing list can never disagree about which styles are sitting.
 
-SITTING = a style we hold stock of with NO SALE ON ANY CHANNEL FOR 60 DAYS (or never sold). That single test is the whole rule.
+SITTING = a style we hold stock of with NO SALE ON ANY CHANNEL FOR 90 DAYS (or never sold). That single test is the whole rule.
          Deliveries are deliberately ignored (owner, 2026-10-10: "We shouldn't care about delivery. My fault if I'm still ordering
-         while they are not selling. Just want to know what hasn't sold."). The first cut gave a fresh delivery its own 60 days; that
+         while they are not selling. Just want to know what hasn't sold."). The first cut gave a fresh delivery its own window; that
          was removed, so a style re-ordered while not selling shows here — which is the point.
 
-         Why 60: the owner looked at 30/60/90 the same day. 30 days put HALF the stock on the list in October (summer stock resting —
-         it measures the weather); 90 is too late to act on. 60 is "it has stopped" while there's still time to push.
+         Why 90 (owner, 2026-10-14: "I want to move slow to 90 days"). It was 60 from 2026-10-10: the owner looked at 30/60/90 that
+         day — 30 days put HALF the stock on the list in October (summer stock resting — it measures the weather), and 90 then read as
+         too late to act on. Four days of working the list moved it to 90: a stricter test, a shorter list, every style on it has
+         truly stopped. The Collections screen's Slow chip reads this same rule.
 
 THIS IS A FACT, NOT A FORECAST. Deliberately unlike the EXCESS rules removed 2026-10-10 (git f0ed513, e4f91fd, dd28eb4), which predicted
-         need from past pace and misread seasonal buying (a selling Zermatt read as excess). "No sale in 60 days" has no pace and no
+         need from past pace and misread seasonal buying (a selling Zermatt read as excess). "No sale in 90 days" has no pace and no
          season in it. Don't grow it into a stock-needs rule without the owner.
 
-NEW PRODUCTS GET THEIR CHANCE (owner, 2026-10-10: "Is NEW factored, to give it a chance?"). A style created in the last 60 days (the
+NEW PRODUCTS GET THEIR CHANCE (owner, 2026-10-10: "Is NEW factored, to give it a chance?"). A style created in the last 90 days (the
          SAME window as the sale test) that hasn't sold is NEW, not sitting — its own part of the split, and off the list. The PRODUCT's
-         age, skusummary.created_at — never a delivery date: a re-order of a non-seller is still sitting (above). After 60 days an
+         age, skusummary.created_at — never a delivery date: a re-order of a non-seller is still sitting (above). After 90 days an
          unsold new style becomes sitting with no action needed. A new style that HAS sold is just selling.
-         NOT the portfolio NEW status's 90 days (utils/portfolioStatus.js NEW_DAYS) — first built on it, switched the same day (owner:
-         "switch to 60") so every number on the screen reads one window. It differed by one style then. Don't re-point it at NEW_DAYS.
+         The same 90 as the portfolio NEW status (utils/portfolioStatus.js NEW_DAYS) since the move to 90 — but deliberately its OWN
+         constant: it is "one window with the sale test" (it was 60 alongside a 60-day sale test until 2026-10-14), not "whatever the
+         portfolio uses". Don't re-point it at NEW_DAYS; if the sale window moves again, NEW moves with it.
 
-         So stock splits three ways and always adds to 100%: SELLING (sold in 60 days) | SITTING | NEW (unsold, under 60 days old).
+         So stock splits three ways and always adds to 100%: SELLING (sold in 90 days) | SITTING | NEW (unsold, under 90 days old).
 
 STOCK is the utils/financeStock.js definition (local #FREE, not deleted + amzfeed.amztotal), per style, so the total agrees with Month
          End and the nightly stock_daily line. Read LIVE (stock_daily is a total, not per style). Only styles with stock > 0 count.
@@ -40,7 +43,8 @@ SALES are `sales` rows with qty > 0 on any channel — Shopify, Amazon, the shop
 Exports:
   SITTING_DAYS
   loadStockSplit() -> { days, new_days, total_units, selling_units, new_units, sitting_units,
-                        styles: [{ groupid, title, brand, units, last_sale, idle_days }] }   // sitting only, most pairs first
+                        styles: [{ groupid, title, brand, units, last_sale, idle_days }],   // sitting only, most pairs first
+                        new_ids: string[] }                                                 // the NEW styles (Collections' New chip)
 
 NO CUT (removed 2026-10-14). A "cut" (skusummary.sitting_cut_at/_by, 2026-10-11) let the owner keep a sitting style out of the
          actions. It mixed two things — what is slow (a fact) and what to act on (a choice) — and a cut style that sold vanished with its
@@ -53,7 +57,7 @@ NO CUT (removed 2026-10-14). A "cut" (skusummary.sitting_cut_at/_by, 2026-10-11)
 
 const { query } = require('../database');
 
-const SITTING_DAYS = 60;   // see header — the owner's pick between 30/60/90; also the NEW age (one window)
+const SITTING_DAYS = 90;   // see header — 60 until 2026-10-14, moved to 90 by the owner; also the NEW age (one window)
 
 // EVERY held style comes back (a few hundred rows), classified, so the three parts and the total come from one read and always add
 // up. Dates go out as text (CLAUDE.md: never hand a pg DATE to the JS Date parser).
@@ -100,11 +104,12 @@ async function loadStockSplit() {
   // Selling wins over NEW: a new style that has sold is simply selling. NEW is only the not-yet-sold new ones.
   let total = 0, selling = 0, newUnits = 0;
   const styles = [];
+  const newIds = [];
   for (const x of r.rows) {
     const units = Number(x.units);
     total += units;
     if (x.selling) { selling += units; continue; }
-    if (x.is_new) { newUnits += units; continue; }
+    if (x.is_new) { newUnits += units; newIds.push(x.groupid); continue; }
     styles.push({
       groupid: x.groupid,
       title: x.title || null,
@@ -123,6 +128,7 @@ async function loadStockSplit() {
     new_units: newUnits,
     sitting_units: total - selling - newUnits,
     styles,
+    new_ids: newIds,
   };
 }
 

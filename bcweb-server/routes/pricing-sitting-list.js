@@ -17,7 +17,7 @@ Purpose: Repricing — the SITTING styles from Winners → Slow as a Shopify lis
          a Shopify price can't clear them. At build time all 52 were live, so the list matched the box exactly; if that ever stops being
          true the two counts differ by exactly those styles.
 
-         ONE UNSPLIT LIST, like a status list: no Selling / Stuck bars (every row has sold nothing in 60 days — the split would be
+         ONE UNSPLIT LIST, like a status list: no Selling / Stuck bars (every row has sold nothing in 90 days — the split would be
          empty on one side). NOT filtered by lead channel: sitting is all-channel, and the box counts every style.
 
          Stock column = the sitting list's units (local #FREE + amzfeed.amztotal), not local stock alone, so the list explains the box.

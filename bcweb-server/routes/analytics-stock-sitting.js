@@ -6,7 +6,7 @@ Method: GET
 Purpose: Winners -> Slow: stock now split SELLING | SITTING | NEW (the three boxes) and the sitting styles (the list under
          them). Owner, 2026-10-10: "Stock comes in, goes out, happy. Sits, not happy so I push it."
 
-         THE RULE LIVES IN utils/stockSitting.js — read its header for what sitting / new mean and why (60 days, any channel, deliveries
+         THE RULE LIVES IN utils/stockSitting.js — read its header for what sitting / new mean and why (90 days, any channel, deliveries
          ignored, new = product age). It is shared with GET /pricing-sitting-list (the Repricing list of the same styles), so the box,
          this list and the Repricing list always agree. This route is just the HTTP wrapper.
 
@@ -20,8 +20,8 @@ Request Payload: none (GET)
 Success Response:
 {
   "return_code": "SUCCESS",
-  "days": 60,
-  "new_days": 60,                      // = days; kept separate so the screen never assumes it
+  "days": 90,
+  "new_days": 90,                      // = days; kept separate so the screen never assumes it
   "total_units": 2917,                 // all stock, live — the three parts below always add up to it
   "selling_units": 2527,
   "new_units": 92,
@@ -50,7 +50,8 @@ router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    const split = await loadStockSplit();
+    // new_ids is for the Collections screen's New chip (routes/collection-styles.js) — not part of this response.
+    const { new_ids: _newIds, ...split } = await loadStockSplit();
     return res.json({ return_code: 'SUCCESS', ...split });
   } catch (err) {
     logger.error('[analytics-stock-sitting] error:', err.message);

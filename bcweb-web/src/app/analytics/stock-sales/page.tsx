@@ -11,12 +11,12 @@ Purpose: Is the stock we buy shifting? The owner's read on whether to slow order
 HIGH LEVEL ON PURPOSE (owner, 2026-10-09)
          The first cut had weekly panels, a Shopify/Amazon/Shop split, a hover readout, a Week|Month switch on the chart and a full
          table, and the owner's verdict was "too many things going on — I really want it simple". So, top to bottom:
-           1. THE TRACK — three boxes SELLING (biggest) | SITTING | NEW (60-day window, adds to 100%; boxes, not a bar)
+           1. THE TRACK — three boxes SELLING (biggest) | SITTING | NEW (90-day window since 2026-10-14, was 60; adds to 100%; boxes, not a bar)
            2. the sitting styles — the "crap list" the owner works to keep the track up
            3. (HIDDEN, lib/features.ts STOCK_SALES_FLOW) a monthly chart — closing stock line over sold columns
            4. (HIDDEN, same switch) the numbers as a list, Month | Week, with % sold (also the chart's table view)
          Selling % leads (owner, 2026-10-10: "use the positive 87%... I don't want this number to go too low"), chosen knowing it reads
-         generously — a style's WHOLE stock counts as selling if it sold one pair in 60 days — so it's labelled "in styles that sold",
+         generously — a style's WHOLE stock counts as selling if it sold one pair in the window — so it's labelled "in styles that sold",
          never "% sold". The split is TODAY only — per-style stock history isn't stored and the owner doesn't want it stored.
          The top was three numbers (stock, sold 30d, % sold 30d) plus a 60-day sitting % until 2026-10-10 — owner: the 30- and 60-day
          numbers side by side "feel mixed". Sold/% sold measure flow, not stock, so they can't be part of a split that adds to 100%;
@@ -42,8 +42,8 @@ CHART (back 2026-10-10, owner asked for it)
          the list against the same month a year earlier, not against a fixed target. No verdict tile: the owner asked for the list.
 
 SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so I push it.")
-         Stock in styles with no sale on any channel for 60 days (deliveries ignored — owner: "my fault if I'm still ordering while
-         they are not selling"), except NEW products — created under 60 days ago and not yet sold (same window; NOT Repricing's 90-day NEW status) — which
+         Stock in styles with no sale on any channel for 90 days (60 until 2026-10-14; deliveries ignored — owner: "my fault if I'm still ordering while
+         they are not selling"), except NEW products — created under 90 days ago and not yet sold (same window — now the same 90 as Repricing's NEW status, but its own constant) — which
          are their own part of the split and off the list; the rest is SELLING. The top split and the list both come from GET /analytics-stock-sitting, LIVE
          stock — so the top number can differ from the chart's latest point (last night's stock_daily reading) by today's movement.
          The list: most pairs first, GROUPID leading with the title on hover, GROUPID opens the Shopify price drill, sortable headers; "Reprice →" opens them on Repricing (see SittingList); the clearance collection is the owner's choice — each row shows In collection / Not in with
@@ -57,7 +57,7 @@ ARRIVAL FROM REPRICING (2026-10-12, owner: "WINNERS needs a card for CLEARANCE s
          ← Back then returns there, and the origin rides along on every link out (drill, Reprice, Google Ads) so coming back through
          them keeps it. With no ?from= (a bookmark) ← Back still goes to Winners.
 
-Guarded by AppShell. Consumes GET /analytics-stock-sitting, GET /shopify-clearance-list, POST /shopify-clearance-apply,
+Guarded by AppShell. Consumes GET /analytics-stock-sitting, GET /shopify-clearance-list,
 POST /shopify-clearance-set, POST /pricing-apply (Remove's optional price), and GET /analytics-stock-sales only while
 STOCK_SALES_FLOW is on.
 
@@ -72,7 +72,7 @@ import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { STOCK_SALES_FLOW } from '@/lib/features';
 import {
-  getStockSales, getStockSitting, applyClearanceTags, StockSalesPeriod, StockSittingData,
+  getStockSales, getStockSitting, StockSalesPeriod, StockSittingData,
   getClearanceCollection, setClearance, applyPrice, ClearanceCollectionItem,
 } from '@/lib/api';
 
@@ -177,7 +177,7 @@ function StockSplit({ data }: { data: StockSittingData }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {/* Numbers only, lined up (owner, 2026-10-12: "Simply interested in the numbers and want them lined up") — just "N pairs";
-          the 60-day rule is on the Winners card's header. Boxes align to the BOTTOM so the % and pairs lines sit level across
+          the 90-day rule is on the Winners card's header. Boxes align to the BOTTOM so the % and pairs lines sit level across
           all three even though slow's number is the biggest. */}
       <SplitBox hero label="slow" pct={sitPct}
         detail={`${n(data.sitting_units)} pairs`} />
@@ -416,8 +416,10 @@ const repriceHref = (self: string) =>
 //
 // THE COLLECTION (2026-10-14, owner: "The slow screen simply shows what is SLOW and whether it is in a clearance collection or not. Then
 // its up to me to choose what is in or out the collection. Simple."). Every row carries an In collection / Not in pill and its own Add
-// or Remove; tick rows to Add / Remove in bulk. Nothing goes in or out by itself — "Update collection" still adds every slow style
-// not yet in, but never removes (a sale used to untag a style, which pulled 9 out mid-campaign while their 50% price stayed). Styles
+// or Remove; tick rows to Add / Remove in bulk. Nothing goes in or out by itself (a sale used to untag a style, which pulled 9 out
+// mid-campaign while their 50% price stayed). NO "UPDATE COLLECTION" since 2026-10-14 (owner: "yes remove it"): it added every slow
+// style in one click with no preview; the Collections screen does the same with the list in view first (clearance, Not in, Slow,
+// tick all, Add), so nothing reaches the shop unseen. Styles
 // still IN the collection that have sold (no longer slow) get their own section, so they can be seen and taken out.
 // Remove on one row opens a small inline form with an OPTIONAL new price ("Perhaps continue to allow repricing if I remove from a
 // collection"): the tag comes off (POST /shopify-clearance-set), then, if a price was typed, a normal W1 (applyPrice) with the note
@@ -509,17 +511,6 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
     setPicked(new Set());
     onCollectionChange();
   }
-  // UPDATE COLLECTION — one click adds every slow style not yet in (owner, 2026-10-10: one click, no preview). Never removes.
-  async function addAll() {
-    setBusy(true); setMsg(null);
-    const r = await applyClearanceTags();
-    setBusy(false);
-    if (!(r.success && r.data)) { setMsg({ text: r.error || 'Update failed', bad: true }); return; }
-    const d = r.data;
-    const failed = d.failed.length ? ` · ${d.failed.length} failed, try again` : '';
-    setMsg({ text: `+${d.added.length} added${failed}`, bad: d.failed.length > 0 });
-    onCollectionChange();
-  }
 
   const link = 'text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50';
   const pickLink = 'text-sm font-medium text-slate-900 hover:underline disabled:opacity-50';
@@ -586,7 +577,6 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
             <button type="button" onClick={cutPicked} disabled={busy} className={pickLink}>Cut {pickedKeys.length}</button>
           )}
           {hidden.size > 0 && <button type="button" onClick={reset} className={link}>Reset</button>}
-          <button type="button" onClick={addAll} disabled={busy} className={link}>{busy ? 'Updating…' : 'Update collection'}</button>
           {data.styles.length > 0 && (
             <>
               <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Google Ads &rarr;</Link>
