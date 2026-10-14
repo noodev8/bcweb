@@ -1200,6 +1200,60 @@ export function getStockSales() {
   );
 }
 
+// Sell-through — the unit ledger (server utils/unitAge.js): pairs in / out / held, each held pair dated oldest-sells-first.
+// Age bands: m0_3 = up to 3 months, m3_6, m6_12, m12 = over a year, pre = arrived before Goods In logging began (Jan 2025).
+export interface AgeBands { m0_3: number; m3_6: number; m6_12: number; m12: number; pre: number }
+
+export interface SellThroughMonth {
+  month: string;      // YYYY-MM
+  end: string;        // YYYY-MM-DD — the month end the held pairs are aged at (today for the open month)
+  partial: boolean;
+  in: number;         // pairs booked in by Goods In
+  sold: number;       // pairs sold, all channels, net of returns
+  profit: number;     // £, all channels
+  held: number;       // pairs held at month end (rebuilt backwards from today)
+  bands: AgeBands;
+}
+
+export interface SellThroughCohort {
+  month: string;             // the arrival month
+  in: number;
+  left_3m: number | null;    // still held 3 month-ends later (null = not reached yet)
+  left_6m: number | null;
+  left_now: number;
+}
+
+export interface SellThroughStyle {
+  groupid: string;
+  title: string | null;
+  brand: string | null;
+  units: number;
+  bands: AgeBands;
+  oldest: string | null;     // oldest logged arrival among the held pairs; null when any predate the log
+  sold_90: number;
+}
+
+export interface SellThroughData {
+  today: string;
+  recent: { d1: { in: number; sold: number }; d7: { in: number; sold: number }; d30: { in: number; sold: number } };
+  months: SellThroughMonth[];      // oldest -> newest
+  cohorts: SellThroughCohort[];    // oldest -> newest
+  styles: SellThroughStyle[];      // oldest-heavy first
+}
+
+export function getSellThrough() {
+  return request<SellThroughData>(
+    { url: '/analytics-sell-through', method: 'GET' },
+    (b) => ({
+      today: b.today,
+      recent: b.recent,
+      months: b.months || [],
+      cohorts: b.cohorts || [],
+      styles: b.styles || [],
+    })
+  );
+}
+
 // Sitting stock — styles held with no sale on any channel for `days` (or never sold). Live, per style.
 export interface SittingStyle {
   groupid: string;

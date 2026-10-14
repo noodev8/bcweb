@@ -333,6 +333,8 @@ app.use('/birk-availability-update', require('./routes/birk-availability-update'
 // (live from `sales`, all channels, net of returns). Replaced the Stock Position gauge and its "Update now" snapshot (2026-10-09).
 app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   // GET: READ ONLY
 app.use('/analytics-stock-sitting', require('./routes/analytics-stock-sitting'));   // GET: READ ONLY
+// Sell-through: the unit ledger — pairs in, out and held, each pair dated oldest-sells-first (utils/unitAge.js, nothing stored).
+app.use('/analytics-sell-through', require('./routes/analytics-sell-through'));     // GET: READ ONLY
 app.use('/pricing-sitting-list', require('./routes/pricing-sitting-list'));         // GET: READ ONLY — Repricing list of the sitting styles
 app.use('/shopify-clearance-list', require('./routes/shopify-clearance-list'));       // GET: what is in the clearance collection now (collection_member)
 app.use('/shopify-clearance-set', require('./routes/shopify-clearance-set'));         // POST: WRITES SHOPIFY TAGS — put chosen styles in / take them out of the clearance collection

@@ -69,7 +69,7 @@ import {
   ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
-  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ArrowTrendingDownIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
   RectangleStackIcon,
 } from '@heroicons/react/24/outline';
@@ -280,6 +280,14 @@ const GROUPS: Group[] = [
         description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
         href: '/analytics/price-changes',
         icon: ArrowsRightLeftIcon,
+      },
+      {
+        // The unit ledger (owner, 2026-10-14) — here because Reports isn't opened directly any more (owner, same day).
+        title: 'Sell-through',
+        subtitle: 'Pairs in, out, held — and their age',
+        description: "Pairs in, pairs out, pairs held — and how long the held pairs have been here. Month by month against last year, each delivery's sell-through, and the styles holding the oldest pairs.",
+        href: '/analytics/sell-through',
+        icon: ArrowTrendingDownIcon,
       },
       {
         title: 'Log',

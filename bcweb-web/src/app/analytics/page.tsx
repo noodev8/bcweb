@@ -21,7 +21,7 @@ import AppShell from '@/components/AppShell';
 import ModuleTile from '@/components/ModuleTile';
 import {
   PresentationChartLineIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
-  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon, TrophyIcon,
+  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon, TrophyIcon, ArrowTrendingDownIcon,
 } from '@heroicons/react/24/outline';
 
 export default function AnalyticsPage() {
@@ -52,6 +52,16 @@ export default function AnalyticsPage() {
 
         {/* Selling vs Sitting (/analytics/stock-sales) is no longer a Reports tile: renamed Slow and reached only from the Slow card on
             Winners (owner, 2026-10-12: "Remove the menu option for Selling v Sitting completely"). */}
+
+        {/* Sell-through (2026-10-14) — units only: pairs in, out and held, each pair dated oldest-sells-first. The owner's read on
+            whether the excess unit count is coming down and whether buying decisions sold through. */}
+        <ModuleTile
+          title="Sell-through"
+          description="Pairs in, pairs out, pairs held — and how long the held pairs have been here. Month by month against last year, each delivery's sell-through, and the styles holding the oldest pairs."
+          href="/analytics/sell-through"
+          icon={ArrowTrendingDownIcon}
+          live
+        />
 
         {/* Catalogue-growth pulse — what's been added lately and how the new lines are selling. */}
         <ModuleTile
