@@ -65,7 +65,7 @@ function monthSpan(label) {
 }
 
 function parsePL(text, today) {
-  const rows = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim()).map(fields);
+  const rows = (text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text).split(/\r?\n/).filter((l) => l.trim()).map(fields);
   const head = rows.find((r) => r[0] === 'Account' && r[1] === 'Code');
   if (!head) return { ok: false, reason: 'Not a QuickFile P&L CSV (no "Account","Code" header row).' };
   const spans = head.slice(2).map(monthSpan);
