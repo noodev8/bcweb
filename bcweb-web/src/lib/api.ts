@@ -1270,6 +1270,8 @@ export interface RevenueChannel {
   prev_cogs: number;
   no_cost: number;        // revenue with no usable cost (not in cogs)
   prev_no_cost: number;
+  cogs_filled: number;      // Amazon / CM3: deleted styles' cost at the channel's own cost ratio (already in cogs)
+  prev_cogs_filled: number;
 }
 
 // A fee (or ads) line for one window: `real` from stored figures, `est` for days not covered (its own rate x Shopify revenue).
@@ -1278,12 +1280,12 @@ export interface RevenueFee {
   real_days: { from: string; to: string } | null;
 }
 // Royal Mail / packing bags: each window = that window's average per pair (from the owner's figure for it) x its pairs sold.
-export interface RevenueFigure { name: string; per_pair: number | null; cur: number | null; prev: number | null }
+export interface RevenueOverhead { name: string; cur: number | null; prev: number | null }   // whole business, ex VAT (P&L)
 export interface ShopifyExpenses {
   shopify_payments: { cur: RevenueFee; prev: RevenueFee };
   paypal: { cur: RevenueFee; prev: RevenueFee };
-  google_ads: { cur: RevenueFee; prev: RevenueFee };   // real to the last import, then its rate; real_days always null
-  figures: RevenueFigure[];
+  advertising: RevenueOverhead;   // QuickFile P&L 6201, all Shopify's (was the Google Ads import)
+  shipping: RevenueOverhead;      // QuickFile P&L 7501 Postage + 5003 Packaging (was hand-typed Royal Mail + bags)
   delivery: { cur: number; prev: number };   // INCOME: delivery customers paid, net of refunds, inc. VAT (free postage from 14 Oct 26)
 }
 
@@ -1291,13 +1293,17 @@ export interface RevenueData {
   from: string; to: string; prev_from: string; prev_to: string;   // YYYY-MM-DD, inclusive
   channels: RevenueChannel[];                                     // largest first
   shopify_expenses: ShopifyExpenses | null;
+  amazon_expenses: { fees: { cur: number | null; prev: number | null } } | null;   // P&L seller fees less Shopify's + PayPal's
+  overheads: RevenueOverhead[];
+  accounts_turnover: { cur: number | null; prev: number | null } | null;   // P&L 4000 General Sales, ex VAT — a check, not summed                                   // whole business (P&L), [] until typed in
 }
 
 export function getRevenue() {
   return request<RevenueData>(
     { url: '/analytics-revenue', method: 'GET' },
     (b) => ({ from: b.from, to: b.to, prev_from: b.prev_from, prev_to: b.prev_to, channels: b.channels || [],
-              shopify_expenses: b.shopify_expenses || null })
+              shopify_expenses: b.shopify_expenses || null, amazon_expenses: b.amazon_expenses || null, overheads: b.overheads || [],
+              accounts_turnover: b.accounts_turnover || null })
   );
 }
 

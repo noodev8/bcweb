@@ -35,22 +35,35 @@ Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's St
          averages in use; fee/ads windows also split `real` and `est` so a cell can say "est." / "part est.".
            shopify_payments, paypal   fee_daily (utils/feeDaily.js). Real for the days a source covers; outside them its own rate
                                       (its fees / Shopify revenue over the days it covers) x Shopify revenue.
-           google_ads                 google_product_daily (manual import), as Ad Daily sums it. Real to the last imported day, then
-                                      the ads' rate over the 12 months to that day x Shopify revenue. Ads first ran 2025-02-02, so the
-                                      year before is complete as stored.
-           figures                    expense_figure — Royal Mail, packing bags. Averages: each window takes its own figure (the
-                                      newest ending by the window's end), / Shopify pairs sold over its period = a cost per pair,
-                                      x the window's pairs sold. `per_pair` returned is this year's.
+           advertising, shipping { name, cur, prev }   QuickFile P&L, monthly (see P&L LINES below): 6201 Advertising, all Shopify's;
+                                      7501 Postage + 5003 Packaging. (Were the Google Ads import and hand-typed Royal Mail / bags
+                                      until 2026-10-14.)
 
            delivery { cur, prev }     INCOME: what Shopify customers paid for delivery (shopify_delivery, net of refunds, inc.
                                       VAT). Not in `sales`, so not in revenue above. Free postage from 2026-10-14.
 
-         KEEPING IT CURRENT — the owner supplies these by hand now and again, only to RECALCULATE the averages (nothing goes blank or
-         stale without them; the page shows the averages in use, not dates):
-           - Royal Mail + packing bags: a new period total → INSERT a new expense_figure row (newest per name wins).
-           - PayPal: a new "All transactions" export → node scripts/paypal-fees-import.js <csv> --apply.
-           - Google Ads: the Google Ads Import screen, as for the ads screens.
-           Shopify Payments fees need nothing: "Update now" on Repricing tops them up.
+         P&L LINES (2026-10-14) — every line from the accounts comes from QuickFile's monthly P&L CSV (scripts/pl-import.js; code → line
+         mapping in utils/quickFilePL.js), one expense_figure row per line per month. A window's amount = the months inside it, part
+         months pro rata by days; days no month covers (the current month, until it has ended and been imported) are filled at the
+         window's own daily rate. Owner, 2026-10-14: monthly because QuickFile won't give a rolling 12 months, and shoe sales are too
+         seasonal to scale a part year up.
+
+         KEEPING IT CURRENT (the page's "What to provide" says the same, briefly):
+           - Every month or two: QuickFile → Segmented P&L by Months → CSV Download → node scripts/pl-import.js <csv> --apply.
+           - Now and then: a PayPal "All transactions" export → node scripts/paypal-fees-import.js <csv> --apply.
+           Shopify Payments fees and delivery need nothing: "Update now" on Repricing tops them up.
+
+         AMAZON (2026-10-14) — `amazon_expenses.fees` { cur, prev }: the P&L's 6003 Seller Fees (expense_figure AMZ 'Seller fees',
+         by days) less shopify_payments and paypal above. Deleted Amazon / CM3 styles' revenue costed at the channel's own cost ratio
+         (`cogs_filled`).
+
+         ACCOUNTS TURNOVER (2026-10-14) — `accounts_turnover` { cur, prev }: the P&L's 4000 General Sales (ex VAT), so the page can show
+         the accounts beside our sales. Not used in any sum. It exposed that `sales` is ~£82k short in the year before (Nov 2024 – Feb
+         2025 especially) while this year agrees.
+
+         OVERHEADS (2026-10-14) — `overheads` [{ name, cur, prev }]: Wages (7004 + 7007 pensions), Rent (7100), General expenses
+         (every other P&L expense line + 5100 Carriage; NOT 5000 purchases — cost of goods is ours — 5003/7501 shipping, 6003 seller
+         fees, 6201 advertising, which the channels carry). expense_figure channel 'ALL'.
 
          Channels are whatever `sales.channel` holds (SHP / AMZ / CM3 today), largest first; an unknown code still shows, never dropped.
 
@@ -131,14 +144,33 @@ router.get('/', async (req, res) => {
              (CURRENT_DATE - INTERVAL '12 months' - INTERVAL '1 day')::date::text AS prev_to
     `);
     const r2 = (x) => Math.round(x * 100) / 100;
-    const channels = r.rows.map((c) => ({
-      channel: c.channel, revenue: r2(c.revenue), sold: r2(c.sold), returns: r2(c.returns), units: c.units,
-      prev_revenue: r2(c.prev_revenue), prev_sold: r2(c.prev_sold), prev_returns: r2(c.prev_returns), prev_units: c.prev_units,
-      off_file: r2(c.off_file),
-      cogs: r2(c.cogs), prev_cogs: r2(c.prev_cogs), no_cost: r2(c.no_cost), prev_no_cost: r2(c.prev_no_cost),
-    }));
-    const shopify_expenses = await shopifyExpenses();
-    return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses });
+    // AMAZON / CM3 UNCOSTED REVENUE (2026-10-14): a deleted style's sales have no cost, and Amazon's stored profit can't give it back
+    // (its formula carries the FBA fee, which moves — inverting it matched today's cost on only 67% of live rows). So that revenue is
+    // costed at the channel's OWN cost ratio on the revenue that has a cost. `cogs_filled` is the part added, for the footnote.
+    // Shopify keeps its recovery from stored profit (above); its only leftover is refunds on deleted styles, left as they are.
+    const fill = (c, cogs, rev, noCost) => (c.channel === 'SHP' || rev - noCost === 0 ? 0 : noCost * (cogs / (rev - noCost)));
+    const channels = r.rows.map((c) => {
+      const f = fill(c, c.cogs, c.revenue, c.no_cost), pf = fill(c, c.prev_cogs, c.prev_revenue, c.prev_no_cost);
+      return {
+        channel: c.channel, revenue: r2(c.revenue), sold: r2(c.sold), returns: r2(c.returns), units: c.units,
+        prev_revenue: r2(c.prev_revenue), prev_sold: r2(c.prev_sold), prev_returns: r2(c.prev_returns), prev_units: c.prev_units,
+        off_file: r2(c.off_file),
+        cogs: r2(c.cogs + f), prev_cogs: r2(c.prev_cogs + pf), no_cost: r2(c.no_cost), prev_no_cost: r2(c.prev_no_cost),
+        cogs_filled: r2(f), prev_cogs_filled: r2(pf),
+      };
+    });
+    const [shopify_expenses, overheads, sellerFees, turnover] = await Promise.all([
+      shopifyExpenses(), overheadLines(), plLines({ query }, 'AMZ', 'Seller fees'), plLines({ query }, 'ACC', 'Turnover'),
+    ]);
+    // AMAZON FEES (owner, 2026-10-14) = the QuickFile P&L's 6003 Seller Fees, which holds EVERY channel's fees (Month End posts
+    // Amazon's, Shopify's and PayPal's there — utils/financeQuickFile.js), less the Shopify Payments and PayPal fees this screen
+    // already holds. What remains is Amazon's (referral, FBA, storage, subscription; SumUp's few pounds too). Ex VAT, as the P&L.
+    const sf = sellerFees[0] || { cur: null, prev: null };
+    const amzFees = (w) => (sf[w] === null ? null
+      : r2(sf[w] - (shopify_expenses.shopify_payments[w].amount || 0) - (shopify_expenses.paypal[w].amount || 0)));
+    const amazon_expenses = { fees: { cur: amzFees('cur'), prev: amzFees('prev') }, seller_fees: sf };
+    const accounts_turnover = turnover[0] ? { cur: turnover[0].cur, prev: turnover[0].prev } : null;
+    return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses, amazon_expenses, overheads, accounts_turnover });
   } catch (err) {
     logger.error('[analytics-revenue] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Revenue' });
@@ -146,10 +178,8 @@ router.get('/', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// SHOPIFY EXPENSES (see the header). Three reads, each giving { cur, prev } for the same two windows as the channels above.
+// SHOPIFY EXPENSES (see the header). Four reads, each giving { cur, prev } for the same two windows as the channels above.
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Google Shopping first ran 2025-02-02 (owner, 2026-10-14: an export for 1 Oct 2024 – 31 Jul 2025 has no rows before it, and that is
-// real, not a short export) — so the year before's ads are complete as stored, and only days AFTER the last import are estimated.
 
 const WINDOWS_SQL = `
   SELECT 'cur' AS w, (CURRENT_DATE - INTERVAL '12 months')::date AS f, CURRENT_DATE AS t
@@ -157,7 +187,7 @@ const WINDOWS_SQL = `
   SELECT 'prev', (CURRENT_DATE - INTERVAL '24 months')::date, (CURRENT_DATE - INTERVAL '12 months' - INTERVAL '1 day')::date`;
 
 async function shopifyExpenses(db = { query }) {   // db: a transaction client in the rollback test, else the pool
-  const [fees, ads, figs, delivery] = await Promise.all([
+  const [fees, delivery, advertising, shipping] = await Promise.all([
     // FEES: real where fee_daily covers the day; outside a source's covered range, its own real rate (fees / Shopify revenue over
     // the covered range) x that day's Shopify revenue. rate NULL = nothing stored for the source yet, so no estimate either.
     db.query(`
@@ -176,43 +206,6 @@ async function shopifyExpenses(db = { query }) {   // db: a transaction client i
              GREATEST(w.f, r.f)::text AS real_from, LEAST(w.t, r.t)::text AS real_to
       FROM src s CROSS JOIN win w LEFT JOIN rate r ON r.source = s.source
     `),
-    // GOOGLE ADS: Shopping spend from the manual import (google_product_daily — the same sum as Ad Daily). Real up to the last
-    // imported day; the days after it are ESTIMATED at the ads' own rate (spend / Shopify revenue over the 12 months to the last
-    // import) x Shopify revenue. Nothing ran before GOOGLE_ADS_STARTED, so days before it are simply £0, not "missing".
-    db.query(`
-      WITH win AS (${WINDOWS_SQL}),
-      last AS (SELECT MAX(snapshot_date) AS d FROM google_product_daily),
-      shp AS (SELECT solddate AS day, SUM(soldprice * qty) AS rev FROM sales WHERE channel = 'SHP' GROUP BY solddate),
-      rate AS (
-        SELECT (SELECT SUM(cost) FROM google_product_daily, last WHERE snapshot_date > last.d - INTERVAL '12 months')
-               / NULLIF((SELECT SUM(rev) FROM shp, last WHERE day > last.d - INTERVAL '12 months' AND day <= last.d), 0) AS rate
-      )
-      SELECT w.w,
-             COALESCE((SELECT SUM(g.cost) FROM google_product_daily g WHERE g.snapshot_date BETWEEN w.f AND w.t), 0)::float8 AS real,
-             (SELECT SUM(rev) FROM shp, last WHERE day BETWEEN w.f AND w.t AND day > last.d)::float8 AS uncovered_rev,
-             rate.rate::float8 AS rate
-      FROM win w CROSS JOIN rate
-    `),
-    // TYPED FIGURES (Royal Mail, packing bags) — AVERAGES (owner, 2026-10-14: "just show your average figure used ... every now and
-    // again I can give you data to recalculate the average"). Each window takes ITS OWN figure — the newest per name that ended by
-    // the window's end (else the newest there is) — turned into a cost per pair sold (amount / SHP pairs sold, qty > 0, over the
-    // figure's own period), x the window's pairs sold. So a figure given for exactly the window comes back as itself, and as the
-    // window rolls on it follows the average instead of going stale.
-    db.query(`
-      WITH win AS (${WINDOWS_SQL}),
-      pairs AS (SELECT solddate AS day, SUM(qty) AS n FROM sales WHERE channel = 'SHP' AND qty > 0 GROUP BY solddate),
-      names AS (SELECT DISTINCT name FROM expense_figure WHERE channel = 'SHP'),
-      pick AS (
-        SELECT n.name, w.w, w.f, w.t,
-               (SELECT e.id FROM expense_figure e WHERE e.channel = 'SHP' AND e.name = n.name
-                ORDER BY (e.period_to <= w.t) DESC, e.period_to DESC, e.id DESC LIMIT 1) AS id
-        FROM names n CROSS JOIN win w
-      )
-      SELECT p.name, p.w,
-             (e.amount / NULLIF((SELECT SUM(n) FROM pairs WHERE day BETWEEN e.period_from AND e.period_to), 0))::float8 AS per_pair,
-             (SELECT SUM(n) FROM pairs WHERE day BETWEEN p.f AND p.t)::float8 AS window_pairs
-      FROM pick p JOIN expense_figure e ON e.id = p.id
-    `),
     // DELIVERY CHARGED to the customer (shopify_delivery, per order, net of delivery refunds, inc. VAT), by the order's day. INCOME,
     // not an expense — it sits under Revenue on the page. Free postage from 2026-10-14, so it runs to £0 from there on purpose.
     db.query(`
@@ -221,6 +214,11 @@ async function shopifyExpenses(db = { query }) {   // db: a transaction client i
       FROM win w LEFT JOIN shopify_delivery d ON d.order_day BETWEEN w.f AND w.t
       GROUP BY w.w
     `),
+    // ADVERTISING (owner, 2026-10-14: "take advertising from the P&L and charge it to shopify. It will be the most accurate") — the P&L's
+    // 6201, all of it Shopify's (no Amazon ads). Replaced the google_product_daily sum, which missed ~£17k of other channels the
+    // year before. SHIPPING — the P&L's 7501 Postage and Carriage + 5003 Packaging.
+    plLines(db, 'SHP', 'Advertising'),
+    plLines(db, 'SHP', 'Shipping'),
   ]);
 
   const r2 = (x) => (x === null || x === undefined ? null : Math.round(x * 100) / 100);
@@ -233,24 +231,46 @@ async function shopifyExpenses(db = { query }) {   // db: a transaction client i
     };
     return { cur: at('cur'), prev: at('prev') };
   };
-  const adAt = (w) => {
-    const x = ads.rows.find((a) => a.w === w);
-    const est = x.rate === null ? null : (x.uncovered_rev || 0) * x.rate;
-    return { amount: r2(x.real + (est || 0)), real: r2(x.real), est: r2(est), rate: x.rate, real_days: null };
-  };
   return {
     shopify_payments: feeLine('SHOPIFY_PAYMENTS'),
     paypal: feeLine('PAYPAL'),
-    google_ads: { cur: adAt('cur'), prev: adAt('prev') },
+    advertising: advertising[0] || { name: 'Advertising', cur: null, prev: null },
+    shipping: shipping[0] || { name: 'Shipping', cur: null, prev: null },
     delivery: Object.fromEntries(delivery.rows.map((d) => [d.w, r2(d.amount)])),
-    figures: [...new Set(figs.rows.map((f) => f.name))].map((name) => {
-      const at = (w) => figs.rows.find((f) => f.name === name && f.w === w);
-      const cur = at('cur'), prev = at('prev');
-      const amt = (x) => (x && x.per_pair !== null ? r2(x.per_pair * (x.window_pairs || 0)) : null);
-      return { name, per_pair: cur ? r2(cur.per_pair) : null, cur: amt(cur), prev: amt(prev) };
-    }).sort((a, b) => (b.cur || 0) - (a.cur || 0)),
   };
+}
+
+// OVERHEADS (owner, 2026-10-14: wages, rent "and then group others into general expenses") — the whole business's costs, not a
+// channel's, so expense_figure channel 'ALL'.
+function overheadLines(db = { query }) {
+  return plLines(db, 'ALL', null);
+}
+
+// A P&L line per window (see P&L LINES in the header): the monthly rows inside the window, part months pro rata by days, then scaled
+// up for any days no month covers (amount x window days / covered days). Months never overlap — pl-import.js replaces a month
+// rather than adding a second row. name null = every name on the channel. null where nothing covers the window at all.
+async function plLines(db, channel, only) {
+  const r = await db.query(`
+    WITH win AS (${WINDOWS_SQL}),
+    fig AS (SELECT name, amount, period_from AS f, period_to AS t FROM expense_figure
+            WHERE channel = $1 AND ($2::text IS NULL OR name = $2)),
+    o AS (SELECT fig.name, w.w, (w.t - w.f + 1) AS days, fig.amount, (fig.t - fig.f + 1) AS len,
+                 GREATEST(0, LEAST(fig.t, w.t) - GREATEST(fig.f, w.f) + 1) AS overlap
+          FROM fig CROSS JOIN win w)
+    SELECT name, w, SUM(amount * overlap / len)::float8 AS amount, SUM(overlap)::int AS covered, MAX(days)::int AS days
+    FROM o GROUP BY name, w
+  `, [channel, only]);
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const at = (name, w) => {
+    const x = r.rows.find((y) => y.name === name && y.w === w);
+    return x && x.covered > 0 ? r2(x.amount * x.days / x.covered) : null;
+  };
+  return [...new Set(r.rows.map((x) => x.name))]
+    .map((name) => ({ name, cur: at(name, 'cur'), prev: at(name, 'prev') }))
+    .sort((a, b) => (b.cur || 0) - (a.cur || 0));
 }
 
 module.exports = router;
 module.exports.shopifyExpenses = shopifyExpenses;   // for the rollback test only
+module.exports.overheadLines = overheadLines;
+module.exports.plLines = plLines;
