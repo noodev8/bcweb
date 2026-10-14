@@ -32,7 +32,7 @@ thing — the pinned block is for the actions you take mid-scroll.
 import { useCallback, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import AppShell from '@/components/AppShell';
-import CustomerOrderList from '@/components/CustomerOrderList';
+import CustomerOrderList, { focusCustomerScan } from '@/components/CustomerOrderList';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import PickLink from '@/components/PickLink';
 import { CUSTOMER_ORDERS_KEY } from '@/lib/orderStatusUi';
@@ -44,7 +44,10 @@ export default function CustomerOrdersPage() {
   // through SWR's global mutate on the list's own key rather than by handing a refresh callback down into CustomerOrderList: the list
   // owns that query, and this page has no business holding a second subscription to it just to be able to poke it.
   const { mutate } = useSWRConfig();
-  const onUpdated = useCallback(async () => { await mutate(CUSTOMER_ORDERS_KEY); }, [mutate]);
+  // Either way the run ends, the cursor goes back to the scan box (owner, 2026-10-14). onError(null) is also called as a run STARTS,
+  // so only a real message refocuses — otherwise pressing the button would pull focus to the scan box mid-run.
+  const onUpdated = useCallback(async () => { await mutate(CUSTOMER_ORDERS_KEY); focusCustomerScan(); }, [mutate]);
+  const onUpdateError = useCallback((message: string | null) => { setUpdateError(message); if (message) focusCustomerScan(); }, []);
 
   return (
     <AppShell
@@ -53,7 +56,7 @@ export default function CustomerOrdersPage() {
       headerRight={(
         <div className="flex items-center gap-2">
           <PickLink />
-          <UpdateOrdersButton onDone={onUpdated} onError={setUpdateError} />
+          <UpdateOrdersButton onDone={onUpdated} onError={onUpdateError} />
         </div>
       )}
     >

@@ -123,6 +123,13 @@ function beepError() {
   } catch { /* silent; the screen still goes red */ }
 }
 
+// The scan box's DOM id, so the page can hand focus back to it after Update orders, which lives in the page's title row, outside this
+// component (owner, 2026-10-14: after Refresh or Update orders, the cursor goes back to scan).
+const SCAN_INPUT_ID = 'customer-order-scan';
+export function focusCustomerScan() {
+  document.getElementById(SCAN_INPUT_ID)?.focus();
+}
+
 export default function CustomerOrderList() {
   // Same SWR key the module home uses to headline the counts on the stage switch. SWR dedupes by key, so the two call sites share
   // one request and one cache entry — which is why this component doesn't report its counts upward through a prop. (It used to, and
@@ -677,7 +684,8 @@ export default function CustomerOrderList() {
             So: Refresh to see how the picking is going, Update orders when you want the count to come down. */}
         <button
           type="button"
-          onClick={() => refresh()}
+          // Back to the scan box once the re-read lands (owner, 2026-10-14) — the next thing done is scan a shoe, not click again.
+          onClick={async () => { await refresh(); scanRef.current?.focus(); }}
           disabled={busy}
           title="Re-read our order list. Doesn't contact Shopify."
           className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
@@ -696,6 +704,7 @@ export default function CustomerOrderList() {
             (scanError ? 'text-red-500' : 'text-brand-500')} />
           <input
             ref={scanRef}
+            id={SCAN_INPUT_ID}
             // Focused on arrival: the first thing done on this screen is pick up a shoe and scan it, no click first. It mounts with
             // the grid (after the loading render), so autoFocus fires once the list is there.
             autoFocus
