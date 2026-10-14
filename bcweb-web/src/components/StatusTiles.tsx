@@ -93,6 +93,8 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
     const res = await updatePortfolioSnapshot();
     if (res.success) {
       await Promise.all([refresh(), portfolio.refresh()]);
+      // The statuses updated; only the Shopify fee top-up (for Reports → Revenue) failed. Said, not hidden — the fees stay stale.
+      if (res.data?.feesError) setActionError(`Statuses updated, but Shopify fees were not topped up: ${res.data.feesError}`);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
       setActionError(res.error || 'Failed to update');
@@ -255,7 +257,10 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
           ))}
           {totals && totals.revenue > 0 && winners && (
             <>
-              <TotalBox value={gbp(totals.revenue)} label="12m revenue" />
+              {/* The way into the revenue breakdown, by channel (owner, 2026-10-14: "click on the card and go to the breakdown"). */}
+              <Link href="/analytics/revenue" className="block rounded-lg transition hover:opacity-80">
+                <TotalBox value={gbp(totals.revenue)} label="12m revenue" />
+              </Link>
               {/* Winners' column only (stretching it under Slow too was tried and reverted, owner 2026-10-13: it is only for winners). */}
               <FigureGroup pct={pct(winners.revenue, totals.revenue)} color={STATUS_COLOR.WINNERS}>
                 <Figure value={pctText(winners.revenue, totals.revenue)} strong />
@@ -275,7 +280,7 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
 // whole, not as a share.
 function TotalBox({ value, label }: { value: string; label: string }) {
   return (
-    <span className="flex flex-col justify-center rounded-lg px-4 py-2 ring-1 ring-slate-200">
+    <span className="flex h-full flex-col justify-center rounded-lg px-4 py-2 ring-1 ring-slate-200">
       <span className="block text-xl font-bold leading-none tabular-nums text-slate-900">{value}</span>
       <span className="mt-1 block text-xs text-slate-500">{label}</span>
     </span>

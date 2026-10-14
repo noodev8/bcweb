@@ -1254,6 +1254,53 @@ export function getSellThrough() {
   );
 }
 
+// Revenue — rolling 12 months by channel against the 12 before (server routes/analytics-revenue.js). £, VAT-inclusive, net of returns.
+export interface RevenueChannel {
+  channel: string;        // 'SHP' | 'AMZ' | 'CM3' (whatever sales.channel holds)
+  revenue: number;        // sold + returns
+  sold: number;
+  returns: number;        // negative
+  units: number;          // net of returns
+  prev_revenue: number;   // the same four, the 12 months before
+  prev_sold: number;
+  prev_returns: number;
+  prev_units: number;
+  off_file: number;       // of `revenue`, styles no longer in skusummary / shop items with no style — why the Winners box is lower
+  cogs: number;           // cost of goods, ex VAT, at TODAY's skusummary.cost; returns put back
+  prev_cogs: number;
+  no_cost: number;        // revenue with no usable cost (not in cogs)
+  prev_no_cost: number;
+}
+
+// A fee (or ads) line for one window: `real` from stored figures, `est` for days not covered (its own rate x Shopify revenue).
+export interface RevenueFee {
+  amount: number | null; real: number; est: number | null; rate: number | null;
+  real_days: { from: string; to: string } | null;
+}
+// Royal Mail / packing bags: each window = that window's average per pair (from the owner's figure for it) x its pairs sold.
+export interface RevenueFigure { name: string; per_pair: number | null; cur: number | null; prev: number | null }
+export interface ShopifyExpenses {
+  shopify_payments: { cur: RevenueFee; prev: RevenueFee };
+  paypal: { cur: RevenueFee; prev: RevenueFee };
+  google_ads: { cur: RevenueFee; prev: RevenueFee };   // real to the last import, then its rate; real_days always null
+  figures: RevenueFigure[];
+  delivery: { cur: number; prev: number };   // INCOME: delivery customers paid, net of refunds, inc. VAT (free postage from 14 Oct 26)
+}
+
+export interface RevenueData {
+  from: string; to: string; prev_from: string; prev_to: string;   // YYYY-MM-DD, inclusive
+  channels: RevenueChannel[];                                     // largest first
+  shopify_expenses: ShopifyExpenses | null;
+}
+
+export function getRevenue() {
+  return request<RevenueData>(
+    { url: '/analytics-revenue', method: 'GET' },
+    (b) => ({ from: b.from, to: b.to, prev_from: b.prev_from, prev_to: b.prev_to, channels: b.channels || [],
+              shopify_expenses: b.shopify_expenses || null })
+  );
+}
+
 // Sitting stock — styles held with no sale on any channel for `days` (or never sold). Live, per style.
 export interface SittingStyle {
   groupid: string;
@@ -4196,10 +4243,11 @@ export function getPortfolioStatus() {
 
 // "Update now" — the deliberate act: re-tags every style's portfolio status (skusummary.portfolio_status). Callers re-read the
 // screens afterwards, so nothing from the response is mapped. (The name is historic — it no longer records a trend point.)
+// Also tops up the Shopify Payments fees for Reports → Revenue; `feesError` is set when that part failed (the re-tag still succeeded).
 export function updatePortfolioSnapshot() {
-  return request<Record<string, never>>(
+  return request<{ feesError: string | null }>(
     { url: '/portfolio-snapshot-update', method: 'POST' },
-    () => ({})
+    (b) => ({ feesError: b.fees && b.fees.ok === false ? String(b.fees.error || 'failed') : null })
   );
 }
 

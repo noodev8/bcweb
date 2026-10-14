@@ -134,4 +134,19 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-module.exports = { shopifyProfit, priceForProfit, toNumber };
+/*
+ * costFromProfitSql(soldExpr, profitExpr) -> SQL expression string
+ * The same formula rearranged for COST: the cost a stored SHP sale was priced against, recovered from its sales.profit. Sales rows
+ * carry no cost, so this is the only record of cost for a style deleted since (Reports -> Revenue, 2026-10-14).
+ *     cost = sold * (1 - 1/6 - 0.029) - 4.74 - 1.2 * profit
+ * Verified against the live DB 2026-10-14: over 24 months of SHP sales of styles still on file, 7,097 of 7,110 rows recover today's
+ * skusummary.cost to within 5p, totals £219,155 vs £219,163. SALES ROWS ONLY (qty > 0): a refund row's profit doesn't invert the same
+ * way. NULL in, NULL out. The inputs are column expressions written by the caller, never request data.
+ */
+function costFromProfitSql(soldExpr, profitExpr) {
+  const priceCoefficient = 1 - 1 / VAT_DIVISOR - PAYMENT_RATE;
+  const flatCosts = PAYMENT_FIXED + PACKING + ROYAL_MAIL;
+  return `(${soldExpr} * ${priceCoefficient} - ${flatCosts} - ${RETURNS_DIVISOR} * ${profitExpr})`;
+}
+
+module.exports = { shopifyProfit, priceForProfit, costFromProfitSql, toNumber };

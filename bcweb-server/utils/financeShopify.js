@@ -495,6 +495,95 @@ async function fetchFees(start, end) {
   };
 }
 
+/**
+ * Shopify Payments fees PER DAY from `start` (YYYY-MM-DD, inclusive) to now — for Reports → Revenue's stored fee_daily
+ * (utils/shopifyPaymentFees.js), not for the month end. The SAME endpoint, transaction types and day rule as fetchFees() above, so a
+ * month added up from these days equals Month End's figure (Aug 2026: £646.16 both ways, checked 2026-10-14).
+ *
+ * Fees are returned POSITIVE (a cost), in pounds. Pages back until a page reaches before `start`; every day from `start` on is then
+ * complete. The page cap is far wider than fetchFees' because a backfill reaches two years back (~8,000 transactions = 32 pages).
+ */
+async function fetchFeesByDay(start) {
+  const { shop } = requireConfig('payments');
+  let url = `https://${shop}.myshopify.com/admin/api/${API_VERSION}/shopify_payments/balance/transactions.json?limit=${PAGE_SIZE}`;
+  const days = new Map();   // day -> { pence, txns }
+  let pages = 0;
+  let reachedStart = false;
+
+  while (url) {
+    const { body, linkHeader } = await get(url, 'payments');
+    const txns = (body && body.transactions) || [];
+    if (txns.length === 0) { reachedStart = true; break; }   // the very first transaction is behind us
+    pages += 1;
+
+    let earliest = null;
+    for (const t of txns) {
+      const day = dayOf(t.processed_at);
+      if (earliest === null || day < earliest) earliest = day;
+      if (day >= start && ['charge', 'refund', 'dispute'].includes(t.type)) {
+        const x = days.get(day) || { pence: 0, txns: 0 };
+        x.pence += pence(t.fee);
+        x.txns += 1;
+        days.set(day, x);
+      }
+    }
+    if (earliest !== null && earliest < start) { reachedStart = true; break; }
+
+    const next = parseNextLink(linkHeader);
+    if (!next) { reachedStart = true; break; }
+    if (pages >= MAX_FEE_DAY_PAGES) break;
+    url = next;
+  }
+
+  return {
+    days: [...days.entries()].map(([day, x]) => ({ day, fees: x.pence / 100, txns: x.txns })).sort((a, b) => (a.day < b.day ? -1 : 1)),
+    complete: reachedStart,   // false = the page cap stopped it short of `start`; the caller must not store a partial range
+    pages,
+  };
+}
+// 250 x 200 = 50,000 transactions — a runaway guard only (two years is ~32 pages).
+const MAX_FEE_DAY_PAGES = 200;
+
+/**
+ * Delivery charged to the customer, PER ORDER — for Reports → Revenue's stored shopify_delivery (utils/shopifyDelivery.js), not the
+ * month end. Same reading as computeShopify's shipping row: the order's shipping_lines price, less any 'shipping_refund' order
+ * adjustment on its refunds. Kept VAT-INCLUSIVE (Shopify reports £0 tax on every line, see the header) — the page takes VAT off.
+ *
+ * Give `createdMin` (a backfill: every order created since) or `updatedMin` (a top-up: every order CHANGED since, which also catches
+ * a delivery refunded weeks after the order). ISO timestamps. A cancelled order comes back with charged 0, so a stored row is reset.
+ * Returns [{ id, day, charged, refunded }] in pounds, refunded positive.
+ */
+async function fetchDeliveryOrders({ createdMin, updatedMin }) {
+  const { shop } = requireConfig('orders');
+  const params = new URLSearchParams({ status: 'any', limit: String(PAGE_SIZE), fields: 'id,created_at,cancelled_at,shipping_lines,refunds' });
+  if (createdMin) params.set('created_at_min', createdMin);
+  if (updatedMin) params.set('updated_at_min', updatedMin);
+  let url = `https://${shop}.myshopify.com/admin/api/${API_VERSION}/orders.json?${params}`;
+  const out = [];
+  let pages = 0;
+  while (url) {
+    const { body, linkHeader } = await get(url, 'orders');
+    pages += 1;
+    for (const o of (body && body.orders) || []) {
+      let charged = 0;
+      let refunded = 0;
+      if (!o.cancelled_at) {
+        for (const sl of o.shipping_lines || []) charged += pence(sl.price);
+        for (const r of o.refunds || []) {
+          for (const adj of r.order_adjustments || []) {
+            if (adj.kind === 'shipping_refund') refunded -= pence(adj.amount) + pence(adj.tax_amount);   // negative in Shopify
+          }
+        }
+      }
+      out.push({ id: o.id, day: dayOf(o.created_at), charged: charged / 100, refunded: refunded / 100 });
+    }
+    const next = parseNextLink(linkHeader);
+    if (!next || pages >= MAX_FEE_DAY_PAGES) break;
+    url = next;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The month
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -611,4 +700,4 @@ async function computeShopify(db, month) {
   };
 }
 
-module.exports = { computeShopify, monthRange, buildRows, buildTransactionCsv, formatNum, pence, pounds, shiftDays };
+module.exports = { computeShopify, fetchFeesByDay, fetchDeliveryOrders, monthRange, buildRows, buildTransactionCsv, formatNum, pence, pounds, shiftDays };

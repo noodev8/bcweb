@@ -140,4 +140,48 @@ function computePayPal(text) {
   };
 }
 
-module.exports = { identify, computePayPal, LAYOUT_2026_08 };
+/**
+ * The Fee column PER DAY — for Reports → Revenue's stored fee_daily (scripts/paypal-fees-import.js), not the month end. Same rows and
+ * sign as computePayPal(), so the days add up to its total.
+ *
+ * Unlike computePayPal this DOES read the Date column, so it must know its format: this account writes DD/MM/YYYY (checked on a full
+ * year's export, 2026-10-14). Any date that isn't exactly that refuses the whole file — a US-format export read as UK would put fees
+ * on the wrong days silently, and a refusal is recoverable.
+ */
+function payPalFeesByDay(text) {
+  const id = identify(text);
+  if (!id.ok) return id;
+  if (!id.header.includes('date')) return { ok: false, reason: 'The Date column is missing.' };
+
+  const lines = splitLines(text);
+  const index = new Map(id.header.map((name, i) => [name, i]));
+  const at = (cells, name) => (index.has(name) ? cells[index.get(name)] : undefined);
+  const days = new Map();   // day -> { pence, txns }
+  let first = null;
+  let last = null;
+
+  for (let i = id.headerLine + 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]);
+    if (cells.length < id.header.length) continue;
+    const m = String(at(cells, 'date') || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return { ok: false, reason: `Line ${i + 1}: date '${at(cells, 'date')}' is not DD/MM/YYYY.` };
+    const day = `${m[3]}-${m[2]}-${m[1]}`;
+    if (first === null || day < first) first = day;
+    if (last === null || day > last) last = day;
+    const fee = pence(at(cells, 'fee'));
+    if (fee !== 0) {
+      const x = days.get(day) || { pence: 0, txns: 0 };
+      x.pence -= fee;   // PayPal writes fees negative; stored positive
+      x.txns += 1;
+      days.set(day, x);
+    }
+  }
+
+  return {
+    ok: true,
+    first, last,   // the export's own span: every day inside it is covered, fee or not
+    days: [...days.entries()].map(([day, x]) => ({ day, fees: x.pence / 100, txns: x.txns })).sort((a, b) => (a.day < b.day ? -1 : 1)),
+  };
+}
+
+module.exports = { identify, computePayPal, payPalFeesByDay, LAYOUT_2026_08 };
