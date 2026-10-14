@@ -427,9 +427,11 @@ export default function CustomerOrderList() {
     const parts: string[] = [];
     if (done.length) parts.push(`Manifested ${orders} order${orders === 1 ? '' : 's'} — manifest saved to Downloads`);
     if (done.some((m) => !m.pdf)) parts.push('a manifest came back with no PDF — download it from Click & Drop');
-    if (pending.length) parts.push('Click & Drop is still making the manifest — press Collect manifest in a minute to collect it');
+    const unread = pending.filter((m) => m.readError);
+    if (unread.length) parts.push(`manifested, but the PDF couldn’t be fetched (${unread[0].readError}) — press Collect manifest to try again`);
+    if (pending.length > unread.length) parts.push('Click & Drop is still making the manifest — press Collect manifest in a minute to collect it');
     if (failed.length) parts.push(`manifest failed at Click & Drop (ref ${failed.map((m) => m.errorReference || m.id).join(', ')})`);
-    setManifestNote({ ok: !failed.length && done.every((m) => m.pdf), text: parts.join('; ') });
+    setManifestNote({ ok: !failed.length && !unread.length && done.every((m) => m.pdf), text: parts.join('; ') });
   }
 
   // Voids the Click & Drop order (refused once Royal Mail has manifested it — the error shows in the bar) and un-packs the order.

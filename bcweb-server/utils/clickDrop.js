@@ -40,18 +40,27 @@ class ClickDropError extends Error {
 async function call(method, path, { body, binary = false, raw = false } = {}) {
   const key = process.env.CLICKDROP_API_KEY;
   if (!key) throw new ClickDropError('CLICKDROP_API_KEY is not set on the server', 0, null);
-  const res = await fetch(BASE + path, {
-    method,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-      Accept: binary ? 'application/pdf' : 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (binary && res.ok) return Buffer.from(await res.arrayBuffer());
-  const text = await res.text();
+  // A dropped connection (Node's fetch says just "terminated" — the first live manifest PDF fetch hit it, 2026-10-14) or a timeout
+  // becomes a ClickDropError with status 0, naming the call, so callers can tell it from a refusal and retry what's safe to retry.
+  let res;
+  let text;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${key}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        Accept: binary ? 'application/pdf' : 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (binary && res.ok) return Buffer.from(await res.arrayBuffer());
+    text = await res.text();
+  } catch (err) {
+    const why = err.cause?.message || err.message || 'connection failed';
+    throw new ClickDropError(`connection to Click & Drop failed on ${method} ${path.split('?')[0]} (${why})`, 0, null);
+  }
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON error body */ }
   // No readable message: show the raw body and the call, so a refusal like the manifest's bare 400 can be diagnosed from the screen.
@@ -216,8 +225,17 @@ async function createManifests() {
 }
 
 /** { manifestStatus: InProgress|Completed|Failed, documentStatus, orders: [{orderIdentifier, orderReference}], pdf, errorReference } */
-function getManifest(manifestId) {
-  return call('GET', `/manifests/${encodeURIComponent(manifestId)}`);
+// A read, so safe to retry: a dropped connection or a 5xx is tried up to 3 times, a few seconds apart, before it's given up on.
+async function getManifest(manifestId) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call('GET', `/manifests/${encodeURIComponent(manifestId)}`);
+    } catch (err) {
+      const transient = err instanceof ClickDropError && (err.status === 0 || err.status >= 500);
+      if (!transient || attempt >= 3) throw err;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
 }
 
 module.exports = {

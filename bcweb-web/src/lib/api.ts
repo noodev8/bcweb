@@ -2355,6 +2355,7 @@ export interface CustomerManifest {
   pending: boolean;              // still processing when the server stopped waiting — collect it with its id
   failed: boolean;
   errorReference: string | null;
+  readError: string | null;      // Click & Drop couldn't be read for it (after retries) — pending, collect again
 }
 
 // The Fulfill button, manifest step: manifests everything Click & Drop has waiting (irreversible). Pass `manifestIds` to collect
@@ -2370,6 +2371,7 @@ export function manifestCustomerOrders(manifestIds?: string[]) {
       pending: !!m.pending,
       failed: !!m.failed,
       errorReference: m.errorReference ? String(m.errorReference) : null,
+      readError: m.readError ? String(m.readError) : null,
     }))
   );
 }

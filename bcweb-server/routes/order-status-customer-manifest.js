@@ -29,7 +29,8 @@ Request Payload:
 Success Response:
 { "return_code": "SUCCESS",
   "manifests": [ { "id": "<uuid>", "status": "Completed", "orders": ["BC19314", ...], "pdf": "<base64>" | null,
-                   "pending": false, "failed": false, "errorReference": null } ] }
+                   "pending": false, "failed": false, "errorReference": null, "readError": null } ] }
+  readError: Click & Drop couldn't be read for that manifest (after retries) — it comes back pending, to collect again.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "NOTHING_TO_MANIFEST" · "MANIFEST_NO_ID" · "CLICKDROP_ERROR" · "UNAUTHORIZED" · "SERVER_ERROR"
@@ -79,11 +80,21 @@ router.post('/', async (req, res) => {
     // Poll every manifest until all are finished or the wait runs out.
     const latest = new Map();
     const deadline = Date.now() + WAIT_MS;
+    // Once the manifest has STARTED its ids must reach the client whatever happens next — a fetch failure here used to throw them
+    // away (SERVER_ERROR, 2026-10-14) and leave the PDF reachable only on the website. So a manifest we can't read (getManifest has
+    // already retried) stops being polled and comes back pending, with the reason; "Collect manifest" then tries it again.
+    const unreadable = new Map();
     for (;;) {
       for (const id of ids) {
-        if (latest.has(id) && finished(latest.get(id))) continue;
-        latest.set(id, await clickDrop.getManifest(id));
+        if (unreadable.has(id) || (latest.has(id) && finished(latest.get(id)))) continue;
+        try {
+          latest.set(id, await clickDrop.getManifest(id));
+        } catch (err) {
+          logger.error(`[order-status-customer-manifest] reading ${id}:`, err.message);
+          unreadable.set(id, err.message);
+        }
       }
+      if (ids.every((id) => unreadable.has(id) || finished(latest.get(id))) || Date.now() >= deadline) break;
       if (ids.every((id) => finished(latest.get(id))) || Date.now() >= deadline) break;
       await sleep(POLL_MS);
     }
@@ -98,15 +109,23 @@ router.post('/', async (req, res) => {
         pending: !finished(m),
         failed: m.manifestStatus === 'Failed',
         errorReference: m.errorReference || null,
+        readError: unreadable.get(id) || null,
       };
     });
     for (const m of manifests) {
-      logger.info(`[order-status-customer-manifest] ${m.id} ${m.status}${m.pending ? ' (pending)' : ''} — ${m.orders.length} orders`);
+      logger.info(`[order-status-customer-manifest] ${m.id} ${m.status}${m.pending ? ' (pending)' : ''} — ${m.orders.length} orders${m.readError ? ` — couldn't read: ${m.readError}` : ''}`);
     }
     return res.json({ return_code: 'SUCCESS', manifests });
   } catch (err) {
     if (err instanceof clickDrop.ClickDropError) {
       logger.error('[order-status-customer-manifest] Click & Drop:', err.message);
+      // Connection lost on the POST itself: Click & Drop may have manifested anyway, and we'd have no id to collect the PDF with.
+      if (err.status === 0 && err.message.includes('POST /manifests')) {
+        return res.json({
+          return_code: 'CLICKDROP_ERROR',
+          message: 'Lost the connection to Click & Drop while manifesting — it may have gone through. Check Manifests on the Click & Drop website for the PDF.',
+        });
+      }
       return res.json({ return_code: 'CLICKDROP_ERROR', message: `Click & Drop: ${err.message}` });
     }
     logger.error('[order-status-customer-manifest] error:', err.message);
