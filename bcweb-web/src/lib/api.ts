@@ -2362,14 +2362,14 @@ export interface CustomerManifest {
 export function manifestCustomerOrders(manifestIds?: string[]) {
   return request<CustomerManifest[]>(
     { url: '/order-status-customer-manifest', method: 'POST', data: manifestIds?.length ? { manifestIds } : {}, timeout: 90000 },
-    (b) => (Array.isArray(b.manifests) ? b.manifests : []).map((m: any) => ({
+    (b) => (Array.isArray(b.manifests) ? b.manifests : []).map((m: Record<string, unknown>) => ({
       id: String(m.id || ''),
       status: String(m.status || ''),
       orders: Array.isArray(m.orders) ? m.orders.map(String) : [],
-      pdf: m.pdf || null,
+      pdf: m.pdf ? String(m.pdf) : null,
       pending: !!m.pending,
       failed: !!m.failed,
-      errorReference: m.errorReference || null,
+      errorReference: m.errorReference ? String(m.errorReference) : null,
     }))
   );
 }
