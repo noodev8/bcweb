@@ -47,8 +47,8 @@ it belongs to the bench, not the shipment. The printer icon on a line reprints t
 MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in above its contents (moved up 2026-10-15) —
 Amazon wants all four for every carton. A box with units but no full set is flagged "needs size" in the list. Amazon's standard-carton
 limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks. Two quick fills (owner, 2026-10-01): "Birk box" puts in
-the Birkenstock carton's sides (BIRK_BOX — weight left blank, it depends on the contents), and "Set" takes typed values, applies them to
-the open box and remembers them in this browser so the next Set opens pre-filled.
+the Birkenstock carton's sides (BIRK_BOX — weight left blank, it depends on the contents), and "Set" (one click, 2026-10-15) saves the open
+box's typed size in this browser, or fills an empty box with the saved size — the same box size packed again and again isn't retyped.
 
 SHIPPING PLAN (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
 Downloads Amazon-ShippingPlan.txt, the Seller Central shipping-plan upload, in the legacy app's exact layout: the template's header block,
@@ -273,8 +273,6 @@ function Packing({ initial, onShipped, onReload }: {
   const [shipError, setShipError] = useState<string | null>(null);
   // FIND — which box is a SKU in? Matches code, Amazon SKU, FNSKU or title, case-insensitive, across every box.
   const [find, setFind] = useState('');
-  const [presetOpen, setPresetOpen] = useState(false);
-  const [preset, setPreset] = useState<BoxDims>(NO_DIMS);
   const scanRef = useRef<HTMLInputElement>(null);
   // SAVING (see the header): writes run one after another on this chain, in the order the changes were made.
   const saveChain = useRef<Promise<void>>(Promise.resolve());
@@ -456,15 +454,12 @@ function Packing({ initial, onShipped, onReload }: {
     persist(`Box ${boxId} measurements`, () => saveAmzShipmentDims(boxId, dims));
   }
 
-  function openPreset() {
-    setPreset(loadPreset());
-    setPresetOpen(true);
-  }
-
-  function applyPreset() {
-    savePreset(preset);
-    fillDims(preset);
-    setPresetOpen(false);
+  // SET (owner, 2026-10-15) — for packing the same size box again and again without retyping it. One click, no panel, no message:
+  //   the open box has measurements typed  -> they become Set's saved values;
+  //   the open box has none                -> the saved values are filled in.
+  function setButton() {
+    if (FIELDS.some((f) => active.dims[f.key].trim() !== '')) savePreset(active.dims);
+    else fillDims(loadPreset());
     refocus();
   }
 
@@ -775,7 +770,7 @@ function Packing({ initial, onShipped, onReload }: {
                 ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">Done</span>
                 : boxUnits(active) > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">Needed to ship</span>}
               {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
-                  what's packed. Set = your own values, remembered for next time. Both fill the OPEN box only. */}
+                  what's packed. Set saves the open box's typed size, or fills an empty one with the saved size (setButton). */}
               <div className="ml-auto flex items-center gap-1.5">
                 <button
                   type="button"
@@ -787,40 +782,14 @@ function Packing({ initial, onShipped, onReload }: {
                 </button>
                 <button
                   type="button"
-                  onClick={() => (presetOpen ? setPresetOpen(false) : openPreset())}
-                  aria-expanded={presetOpen}
-                  className={'h-8 rounded-md border px-2.5 text-xs font-medium '
-                    + (presetOpen ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
+                  onClick={setButton}
+                  title="Typed a size? Set saves it. Empty box? Set fills in the saved size."
+                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Set
                 </button>
               </div>
             </div>
-            {/* SET — type the values once, Apply fills the open box and remembers them; the next Set opens with them already in.
-                A blank field leaves that measurement as it is, so you can keep just a size and weigh each box. */}
-            {presetOpen && (
-              <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-brand-200 bg-white p-2">
-                {FIELDS.map((f) => (
-                  <label key={f.key} className="block w-24">
-                    <span className="mb-0.5 block text-xs text-slate-500">{f.label} ({f.unit})</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={preset[f.key]}
-                      onChange={(e) => setPreset((p) => ({ ...p, [f.key]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPreset(); } }}
-                      className="h-8 w-full rounded-md border border-slate-300 px-2 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </label>
-                ))}
-                <button type="button" onClick={applyPreset}
-                  className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">
-                  Apply to Box {active.id}
-                </button>
-                <button type="button" onClick={() => setPresetOpen(false)}
-                  className="h-8 rounded-md px-2 text-sm text-slate-500 hover:text-slate-800">Cancel</button>
-              </div>
-            )}
             {warning && <div className="mt-1.5 text-xs text-amber-700">{warning}</div>}
           </div>
 
