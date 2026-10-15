@@ -44,7 +44,7 @@ DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenan
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowPathIcon, ArrowUturnLeftIcon, ChevronDownIcon, ExclamationTriangleIcon,
   MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon, XMarkIcon,
@@ -205,6 +205,19 @@ export default function CustomerOrderList() {
     writeStored(LAST_PACKED_KEY, ordernum);
   };
   const scanRef = useRef<HTMLInputElement | null>(null);
+  // The board sticks to the top of the window (owner, 2026-10-15: the numbers stay in sight while scrolling), so the sticky box and
+  // the table heading must stick BELOW it. Its height changes (tiles wrap, the No stock / FBA / Waiting tiles come and go), so it is
+  // measured and handed down as --board-h rather than guessed.
+  const [boardH, setBoardH] = useState(0);
+  const boardObserver = useRef<ResizeObserver | null>(null);
+  const boardRef = useCallback((el: HTMLDivElement | null) => {
+    boardObserver.current?.disconnect();
+    boardObserver.current = null;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBoardH(el.offsetHeight));
+    ro.observe(el);
+    boardObserver.current = ro;
+  }, []);
   // Scans arrive faster than the server answers, so they run one at a time through this chain, and read the latest scans from a
   // ref rather than a render's closure — two quick scans of a 2-pair order must tick two units, not the same one twice.
   const scanQueue = useRef<Promise<void>>(Promise.resolve());
@@ -551,12 +564,14 @@ export default function CustomerOrderList() {
   const boxTone = scanError ? 'border-red-500' : justPrinted ? 'border-emerald-500' : active ? 'border-brand-500/50' : 'border-slate-200';
 
   return (
-    <div>
+    <div style={{ '--board-h': `${boardH}px` } as CSSProperties}>
       {/* --- the board ---------------------------------------------------------------------------------------------------------
           The day as stages, in ORDERS, each a filter. To pack leads and carries the packed bar; at zero it goes green and says All
           packed — the end of the job is worth seeing. FBA, Waiting and No stock appear only when there are some: each is an
           exception, so the tile appearing IS the reminder, where a permanent "0" would be noise you'd learn to look past. */}
-      <div className="mb-4 flex flex-wrap items-stretch gap-2">
+      {/* Sticky, on the page's own background so rows scroll out of sight beneath it. The margin is inside it (pb-4, not mb-4) so the
+          gap travels with it and the box and table heading below sit flush under its measured height. */}
+      <div ref={boardRef} className="sticky top-0 z-30 flex flex-wrap items-stretch gap-2 bg-slate-100 pb-4 pt-3">
         <button
           type="button"
           onClick={() => setStage(stage === 'topack' ? 'all' : 'topack')}
@@ -616,7 +631,7 @@ export default function CustomerOrderList() {
         {/* --- the box ---------------------------------------------------------------------------------------------------------
             First in the DOM so it stacks ABOVE the list on a narrow screen (the bench needs it more than the list); placed right
             from lg up. Sticky so it stays beside whatever row you've scrolled to. */}
-        <aside className="lg:sticky lg:top-3 lg:order-2 lg:max-h-[calc(100vh-1.5rem)] lg:self-start lg:overflow-y-auto">
+        <aside className="lg:sticky lg:top-[var(--board-h)] lg:order-2 lg:max-h-[calc(100vh-var(--board-h)-0.75rem)] lg:self-start lg:overflow-y-auto">
           <div className={'overflow-hidden rounded-xl border-2 bg-white transition-colors ' + boxTone}>
             {/* --- scan strip: readiness first ----------------------------------------------------------------------------------
                 A <label>, so a click anywhere on the strip puts the cursor in the box. */}
@@ -792,7 +807,7 @@ export default function CustomerOrderList() {
                 up the table fits, so the scroller is dropped and the heading sticks to the window. */}
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white lg:overflow-visible">
               <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
+                <thead className="sticky top-[var(--board-h)] z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
                   <tr className="border-b border-slate-200">
                     <th className="w-1.5 p-0" aria-label="Status" />
                     <th className="px-3 py-2 font-medium">Order</th>
