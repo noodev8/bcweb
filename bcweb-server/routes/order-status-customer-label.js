@@ -70,8 +70,10 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-// A line that goes in this box: not already packed, not Amazon's to ship, not 'Do Not Order'. The same set the screen lets you scan.
-const OPEN = (state) => state !== 'packed' && state !== 'fba' && state !== 'parked';
+// A line that goes in this box: anything not already packed. The same set the screen lets you scan (owner, 2026-10-15: the only
+// refusals are pack only, already packed, and not all scanned). 'Do Not Order' (parked) is packed — it means don't source it, nothing
+// more. An FBA line is packed too if the shoe is here; one whose Amazon file has been made already reads `packed` (rowState).
+const OPEN = (state) => state !== 'packed';
 
 // A refusal the screen shows as it stands. Thrown out of the transaction so it rolls back.
 class Refusal extends Error {
@@ -182,15 +184,13 @@ router.post('/', async (req, res) => {
         pdf = created.label || await clickDrop.getLabel(created.orderIdentifier);
       }
 
-      // PACKED. Only the open lines — an FBA or 'Do Not Order' sibling isn't in this box and keeps its own state.
+      // PACKED. Every line not already packed — FBA and 'Do Not Order' lines included (owner, 2026-10-15).
       const weightText = String(weightKg);
       await client.query(
         `UPDATE orderstatus o
             SET batch = '2', weight = $3, updated = ${LEGACY_STAMP}
           WHERE o.ordernum = $1 AND o.ordertype = $2 AND ${notDiscarded('o')}
-            AND COALESCE(o.batch, '') <> '2'
-            AND COALESCE(o.amz, 0) = 0
-            AND LOWER(COALESCE(o.orderdate, '')) NOT LIKE '%do not order%'`,
+            AND COALESCE(o.batch, '') <> '2'`,
         [ordernum, CUSTOMER_ORDERTYPE, weightText]
       );
 

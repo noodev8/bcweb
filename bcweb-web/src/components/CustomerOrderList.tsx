@@ -91,10 +91,12 @@ interface OrderGroup {
 // only one that counts everything.
 type Stage = 'all' | 'topack' | 'packed' | 'fba' | 'waiting' | 'nostock';
 
-// Can this line still take a scan? Open = still on our packing job (isOutstanding) and not 'Do not order' — PLUS Waiting (owner,
-// 2026-10-12): Waiting is set aside on the customer's say-so, not unpackable, so when the shoe is in hand it scans and packs like
-// any other. It stays out of isOutstanding (the To pack count and bar), which is a different question.
-const scannable = (l: CustomerOrderLine) => (isOutstanding(l.state) || isWaiting(l.state)) && l.state !== 'parked';
+// Can this line still take a scan? Open = still on our packing job (isOutstanding, which includes 'Do not order' — owner, 2026-10-15:
+// "do not order DOES NOT MEAN do not pack") — PLUS Waiting (owner, 2026-10-12): Waiting is set aside on the customer's say-so, not
+// unpackable, so when the shoe is in hand it scans and packs like any other. It stays out of isOutstanding (the To pack count and
+// bar), which is a different question. FBA too (owner, 2026-10-15): if the shoe is here it packs, and the line reads Packed — as it
+// already does once its Amazon file is made. The only refusals are pack only, already packed, and not all scanned.
+const scannable = (l: CustomerOrderLine) => isOutstanding(l.state) || isWaiting(l.state) || isFba(l.state);
 
 // The order-level tests behind the board. `toPack` and `packed` are the old headline's rules, unchanged: an order is left to do while
 // any line is outstanding, and done once none is and a non-FBA line is packed. FBA and Waiting lines are in neither half.
@@ -261,7 +263,7 @@ export default function CustomerOrderList() {
   const orderPackedNum = (ordernum: string) => { const o = orders.get(ordernum); return !!o && orderPacked(o); };
 
   // Which LINES carry a scan tick, and each order's n-of-m. Ticks go on the first n scannable lines of each code in the order, so two
-  // identical pairs fill in one at a time. Lines that aren't scannable (already packed, FBA, do not order) are out of the count entirely —
+  // identical pairs fill in one at a time. Lines that aren't scannable (already packed) are out of the count entirely —
   // they aren't going in this box.
   const scanState = useMemo(() => {
     const ticked = new Set<CustomerOrderLine>();
@@ -488,7 +490,7 @@ export default function CustomerOrderList() {
       }
 
       // Three different "no"s, worded apart so the packer knows whether to look for a mistake or put the shoe back: no order wants
-      // it at all, every order that wants it is already scanned, or the only orders for it aren't open (packed, FBA, do not order).
+      // it at all, every order that wants it is already scanned, or the only orders for it aren't open (already packed).
       const hits = lines.filter((l) => l.code.toUpperCase() === code);
       setPrinted(null);
       setScanError(

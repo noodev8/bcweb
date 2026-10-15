@@ -35,9 +35,9 @@ same derivation plus the two flags that sit on top of it.
   pending    localstock > 0                       ALLOCATED against a shelf row, awaiting pick — see the warning below
   parked     orderdate ~ 'do not order'           phase E skips it (see CANDIDATE_SKIP below)
 
-  PRECEDENCE within rowState(), when a row satisfies more than one test: parked first (the 'Do Not Order' string overrides
-  everything — phase E won't touch the line at all), then packed (a boxed line is done, whatever flags it still carries —
-  2026-10-13), then no_stock, then waiting. no_stock outranks waiting deliberately: "waiting"
+  PRECEDENCE within rowState(), when a row satisfies more than one test: packed first (a boxed line is done, whatever flags it
+  still carries — 2026-10-13), then parked (the 'Do Not Order' string — phase E won't source the line, but it is still PACKED
+  like any other when the shoe is in hand: owner, 2026-10-15, "do not order DOES NOT MEAN do not pack"), then no_stock, then waiting. no_stock outranks waiting deliberately: "waiting"
   is an acknowledged problem, "no stock" is one nobody has looked at yet, and the screen should surface the unnoticed one.
 
   NOT TO BE CONFUSED WITH the order-level roll-up (worstCustomerState in src/lib/orderStatusUi.ts), which answers a DIFFERENT
@@ -138,13 +138,14 @@ function rowState(row) {
   const held = Number(row.held_rows) || 0;
   const picked = Number(row.picked_rows) || 0;
 
-  if (String(row.orderdate || '').toLowerCase().includes('do not order')) return 'parked';
-  // PACKED OUTRANKS EVERYTHING BUT PARKED (2026-10-13). batch '2' is written when the box is packed — now by the scan-to-label route
+  // PACKED OUTRANKS EVERYTHING (2026-10-13; above parked since 2026-10-15, when a Do Not Order line became packable). batch '2' is written when the box is packed — now by the scan-to-label route
   // too — and a boxed line is done whatever flags it still carries. It used to sit below no_stock / waiting / sourcing, so a Waiting
   // order (BC19233) packed and labelled still read Waiting after a refresh and the scan box treated it as open again.
   // It deliberately does NOT require the pick signal as a precondition (owner): the pick signal is the weak one, and making the
   // strong signal depend on it would let a missing shelf row hide a packed order. Do not "tidy" this into `if (packed && picked)`.
   if (String(row.batch || '') === '2') return 'packed';
+  // Do Not Order means don't SOURCE it (phase E skips it), not don't pack it — packed above, otherwise it reads as parked.
+  if (String(row.orderdate || '').toLowerCase().includes('do not order')) return 'parked';
   // The legacy li_outofstock derivation, unchanged.
   if (local === 0 && amz === 0 && ukd === 0 && other === 0) return 'no_stock';
   if (Number(row.customerwaiting) === 1) return 'waiting';
