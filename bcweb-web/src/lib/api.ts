@@ -2542,7 +2542,8 @@ export interface CustomerManifest {
 // manifests a previous call left pending instead of starting a new one. return_code NOTHING_TO_MANIFEST = nothing was waiting.
 export function manifestCustomerOrders(manifestIds?: string[]) {
   return request<CustomerManifest[]>(
-    { url: '/order-status-customer-manifest', method: 'POST', data: manifestIds?.length ? { manifestIds } : {}, timeout: 90000 },
+    // 2 minutes (owner, 2026-10-15). The route always answers inside this — see HARD_MS in routes/order-status-customer-manifest.js.
+    { url: '/order-status-customer-manifest', method: 'POST', data: manifestIds?.length ? { manifestIds } : {}, timeout: 120000 },
     (b) => (Array.isArray(b.manifests) ? b.manifests : []).map((m: Record<string, unknown>) => ({
       id: String(m.id || ''),
       status: String(m.status || ''),

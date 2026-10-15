@@ -45,8 +45,15 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-const WAIT_MS = 60000;   // inside the client's 90s timeout
+const WAIT_MS = 60000;   // how long to keep checking for the PDF before handing back `pending`
 const POLL_MS = 2000;
+// THE HARD LIMIT (2026-10-15). The client waits 120s. WAIT_MS alone didn't keep the route inside that: it's only checked between
+// polls, a single Click & Drop call can take its full 30s timeout, and getManifest retries a dropped connection up to 3 times — so a
+// hanging Click & Drop could run the route to ~2.5 minutes, the client would give up with "Network error", and the manifest's ids
+// (it HAD started) would be lost. Now no Click & Drop read is started unless it can finish, at its 30s timeout, before HARD_MS; one
+// that can't is left pending, and the client offers Collect manifest. 110s leaves 10s of slack for the reply to reach the browser.
+const HARD_MS = 110000;
+const CALL_MS = 30000;   // utils/clickDrop.js TIMEOUT_MS — the longest one call can take
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,6 +61,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const finished = (m) => m.manifestStatus === 'Failed' || (m.manifestStatus === 'Completed' && m.documentStatus === 'Completed');
 
 router.post('/', async (req, res) => {
+  const startedAt = Date.now();
+  const hardDeadline = startedAt + HARD_MS;
   const given = Array.isArray(req.body?.manifestIds)
     ? req.body.manifestIds.map((s) => String(s || '').trim()).filter(Boolean)
     : [];
@@ -79,7 +88,7 @@ router.post('/', async (req, res) => {
 
     // Poll every manifest until all are finished or the wait runs out.
     const latest = new Map();
-    const deadline = Date.now() + WAIT_MS;
+    const deadline = Math.min(Date.now() + WAIT_MS, hardDeadline - CALL_MS);
     // Once the manifest has STARTED its ids must reach the client whatever happens next — a fetch failure here used to throw them
     // away (SERVER_ERROR, 2026-10-14) and leave the PDF reachable only on the website. So a manifest we can't read (getManifest has
     // already retried) stops being polled and comes back pending, with the reason; "Collect manifest" then tries it again.
@@ -87,8 +96,10 @@ router.post('/', async (req, res) => {
     for (;;) {
       for (const id of ids) {
         if (unreadable.has(id) || (latest.has(id) && finished(latest.get(id)))) continue;
+        // Not enough time left for this read to finish before the hard limit: leave it as it stands (pending) for Collect manifest.
+        if (Date.now() + CALL_MS > hardDeadline) continue;
         try {
-          latest.set(id, await clickDrop.getManifest(id));
+          latest.set(id, await clickDrop.getManifest(id, hardDeadline));
         } catch (err) {
           logger.error(`[order-status-customer-manifest] reading ${id}:`, err.message);
           unreadable.set(id, err.message);

@@ -226,13 +226,15 @@ async function createManifests() {
 
 /** { manifestStatus: InProgress|Completed|Failed, documentStatus, orders: [{orderIdentifier, orderReference}], pdf, errorReference } */
 // A read, so safe to retry: a dropped connection or a 5xx is tried up to 3 times, a few seconds apart, before it's given up on.
-async function getManifest(manifestId) {
+// `until` (ms timestamp, optional): no retry is started that couldn't finish, at the full call timeout, before it — the manifest route
+// passes its hard limit so it always answers inside the browser's wait.
+async function getManifest(manifestId, until = Infinity) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await call('GET', `/manifests/${encodeURIComponent(manifestId)}`);
     } catch (err) {
       const transient = err instanceof ClickDropError && (err.status === 0 || err.status >= 500);
-      if (!transient || attempt >= 3) throw err;
+      if (!transient || attempt >= 3 || Date.now() + 3000 + TIMEOUT_MS > until) throw err;
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
