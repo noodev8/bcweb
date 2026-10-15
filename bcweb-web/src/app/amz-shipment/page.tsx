@@ -29,6 +29,9 @@ LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"
 measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
 (POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
 adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box.
+NO NEW BOX WHILE ONE IS OPEN (owner, 2026-10-15: "dont let user start a new box if their box hasnt been locked"). New box is off while
+any box is unlocked (or empty) and names the box to finish, one click away. Goods In can't refuse a shoe, so it shows a standing
+warning while any box is unlocked instead (goods-in/page.tsx).
 
 FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list narrows it to boxes holding a match (code, Amazon SKU,
 FNSKU or title) and names the matching codes under each; the matching lines are highlighted in the open box.
@@ -452,7 +455,11 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
     refocus();
   }
 
+  // The box holding up New box (see the header): the first one not locked — an empty box counts, scan into it instead.
+  const openBox = boxes.find((b) => !b.locked);
+
   function newBox() {
+    if (openBox) return;
     const id = Math.max(0, ...boxes.map((b) => b.id)) + 1;
     setBoxes((prev) => [...prev, newBoxOf(id)]);
     setActiveId(id);
@@ -674,11 +681,21 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
           <button
             type="button"
             onClick={newBox}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            disabled={!!openBox}
+            title={openBox ? `Lock Box ${openBox.id} before starting a new one` : undefined}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <PlusIcon className="h-4 w-4" />
             New box
           </button>
+          {openBox && (
+            <p className="px-1 text-xs text-amber-700">
+              {boxUnits(openBox) === 0 ? `Box ${openBox.id} is empty — scan into it` : `Lock Box ${openBox.id} before starting a new box`}
+              {openBox.id !== active.id && (
+                <> · <button type="button" onClick={() => selectBox(openBox.id)} className="font-medium underline hover:text-amber-900">Open Box {openBox.id}</button></>
+              )}
+            </p>
+          )}
 
           {/* FINISH SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
               3 Mark shipped. Quiet buttons, all usable any time; Mark shipped is still behind its confirm. "n of m locked" is a guide only. */}
