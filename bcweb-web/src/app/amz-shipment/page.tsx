@@ -71,7 +71,7 @@ Amazon's B1..Bn in order, which is why Delete box renumbers.
 */
 
 import { Suspense, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
   InboxArrowDownIcon, LockClosedIcon, LockOpenIcon,
@@ -284,6 +284,7 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
+  const router = useRouter();
   // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling.
   const [activeId, setActiveId] = useState(() => {
     if (!initial.length) return 1;
@@ -521,10 +522,22 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
   // LOCK (owner, 2026-10-15): a finished box's contents and measurements are fixed until it's unlocked — every change on this screen is
   // blocked for it, and the server refuses one anyway. Only a box with something in it can be locked (an empty box isn't stored).
   // Locking only once the box is MEASURED AND WEIGHED (owner, 2026-10-15) — all four fields; unlocking always works.
-  function toggleLock() {
+  async function toggleLock() {
     if (boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))) return;
     const id = active.id;
     const locked = !active.locked;
+    // CAME FROM GOODS IN (?box=newest) and just locked the box: that box is done, so straight back to Goods In (owner, 2026-10-15).
+    // Not queued through persist — the page is about to go, so the lock is written (after any queued saves) and only on success do we
+    // leave; a refusal stays here and says why.
+    if (locked && startNewest) {
+      setLockAsk(null);
+      await saveChain.current;
+      const res = await setAmzShipmentBoxLock(id, true);
+      if (!res.success) { setSaveError(`Locking Box ${id} wasn’t saved: ${res.error || 'error'}`); return; }
+      setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked: true } : b)));
+      router.push('/goods-in');
+      return;
+    }
     persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
     setLockAsk(null);
     setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked } : b)));
