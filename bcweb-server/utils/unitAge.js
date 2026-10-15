@@ -39,7 +39,8 @@ Exports:
     months: [{ month, end, partial, in, sold, profit, held, bands: {m0_3..pre} }],   // oldest -> newest, rolling 24 months
     cohorts: [{ month, in, left_3m, left_6m, left_now }],    // pairs of each arrival month still held (null = not reached yet)
     styles: [{ groupid, title, brand, units, bands, oldest, sold_90 }],              // held now, oldest-heavy first
-    recent: { d1: {in, sold}, d7: {...}, d30: {...} }
+    recent: { d1: {in, sold}, d7: {...}, d30: {...}, d90: {...} },
+    year_ago: { date, held, bands }                  // the same day a year ago, rebuilt the same way (Stock Position's compare)
   }
 =======================================================================================================================================
 */
@@ -91,8 +92,10 @@ function monthList(today) {
 
 async function loadUnitLedger() {
   // UK today — Goods In stamps arrival_date in Europe/London, and the pg session runs UTC.
-  const t = await query(`SELECT to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today`);
+  const t = await query(`SELECT to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today,
+                                to_char((now() AT TIME ZONE 'Europe/London')::date - interval '1 year', 'YYYY-MM-DD') AS year_ago`);
   const today = t.rows[0].today;
+  const yearAgo = t.rows[0].year_ago;
   const months = monthList(today);
   const mIndex = new Map(months.map((p, i) => [p.month, i]));
 
@@ -111,21 +114,28 @@ async function loadUnitLedger() {
     query(`SELECT code, to_char(solddate, 'YYYY-MM') AS m, SUM(qty)::int AS q, COALESCE(SUM(profit), 0)::float AS profit
            FROM sales WHERE solddate >= $1::date AND code IS NOT NULL
            GROUP BY code, 2`, [`${months[0].month}-01`]),
-    // The top boxes: today / 7 / 30 days, in and out. UK dates throughout.
+    // The top boxes: today / 7 / 30 / 90 days (90 added 2026-10-15, owner — the house "sell within 90 days"), in and out. UK dates throughout.
     query(`WITH d AS (SELECT (now() AT TIME ZONE 'Europe/London')::date AS today)
            SELECT
              (SELECT COALESCE(SUM(GREATEST(quantity_added,1)),0) FROM incoming_stock, d WHERE arrival_date = d.today)::int        AS in_1,
              (SELECT COALESCE(SUM(GREATEST(quantity_added,1)),0) FROM incoming_stock, d WHERE arrival_date > d.today - 7)::int    AS in_7,
              (SELECT COALESCE(SUM(GREATEST(quantity_added,1)),0) FROM incoming_stock, d WHERE arrival_date > d.today - 30)::int   AS in_30,
+             (SELECT COALESCE(SUM(GREATEST(quantity_added,1)),0) FROM incoming_stock, d WHERE arrival_date > d.today - 90)::int   AS in_90,
              (SELECT COALESCE(SUM(qty),0) FROM sales, d WHERE solddate = d.today)::int       AS sold_1,
              (SELECT COALESCE(SUM(qty),0) FROM sales, d WHERE solddate > d.today - 7)::int   AS sold_7,
-             (SELECT COALESCE(SUM(qty),0) FROM sales, d WHERE solddate > d.today - 30)::int  AS sold_30`),
+             (SELECT COALESCE(SUM(qty),0) FROM sales, d WHERE solddate > d.today - 30)::int  AS sold_30,
+             (SELECT COALESCE(SUM(qty),0) FROM sales, d WHERE solddate > d.today - 90)::int  AS sold_90`),
     // Style facts for the list: code -> groupid, title, brand, and net units sold in 90 days.
     query(`SELECT m.code, m.groupid, t.shopifytitle AS title, NULLIF(TRIM(ss.brand), '') AS brand
            FROM skumap m
            LEFT JOIN skusummary ss ON ss.groupid = m.groupid
            LEFT JOIN title t       ON t.groupid  = m.groupid`),
   ]);
+
+  // Net units per code sold AFTER the same day a year ago — undone to rebuild what was held that day (Stock Position, 2026-10-15:
+  // "now against a year ago" must be the same day, not a month end — mid-month the two differ by a fortnight of sales and deliveries).
+  const soldSinceYAQ = await query(`SELECT code, SUM(qty)::int AS q FROM sales WHERE solddate > $1::date AND code IS NOT NULL GROUP BY code`,
+                                   [yearAgo]);
 
   const sold90Q = await query(`SELECT groupid, SUM(qty)::int AS q FROM sales
                                WHERE solddate > (now() AT TIME ZONE 'Europe/London')::date - 90 AND groupid IS NOT NULL
@@ -162,6 +172,10 @@ async function loadUnitLedger() {
   const info = new Map(metaQ.rows.map((r) => [r.code, r]));
   const styles = new Map();
   const nowIdx = months.length - 1;
+  const soldSinceYA = new Map(soldSinceYAQ.rows.map((r) => [r.code, r.q]));
+  const yaDay = dayNum(yearAgo);
+  const yaBands = emptyBands();
+  let yaHeld = 0;
 
   const codes = new Set([...held.keys(), ...arrivals.keys(), ...soldByCode.keys()]);
   for (const code of codes) {
@@ -196,6 +210,18 @@ async function loadUnitLedger() {
         if (i === nowIdx) addStyle(code, left, 'pre', null);
       }
     }
+
+    // The same day a year ago: held now − arrived since + sold since (floored), then FIFO over the arrivals on or before that day.
+    let ya = Math.max(0, now - arr.filter((a) => a.day > yaDay).reduce((s, a) => s + a.q, 0) + (soldSinceYA.get(code) || 0));
+    yaHeld += ya;
+    for (const a of arr) {
+      if (ya === 0) break;
+      if (a.day > yaDay) continue;
+      const take = Math.min(ya, a.q);
+      ya -= take;
+      yaBands[band(a.day, yaDay)] += take;
+    }
+    yaBands.pre += ya;
   }
 
   function addStyle(code, q, b, date) {
@@ -240,7 +266,9 @@ async function loadUnitLedger() {
       d1: { in: r.in_1, sold: r.sold_1 },
       d7: { in: r.in_7, sold: r.sold_7 },
       d30: { in: r.in_30, sold: r.sold_30 },
+      d90: { in: r.in_90, sold: r.sold_90 },
     },
+    year_ago: { date: yearAgo, held: yaHeld, bands: yaBands },
   };
 }
 

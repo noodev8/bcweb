@@ -1235,7 +1235,7 @@ export interface SellThroughStyle {
 
 export interface SellThroughData {
   today: string;
-  recent: { d1: { in: number; sold: number }; d7: { in: number; sold: number }; d30: { in: number; sold: number } };
+  recent: { d1: { in: number; sold: number }; d7: { in: number; sold: number }; d30: { in: number; sold: number }; d90: { in: number; sold: number } };
   months: SellThroughMonth[];      // oldest -> newest
   cohorts: SellThroughCohort[];    // oldest -> newest
   styles: SellThroughStyle[];      // oldest-heavy first
@@ -1250,6 +1250,36 @@ export function getSellThrough() {
       months: b.months || [],
       cohorts: b.cohorts || [],
       styles: b.styles || [],
+    })
+  );
+}
+
+// Stock Position — the at-a-glance summary of Sell-through (server routes/analytics-stock-position.js). "_ya" = the same day a year ago.
+export interface StockPositionData {
+  today: string;
+  year_ago: string;
+  position: { held: number; held_ya: number; past90: number; past90_ya: number; cover: number | null; cover_ya: number | null };
+  progress: { sold: number; sold_prev: number; bought: number; bought_prev: number | null };   // rolling 12 months vs the 12 before
+  recent: SellThroughData['recent'];   // the moves boxes: today / 7 / 30 / 90 days, pairs in and out
+  trend: { month: string; held: number; sold90: number; partial: boolean }[];   // every ledger month end, oldest first; sold90 = 90 days to it
+  act: {
+    slow_styles: number;
+    slow_units: number;
+    top: { groupid: string; title: string | null; units: number; past90: number; sold_90: number }[];
+  };
+}
+
+export function getStockPosition() {
+  return request<StockPositionData>(
+    { url: '/analytics-stock-position', method: 'GET' },
+    (b) => ({
+      today: b.today,
+      year_ago: b.year_ago,
+      position: b.position,
+      progress: b.progress,
+      recent: b.recent,
+      trend: b.trend || [],
+      act: b.act,
     })
   );
 }

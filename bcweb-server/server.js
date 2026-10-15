@@ -335,6 +335,7 @@ app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   
 app.use('/analytics-stock-sitting', require('./routes/analytics-stock-sitting'));   // GET: READ ONLY
 // Sell-through: the unit ledger — pairs in, out and held, each pair dated oldest-sells-first (utils/unitAge.js, nothing stored).
 app.use('/analytics-sell-through', require('./routes/analytics-sell-through'));     // GET: READ ONLY
+app.use('/analytics-stock-position', require('./routes/analytics-stock-position')); // GET: READ ONLY
 // Revenue: 12 months by channel against the 12 before — the breakdown behind Repricing's "12m revenue" box.
 app.use('/analytics-revenue', require('./routes/analytics-revenue'));                 // GET: READ ONLY
 app.use('/pricing-sitting-list', require('./routes/pricing-sitting-list'));         // GET: READ ONLY — Repricing list of the sitting styles

@@ -1,22 +1,20 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /analytics/sell-through  (Reports -> Sell-through, 2026-10-14)
+Page: /analytics/sell-through  (the DATA behind Stock Position, 2026-10-15; was Reports -> Sell-through, 2026-10-14)
 =======================================================================================================================================
-Purpose: Units only. Owner, 2026-10-14: "We bought it, we sell it. How many have we got and are we getting through them." and "I want
-         to be able to see trend and compare as well to see if my decisions are working." The target: push the excess unit count
-         down, then grow profit while total stock grows at a healthy pace.
+Purpose: Units only — the detail tables. Owner, 2026-10-15: "I only use the top stats of the sell through. The rest is just data ...
+         the navigate should be to the data, not the summary." So the top stats (held + today / 7 / 30 / 90 moves) moved to
+         /analytics/stock-position, which is now THE stock screen; its "pairs held now" card opens this page, and the standard
+         header back link "← Stock position" returns (owner: keep that one only). No Back Office tile of its own any more.
 
          Top to bottom:
-           1. HELD NOW + three move boxes (today / 7 / 30 days): pairs out, pairs in, and the net — "today we made 7 sales and nothing
-              came in, so 7 moves towards selling all our stock; a delivery pushes us back".
-           2. THE TREND — pairs held at each month end, stacked by age (light = just arrived, dark = over a year, grey = came in before
-              Goods In logging began). The old part of the stack is the excess; it should shrink.
-           3. MONTH BY MONTH — in, sold, held, the age bands, profit; sold / held / profit carry the change on the same month a year
-              earlier (from Jan 2026), which is the compare.
-           4. DELIVERIES — each arrival month: pairs in, and the share gone 3 and 6 month-ends later and now. Did that month's buying
-              sell through?
-           5. STYLES — every style held now, its pairs by age, oldest-heavy first. Where the over-buying sits.
+           1. THE AGE CHART — pairs held at each month end, stacked by age (light = just arrived, dark = over a year, grey = came in
+              before Goods In logging began).
+           2. MONTH BY MONTH — in, sold, held, the age bands, profit; sold / held / profit carry the change on the same month a year
+              earlier (from Jan 2026).
+           3. DELIVERIES — each arrival month: pairs in, and the share gone 3 and 6 month-ends later and now.
+           4. STYLES — every style held now, its pairs by age, oldest-heavy first.
 
          HOW A PAIR IS DATED: oldest sells first, per code (server utils/unitAge.js). Nothing per unit is stored — it can't be known
          which of two identical pairs was picked. FBA pairs count the same as shelf pairs; returns go back into the pot (owner).
@@ -33,7 +31,7 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSellThrough, AgeBands, SellThroughData, SellThroughMonth, SellThroughCohort, SellThroughStyle } from '@/lib/api';
+import { getSellThrough, AgeBands, SellThroughMonth, SellThroughCohort, SellThroughStyle } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 const gbp = (v: number) => `£${Math.round(v).toLocaleString('en-GB')}`;
@@ -57,13 +55,15 @@ export default function SellThroughPage() {
   const q = useApiQuery('analytics-sell-through', () => getSellThrough());
   const d = q.data;
   return (
-    <AppShell backHref="/dashboard?g=reports" backLabel="Back Office">
+    <AppShell backHref="/analytics/stock-position" backLabel="Stock position">
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {d && (
         <>
-          <Moves data={d} />
-          <div className="mt-6"><AgeChart months={d.months} /></div>
+          {/* The way back is AppShell's standard back link (backHref above) — owner, 2026-10-15: keep that one, not a second. This page
+              is only reached from Stock Position's card (no ?from=), so the header link always shows. */}
+          <h1 className="text-2xl font-semibold text-slate-900">Sell-through data</h1>
+          <div className="mt-4"><AgeChart months={d.months} /></div>
           <MonthTable months={d.months} />
           <CohortTable cohorts={d.cohorts} />
           {/* useTableSort reads useSearchParams, so the sortable list needs a Suspense boundary for Next's build. */}
@@ -71,41 +71,6 @@ export default function SellThroughPage() {
         </>
       )}
     </AppShell>
-  );
-}
-
-// -------------------------------------------------------------------------------------------------------------------------------------
-// MOVES — held now, then today / 7 / 30 days. The net leads each box: minus = we got through stock, plus = a delivery pushed us back.
-// The net is in − out, so it is the pairs-held change bar adjustments (which the owner asked not to see).
-// -------------------------------------------------------------------------------------------------------------------------------------
-function Moves({ data }: { data: SellThroughData }) {
-  const held = data.months[data.months.length - 1]?.held ?? 0;
-  const boxes = [
-    { label: 'Today', v: data.recent.d1 },
-    { label: 'Last 7 days', v: data.recent.d7 },
-    { label: 'Last 30 days', v: data.recent.d30 },
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <div className="flex flex-col justify-end rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-        <span className="text-5xl font-semibold leading-none text-slate-900">{n(held)}</span>
-        <span className="mt-2 text-sm text-slate-500">pairs held now</span>
-      </div>
-      {boxes.map(({ label, v }) => {
-        const net = v.in - v.sold;
-        return (
-          <div key={label} className="flex flex-col justify-end rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-            <div className="mt-1 text-3xl font-semibold leading-none text-slate-800">
-              {net > 0 ? '+' : net < 0 ? '−' : ''}{n(Math.abs(net))}
-            </div>
-            <div className="mt-2 text-sm text-slate-500">
-              {n(v.sold)} out · {n(v.in)} in
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
