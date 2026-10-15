@@ -1384,7 +1384,8 @@ export interface SlowSize {
   brand: string | null;
   units: number;              // local + Amazon, one number
   last_sale: string | null;   // YYYY-MM-DD; null = never sold
-  idle_days: number;          // since the last sale; never sold = on_shelf_days
+  idle_days: number;          // since the LATER of the last sale and the oldest held pair's arrival
+  idle_from: 'sale' | 'arrival';   // which of the two started the clock
   on_shelf: string;           // oldest held pair's arrival, YYYY-MM-DD ('2024-12-31' = before the log)
   on_shelf_days: number;
   style_sold_12m: number;     // the whole style, net, last 12 months
@@ -1403,7 +1404,8 @@ export interface StyleSizeRow {
   size: string;
   units: number;              // local + Amazon, one number
   last_sale: string | null;   // YYYY-MM-DD; null = never sold
-  idle_days: number | null;
+  idle_days: number | null;   // as SlowSize.idle_days; null = none held
+  idle_from: 'sale' | 'arrival' | null;
   on_shelf_days: number | null;   // null = none held
   sold_12m: number;           // this size, last 12 months, net of returns
 }

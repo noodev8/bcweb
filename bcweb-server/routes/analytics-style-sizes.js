@@ -11,6 +11,9 @@ Purpose: Slow Sizes -> click a style (its own screen, /analytics/slow-sizes/[gro
          of the picture. Stock = local #FREE not deleted + amzfeed.amztotal, one number (same as Slow Sizes). Last sale = any channel,
          qty > 0 (a return is not a sale), same as Slow Sizes. Sizes sort numerically (CLAUDE.md: suffix after the last dash).
          On shelf = days since the oldest held pair arrived (utils/onShelf.js, before the log = 31 Dec 2024); null at 0 stock.
+         Idle days = the Slow Sizes list's own number (utils/onShelf.js → idleSince): since the LATER of the last sale and the oldest
+         held pair's arrival, so a restocked size isn't charged for the months it was sold out. Null at 0 stock — nothing held,
+         nothing sitting (owner, same day: "Not sure we need to show a number for out of stock").
 
          READ-ONLY. Requires auth.
 =======================================================================================================================================
@@ -23,6 +26,7 @@ Success Response:
   "title": "Birkenstock Milano …" | null, "brand": "Birkenstock" | null,
   "imagename": "milano-black.jpg" | null,     // served from https://images.brookfieldcomfort.com/<imagename>, as on the price drill
   "sizes": [ { "code": "0034791-MILANO-35", "size": "35", "units": 5, "last_sale": "2025-08-02" | null, "idle_days": 439 | null,
+               "idle_from": "sale" | "arrival" | null,
                "on_shelf_days": 289 | null,   // null = none held
                "sold_12m": 0 } ]     // sold_12m = this size, last 12 months, net of returns
 }
@@ -40,7 +44,7 @@ const router = express.Router();
 const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
 const logger = require('../utils/logger');
-const { oldestHeldArrival } = require('../utils/onShelf');
+const { oldestHeldArrival, idleSince } = require('../utils/onShelf');
 
 router.use(verifyToken);
 
@@ -66,7 +70,6 @@ const SQL = `
   SELECT c.code, SUBSTRING(c.code FROM '[^-]*$') AS size,
          GREATEST(COALESCE(h.units, 0), 0) AS units,
          to_char(s.d, 'YYYY-MM-DD') AS last_sale,
-         (now() AT TIME ZONE 'Europe/London')::date - s.d AS idle_days,
          to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today,
          COALESCE(s.sold_12m, 0) AS sold_12m
   FROM codes c
@@ -90,15 +93,20 @@ router.get('/', async (req, res) => {
     const shelf = await oldestHeldArrival(new Map(r.rows.map((x) => [x.code, Number(x.units)])));
     // Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day.
     const day = (v) => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
-    const sizes = r.rows.map((x) => ({
-      code: x.code,
-      size: x.size,
-      units: Number(x.units),
-      last_sale: x.last_sale,
-      idle_days: x.idle_days === null ? null : Number(x.idle_days),
-      on_shelf_days: shelf.has(x.code) ? day(x.today) - day(shelf.get(x.code)) : null,
-      sold_12m: Number(x.sold_12m),
-    }));
+    const sizes = r.rows.map((x) => {
+      const onShelf = shelf.get(x.code) || null;
+      const idle = idleSince(x.last_sale, onShelf);
+      return {
+        code: x.code,
+        size: x.size,
+        units: Number(x.units),
+        last_sale: x.last_sale,
+        idle_days: idle ? day(x.today) - day(idle.since) : null,
+        idle_from: idle ? idle.from : null,
+        on_shelf_days: onShelf ? day(x.today) - day(onShelf) : null,
+        sold_12m: Number(x.sold_12m),
+      };
+    });
     return res.json({ return_code: 'SUCCESS', groupid, title: meta.title || null, brand: meta.brand || null,
       imagename: meta.imagename || null, sizes });
   } catch (err) {

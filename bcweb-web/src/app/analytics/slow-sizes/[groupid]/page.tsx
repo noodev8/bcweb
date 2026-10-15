@@ -15,13 +15,15 @@ A STRIP OF SIZE TILES, NOT A TABLE (owner, same day: "make it more compact and n
          The whole run sits on one line on a wide screen (grid sized to the run, up to 14 sizes), labels kept short to fit.
          The colour is the list's own bands (over a year | 6–12 months | 3–6 months | sold within 3 months), so a tile looks the way
          its box on the list does. A size never sold that we hold is coloured by how long it has been here (on_shelf_days, the list's
-         own ranking) — so a size that arrived last month is green, not red (it read as the oldest band until 2026-10-15). 0 stock = faded, dashed — part of the run,
+         own ranking) — so a size that arrived last month is green, not red (it read as the oldest band until 2026-10-15). 0 stock = a soft grey box reading "Out of stock", faded, no colour or number (it can't sell what we don't hold; a dashed border and a bare dash read too sharp, owner 2026-10-15) — part of the run,
          nothing to clear. NO SIZE IS HIGHLIGHTED (owner, 2026-10-15: "Size 11 is never sold and takes priority for me but I came from size 12. Best we
          dont highlight any") — the screen is the style, not the row you came from; the colours already say which size matters.
          A short line above the tiles carries the totals (in stock, qty sold in 12 months, sizes over a year).
 
          "Price →" opens the Shopify price drill (← Back returns here); ← Back here returns to the list as it was left (?from=,
-         same-site paths only; with none, the list). Rules for every number: routes/analytics-style-sizes.js. READ-ONLY.
+         same-site paths only; with none, the list). CLICKING A SIZE opens Inventory on that style, leading with that size (owner,
+         2026-10-15) — ?q=<code>, the way Amazon Order hands a SKU over; Inventory's ← Back returns here, and this screen's own
+         ?from= rides along, so its Back still reaches the list. Rules for every number: routes/analytics-style-sizes.js. READ-ONLY.
 
          THE SHOE (owner, same day: "a small image of the shoe"): the price drill's own 56px ZoomableThumb, left of the title — click for
          it large. A missing or dead image just leaves the title on its own.
@@ -53,10 +55,13 @@ const TONES = {
   m3: { chip: 'bg-yellow-100 text-yellow-800', label: '3–6 months' },
   m0: { chip: 'bg-emerald-100 text-emerald-800', label: 'Within 3 months' },
 } as const;
-// NEVER SOLD goes by how long it has been HERE (on_shelf_days — its oldest pair's arrival), the same as the list ranks it: a size that
-// arrived last month and hasn't sold yet is new, not stuck, so it is green; one here over a year is red. None held = nothing to say.
+// Coloured by idle_days — how long the stock held now has sat unsold (the server takes the later of the last sale and the oldest pair's
+// arrival), the same number the list ranks by: a size that arrived or was restocked last month is green, not stuck.
+// NONE HELD = NO COLOUR, NO NUMBER (owner, 2026-10-15: "We are penalising sizes that have no stock" ... "Not sure we need to show a
+// number for out of stock"). A size we don't have can't sell, so it has no idle clock — 47/48 of a Zermatt read red at 500 days.
+// The server sends idle_days null at 0 stock; the tile shows a dash.
 function tone(x: StyleSizeRow) {
-  const days = x.idle_days ?? x.on_shelf_days;
+  const days = x.idle_days;
   if (days === null) return null;
   if (days > 365) return TONES.y1;
   if (days > 183) return TONES.m6;
@@ -123,7 +128,7 @@ function Body() {
           {/* The whole run on one line on a wide screen (up to 14 sizes; more wrap) — the --cols var sizes the grid to the run. */}
           <div className="mt-4 grid grid-cols-4 gap-1.5 sm:grid-cols-7 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
             style={{ '--cols': Math.min(Math.max(sizes.length, 8), 14) } as CSSProperties}>
-            {sizes.map((x) => <SizeTile key={x.code} x={x} />)}
+            {sizes.map((x) => <SizeTile key={x.code} x={x} groupid={groupid} self={self} />)}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
@@ -141,39 +146,44 @@ function Body() {
 }
 
 // One size: the size, in stock, days since it last sold (coloured) over its month, qty sold in 12 months. 0 stock fades back.
-function SizeTile({ x }: { x: StyleSizeRow }) {
+// The tile is the link into Inventory. Inventory splits the size off a pasted SKU only when the code starts with a digit (a
+// real groupid, e.g. 73220-24-38); a letter-led code (M378BS-8) would match nothing, so that one goes over as the bare style.
+function SizeTile({ x, groupid, self }: { x: StyleSizeRow; groupid: string; self: string }) {
   const t = tone(x);
   const empty = x.units === 0;
+  const q = /^\d/.test(x.code) ? x.code : groupid;
   return (
-    <div className={
-      'rounded-md border px-1 py-1.5 text-center ' +
-      (empty ? 'border-dashed border-slate-200 opacity-60' : 'border-slate-200')
-    }>
+    <Link href={`/inventory?q=${encodeURIComponent(q)}&from=${self}&back=${encodeURIComponent('Slow Sizes')}`}
+      title={`${x.code} in Inventory`}
+      className={
+        'block rounded-md border px-1 py-1.5 text-center hover:border-slate-400 hover:shadow-sm ' +
+        (empty ? 'border-slate-200 opacity-70' : 'border-slate-200')
+      }>
       <div className="text-base font-semibold leading-tight text-slate-900">{x.size}</div>
       <div className="text-xs text-slate-500" title="In stock">{n(x.units)} in</div>
-      <div className={`mt-1.5 rounded px-1 py-1 ${t ? t.chip : 'bg-slate-50 text-slate-400'}`}>
-        {/* Every tile leads with a day count: since it last sold, or — never sold — since it arrived, with "no sale" in the
-            month's place (a bare "never sold" read as new, owner 2026-10-15). Never sold and none held: nothing to count. */}
-        {x.last_sale && x.idle_days !== null ? (
+      <div className={`mt-1.5 rounded px-1 py-1 ${t ? t.chip : 'bg-slate-100 text-slate-500'}`}>
+        {/* Every tile leads with a day count: how long the stock held now has sat without a sale (the list's own number — since
+            the later of its last sale and its oldest pair's arrival). Second line says what started the clock: the month it last
+            sold, "restock" (it sold before, then sat sold out — the clock runs from the delivery; hover for the last sale), or
+            "no sale" (never sold — since it arrived). None held: "Out of stock" in a grey box, nothing sitting to count. */}
+        {x.idle_days !== null ? (
           <>
             <div className="text-sm font-semibold leading-tight tabular-nums">{n(x.idle_days)}d</div>
-            <div className="text-[11px] leading-tight opacity-80">{monthLabel(x.last_sale)}</div>
-          </>
-        ) : x.on_shelf_days !== null ? (
-          <>
-            <div className="text-sm font-semibold leading-tight tabular-nums">{n(x.on_shelf_days)}d</div>
-            <div className="text-[11px] leading-tight opacity-80">no sale</div>
+            <div className="text-[11px] leading-tight opacity-80"
+              title={x.idle_from === 'arrival' && x.last_sale ? `Last sold ${monthLabel(x.last_sale)}` : undefined}>
+              {x.idle_from === 'sale' && x.last_sale ? monthLabel(x.last_sale) : x.last_sale ? 'restock' : 'no sale'}
+            </div>
           </>
         ) : (
           <>
-            <div className="text-sm font-semibold leading-tight">—</div>
-            <div className="text-[11px] leading-tight opacity-80">no sale</div>
+            <div className="text-sm font-medium leading-tight">Out</div>
+            <div className="text-[11px] leading-tight opacity-80">of stock</div>
           </>
         )}
       </div>
       <div className="mt-1.5 text-xs text-slate-500" title="Sold in the last 12 months">
         {x.sold_12m ? <><span className="font-semibold text-slate-700">{n(x.sold_12m)}</span> sold</> : '0 sold'}
       </div>
-    </div>
+    </Link>
   );
 }

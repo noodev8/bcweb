@@ -35,7 +35,10 @@ CLICK THE STYLE (owner, same day: "I would prefer to have the breakdown on a sep
          highlighted — and that screen links on to the price drill. (It opened inline under the row for a few hours; the Style link
          went straight to pricing.)
 
-         Days = since the size last sold, any channel (a return is not a sale; deliveries ignored, as on Slow). DAYS SINCE LAST SOLD
+         Days = how long the stock held NOW has sat without a sale: since the later of the last sale (any channel; a return is not
+         a sale) and the oldest held pair's arrival (owner, 2026-10-15: "this screen is about clearing losers" — a restocked size
+         isn't charged for the months it was sold out; until then deliveries were ignored, as on Slow). A restocked size shows
+         "restock" in the month's slot (hover for its last sale). DAYS SINCE LAST SOLD
          ONLY on screen (owner, 2026-10-15: "show days since last sold only, drop on shelf" — the two numbers side by side confused).
          LAST SOLD is one column (owner, same day: days first, the month second — "only reason date helps is to see if it is season
          based"), e.g. "754  Sep 24". A never-sold size shows its days since it ARRIVED and "no sale" (e.g. "653  no sale") —
@@ -229,7 +232,7 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
                   </td>
                   <td className="px-4 py-1.5 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
                   <td className="whitespace-nowrap px-4 py-1.5 text-right tabular-nums">
-                    <LastSold days={s.idle_days} date={s.last_sale} />
+                    <LastSold days={s.idle_days} date={s.last_sale} from={s.idle_from} />
                   </td>
                   <td className="px-4 py-1.5 text-right tabular-nums">
                     {s.style_sold_12m ? n(s.style_sold_12m) : <span className="text-slate-300">—</span>}
@@ -255,13 +258,17 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
 // NEVER SOLD (owner, 2026-10-15: a bare "never" read as NEW): the day count runs from the day its oldest unit arrived, as though that
 // were its last sale (the server's idle_days already is), and "no sale" takes the month's slot — so 653 "no sale" reads as stuck
 // and 30 "no sale" as new. Every row leads with a number.
-function LastSold({ days, date }: { days: number; date: string | null }) {
-  let second = 'no sale';
-  if (date) { const [y, m] = date.split('-').map(Number); second = `${MONTHS[m - 1]} ${String(y).slice(2)}`; }
+// RESTOCK (owner, same day): when the stock held now arrived after the last sale, the server runs the clock from that delivery, so the
+// month would be a lie beside the number — "restock" takes its slot, the last sale on hover.
+function LastSold({ days, date, from }: { days: number; date: string | null; from: 'sale' | 'arrival' }) {
+  let month = '';
+  if (date) { const [y, m] = date.split('-').map(Number); month = `${MONTHS[m - 1]} ${String(y).slice(2)}`; }
+  const second = !date ? 'no sale' : from === 'arrival' ? 'restock' : month;
   return (
     <>
       <span className="font-semibold text-slate-900">{days.toLocaleString('en-GB')}</span>
-      <span className="ml-2 inline-block w-12 text-left text-xs text-slate-400">{second}</span>
+      <span className="ml-2 inline-block w-12 text-left text-xs text-slate-400"
+        title={date && from === 'arrival' ? `Last sold ${month}` : undefined}>{second}</span>
     </>
   );
 }

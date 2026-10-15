@@ -11,9 +11,11 @@ Purpose: Slow -> Sizes. Every SIZE (code) we hold, longest without a sale first.
          A LIST, NOT A RULE. No window, no bar: every held size is returned, ranked. There is no "slow" cut-off here on purpose — the
          owner works the top of the list and decides; don't add a threshold or a flag without the owner. Nothing is written.
 
-IDLE DAYS = days since the size last SOLD on any channel (sales rows with qty > 0 — a return is not a sale, so a pair that sold and
-         came back still counts from the sale). Deliveries are ignored, as on Slow (owner, 2026-10-10: "We shouldn't care about
-         delivery ... Just want to know what hasn't sold") — a size re-stocked last week that last sold a year ago is a year idle.
+IDLE DAYS = how long the stock held NOW has sat without a sale: days since the LATER of its last sale (any channel, qty > 0 — a
+         return is not a sale) and its oldest held pair's arrival (utils/onShelf.js → idleSince; owner, 2026-10-15: "this screen is
+         about clearing losers"). A size restocked last week that last sold a year ago is a week idle — it was sold out, not stuck.
+         That reverses the 2026-10-10 "deliveries ignored" rule here only (Slow itself still ignores them). idle_from says which
+         date started the clock ('sale' | 'arrival'); last_sale is still the real last sale, for the month.
 
 ON SHELF = days since the OLDEST pair still held arrived (utils/onShelf.js — oldest sells first; a pair from before Goods In logged
          arrivals is dated 31 Dec 2024, so every size has a number). A separate fact from idle days (owner, 2026-10-15): a size that
@@ -41,7 +43,8 @@ Success Response:
     { "code": "1017722-BEND-46", "groupid": "1017722-BEND", "size": "46", "title": "…", "brand": "Birkenstock",
       "units": 2,
       "last_sale": "2025-08-02" | null,         // null = never sold
-      "idle_days": 439,                         // since the last sale; never sold = on_shelf_days
+      "idle_days": 439,                         // since the later of last sale / oldest held arrival
+      "idle_from": "sale" | "arrival",
       "on_shelf": "2025-03-11",                 // oldest held pair's arrival ('2024-12-31' = before the log)
       "on_shelf_days": 218,
       "style_sold_12m": 41 }
@@ -59,7 +62,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
-const { oldestHeldArrival } = require('../utils/onShelf');
+const { oldestHeldArrival, idleSince } = require('../utils/onShelf');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -84,8 +87,7 @@ const SIZES_SQL = `
          COALESCE(m.groupid, h.code) AS groupid,
          SUBSTRING(h.code FROM '[^-]*$') AS size,
          t.shopifytitle AS title, NULLIF(TRIM(ss.brand), '') AS brand,
-         to_char(s.d, 'YYYY-MM-DD') AS last_sale,
-         (SELECT d FROM today) - s.d AS idle_days
+         to_char(s.d, 'YYYY-MM-DD') AS last_sale
   FROM held h
   LEFT JOIN last_sale s   ON s.code     = h.code
   LEFT JOIN skumap m      ON m.code     = h.code
@@ -113,6 +115,7 @@ router.get('/', async (req, res) => {
     const sizes = sizesQ.rows.map((r) => {
       const onShelf = shelf.get(r.code);
       const onShelfDays = day(today) - day(onShelf);
+      const idle = idleSince(r.last_sale, onShelf);   // held, so never null
       return {
         code: r.code,
         groupid: r.groupid,
@@ -121,7 +124,8 @@ router.get('/', async (req, res) => {
         brand: r.brand || null,
         units: r.units,
         last_sale: r.last_sale,
-        idle_days: r.idle_days === null ? onShelfDays : Number(r.idle_days),
+        idle_days: day(today) - day(idle.since),
+        idle_from: idle.from,
         on_shelf: onShelf,
         on_shelf_days: onShelfDays,
         style_sold_12m: sold12m.get(r.groupid) || 0,

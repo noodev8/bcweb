@@ -17,11 +17,19 @@ BEFORE THE LOG = 31 DEC 2024. A held pair that can't be matched to a logged arri
          before its style existed. Stock put away without Goods In (73220-24, created 8 Oct 2026, showed 653 days on Slow Sizes)
          is dated from the style's creation instead.
 
+IDLE SINCE (owner, 2026-10-15: "We are penalising sizes that have no stock" ... "this screen is about clearing losers"). Slow Sizes
+         asks how long the stock we hold NOW has sat without a sale, so its clock starts at the LATER of the last sale and the oldest
+         held pair's arrival. A size that last sold in Apr 25 and was restocked in Sep 26 has sat since Sep 26 — the months it was
+         sold out are not its fault. This reverses, for this case only, the 2026-10-10 "deliveries ignored" rule.
+         The LOG_FLOOR is not an arrival, so it never moves the clock past a real last sale (a size that sold in 2024 and still holds
+         pre-log pairs stays dated from that sale). The style-creation floor is a real bound and counts.
+
          READ-ONLY.
 =======================================================================================================================================
 Exports:
   LOG_FLOOR                                     '2024-12-31'
   oldestHeldArrival(held: Map<code, units>) -> Map<code, 'YYYY-MM-DD'>   // every code with units > 0
+  idleSince(lastSale, onShelf) -> { since: 'YYYY-MM-DD', from: 'sale' | 'arrival' } | null   // null = none held
 =======================================================================================================================================
 */
 
@@ -68,4 +76,13 @@ async function oldestHeldArrival(held) {
   return out;
 }
 
-module.exports = { LOG_FLOOR, oldestHeldArrival };
+// Where a size's idle clock starts (see IDLE SINCE). Both args 'YYYY-MM-DD' or null; onShelf null = none held — nothing sitting, so no
+// clock at all (owner, 2026-10-15: "Not sure we need to show a number for out of stock"). Same-format date strings compare as text.
+function idleSince(lastSale, onShelf) {
+  if (!onShelf) return null;
+  if (!lastSale) return { since: onShelf, from: 'arrival' };
+  if (onShelf !== LOG_FLOOR && onShelf > lastSale) return { since: onShelf, from: 'arrival' };
+  return { since: lastSale, from: 'sale' };
+}
+
+module.exports = { LOG_FLOOR, oldestHeldArrival, idleSince };
