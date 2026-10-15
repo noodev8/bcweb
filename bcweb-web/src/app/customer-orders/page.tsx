@@ -26,19 +26,25 @@ isn't on the list. See the header of UpdateOrdersButton for what is and isn't sh
 and the route it calls (/order-sync) use different words. In the title row rather than
 in the pinned control block below because it acts on the WHOLE list, not on the selected order, and pressing it is a once-in-a-while
 thing — the pinned block is for the actions you take mid-scroll.
+
+MANIFEST AND FULFIL sits beside it (2026-10-15) for the same reason — it acts on the whole list, once a day — and is the one solid
+button in the row because it's the day's last job. Its outcome shows under the row, where Update orders' errors already go.
 =======================================================================================================================================
 */
 
 import { useCallback, useState } from 'react';
+import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { useSWRConfig } from 'swr';
 import AppShell from '@/components/AppShell';
 import CustomerOrderList, { focusCustomerScan } from '@/components/CustomerOrderList';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
+import ManifestButton, { type ManifestResult } from '@/components/ManifestButton';
 import PickLink from '@/components/PickLink';
 import { CUSTOMER_ORDERS_KEY } from '@/lib/orderStatusUi';
 
 export default function CustomerOrdersPage() {
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [manifestResult, setManifestResult] = useState<ManifestResult | null>(null);
 
   // A sync inserts customer order lines and archives shipped ones, so the grid below is stale the moment a run finishes. Revalidated
   // through SWR's global mutate on the list's own key rather than by handing a refresh callback down into CustomerOrderList: the list
@@ -51,17 +57,35 @@ export default function CustomerOrdersPage() {
 
   return (
     <AppShell
-      /* PickLink first, Update Orders second: the pick count is a READING you glance at on the way past, Update Orders is an ACTION
-         that reloads the grid under you — the quiet one shouldn't sit where the mouse is already heading. */
+      // Wide: the list and the packing panel sit side by side, which the standard 1024px column can't hold.
+      wide
+      /* In the order of the day: the pick count (a READING you glance at on the way past), Update orders (pull in what's sold),
+         then Manifest and fulfil (the day's last job, the one solid button). The quiet one shouldn't sit where the mouse is heading. */
       headerRight={(
         <div className="flex items-center gap-2">
           <PickLink />
           <UpdateOrdersButton onDone={onUpdated} onError={onUpdateError} />
+          <ManifestButton onResult={setManifestResult} />
         </div>
       )}
     >
       {updateError && (
         <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{updateError}</div>
+      )}
+      {manifestResult && (
+        <div
+          role={manifestResult.ok ? 'status' : 'alert'}
+          className={'mb-3 flex items-start gap-2 rounded-md px-3 py-2 text-sm font-medium ' +
+            (manifestResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700')}
+        >
+          {manifestResult.ok
+            ? <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            : <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />}
+          <span className="flex-1">{manifestResult.text}</span>
+          <button type="button" onClick={() => setManifestResult(null)} className="text-xs font-normal opacity-70 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
       )}
       <CustomerOrderList />
     </AppShell>
