@@ -497,8 +497,9 @@ function Packing({ initial, onShipped, onReload }: {
 
   // LOCK (owner, 2026-10-15): a finished box's contents and measurements are fixed until it's unlocked — every change on this screen is
   // blocked for it, and the server refuses one anyway. Only a box with something in it can be locked (an empty box isn't stored).
+  // Locking only once the box is MEASURED AND WEIGHED (owner, 2026-10-15) — all four fields; unlocking always works.
   function toggleLock() {
-    if (boxUnits(active) === 0) return;
+    if (boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))) return;
     const id = active.id;
     const locked = !active.locked;
     persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
@@ -768,8 +769,10 @@ function Packing({ initial, onShipped, onReload }: {
                 <button
                   type="button"
                   onClick={toggleLock}
-                  disabled={boxUnits(active) === 0}
-                  title={active.locked ? 'Unlock to change what’s in it or its size' : 'Box done — fix what’s in it and its size'}
+                  disabled={boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))}
+                  title={active.locked ? 'Unlock to change what’s in it or its size'
+                    : dimsComplete(active.dims) ? 'Box done — fix what’s in it and its size'
+                    : 'Put in its length, width, height and weight first'}
                   className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
                     + (active.locked ? 'border-slate-800 bg-slate-800 text-white hover:bg-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
                 >
