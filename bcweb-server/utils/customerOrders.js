@@ -104,9 +104,8 @@ same derivation plus the two flags that sit on top of it.
   STOCK when the column describes the ORDER LINE. `pending` (owner's word) is what the line actually is: everything needed is
   reserved, and it is waiting on us. Note the name `picked` is now in use again — but for the state that genuinely means it.
 
-PARKED is display-only in bcweb: the action that sets it was dropped from this module (owner's call), but the string is still honoured
-by phase E's candidate filter and BOTH PowerBuilder and the cron are still live and can still write it. So we render the state without
-being able to create it. Do not "tidy up" the parked branch on the grounds that nothing here writes it.
+PARKED ('Do Not Order') is set and cleared on Customer Orders by routes/order-status-customer-do-not-order.js (back since 2026-10-15,
+owner), and PowerBuilder can still write it too. It is honoured by phase E's candidate filter (don't source it) — never by packing.
 =======================================================================================================================================
 */
 

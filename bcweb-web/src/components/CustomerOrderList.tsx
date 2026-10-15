@@ -54,6 +54,7 @@ import {
   CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
   printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
   setCustomerOrderWaiting,
+  setCustomerOrderDoNotOrder,
 } from '@/lib/api';
 import { printPdfBase64 } from '@/lib/printPdf';
 import {
@@ -700,6 +701,7 @@ export default function CustomerOrderList() {
                   onClose={() => { setSelected(null); setActionError(null); scanRef.current?.focus(); }}
                   onNote={(note) => run(() => setCustomerOrderNote(active.ordernum, note))}
                   onWaiting={(w) => run(() => setCustomerOrderWaiting(active.ordernum, w))}
+                  onDoNotOrder={(d) => run(() => setCustomerOrderDoNotOrder(active.ordernum, d))}
                   onCourier={(c) => run(() => setCustomerOrderCourier(active.ordernum, c))}
                   // Flag it, then hand over the Amazon file straight away — flagging alone leaves the order sitting there until somebody
                   // uploads the file to Seller Central, so the two are one job and the operator expects the file from this click (owner).
@@ -957,7 +959,7 @@ function StageTile({ label, count, tone, active, onClick }: {
  */
 function OrderBox({
   order, progress, ticked, label, working, error,
-  onClose, onNote, onWaiting, onCourier, onFba, onFbaFile, onDelete, onPrint, onCancelLabel,
+  onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onPrint, onCancelLabel,
 }: {
   order: OrderGroup;
   progress: { scanned: number; total: number } | null;
@@ -968,6 +970,7 @@ function OrderBox({
   onClose: () => void;
   onNote: (note: string) => void;
   onWaiting: (w: boolean) => void;
+  onDoNotOrder: (d: boolean) => void;
   onCourier: (c: string) => void;
   onFba: () => void;
   onFbaFile: () => void;
@@ -992,6 +995,8 @@ function OrderBox({
   const scanning = !!progress && progress.total > 0 && progress.scanned > 0 && !label;
   const allIn = scanning && progress!.scanned >= progress!.total;
   const s = CUSTOMER_STATES[order.state];
+  // Do Not Order is written per order, so one parked line means the order is marked.
+  const doNotOrder = order.lines.some((l) => l.state === 'parked');
 
   return (
     <div>
@@ -1179,6 +1184,23 @@ function OrderBox({
               }
             >
               {order.waiting ? 'Waiting ✓' : 'Waiting'}
+            </button>
+
+            {/* Don't source it — the order sync stops reserving or flagging stock for it. It still scans and packs (owner, 2026-10-15). */}
+            <button
+              type="button"
+              disabled={working}
+              aria-pressed={doNotOrder}
+              title="Stops the order sync sourcing stock for it — it can still be scanned and packed"
+              onClick={() => onDoNotOrder(!doNotOrder)}
+              className={
+                'rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ' +
+                (doNotOrder
+                  ? 'border-slate-400 bg-slate-200 text-slate-900'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+              }
+            >
+              {doNotOrder ? 'Do not order ✓' : 'Do not order'}
             </button>
 
             {confirm === 'fba' ? (

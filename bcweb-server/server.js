@@ -277,6 +277,7 @@ app.use('/locations-add-undo', require('./routes/locations-add-undo')); // WRITE
 app.use('/order-status-customer-list', require('./routes/order-status-customer-list'));       // the dense fulfilment grid
 app.use('/order-status-customer-note', require('./routes/order-status-customer-note'));       // the working note (legacy's top bar)
 app.use('/order-status-customer-waiting', require('./routes/order-status-customer-waiting')); // hold flag — the legacy yellow row
+app.use('/order-status-customer-do-not-order', require('./routes/order-status-customer-do-not-order')); // don't source it (still packs)
 app.use('/order-status-customer-courier', require('./routes/order-status-customer-courier')); // override the derived shipping service
 app.use('/order-status-customer-fba', require('./routes/order-status-customer-fba'));         // re-route to FBA (ONE-WAY: no Reset)
 app.use('/order-status-customer-fba-file', require('./routes/order-status-customer-fba-file')); // Amazon MCF order file (read only)

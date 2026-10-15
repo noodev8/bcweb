@@ -2498,6 +2498,14 @@ export function setCustomerOrderWaiting(ordernum: string, waiting: boolean) {
   );
 }
 
+// Do Not Order = don't source it (the order sync skips it); it still scans and packs. Explicit value, like Waiting.
+export function setCustomerOrderDoNotOrder(ordernum: string, doNotOrder: boolean) {
+  return request<{ updated: number }>(
+    { url: '/order-status-customer-do-not-order', method: 'POST', data: { ordernum, doNotOrder } },
+    (b) => ({ updated: Number(b.updated) || 0 })
+  );
+}
+
 export function setCustomerOrderCourier(ordernum: string, courier: string) {
   return request<{ updated: number }>(
     { url: '/order-status-customer-courier', method: 'POST', data: { ordernum, courier } },
