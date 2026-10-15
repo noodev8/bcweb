@@ -24,9 +24,10 @@ import GoodsInStation from '@/components/GoodsInStation';
 
 export default function GoodsInPage() {
   return (
-    // The two C3-Amazon benches link to each other (owner, 2026-10-15): Amazon-bound units booked in here are boxed there.
+    // The two C3-Amazon benches link to each other (owner, 2026-10-15): Amazon-bound units booked in here are boxed there, and the
+    // link opens AMZ Shipment on the NEWEST box — the one this bench has most likely just been filling.
     <AppShell headerRight={
-        <Link href="/amz-shipment"
+        <Link href="/amz-shipment?box=newest"
           className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
           <CubeIcon className="h-4 w-4" />AMZ Shipment
         </Link>

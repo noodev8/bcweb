@@ -59,4 +59,11 @@ async function removeUnitFromBox(client, box, code) {
   return Math.max(0, row.qty);
 }
 
-module.exports = { cleanDims, addUnitToBox, removeUnitFromBox };
+// LOCKED (owner, 2026-10-15): a box marked done — its contents and measurements are fixed until it's unlocked. The flag is on every row
+// of the box (amz-shipment-box-lock), so "any row locked" is the test. An empty box has no rows and is never locked.
+async function isBoxLocked(client, box) {
+  const r = await client.query(`SELECT COALESCE(bool_or(locked), false) AS locked FROM amzshipment WHERE box = $1`, [box]);
+  return r.rows[0].locked === true;
+}
+
+module.exports = { cleanDims, addUnitToBox, removeUnitFromBox, isBoxLocked };

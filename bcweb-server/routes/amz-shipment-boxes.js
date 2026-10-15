@@ -46,7 +46,8 @@ router.get('/', async (req, res) => {
       `SELECT s.box, s.code, COALESCE(s.sku, '') AS sku, COALESCE(s.fnsku, '') AS fnsku, COALESCE(s.supplier, '') AS supplier,
               COALESCE(t.shopifytitle, '') AS title, COALESCE(s.qty, 0) AS qty,
               MAX(s.weight) OVER w AS weight, MAX(s.length) OVER w AS length,
-              MAX(s.width)  OVER w AS width,  MAX(s.height) OVER w AS height
+              MAX(s.width)  OVER w AS width,  MAX(s.height) OVER w AS height,
+              bool_or(COALESCE(s.locked, false)) OVER w AS locked
        FROM amzshipment s
        LEFT JOIN LATERAL (SELECT m.groupid FROM skumap m WHERE m.code = s.code LIMIT 1) m ON true
        LEFT JOIN title t ON t.groupid = m.groupid
@@ -59,7 +60,7 @@ router.get('/', async (req, res) => {
     for (const r of result.rows) {
       let b = boxes[boxes.length - 1];
       if (!b || b.box !== r.box) {
-        b = { box: r.box, weight: r.weight || '', length: r.length || '', width: r.width || '', height: r.height || '', lines: [] };
+        b = { box: r.box, weight: r.weight || '', length: r.length || '', width: r.width || '', height: r.height || '', locked: r.locked === true, lines: [] };
         boxes.push(b);
       }
       b.lines.push({ code: r.code, sku: r.sku, fnsku: r.fnsku, supplier: r.supplier, title: r.title, qty: Number(r.qty) });

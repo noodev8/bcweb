@@ -20,7 +20,7 @@ Success Response:
 { "return_code": "SUCCESS", "removed": 4, "renumbered": 6 }   // rows deleted (0 for a box never stored) / rows moved down a box
 =======================================================================================================================================
 Return Codes:
-"SUCCESS" · "MISSING_FIELDS" · "UNAUTHORIZED" · "SERVER_ERROR"
+"SUCCESS" · "MISSING_FIELDS" · "LOCKED" (unlock it first) · "UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -28,6 +28,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
+const { isBoxLocked } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -36,12 +37,15 @@ router.post('/', async (req, res) => {
   try {
     const box = Number(req.body?.box);
     if (!Number.isInteger(box) || box < 1) return res.json({ return_code: 'MISSING_FIELDS', message: 'box is required' });
-    const { removed, renumbered } = await withTransaction(async (client) => {
+    const out = await withTransaction(async (client) => {
+      if (await isBoxLocked(client, box)) return null;
       const del = await client.query(`DELETE FROM amzshipment WHERE box = $1`, [box]);
       await client.query(`UPDATE amzshipment SET box = -box WHERE box > $1`, [box]);
       const moved = await client.query(`UPDATE amzshipment SET box = -box - 1 WHERE box < 0`);
       return { removed: del.rowCount, renumbered: moved.rowCount };
     });
+    if (out === null) return res.json({ return_code: 'LOCKED', message: `Box ${box} is locked — unlock it to delete it` });
+    const { removed, renumbered } = out;
     logger.info(`[amz-shipment-box-delete] box ${box}: ${removed} rows, ${renumbered} moved down — by ${req.user.display_name}`);
     return res.json({ return_code: 'SUCCESS', removed, renumbered });
   } catch (err) {

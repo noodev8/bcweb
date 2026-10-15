@@ -110,7 +110,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { placed } = require('../utils/orderStatus');
 const { markArrivedFromGoodsIn } = require('../utils/birkTracker');
-const { addUnitToBox } = require('../utils/amzShipment');
+const { addUnitToBox, isBoxLocked } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -241,6 +241,9 @@ router.post('/', async (req, res) => {
         try {
           // The session's box if it has one; a new box only for the session's first Amazon unit — see the header.
           let box = Number.isInteger(wantBox) && wantBox >= 1 ? wantBox : null;
+          // The session's box has been LOCKED on AMZ Shipment (owner, 2026-10-15) — it's done, so this unit starts a new one; the
+          // screen takes the new number from the response and the rest of the session follows it.
+          if (box !== null && await isBoxLocked(client, box)) box = null;
           if (box === null) {
             await client.query(`SELECT pg_advisory_xact_lock(hashtext('amzshipment:new-box'))`);
             box = Number((await client.query(`SELECT COALESCE(MAX(box), 0) + 1 AS box FROM amzshipment`)).rows[0].box);

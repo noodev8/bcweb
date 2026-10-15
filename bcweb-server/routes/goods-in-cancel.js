@@ -61,7 +61,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { unmarkArrivedFromGoodsIn } = require('../utils/birkTracker');
-const { removeUnitFromBox } = require('../utils/amzShipment');
+const { removeUnitFromBox, isBoxLocked } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -133,9 +133,13 @@ router.post('/', async (req, res) => {
       if (Number.isInteger(amzBoxNo) && amzBoxNo >= 1) {
         await client.query('SAVEPOINT amz_box');
         try {
-          const left = await removeUnitFromBox(client, amzBoxNo, incCode);
+          // A LOCKED box isn't changed from here — the packer unlocks it on AMZ Shipment and takes the shoe out there.
+          const locked = await isBoxLocked(client, amzBoxNo);
+          const left = locked ? null : await removeUnitFromBox(client, amzBoxNo, incCode);
           await client.query('RELEASE SAVEPOINT amz_box');
-          amzBox = left === null
+          amzBox = locked
+            ? { undone: false, message: `Box ${amzBoxNo} is locked — unlock it on AMZ Shipment and take ${incCode} out there` }
+            : left === null
             ? { undone: false, message: `${incCode} is no longer in Box ${amzBoxNo} — check the boxes on AMZ Shipment` }
             : { undone: true };
         } catch (err) {

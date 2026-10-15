@@ -25,6 +25,11 @@ the stored shipment is archived to amzshipment_archive under a new shipment id, 
 server refuses if the stored shipment differs (a failed save, or the legacy app packing too). Codes boxed with nothing on C3-Amazon to
 take are listed in the notice afterwards. See the route header for the detail.
 
+LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"). Lock box fixes a packed box's contents and
+measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
+(POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
+adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box.
+
 FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list narrows it to boxes holding a match (code, Amazon SKU,
 FNSKU or title) and names the matching codes under each; the matching lines are highlighted in the open box.
 
@@ -68,12 +73,12 @@ Amazon's B1..Bn in order, which is why Delete box renumbers.
 import { useRef, useState } from 'react';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon,
+  InboxArrowDownIcon, LockClosedIcon, LockOpenIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
-  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, saveAmzShipmentLine, saveAmzShipmentDims, deleteAmzShipmentBox, emptyAmzShipmentBox,
+  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, saveAmzShipmentLine, saveAmzShipmentDims, deleteAmzShipmentBox, emptyAmzShipmentBox, setAmzShipmentBoxLock,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -84,15 +89,17 @@ import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; title?: string; }
 // Measurements are held as typed (strings), so a half-typed "12." isn't rewritten under the cursor.
 interface BoxDims { length: string; width: string; height: string; weight: string; }
-interface Box { id: number; lines: BoxLine[]; dims: BoxDims; }
+// locked = the box is done (owner, 2026-10-15): contents and measurements fixed until unlocked. Stored on the server (amzshipment.locked).
+interface Box { id: number; lines: BoxLine[]; dims: BoxDims; locked: boolean; }
 
 const NO_DIMS: BoxDims = { length: '', width: '', height: '', weight: '' };
-const newBoxOf = (id: number): Box => ({ id, lines: [], dims: NO_DIMS });
+const newBoxOf = (id: number): Box => ({ id, lines: [], dims: NO_DIMS, locked: false });
 const boxUnits = (b: Box) => b.lines.reduce((n, l) => n + l.qty, 0);
 const fromDb = (b: AmzBox): Box => ({
   id: b.box,
   lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, title: l.title })),
   dims: { length: b.length, width: b.width, height: b.height, weight: b.weight },
+  locked: !!b.locked,
 });
 
 // Amazon's standard-carton limits (UK/EU): no side over 63.5 cm, no box over 23 kg. Advisory here — see MEASUREMENTS in the header.
@@ -253,7 +260,13 @@ function Packing({ initial, onShipped, onReload }: {
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
-  const [activeId, setActiveId] = useState(initial.length ? initial[0].id : 1);
+  // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling. Read from
+  // the URL once, in the initialiser: this component only renders client-side, after the boxes load.
+  const [activeId, setActiveId] = useState(() => {
+    if (!initial.length) return 1;
+    const newest = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('box') === 'newest';
+    return newest ? Math.max(...initial.map((b) => b.id)) : initial[0].id;
+  });
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
@@ -340,6 +353,10 @@ function Packing({ initial, onShipped, onReload }: {
     setScan('');
     if (!raw) return;
     const boxId = active.id;
+    if (active.locked) {
+      refuse({ scan: raw, message: `Box ${boxId} is locked — unlock it, or pick another box. Not added.` });
+      return;
+    }
     let hit = scanCache.current.get(raw);
     if (!hit) {
       const res = await lookupAmzShipmentScan(raw);
@@ -384,6 +401,7 @@ function Packing({ initial, onShipped, onReload }: {
   }
 
   function takeOne(code: string) {
+    if (active.locked) return;
     addTo(active.id, code, -1);
     // Drop that box's most recent scan of this code from the history too, so Undo never re-removes it.
     setHistory((h) => {
@@ -396,7 +414,7 @@ function Packing({ initial, onShipped, onReload }: {
 
   function undo() {
     const last = history[history.length - 1];
-    if (!last) return;
+    if (!last || boxes.find((b) => b.id === last.boxId)?.locked) return;
     addTo(last.boxId, last.code, -1);
     setHistory((h) => h.slice(0, -1));
     setActiveId(last.boxId);
@@ -413,6 +431,7 @@ function Packing({ initial, onShipped, onReload }: {
   }
 
   function setDim(key: keyof BoxDims, value: string) {
+    if (active.locked) return;
     const clean = value.replace(/[^0-9.]/g, '');
     setBoxes((prev) => prev.map((b) => (b.id === active.id ? { ...b, dims: { ...b.dims, [key]: clean } } : b)));
   }
@@ -420,6 +439,7 @@ function Packing({ initial, onShipped, onReload }: {
   // Quick fill: write the given measurements into the open box. Only non-blank values are written, so Birk box (no weight) and a Set
   // with a field left empty keep whatever that box already had there.
   function fillDims(d: Partial<BoxDims>) {
+    if (active.locked) return;
     const next = { ...active.dims };
     for (const f of FIELDS) { const v = (d[f.key] ?? '').trim(); if (v) next[f.key] = v; }
     setBoxes((prev) => prev.map((b) => (b.id === active.id ? { ...b, dims: next } : b)));
@@ -463,6 +483,19 @@ function Packing({ initial, onShipped, onReload }: {
     refocus();
   }
 
+  // LOCK (owner, 2026-10-15): a finished box's contents and measurements are fixed until it's unlocked — every change on this screen is
+  // blocked for it, and the server refuses one anyway. Only a box with something in it can be locked (an empty box isn't stored).
+  function toggleLock() {
+    if (boxUnits(active) === 0) return;
+    const id = active.id;
+    const locked = !active.locked;
+    persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
+    setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked } : b)));
+    setConfirmEmpty(false);
+    setConfirmDelete(false);
+    refocus();
+  }
+
   function selectBox(id: number) {
     setActiveId(id);
     setConfirmDelete(false);
@@ -474,7 +507,7 @@ function Packing({ initial, onShipped, onReload }: {
   // Empty the active box (owner, 2026-10-15): everything out, the box kept — same number, same measurements, no renumbering, so it can
   // be packed again. Always confirmed inline first. Its scans leave Undo's history, so Undo can't take out a unit that's already gone.
   function emptyActive() {
-    if (boxUnits(active) === 0) return;
+    if (boxUnits(active) === 0 || active.locked) return;
     if (!confirmEmpty) { setConfirmEmpty(true); setConfirmDelete(false); return; }
     const id = active.id;
     persist(`Emptying Box ${id}`, () => emptyAmzShipmentBox(id));
@@ -489,7 +522,7 @@ function Packing({ initial, onShipped, onReload }: {
   // scan into. The boxes after it are RENUMBERED down one (owner, 2026-10-06) so the numbers stay 1..n and match Amazon's B1..Bn in the
   // Amazon upload — the server does the same to the stored rows (amz-shipment-box-delete), and Undo's history follows the new numbers.
   function deleteActive() {
-    if (boxes.length === 1) return;
+    if (boxes.length === 1 || active.locked) return;
     if (boxUnits(active) > 0 && !confirmDelete) { setConfirmDelete(true); setConfirmEmpty(false); return; }
     const gone = active.id;
     const shift = (id: number) => (id > gone ? id - 1 : id);
@@ -634,9 +667,10 @@ function Packing({ initial, onShipped, onReload }: {
               >
                 <CubeIcon className={'h-5 w-5 ' + (on ? 'text-brand-600' : 'text-slate-400')} />
                 <span className="font-medium text-slate-900">Box {b.id}</span>
+                {b.locked && <LockClosedIcon className="h-4 w-4 text-slate-500" aria-label="Locked" />}
                 <span className="ml-auto text-right text-sm tabular-nums text-slate-500">
                   {units} {units === 1 ? 'unit' : 'units'}
-                  {units > 0 && !dimsComplete(b.dims) && <span className="block text-xs text-amber-700">needs size</span>}
+                  {units > 0 && !b.locked && !dimsComplete(b.dims) && <span className="block text-xs text-amber-700">needs size</span>}
                 </span>
                 {matched.length > 0 && (
                   <span className="mt-1.5 w-full space-y-0.5">
@@ -667,7 +701,23 @@ function Packing({ initial, onShipped, onReload }: {
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-900">Box {active.id}</h2>
               <span className="text-sm text-slate-500">{boxUnits(active)} {boxUnits(active) === 1 ? 'unit' : 'units'}</span>
+              {active.locked && (
+                <span className="flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-white">
+                  <LockClosedIcon className="h-3.5 w-3.5" />Locked
+                </span>
+              )}
               <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleLock}
+                  disabled={boxUnits(active) === 0}
+                  title={active.locked ? 'Unlock to change what’s in it or its size' : 'Box done — fix what’s in it and its size'}
+                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
+                    + (active.locked ? 'border-slate-800 bg-slate-800 text-white hover:bg-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
+                >
+                  {active.locked ? <LockOpenIcon className="h-4 w-4" /> : <LockClosedIcon className="h-4 w-4" />}
+                  {active.locked ? 'Unlock' : 'Lock box'}
+                </button>
                 <button
                   type="button"
                   onClick={togglePrint}
@@ -682,7 +732,7 @@ function Packing({ initial, onShipped, onReload }: {
                 <button
                   type="button"
                   onClick={undo}
-                  disabled={history.length === 0}
+                  disabled={history.length === 0 || !!boxes.find((b) => b.id === history[history.length - 1]?.boxId)?.locked}
                   className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUturnLeftIcon className="h-4 w-4" />
@@ -691,7 +741,7 @@ function Packing({ initial, onShipped, onReload }: {
                 <button
                   type="button"
                   onClick={emptyActive}
-                  disabled={boxUnits(active) === 0}
+                  disabled={boxUnits(active) === 0 || active.locked}
                   className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
                     + (confirmEmpty ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
                 >
@@ -703,7 +753,7 @@ function Packing({ initial, onShipped, onReload }: {
                 <button
                   type="button"
                   onClick={deleteActive}
-                  disabled={boxes.length === 1}
+                  disabled={boxes.length === 1 || active.locked}
                   className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
                     + (confirmDelete ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
                 >
@@ -721,7 +771,7 @@ function Packing({ initial, onShipped, onReload }: {
               value={scan}
               onChange={(e) => setScan(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onScan(); } }}
-              placeholder={`Scan a shoe into Box ${active.id}`}
+              placeholder={active.locked ? `Box ${active.id} is locked — unlock it or pick another box` : `Scan a shoe into Box ${active.id}`}
               aria-label={`Scan into Box ${active.id}`}
               aria-invalid={scanError ? true : undefined}
               className={'h-12 w-full rounded-md border px-4 font-mono text-lg text-slate-900 placeholder:font-sans placeholder:text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 '
@@ -758,9 +808,10 @@ function Packing({ initial, onShipped, onReload }: {
                       inputMode="decimal"
                       value={active.dims[f.key]}
                       onChange={(e) => setDim(f.key, e.target.value)}
-                      onBlur={() => saveDims(active.id, active.dims)}
+                      onBlur={() => { if (!active.locked) saveDims(active.id, active.dims); }}
+                      disabled={active.locked}
                       placeholder={f.label}
-                      className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
                     <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">{f.unit}</span>
                   </label>
@@ -772,16 +823,18 @@ function Packing({ initial, onShipped, onReload }: {
                 <button
                   type="button"
                   onClick={() => fillDims(BIRK_BOX)}
+                  disabled={active.locked}
                   title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
-                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Birk box
                 </button>
                 <button
                   type="button"
                   onClick={setButton}
+                  disabled={active.locked}
                   title="Typed a size? Set saves it. Empty box? Set fills in the saved size."
-                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Set
                 </button>
@@ -825,7 +878,7 @@ function Packing({ initial, onShipped, onReload }: {
                           <PrinterIcon className="h-4 w-4" />
                         </button>
                       )}
-                      <button
+                      {!active.locked && <button
                         type="button"
                         onClick={() => takeOne(l.code)}
                         aria-label={`Take one ${l.code} out`}
@@ -833,7 +886,7 @@ function Packing({ initial, onShipped, onReload }: {
                         className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                       >
                         <MinusIcon className="h-4 w-4" />
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 ))}

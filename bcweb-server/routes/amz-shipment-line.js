@@ -39,7 +39,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { cleanDims, addUnitToBox, removeUnitFromBox } = require('../utils/amzShipment');
+const { cleanDims, addUnitToBox, removeUnitFromBox, isBoxLocked } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -56,6 +56,8 @@ router.post('/', async (req, res) => {
 
     // The row writes are utils/amzShipment.js (shared with Goods In, which boxes the Amazon units it books in).
     const outcome = await withTransaction(async (client) => {
+      // A locked box is done — nothing in or out until it's unlocked (amz-shipment-box-lock).
+      if (await isBoxLocked(client, box)) return { code: 'LOCKED' };
       if (delta < 0) {
         const qty = await removeUnitFromBox(client, box, code);
         return qty === null ? { code: 'NOT_FOUND' } : { code: 'SUCCESS', qty };
@@ -64,6 +66,9 @@ router.post('/', async (req, res) => {
       return added.noSku ? { code: 'NO_SKU' } : { code: 'SUCCESS', qty: added.qty };
     });
 
+    if (outcome.code === 'LOCKED') {
+      return res.json({ return_code: 'LOCKED', message: `Box ${box} is locked — unlock it to change what's in it` });
+    }
     if (outcome.code === 'NOT_FOUND') {
       return res.json({ return_code: 'NOT_FOUND', message: `${code} isn't stored in Box ${box} — reload to see what is` });
     }

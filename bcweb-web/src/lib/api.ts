@@ -2739,7 +2739,7 @@ export function getAmzBarcodeCheck() {
 // AMZ Shipment — the Amazon boxes packed so far (amzshipment), with each box's contents and measurements. READ ONLY.
 // Measurements come through as the strings the legacy table holds ('' when unset).
 export interface AmzBoxLine { code: string; sku: string; fnsku: string; supplier: string; title: string; qty: number }
-export interface AmzBox { box: number; weight: string; length: string; width: string; height: string; lines: AmzBoxLine[] }
+export interface AmzBox { box: number; weight: string; length: string; width: string; height: string; locked: boolean; lines: AmzBoxLine[] }
 export function getAmzShipmentBoxes() {
   return request<{ boxes: AmzBox[] }>({ url: '/amz-shipment-boxes', method: 'GET' }, (b) => ({
     boxes: (b.boxes as AmzBox[]) || [],
@@ -2781,6 +2781,13 @@ export function saveAmzShipmentDims(box: number, dims: AmzBoxDims) {
     saved: !!b.saved,
   }));
 }
+// Lock / unlock a finished box: while locked its contents and measurements can't change. Explicit value, not a toggle.
+export function setAmzShipmentBoxLock(box: number, locked: boolean) {
+  return request<{ locked: boolean }>({ url: '/amz-shipment-box-lock', method: 'POST', data: { box, locked } }, (b) => ({
+    locked: !!b.locked,
+  }));
+}
+
 // Empty box: its contents out, the box (number, measurements on screen) kept. No renumbering, unlike delete.
 export function emptyAmzShipmentBox(box: number) {
   return request<{ removed: number }>({ url: '/amz-shipment-box-empty', method: 'POST', data: { box } }, (b) => ({

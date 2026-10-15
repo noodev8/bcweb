@@ -37,11 +37,17 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'box and dims are required' });
     }
     const d = cleanDims(req.body.dims);
-    // A single UPDATE is atomic on its own — no transaction needed.
+    // A single UPDATE is atomic on its own — no transaction needed. A LOCKED box's measurements are fixed (amz-shipment-box-lock), so
+    // its rows are left alone and the screen is told why.
     const result = await query(
-      `UPDATE amzshipment SET length = $2, width = $3, height = $4, weight = $5 WHERE box = $1`,
+      `UPDATE amzshipment SET length = $2, width = $3, height = $4, weight = $5
+        WHERE box = $1 AND NOT EXISTS (SELECT 1 FROM amzshipment l WHERE l.box = $1 AND l.locked)`,
       [box, d.length || null, d.width || null, d.height || null, d.weight || null]
     );
+    if (result.rowCount === 0) {
+      const locked = await query(`SELECT 1 FROM amzshipment WHERE box = $1 AND locked LIMIT 1`, [box]);
+      if (locked.rowCount > 0) return res.json({ return_code: 'LOCKED', message: `Box ${box} is locked — unlock it to change its size` });
+    }
     return res.json({ return_code: 'SUCCESS', saved: result.rowCount > 0 });
   } catch (err) {
     logger.error('[amz-shipment-dims] error:', err.message);
