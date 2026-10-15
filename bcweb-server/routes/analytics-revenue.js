@@ -64,6 +64,9 @@ Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's St
          (every other P&L expense line + 5100 Carriage; NOT 5000 purchases — cost of goods is ours — 5003/7501 shipping, 6003 seller
          fees, 6201 advertising, which the channels carry). expense_figure channel 'ALL'.
 
+         STOCK (2026-10-15) — `stock` { value, units, prev_value, avg_value, turn }: cash in stock now at cost (utils/financeStock.js),
+         the stock a year ago (stock_daily), and the turn = this year's cost of goods / average stock over the year. See the code.
+
          Channels are whatever `sales.channel` holds (SHP / AMZ / CM3 today), largest first; an unknown code still shows, never dropped.
 
          READ-ONLY. Requires auth.
@@ -98,6 +101,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 const { safeNumeric } = require('../utils/sql');
 const { costFromProfitSql } = require('../utils/shopifyProfit');
+const { stockValue } = require('../utils/financeStock');
 
 router.use(verifyToken);
 
@@ -158,9 +162,30 @@ router.get('/', async (req, res) => {
         cogs_filled: r2(f), prev_cogs_filled: r2(pf),
       };
     });
-    const [shopify_expenses, overheads, sellerFees, turnover] = await Promise.all([
+    const [shopify_expenses, overheads, sellerFees, turnover, now, hist] = await Promise.all([
       shopifyExpenses(), overheadLines(), plLines({ query }, 'AMZ', 'Seller fees'), plLines({ query }, 'ACC', 'Turnover'),
+      stockValue(),
+      // STOCK HISTORY (stock_daily, nightly, backfilled from 14 Oct 2025): the average over this window, for the turn, and the
+      // reading a year ago. No history before that, so the year before has no turn.
+      query(`
+        SELECT AVG(value)::float8 AS avg_value, COUNT(*)::int AS days,
+               (SELECT value::float8 FROM stock_daily
+                WHERE snapshot_date <= CURRENT_DATE - INTERVAL '12 months' ORDER BY snapshot_date DESC LIMIT 1) AS year_ago,
+               (SELECT value::float8 FROM stock_daily ORDER BY snapshot_date LIMIT 1) AS first_value
+        FROM stock_daily WHERE snapshot_date >= CURRENT_DATE - INTERVAL '12 months'
+      `),
     ]);
+    const h = hist.rows[0] || {};
+    // CASH IN STOCK (owner, 2026-10-15) = the stock we own at cost, ex VAT (utils/financeStock.js, the Month End figure).
+    // STOCK TURN = the year's cost of goods / the year's AVERAGE stock at cost — how many times the money in stock came back.
+    // Days = 365 / turn. Year before: the stock a year ago (or the first reading, a day short), no turn.
+    const cogsAll = channels.reduce((a, c) => a + c.cogs, 0);
+    const stock = {
+      value: now.value, units: now.units,
+      prev_value: h.year_ago ?? h.first_value ?? null,
+      avg_value: h.avg_value ? r2(h.avg_value) : null,
+      turn: h.avg_value ? Math.round((cogsAll / h.avg_value) * 10) / 10 : null,
+    };
     // AMAZON FEES (owner, 2026-10-14) = the QuickFile P&L's 6003 Seller Fees, which holds EVERY channel's fees (Month End posts
     // Amazon's, Shopify's and PayPal's there — utils/financeQuickFile.js), less the Shopify Payments and PayPal fees this screen
     // already holds. What remains is Amazon's (referral, FBA, storage, subscription; SumUp's few pounds too). Ex VAT, as the P&L.
@@ -169,7 +194,7 @@ router.get('/', async (req, res) => {
       : r2(sf[w] - (shopify_expenses.shopify_payments[w].amount || 0) - (shopify_expenses.paypal[w].amount || 0)));
     const amazon_expenses = { fees: { cur: amzFees('cur'), prev: amzFees('prev') }, seller_fees: sf };
     const accounts_turnover = turnover[0] ? { cur: turnover[0].cur, prev: turnover[0].prev } : null;
-    return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses, amazon_expenses, overheads, accounts_turnover });
+    return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses, amazon_expenses, overheads, accounts_turnover, stock });
   } catch (err) {
     logger.error('[analytics-revenue] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load Revenue' });

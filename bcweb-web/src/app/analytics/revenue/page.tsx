@@ -120,7 +120,7 @@ function Revenue({ data }: { data: RevenueData }) {
           sub={<>{pctOf(profit, all.revenue)} of revenue<br /><YearBefore v={pProfit} /></>} />
       </section>
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {keyStats(data, all, leftSum, pLeftSum, oh, pOh, profit, pProfit).map((k) => <Stat key={k.label} {...k} />)}
       </section>
 
@@ -195,6 +195,7 @@ function keyStats(data: RevenueData, all: Figures, leftSum: number, pLeftSum: nu
   // Break-even: the revenue at which what the channels leave just pays the overheads, at today's rate of leaving.
   const be = leftSum > 0 ? oh / (leftSum / all.revenue) : null;
   const pBe = pLeftSum > 0 ? pOh / (pLeftSum / all.prev_revenue) : null;
+  const s = data.stock;
   return [
     // Wages as a % of turnover (owner, 2026-10-15: "Should turnover wages be %?") — the usual UK form; lower is better.
     { label: 'Wages', value: pct(wages?.cur, exVat), prev: pct(wages?.prev, pExVat), note: 'of turnover, ex VAT' },
@@ -205,6 +206,13 @@ function keyStats(data: RevenueData, all: Figures, leftSum: number, pLeftSum: nu
     { label: 'Returns', value: pct(-all.returns, all.sold), prev: pct(-all.prev_returns, all.prev_sold), note: 'of sales' },
     { label: 'Profit per pair', value: all.units > 0 ? pound(profit / all.units) : '–',
       prev: all.prev_units > 0 ? pound(pProfit / all.prev_units) : '–', note: `${all.units.toLocaleString('en-GB')} pairs` },
+    // CASH IN STOCK and STOCK TURN (owner, 2026-10-15: the strategy is to rinse winners and clear non-movers at 90 days, so watch
+    // how fast stock money comes back). Stock at cost, ex VAT. Turn = the year's cost of goods / its average stock; no stock history
+    // before Oct 2025, so the turn has no year before.
+    { label: 'Cash in stock', value: s ? gbpK(s.value) : '–', prev: s?.prev_value != null ? gbpK(s.prev_value) : '–',
+      note: s ? `${s.units.toLocaleString('en-GB')} pairs, at cost` : '' },
+    { label: 'Stock turn', value: s?.turn ? `${s.turn}×` : '–', prev: '',
+      note: s?.turn ? `stock sells through every ${Math.round(365 / s.turn)} days` : '' },
   ];
 }
 
@@ -213,9 +221,11 @@ function Stat({ label, value, prev, note }: KeyStat) {
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1.5 text-2xl font-bold leading-none tabular-nums text-slate-900">{value}</div>
-      <div className="mt-2 text-[11px] text-slate-500">
-        Year before <span className={`font-semibold tabular-nums ${prev.startsWith('−') ? 'text-red-700' : 'text-slate-700'}`}>{prev}</span>
-      </div>
+      {prev && (
+        <div className="mt-2 text-[11px] text-slate-500">
+          Year before <span className={`font-semibold tabular-nums ${prev.startsWith('−') ? 'text-red-700' : 'text-slate-700'}`}>{prev}</span>
+        </div>
+      )}
       {note && <div className="mt-0.5 text-[11px] text-slate-400">{note}</div>}
     </div>
   );

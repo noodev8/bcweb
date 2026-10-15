@@ -1326,6 +1326,8 @@ export interface RevenueData {
   amazon_expenses: { fees: { cur: number | null; prev: number | null } } | null;   // P&L seller fees less Shopify's + PayPal's
   overheads: RevenueOverhead[];
   accounts_turnover: { cur: number | null; prev: number | null } | null;   // P&L 4000 General Sales, ex VAT — a check, not summed                                   // whole business (P&L), [] until typed in
+  // Stock at cost now / a year ago, the year's average, and turn = the year's cost of goods / that average
+  stock: { value: number; units: number; prev_value: number | null; avg_value: number | null; turn: number | null } | null;
 }
 
 export function getRevenue() {
@@ -1333,7 +1335,7 @@ export function getRevenue() {
     { url: '/analytics-revenue', method: 'GET' },
     (b) => ({ from: b.from, to: b.to, prev_from: b.prev_from, prev_to: b.prev_to, channels: b.channels || [],
               shopify_expenses: b.shopify_expenses || null, amazon_expenses: b.amazon_expenses || null, overheads: b.overheads || [],
-              accounts_turnover: b.accounts_turnover || null })
+              accounts_turnover: b.accounts_turnover || null, stock: b.stock || null })
   );
 }
 
