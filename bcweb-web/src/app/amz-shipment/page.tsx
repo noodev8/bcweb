@@ -745,7 +745,7 @@ function Packing({ initial, onShipped, onReload }: {
           </div>
 
           {/* MEASUREMENTS — the packed carton's size and weight, on ONE row above the contents (owner, 2026-10-15: above the items, and
-              tidier): the four fields with their units, the status, then the two quick fills. */}
+              tidier): the four fields with their units, then the two quick fills (no status pill — owner, 2026-10-15). */}
           <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <span className="text-sm font-medium text-slate-700">Size</span>
@@ -766,9 +766,6 @@ function Packing({ initial, onShipped, onReload }: {
                   </label>
                 ))}
               </div>
-              {dimsComplete(active.dims)
-                ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">Done</span>
-                : boxUnits(active) > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">Needed to ship</span>}
               {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
                   what's packed. Set saves the open box's typed size, or fills an empty one with the saved size (setButton). */}
               <div className="ml-auto flex items-center gap-1.5">
