@@ -204,7 +204,9 @@ function manifestIds(json, location) {
 }
 
 /**
- * Start manifesting everything that's ready. Returns { ids, nothing, reply }:
+ * Start manifesting everything that's ready. Returns { ids, nothing, reply, inline }:
+ *   inline   THIS ACCOUNT'S ACTUAL REPLY (live, 2026-10-15): HTTP 201 { manifestNumber: 2580, documentPdf: "<base64>", ... } — the
+ *            manifest is done and its PDF is right there, no id to poll. Returned as { number, pdf, orders } and used as it stands.
  *   nothing  true ONLY when Click & Drop said so — the live 400 NO_ELIGIBLE_ORDERS, or the spec's HTTP 200 with an explicit empty list.
  *   ids      the manifests started. Can be [] with nothing=false: Click & Drop accepted (so it DID manifest) but sent no id we can read —
  *            `reply` then carries its raw answer so the caller can show it, and the PDF is on the Click & Drop website.
@@ -218,10 +220,17 @@ async function createManifests() {
     if (err.status === 400 && (err.body?.errors || []).some((e) => e.code === 'NO_ELIGIBLE_ORDERS')) return { ids: [], nothing: true, reply: null };
     throw err;
   }
-  const ids = manifestIds(r.json, r.location);
   const reply = `HTTP ${r.status}${r.location ? ` Location ${r.location}` : ''}: ${r.text ? r.text.slice(0, 500) : '(empty)'}`;
+  const pdf = r.json && !Array.isArray(r.json) ? (r.json.documentPdf || r.json.pdf || null) : null;
+  if (pdf) {
+    const orders = (Array.isArray(r.json.orders) ? r.json.orders : [])
+      .map((o) => (typeof o === 'string' ? o : o?.orderReference)).filter(Boolean);
+    const number = r.json.manifestNumber ?? r.json.manifestId ?? r.json.manifestGuid ?? null;
+    return { ids: [], nothing: false, reply, inline: { number: number == null ? null : String(number), pdf, orders } };
+  }
+  const ids = manifestIds(r.json, r.location);
   const nothing = !ids.length && r.status === 200 && Array.isArray(r.json?.manifests) && r.json.manifests.length === 0;
-  return { ids, nothing, reply };
+  return { ids, nothing, reply, inline: null };
 }
 
 /** { manifestStatus: InProgress|Completed|Failed, documentStatus, orders: [{orderIdentifier, orderReference}], pdf, errorReference } */

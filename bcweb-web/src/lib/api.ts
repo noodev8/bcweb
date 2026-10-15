@@ -2584,6 +2584,7 @@ export interface CustomerManifest {
   failed: boolean;
   errorReference: string | null;
   readError: string | null;      // Click & Drop couldn't be read for it (after retries) — pending, collect again
+  number: string | null;         // Click & Drop's manifest number, when its reply gave one (it sends the PDF straight back with it)
 }
 
 // The Fulfill button, manifest step: manifests everything Click & Drop has waiting (irreversible). Pass `manifestIds` to collect
@@ -2601,6 +2602,7 @@ export function manifestCustomerOrders(manifestIds?: string[]) {
       failed: !!m.failed,
       errorReference: m.errorReference ? String(m.errorReference) : null,
       readError: m.readError ? String(m.readError) : null,
+      number: m.number ? String(m.number) : null,
     }))
   );
 }

@@ -53,7 +53,7 @@ export default function ManifestButton({ onResult }: { onResult: (r: ManifestRes
       const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(m.pdf), (c) => c.charCodeAt(0))], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `manifest-${day}-${m.id.slice(0, 8)}.pdf`;
+      a.download = `manifest-${day}-${(m.number || m.id).slice(0, 8)}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -62,7 +62,12 @@ export default function ManifestButton({ onResult }: { onResult: (r: ManifestRes
 
     const n = done.reduce((t, m) => t + m.orders.length, 0);
     const parts: string[] = [];
-    if (done.length) parts.push(`Manifested ${n} order${n === 1 ? '' : 's'} — manifest saved to Downloads`);
+    // Click & Drop's inline reply names the manifest but may not list its orders — then say the number, not "0 orders".
+    if (done.length) {
+      parts.push(n > 0
+        ? `Manifested ${n} order${n === 1 ? '' : 's'} — manifest saved to Downloads`
+        : `Manifest${done.some((m) => m.number) ? ' ' + done.map((m) => m.number).filter(Boolean).join(', ') : ''} done — saved to Downloads`);
+    }
     if (done.some((m) => !m.pdf)) parts.push('a manifest came back with no PDF — download it from Click & Drop');
     const unread = stillPending.filter((m) => m.readError);
     if (unread.length) parts.push(`manifested, but the PDF couldn’t be fetched (${unread[0].readError}) — press Collect manifest to try again`);

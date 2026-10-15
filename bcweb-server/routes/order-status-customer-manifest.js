@@ -72,7 +72,17 @@ router.post('/', async (req, res) => {
     if (!given.length) {
       const started = await clickDrop.createManifests();
       // Always logged: the reply's shape is what broke the first live manifest (see createManifests).
-      logger.info(`[order-status-customer-manifest] POST /manifests by ${req.user.display_name} -> ${started.reply || 'NO_ELIGIBLE_ORDERS'}`);
+      logger.info(`[order-status-customer-manifest] POST /manifests by ${req.user.display_name} -> ${(started.reply || 'NO_ELIGIBLE_ORDERS').slice(0, 200)}`);
+      // THE PDF CAME BACK WITH THE MANIFEST (this account's real reply, 2026-10-15: HTTP 201 { manifestNumber, documentPdf }). Done —
+      // nothing to poll; hand it straight to the screen, which saves it to Downloads.
+      if (started.inline) {
+        const { number, pdf, orders } = started.inline;
+        logger.info(`[order-status-customer-manifest] manifest ${number ?? '(no number)'} — PDF returned inline, ${orders.length} orders listed`);
+        return res.json({
+          return_code: 'SUCCESS',
+          manifests: [{ id: number || 'manifest', number, status: 'Completed', orders, pdf, pending: false, failed: false, errorReference: null, readError: null }],
+        });
+      }
       if (started.nothing) {
         return res.json({ return_code: 'NOTHING_TO_MANIFEST', message: 'Nothing on Click & Drop is waiting to be manifested' });
       }
