@@ -92,6 +92,8 @@ interface BoxDims { length: string; width: string; height: string; weight: strin
 // locked = the box is done (owner, 2026-10-15): contents and measurements fixed until unlocked. Stored on the server (amzshipment.locked).
 interface Box { id: number; lines: BoxLine[]; dims: BoxDims; locked: boolean; }
 
+// The box header's small square buttons (print toggle, Empty, Delete); a confirm widens one to say what it will do.
+const ICON_BTN = 'flex items-center gap-1 rounded-md border p-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 ';
 const NO_DIMS: BoxDims = { length: '', width: '', height: '', weight: '' };
 const newBoxOf = (id: number): Box => ({ id, lines: [], dims: NO_DIMS, locked: false });
 const boxUnits = (b: Box) => b.lines.reduce((n, l) => n + l.qty, 0);
@@ -701,12 +703,56 @@ function Packing({ initial, onShipped, onReload }: {
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-900">Box {active.id}</h2>
               <span className="text-sm text-slate-500">{boxUnits(active)} {boxUnits(active) === 1 ? 'unit' : 'units'}</span>
-              {active.locked && (
-                <span className="flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-white">
-                  <LockClosedIcon className="h-3.5 w-3.5" />Locked
-                </span>
-              )}
-              <div className="ml-auto flex items-center gap-2">
+              {active.locked && <LockClosedIcon className="h-4 w-4 text-slate-500" aria-label="Locked" />}
+              {/* Kept short (owner, 2026-10-15: "too much going on"). A LOCKED box offers only Unlock — nothing else can change it. Open,
+                  it's Undo, three icon buttons (print toggle, Empty, Delete — their confirms spell out what happens), then Lock box. */}
+              <div className="ml-auto flex items-center gap-1.5">
+                {!active.locked && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={undo}
+                      disabled={history.length === 0 || !!boxes.find((b) => b.id === history[history.length - 1]?.boxId)?.locked}
+                      title="Undo the last scan"
+                      className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ArrowUturnLeftIcon className="h-4 w-4" />
+                      Undo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={togglePrint}
+                      aria-pressed={printOn}
+                      aria-label={printOn ? 'Label printing on' : 'Label printing off'}
+                      title={printOn ? 'Labels print on every good scan — click to stop' : 'Labels are off — click to print one per scan'}
+                      className={ICON_BTN + (printOn ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-400 hover:bg-slate-50')}
+                    >
+                      <PrinterIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={emptyActive}
+                      disabled={boxUnits(active) === 0}
+                      aria-label="Empty box"
+                      title="Empty box — take everything out, keep the box"
+                      className={ICON_BTN + (confirmEmpty ? 'border-amber-300 bg-amber-50 px-2.5 text-amber-800' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
+                    >
+                      <ArchiveBoxXMarkIcon className="h-4 w-4" />
+                      {confirmEmpty && `Take all ${boxUnits(active)} out?`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteActive}
+                      disabled={boxes.length === 1}
+                      aria-label="Delete box"
+                      title="Delete box"
+                      className={ICON_BTN + (confirmDelete ? 'border-red-300 bg-red-50 px-2.5 text-red-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      {confirmDelete && (`Delete Box ${active.id}?` + (boxes.some((b) => b.id > active.id) ? ' Later boxes move down one.' : ''))}
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={toggleLock}
@@ -717,51 +763,6 @@ function Packing({ initial, onShipped, onReload }: {
                 >
                   {active.locked ? <LockOpenIcon className="h-4 w-4" /> : <LockClosedIcon className="h-4 w-4" />}
                   {active.locked ? 'Unlock' : 'Lock box'}
-                </button>
-                <button
-                  type="button"
-                  onClick={togglePrint}
-                  aria-pressed={printOn}
-                  title={printOn ? 'A label prints for every good scan — click to stop' : 'Labels are off — click to print one per scan'}
-                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm '
-                    + (printOn ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
-                >
-                  <PrinterIcon className="h-4 w-4" />
-                  {printOn ? 'Print labels: on' : 'Print labels: off'}
-                </button>
-                <button
-                  type="button"
-                  onClick={undo}
-                  disabled={history.length === 0 || !!boxes.find((b) => b.id === history[history.length - 1]?.boxId)?.locked}
-                  className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ArrowUturnLeftIcon className="h-4 w-4" />
-                  Undo last scan
-                </button>
-                <button
-                  type="button"
-                  onClick={emptyActive}
-                  disabled={boxUnits(active) === 0 || active.locked}
-                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
-                    + (confirmEmpty ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-                >
-                  <ArchiveBoxXMarkIcon className="h-4 w-4" />
-                  {confirmEmpty
-                    ? `Take all ${boxUnits(active)} ${boxUnits(active) === 1 ? 'unit' : 'units'} out of Box ${active.id}?`
-                    : 'Empty box'}
-                </button>
-                <button
-                  type="button"
-                  onClick={deleteActive}
-                  disabled={boxes.length === 1 || active.locked}
-                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
-                    + (confirmDelete ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
-                >
-                  <TrashIcon className="h-4 w-4" />
-                  {confirmDelete
-                    ? `Delete Box ${active.id} and its ${boxUnits(active)} ${boxUnits(active) === 1 ? 'unit' : 'units'}?`
-                      + (boxes.some((b) => b.id > active.id) ? ' Later boxes move down one.' : '')
-                    : 'Delete box'}
                 </button>
               </div>
             </div>
