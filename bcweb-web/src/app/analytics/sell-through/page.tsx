@@ -5,7 +5,7 @@ Page: /analytics/sell-through  (the DATA behind Stock Position, 2026-10-15; was 
 =======================================================================================================================================
 Purpose: Units only — the detail tables. Owner, 2026-10-15: "I only use the top stats of the sell through. The rest is just data ...
          the navigate should be to the data, not the summary." So the top stats (held + today / 7 / 30 / 90 moves) moved to
-         /analytics/stock-position, which is now THE stock screen; its "pairs held now" card opens this page, and the standard
+         /analytics/stock-position, which is now THE stock screen; its "in stock now" card opens this page, and the standard
          header back link "← Stock position" returns (owner: keep that one only). No Back Office tile of its own any more.
 
          Top to bottom:
@@ -103,7 +103,7 @@ function AgeChart({ months }: { months: SellThroughMonth[] }) {
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div className="text-sm font-medium text-slate-700">Pairs held at month end, by how long they&rsquo;ve been here</div>
+      <div className="text-sm font-medium text-slate-700">Stock held at month end, by how long it&rsquo;s been here</div>
       <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-600">
         {BANDS.map((b) => (
           <span key={b.key} className="inline-flex items-center gap-2">
@@ -114,7 +114,7 @@ function AgeChart({ months }: { months: SellThroughMonth[] }) {
 
       <div className="relative mt-3 overflow-x-auto">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 520 }} role="img"
-          aria-label="Pairs held at each month end, stacked by age. The same numbers are in the table below."
+          aria-label="Stock held at each month end, stacked by age. The same numbers are in the table below."
           onPointerLeave={() => setHover(null)}>
           {ticks.map((t) => (
             <g key={t}>
@@ -171,7 +171,7 @@ function AgeChart({ months }: { months: SellThroughMonth[] }) {
               transform: hover! > months.length / 2 ? 'translateX(calc(-100% - 12px))' : 'translateX(12px)',
             }}>
             <div className="font-medium text-slate-800">{monthLabel(h.month)}{h.partial ? ' (so far)' : ''}</div>
-            <div className="mt-1 text-slate-600"><span className="font-semibold tabular-nums text-slate-900">{n(h.held)}</span> pairs held</div>
+            <div className="mt-1 text-slate-600"><span className="font-semibold tabular-nums text-slate-900">{n(h.held)}</span> in stock</div>
             {BANDS.map((b) => (
               <div key={b.key} className="flex items-center gap-2 text-slate-600">
                 <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: b.color }} />
@@ -263,7 +263,7 @@ function CohortTable({ cohorts }: { cohorts: SellThroughCohort[] }) {
         <thead>
           <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             <th className="px-4 py-2.5 text-left font-semibold">Arrived</th>
-            <th className={th}>Pairs in</th>
+            <th className={th}>Qty in</th>
             <th className={th}>Sold after 3 months</th>
             <th className={th}>After 6 months</th>
             <th className={th}>Sold now</th>
@@ -308,7 +308,7 @@ function StyleTable({ styles }: { styles: SellThroughStyle[] }) {
   return (
     <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-        Styles held now, by age of their pairs <span className="font-normal text-slate-400">· {styles.length} styles</span>
+        Styles held now, by age of their stock <span className="font-normal text-slate-400">· {styles.length} styles</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -316,11 +316,11 @@ function StyleTable({ styles }: { styles: SellThroughStyle[] }) {
             <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
               <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
               <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
-              <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
+              <SortableTh {...th} sortKey="units" label="In stock" align="right" />
               <SortableTh {...th} sortKey="m0_3" label="Up to 3m" align="right" />
               <SortableTh {...th} sortKey="m3_6" label="3–6m" align="right" />
               <SortableTh {...th} sortKey="m6_12" label="6–12m" align="right" />
-              <SortableTh {...th} sortKey="m12" label="Over a year" align="right" title="Includes pairs that came in before 2025" />
+              <SortableTh {...th} sortKey="m12" label="Over a year" align="right" title="Includes stock that came in before 2025" />
               <SortableTh {...th} sortKey="oldest" label="Oldest" align="right" firstDir="asc" />
               <SortableTh {...th} sortKey="sold_90" label="Sold 90d" align="right" />
             </tr>

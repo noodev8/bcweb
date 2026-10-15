@@ -19,7 +19,7 @@ Purpose: The at-a-glance summary of Sell-through. Owner, 2026-10-15: "I wanted t
          the styles with more pairs over 90 days than they sold in 90.
 
          ONE SCREEN (owner, 2026-10-15: "I only use the top stats of the sell through ... Can we combine the screens"): Sell-through's
-         moves row (held + today / 7 / 30 / 90) sits at the top. "Pairs held now" opens /analytics/sell-through, now just the data
+         moves row (held + today / 7 / 30 / 90) sits at the top. "In stock now" (was "pairs held now") opens /analytics/sell-through, now just the data
          tables, which links back on screen. The Back Office tile opens this screen; Sell-through has no tile of its own.
 
          90 DAYS is the house rule ("we generally say sell the item inside 90 days", owner). Seasonal stock bought months ahead is over
@@ -78,14 +78,14 @@ function Position({ data }: { data: StockPositionData }) {
           90-day one leads — it is the one the owner named: "I am growing the 90 day stock and shouldn't be." */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Question q="Is 90-day stock building up?" v={more90 > 0 ? { word: 'Yes', good: false } : { word: 'No', good: true }}
-          value={n(p.past90)} unit="pairs here over 90 days">
+          value={n(p.past90)} unit="in stock over 90 days">
           <div>{more90 > 0 ? `${n(more90)} more` : `${n(-more90)} fewer`} than a year ago ({n(p.past90_ya)})</div>
           <Split label="Now" over={p.past90} total={p.held} />
           <Split label="A year ago" over={p.past90_ya} total={p.held_ya} />
         </Question>
 
         <Question q="Are we selling more?" v={soldCh && soldCh.p > 0 ? { word: 'Yes', good: true } : { word: 'No', good: false }}
-          value={n(g.sold)} unit="pairs sold in 12 months">
+          value={n(g.sold)} unit="sold in 12 months">
           {soldCh && <div>{soldCh.text} on the year before ({n(g.sold_prev)})</div>}
         </Question>
 
@@ -111,7 +111,7 @@ function Position({ data }: { data: StockPositionData }) {
             className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Slow</div>
             <div className="mt-2 text-4xl font-bold leading-none tabular-nums text-slate-900 sm:text-5xl">{n(act.slow_styles)}</div>
-            <div className="mt-3 text-xs text-slate-500">styles · {n(act.slow_units)} pairs · no sale in 90 days</div>
+            <div className="mt-3 text-xs text-slate-500">styles · {n(act.slow_units)} in stock · no sale in 90 days</div>
             <div className="mt-3 text-sm font-medium text-slate-700">Open Slow →</div>
           </Link>
           <BehindList top={act.top} />
@@ -123,7 +123,7 @@ function Position({ data }: { data: StockPositionData }) {
 
 // -------------------------------------------------------------------------------------------------------------------------------------
 // MOVES — held now, then today / 7 / 30 / 90 days (Sell-through's top stats, moved here 2026-10-15). The net leads each box, out − in:
-// positive = we got through stock (owner: "-43 to be 43"), minus = a delivery pushed us back. "Pairs held now" opens the data page
+// positive = we got through stock (owner: "-43 to be 43"), minus = a delivery pushed us back. "In stock now" (was "pairs held now") opens the data page
 // (owner: "the navigate should be to the data, not the summary").
 // -------------------------------------------------------------------------------------------------------------------------------------
 function Moves({ data }: { data: StockPositionData }) {
@@ -138,7 +138,7 @@ function Moves({ data }: { data: StockPositionData }) {
       <Link href="/analytics/sell-through"
         className="flex flex-col justify-end rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300 hover:shadow">
         <span className="text-5xl font-semibold leading-none text-slate-900">{n(data.position.held)}</span>
-        <span className="mt-2 text-sm text-slate-500">pairs held now</span>
+        <span className="mt-2 text-sm text-slate-500">in stock now</span>
         <span className="mt-2 text-sm font-medium text-slate-700">Data →</span>
       </Link>
       {boxes.map(({ label, v }) => {
@@ -240,7 +240,7 @@ function Snake({ trend }: { trend: StockPositionData['trend'] }) {
       </div>
       <div className="relative mt-2">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" onPointerLeave={() => setHover(null)}
-          aria-label="Pairs held at each month end against pairs sold in the 90 days before it.">
+          aria-label="Stock held at each month end against qty sold in the 90 days before it.">
           {ticks.map((t) => (
             <g key={t}>
               <line x1={M.l} x2={W - M.r} y1={y(t)} y2={y(t)} stroke="#e2e8f0" />
@@ -275,7 +275,7 @@ function Snake({ trend }: { trend: StockPositionData['trend'] }) {
             <div className="font-medium text-slate-800">
               End {MONTHS[Number(h.month.slice(5, 7)) - 1]} {h.month.slice(0, 4)}{h.partial ? ' (today)' : ''}
             </div>
-            <div className="mt-1 text-slate-600"><span className="font-semibold tabular-nums text-slate-900">{n(h.held)}</span> pairs held</div>
+            <div className="mt-1 text-slate-600"><span className="font-semibold tabular-nums text-slate-900">{n(h.held)}</span> in stock</div>
             <div className="text-slate-600"><span className="font-semibold tabular-nums text-slate-900">{n(h.sold90)}</span> sold in the 90 days before</div>
             <div className="mt-1 text-slate-500">{months(h)} months of stock</div>
           </div>
@@ -303,7 +303,7 @@ function BehindList({ top }: { top: StockPositionData['act']['top'] }) {
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500">
               <th className="px-4 py-2 text-left font-semibold">Style</th>
-              <th className="px-4 py-2 text-right font-semibold">Pairs</th>
+              <th className="px-4 py-2 text-right font-semibold">In stock</th>
               <th className="px-4 py-2 text-right font-semibold">Past 90 days</th>
               <th className="px-4 py-2 text-right font-semibold">Sold 90 days</th>
             </tr>

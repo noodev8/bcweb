@@ -283,10 +283,10 @@ const GROUPS: Group[] = [
       },
       {
         // THE stock screen (owner, 2026-10-15: "current position, progress and something to act on"). Sell-through merged into it the
-        // same day — its tile is gone; its data tables open from the "pairs held now" card.
+        // same day — its tile is gone; its data tables open from the "in stock now" card.
         title: 'Stock Position',
         subtitle: 'Are we selling what we buy?',
-        description: 'Pairs in and out, 90-day stock against a year ago, stock held against stock sold, and what to act on.',
+        description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold, and what to act on.',
         href: '/analytics/stock-position',
         icon: ScaleIcon,
       },

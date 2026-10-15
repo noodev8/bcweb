@@ -178,15 +178,15 @@ function StockSplit({ data }: { data: StockSittingData }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      {/* Numbers only, lined up (owner, 2026-10-12: "Simply interested in the numbers and want them lined up") — just "N pairs";
+      {/* Numbers only, lined up (owner, 2026-10-12: "Simply interested in the numbers and want them lined up") — just "N in stock" ("N pairs" until 2026-10-15 — the owner reads "pairs" as a count of sizes);
           the 90-day rule is on the Winners card's header. Boxes align to the BOTTOM so the % and pairs lines sit level across
           all three even though slow's number is the biggest. */}
       <SplitBox hero label="slow" pct={sitPct}
-        detail={`${n(data.sitting_units)} pairs`} />
+        detail={`${n(data.sitting_units)} in stock`} />
       <SplitBox label="selling" pct={total ? 100 - newPct - sitPct : 0}
-        detail={`${n(data.selling_units)} pairs`} />
+        detail={`${n(data.selling_units)} in stock`} />
       <SplitBox label="new" pct={newPct}
-        detail={`${n(data.new_units)} pairs`} />
+        detail={`${n(data.new_units)} in stock`} />
     </div>
   );
 }
@@ -604,7 +604,7 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
                 </th>
                 <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
                 <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
-                <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
+                <SortableTh {...th} sortKey="units" label="In stock" align="right" />
                 <SortableTh {...th} sortKey="last_sale" label="Last sale" align="right" />
                 <SortableTh {...th} sortKey="days" label="Days" align="right" />
                 <th className="w-8 py-2 pl-0 pr-4" />
