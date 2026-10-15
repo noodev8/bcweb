@@ -13,6 +13,10 @@ BEFORE THE LOG = 31 DEC 2024. A held pair that can't be matched to a logged arri
          every size has a day count. It is a floor, not a fact: such a pair may have been here much longer. A size that SOLD before
          2025 can therefore show more days since its last sale than on shelf — that is this floor, not an error.
 
+         ...UNLESS THE STYLE IS NEWER. The floor is never earlier than the style's skusummary.created_at: a pair can't have arrived
+         before its style existed. Stock put away without Goods In (73220-24, created 8 Oct 2026, showed 653 days on Slow Sizes)
+         is dated from the style's creation instead.
+
          READ-ONLY.
 =======================================================================================================================================
 Exports:
@@ -43,9 +47,18 @@ async function oldestHeldArrival(held) {
     arrivals.get(a.code).push(a);
   }
 
+  // Each code's style creation date (London day), for the floor. Only rows newer than LOG_FLOOR matter.
+  const c = await query(
+    `SELECT m.code, to_char(s.created_at AT TIME ZONE 'Europe/London', 'YYYY-MM-DD') AS d
+     FROM skumap m JOIN skusummary s ON s.groupid = m.groupid
+     WHERE m.code = ANY($1::text[]) AND s.created_at > $2::date`,
+    [codes, LOG_FLOOR]
+  );
+  const created = new Map(c.rows.map((x) => [x.code, x.d]));
+
   for (const code of codes) {
     let left = held.get(code);
-    let since = LOG_FLOOR;   // pairs left over after the logged arrivals predate the log
+    let since = created.get(code) || LOG_FLOOR;   // pairs left over after the logged arrivals predate the log (or the style)
     for (const a of arrivals.get(code) || []) {
       left -= a.q;
       if (left <= 0) { since = a.d; break; }
