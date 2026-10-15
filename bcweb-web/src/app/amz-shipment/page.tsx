@@ -44,7 +44,7 @@ A refused scan prints nothing, and NEITHER DOES SCANNING THE FNSKU ITSELF (owner
 is already labelled, so a scan that matches the product's FNSKU boxes it without printing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
 it belongs to the bench, not the shipment. The printer icon on a line reprints that line's label (a jam, a smudge, a test).
 
-MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in under its contents —
+MEASUREMENTS (owner, 2026-09-28). Once a box is packed, its length, width and height (cm) and weight (kg) go in above its contents (moved up 2026-10-15) —
 Amazon wants all four for every carton. A box with units but no full set is flagged "needs size" in the list. Amazon's standard-carton
 limits (63.5 cm on any side, 23 kg) are shown as a warning only; nothing blocks. Two quick fills (owner, 2026-10-01): "Birk box" puts in
 the Birkenstock carton's sides (BIRK_BOX — weight left blank, it depends on the contents), and "Set" takes typed values, applies them to
@@ -747,6 +747,81 @@ function Packing({ initial, onShipped, onReload }: {
             </div>
           </div>
 
+          {/* MEASUREMENTS — the packed carton's size and weight, on ONE row above the contents (owner, 2026-10-15: above the items, and
+              tidier): the four fields with their units, the status, then the two quick fills. */}
+          <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="text-sm font-medium text-slate-700">Size</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {FIELDS.map((f) => (
+                  <label key={f.key} className="relative block" title={`${f.label} (${f.unit})`}>
+                    <span className="sr-only">{f.label}</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={active.dims[f.key]}
+                      onChange={(e) => setDim(f.key, e.target.value)}
+                      onBlur={() => saveDims(active.id, active.dims)}
+                      placeholder={f.label}
+                      className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">{f.unit}</span>
+                  </label>
+                ))}
+              </div>
+              {dimsComplete(active.dims)
+                ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">Done</span>
+                : boxUnits(active) > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">Needed to ship</span>}
+              {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
+                  what's packed. Set = your own values, remembered for next time. Both fill the OPEN box only. */}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => fillDims(BIRK_BOX)}
+                  title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
+                  className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Birk box
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (presetOpen ? setPresetOpen(false) : openPreset())}
+                  aria-expanded={presetOpen}
+                  className={'h-8 rounded-md border px-2.5 text-xs font-medium '
+                    + (presetOpen ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+            {/* SET — type the values once, Apply fills the open box and remembers them; the next Set opens with them already in.
+                A blank field leaves that measurement as it is, so you can keep just a size and weigh each box. */}
+            {presetOpen && (
+              <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-brand-200 bg-white p-2">
+                {FIELDS.map((f) => (
+                  <label key={f.key} className="block w-24">
+                    <span className="mb-0.5 block text-xs text-slate-500">{f.label} ({f.unit})</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={preset[f.key]}
+                      onChange={(e) => setPreset((p) => ({ ...p, [f.key]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPreset(); } }}
+                      className="h-8 w-full rounded-md border border-slate-300 px-2 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </label>
+                ))}
+                <button type="button" onClick={applyPreset}
+                  className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">
+                  Apply to Box {active.id}
+                </button>
+                <button type="button" onClick={() => setPresetOpen(false)}
+                  className="h-8 rounded-md px-2 text-sm text-slate-500 hover:text-slate-800">Cancel</button>
+              </div>
+            )}
+            {warning && <div className="mt-1.5 text-xs text-amber-700">{warning}</div>}
+          </div>
+
           {active.lines.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">Nothing in Box {active.id} yet — scan a shoe to start.</div>
           ) : (
@@ -798,81 +873,6 @@ function Packing({ initial, onShipped, onReload }: {
             </table>
           )}
 
-          {/* MEASUREMENTS — the packed carton's size and weight. Below the contents: you measure once it's packed. */}
-          <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-3">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-slate-900">Box {active.id} measurements</h3>
-              {dimsComplete(active.dims)
-                ? <span className="text-xs text-emerald-700">Done</span>
-                : boxUnits(active) > 0 && <span className="text-xs text-amber-700">Needed before it can ship</span>}
-              {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
-                  what's packed. Set = your own values, remembered for next time. Both fill the OPEN box only. */}
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => fillDims(BIRK_BOX)}
-                  title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Birk box
-                </button>
-                <button
-                  type="button"
-                  onClick={() => (presetOpen ? setPresetOpen(false) : openPreset())}
-                  aria-expanded={presetOpen}
-                  className={'rounded-md border px-2.5 py-1 text-sm font-medium '
-                    + (presetOpen ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
-                >
-                  Set
-                </button>
-              </div>
-            </div>
-            {/* SET — type the values once, Apply fills the open box and remembers them; the next Set opens with them already in.
-                A blank field leaves that measurement as it is, so you can keep just a size and weigh each box. */}
-            {presetOpen && (
-              <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md border border-brand-200 bg-white p-2">
-                {FIELDS.map((f) => (
-                  <label key={f.key} className="block w-24">
-                    <span className="mb-0.5 block text-xs text-slate-500">{f.label} ({f.unit})</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={preset[f.key]}
-                      onChange={(e) => setPreset((p) => ({ ...p, [f.key]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPreset(); } }}
-                      className="h-8 w-full rounded-md border border-slate-300 px-2 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </label>
-                ))}
-                <button type="button" onClick={applyPreset}
-                  className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">
-                  Apply to Box {active.id}
-                </button>
-                <button type="button" onClick={() => setPresetOpen(false)}
-                  className="h-8 rounded-md px-2 text-sm text-slate-500 hover:text-slate-800">Cancel</button>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {FIELDS.map((f) => (
-                <label key={f.key} className="block">
-                  <span className="mb-1 block text-xs text-slate-500">{f.label}</span>
-                  <span className="relative block">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={active.dims[f.key]}
-                      onChange={(e) => setDim(f.key, e.target.value)}
-                      onBlur={() => saveDims(active.id, active.dims)}
-                      placeholder="0"
-                      className="h-10 w-full rounded-md border border-slate-300 bg-white pl-3 pr-10 text-right tabular-nums text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{f.unit}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-            {warning && <div className="mt-2 text-sm text-amber-700">{warning}</div>}
-          </div>
         </div>
       </div>
     </>
