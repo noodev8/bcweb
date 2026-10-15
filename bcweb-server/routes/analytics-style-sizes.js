@@ -21,6 +21,7 @@ Success Response:
   "return_code": "SUCCESS",
   "groupid": "0034791-MILANO",
   "title": "Birkenstock Milano …" | null, "brand": "Birkenstock" | null,
+  "imagename": "milano-black.jpg" | null,     // served from https://images.brookfieldcomfort.com/<imagename>, as on the price drill
   "sizes": [ { "code": "0034791-MILANO-35", "size": "35", "units": 5, "last_sale": "2025-08-02" | null, "idle_days": 439 | null,
                "on_shelf_days": 289 | null,   // null = none held
                "sold_12m": 0 } ]     // sold_12m = this size, last 12 months, net of returns
@@ -82,7 +83,7 @@ router.get('/', async (req, res) => {
   try {
     const [r, metaQ] = await Promise.all([
       query(SQL, [groupid]),
-      query(`SELECT t.shopifytitle AS title, NULLIF(TRIM(ss.brand), '') AS brand
+      query(`SELECT t.shopifytitle AS title, NULLIF(TRIM(ss.brand), '') AS brand, NULLIF(TRIM(ss.imagename), '') AS imagename
              FROM skusummary ss LEFT JOIN title t ON t.groupid = ss.groupid WHERE ss.groupid = $1`, [groupid]),
     ]);
     const meta = metaQ.rows[0] || {};
@@ -98,7 +99,8 @@ router.get('/', async (req, res) => {
       on_shelf_days: shelf.has(x.code) ? day(x.today) - day(shelf.get(x.code)) : null,
       sold_12m: Number(x.sold_12m),
     }));
-    return res.json({ return_code: 'SUCCESS', groupid, title: meta.title || null, brand: meta.brand || null, sizes });
+    return res.json({ return_code: 'SUCCESS', groupid, title: meta.title || null, brand: meta.brand || null,
+      imagename: meta.imagename || null, sizes });
   } catch (err) {
     logger.error('[analytics-style-sizes] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the sizes' });

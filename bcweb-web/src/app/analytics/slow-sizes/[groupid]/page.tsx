@@ -23,16 +23,20 @@ A STRIP OF SIZE TILES, NOT A TABLE (owner, same day: "make it more compact and n
          "Price →" opens the Shopify price drill (← Back returns here); ← Back here returns to the list as it was left (?from=,
          same-site paths only; with none, the list). Rules for every number: routes/analytics-style-sizes.js. READ-ONLY.
 
+         THE SHOE (owner, same day: "a small image of the shoe"): the price drill's own 56px ZoomableThumb, left of the title — click for
+         it large. A missing or dead image just leaves the title on its own.
+
          WORDING: unit counts are "in stock" / "qty", never "pairs" (the owner reads "pairs" as a count of sizes).
 
 Guarded by AppShell. Consumes GET /analytics-style-sizes.
 =======================================================================================================================================
 */
 
-import { Suspense, type CSSProperties } from 'react';
+import { Suspense, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import ZoomableThumb from '@/components/ZoomableThumb';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getStyleSizes, StyleSizeRow } from '@/lib/api';
 
@@ -77,6 +81,7 @@ function Body() {
   const from = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null;
 
   const q = useApiQuery(`analytics-style-sizes:${groupid}`, () => getStyleSizes(groupid));
+  const [imgFailed, setImgFailed] = useState(false);
   const d = q.data;
   const sizes = d?.sizes ?? [];
   const inStock = sizes.reduce((t, x) => t + x.units, 0);
@@ -91,9 +96,15 @@ function Body() {
       {d && (
         <div className="max-w-4xl rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-base font-semibold text-slate-900">{d.title || groupid}</h1>
-              <div className="mt-0.5 text-sm text-slate-500">{groupid}{d.brand && ` · ${d.brand}`}</div>
+            <div className="flex min-w-0 items-center gap-3">
+              {d.imagename && !imgFailed && (
+                <ZoomableThumb src={`https://images.brookfieldcomfort.com/${d.imagename}`} alt={d.title || groupid}
+                  onError={() => setImgFailed(true)} />
+              )}
+              <div className="min-w-0">
+                <h1 className="text-base font-semibold text-slate-900">{d.title || groupid}</h1>
+                <div className="mt-0.5 text-sm text-slate-500">{groupid}{d.brand && ` · ${d.brand}`}</div>
+              </div>
             </div>
             <Link href={`/pricing/style/${encodeURIComponent(groupid)}?from=${self}`}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">

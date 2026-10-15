@@ -1409,9 +1409,9 @@ export interface StyleSizeRow {
 }
 
 export function getStyleSizes(groupid: string) {
-  return request<{ groupid: string; title: string | null; brand: string | null; sizes: StyleSizeRow[] }>(
+  return request<{ groupid: string; title: string | null; brand: string | null; imagename: string | null; sizes: StyleSizeRow[] }>(
     { url: '/analytics-style-sizes', method: 'GET', params: { groupid } },
-    (b) => ({ groupid: b.groupid, title: b.title ?? null, brand: b.brand ?? null, sizes: b.sizes || [] })
+    (b) => ({ groupid: b.groupid, title: b.title ?? null, brand: b.brand ?? null, imagename: b.imagename ?? null, sizes: b.sizes || [] })
   );
 }
 
