@@ -33,6 +33,7 @@ interface AppShellProps {
   // heading names; it is not a general-purpose action slot, which is what the button beside it would have become.
   titleHref?: string;
   titleTitle?: string;   // tooltip for the linked title, so the destination is named before the click
+  bigTitle?: boolean;    // a much larger title, for a bench screen read from a step away (owner, 2026-10-15: Goods In)
   subtitle?: string;     // optional line under the title (e.g. the style's groupid) — the page's key identifier
   subtitleCopy?: boolean; // when true, shows a copy-icon next to the subtitle that copies it verbatim (e.g. to search elsewhere)
   subtitleNode?: ReactNode; // richer alternative to `subtitle` for pages whose identity is more than one string (e.g. the Amazon drill's
@@ -61,7 +62,7 @@ interface AppShellProps {
   wide?: boolean;
 }
 
-export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, headerBarRight, crumb, bare, wide }: AppShellProps) {
+export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, bigTitle, headerRight, headerBarRight, crumb, bare, wide }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -225,7 +226,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               {title && (
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                <h1 className={(bigTitle ? 'text-6xl font-extrabold' : 'text-2xl font-semibold') + ' tracking-tight text-slate-900'}>
                   {titleHref ? (
                     // Underline only on hover: at rest the heading must still read as the page's name, not as a piece of UI.
                     <Link href={titleHref} title={titleTitle} className="hover:text-brand-700 hover:underline hover:decoration-slate-300 hover:underline-offset-4">
