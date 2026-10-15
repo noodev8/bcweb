@@ -283,6 +283,10 @@ function Packing({ initial, onShipped, onReload }: {
   const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  // LOCK PROMPT (owner, 2026-10-15): once a packed box's four measurements are all in, ask whether to lock it. Asked once per box —
+  // "Not now" isn't repeated on the next field left — until its measurements stop being complete again.
+  const [lockAsk, setLockAsk] = useState<number | null>(null);
+  const lockAsked = useRef(new Set<number>());
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
   const [shipError, setShipError] = useState<string | null>(null);
@@ -474,6 +478,12 @@ function Packing({ initial, onShipped, onReload }: {
   // Measurements are saved when a field is left (not per keystroke) and by the quick fills.
   function saveDims(boxId: number, dims: BoxDims) {
     persist(`Box ${boxId} measurements`, () => saveAmzShipmentDims(boxId, dims));
+    const box = boxes.find((b) => b.id === boxId);
+    if (!dimsComplete(dims)) { lockAsked.current.delete(boxId); return; }
+    if (box && !box.locked && boxUnits(box) > 0 && !lockAsked.current.has(boxId)) {
+      lockAsked.current.add(boxId);
+      setLockAsk(boxId);
+    }
   }
 
   // SET (owner, 2026-10-15) — for packing the same size box again and again without retyping it. One click, no panel, no message:
@@ -492,6 +502,7 @@ function Packing({ initial, onShipped, onReload }: {
     const id = active.id;
     const locked = !active.locked;
     persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
+    setLockAsk(null);
     setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked } : b)));
     setConfirmEmpty(false);
     setConfirmDelete(false);
@@ -500,6 +511,7 @@ function Packing({ initial, onShipped, onReload }: {
 
   function selectBox(id: number) {
     setActiveId(id);
+    setLockAsk(null);
     setConfirmDelete(false);
     setConfirmEmpty(false);
     setLastScan(null);
@@ -842,6 +854,16 @@ function Packing({ initial, onShipped, onReload }: {
               </div>
             </div>
             {warning && <div className="mt-1.5 text-xs text-amber-700">{warning}</div>}
+            {lockAsk === active.id && !active.locked && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                <LockClosedIcon className="h-4 w-4 text-slate-500" />
+                <span className="text-slate-700">Box {active.id} is measured — lock it?</span>
+                <button type="button" onClick={toggleLock}
+                  className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700">Lock box</button>
+                <button type="button" onClick={() => { setLockAsk(null); refocus(); }}
+                  className="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-800">Not now</button>
+              </div>
+            )}
           </div>
 
           {active.lines.length === 0 ? (
