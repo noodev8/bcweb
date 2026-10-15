@@ -185,14 +185,15 @@ export default function CustomerOrderList() {
   const [scan, setScan] = useState('');
   const [scanFocused, setScanFocused] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  // An amber note in the box — currently only "a part-scanned order was dropped" (see ONE ORDER AT A TIME in handleScan).
-  const [scanNote, setScanNote] = useState<string | null>(null);
   const [scans, setScans] = useState<ScanMap>(() => new Map());
   const [labels, setLabels] = useState<Map<string, LabelInfo>>(() => new Map());
   // The label that just came off the printer, for the box's green "Label printed" moment. Cleared by the next scan.
   const [printed, setPrinted] = useState<{ ordernum: string; reprint: boolean } | null>(null);
   // The order waiting on a typed parcel weight (the server said WEIGHT_NEEDED), with the server's message naming the shoes.
   const [weightAsk, setWeightAsk] = useState<{ ordernum: string; message: string } | null>(null);
+  // The parcel weight already typed for an order this session. ONE weight per order — the packed box, all pairs in it (owner,
+  // 2026-10-15) — so a retry after a failed print, or a re-scan of one of its shoes, reuses it instead of asking again.
+  const weights = useRef<Map<string, number>>(new Map());
   // The last order THIS packer labelled, for the "Last order" button — a click elsewhere loses the selection, and this brings it back.
   // Kept in localStorage so it survives a refresh; per browser, not shared (each bench has its own last box).
   const [lastPacked, setLastPacked] = useState<string | null>(() => readStored(LAST_PACKED_KEY));
@@ -257,6 +258,7 @@ export default function CustomerOrderList() {
   }, [orders, stage, term]);
 
   const active = selected ? orders.get(selected) ?? null : null;
+  const orderPackedNum = (ordernum: string) => { const o = orders.get(ordernum); return !!o && orderPacked(o); };
 
   // Which LINES carry a scan tick, and each order's n-of-m. Ticks go on the first n scannable lines of each code in the order, so two
   // identical pairs fill in one at a time. Lines that aren't scannable (already packed, FBA, do not order) are out of the count entirely —
@@ -354,18 +356,41 @@ export default function CustomerOrderList() {
   async function printLabel(ordernum: string, opts: { weightKg?: number; reprint?: boolean } = {}) {
     setWorking(true);
     setActionError(null);
-    const res = await printCustomerLabel(ordernum, opts.reprint ? { reprint: true } : { codes: scannedCodes(ordernum), weightKg: opts.weightKg });
+    const weightKg = opts.weightKg ?? weights.current.get(ordernum);
+    let res: Awaited<ReturnType<typeof printCustomerLabel>>;
+    try {
+      res = await printCustomerLabel(ordernum, opts.reprint ? { reprint: true } : { codes: scannedCodes(ordernum), weightKg });
+    } catch {
+      // A dropped connection: the label may or may not have been made. Re-read the list (a made one shows Packed, which hides the
+      // weight prompt); otherwise the next scan retries with the weight already typed.
+      setWorking(false);
+      setActionError('Lost the connection while printing — check the order, re-scan a shoe to try again');
+      beepError();
+      await refresh();
+      return;
+    }
     setWorking(false);
     if (!res.success || !res.data) {
       if (res.return_code === 'WEIGHT_NEEDED') {
-        setWeightAsk({ ordernum, message: res.error || 'No stored weight — enter the parcel weight' });
+        // A group order's message is ours, not the server's: one weight for the whole packed box, never one per shoe.
+        const o = latest.current.orders.get(ordernum);
+        const units = o ? o.lines.reduce((n, l) => n + (scannable(l) ? l.qty : 0), 0) : 0;
+        setWeightAsk({
+          ordernum,
+          message: units > 1
+            ? `${units} pairs in one parcel — weigh the packed box with them all in, and enter that one weight`
+            : res.error || 'No stored weight — weigh the parcel',
+        });
         return;
       }
+      // Already packed (elsewhere, or by an attempt whose reply was lost): nothing to weigh any more.
+      if (res.return_code === 'NOTHING_TO_PACK') setWeightAsk(null);
       setActionError(res.error || 'The label didn’t print');
       beepError();
       return;
     }
     setWeightAsk(null);
+    weights.current.delete(ordernum);
     printPdfBase64(res.data.pdf, refocusScan);
     rememberPacked(ordernum);
     setPrinted({ ordernum, reprint: !!res.data.reprint });
@@ -391,26 +416,15 @@ export default function CustomerOrderList() {
     if (!ok) return;
     setLabels((prev) => { const next = new Map(prev); next.delete(ordernum); return next; });
     setPrinted(null);
+    weights.current.delete(ordernum);
     const next = new Map(scansRef.current);
     next.delete(ordernum);
     updateScans(next);
   }
 
-  // Drop every other order's scans (ONE ORDER AT A TIME, see handleScan), saying so if one was part-scanned — the packer needs to
-  // know those shoes have to be scanned again, together.
+  // Drop every other order's scans (ONE ORDER AT A TIME, see handleScan). Silently — no note when a part-scanned order is dropped
+  // (owner, 2026-10-15).
   function keepOnly(ordernum: string) {
-    const { orders } = latest.current;
-    const dropped: string[] = [];
-    for (const [other, perCode] of scansRef.current) {
-      if (other === ordernum) continue;
-      const o = orders.get(other);
-      const total = o ? o.lines.reduce((n, l) => n + (scannable(l) ? l.qty : 0), 0) : 0;
-      const scanned = [...perCode.values()].reduce((n, c) => n + c, 0);
-      if (o && scanned < total) dropped.push(`${other} (${scanned} of ${total})`);
-    }
-    setScanNote(dropped.length
-      ? `Scans cleared on ${dropped.join(', ')} — an order's shoes are scanned together, so scan all of it again.`
-      : null);
     const kept = scansRef.current.get(ordernum);
     updateScans(kept ? new Map([[ordernum, kept]]) : new Map());
   }
@@ -515,6 +529,7 @@ export default function CustomerOrderList() {
   // The parcel weight typed in after WEIGHT_NEEDED. Whole order, kg, this label only.
   async function submitWeight(kg: number) {
     if (!weightAsk) return;
+    weights.current.set(weightAsk.ordernum, kg);
     await printLabel(weightAsk.ordernum, { weightKg: kg });
   }
 
@@ -657,15 +672,10 @@ export default function CustomerOrderList() {
             ) : null}
 
             <div className="p-4">
-              {scanNote && (
-                <p className="mb-3 flex items-start gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800" role="status">
-                  <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />{scanNote}
-                </p>
-              )}
-
-              {/* The parcel weight, only when a shoe in the order has none stored. Whole order, kg. Enter prints; Not now leaves the
-                  order fully scanned, so re-scanning any of its shoes asks again. */}
-              {weightAsk && (
+              {/* The parcel weight: one, for the whole packed box (a group order always; a single pair only when it has none stored).
+                  Enter prints; Not now leaves the order fully scanned, so re-scanning any of its shoes asks again. Gone once the order
+                  is packed or labelled. */}
+              {weightAsk && !labels.has(weightAsk.ordernum) && !orderPackedNum(weightAsk.ordernum) && (
                 <WeightPrompt
                   key={weightAsk.ordernum}
                   ordernum={weightAsk.ordernum}
