@@ -17,12 +17,20 @@ legacy source, and is the only file that has to change when it lands.
 =======================================================================================================================================
 */
 
+import Link from 'next/link';
+import { CubeIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import GoodsInStation from '@/components/GoodsInStation';
 
 export default function GoodsInPage() {
   return (
-    <AppShell>
+    // The two C3-Amazon benches link to each other (owner, 2026-10-15): Amazon-bound units booked in here are boxed there.
+    <AppShell headerRight={
+        <Link href="/amz-shipment"
+          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
+          <CubeIcon className="h-4 w-4" />AMZ Shipment
+        </Link>
+      }>
       <GoodsInStation />
     </AppShell>
   );

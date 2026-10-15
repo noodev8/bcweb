@@ -68,7 +68,9 @@ Amazon's B1..Bn in order, which is why Delete box renumbers.
 import { useRef, useState } from 'react';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
+  InboxArrowDownIcon,
 } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, saveAmzShipmentLine, saveAmzShipmentDims, deleteAmzShipmentBox,
@@ -204,7 +206,13 @@ export default function AmzShipmentPage() {
   }
 
   return (
-    <AppShell title="AMZ Shipment">
+    // Goods In and this screen link to each other (owner, 2026-10-15).
+    <AppShell title="AMZ Shipment" headerRight={
+        <Link href="/goods-in"
+          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
+          <InboxArrowDownIcon className="h-4 w-4" />Goods In
+        </Link>
+      }>
       {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
       {isLoading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading boxes…</div>
