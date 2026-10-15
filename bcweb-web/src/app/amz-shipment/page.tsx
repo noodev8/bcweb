@@ -92,6 +92,8 @@ interface BoxDims { length: string; width: string; height: string; weight: strin
 // locked = the box is done (owner, 2026-10-15): contents and measurements fixed until unlocked. Stored on the server (amzshipment.locked).
 interface Box { id: number; lines: BoxLine[]; dims: BoxDims; locked: boolean; }
 
+// The Finish shipment steps — full width, quiet: outline, numbered, nothing that shouts before it's time.
+const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white';
 // The box header's small square buttons (print toggle, Empty, Delete); a confirm widens one to say what it will do.
 const ICON_BTN = 'flex items-center gap-1 rounded-md border p-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 ';
 const NO_DIMS: BoxDims = { length: '', width: '', height: '', weight: '' };
@@ -335,6 +337,9 @@ function Packing({ initial, onShipped, onReload }: {
   const packedBoxes = boxes.filter((b) => boxUnits(b) > 0).length;
   // Packed boxes still missing a measurement — the summary counts them, the list flags each.
   const needSize = boxes.filter((b) => boxUnits(b) > 0 && !dimsComplete(b.dims)).length;
+  // Shown in the Finish shipment heading as a guide only — Mark shipped doesn't wait for locks (owner, 2026-10-15).
+  const lockedBoxes = boxes.filter((b) => boxUnits(b) > 0 && b.locked).length;
+  const allLocked = packedBoxes > 0 && lockedBoxes === packedBoxes;
   const warning = dimsWarning(active.dims);
   const refocus = () => scanRef.current?.focus();
 
@@ -553,7 +558,8 @@ function Packing({ initial, onShipped, onReload }: {
 
   return (
     <>
-      {/* Shipment summary + the send action. */}
+      {/* Shipment summary — counts only. The finishing steps (plan, Amazon upload, Mark shipped) are the LAST job, so they live at the
+          foot of the box list, not up here where they read as the first thing to do (owner, 2026-10-15: "they seem a bit scary"). */}
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
         <div className="text-sm text-slate-600">
           <span className="font-semibold text-slate-900">{boxes.length}</span> {boxes.length === 1 ? 'box' : 'boxes'}
@@ -566,72 +572,6 @@ function Packing({ initial, onShipped, onReload }: {
             </>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            disabled={totalUnits === 0}
-            onClick={() => downloadShippingPlan(boxes)}
-            title={totalUnits === 0 ? 'No packed boxes yet' : `Amazon shipping plan: ${totalUnits} units across ${packedBoxes} ${packedBoxes === 1 ? 'box' : 'boxes'}`}
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
-          >
-            <ArrowDownTrayIcon className="h-4 w-4" />
-            Shipping plan
-          </button>
-          {/* AMAZON UPLOAD — pick Amazon's box contents .xlsx, get it back filled in (see the header). */}
-          <input ref={uploadRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onUploadFile(e.target.files?.[0])} />
-          <button
-            type="button"
-            disabled={totalUnits === 0 || uploading}
-            onClick={() => { setUpload(null); uploadRef.current?.click(); }}
-            title={totalUnits === 0 ? 'No packed boxes yet' : 'Pick the box contents file from Send to Amazon — it comes back filled in'}
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
-          >
-            <ArrowUpTrayIcon className="h-4 w-4" />
-            {uploading ? 'Filling…' : 'Amazon upload'}
-          </button>
-          {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
-              Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. */}
-          {confirmShip ? (
-            <span className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
-              <span className="text-slate-700">
-                Ship all {packedBoxes} {packedBoxes === 1 ? 'box' : 'boxes'} ({totalUnits} units)?
-              </span>
-              <button type="button" disabled={shipping} onClick={ship}
-                className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50">
-                {shipping ? 'Shipping…' : 'Yes, shipped'}
-              </button>
-              <button type="button" disabled={shipping} onClick={() => setConfirmShip(false)}
-                className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">No</button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              disabled={totalUnits === 0}
-              onClick={() => { setConfirmShip(true); setShipError(null); }}
-              title={totalUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment'}
-              className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              <TruckIcon className="h-4 w-4" />
-              Mark shipped
-            </button>
-          )}
-        </div>
-        {shipError && <div className="w-full text-sm text-red-700">{shipError}</div>}
-        {upload && (
-          <div className={'flex w-full items-start gap-3 rounded-md border px-3 py-2 text-sm '
-            + (upload.error ? 'border-red-300 bg-red-50 text-red-800'
-              : upload.warnings.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
-            <div className="flex-1">
-              {upload.error ? <>Amazon upload: {upload.error}</> : upload.done}
-              {upload.warnings.length > 0 && (
-                <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                  {upload.warnings.map((w) => <li key={w}>{w}</li>)}
-                </ul>
-              )}
-            </div>
-            <button type="button" onClick={() => setUpload(null)} className="text-xs opacity-70 hover:opacity-100">Close</button>
-          </div>
-        )}
         {saveError && (
           <div className="flex w-full items-center gap-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
             <span className="flex-1">{saveError}. The screen may not match what is stored.</span>
@@ -708,6 +648,86 @@ function Packing({ initial, onShipped, onReload }: {
             <PlusIcon className="h-4 w-4" />
             New box
           </button>
+
+          {/* FINISH SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
+              3 Mark shipped. Quiet buttons, all usable any time; Mark shipped is still behind its confirm. "n of m locked" is a guide only. */}
+          <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+            <div className="flex items-baseline justify-between px-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Finish shipment</span>
+              {packedBoxes > 0 && (
+                <span className={'text-xs ' + (allLocked ? 'text-emerald-700' : 'text-slate-500')}>
+                  {lockedBoxes} of {packedBoxes} locked
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={totalUnits === 0}
+              onClick={() => downloadShippingPlan(boxes)}
+              title={totalUnits === 0 ? 'No packed boxes yet' : `Amazon shipping plan: ${totalUnits} units across ${packedBoxes} ${packedBoxes === 1 ? 'box' : 'boxes'}`}
+              className={FINISH_BTN}
+            >
+              <span className="w-4 text-center text-xs font-semibold text-slate-400">1</span>
+              <ArrowDownTrayIcon className="h-4 w-4 text-slate-400" />
+              Shipping plan
+            </button>
+            {/* AMAZON UPLOAD — pick Amazon's box contents .xlsx, get it back filled in (see the header). */}
+            <input ref={uploadRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onUploadFile(e.target.files?.[0])} />
+            <button
+              type="button"
+              disabled={totalUnits === 0 || uploading}
+              onClick={() => { setUpload(null); uploadRef.current?.click(); }}
+              title={totalUnits === 0 ? 'No packed boxes yet' : 'Pick the box contents file from Send to Amazon — it comes back filled in'}
+              className={FINISH_BTN}
+            >
+              <span className="w-4 text-center text-xs font-semibold text-slate-400">2</span>
+              <ArrowUpTrayIcon className="h-4 w-4 text-slate-400" />
+              {uploading ? 'Filling…' : 'Amazon upload'}
+            </button>
+            {upload && (
+              <div className={'flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs '
+                + (upload.error ? 'border-red-300 bg-red-50 text-red-800'
+                  : upload.warnings.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
+                <div className="flex-1">
+                  {upload.error ? <>Amazon upload: {upload.error}</> : upload.done}
+                  {upload.warnings.length > 0 && (
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {upload.warnings.map((w) => <li key={w}>{w}</li>)}
+                    </ul>
+                  )}
+                </div>
+                <button type="button" onClick={() => setUpload(null)} className="opacity-70 hover:opacity-100">×</button>
+              </div>
+            )}
+            {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
+                Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. */}
+            {confirmShip ? (
+              <div className="space-y-2 rounded-md border border-slate-300 bg-white p-2.5 text-sm">
+                <div className="text-slate-700">Ship all {packedBoxes} {packedBoxes === 1 ? 'box' : 'boxes'} ({totalUnits} units)? This clears the shipment.</div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={shipping} onClick={ship}
+                    className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50">
+                    {shipping ? 'Shipping…' : 'Yes, shipped'}
+                  </button>
+                  <button type="button" disabled={shipping} onClick={() => setConfirmShip(false)}
+                    className="rounded bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">No</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={totalUnits === 0}
+                onClick={() => { setConfirmShip(true); setShipError(null); }}
+                title={totalUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment'}
+                className={FINISH_BTN}
+              >
+                <span className="w-4 text-center text-xs font-semibold text-slate-400">3</span>
+                <TruckIcon className="h-4 w-4 text-slate-400" />
+                Mark shipped
+              </button>
+            )}
+            {shipError && <div className="px-1 text-xs text-red-700">{shipError}</div>}
+          </div>
         </div>
 
         {/* THE ACTIVE BOX — scan into it, see what's in it. */}
