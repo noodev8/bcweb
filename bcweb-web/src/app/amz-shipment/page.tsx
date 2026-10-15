@@ -732,7 +732,9 @@ function Packing({ initial, onShipped, onReload }: {
               className={'h-12 w-full rounded-md border px-4 font-mono text-lg text-slate-900 placeholder:font-sans placeholder:text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 '
                 + (scanError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-slate-300 focus:ring-brand-500')}
             />
-            <div className="mt-1.5 min-h-5 text-sm" role="status" aria-live="assertive">
+            {/* Always mounted (a live region must exist before its message arrives), but takes no space until there is one (owner,
+                2026-10-15: the empty line under the scan box was awkward). */}
+            <div className={scanError || lastScan ? 'mt-1.5 text-sm' : ''} role="status" aria-live="assertive">
               {scanError ? (
                 <div className="rounded-md border border-red-300 bg-red-100 px-3 py-2 font-medium text-red-800">
                   <span className="font-mono">{scanError.scan}</span>: {scanError.message}
