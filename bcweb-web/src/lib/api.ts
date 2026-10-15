@@ -1323,7 +1323,7 @@ export interface RevenueData {
   from: string; to: string; prev_from: string; prev_to: string;   // YYYY-MM-DD, inclusive
   channels: RevenueChannel[];                                     // largest first
   shopify_expenses: ShopifyExpenses | null;
-  amazon_expenses: { fees: { cur: number | null; prev: number | null } } | null;   // P&L seller fees less Shopify's + PayPal's
+  amazon_expenses: { fees: { cur: number | null; prev: number | null }; shipping?: { cur: number | null; prev: number | null } } | null;   // P&L seller fees less Shopify's + PayPal's
   overheads: RevenueOverhead[];
   accounts_turnover: { cur: number | null; prev: number | null } | null;   // P&L 4000 General Sales, ex VAT — a check, not summed                                   // whole business (P&L), [] until typed in
   // Stock at cost now / a year ago, the year's average, and turn = the year's cost of goods / that average

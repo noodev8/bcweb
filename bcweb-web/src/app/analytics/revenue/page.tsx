@@ -418,7 +418,11 @@ function channelList(f: RevenueChannel, data: RevenueData): Omit<ChannelSum, 'c'
     );
   }
   if (f.channel === 'AMZ' && data.amazon_expenses) {
-    lines.push({ label: 'Amazon fees', now: data.amazon_expenses.fees.cur, prev: data.amazon_expenses.fees.prev });
+    lines.push(
+      { label: 'Amazon fees', now: data.amazon_expenses.fees.cur, prev: data.amazon_expenses.fees.prev },
+      // The P&L's 5100 Carriage — DPD to Amazon (owner, 2026-10-15).
+      { label: 'Shipping', now: data.amazon_expenses.shipping?.cur ?? null, prev: data.amazon_expenses.shipping?.prev ?? null },
+    );
   }
   const left = income - lines.reduce((a, l) => a + (l.now ?? 0), 0);
   const pLeft = pIncome - lines.reduce((a, l) => a + (l.prev ?? 0), 0);

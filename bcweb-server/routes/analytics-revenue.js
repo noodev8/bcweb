@@ -53,7 +53,8 @@ Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's St
            Shopify Payments fees and delivery need nothing: "Update now" on Repricing tops them up.
 
          AMAZON (2026-10-14) — `amazon_expenses.fees` { cur, prev }: the P&L's 6003 Seller Fees (expense_figure AMZ 'Seller fees',
-         by days) less shopify_payments and paypal above. Deleted Amazon / CM3 styles' revenue costed at the channel's own cost ratio
+         by days) less shopify_payments and paypal above. `amazon_expenses.shipping` { cur, prev }: the P&L's 5100 Carriage (DPD to
+         Amazon; owner, 2026-10-15 — 7501 Postage stays all Shopify's). Deleted Amazon / CM3 styles' revenue costed at the channel's own cost ratio
          (`cogs_filled`).
 
          ACCOUNTS TURNOVER (2026-10-14) — `accounts_turnover` { cur, prev }: the P&L's 4000 General Sales (ex VAT), so the page can show
@@ -61,7 +62,7 @@ Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's St
          2025 especially) while this year agrees.
 
          OVERHEADS (2026-10-14) — `overheads` [{ name, cur, prev }]: Wages (7004 + 7007 pensions), Rent (7100), General expenses
-         (every other P&L expense line + 5100 Carriage; NOT 5000 purchases — cost of goods is ours — 5003/7501 shipping, 6003 seller
+         (every other P&L expense line; NOT 5100 Carriage, Amazon's shipping; 5000 purchases — cost of goods is ours — 5003/7501 shipping, 6003 seller
          fees, 6201 advertising, which the channels carry). expense_figure channel 'ALL'.
 
          STOCK (2026-10-15) — `stock` { value, units, prev_value, avg_value, turn }: cash in stock now at cost (utils/financeStock.js),
@@ -162,8 +163,9 @@ router.get('/', async (req, res) => {
         cogs_filled: r2(f), prev_cogs_filled: r2(pf),
       };
     });
-    const [shopify_expenses, overheads, sellerFees, turnover, now, hist] = await Promise.all([
+    const [shopify_expenses, overheads, sellerFees, turnover, amzShipping, now, hist] = await Promise.all([
       shopifyExpenses(), overheadLines(), plLines({ query }, 'AMZ', 'Seller fees'), plLines({ query }, 'ACC', 'Turnover'),
+      plLines({ query }, 'AMZ', 'Shipping'),
       stockValue(),
       // STOCK HISTORY (stock_daily, nightly, backfilled from 14 Oct 2025): the average over this window, for the turn, and the
       // reading a year ago. No history before that, so the year before has no turn.
@@ -192,7 +194,9 @@ router.get('/', async (req, res) => {
     const sf = sellerFees[0] || { cur: null, prev: null };
     const amzFees = (w) => (sf[w] === null ? null
       : r2(sf[w] - (shopify_expenses.shopify_payments[w].amount || 0) - (shopify_expenses.paypal[w].amount || 0)));
-    const amazon_expenses = { fees: { cur: amzFees('cur'), prev: amzFees('prev') }, seller_fees: sf };
+    const amzShip = amzShipping[0] || { cur: null, prev: null };
+    const amazon_expenses = { fees: { cur: amzFees('cur'), prev: amzFees('prev') }, seller_fees: sf,
+      shipping: { cur: amzShip.cur, prev: amzShip.prev } };
     const accounts_turnover = turnover[0] ? { cur: turnover[0].cur, prev: turnover[0].prev } : null;
     return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses, amazon_expenses, overheads, accounts_turnover, stock });
   } catch (err) {

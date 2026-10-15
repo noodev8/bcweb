@@ -20,7 +20,7 @@ const { pool, query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { parsePL } = require('../utils/quickFilePL');
 
-const NAMES = ['ACC|Turnover', 'SHP|Shipping', 'SHP|Advertising', 'AMZ|Seller fees', 'ALL|Wages', 'ALL|Rent', 'ALL|General expenses'];
+const NAMES = ['ACC|Turnover', 'SHP|Shipping', 'SHP|Advertising', 'AMZ|Seller fees', 'AMZ|Shipping', 'ALL|Wages', 'ALL|Rent', 'ALL|General expenses'];
 
 (async () => {
   const files = process.argv.slice(2).filter((a) => a !== '--apply');
@@ -37,7 +37,7 @@ const NAMES = ['ACC|Turnover', 'SHP|Shipping', 'SHP|Advertising', 'AMZ|Seller fe
   }
   const months = [...byMonth.values()].sort((a, b) => a.from.localeCompare(b.from));
   for (const m of months) {
-    console.log(m.from.slice(0, 7), NAMES.map((k) => `${k.split('|')[1]} ${(m.lines[k] || 0).toFixed(2)}`).join(' · '));
+    console.log(m.from.slice(0, 7), NAMES.map((k) => `${k} ${(m.lines[k] || 0).toFixed(2)}`).join(' · '));
   }
   if (!apply) { console.log('Dry run — nothing written. Add --apply to store.'); return; }
 

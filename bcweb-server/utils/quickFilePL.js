@@ -11,9 +11,11 @@ Purpose: Read QuickFile's "Segmented Profit and Loss Report" (segmented by Month
            5003 Packaging, 7501 Postage  SHP  Shipping
            6201 Advertising              SHP  Advertising        — all Shopify's (owner: no Amazon ads)
            6003 Seller Fees              AMZ  Seller fees        — EVERY channel's; the route takes Shopify Payments + PayPal off
+           5100 Carriage                 AMZ  Shipping           — DPD to Amazon (owner, 2026-10-15: "5100 is Amazon and 7501 is
+                                                                   shopify only"); was General expenses as "inbound"
            7004 Wages, 7007 Pensions     ALL  Wages
            7100 Rent                     ALL  Rent
-           anything else with a code     ALL  General expenses   — incl. 5100 Carriage (inbound)
+           anything else with a code     ALL  General expenses
          Not taken: 5000 General Purchases (cost of goods is ours, per pair SOLD — purchases include stock still on the shelf) and
          4902 Commissions Received (a little income, left out). Total / profit rows have no code and are skipped.
 
@@ -34,6 +36,7 @@ function lineFor(code) {
   if (code === '5003' || code === '7501') return { channel: 'SHP', name: 'Shipping' };
   if (code === '6201') return { channel: 'SHP', name: 'Advertising' };
   if (code === '6003') return { channel: 'AMZ', name: 'Seller fees' };
+  if (code === '5100') return { channel: 'AMZ', name: 'Shipping' };
   if (code === '7004' || code === '7007') return { channel: 'ALL', name: 'Wages' };
   if (code === '7100') return { channel: 'ALL', name: 'Rent' };
   return { channel: 'ALL', name: 'General expenses' };
