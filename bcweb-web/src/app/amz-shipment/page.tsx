@@ -13,7 +13,7 @@ code, fnsku, qty and the box's measurements on every row); GET /amz-shipment-box
 boxes — numbers, contents and measurements as stored.
 
 SAVING (owner, 2026-10-06: "THE BOXES AREN'T SAVING?" → save every change). Each change is written the moment it's made: a good scan,
-− and Undo via POST /amz-shipment-line (+1/−1), Delete box via /amz-shipment-box-delete, measurements via /amz-shipment-dims when a
+− and Undo via POST /amz-shipment-line (+1/−1), Delete box via /amz-shipment-box-delete, Empty box via /amz-shipment-box-empty, measurements via /amz-shipment-dims when a
 field is left or a quick fill is used. The screen updates at once and the writes queue behind it in order (persist), so a fast run
 of scans can't arrive out of order. A failed save shows a red bar with Reload — the screen may no longer match the DB, and reloading
 puts it back to what is stored. A new box is only stored once something is in it (there's no row to hold an empty one), so an empty
@@ -67,13 +67,13 @@ Amazon's B1..Bn in order, which is why Delete box renumbers.
 
 import { useRef, useState } from 'react';
 import {
-  PlusIcon, MinusIcon, CubeIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
+  PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
   InboxArrowDownIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
-  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, saveAmzShipmentLine, saveAmzShipmentDims, deleteAmzShipmentBox,
+  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, saveAmzShipmentLine, saveAmzShipmentDims, deleteAmzShipmentBox, emptyAmzShipmentBox,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -267,6 +267,7 @@ function Packing({ initial, onShipped, onReload }: {
   // Lazy initialiser: read once on mount (this component only renders client-side after the boxes load), no effect needed.
   const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
   const [shipError, setShipError] = useState<string | null>(null);
@@ -470,6 +471,21 @@ function Packing({ initial, onShipped, onReload }: {
   function selectBox(id: number) {
     setActiveId(id);
     setConfirmDelete(false);
+    setConfirmEmpty(false);
+    setLastScan(null);
+    refocus();
+  }
+
+  // Empty the active box (owner, 2026-10-15): everything out, the box kept — same number, same measurements, no renumbering, so it can
+  // be packed again. Always confirmed inline first. Its scans leave Undo's history, so Undo can't take out a unit that's already gone.
+  function emptyActive() {
+    if (boxUnits(active) === 0) return;
+    if (!confirmEmpty) { setConfirmEmpty(true); setConfirmDelete(false); return; }
+    const id = active.id;
+    persist(`Emptying Box ${id}`, () => emptyAmzShipmentBox(id));
+    setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, lines: [] } : b)));
+    setHistory((h) => h.filter((x) => x.boxId !== id));
+    setConfirmEmpty(false);
     setLastScan(null);
     refocus();
   }
@@ -479,7 +495,7 @@ function Packing({ initial, onShipped, onReload }: {
   // Amazon upload — the server does the same to the stored rows (amz-shipment-box-delete), and Undo's history follows the new numbers.
   function deleteActive() {
     if (boxes.length === 1) return;
-    if (boxUnits(active) > 0 && !confirmDelete) { setConfirmDelete(true); return; }
+    if (boxUnits(active) > 0 && !confirmDelete) { setConfirmDelete(true); setConfirmEmpty(false); return; }
     const gone = active.id;
     const shift = (id: number) => (id > gone ? id - 1 : id);
     const rest = boxes.filter((b) => b.id !== gone).map((b) => ({ ...b, id: shift(b.id) }));
@@ -676,6 +692,18 @@ function Packing({ initial, onShipped, onReload }: {
                 >
                   <ArrowUturnLeftIcon className="h-4 w-4" />
                   Undo last scan
+                </button>
+                <button
+                  type="button"
+                  onClick={emptyActive}
+                  disabled={boxUnits(active) === 0}
+                  className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
+                    + (confirmEmpty ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
+                >
+                  <ArchiveBoxXMarkIcon className="h-4 w-4" />
+                  {confirmEmpty
+                    ? `Take all ${boxUnits(active)} ${boxUnits(active) === 1 ? 'unit' : 'units'} out of Box ${active.id}?`
+                    : 'Empty box'}
                 </button>
                 <button
                   type="button"

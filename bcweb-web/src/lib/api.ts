@@ -2781,6 +2781,13 @@ export function saveAmzShipmentDims(box: number, dims: AmzBoxDims) {
     saved: !!b.saved,
   }));
 }
+// Empty box: its contents out, the box (number, measurements on screen) kept. No renumbering, unlike delete.
+export function emptyAmzShipmentBox(box: number) {
+  return request<{ removed: number }>({ url: '/amz-shipment-box-empty', method: 'POST', data: { box } }, (b) => ({
+    removed: Number(b.removed) || 0,
+  }));
+}
+
 export function deleteAmzShipmentBox(box: number) {
   return request<{ removed: number }>({ url: '/amz-shipment-box-delete', method: 'POST', data: { box } }, (b) => ({
     removed: Number(b.removed) || 0,

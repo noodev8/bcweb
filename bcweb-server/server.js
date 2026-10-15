@@ -185,6 +185,7 @@ app.use('/amz-shipment-ship',require('./routes/amz-shipment-ship'));   // Mark s
 app.use('/amz-shipment-line', require('./routes/amz-shipment-line'));   // AMZ Shipment: +1/−1 a unit in a box (saved per scan)
 app.use('/amz-shipment-dims', require('./routes/amz-shipment-dims'));   // AMZ Shipment: save a box's measurements
 app.use('/amz-shipment-box-delete', require('./routes/amz-shipment-box-delete')); // AMZ Shipment: delete a box and its contents
+app.use('/amz-shipment-box-empty', require('./routes/amz-shipment-box-empty')); // AMZ Shipment: empty a box, keep the box
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
