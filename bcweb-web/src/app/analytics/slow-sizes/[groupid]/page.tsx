@@ -46,7 +46,12 @@ const n = (v: number) => v.toLocaleString('en-GB');
 
 // Month names for 'YYYY-MM-DD' read by split, never the JS Date parser (CLAUDE.md: a pg date handed to Date drifts a day in BST).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const monthLabel = (s: string) => { const [y, m] = s.split('-').map(Number); return `${MONTHS[m - 1]} ${String(y).slice(2)}`; };
+// THIS YEAR = MONTH ONLY (owner, 2026-10-15: "Oct 26" read as a date, the 26th). Another year keeps its two digits ("Apr 25").
+const THIS_YEAR = new Date().getFullYear();
+const monthLabel = (s: string) => {
+  const [y, m] = s.split('-').map(Number);
+  return y === THIS_YEAR ? MONTHS[m - 1] : `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+};
 
 // How long since it sold -> tile colour. Same steps as the list's boxes (91 / 183 / 365 days).
 const TONES = {

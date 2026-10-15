@@ -262,7 +262,11 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
 // month would be a lie beside the number — "restock" takes its slot, the last sale on hover.
 function LastSold({ days, date, from }: { days: number; date: string | null; from: 'sale' | 'arrival' }) {
   let month = '';
-  if (date) { const [y, m] = date.split('-').map(Number); month = `${MONTHS[m - 1]} ${String(y).slice(2)}`; }
+  // This year = month only ("Oct 26" read as the 26th, owner 2026-10-15); another year keeps its two digits.
+  if (date) {
+    const [y, m] = date.split('-').map(Number);
+    month = y === new Date().getFullYear() ? MONTHS[m - 1] : `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+  }
   const second = !date ? 'no sale' : from === 'arrival' ? 'restock' : month;
   return (
     <>
