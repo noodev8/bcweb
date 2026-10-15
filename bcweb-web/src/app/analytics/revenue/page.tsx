@@ -32,8 +32,8 @@ Purpose: The breakdown behind the Winners screen's revenue figure. Owner, 2026-1
                        from their own data, PayPal at its average past the last export. NO per-cell "est." marks and NO dates (owner:
                        "just show your average figure used rather than the date").
 
-         Revenue is the Winners figure's own sum (soldprice x qty): VAT-inclusive and NET OF RETURNS. THE TOTAL HERE IS HIGHER THAN THE
-         WINNERS BOX, on purpose: this counts every sale, the box only styles still on file at the last "Update now" (footnote).
+         Revenue is the Winners figure's own sum (soldprice x qty): VAT-inclusive and NET OF RETURNS. Every sale counts, and the
+         Winners box shows this same live total (since 2026-10-15; it used to be the stamped sum, ~£19k lower).
 
 Guarded by AppShell. Consumes GET /analytics-revenue.
 =======================================================================================================================================
@@ -107,14 +107,13 @@ function Revenue({ data }: { data: RevenueData }) {
   // Growth by the ACCOUNTS where we have them: `sales` is short in the year before (recording started Aug 2024), so ours reads high.
   const growth = t && t.cur !== null && t.prev !== null ? change(t.cur, t.prev) : change(all.revenue, all.prev_revenue);
 
-  const pGrowthNote = t ? ' (accounts)' : '';
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold text-slate-900">Revenue &amp; profit</h1>
 
       {/* HEADLINES — one sum, left to right: revenue → channels leave → less overheads = profit. The year before under each. */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Headline label="Revenue" value={gbpK(all.revenue)} sub={`${changeText(growth)} on the year before${pGrowthNote}`} />
+        <Headline label="Revenue" value={gbpK(all.revenue)} sub={`${changeText(growth)} on the year before`} />
         <Headline label="Channels leave" value={gbpK(leftSum)} sub={<YearBefore v={pLeftSum} />} />
         <Headline label="Overheads" value={gbpK(oh)} sub={<YearBefore v={pOh} />} />
         <Headline label="Profit" value={gbpK(profit)} tone={profit >= 0 ? 'good' : 'bad'}
@@ -144,12 +143,6 @@ function Revenue({ data }: { data: RevenueData }) {
           const f = channelFoot(l.c, data);
           return f && <p key={l.c.channel}>{nameOf(l.c.channel)}: {f}</p>;
         })}
-        {all.off_file > 0 && (
-          <p>
-            The Winners screen shows {gbp(all.revenue - all.off_file)}: it leaves out {gbp(all.off_file)} this year from styles no longer on
-            file and shop items with no style.
-          </p>
-        )}
         <Needs />
       </footer>
     </div>
@@ -207,7 +200,7 @@ function keyStats(data: RevenueData, all: Figures, leftSum: number, pLeftSum: nu
     { label: 'Wages', value: pct(wages?.cur, exVat), prev: pct(wages?.prev, pExVat), note: 'of turnover, ex VAT' },
     { label: 'Gross margin', value: pct(exVat - all.cogs, exVat), prev: pct(pExVat - all.prev_cogs, pExVat), note: 'ex VAT, after cost of goods' },
     { label: 'Break-even revenue', value: be === null ? '–' : gbpK(be), prev: pBe === null ? '–' : gbpK(pBe),
-      note: be === null ? '' : `${gbpK(Math.abs(all.revenue - be))} ${all.revenue >= be ? 'above' : 'below'} it` },
+      note: '' },
     { label: 'Advertising', value: pct(ads?.cur, shp?.revenue ?? 0), prev: pct(ads?.prev, shp?.prev_revenue ?? 0), note: 'of Shopify revenue' },
     { label: 'Returns', value: pct(-all.returns, all.sold), prev: pct(-all.prev_returns, all.prev_sold), note: 'of sales' },
     { label: 'Profit per pair', value: all.units > 0 ? pound(profit / all.units) : '–',

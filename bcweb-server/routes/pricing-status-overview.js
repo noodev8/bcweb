@@ -36,7 +36,9 @@ Purpose: Repricing — the STATUS tab (the first and default tab since 2026-09-2
          `share_totals` as the denominators — drawn in the Slow card beside its %. ALL-CHANNEL, like Slow's 10% — stock is
          one pool. STOCK is utils/stockSitting.js's definition (local #FREE + amzfeed
          amztotal, styles with stock > 0) so the denominator is the same total Slow divides by. REVENUE is the stamped
-         portfolio_revenue_12m (net of returns, all-channel — what the tier itself reads) over every tagged style. STYLES is how many
+         portfolio_revenue_12m (net of returns, all-channel — what the tier itself reads) over the LIVE 12m sales total (since
+         2026-10-15 — the same figure as Reports -> Revenue, which the "12m revenue" box opens; was the stamped sum over tagged
+         styles, ~£19k lower because it missed deleted styles and shop items). STYLES is how many
          winners over every tagged style — the "N% of styles earn N% of revenue" (80/20) line under the figures.
 
          HELD STYLES (2026-10-13, owner: "I want them to line up ... glance at the screen and see it"). `held_styles` = winner styles
@@ -174,8 +176,10 @@ router.get('/', async (req, res) => {
         ),
         tot AS (
           SELECT (SELECT COALESCE(SUM(qty), 0) FROM stock)::int AS units,
-                 (SELECT COALESCE(SUM(portfolio_revenue_12m), 0) FROM skusummary
-                  WHERE portfolio_status IS NOT NULL)::float8 AS revenue,
+                 -- The live 12m total, the SAME sum and window as Reports -> Revenue (analytics-revenue.js), which this box opens —
+                 -- owner 2026-10-15: the two must agree. Not the stamped per-style sum, which misses deleted styles / shop items.
+                 (SELECT COALESCE(SUM(soldprice * qty), 0) FROM sales
+                  WHERE solddate >= CURRENT_DATE - INTERVAL '12 months')::float8 AS revenue,
                  (SELECT COUNT(*) FROM skusummary WHERE portfolio_status IS NOT NULL)::int AS styles,
                  (SELECT COUNT(*) FROM stock)::int AS held_styles
         )

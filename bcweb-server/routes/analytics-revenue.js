@@ -14,10 +14,9 @@ Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's St
          `returns` are the two halves of it (returns negative). Windows are the stamp's too: this year = solddate >= CURRENT_DATE - 12
          months (today included); last year = the 12 months before that. sales starts Aug 2024, so last year is complete.
 
-         WHY THE TOTAL IS HIGHER THAN THE WINNERS BOX. The Winners box sums the revenue STAMPED on each style still in skusummary, at the
-         last "Update now". This screen sums every sales row, so it also counts styles deleted since and shop items with no style
-         (~£19k on 14 Oct 2026). `off_file` is that part, per channel, so the page can say so instead of leaving two numbers that
-         don't agree. A small difference can also be today's sales since the last "Update now".
+         THE "12m revenue" BOX on Repricing (pricing-status-overview.js share_totals) is this same live sum since 2026-10-15, so the
+         two agree. `off_file` is the part from styles deleted since and shop items with no style (~£19k on 14 Oct 2026) — the
+         winners' stamped revenue can't include it.
 
          COST OF GOODS (2026-10-14, owner: "start with VAT and cost of goods"). Sales rows carry no cost, so it is skusummary.cost
          (read via safeNumeric) x qty — TODAY's cost, so the year before reads a little high wherever a supplier has put prices up
