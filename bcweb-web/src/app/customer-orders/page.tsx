@@ -39,7 +39,6 @@ import AppShell from '@/components/AppShell';
 import CustomerOrderList, { focusCustomerScan } from '@/components/CustomerOrderList';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import ManifestButton, { type ManifestResult } from '@/components/ManifestButton';
-import PickLink from '@/components/PickLink';
 import { CUSTOMER_ORDERS_KEY } from '@/lib/orderStatusUi';
 
 export default function CustomerOrdersPage() {
@@ -59,12 +58,12 @@ export default function CustomerOrdersPage() {
     <AppShell
       // Wide: the list and the packing panel sit side by side, which the standard 1024px column can't hold.
       wide
-      /* In the order of the day: the pick count (a READING you glance at on the way past), Update orders (pull in what's sold),
-         then Manifest and fulfil (the day's last job, the one solid button). The quiet one shouldn't sit where the mouse is heading. */
-      headerRight={(
+      /* Update orders (pull in what's sold), then Manifest and fulfil (the day's last job, the one solid button), in the platform
+         header bar where Logout usually sits (owner, 2026-10-15) — their own row under it was wasted space. The pick count is a
+         number like the board's, so it lives on the board (CustomerOrderList). */
+      headerBarRight={(
         <div className="flex items-center gap-2">
-          <PickLink />
-          <UpdateOrdersButton onDone={onUpdated} onError={onUpdateError} />
+          <UpdateOrdersButton compact onDone={onUpdated} onError={onUpdateError} />
           <ManifestButton onResult={setManifestResult} />
         </div>
       )}

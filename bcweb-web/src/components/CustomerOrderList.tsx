@@ -62,6 +62,7 @@ import {
   courierShort, isFba, isOutstanding, isWaiting, orderedAt, worstCustomerState,
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
+import PickLink from '@/components/PickLink';
 
 // localStorage key for the "Last order" button (see lastPacked).
 const LAST_PACKED_KEY = 'customerOrders.lastPacked';
@@ -625,6 +626,8 @@ export default function CustomerOrderList() {
             onClick={() => setStage(stage === 'waiting' ? 'all' : 'waiting')} />
         )}
         <StageTile label="All orders" count={counts.all} tone="slate" active={stage === 'all'} onClick={() => setStage('all')} />
+        {/* Shelf picks still to do — a link to /pick, not a filter (owner, 2026-10-15: same vibe as the board's numbers). */}
+        <PickLink />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">

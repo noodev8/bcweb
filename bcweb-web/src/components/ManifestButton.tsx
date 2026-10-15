@@ -89,9 +89,9 @@ export default function ManifestButton({ onResult }: { onResult: (r: ManifestRes
       disabled={running}
       onClick={() => (pending.length ? run() : setConfirm(true))}
       title={pending.length ? 'Collect the manifest Click & Drop is still making' : 'Manifest everything waiting on Click & Drop and download the manifest'}
-      className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {running ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <TruckIcon className="h-4 w-4" />}
+      {running ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <TruckIcon className="h-3.5 w-3.5" />}
       {running ? 'Manifesting…' : pending.length ? 'Collect manifest' : 'Manifest and fulfil'}
     </button>
   );

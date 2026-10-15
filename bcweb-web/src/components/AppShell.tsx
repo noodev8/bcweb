@@ -44,6 +44,10 @@ interface AppShellProps {
   headerRight?: ReactNode; // optional node rendered flush-right of the title (e.g. a product thumbnail) — uses the title row's
                            // otherwise-empty right side so it costs no vertical space in the page body. With no title it moves up
                            // to the back-link row, for the same reason.
+  // HEADER-BAR ACTIONS — a page's own buttons in the platform header bar, IN PLACE OF the "Signed in as" line and Logout (owner,
+  // 2026-10-15: Customer Orders' Update orders / Manifest, whose own row under the header was wasted space; "hide those"). Opt-in per
+  // page: every other screen's header is unchanged, and Logout is one tab away.
+  headerBarRight?: ReactNode;
   crumb?: ReactNode;       // optional "where you are" rendered after the back link as `← Back / GIZEH-SEG` — for pages whose
                            // name is context you picked one click ago, not a heading worth a row (owner, 2026-09-24: the pricing lists)
   // BARE — no sub-header at all: no back link (not even the ?from= one the dashboard adds) and no title. For full-width working
@@ -57,7 +61,7 @@ interface AppShellProps {
   wide?: boolean;
 }
 
-export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, crumb, bare, wide }: AppShellProps) {
+export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, headerRight, headerBarRight, crumb, bare, wide }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -178,14 +182,18 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
           </div>
 
           <div className="flex shrink-0 items-center gap-3 justify-self-end text-sm">
-            {/* The signed-in line is the first thing to go when the row gets tight — it's ambient, not a control. */}
-            <span className="hidden text-slate-500 lg:inline">Signed in as <span className="font-medium text-slate-800">{displayName}</span></span>
-            <button
-              onClick={logout}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50"
-            >
-              <ArrowRightOnRectangleIcon className="h-4 w-4" /> Logout
-            </button>
+            {headerBarRight ?? (
+              <>
+                {/* The signed-in line is the first thing to go when the row gets tight — it's ambient, not a control. */}
+                <span className="hidden text-slate-500 lg:inline">Signed in as <span className="font-medium text-slate-800">{displayName}</span></span>
+                <button
+                  onClick={logout}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50"
+                >
+                  <ArrowRightOnRectangleIcon className="h-4 w-4" /> Logout
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -194,7 +202,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
       {!bare && (hasTitleRow || effectiveBackHref || headerRight) && (
         <div className={pageContainer + ' pt-6'}>
           {/* The back-link row. Also carries headerRight on a page with no title row — which, since the page titles went (owner,
-              2026-09-24), can mean a row holding ONLY headerRight (Customer Orders' pick count + Update orders). */}
+              2026-09-24), can mean a row holding ONLY headerRight. */}
           {(effectiveBackHref || (!hasTitleRow && headerRight)) && (
             <div className="mb-2 flex items-center justify-between gap-4">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">

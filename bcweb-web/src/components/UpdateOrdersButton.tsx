@@ -58,6 +58,8 @@ interface Props {
   onError: (message: string | null) => void;
   /** Extra classes on the wrapper, so a host can place it (e.g. `ml-auto` at the end of a filter row). */
   className?: string;
+  /** Shorter, for the platform header bar (Customer Orders). */
+  compact?: boolean;
 }
 
 /*
@@ -98,7 +100,7 @@ export function useUpdateOrders({ onDone, onError }: { onDone?: () => void | Pro
   return { running, note, run };
 }
 
-export default function UpdateOrdersButton({ onDone, onError, className }: Props) {
+export default function UpdateOrdersButton({ onDone, onError, className, compact }: Props) {
   const { running, note, run: onRun } = useUpdateOrders({ onDone, onError });
 
   return (
@@ -113,9 +115,10 @@ export default function UpdateOrdersButton({ onDone, onError, className }: Props
         type="button"
         onClick={onRun}
         disabled={running}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className={'inline-flex items-center gap-1.5 rounded-md border border-slate-300 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 '
+          + (compact ? 'px-2.5 py-1' : 'px-3 py-1.5')}
       >
-        <CloudArrowDownIcon className={`h-4 w-4 ${running ? 'animate-pulse' : ''}`} />
+        <CloudArrowDownIcon className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${running ? 'animate-pulse' : ''}`} />
         {running ? 'Updating…' : 'Update orders'}
       </button>
     </div>
