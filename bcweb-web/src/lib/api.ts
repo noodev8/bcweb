@@ -1387,7 +1387,7 @@ export interface SlowSize {
   idle_days: number;          // since the last sale; never sold = on_shelf_days
   on_shelf: string;           // oldest held pair's arrival, YYYY-MM-DD ('2024-12-31' = before the log)
   on_shelf_days: number;
-  style_sold_90: number;      // the whole style, net, 90 days
+  style_sold_12m: number;     // the whole style, net, last 12 months
 }
 
 export function getSlowSizes() {
@@ -1397,7 +1397,7 @@ export function getSlowSizes() {
   );
 }
 
-// Slow Sizes -> click a size: every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
+// Slow Sizes -> click a style (its own screen): every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
 export interface StyleSizeRow {
   code: string;
   size: string;
@@ -1405,13 +1405,13 @@ export interface StyleSizeRow {
   last_sale: string | null;   // YYYY-MM-DD; null = never sold
   idle_days: number | null;
   on_shelf_days: number | null;   // null = none held
-  sold_90: number;            // this size, net of returns
+  sold_12m: number;           // this size, last 12 months, net of returns
 }
 
 export function getStyleSizes(groupid: string) {
-  return request<StyleSizeRow[]>(
+  return request<{ groupid: string; title: string | null; brand: string | null; sizes: StyleSizeRow[] }>(
     { url: '/analytics-style-sizes', method: 'GET', params: { groupid } },
-    (b) => b.sizes || []
+    (b) => ({ groupid: b.groupid, title: b.title ?? null, brand: b.brand ?? null, sizes: b.sizes || [] })
   );
 }
 

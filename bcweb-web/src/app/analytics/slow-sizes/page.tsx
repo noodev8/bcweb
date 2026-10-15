@@ -9,60 +9,62 @@ Purpose: Every SIZE we hold, by how long since it last sold. Owner, 2026-10-15: 
          for a year (the owner's example: Milano). This is that question one level down.
 
 SUMMARY FIRST, THEN THE SIZES (owner, same day: "maybe a summary of your breakdown ... Then I click into it to see the details").
-         Four bands, each a box with its sizes (the headline — a row is one size of one style), pairs and styles. The bands DON'T
-         overlap, so they add up to every size held:
-           over a year | 6–12 months | 3–6 months | up to 3 months
+         WORDING (owner, same day): "pairs" reads as a count of SIZES to the owner ("5/8 pairs made a sale"), so stock and sales are
+         QTY / "in stock" on screen, never "pairs".
+         Bands, each a box with its QTY IN STOCK (the headline — owner, 2026-10-15: "Change the headline figure of the card to Pairs.
+         Dont need sizes") and styles. The bands DON'T
+         overlap, so they add up to the line above them:
+           over a year | 6–12 months | 3–6 months
+         ("Up to 3 months" went the same day — owner: "Thats the winners mindset". Sizes that sold in 91 days aren't shown at all;
+         the server still returns them, the page just has no box for them.)
          (A fifth, "never sold, here since before 2025", went the same day when pre-log pairs were dated 31 Dec 2024 — owner:
          "everything rolls as standard instead of putting text in". Never-sold sizes now sit in the band their shelf days put them in.)
          (91 / 183 / 365 days — the same steps as Sell-through's age bands, utils/unitAge.js). Clicking a box opens its sizes below,
          longest first; clicking it again closes them. The open band sits in the URL (?band=), so ← Back from the drill reopens it.
          Nothing opens by default — the summary is the first read.
 
-         A LIST, NOT A RULE: no cut-off, no flag, no actions. The owner decides what to do with each; Style opens that style's Shopify
-         price drill (size curve and all), ← Back returns here with the band and sort kept.
+         A LIST, NOT A RULE: no cut-off, no flag, no actions. The owner decides what to do with each; ← Back from the style screen
+         returns here with the band and sort kept.
 
 CUT × (owner, same day: "add the cut × like on Slow"). DISPLAY ONLY, exactly as Slow: a row's × takes it off the screen until Reset
          or a reload — nothing is stored, no cut count is shown (owner: "Just cut them away"), the boxes keep their full counts. Cuts are kept while
          you switch boxes.
 
-CLICK A SIZE ROW (owner, same day: "drill down further when clicking on a style size and seeing all of its sizes and the last time
-         each size sold and stock remaining"). The row opens that style's FULL size run underneath (GET /analytics-style-sizes —
-         0-stock sizes included), the clicked size highlighted: pairs, last sale, days, sold 90d per size. One open at a time; click
-         again to close. The Style link still goes to the price drill.
+CLICK THE STYLE (owner, same day: "I would prefer to have the breakdown on a separate screen by clicking the style. Not have it in
+         the main list. Too much info."). Style opens /analytics/slow-sizes/[groupid] — the style's full size run, the clicked size
+         highlighted — and that screen links on to the price drill. (It opened inline under the row for a few hours; the Style link
+         went straight to pricing.)
 
-         Days = since the size last sold, any channel (a return is not a sale; deliveries ignored, as on Slow). Never sold = its On
-         shelf days ("never" shows in Last sale). ON SHELF = days since the oldest pair held arrived (utils/onShelf.js; before the log
-         = 31 Dec 2024, a floor) — a separate fact (owner, 2026-10-15): Days 300 with On shelf 30 is a re-order of a non-seller, not
-         an old pair. A size that sold before 2025 can show Days above On shelf — that is the 31 Dec 2024 floor. Style 90d = the whole style's net sales in 90 days — high there with a big
+         Days = since the size last sold, any channel (a return is not a sale; deliveries ignored, as on Slow). DAYS SINCE LAST SOLD
+         ONLY on screen (owner, 2026-10-15: "show days since last sold only, drop on shelf" — the two numbers side by side confused).
+         LAST SOLD is one column (owner, same day: days first, the month second — "only reason date helps is to see if it is season
+         based"), e.g. "754  Sep 24". A never-sold size shows its days since it ARRIVED and "no sale" (e.g. "653  no sale") —
+         a bare "never" read as new (owner, same day) — and is still banded and ranked by its days on the shelf (the server's idle_days,
+         utils/onShelf.js — oldest pair's arrival, before the log = 31 Dec 2024), so it lands where its wait puts it. Qty sold (12m) = the whole style's net sales in the last 12 months — high there with a big
          Days here is the dead-size-in-a-selling-style case. Rules: routes/analytics-slow-sizes.js.
 
 Guarded by AppShell. Consumes GET /analytics-slow-sizes.
 =======================================================================================================================================
 */
 
-import { Fragment, Suspense, useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSlowSizes, getStyleSizes, SlowSize } from '@/lib/api';
+import { getSlowSizes, SlowSize } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
-// 'YYYY-MM-DD' -> '2 Aug 25' without the JS Date parser (CLAUDE.md: a pg date handed to Date drifts a day in BST).
+// Month names for 'YYYY-MM-DD' read by split, never the JS Date parser (CLAUDE.md: a pg date handed to Date drifts a day in BST).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function dateLabel(s: string) {
-  const [y, m, d] = s.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]} ${String(y).slice(2)}`;
-}
 
 // The bands, longest wait first, by days since the last sale (never sold = days on the shelf).
 const BANDS = [
   { key: 'y1', label: 'Over a year', sub: 'over 365 days', test: (d: number) => d > 365 },
   { key: 'm6', label: '6–12 months', sub: '184–365 days', test: (d: number) => d > 183 && d <= 365 },
   { key: 'm3', label: '3–6 months', sub: '92–183 days', test: (d: number) => d > 91 && d <= 183 },
-  { key: 'm0', label: 'Up to 3 months', sub: '0–91 days', test: (d: number) => d <= 91 },
 ] as const;
 type BandKey = (typeof BANDS)[number]['key'];
 
@@ -105,7 +107,6 @@ function SlowSizesBody() {
     return {
       ...b,
       rows,
-      sizes: rows.length,
       pairs: rows.reduce((t, s) => t + s.units, 0),
       styles: new Set(rows.map((s) => s.groupid)).size,
     };
@@ -119,10 +120,10 @@ function SlowSizesBody() {
       {q.data && (
         <>
           <div className="mb-3 text-sm text-slate-500">
-            {n(sizes.length)} sizes held ({n(sizes.reduce((t, s) => t + s.units, 0))} pairs), by how long since each last sold. Click a
+            {n(summary.reduce((t, b) => t + b.pairs, 0))} in stock in sizes that haven&rsquo;t sold for over 3 months, by how long. Click a
             box for its sizes.
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {summary.map((b) => (
               <button key={b.key} type="button" onClick={() => toggle(b.key)} aria-pressed={open === b.key}
                 className={
@@ -131,9 +132,9 @@ function SlowSizesBody() {
                 }>
                 <div className="text-sm font-medium text-slate-700">{b.label}</div>
                 <div className="text-xs text-slate-400">{b.sub}</div>
-                <div className="mt-2 text-3xl font-semibold leading-none text-slate-900">{n(b.sizes)}</div>
-                <div className="mt-1 text-xs text-slate-500">sizes</div>
-                <div className="mt-2 text-sm text-slate-500">{n(b.pairs)} pairs · {n(b.styles)} styles</div>
+                <div className="mt-2 text-3xl font-semibold leading-none text-slate-900">{n(b.pairs)}</div>
+                <div className="mt-1 text-xs text-slate-500">in stock</div>
+                <div className="mt-2 text-sm text-slate-500">{n(b.styles)} styles</div>
               </button>
             ))}
           </div>
@@ -157,15 +158,12 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
     size: (s) => (/^[0-9]+([.][0-9]+)?$/.test(s.size) ? Number(s.size) : s.size),
     brand: (s) => s.brand,
     units: (s) => s.units,
-    last_sale: (s) => s.last_sale,
     days: (s) => s.idle_days,
-    shelf: (s) => s.on_shelf_days,
-    style_90: (s) => s.style_sold_90,
+    style_12m: (s) => s.style_sold_12m,
   });
   const th = { sort, onSort };
   const rows = sorted.filter((s) => !hidden.has(s.code));
   const cutHere = sizes.length - rows.length;
-  const [opened, setOpened] = useState<string | null>(null);   // the size row whose style run is open
   // This page's own URL as it stands (band, sort, origin), so ← Back from the drill lands on the same view.
   const sp = useSearchParams();
   const self = encodeURIComponent(`/analytics/slow-sizes${sp.toString() ? `?${sp}` : ''}`);
@@ -175,7 +173,7 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <div className="text-sm font-medium text-slate-700">
           {title}{' '}
-          <span className="font-normal text-slate-400">· {sub} · {n(sizes.length)} sizes</span>
+          <span className="font-normal text-slate-400">· {sub} · {n(sizes.reduce((t, s) => t + s.units, 0))} in stock</span>
         </div>
         {hidden.size > 0 && (
           <button type="button" onClick={onReset} className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
@@ -194,23 +192,19 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
                 <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
                 <SortableTh {...th} sortKey="size" label="Size" firstDir="asc" />
                 <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
-                <SortableTh {...th} sortKey="units" label="Pairs" align="right" />
-                <SortableTh {...th} sortKey="last_sale" label="Last sale" align="right" />
-                <SortableTh {...th} sortKey="days" label="Days" align="right" title="Days since it last sold" />
-                <SortableTh {...th} sortKey="shelf" label="On shelf" align="right" title="Days since the oldest pair arrived" />
-                <SortableTh {...th} sortKey="style_90" label="Style 90d" align="right"
-                  title="Pairs the whole style sold in 90 days, net of returns" />
+                <SortableTh {...th} sortKey="units" label="In stock" align="right" />
+                <SortableTh {...th} sortKey="days" label="Last sold" align="right" title="Days since it last sold, and the month" />
+                <SortableTh {...th} sortKey="style_12m" label="Qty sold (12m)" align="right"
+                  title="Items of this style sold in the last 12 months, all sizes" />
                 <th className="w-8 py-2 pl-0 pr-4" />
               </tr>
             </thead>
             <tbody>
               {rows.map((s, i) => (
-                <Fragment key={s.code}>
-                <tr onClick={() => setOpened(opened === s.code ? null : s.code)} title="Show all sizes of this style"
-                  className={`cursor-pointer border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50 ${opened === s.code ? 'bg-slate-50' : ''}`}>
+                <tr key={s.code} className="border-b border-slate-100 text-slate-700 last:border-0">
                   <td className="px-4 py-2 text-right tabular-nums text-slate-400">{i + 1}</td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    <Link onClick={(e) => e.stopPropagation()} href={`/pricing/style/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
+                    <Link href={`/analytics/slow-sizes/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
                       className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
                       {s.groupid}
                     </Link>
@@ -219,29 +213,17 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
                   <td className="px-4 py-2 text-slate-500">{s.brand || '—'}</td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
-                    {s.last_sale
-                      ? dateLabel(s.last_sale)
-                      : <span className="text-slate-500">never</span>}
+                    <LastSold days={s.idle_days} date={s.last_sale} />
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-slate-900">{n(s.idle_days)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{n(s.on_shelf_days)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">
-                    {s.style_sold_90 ? n(s.style_sold_90) : <span className="text-slate-300">—</span>}
+                    {s.style_sold_12m ? n(s.style_sold_12m) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="w-8 py-2 pl-0 pr-4 text-right">
                     <button type="button" aria-label={`Cut ${s.code}`} title="Cut this row (Reset brings it back)"
-                      onClick={(e) => { e.stopPropagation(); onCut(s.code); if (opened === s.code) setOpened(null); }}
+                      onClick={() => onCut(s.code)}
                       className="px-1 text-base leading-none text-slate-300 hover:text-slate-700">&times;</button>
                   </td>
                 </tr>
-                {opened === s.code && (
-                  <tr className="border-b border-slate-100 bg-slate-50">
-                    <td colSpan={10} className="px-4 py-3">
-                      <StyleRun groupid={s.groupid} title={s.title} current={s.code} />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
               ))}
             </tbody>
           </table>
@@ -251,46 +233,19 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
   );
 }
 
-// THE STYLE'S SIZE RUN — every size (0 stock included), under the clicked row; the clicked size is highlighted. Fetched on open (SWR,
-// keyed by style, so reopening is instant). Never a useEffect (docs/maintenance-notes.md).
-function StyleRun({ groupid, title, current }: { groupid: string; title: string | null; current: string }) {
-  const q = useApiQuery(`analytics-style-sizes:${groupid}`, () => getStyleSizes(groupid));
-  if (q.isLoading) return <p className="text-sm text-slate-400">Loading sizes…</p>;
-  if (q.error) return <p className="text-sm text-red-700">{q.error.message}</p>;
-  const sizes = q.data ?? [];
-  const pairs = sizes.reduce((t, x) => t + x.units, 0);
+// LAST SOLD — one cell: days since the last sale first (the read), the month it sold second and muted (owner, 2026-10-15: "I would
+// look at the number of days first, date secondary. Only reason date helps is to see if it is season based") — so month + year only.
+// Never sold = "never". The month sits in a fixed-width slot so the day counts line up.
+// NEVER SOLD (owner, 2026-10-15: a bare "never" read as NEW): the day count runs from the day its oldest unit arrived, as though that
+// were its last sale (the server's idle_days already is), and "no sale" takes the month's slot — so 653 "no sale" reads as stuck
+// and 30 "no sale" as new. Every row leads with a number.
+function LastSold({ days, date }: { days: number; date: string | null }) {
+  let second = 'no sale';
+  if (date) { const [y, m] = date.split('-').map(Number); second = `${MONTHS[m - 1]} ${String(y).slice(2)}`; }
   return (
-    <div>
-      <div className="mb-2 text-sm text-slate-600">
-        <span className="font-medium text-slate-800">{title || groupid}</span>
-        <span className="text-slate-400"> · {sizes.length} sizes · {n(pairs)} pairs held</span>
-      </div>
-      <table className="w-auto text-sm">
-        <thead>
-          <tr className="text-left text-xs text-slate-500">
-            <th className="py-1 pr-8 font-normal">Size</th>
-            <th className="py-1 pr-8 text-right font-normal">Pairs</th>
-            <th className="py-1 pr-8 text-right font-normal">Last sale</th>
-            <th className="py-1 pr-8 text-right font-normal" title="Days since it last sold">Days</th>
-            <th className="py-1 pr-8 text-right font-normal" title="Days since the oldest pair arrived">On shelf</th>
-            <th className="py-1 text-right font-normal" title="Pairs this size sold in 90 days, net of returns">Sold 90d</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sizes.map((x) => (
-            <tr key={x.code} className={x.code === current ? 'font-semibold text-slate-900' : x.units ? 'text-slate-700' : 'text-slate-400'}>
-              <td className="py-0.5 pr-8 tabular-nums">
-                {x.size}{x.code === current && <span className="ml-1 text-xs font-normal text-slate-500">◂</span>}
-              </td>
-              <td className="py-0.5 pr-8 text-right tabular-nums">{x.units ? n(x.units) : '—'}</td>
-              <td className="whitespace-nowrap py-0.5 pr-8 text-right tabular-nums">{x.last_sale ? dateLabel(x.last_sale) : 'never sold'}</td>
-              <td className="py-0.5 pr-8 text-right tabular-nums">{x.idle_days ?? '—'}</td>
-              <td className="py-0.5 pr-8 text-right tabular-nums">{x.on_shelf_days ?? '—'}</td>
-              <td className="py-0.5 text-right tabular-nums">{x.sold_90 ? n(x.sold_90) : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <span className="font-semibold text-slate-900">{days.toLocaleString('en-GB')}</span>
+      <span className="ml-2 inline-block w-12 text-left text-xs text-slate-400">{second}</span>
+    </>
   );
 }

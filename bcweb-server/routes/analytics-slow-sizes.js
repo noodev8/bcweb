@@ -25,7 +25,8 @@ NEVER SOLD: idle days = on shelf days (it has been waiting since its oldest pair
 STOCK = the utils/financeStock.js definition at code grain (local #FREE not deleted + amzfeed.amztotal), LIVE — one number, no Amazon
          split, the same as Slow and Sell-through.
 
-STYLE SOLD 90D = net units of the whole STYLE in 90 days, so a dead size in a selling style (the Milano case) can be told apart from a
+STYLE SOLD (12M) = net units of the whole STYLE in the last 12 months (was 90 days until 2026-10-15 — owner: "shall we say a
+         year ... its basically saying the style has sold this many in this time"), so a dead size in a selling style (the Milano case) can be told apart from a
          dead style (which Slow already lists).
 
          READ-ONLY. Requires auth.
@@ -43,7 +44,7 @@ Success Response:
       "idle_days": 439,                         // since the last sale; never sold = on_shelf_days
       "on_shelf": "2025-03-11",                 // oldest held pair's arrival ('2024-12-31' = before the log)
       "on_shelf_days": 218,
-      "style_sold_90": 14 }
+      "style_sold_12m": 41 }
   ]                                             // longest idle first; then most pairs
 }
 =======================================================================================================================================
@@ -94,11 +95,11 @@ const SIZES_SQL = `
 
 router.get('/', async (req, res) => {
   try {
-    const [sizesQ, todayQ, sold90Q] = await Promise.all([
+    const [sizesQ, todayQ, soldQ] = await Promise.all([
       query(SIZES_SQL),
       query(`SELECT to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today`),
       query(`SELECT groupid, SUM(qty)::int AS q FROM sales
-             WHERE solddate > (now() AT TIME ZONE 'Europe/London')::date - 90 AND groupid IS NOT NULL
+             WHERE solddate > (now() AT TIME ZONE 'Europe/London')::date - 365 AND groupid IS NOT NULL
              GROUP BY groupid`),
     ]);
     const today = todayQ.rows[0].today;
@@ -107,7 +108,7 @@ router.get('/', async (req, res) => {
 
     // Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day.
     const day = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
-    const sold90 = new Map(sold90Q.rows.map((r) => [r.groupid, r.q]));
+    const sold12m = new Map(soldQ.rows.map((r) => [r.groupid, r.q]));
 
     const sizes = sizesQ.rows.map((r) => {
       const onShelf = shelf.get(r.code);
@@ -123,7 +124,7 @@ router.get('/', async (req, res) => {
         idle_days: r.idle_days === null ? onShelfDays : Number(r.idle_days),
         on_shelf: onShelf,
         on_shelf_days: onShelfDays,
-        style_sold_90: sold90.get(r.groupid) || 0,
+        style_sold_12m: sold12m.get(r.groupid) || 0,
       };
     });
 
