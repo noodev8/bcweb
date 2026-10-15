@@ -51,6 +51,8 @@ SITTING (2026-10-10, owner: "Stock comes in, goes out, happy. Sits, not happy so
          Amazon split (owner: keep the display clean). Sitting is the number to push down; the list is what to promote or clear. A
          fact, not a forecast (rules and the why in routes/analytics-stock-sitting.js) — not the excess rules coming back.
          Cut hides ticked rows from the display only, until Reset or a reload (2026-10-14) — nothing is stored and no action skips them.
+         "Sizes →" (2026-10-15) opens /analytics/slow-sizes: every held SIZE, longest without a sale first — the per-size view of the
+         same question, for a dead size inside a style that still sells (so never on this list).
 
 ARRIVAL FROM REPRICING (2026-10-12, owner: "WINNERS needs a card for CLEARANCE screen navigation and back"; the card is "Slow").
          Repricing's Status tab (the owner's "WINNERS" screen) has a Slow card that opens this page with ?from=/segments&back=Winners;
@@ -577,6 +579,9 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
             <button type="button" onClick={cutPicked} disabled={busy} className={pickLink}>Cut {pickedKeys.length}</button>
           )}
           {hidden.size > 0 && <button type="button" onClick={reset} className={link}>Reset</button>}
+          {/* Sizes (2026-10-15): every held SIZE, longest without a sale first — the dead size in a selling style, which this
+              per-style list can't show (owner's example: Milano). See app/analytics/slow-sizes. */}
+          <Link href={`/analytics/slow-sizes?from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Sizes &rarr;</Link>
           {data.styles.length > 0 && (
             <>
               <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Google Ads &rarr;</Link>

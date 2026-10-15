@@ -1375,6 +1375,46 @@ export function getStockSitting() {
   );
 }
 
+// Slow -> Sizes: every held size (code), longest without a sale first (server: routes/analytics-slow-sizes.js).
+export interface SlowSize {
+  code: string;
+  groupid: string;
+  size: string;
+  title: string | null;
+  brand: string | null;
+  units: number;              // local + Amazon, one number
+  last_sale: string | null;   // YYYY-MM-DD; null = never sold
+  idle_days: number;          // since the last sale; never sold = on_shelf_days
+  on_shelf: string;           // oldest held pair's arrival, YYYY-MM-DD ('2024-12-31' = before the log)
+  on_shelf_days: number;
+  style_sold_90: number;      // the whole style, net, 90 days
+}
+
+export function getSlowSizes() {
+  return request<{ today: string; sizes: SlowSize[] }>(
+    { url: '/analytics-slow-sizes', method: 'GET' },
+    (b) => ({ today: b.today, sizes: b.sizes || [] })
+  );
+}
+
+// Slow Sizes -> click a size: every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
+export interface StyleSizeRow {
+  code: string;
+  size: string;
+  units: number;              // local + Amazon, one number
+  last_sale: string | null;   // YYYY-MM-DD; null = never sold
+  idle_days: number | null;
+  on_shelf_days: number | null;   // null = none held
+  sold_90: number;            // this size, net of returns
+}
+
+export function getStyleSizes(groupid: string) {
+  return request<StyleSizeRow[]>(
+    { url: '/analytics-style-sizes', method: 'GET', params: { groupid } },
+    (b) => b.sizes || []
+  );
+}
+
 // The Shopify `clearance` collection (server: utils/clearanceTag.js). Only the owner puts styles in or takes them out (setClearance);
 // Slow's one-click "Update collection" (POST /shopify-clearance-apply) was removed 2026-10-14 — the Collections screen does it with
 // the list in view.

@@ -71,7 +71,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon,
+  RectangleStackIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -289,6 +289,15 @@ const GROUPS: Group[] = [
         description: 'Pairs in and out, 90-day stock against a year ago, stock held against stock sold, and what to act on.',
         href: '/analytics/stock-position',
         icon: ScaleIcon,
+      },
+      {
+        // Its own door (owner, 2026-10-15: "access it easier without too many navigation clicks ... its own from back office").
+        // Also reached from the Sizes link on Slow.
+        title: 'Slow Sizes',
+        subtitle: "Sizes that haven't sold",
+        description: 'Every size held, by how long since it last sold — a summary by age, then click in for the sizes, oldest first.',
+        href: '/analytics/slow-sizes',
+        icon: ClockIcon,
       },
       {
         title: 'Log',
