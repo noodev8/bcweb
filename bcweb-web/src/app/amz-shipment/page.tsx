@@ -29,9 +29,11 @@ LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"
 measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
 (POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
 adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box.
-NO NEW BOX WHILE ONE IS OPEN (owner, 2026-10-15: "dont let user start a new box if their box hasnt been locked"). New box is off while
-any box is unlocked (or empty) and names the box to finish, one click away. Goods In can't refuse a shoe, so it shows a standing
-warning while any box is unlocked instead (goods-in/page.tsx).
+WARN ON NEW BOX WHILE ONE IS OPEN (owner, 2026-10-15: "dont let user start a new box if their box hasnt been locked", then "dont STOP
+users making a new box if ones unlocked (incase multiple ppl) just warn them"). While any box is unlocked a line under New box names
+it, one click away — New box still works, as the open box may be someone else's on the other bench. Goods In shows the same warning
+as a standing strip (goods-in/page.tsx). New box re-reads the stored boxes first (see newBox), so a box the other bench started is
+seen and the new number is never one that already exists.
 
 FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list narrows it to boxes holding a match (code, Amazon SKU,
 FNSKU or title) and names the matching codes under each; the matching lines are highlighted in the open box.
@@ -455,15 +457,29 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
     refocus();
   }
 
-  // The box holding up New box (see the header): the first one not locked — an empty box counts, scan into it instead.
+  // The box the warning under New box names (see the header): the first one not locked — an empty box counts, scan into it instead.
   const openBox = boxes.find((b) => !b.locked);
 
-  function newBox() {
-    if (openBox) return;
-    const id = Math.max(0, ...boxes.map((b) => b.id)) + 1;
-    setBoxes((prev) => [...prev, newBoxOf(id)]);
-    setActiveId(id);
+  // CHECKED AGAINST THE STORED BOXES (owner, 2026-10-15 — two people packing at once). This screen reads the boxes only on arrival, so
+  // its list can be behind the other bench. New box waits for this screen's queued saves, re-reads the stored boxes and takes them as
+  // the list: the new number is one past the highest box that really exists, and a box the other bench started shows up (and, while
+  // unlocked, in the warning). It never refuses over an unlocked box — warning only. A failed read starts nothing. An empty box on this
+  // screen isn't stored, so it drops out of the list here and the new box takes its place.
+  const [checkingNew, setCheckingNew] = useState(false);
+  const [newBoxError, setNewBoxError] = useState<string | null>(null);
+  async function newBox() {
+    if (checkingNew) return;
+    setCheckingNew(true);
+    setNewBoxError(null);
+    await saveChain.current;
+    const res = await getAmzShipmentBoxes();
+    setCheckingNew(false);
+    if (!res.success || !res.data) { setNewBoxError(`Couldn’t check the stored boxes: ${res.error || 'error'} — try again`); refocus(); return; }
+    const stored = res.data.boxes.map(fromDb);
     setLastScan(null);
+    const id = Math.max(0, ...stored.map((b) => b.id)) + 1;
+    setBoxes([...stored, newBoxOf(id)]);
+    setActiveId(id);
     refocus();
   }
 
@@ -681,16 +697,19 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
           <button
             type="button"
             onClick={newBox}
-            disabled={!!openBox}
-            title={openBox ? `Lock Box ${openBox.id} before starting a new one` : undefined}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            disabled={checkingNew}
+            title={openBox && boxUnits(openBox) > 0 ? `Box ${openBox.id} isn’t locked yet` : undefined}
+            // Amber while a box is unlocked (owner, 2026-10-15: "so more clear") — a warning, not a stop; it still makes the box.
+            className={'flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 '
+              + (openBox ? 'border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
           >
             <PlusIcon className="h-4 w-4" />
-            New box
+            {checkingNew ? 'Checking boxes…' : 'New box'}
           </button>
+          {newBoxError && <p className="px-1 text-xs text-red-700">{newBoxError}</p>}
           {openBox && (
             <p className="px-1 text-xs text-amber-700">
-              {boxUnits(openBox) === 0 ? `Box ${openBox.id} is empty — scan into it` : `Lock Box ${openBox.id} before starting a new box`}
+              {boxUnits(openBox) === 0 ? `Box ${openBox.id} is empty — scan into it` : `Box ${openBox.id} isn’t locked yet — lock it once it’s done`}
               {openBox.id !== active.id && (
                 <> · <button type="button" onClick={() => selectBox(openBox.id)} className="font-medium underline hover:text-amber-900">Open Box {openBox.id}</button></>
               )}
