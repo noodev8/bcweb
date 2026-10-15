@@ -70,7 +70,8 @@ Amazon's B1..Bn in order, which is why Delete box renumbers.
 =======================================================================================================================================
 */
 
-import { useRef, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
   InboxArrowDownIcon, LockClosedIcon, LockOpenIcon,
@@ -201,9 +202,28 @@ function downloadShippingPlan(boxes: Box[]) {
 // Loads the packed boxes, then hands them to Packing as its starting state (so Packing's useState seeds from real data, no effect).
 // After Mark shipped (or Reload after a failed save) the boxes are re-read and Packing is REMOUNTED (key = round) so it re-seeds from
 // the DB — its useState only reads `initial` once, so a re-render alone would leave the old boxes on screen.
+// useSearchParams needs a Suspense boundary for Next's build, so the page body is AmzShipmentContent and this is a thin wrapper — the
+// same split /amazon-order uses.
 export default function AmzShipmentPage() {
-  const { data, error, isLoading, refresh } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <AmzShipmentContent />
+    </Suspense>
+  );
+}
+
+function AmzShipmentContent() {
+  // ?box=newest (the Goods In button): open the newest box. Read through Next's router, NOT window.location — on an in-app
+  // navigation window.location can still be Goods In's URL when this first renders, which is why it kept opening Box 1.
+  const startNewest = useSearchParams().get('box') === 'newest';
+  const { data, error, isLoading, busy, refresh } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
   const [round, setRound] = useState(0);
+  // FRESH ON ARRIVAL (owner, 2026-10-15). SWR hands back the boxes cached from the last visit at once and re-reads in the background —
+  // but Packing seeds from `initial` only once, so it was seeded from the STALE list: a box Goods In had just started wasn't there,
+  // and ?box=newest landed on an older one. So the first render waits for this visit's own read; after that, a background re-read
+  // never unmounts Packing (reload() remounts it on purpose).
+  const fresh = useRef(false);
+  if ((data || error) && !busy) fresh.current = true;   // an error counts too, so a failed read shows its message, not "Loading" forever
   const [shipped, setShipped] = useState<AmzShipResult | null>(null);
 
   async function reload() {
@@ -225,12 +245,12 @@ export default function AmzShipmentPage() {
         </Link>
       }>
       {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
-      {isLoading ? (
+      {isLoading || !fresh.current ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading boxes…</div>
       ) : error || !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
       ) : (
-        <Packing key={round} initial={data.boxes.map(fromDb)} onShipped={onShipped} onReload={reload} />
+        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} onShipped={onShipped} onReload={reload} />
       )}
     </AppShell>
   );
@@ -259,17 +279,15 @@ function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: ()
   );
 }
 
-function Packing({ initial, onShipped, onReload }: {
-  initial: Box[]; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
+function Packing({ initial, startNewest, onShipped, onReload }: {
+  initial: Box[]; startNewest: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
-  // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling. Read from
-  // the URL once, in the initialiser: this component only renders client-side, after the boxes load.
+  // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling.
   const [activeId, setActiveId] = useState(() => {
     if (!initial.length) return 1;
-    const newest = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('box') === 'newest';
-    return newest ? Math.max(...initial.map((b) => b.id)) : initial[0].id;
+    return startNewest ? Math.max(...initial.map((b) => b.id)) : initial[0].id;
   });
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
