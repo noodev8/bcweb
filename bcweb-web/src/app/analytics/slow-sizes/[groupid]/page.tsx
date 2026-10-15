@@ -45,7 +45,7 @@ const monthLabel = (s: string) => { const [y, m] = s.split('-').map(Number); ret
 // How long since it sold -> tile colour. Same steps as the list's boxes (91 / 183 / 365 days).
 const TONES = {
   y1: { chip: 'bg-rose-100 text-rose-800', label: 'Over a year' },
-  m6: { chip: 'bg-amber-100 text-amber-800', label: '6–12 months' },
+  m6: { chip: 'bg-orange-100 text-orange-800', label: '6–12 months' },
   m3: { chip: 'bg-yellow-100 text-yellow-800', label: '3–6 months' },
   m0: { chip: 'bg-emerald-100 text-emerald-800', label: 'Within 3 months' },
 } as const;

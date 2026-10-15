@@ -43,6 +43,18 @@ CLICK THE STYLE (owner, same day: "I would prefer to have the breakdown on a sep
          utils/onShelf.js — oldest pair's arrival, before the log = 31 Dec 2024), so it lands where its wait puts it. Qty sold (12m) = the whole style's net sales in the last 12 months — high there with a big
          Days here is the dead-size-in-a-selling-style case. Rules: routes/analytics-slow-sizes.js.
 
+LOOK (owner, 2026-10-15: "the design of your size screen has improved so much ... take a look at this front screen as well").
+         No intro line above the boxes (owner, same day: removed "1,017 in stock in sizes that haven't sold ... Click a box").
+         The boxes carry their band's colour — the same rose / orange / yellow as the style screen's tiles (one TONES set each side, keep
+         them in step) — and are short: label, then the qty in stock and styles on one line. The open box is tinted in its own colour,
+         not ringed in black (a dark ring on the style screen distracted). The list is tighter: style, size and brand share one cell
+         (XM620A · 12 · Grafters), so it reads as six columns, not eight, with less space between small numbers; size and brand lost
+         their own sort (within a band the order that matters is Last sold, and Style still sorts).
+
+BACK LANDS ON THE ROW (owner, same day: "when returning to it from sizes, can we scroll to the style we clicked?"). Each row has an id
+         (size-<code>) and its Style link hands the style screen a ?from= that ends in #size-<code>; that screen's ← Slow Sizes is a Link to
+         it, and Next scrolls to the hash. The data is in SWR's cache by then, so the row is there to scroll to.
+
 Guarded by AppShell. Consumes GET /analytics-slow-sizes.
 =======================================================================================================================================
 */
@@ -60,11 +72,15 @@ const n = (v: number) => v.toLocaleString('en-GB');
 // Month names for 'YYYY-MM-DD' read by split, never the JS Date parser (CLAUDE.md: a pg date handed to Date drifts a day in BST).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// The bands, longest wait first, by days since the last sale (never sold = days on the shelf).
+// The bands, longest wait first, by days since the last sale (never sold = days on the shelf). Colours = the style screen's TONES
+// ([groupid]/page.tsx): bar = the box's top edge, on = the open box's tint and border.
 const BANDS = [
-  { key: 'y1', label: 'Over a year', sub: 'over 365 days', test: (d: number) => d > 365 },
-  { key: 'm6', label: '6–12 months', sub: '184–365 days', test: (d: number) => d > 183 && d <= 365 },
-  { key: 'm3', label: '3–6 months', sub: '92–183 days', test: (d: number) => d > 91 && d <= 183 },
+  { key: 'y1', label: 'Over a year', sub: 'over 365 days', test: (d: number) => d > 365,
+    bar: 'border-t-rose-300', on: 'border-rose-300 bg-rose-50' },
+  { key: 'm6', label: '6–12 months', sub: '184–365 days', test: (d: number) => d > 183 && d <= 365,
+    bar: 'border-t-orange-300', on: 'border-orange-300 bg-orange-50' },
+  { key: 'm3', label: '3–6 months', sub: '92–183 days', test: (d: number) => d > 91 && d <= 183,
+    bar: 'border-t-yellow-300', on: 'border-yellow-300 bg-yellow-50' },
 ] as const;
 type BandKey = (typeof BANDS)[number]['key'];
 
@@ -119,22 +135,21 @@ function SlowSizesBody() {
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.data && (
         <>
-          <div className="mb-3 text-sm text-slate-500">
-            {n(summary.reduce((t, b) => t + b.pairs, 0))} in stock in sizes that haven&rsquo;t sold for over 3 months, by how long. Click a
-            box for its sizes.
-          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {summary.map((b) => (
               <button key={b.key} type="button" onClick={() => toggle(b.key)} aria-pressed={open === b.key}
                 className={
-                  'rounded-lg border bg-white px-4 py-3 text-left shadow-sm transition ' +
-                  (open === b.key ? 'border-slate-800 ring-1 ring-slate-800' : 'border-slate-200 hover:border-slate-400')
+                  `rounded-lg border border-t-4 ${b.bar} px-4 py-3 text-left shadow-sm transition ` +
+                  (open === b.key ? b.on : 'border-slate-200 bg-white hover:border-slate-300')
                 }>
-                <div className="text-sm font-medium text-slate-700">{b.label}</div>
-                <div className="text-xs text-slate-400">{b.sub}</div>
-                <div className="mt-2 text-3xl font-semibold leading-none text-slate-900">{n(b.pairs)}</div>
-                <div className="mt-1 text-xs text-slate-500">in stock</div>
-                <div className="mt-2 text-sm text-slate-500">{n(b.styles)} styles</div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-700">{b.label}</span>
+                  <span className="text-xs text-slate-400">{b.sub}</span>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold leading-none text-slate-900">{n(b.pairs)}</span>
+                  <span className="text-sm text-slate-500">in stock · {n(b.styles)} styles</span>
+                </div>
               </button>
             ))}
           </div>
@@ -155,8 +170,6 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
 }) {
   const { sorted, sort, onSort } = useTableSort(sizes, {
     groupid: (s) => s.groupid,
-    size: (s) => (/^[0-9]+([.][0-9]+)?$/.test(s.size) ? Number(s.size) : s.size),
-    brand: (s) => s.brand,
     units: (s) => s.units,
     days: (s) => s.idle_days,
     style_12m: (s) => s.style_sold_12m,
@@ -166,11 +179,13 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
   const cutHere = sizes.length - rows.length;
   // This page's own URL as it stands (band, sort, origin), so ← Back from the drill lands on the same view.
   const sp = useSearchParams();
-  const self = encodeURIComponent(`/analytics/slow-sizes${sp.toString() ? `?${sp}` : ''}`);
+  const selfPath = `/analytics/slow-sizes${sp.toString() ? `?${sp}` : ''}`;
+  // The style screen's ← Back: this view, ending at the row that was clicked (see BACK LANDS ON THE ROW).
+  const backTo = (code: string) => encodeURIComponent(`${selfPath}#size-${code}`);
 
   return (
-    <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
         <div className="text-sm font-medium text-slate-700">
           {title}{' '}
           <span className="font-normal text-slate-400">· {sub} · {n(sizes.reduce((t, s) => t + s.units, 0))} in stock</span>
@@ -189,9 +204,7 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                 <th className="w-10 px-4 py-2 text-right font-normal">#</th>
-                <SortableTh {...th} sortKey="groupid" label="Style" firstDir="asc" />
-                <SortableTh {...th} sortKey="size" label="Size" firstDir="asc" />
-                <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
+                <SortableTh {...th} sortKey="groupid" label="Style · size" firstDir="asc" />
                 <SortableTh {...th} sortKey="units" label="In stock" align="right" />
                 <SortableTh {...th} sortKey="days" label="Last sold" align="right" title="Days since it last sold, and the month" />
                 <SortableTh {...th} sortKey="style_12m" label="Qty sold (12m)" align="right"
@@ -201,24 +214,27 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
             </thead>
             <tbody>
               {rows.map((s, i) => (
-                <tr key={s.code} className="border-b border-slate-100 text-slate-700 last:border-0">
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-400">{i + 1}</td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    <Link href={`/analytics/slow-sizes/${encodeURIComponent(s.groupid)}?from=${self}`} title={s.title ?? undefined}
+                <tr key={s.code} id={`size-${s.code}`}
+                  className="scroll-mt-24 border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50">
+                  <td className="px-4 py-1.5 text-right tabular-nums text-xs text-slate-400">{i + 1}</td>
+                  <td className="whitespace-nowrap px-4 py-1.5">
+                    <Link href={`/analytics/slow-sizes/${encodeURIComponent(s.groupid)}?from=${backTo(s.code)}`} title={s.title ?? undefined}
                       className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
                       {s.groupid}
                     </Link>
+                    <span className="ml-2 inline-block min-w-[2.25rem] rounded border border-slate-200 px-1.5 text-center text-xs font-semibold tabular-nums text-slate-700">
+                      {s.size}
+                    </span>
+                    {s.brand && <span className="ml-2 text-xs text-slate-400">{s.brand}</span>}
                   </td>
-                  <td className="px-4 py-2 tabular-nums font-medium text-slate-900">{s.size}</td>
-                  <td className="px-4 py-2 text-slate-500">{s.brand || '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
+                  <td className="px-4 py-1.5 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
+                  <td className="whitespace-nowrap px-4 py-1.5 text-right tabular-nums">
                     <LastSold days={s.idle_days} date={s.last_sale} />
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  <td className="px-4 py-1.5 text-right tabular-nums">
                     {s.style_sold_12m ? n(s.style_sold_12m) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="w-8 py-2 pl-0 pr-4 text-right">
+                  <td className="w-8 py-1.5 pl-0 pr-4 text-right">
                     <button type="button" aria-label={`Cut ${s.code}`} title="Cut this row (Reset brings it back)"
                       onClick={() => onCut(s.code)}
                       className="px-1 text-base leading-none text-slate-300 hover:text-slate-700">&times;</button>
