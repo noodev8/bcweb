@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface Props {
   groupid: string;
   sizesCount: number;   // no active sizes -> nothing to upload; disable + explain
+  onDownloaded?: (groupid: string) => void;   // told after the file has downloaded (Amazon Order's session-only "File made" tag)
 }
 
 // Turn the base64 the server sent into a real file download in the browser.
@@ -38,7 +39,7 @@ function downloadBase64(filename: string, base64: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function AmazonExport({ groupid, sizesCount }: Props) {
+export default function AmazonExport({ groupid, sizesCount, onDownloaded }: Props) {
   const { logout } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export default function AmazonExport({ groupid, sizesCount }: Props) {
     if (res.success && res.data) {
       const d = res.data;
       downloadBase64(d.filename, d.file);
+      onDownloaded?.(groupid);
       // "added" = sizes written to the file; "skipped" = sizes left out (already on Amazon, OR no barcode) — so we don't claim a reason.
       const parts = [`${d.variants} added`];
       if (d.skipped) parts.push(`${d.skipped} skipped`);

@@ -20,9 +20,11 @@ NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have n
         which builds the Amazon upload file (AmazonExport, the same control as Add / Modify) in place of the price block. Order and
         Pick are open on these rows and go through Confirm Basket like any other: a pick needs only shelf stock, and the missing
         FNSKU is checked at Pack (AMZ Shipment refuses a size with none), by when the listing is normally in. Typed by hand only —
-        rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Cold never show them. There is no
-        "file made" state: skumap's stamp can't tell a fresh file from an old abandoned one, so the tag simply stays until the Update
-        Amazon import finds the listing.
+        rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Cold never show them. The tag stays until
+        the Update Amazon import finds the listing — nothing is stored server-side, because skumap's stamp can't tell a fresh file
+        from an old abandoned one. FILE MADE (owner, 2026-10-16 — "I load to Amazon then forget which one I did"): once the upload
+        file downloads here, that style's tag turns green "File made", held in sessionStorage only (FILE_MADE_KEY), so it's this
+        tab's memory and clears when the tab/browser closes. A reminder, not a record — deliberately not a stored "uploading" state.
 
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
@@ -484,6 +486,9 @@ const DRAFT_KEY = 'bcweb:amazon-order-draft';
 // A draft older than this is more likely to be stale (stock/sales have moved on) than useful — dropped silently on load rather than
 // resurrected, same as any other browser-only state that's outlived its relevance.
 const DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+// FILE MADE — groupids whose Amazon upload file was downloaded this session (see NOT ON AMAZON in the header). sessionStorage, not
+// localStorage, on purpose: it should forget when the browser closes.
+const FILE_MADE_KEY = 'bcweb:amazon-order-file-made';
 // THE TWO HALVES of the basket, each its own column and scratchpad: ORDER (buy these in from the supplier) and PICK (send these
 // from the local shelf to Amazon). Side by side since 2026-10-09 — see ORDER AND PICK in the header.
 type BasketHalf = 'order' | 'pick';
@@ -1078,6 +1083,24 @@ function AmazonOrderContent() {
     }
     loadedDraftRef.current = true;
     /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  // FILE MADE — styles whose upload file was downloaded this session. Read once on mount for the same SSR reason as the draft above.
+  const [fileMade, setFileMade] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try {
+      const raw = sessionStorage.getItem(FILE_MADE_KEY);
+      if (raw) setFileMade(new Set(JSON.parse(raw) as string[]));
+    } catch { /* unreadable or blocked storage — start empty */ }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+  const markFileMade = useCallback((groupid: string) => {
+    setFileMade((prev) => {
+      const next = new Set(prev).add(groupid);
+      try { sessionStorage.setItem(FILE_MADE_KEY, JSON.stringify([...next])); } catch { /* reminder only — fine to lose */ }
+      return next;
+    });
   }, []);
 
   // AUTOSAVE — debounced 500ms after the last edit. Writing nothing (empty) clears any existing saved draft instead of persisting
@@ -2230,15 +2253,20 @@ function AmazonOrderContent() {
                     <span className="inline-flex items-center gap-1">
                       <span title={r.title || undefined}>{r.code}</span>
                       {/* NOT ON AMAZON tag — opens the detail row, where the Amazon upload file is built. Stays until the Update
-                          Amazon import finds the listing, so a file made and never uploaded keeps saying so. */}
+                          Amazon import finds the listing; turns green "File made" once the file downloads this session. */}
                       {!r.on_amazon && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
-                          title="No Amazon listing — open to build the Amazon upload file"
-                          className="rounded border border-sky-200 bg-sky-50 px-1 font-sans text-[10px] font-medium leading-4 text-sky-700"
+                          title={fileMade.has(r.groupid)
+                            ? 'Upload file downloaded this session — not on Amazon until the Update Amazon import finds it'
+                            : 'No Amazon listing — open to build the Amazon upload file'}
+                          className={
+                            'rounded border px-1 font-sans text-[10px] font-medium leading-4 '
+                            + (fileMade.has(r.groupid) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-sky-200 bg-sky-50 text-sky-700')
+                          }
                         >
-                          Not on Amazon
+                          {fileMade.has(r.groupid) ? 'File made' : 'Not on Amazon'}
                         </button>
                       )}
                       {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
@@ -2356,7 +2384,7 @@ function AmazonOrderContent() {
                           ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} onSetPrice={onSetPrice} />
                           : (
                             <div className="max-w-sm">
-                              <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} />
+                              <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} />
                             </div>
                           )}
                         <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
