@@ -19,7 +19,7 @@ YOUR AMZ BOX (2026-10-16 — replaced the unlocked-box warning). Amazon units bo
 this browser until it's packed on AMZ Shipment (src/lib/amzActiveBox.ts). A strip above the station says how many shoes are in it,
 with a link to go and pack it. Closable (owner, 2026-10-16: "they might not care rn"): × hides it for this tab until that box is packed.
 After a Pack that came straight back here (AMZ Shipment's tick-box), a green strip says the number the box was given — the packer
-writes it on the carton — until closed or the next Amazon unit goes in.
+writes it on the carton — until closed or the next shoe is scanned.
 =======================================================================================================================================
 */
 

@@ -67,7 +67,7 @@ import {
 } from '@/lib/api';
 import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 import { printFnskuLabel } from '@/lib/fnskuLabel';
-import { addToActiveBox, takeFromActiveBox } from '@/lib/amzActiveBox';
+import { addToActiveBox, takeFromActiveBox, readActiveBox, dismissPacked } from '@/lib/amzActiveBox';
 import { useAuth } from '@/contexts/AuthContext';
 
 // The shelf the run puts local stock on. Legacy default, and the bay a delivery nearly always lands on.
@@ -274,6 +274,9 @@ export default function GoodsInStation() {
       focusInput();
       return;
     }
+
+    // The "Packed — that's Box n" strip (goods-in/page.tsx) goes on the next shoe scanned, whatever it is (owner, 2026-10-16).
+    if (readActiveBox(user).lastPacked !== null) dismissPacked(user);
 
     // THE WRITE. One call books the unit in — arrived flag, shelf row, arrival record, log — and tells us what it decided. Nothing is
     // guessed client-side: which order line got claimed is the server's call, and it is what determines the destination.
