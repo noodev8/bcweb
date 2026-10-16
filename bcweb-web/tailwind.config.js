@@ -16,6 +16,16 @@ module.exports = {
           50: '#eef2ff', 100: '#e0e7ff', 500: '#4f46e5', 600: '#4338ca', 700: '#3730a3',
         },
       },
+      // AMZ Shipment's good-scan feedback (owner, 2026-10-16): the scanned line flashes green and its qty pops, so a packer looking at
+      // the shoe sees it land out of the corner of an eye. Replayed per scan by re-keying the row.
+      keyframes: {
+        'scan-flash': { '0%': { backgroundColor: '#a7f3d0' }, '100%': { backgroundColor: 'transparent' } },
+        'qty-bump': { '0%': { transform: 'scale(1.6)', color: '#047857' }, '100%': { transform: 'scale(1)' } },
+      },
+      animation: {
+        'scan-flash': 'scan-flash 1.2s ease-out',
+        'qty-bump': 'qty-bump 0.4s ease-out',
+      },
     },
   },
   plugins: [],

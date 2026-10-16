@@ -39,6 +39,11 @@ seen and the new number is never one that already exists.
 FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list narrows it to boxes holding a match (code, Amazon SKU,
 FNSKU or title) and names the matching codes under each; the matching lines are highlighted in the open box.
 
+KEPT SIMPLE (owner, 2026-10-16: "dont want them to really need to think"). The box's rare actions (Print labels switch, Empty, Delete)
+sit in a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; Finish shipment is folded to one
+line (green with a tick once every packed box is locked); the contents show the shoe's name and size big, codes small; and a good
+scan flashes its line green and pops the qty (the animations are in tailwind.config.js).
+
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
 scan, scan, scan with no clicks. Every scan goes into the ACTIVE box (highlighted on the left); click another box, or New box, to switch.
 The same code scanned twice is one line with qty 2. − takes one off a line; Undo takes off the last scan wherever it went.
@@ -80,7 +85,7 @@ import { Suspense, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon, LockClosedIcon, LockOpenIcon,
+  InboxArrowDownIcon, LockClosedIcon, LockOpenIcon, EllipsisHorizontalIcon, ChevronRightIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
@@ -101,11 +106,15 @@ interface Box { id: number; lines: BoxLine[]; dims: BoxDims; locked: boolean; }
 
 // The Finish shipment steps — full width, quiet: outline, numbered, nothing that shouts before it's time.
 const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white';
-// The box header's small square buttons (print toggle, Empty, Delete); a confirm widens one to say what it will do.
+// The box header's small square button (the ⋯ menu).
 const ICON_BTN = 'flex items-center gap-1 rounded-md border p-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 ';
+// A row in the box's ⋯ menu.
+const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ';
 const NO_DIMS: BoxDims = { length: '', width: '', height: '', weight: '' };
 const newBoxOf = (id: number): Box => ({ id, lines: [], dims: NO_DIMS, locked: false });
 const boxUnits = (b: Box) => b.lines.reduce((n, l) => n + l.qty, 0);
+// Size = the code's suffix after the last '-' (CLAUDE.md: not the last two characters — half sizes and UK sizes).
+const sizeOf = (code: string) => code.slice(code.lastIndexOf('-') + 1);
 const fromDb = (b: AmzBox): Box => ({
   id: b.box,
   lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, title: l.title })),
@@ -325,8 +334,10 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
-  // `printed` says whether that scan printed a label, so the confirmation line doesn't claim one when it didn't.
-  const [lastScan, setLastScan] = useState<{ boxId: number; code: string; printed?: boolean } | null>(null);
+  // `printed` says whether that scan printed a label, so the confirmation line doesn't claim one when it didn't. `n` numbers the scan
+  // so the same shoe scanned twice still replays the line's green flash (the row is re-keyed by it).
+  const [lastScan, setLastScan] = useState<{ boxId: number; code: string; printed?: boolean; n: number } | null>(null);
+  const scanCount = useRef(0);
   // The last scan refused by SCAN CHECK — drives the red scan field and the message under it.
   const [scanError, setScanError] = useState<{ scan: string; message: string; title?: string } | null>(null);
   // Good lookups this visit, by what was scanned, so a run of the same shoe is one round trip. Only products WITH an FNSKU are kept:
@@ -336,6 +347,10 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
   const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  // The box's ⋯ menu (print switch, Empty, Delete) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
+  const [menuOpen, setMenuOpen] = useState(false);
+  // FINISH SHIPMENT starts folded to one line (owner, 2026-10-16): it's done once per shipment, not while packing.
+  const [finishOpen, setFinishOpen] = useState(false);
   // LOCK PROMPT (owner, 2026-10-15): once a packed box's four measurements are all in, ask whether to lock it. Asked once per box —
   // "Not now" isn't repeated on the next field left — until its measurements stop being complete again.
   const [lockAsk, setLockAsk] = useState<number | null>(null);
@@ -441,7 +456,7 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
     setHistory((h) => [...h, { boxId, code }]);
     // Scanned the FNSKU itself -> the shoe already wears its label; don't print another (see FNSKU LABELS in the header).
     const printed = printOn && raw !== fnsku.toUpperCase();
-    setLastScan({ boxId, code, printed });
+    setLastScan({ boxId, code, printed, n: ++scanCount.current });
     setScanError(null);
     if (printed) printLabel(fnsku, code);
   }
@@ -594,12 +609,14 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
     setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked } : b)));
     setConfirmEmpty(false);
     setConfirmDelete(false);
+    setMenuOpen(false);
     refocus();
   }
 
   function selectBox(id: number) {
     setActiveId(id);
     setLockAsk(null);
+    setMenuOpen(false);
     setConfirmDelete(false);
     setConfirmEmpty(false);
     setLastScan(null);
@@ -616,6 +633,7 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
     setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, lines: [] } : b)));
     setHistory((h) => h.filter((x) => x.boxId !== id));
     setConfirmEmpty(false);
+    setMenuOpen(false);
     setLastScan(null);
     refocus();
   }
@@ -634,6 +652,7 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
     setHistory((h) => h.filter((x) => x.boxId !== gone).map((x) => ({ ...x, boxId: shift(x.boxId) })));
     setActiveId(rest[rest.length - 1].id);
     setConfirmDelete(false);
+    setMenuOpen(false);
     setLastScan(null);
     refocus();
   }
@@ -745,16 +764,26 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
           )}
 
           {/* FINISH SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
-              3 Mark shipped. Quiet buttons, all usable any time; Mark shipped is still behind its confirm. "n of m locked" is a guide only. */}
+              3 Mark shipped. FOLDED to one line until clicked (owner, 2026-10-16) — it's done once per shipment, so while packing it
+              stays out of the way. The line turns green with a tick once every packed box is locked: the cue that it's time. "n of m
+              locked" is a guide only; the steps are usable any time, Mark shipped still behind its confirm. */}
           <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
-            <div className="flex items-baseline justify-between px-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Finish shipment</span>
+            <button
+              type="button"
+              onClick={() => setFinishOpen((o) => !o)}
+              aria-expanded={finishOpen}
+              className={'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-medium '
+                + (allLocked ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}
+            >
+              {allLocked ? <CheckCircleIcon className="h-4 w-4" /> : <ChevronRightIcon className={'h-4 w-4 text-slate-400 transition-transform ' + (finishOpen ? 'rotate-90' : '')} />}
+              <span className="flex-1">Finish shipment</span>
               {packedBoxes > 0 && (
-                <span className={'text-xs ' + (allLocked ? 'text-emerald-700' : 'text-slate-500')}>
+                <span className={'text-xs font-normal ' + (allLocked ? 'text-emerald-700' : 'text-slate-500')}>
                   {lockedBoxes} of {packedBoxes} locked
                 </span>
               )}
-            </div>
+            </button>
+            {finishOpen && (<>
             <button
               type="button"
               disabled={totalUnits === 0}
@@ -822,6 +851,7 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
               </button>
             )}
             {shipError && <div className="px-1 text-xs text-red-700">{shipError}</div>}
+            </>)}
           </div>
         </div>
 
@@ -832,8 +862,10 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
               <h2 className="text-lg font-semibold text-slate-900">Box {active.id}</h2>
               <span className="text-sm text-slate-500">{boxUnits(active)} {boxUnits(active) === 1 ? 'unit' : 'units'}</span>
               {active.locked && <LockClosedIcon className="h-4 w-4 text-slate-500" aria-label="Locked" />}
-              {/* Kept short (owner, 2026-10-15: "too much going on"). A LOCKED box offers only Unlock — nothing else can change it. Open,
-                  it's Undo, three icon buttons (print toggle, Empty, Delete — their confirms spell out what happens), then Lock box. */}
+              {!printOn && !active.locked && <span className="text-xs text-slate-400">labels off</span>}
+              {/* Kept short (owner, 2026-10-15: "too much going on"; 2026-10-16: the rare ones in a menu). A LOCKED box offers only
+                  Unlock — nothing else can change it. Open, it's Undo, the ⋯ menu (print switch, Empty, Delete — Empty and Delete ask
+                  first, in the menu), then Lock box. */}
               <div className="ml-auto flex items-center gap-1.5">
                 {!active.locked && (
                   <>
@@ -847,38 +879,43 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
                       <ArrowUturnLeftIcon className="h-4 w-4" />
                       Undo
                     </button>
-                    <button
-                      type="button"
-                      onClick={togglePrint}
-                      aria-pressed={printOn}
-                      aria-label={printOn ? 'Label printing on' : 'Label printing off'}
-                      title={printOn ? 'Labels print on every good scan — click to stop' : 'Labels are off — click to print one per scan'}
-                      className={ICON_BTN + (printOn ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-400 hover:bg-slate-50')}
-                    >
-                      <PrinterIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={emptyActive}
-                      disabled={boxUnits(active) === 0}
-                      aria-label="Empty box"
-                      title="Empty box — take everything out, keep the box"
-                      className={ICON_BTN + (confirmEmpty ? 'border-amber-300 bg-amber-50 px-2.5 text-amber-800' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
-                    >
-                      <ArchiveBoxXMarkIcon className="h-4 w-4" />
-                      {confirmEmpty && `Take all ${boxUnits(active)} out?`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={deleteActive}
-                      disabled={boxes.length === 1}
-                      aria-label="Delete box"
-                      title="Delete box"
-                      className={ICON_BTN + (confirmDelete ? 'border-red-300 bg-red-50 px-2.5 text-red-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50')}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                      {confirmDelete && (`Delete Box ${active.id}?` + (boxes.some((b) => b.id > active.id) ? ' Later boxes move down one.' : ''))}
-                    </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen((o) => !o); setConfirmEmpty(false); setConfirmDelete(false); }}
+                        aria-label="More box actions"
+                        aria-expanded={menuOpen}
+                        title="More"
+                        className={ICON_BTN + 'border-slate-300 text-slate-500 hover:bg-slate-50'}
+                      >
+                        <EllipsisHorizontalIcon className="h-4 w-4" />
+                      </button>
+                      {menuOpen && (
+                        <>
+                          {/* Click anywhere else closes it. */}
+                          <div className="fixed inset-0 z-10" onClick={() => { setMenuOpen(false); setConfirmEmpty(false); setConfirmDelete(false); refocus(); }} />
+                          <div className="absolute right-0 z-20 mt-1 w-60 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                            <button type="button" onClick={togglePrint} className={MENU_ITEM + 'text-slate-700'}>
+                              <PrinterIcon className="h-4 w-4 text-slate-400" />
+                              <span className="flex-1">Print labels</span>
+                              <span className={'text-xs font-medium ' + (printOn ? 'text-emerald-700' : 'text-slate-400')}>{printOn ? 'On' : 'Off'}</span>
+                            </button>
+                            <button type="button" onClick={emptyActive} disabled={boxUnits(active) === 0}
+                              className={MENU_ITEM + (confirmEmpty ? 'bg-amber-50 text-amber-800' : 'text-slate-700')}>
+                              <ArchiveBoxXMarkIcon className="h-4 w-4 text-slate-400" />
+                              {confirmEmpty ? `Take all ${boxUnits(active)} out? Click again` : 'Empty box'}
+                            </button>
+                            <button type="button" onClick={deleteActive} disabled={boxes.length === 1}
+                              className={MENU_ITEM + (confirmDelete ? 'bg-red-50 text-red-700' : 'text-slate-700')}>
+                              <TrashIcon className="h-4 w-4 text-slate-400" />
+                              {confirmDelete
+                                ? `Delete Box ${active.id}? Click again` + (boxes.some((b) => b.id > active.id) ? ' (later boxes move down one)' : '')
+                                : 'Delete box'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </>
                 )}
                 <button
@@ -987,27 +1024,35 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
           {active.lines.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">Nothing in Box {active.id} yet — scan a shoe to start.</div>
           ) : (
-            <table className="w-full text-sm">
+            // CONTENTS (owner, 2026-10-16): what a packer looks for is the SHOE — its name and size, big, with the qty; our code, the
+            // Amazon SKU and the FNSKU are on one small line under it (still there to check against a label, and for Find).
+            // The line a good scan just went to flashes green and its qty pops — re-keyed by the scan's number so a repeat scan replays it.
+            <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-                  <th className="px-4 py-2 font-medium">Code</th>
-                  <th className="px-4 py-2 font-medium">Amazon SKU</th>
-                  <th className="px-4 py-2 font-medium">FNSKU</th>
+                  <th className="px-4 py-2 font-medium">Shoe</th>
+                  <th className="px-4 py-2 text-center font-medium">Size</th>
                   <th className="px-4 py-2 text-right font-medium">Qty</th>
                   <th className="w-20 px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
-                {active.lines.map((l) => (
-                  <tr key={l.code} className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : '')}>
-                    <td className="px-4 py-2">
-                      <div className="font-mono text-slate-900">{l.code}</div>
-                      {l.title && <div className="text-xs text-slate-500">{l.title}</div>}
+                {active.lines.map((l) => {
+                  const justScanned = lastScan?.boxId === active.id && lastScan.code === l.code;
+                  return (
+                  <tr key={justScanned ? `${l.code}#${lastScan?.n}` : l.code}
+                    className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : justScanned ? 'animate-scan-flash' : '')}>
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-slate-900">{l.title || l.code}</div>
+                      <div className="font-mono text-xs text-slate-400">
+                        {l.code}{l.sku && ` · ${l.sku}`}{l.fnsku && ` · ${l.fnsku}`}
+                      </div>
                     </td>
-                    <td className="px-4 py-2 font-mono text-slate-600">{l.sku || '—'}</td>
-                    <td className="px-4 py-2 font-mono text-slate-600">{l.fnsku || '—'}</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums text-slate-900">{l.qty}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right">
+                    <td className="px-4 py-2.5 text-center text-lg font-semibold tabular-nums text-slate-900">{sizeOf(l.code)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={'inline-block text-lg font-semibold tabular-nums text-slate-900 ' + (justScanned ? 'animate-qty-bump' : '')}>{l.qty}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
                       {l.fnsku && (
                         <button
                           type="button"
@@ -1030,7 +1075,8 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
                       </button>}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
