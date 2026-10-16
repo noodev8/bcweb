@@ -920,17 +920,19 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
               </div>
             )}
             {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
-                Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. */}
+                Inline confirm stating exactly what goes; can't be undone from here, so it is never one click. RED (owner, 2026-10-16) — the
+                button and its confirm — so it never reads as just another step; the confirm names the boxes, units and the stock it takes. */}
             {confirmShip ? (
-              <div className="space-y-2 rounded-md border border-slate-300 bg-white p-2.5 text-sm">
-                <div className="text-slate-700">Ship all {packedBoxes} {packedBoxes === 1 ? 'box' : 'boxes'} ({totalUnits} units)? This clears the shipment.</div>
+              <div role="alertdialog" className="space-y-2 rounded-md border-2 border-red-400 bg-red-50 p-2.5 text-sm">
+                <div className="font-semibold text-red-800">Mark all {packedBoxes} {packedBoxes === 1 ? 'box' : 'boxes'} ({totalUnits} units) shipped?</div>
+                <div className="text-xs text-red-700">Takes them off the C3-Amazon shelf and clears every box. This can’t be undone.</div>
                 <div className="flex gap-2">
                   <button type="button" disabled={shipping} onClick={ship}
-                    className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50">
-                    {shipping ? 'Shipping…' : 'Yes, shipped'}
+                    className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                    {shipping ? 'Shipping…' : 'Yes, mark shipped'}
                   </button>
                   <button type="button" disabled={shipping} onClick={() => setConfirmShip(false)}
-                    className="rounded bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">No</button>
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
                 </div>
               </div>
             ) : (
@@ -938,11 +940,11 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                 type="button"
                 disabled={totalUnits === 0}
                 onClick={() => { setConfirmShip(true); setShipError(null); }}
-                title={totalUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment'}
-                className={FINISH_BTN}
+                title={totalUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment (asks first)'}
+                className="flex w-full items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
               >
-                <span className="w-4 text-center text-xs font-semibold text-slate-400">3</span>
-                <TruckIcon className="h-4 w-4 text-slate-400" />
+                <span className="w-4 text-center text-xs font-semibold text-red-400">3</span>
+                <TruckIcon className="h-4 w-4 text-red-500" />
                 Mark shipped
               </button>
             )}
