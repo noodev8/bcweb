@@ -28,7 +28,8 @@ take are listed in the notice afterwards. See the route header for the detail.
 LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"). Lock box fixes a packed box's contents and
 measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
 (POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
-adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box.
+adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box, and locking it goes back to Goods In — unless the
+tick-box inside the header's Goods In button is unticked (owner, 2026-10-16; remembered in this browser, like Print labels).
 WARN ON NEW BOX WHILE ONE IS OPEN (owner, 2026-10-15: "dont let user start a new box if their box hasnt been locked", then "dont STOP
 users making a new box if ones unlocked (incase multiple ppl) just warn them"). While any box is unlocked a line under New box names
 it, one click away — New box still works, as the open box may be someone else's on the other bench. Goods In shows the same warning
@@ -149,6 +150,16 @@ function savePrintOn(on: boolean) {
   try { localStorage.setItem(PRINT_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
 }
 
+// Back to Goods In after locking — a tick-box (owner, 2026-10-16), remembered per browser like Print labels. Default ticked (the
+// 2026-10-15 behaviour); storage failures just mean ticked.
+const BACK_KEY = 'amzShipment.backToGoodsIn';
+function loadBackOn(): boolean {
+  try { return localStorage.getItem(BACK_KEY) !== '0'; } catch { return true; }
+}
+function saveBackOn(on: boolean) {
+  try { localStorage.setItem(BACK_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
+}
+
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
 // archive (15 boxes) and the owner confirmed it. Sides only — weight depends on what's packed.
 const BIRK_BOX: Partial<BoxDims> = { length: '46', width: '46', height: '33' };
@@ -230,6 +241,8 @@ function AmzShipmentContent() {
   const fresh = useRef(false);
   if ((data || error) && !busy) fresh.current = true;   // an error counts too, so a failed read shows its message, not "Loading" forever
   const [shipped, setShipped] = useState<AmzShipResult | null>(null);
+  // Held here, not in Packing, because the tick-box sits in the header by the Goods In button. Lazy read: client-only page.
+  const [backOn, setBackOn] = useState(loadBackOn);
 
   async function reload() {
     await refresh();
@@ -244,10 +257,24 @@ function AmzShipmentContent() {
   return (
     // Goods In and this screen link to each other (owner, 2026-10-15).
     <AppShell title="AMZ Shipment" headerRight={
-        <Link href="/goods-in"
-          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
-          <InboxArrowDownIcon className="h-4 w-4" />Goods In
-        </Link>
+        // The tick-box sits INSIDE the Goods In button (owner, 2026-10-16: no extra text) — one bordered pill holding the tick-box and
+        // the link side by side (a checkbox can't go inside the <a> itself, or ticking it would navigate). Only when they came from
+        // Goods In — that's the only time locking leaves the page.
+        <div className="flex items-center rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:border-slate-400">
+          {startNewest && (
+            <input
+              type="checkbox"
+              checked={backOn}
+              onChange={(e) => { setBackOn(e.target.checked); saveBackOn(e.target.checked); }}
+              title={backOn ? 'Locking a box goes back to Goods In — untick to stay here' : 'Tick to go back to Goods In after locking a box'}
+              aria-label="Back to Goods In after locking a box"
+              className="ml-2.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+          )}
+          <Link href="/goods-in" className="flex items-center gap-1.5 rounded-md px-3 py-1.5 hover:bg-slate-50">
+            <InboxArrowDownIcon className="h-4 w-4" />Goods In
+          </Link>
+        </div>
       }>
       {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
       {isLoading || !fresh.current ? (
@@ -255,7 +282,7 @@ function AmzShipmentContent() {
       ) : error || !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
       ) : (
-        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} onShipped={onShipped} onReload={reload} />
+        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} backOn={backOn} onShipped={onShipped} onReload={reload} />
       )}
     </AppShell>
   );
@@ -284,8 +311,8 @@ function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: ()
   );
 }
 
-function Packing({ initial, startNewest, onShipped, onReload }: {
-  initial: Box[]; startNewest: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
+function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
+  initial: Box[]; startNewest: boolean; backOn: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
@@ -549,10 +576,11 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
     if (boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))) return;
     const id = active.id;
     const locked = !active.locked;
-    // CAME FROM GOODS IN (?box=newest) and just locked the box: that box is done, so straight back to Goods In (owner, 2026-10-15).
+    // CAME FROM GOODS IN (?box=newest) and just locked the box: that box is done, so straight back to Goods In (owner, 2026-10-15) —
+    // unless "Back to Goods In" is unticked (owner, 2026-10-16), then it locks and stays like any other lock.
     // Not queued through persist — the page is about to go, so the lock is written (after any queued saves) and only on success do we
     // leave; a refusal stays here and says why.
-    if (locked && startNewest) {
+    if (locked && startNewest && backOn) {
       setLockAsk(null);
       await saveChain.current;
       const res = await setAmzShipmentBoxLock(id, true);
