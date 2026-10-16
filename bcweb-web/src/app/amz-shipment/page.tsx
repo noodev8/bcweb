@@ -736,9 +736,11 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+      {/* The open box on the LEFT, the box list on the RIGHT (owner, 2026-10-16). The list stays first in the source so a phone, one
+          column, still shows it above the box; md:order-last moves it right on a wider screen. */}
+      <div className="grid gap-4 md:grid-cols-[1fr_220px]">
         {/* BOXES — pick the one you're filling. */}
-        <div className="space-y-2">
+        <div className="space-y-2 md:order-last">
           {/* FIND — "which box is this SKU in?". Typing narrows the list to the boxes holding a match and names the matching codes under
               each; click one to open it. Uppercased like the app's other find boxes (codes are uppercase); matching ignores case.
               Its own input, NOT the scan box — a scan here would otherwise go into a box. */}
