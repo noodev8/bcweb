@@ -101,8 +101,8 @@ import { useApiQuery } from '@/lib/useApiQuery';
 import { printFnskuLabel } from '@/lib/fnskuLabel';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 
-// sku / fnsku / title come with every line — from the DB for a stored line, from the scan lookup for one scanned here.
-interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; title?: string; }
+// sku / fnsku / groupid / title come with every line — from the DB for a stored line, from the scan lookup for one scanned here.
+interface BoxLine { code: string; qty: number; sku?: string; fnsku?: string; groupid?: string; title?: string; }
 // Measurements are held as typed (strings), so a half-typed "12." isn't rewritten under the cursor.
 interface BoxDims { length: string; width: string; height: string; weight: string; }
 // locked = the box is done (owner, 2026-10-15): contents and measurements fixed until unlocked. Stored on the server (amzshipment.locked).
@@ -121,7 +121,7 @@ const boxUnits = (b: Box) => b.lines.reduce((n, l) => n + l.qty, 0);
 const sizeOf = (code: string) => code.slice(code.lastIndexOf('-') + 1);
 const fromDb = (b: AmzBox): Box => ({
   id: b.box,
-  lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, title: l.title })),
+  lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, groupid: l.groupid, title: l.title })),
   dims: { length: b.length, width: b.width, height: b.height, weight: b.weight },
   locked: !!b.locked,
 });
@@ -503,8 +503,8 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
         chimeNewBox();
       }
     }
-    const { code, sku, fnsku, title } = hit;
-    addTo(boxId, code, 1, { sku, fnsku, title });
+    const { code, sku, fnsku, groupid, title } = hit;
+    addTo(boxId, code, 1, { sku, fnsku, groupid, title });
     setHistory((h) => [...h, { boxId, code }]);
     // Scanned the FNSKU itself -> the shoe already wears its label; don't print another (see FNSKU LABELS in the header).
     const printed = printOn && raw !== fnsku.toUpperCase();
@@ -1206,10 +1206,9 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                   <tr key={justScanned ? `${l.code}#${lastScan?.n}` : l.code}
                     className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : justScanned ? 'animate-scan-flash' : '')}>
                     <td className="px-4 py-2.5">
-                      <div className="font-medium text-slate-900">{l.title || l.code}</div>
-                      <div className="font-mono text-xs text-slate-400">
-                        {l.code}{l.sku && ` · ${l.sku}`}{l.fnsku && ` · ${l.fnsku}`}
-                      </div>
+                      {/* Led by the groupid (owner, 2026-10-16) — the packer reads the style off the box, the title is the reminder. */}
+                      <div className="font-medium text-slate-900">{l.groupid || l.code}</div>
+                      {l.title && <div className="text-xs text-slate-500">{l.title}</div>}
                     </td>
                     <td className="px-4 py-2.5 text-center text-lg font-semibold tabular-nums text-slate-900">{sizeOf(l.code)}</td>
                     <td className="px-4 py-2.5 text-right">

@@ -14,7 +14,7 @@ Purpose: AMZ Shipment screen — the Amazon boxes packed so far and what is in e
          `transit` bucket reads that). The units are STILL in localstock (C3-Amazon, allocated 'amz') while boxed — see the
          `boxed` note in routes/inv-stock.js — so nothing here is stock in its own right.
 
-         title is joined via skumap -> title purely so the packer can see what a code is (LATERAL ... LIMIT 1 so a code with two
+         groupid and title are joined via skumap -> title purely so the packer can see what a code is (LATERAL ... LIMIT 1 so a code with two
          skumap rows can't double a line).
 =======================================================================================================================================
 Success Response:
@@ -23,7 +23,7 @@ Success Response:
   "boxes": [
     { "box": 1, "weight": "15", "length": "63", "width": "62", "height": "43",
       "lines": [ { "code": "FLE030-IVES-BEIGE-04", "sku": "FLE030 BG-04", "fnsku": "X001L0082L", "supplier": "Lunar",
-                   "title": "Womens Lunar St Ives Leather Casual Trainer Beige", "qty": 4 } ] }
+                   "groupid": "FLE030-IVES-BEIGE", "title": "Womens Lunar St Ives Leather Casual Trainer Beige", "qty": 4 } ] }
   ]
 }
 =======================================================================================================================================
@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await query(
       `SELECT s.box, s.code, COALESCE(s.sku, '') AS sku, COALESCE(s.fnsku, '') AS fnsku, COALESCE(s.supplier, '') AS supplier,
-              COALESCE(t.shopifytitle, '') AS title, COALESCE(s.qty, 0) AS qty,
+              COALESCE(m.groupid, '') AS groupid, COALESCE(t.shopifytitle, '') AS title, COALESCE(s.qty, 0) AS qty,
               MAX(s.weight) OVER w AS weight, MAX(s.length) OVER w AS length,
               MAX(s.width)  OVER w AS width,  MAX(s.height) OVER w AS height,
               bool_or(COALESCE(s.locked, false)) OVER w AS locked
@@ -63,7 +63,7 @@ router.get('/', async (req, res) => {
         b = { box: r.box, weight: r.weight || '', length: r.length || '', width: r.width || '', height: r.height || '', locked: r.locked === true, lines: [] };
         boxes.push(b);
       }
-      b.lines.push({ code: r.code, sku: r.sku, fnsku: r.fnsku, supplier: r.supplier, title: r.title, qty: Number(r.qty) });
+      b.lines.push({ code: r.code, sku: r.sku, fnsku: r.fnsku, supplier: r.supplier, groupid: r.groupid, title: r.title, qty: Number(r.qty) });
     }
 
     return res.json({ return_code: 'SUCCESS', boxes });

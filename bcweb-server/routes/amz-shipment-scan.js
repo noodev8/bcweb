@@ -14,7 +14,7 @@ Purpose: AMZ Shipment screen — what is the shoe just scanned into a box? READ 
          it still wants the product's name to say WHICH shoe it was.
 =======================================================================================================================================
 Success Response:
-{ "return_code": "SUCCESS", "code": "1010551-039", "sku": "1010551-039", "fnsku": "X000Q6ARLD", "title": "Arizona Birko-Flor Stone" }
+{ "return_code": "SUCCESS", "code": "1010551-039", "sku": "1010551-039", "fnsku": "X000Q6ARLD", "groupid": "1010551", "title": "Arizona Birko-Flor Stone" }
   — fnsku/sku are '' when amzfeed has nothing for the code.
 =======================================================================================================================================
 Return Codes:
@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
          UNION
          SELECT code FROM amzfeed WHERE UPPER(fnsku) = $1
        )
-       SELECT m.code, COALESCE(af.sku, '') AS sku, COALESCE(af.fnsku, '') AS fnsku, COALESCE(t.shopifytitle, '') AS title
+       SELECT m.code, COALESCE(af.sku, '') AS sku, COALESCE(af.fnsku, '') AS fnsku, COALESCE(m.groupid, '') AS groupid, COALESCE(t.shopifytitle, '') AS title
          FROM hit h
          JOIN skumap m ON m.code = h.code
          LEFT JOIN title t ON t.groupid = m.groupid
@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
     if (result.rows.length === 0) return res.json({ return_code: 'NOT_FOUND', message: `${raw} isn't a product we know` });
 
     const r = result.rows[0];
-    return res.json({ return_code: 'SUCCESS', code: r.code, sku: r.sku, fnsku: r.fnsku, title: r.title });
+    return res.json({ return_code: 'SUCCESS', code: r.code, sku: r.sku, fnsku: r.fnsku, groupid: r.groupid, title: r.title });
   } catch (err) {
     logger.error('[amz-shipment-scan] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to look up the scan' });

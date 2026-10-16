@@ -2742,7 +2742,7 @@ export function getAmzBarcodeCheck() {
 
 // AMZ Shipment — the Amazon boxes packed so far (amzshipment), with each box's contents and measurements. READ ONLY.
 // Measurements come through as the strings the legacy table holds ('' when unset).
-export interface AmzBoxLine { code: string; sku: string; fnsku: string; supplier: string; title: string; qty: number }
+export interface AmzBoxLine { code: string; sku: string; fnsku: string; supplier: string; groupid: string; title: string; qty: number }
 export interface AmzBox { box: number; weight: string; length: string; width: string; height: string; locked: boolean; lines: AmzBoxLine[] }
 export function getAmzShipmentBoxes() {
   return request<{ boxes: AmzBox[] }>({ url: '/amz-shipment-boxes', method: 'GET' }, (b) => ({
@@ -2752,10 +2752,10 @@ export function getAmzShipmentBoxes() {
 
 // A scan on AMZ Shipment, resolved: code, EAN or FNSKU -> the product. NOT_FOUND when it's nothing we know; fnsku is '' when Amazon
 // hasn't given the product one (the screen refuses those — no FNSKU, no Amazon box).
-export interface AmzScanHit { code: string; sku: string; fnsku: string; title: string }
+export interface AmzScanHit { code: string; sku: string; fnsku: string; groupid: string; title: string }
 export function lookupAmzShipmentScan(scan: string) {
   return request<AmzScanHit>({ url: '/amz-shipment-scan', method: 'GET', params: { scan } }, (b) => ({
-    code: b.code, sku: b.sku || '', fnsku: b.fnsku || '', title: b.title || '',
+    code: b.code, sku: b.sku || '', fnsku: b.fnsku || '', groupid: b.groupid || '', title: b.title || '',
   }));
 }
 
