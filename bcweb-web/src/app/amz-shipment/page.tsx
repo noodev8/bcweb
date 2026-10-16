@@ -45,7 +45,7 @@ FNSKU or title) and names the matching codes under each; the matching lines are 
 
 KEPT SIMPLE (owner, 2026-10-16: "dont want them to really need to think"). The box's rare actions (Print labels switch, Empty, Delete)
 sit in a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; Finish shipment is folded to one
-line (green with a tick once every packed box is locked); the contents show the shoe's name and size big, codes small; and a good
+line (green with a tick once every packed box is locked); moving off a box with shoes but no size asks once "measure it now?"; the contents show the shoe's name and size big, codes small; and a good
 scan flashes its line green and pops the qty (the animations are in tailwind.config.js).
 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
@@ -381,6 +381,12 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   // The box's ⋯ menu (print switch, Empty, Delete) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
   const [menuOpen, setMenuOpen] = useState(false);
+  // DON'T LEAVE A BOX HALF-DONE (owner, 2026-10-16). Moving off a box that has shoes but no full size (picking another box, New box)
+  // asks once: measure it now, or leave it. `go` is the move they asked for, done on "Leave it". Asked once per box per visit
+  // (`leftUnmeasured`) — a packer who said leave it isn't nagged again. The size fields, to put the cursor in the first empty one.
+  const [leaveAsk, setLeaveAsk] = useState<{ from: number; go: () => void } | null>(null);
+  const leftUnmeasured = useRef(new Set<number>());
+  const dimRefs = useRef<Partial<Record<keyof BoxDims, HTMLInputElement | null>>>({});
   // FINISH SHIPMENT starts folded to one line (owner, 2026-10-16): it's done once per shipment, not while packing.
   const [finishOpen, setFinishOpen] = useState(false);
   // LOCK PROMPT (owner, 2026-10-15): once a packed box's four measurements are all in, ask whether to lock it. Asked once per box —
@@ -567,6 +573,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
     const stored = res.data.boxes.map(fromDb);
     setLastScan(null);
     setLockedAsk(null);
+    setLeaveAsk(null);
     const id = Math.max(0, ...stored.map((b) => b.id)) + 1;
     setBoxes([...stored, newBoxOf(id)]);
     setActiveId(id);
@@ -664,7 +671,30 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
     refocus();
   }
 
+  // See DON'T LEAVE A BOX HALF-DONE. Runs `go` straight away unless the open box has shoes, isn't locked, lacks a size and hasn't
+  // been asked about yet.
+  function leaveThen(go: () => void) {
+    if (boxUnits(active) > 0 && !active.locked && !dimsComplete(active.dims) && !leftUnmeasured.current.has(active.id)) {
+      setLeaveAsk({ from: active.id, go });
+      setMenuOpen(false);
+      return;
+    }
+    go();
+  }
+  function measureNow() {
+    setLeaveAsk(null);
+    const first = FIELDS.find((f) => dimNum(active.dims[f.key]) === null);
+    if (first) dimRefs.current[first.key]?.focus();
+  }
+  function leaveIt() {
+    if (!leaveAsk) return;
+    leftUnmeasured.current.add(leaveAsk.from);
+    setLeaveAsk(null);
+    leaveAsk.go();
+  }
+
   function selectBox(id: number) {
+    setLeaveAsk(null);
     setActiveId(id);
     setLockAsk(null);
     setLockedAsk(null);
@@ -773,7 +803,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
               <button
                 key={b.id}
                 type="button"
-                onClick={() => selectBox(b.id)}
+                onClick={() => { if (b.id !== active.id) leaveThen(() => selectBox(b.id)); }}
                 className={'flex w-full flex-wrap items-center gap-x-3 rounded-lg border px-3 py-2.5 text-left '
                   + (on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50')}
               >
@@ -799,7 +829,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
           })}
           <button
             type="button"
-            onClick={() => { void newBox(); }}
+            onClick={() => leaveThen(() => { void newBox(); })}
             disabled={checkingNew}
             title={openBox && boxUnits(openBox) > 0 ? `Box ${openBox.id} isn’t locked yet` : undefined}
             // Amber while a box is unlocked (owner, 2026-10-15: "so more clear") — a warning, not a stop; it still makes the box.
@@ -814,7 +844,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
             <p className="px-1 text-xs text-amber-700">
               {boxUnits(openBox) === 0 ? `Box ${openBox.id} is empty — scan into it` : `Box ${openBox.id} isn’t locked yet — lock it once it’s done`}
               {openBox.id !== active.id && (
-                <> · <button type="button" onClick={() => selectBox(openBox.id)} className="font-medium underline hover:text-amber-900">Open Box {openBox.id}</button></>
+                <> · <button type="button" onClick={() => leaveThen(() => selectBox(openBox.id))} className="font-medium underline hover:text-amber-900">Open Box {openBox.id}</button></>
               )}
             </p>
           )}
@@ -1043,6 +1073,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                   <label key={f.key} className="relative block" title={`${f.label} (${f.unit})`}>
                     <span className="sr-only">{f.label}</span>
                     <input
+                      ref={(el) => { dimRefs.current[f.key] = el; }}
                       type="text"
                       inputMode="decimal"
                       value={active.dims[f.key]}
@@ -1050,7 +1081,8 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                       onBlur={() => { if (!active.locked) saveDims(active.id, active.dims); }}
                       disabled={active.locked}
                       placeholder={f.label}
-                      className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      className={(leaveAsk?.from === active.id && dimNum(active.dims[f.key]) === null ? 'border-amber-400 bg-amber-50 ' : 'border-slate-300 bg-white ')
+                        + "h-8 w-24 rounded-md border pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"}
                     />
                     <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">{f.unit}</span>
                   </label>
@@ -1080,6 +1112,15 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
               </div>
             </div>
             {warning && <div className="mt-1.5 text-xs text-amber-700">{warning}</div>}
+            {leaveAsk?.from === active.id && (
+              <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2 text-sm">
+                <span className="flex-1 font-semibold text-amber-900">Box {active.id} has no size yet — measure it now?</span>
+                <button type="button" onClick={measureNow}
+                  className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700">Measure now</button>
+                <button type="button" onClick={leaveIt}
+                  className="rounded-md px-2 py-1 text-xs font-medium text-amber-800 hover:text-amber-950">Leave it</button>
+              </div>
+            )}
             {lockAsk === active.id && !active.locked && (
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
                 <LockClosedIcon className="h-4 w-4 text-slate-500" />
