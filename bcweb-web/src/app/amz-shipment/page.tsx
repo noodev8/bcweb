@@ -28,8 +28,11 @@ take are listed in the notice afterwards. See the route header for the detail.
 LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"). Lock box fixes a packed box's contents and
 measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
 (POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
-adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box, and locking it goes back to Goods In — unless the
-tick-box inside the header's Goods In button is unticked (owner, 2026-10-16; remembered in this browser, like Print labels).
+adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box as stored — locked or not; arriving changes nothing.
+NEXT BOX (owner, 2026-10-16). Locking a box shows "Box n locked" with Start next box (and Back to Goods In when they came from there).
+Scanning a shoe while a locked box is open starts the next box and puts the shoe in it — only once the scan has passed the check, and
+loudly: a "New box" banner over the scan field and a rising chime, so nobody packs it into the locked carton. Every start goes through
+newBox (re-reads the stored boxes), so with two benches the number is always free.
 WARN ON NEW BOX WHILE ONE IS OPEN (owner, 2026-10-15: "dont let user start a new box if their box hasnt been locked", then "dont STOP
 users making a new box if ones unlocked (incase multiple ppl) just warn them"). While any box is unlocked a line under New box names
 it, one click away — New box still works, as the open box may be someone else's on the other bench. Goods In shows the same warning
@@ -150,6 +153,25 @@ function beepError() {
   } catch { /* silent; the screen still goes red */ }
 }
 
+// A box started by itself (a scan into a locked box): two rising notes — the opposite of the refusal's low beeps, so the packer hears
+// "something new happened" without it sounding like an error. Failures ignored, the banner still says it.
+function chimeNewBox() {
+  try {
+    const ctx = new AudioContext();
+    [[0, 660], [0.16, 990]].forEach(([at, hz]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      gain.gain.value = 0.2;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.14);
+    });
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* silent; the banner still says it */ }
+}
+
 // Print labels on/off — remembered per browser (the bench's setting, see FNSKU LABELS). Default on; storage failures just mean on.
 const PRINT_KEY = 'amzShipment.printLabels';
 function loadPrintOn(): boolean {
@@ -157,16 +179,6 @@ function loadPrintOn(): boolean {
 }
 function savePrintOn(on: boolean) {
   try { localStorage.setItem(PRINT_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
-}
-
-// Back to Goods In after locking — a tick-box (owner, 2026-10-16), remembered per browser like Print labels. Default ticked (the
-// 2026-10-15 behaviour); storage failures just mean ticked.
-const BACK_KEY = 'amzShipment.backToGoodsIn';
-function loadBackOn(): boolean {
-  try { return localStorage.getItem(BACK_KEY) !== '0'; } catch { return true; }
-}
-function saveBackOn(on: boolean) {
-  try { localStorage.setItem(BACK_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
 }
 
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
@@ -241,17 +253,15 @@ function AmzShipmentContent() {
   // ?box=newest (the Goods In button): open the newest box. Read through Next's router, NOT window.location — on an in-app
   // navigation window.location can still be Goods In's URL when this first renders, which is why it kept opening Box 1.
   const startNewest = useSearchParams().get('box') === 'newest';
-  const { data, error, isLoading, busy, refresh } = useApiQuery('amz-shipment-boxes', getAmzShipmentBoxes);
+  // FRESH ON ARRIVAL (owner, 2026-10-15; fixed 2026-10-16). Packing seeds from `initial` only once, so it must be seeded from THIS
+  // visit's read, never the boxes SWR cached on the last visit — that showed boxes locked since as unlocked, and missed a box Goods In
+  // had just started. Waiting on `busy` didn't do it: on the first render SWR hasn't begun its re-read yet, so the stale cache got
+  // through. So every visit reads under its OWN cache key: nothing cached, `isLoading` until the fresh read lands. reload() re-reads
+  // the same key and remounts Packing.
+  const [visit] = useState(() => Math.random());
+  const { data, error, isLoading, refresh } = useApiQuery(['amz-shipment-boxes', visit], getAmzShipmentBoxes);
   const [round, setRound] = useState(0);
-  // FRESH ON ARRIVAL (owner, 2026-10-15). SWR hands back the boxes cached from the last visit at once and re-reads in the background —
-  // but Packing seeds from `initial` only once, so it was seeded from the STALE list: a box Goods In had just started wasn't there,
-  // and ?box=newest landed on an older one. So the first render waits for this visit's own read; after that, a background re-read
-  // never unmounts Packing (reload() remounts it on purpose).
-  const fresh = useRef(false);
-  if ((data || error) && !busy) fresh.current = true;   // an error counts too, so a failed read shows its message, not "Loading" forever
   const [shipped, setShipped] = useState<AmzShipResult | null>(null);
-  // Held here, not in Packing, because the tick-box sits in the header by the Goods In button. Lazy read: client-only page.
-  const [backOn, setBackOn] = useState(loadBackOn);
 
   async function reload() {
     await refresh();
@@ -266,32 +276,18 @@ function AmzShipmentContent() {
   return (
     // Goods In and this screen link to each other (owner, 2026-10-15).
     <AppShell title="AMZ Shipment" headerRight={
-        // The tick-box sits INSIDE the Goods In button (owner, 2026-10-16: no extra text) — one bordered pill holding the tick-box and
-        // the link side by side (a checkbox can't go inside the <a> itself, or ticking it would navigate). Only when they came from
-        // Goods In — that's the only time locking leaves the page.
-        <div className="flex items-center rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:border-slate-400">
-          {startNewest && (
-            <input
-              type="checkbox"
-              checked={backOn}
-              onChange={(e) => { setBackOn(e.target.checked); saveBackOn(e.target.checked); }}
-              title={backOn ? 'Locking a box goes back to Goods In — untick to stay here' : 'Tick to go back to Goods In after locking a box'}
-              aria-label="Back to Goods In after locking a box"
-              className="ml-2.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-          )}
-          <Link href="/goods-in" className="flex items-center gap-1.5 rounded-md px-3 py-1.5 hover:bg-slate-50">
-            <InboxArrowDownIcon className="h-4 w-4" />Goods In
-          </Link>
-        </div>
+        <Link href="/goods-in"
+          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
+          <InboxArrowDownIcon className="h-4 w-4" />Goods In
+        </Link>
       }>
       {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
-      {isLoading || !fresh.current ? (
+      {isLoading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading boxes…</div>
       ) : error || !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
       ) : (
-        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} backOn={backOn} onShipped={onShipped} onReload={reload} />
+        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} onShipped={onShipped} onReload={reload} />
       )}
     </AppShell>
   );
@@ -320,17 +316,28 @@ function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: ()
   );
 }
 
-function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
-  initial: Box[]; startNewest: boolean; backOn: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
+function Packing({ initial, startNewest, onShipped, onReload }: {
+  initial: Box[]; startNewest: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
   const router = useRouter();
-  // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling.
+  // Arriving from Goods In (?box=newest, owner 2026-10-15) opens the NEWEST box — the one that bench has just been filling — exactly as
+  // it is stored. If it's locked it shows locked: arriving never starts or unlocks anything (owner, 2026-10-16: Goods In only ever
+  // scans shoes into a NEW box). A scan into it then starts the next box (see onScan).
   const [activeId, setActiveId] = useState(() => {
     if (!initial.length) return 1;
     return startNewest ? Math.max(...initial.map((b) => b.id)) : initial[0].id;
   });
+  // NEW BOX STARTED FOR YOU (owner, 2026-10-16: "make that obvs to the user") — the banner over the scan field saying a scan into a
+  // locked box started a new one. Stays until closed or another box is picked.
+  const [autoStarted, setAutoStarted] = useState<{ from: number; to: number } | null>(null);
+  // AFTER LOCK (owner, 2026-10-16): the box just locked, so the panel asking "start the next box?" shows under it.
+  const [lockedAsk, setLockedAsk] = useState<number | null>(null);
+  // A scan into a locked box starts ONE new box, even if the scanner fires again before it's made: keyed by the locked box, the
+  // in-flight start is shared. Cleared when that box is picked again, unlocked or locked anew. `announced` = starts already bannered and chimed.
+  const autoNext = useRef(new Map<number, Promise<number | null>>());
+  const announced = useRef(new WeakSet<Promise<number | null>>());
   const [scan, setScan] = useState('');
   // Every scan in order, so Undo can take off the last one whichever box it went into.
   const [history, setHistory] = useState<{ boxId: number; code: string }[]>([]);
@@ -429,11 +436,8 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
     const raw = scan.trim().toUpperCase();
     setScan('');
     if (!raw) return;
-    const boxId = active.id;
-    if (active.locked) {
-      refuse({ scan: raw, message: `Box ${boxId} is locked — unlock it, or pick another box. Not added.` });
-      return;
-    }
+    let boxId = active.id;
+    const fromLocked = active.locked ? active.id : null;
     let hit = scanCache.current.get(raw);
     if (!hit) {
       const res = await lookupAmzShipmentScan(raw);
@@ -450,6 +454,23 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
       }
       hit = res.data;
       scanCache.current.set(raw, hit);
+    }
+    // SCAN INTO A LOCKED BOX (owner, 2026-10-16) starts the next box and puts the shoe in it — after the check above, so a refused scan
+    // never starts a box. Made obvious: a banner over the scan field and a rising two-note chime (distinct from the refusal beep).
+    if (fromLocked !== null) {
+      let pending = autoNext.current.get(fromLocked);
+      if (!pending) { pending = newBox(); autoNext.current.set(fromLocked, pending); }
+      const id = await pending;
+      if (id === null) {
+        refuse({ scan: raw, message: `Box ${fromLocked} is locked and a new box couldn’t be started — try New box. Not added.` });
+        return;
+      }
+      boxId = id;
+      if (!announced.current.has(pending)) {
+        announced.current.add(pending);
+        setAutoStarted({ from: fromLocked, to: id });
+        chimeNewBox();
+      }
     }
     const { code, sku, fnsku, title } = hit;
     addTo(boxId, code, 1, { sku, fnsku, title });
@@ -509,20 +530,23 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
   // screen isn't stored, so it drops out of the list here and the new box takes its place.
   const [checkingNew, setCheckingNew] = useState(false);
   const [newBoxError, setNewBoxError] = useState<string | null>(null);
-  async function newBox() {
-    if (checkingNew) return;
+  // Returns the new box's number, or null when nothing was started. Used by New box, Start next box and a scan into a locked box.
+  async function newBox(): Promise<number | null> {
+    if (checkingNew) return null;
     setCheckingNew(true);
     setNewBoxError(null);
     await saveChain.current;
     const res = await getAmzShipmentBoxes();
     setCheckingNew(false);
-    if (!res.success || !res.data) { setNewBoxError(`Couldn’t check the stored boxes: ${res.error || 'error'} — try again`); refocus(); return; }
+    if (!res.success || !res.data) { setNewBoxError(`Couldn’t check the stored boxes: ${res.error || 'error'} — try again`); refocus(); return null; }
     const stored = res.data.boxes.map(fromDb);
     setLastScan(null);
+    setLockedAsk(null);
     const id = Math.max(0, ...stored.map((b) => b.id)) + 1;
     setBoxes([...stored, newBoxOf(id)]);
     setActiveId(id);
     refocus();
+    return id;
   }
 
   function setDim(key: keyof BoxDims, value: string) {
@@ -587,25 +611,16 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
   // LOCK (owner, 2026-10-15): a finished box's contents and measurements are fixed until it's unlocked — every change on this screen is
   // blocked for it, and the server refuses one anyway. Only a box with something in it can be locked (an empty box isn't stored).
   // Locking only once the box is MEASURED AND WEIGHED (owner, 2026-10-15) — all four fields; unlocking always works.
-  async function toggleLock() {
+  function toggleLock() {
     if (boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))) return;
     const id = active.id;
     const locked = !active.locked;
-    // CAME FROM GOODS IN (?box=newest) and just locked the box: that box is done, so straight back to Goods In (owner, 2026-10-15) —
-    // unless "Back to Goods In" is unticked (owner, 2026-10-16), then it locks and stays like any other lock.
-    // Not queued through persist — the page is about to go, so the lock is written (after any queued saves) and only on success do we
-    // leave; a refusal stays here and says why.
-    if (locked && startNewest && backOn) {
-      setLockAsk(null);
-      await saveChain.current;
-      const res = await setAmzShipmentBoxLock(id, true);
-      if (!res.success) { setSaveError(`Locking Box ${id} wasn’t saved: ${res.error || 'error'}`); return; }
-      setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked: true } : b)));
-      router.push('/goods-in');
-      return;
-    }
     persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
     setLockAsk(null);
+    // Just locked -> ask "start the next box?" right there (see AFTER LOCK). A fresh lock (or an unlock) means a later scan into it
+    // starts a fresh box, not one remembered from before.
+    setLockedAsk(locked ? id : null);
+    autoNext.current.delete(id);
     setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked } : b)));
     setConfirmEmpty(false);
     setConfirmDelete(false);
@@ -616,6 +631,9 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
   function selectBox(id: number) {
     setActiveId(id);
     setLockAsk(null);
+    setLockedAsk(null);
+    setAutoStarted(null);
+    autoNext.current.delete(id);
     setMenuOpen(false);
     setConfirmDelete(false);
     setConfirmEmpty(false);
@@ -743,7 +761,7 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
           })}
           <button
             type="button"
-            onClick={newBox}
+            onClick={() => { void newBox(); }}
             disabled={checkingNew}
             title={openBox && boxUnits(openBox) > 0 ? `Box ${openBox.id} isn’t locked yet` : undefined}
             // Amber while a box is unlocked (owner, 2026-10-15: "so more clear") — a warning, not a stop; it still makes the box.
@@ -933,13 +951,28 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
                 </button>
               </div>
             </div>
+            {/* NEW BOX STARTED FOR YOU — loud on purpose (owner, 2026-10-16: "make that obvs"): the packer must know the shoe went into
+                a NEW box, not the one they locked. */}
+            {autoStarted && autoStarted.to === active.id && (
+              <div role="status" className="mb-2 flex items-center gap-3 rounded-md border-2 border-brand-500 bg-brand-50 px-3 py-2.5 text-brand-700">
+                <CubeIcon className="h-6 w-6 shrink-0" />
+                <div className="flex-1">
+                  <div className="text-base font-bold">New box: Box {autoStarted.to}</div>
+                  <div className="text-sm">
+                    Box {autoStarted.from} is locked, so that shoe went into Box {autoStarted.to} — get a new carton.
+                  </div>
+                </div>
+                <button type="button" onClick={() => { setAutoStarted(null); refocus(); }} aria-label="Close"
+                  className="rounded px-2 py-1 text-lg text-brand-500 hover:bg-brand-100">×</button>
+              </div>
+            )}
             <input
               ref={scanRef}
               autoFocus
               value={scan}
               onChange={(e) => setScan(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onScan(); } }}
-              placeholder={active.locked ? `Box ${active.id} is locked — unlock it or pick another box` : `Scan a shoe into Box ${active.id}`}
+              placeholder={active.locked ? `Box ${active.id} is locked — scan a shoe to start a new box` : `Scan a shoe into Box ${active.id}`}
               aria-label={`Scan into Box ${active.id}`}
               aria-invalid={scanError ? true : undefined}
               className={'h-12 w-full rounded-md border px-4 font-mono text-lg text-slate-900 placeholder:font-sans placeholder:text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 '
@@ -1020,6 +1053,25 @@ function Packing({ initial, startNewest, backOn, onShipped, onReload }: {
               </div>
             )}
           </div>
+
+          {/* AFTER LOCK (owner, 2026-10-16): the box is done — what next? Start the next box here, or (arrived from Goods In) go back
+              there. Either way scanning a shoe also starts the next box (see onScan), so ignoring this is fine too. */}
+          {lockedAsk === active.id && active.locked && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-emerald-50 px-4 py-3">
+              <CheckCircleIcon className="h-6 w-6 text-emerald-600" />
+              <span className="flex-1 font-semibold text-emerald-800">Box {active.id} locked</span>
+              <button type="button" onClick={() => { void newBox(); }} disabled={checkingNew}
+                className="flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+                <PlusIcon className="h-4 w-4" />{checkingNew ? 'Starting…' : 'Start next box'}
+              </button>
+              {startNewest && (
+                <button type="button" onClick={() => router.push('/goods-in')}
+                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  <InboxArrowDownIcon className="h-4 w-4" />Back to Goods In
+                </button>
+              )}
+            </div>
+          )}
 
           {active.lines.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">Nothing in Box {active.id} yet — scan a shoe to start.</div>
