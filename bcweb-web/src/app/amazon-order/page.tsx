@@ -14,6 +14,16 @@ SEARCH: two boxes, Include / Does not contain. Enter (or the Add button) commits
         \b...\b boundary — a plain substring would let excluding a colour like "SAND" also drop anything containing "SANDALS" (the
         exact footgun /inventory's filter hit and fixed, 2026-07-23; same fix reused here).
 
+NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have no Amazon listing (the route's off_amazon), under the
+        listed results and tagged "Not on Amazon". Before this, a style never listed — L7514-15, skipped at creation for a poor
+        ranking, then spotted as a candidate — searched to "Nothing found" and looked like a fault. The tag opens the detail row,
+        which builds the Amazon upload file (AmazonExport, the same control as Add / Modify) in place of the price block. Order and
+        Pick are open on these rows and go through Confirm Basket like any other: a pick needs only shelf stock, and the missing
+        FNSKU is checked at Pack (AMZ Shipment refuses a size with none), by when the listing is normally in. Typed by hand only —
+        rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Cold never show them. There is no
+        "file made" state: skumap's stamp can't tell a fresh file from an old abandoned one, so the tag simply stays until the Update
+        Amazon import finds the listing.
+
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
       the filter — the whole list is already in memory.
@@ -184,6 +194,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
+import AmazonExport from '@/components/AmazonExport';
 import { prettyPathLabel } from '@/lib/nav';
 import {
   getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
@@ -374,6 +385,12 @@ function isLoss(r: AmazonOrderRow): boolean {
 // here. A marked size WITH local stock stays on screen: it can still be picked (see CAN'T GET in the header).
 function supplyHidden(r: AmazonOrderRow): boolean {
   return r.no_supply && r.local_stock === 0;
+}
+
+// NOT ON AMAZON rows sit under the listed ones whatever the sort — they're the "and also, not listed" tail of a search, not part of
+// the ranking. Stable: each group keeps the order the sort gave it.
+function listedFirst(list: AmazonOrderRow[]): AmazonOrderRow[] {
+  return [...list.filter((r) => r.on_amazon), ...list.filter((r) => !r.on_amazon)];
 }
 
 // NOTHING TO PICK — a size with an empty local shelf (owner, 2026-10-09). Its Pick box is dimmed and disabled; the row stays, since
@@ -691,6 +708,20 @@ function AmazonOrderContent() {
     () => (supplyOn ? rows.filter((r) => !supplyHidden(r)) : rows),
     [rows, supplyOn],
   );
+  // NOT ON AMAZON (owner, 2026-10-16) — stocked sizes with no Amazon listing, kept apart from `rows` so the Hot line, the counts and
+  // the presets never see them. A search adds the matching ones under the listed results (see `filtered`), so looking for a style
+  // that was never listed finds it rather than "Nothing found". Can't get hides them the same way as listed rows.
+  const offRows: AmazonOrderRow[] = data?.off_amazon ?? NO_ROWS;
+  const offBaseRows = useMemo(
+    () => (supplyOn ? offRows.filter((r) => !supplyHidden(r)) : offRows),
+    [offRows, supplyOn],
+  );
+  // What a search can land on — addInclude's "does this term find anything" check has to count the unlisted rows too, or a search for
+  // one would throw the steps away as if it had found nothing.
+  const searchRows = useMemo(() => [...baseRows, ...offBaseRows], [baseRows, offBaseRows]);
+  // Every row the basket can hold a number for — Load basket and Confirm Basket look codes up here, so a pick typed on an unlisted
+  // row is shown and sent like any other.
+  const allRows = useMemo(() => [...rows, ...offRows], [rows, offRows]);
   // Reset has something to do if the Can't get cut was switched off — it's how you get back to it.
   const leftSupply = !supplyOn;
   // How many sizes of each style are on the list — the Can't get confirm says the mark takes them all.
@@ -738,14 +769,14 @@ function AmazonOrderContent() {
     // season plus the steps already stacked finds nothing, the steps go and the season stands alone.
     const season = parseSeason(t);
     if (season) {
-      if (!hasSearchMatch(baseRows.filter((r) => inSeason(r, season)), includes, excludes)) { setIncludes([]); setExcludes([]); }
+      if (!hasSearchMatch(searchRows.filter((r) => inSeason(r, season)), includes, excludes)) { setIncludes([]); setExcludes([]); }
       setSeasonFilter(season);
       deselectAll();
       return;
     }
     if (includes.includes(t)) return;
     const stacked = [...includes, t];
-    if (hasSearchMatch(baseRows.filter((r) => inSeason(r, seasonFilter)), stacked, excludes)) {
+    if (hasSearchMatch(searchRows.filter((r) => inSeason(r, seasonFilter)), stacked, excludes)) {
       setIncludes(stacked);
     } else {
       setIncludes([t]);
@@ -903,18 +934,23 @@ function AmazonOrderContent() {
     // a row. The focused row stays exempt as a belt-and-braces guard, and the live test is the fallback if the filter is somehow
     // on with no snapshot taken.
     if (ordersOnly) {
-      return rows.filter((r) => r.code === focusedOrderCode
+      return allRows.filter((r) => r.code === focusedOrderCode
         || (basketSnapshot
           ? basketSnapshot.has(r.code)
           : (Number(qtyByHalf.order[r.code]) || 0) > 0 || (Number(qtyByHalf.pick[r.code]) || 0) > 0));
     }
     // Everything else narrows the working set: every SKU less what Can't get hides (baseRows, above).
-    let out = seasonFilter ? baseRows.filter((r) => inSeason(r, seasonFilter)) : baseRows;
-    if (includes.length > 0 || excludes.length > 0) {
-      const incTerms = includes.map((t) => t.toLowerCase());
-      const excTerms = excludes.map((t) => t.toLowerCase());
-      out = out.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
-    }
+    const incTerms = includes.map((t) => t.toLowerCase());
+    const excTerms = excludes.map((t) => t.toLowerCase());
+    const narrow = (list: AmazonOrderRow[]) => {
+      let o = seasonFilter ? list.filter((r) => inSeason(r, seasonFilter)) : list;
+      if (incTerms.length > 0 || excTerms.length > 0) o = o.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
+      return o;
+    };
+    let out = narrow(baseRows);
+    // Unlisted rows come in on an Include step only — never on the bare list, and never under Hot / Warm / Cold, which are tests
+    // of Amazon sales these rows don't have.
+    const unlisted = includes.length > 0 && !winnersOnly && !potentialOnly && !recycleOnly ? narrow(offBaseRows) : [];
     if (winnersOnly) out = out.filter((r) => isHot(r, hotBar));
     // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
     if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
@@ -928,8 +964,8 @@ function AmazonOrderContent() {
         return !isHot(r, hotBar) && !isWarm(r, hotBar, warmMin);
       });
     }
-    return out;
-  }, [rows, baseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+    return unlisted.length > 0 ? [...out, ...unlisted] : out;
+  }, [allRows, baseRows, offBaseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
 
@@ -988,18 +1024,18 @@ function AmazonOrderContent() {
       if (d === 0) return a.code.localeCompare(b.code);
       return d * dir;
     };
-    if (manualOrder === null) return [...filtered].sort(byNormalSort);
+    if (manualOrder === null) return listedFirst([...filtered].sort(byNormalSort));
     // Manual order wins for any row it names (coverage-fill's just-computed rank); anything filtered in AFTER the fill (e.g. a
     // search term typed since) wasn't ranked, so it falls back to the normal sort and is appended after the ranked rows.
     const rank = new Map(manualOrder.map((code, i) => [code, i]));
-    return [...filtered].sort((a, b) => {
+    return listedFirst([...filtered].sort((a, b) => {
       const ra = rank.get(a.code);
       const rb = rank.get(b.code);
       if (ra !== undefined && rb !== undefined) return ra - rb;
       if (ra !== undefined) return -1;
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
-    });
+    }));
   }, [filtered, sortKey, sortDir, manualOrder]);
 
   // DROPPING THE SNAPSHOT while the Order or Pick column is the active sort would leave that sort with nothing to sort BY (it has
@@ -1081,7 +1117,7 @@ function AmazonOrderContent() {
   // it scrolled out of view. Birkenstock is excluded by construction (isBirkenstock) even if a value somehow ended up in its box.
   // A loss-making SKU (isLoss) is NOT blocked here — the operator can still type a manual number and send it; only the Rate Order
   // auto-fill (applyCoverage, below) skips loss-makers on its own (owner, 2026-08-11).
-  const rowByCode = useMemo(() => new Map(rows.map((r) => [r.code, r])), [rows]);
+  const rowByCode = useMemo(() => new Map(allRows.map((r) => [r.code, r])), [allRows]);
   // One half's worth of sendable rows. A function of the half so the same rules produce both — the only rule that differs between
   // them is the supplier requirement, which is order-only.
   const targetsFor = useCallback((half: BasketHalf) => {
@@ -1220,7 +1256,8 @@ function AmazonOrderContent() {
   // just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
   // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   function applyCoverage(months: number) {
-    const visibleCodes = new Set(visible.map((r) => r.code));
+    // Listed rows only — an unlisted row's boxes are typed by hand, so a rate re-tap must not wipe them (see fillCoverage).
+    const visibleCodes = new Set(visible.filter((r) => r.on_amazon).map((r) => r.code));
     if (coverageMonths === months) {
       // A re-tap clears BOTH halves for these rows, because a fill wrote both (see fillCoverage).
       setCoverageForView(null);
@@ -1251,14 +1288,17 @@ function AmazonOrderContent() {
   // twice and hoping the keep rate hadn't moved in between — and a pick that doesn't match the order it was derived from is worse
   // than no pick at all, because the two would silently double-cover the same units.
   function fillCoverage(months: number, keep: number) {
-    const visibleCodes = new Set(visible.map((r) => r.code));
+    // NOT ON AMAZON rows are out of the fill and out of its clear: with no Amazon sales there is no demand to work a shortfall from,
+    // so a fill would only write nothing over what the operator typed. Their Order and Pick are manual (owner, 2026-10-16).
+    const listed = visible.filter((r) => r.on_amazon);
+    const visibleCodes = new Set(listed.map((r) => r.code));
     // Birkenstock is excluded from both halves: it never goes to Amazon at all (owner, 2026-08-28), so there is nothing to buy
     // for it here and nothing to send it either. A loss-making SKU (isLoss) is skipped the same way — no point buying more of
     // something that lost money last time it sold, and no point shipping the shelf's copy to Amazon to lose money on it there.
     const filled: Record<BasketHalf, { code: string; qty: number }[]> = { order: [], pick: [] };
     // Each filled row's whole shortfall (pick + order) — what the table is ranked by afterwards.
     const need: { code: string; qty: number }[] = [];
-    for (const r of visible) {
+    for (const r of listed) {
       if (isLoss(r) || isBirkenstock(r)) continue;
       const demand = r.units_30d * months;
       // What Amazon is short by, before any local stock is considered — the single number both halves come out of.
@@ -2189,6 +2229,18 @@ function AmazonOrderContent() {
                   }>
                     <span className="inline-flex items-center gap-1">
                       <span title={r.title || undefined}>{r.code}</span>
+                      {/* NOT ON AMAZON tag — opens the detail row, where the Amazon upload file is built. Stays until the Update
+                          Amazon import finds the listing, so a file made and never uploaded keeps saying so. */}
+                      {!r.on_amazon && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
+                          title="No Amazon listing — open to build the Amazon upload file"
+                          className="rounded border border-sky-200 bg-sky-50 px-1 font-sans text-[10px] font-medium leading-4 text-sky-700"
+                        >
+                          Not on Amazon
+                        </button>
+                      )}
                       {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
                           Still can't live. A lapsed mark gets a quieter tag: the style is back, the note says why it was away. */}
                       {(r.no_supply || r.no_supply_since) && (
@@ -2259,15 +2311,20 @@ function AmazonOrderContent() {
                   })}
                   {/* PROFIT -> the Amazon price screen for this SKU (owner, 2026-10-12), carrying ?from= so its Back, and Apply, come
                       straight back here. A link, so the click doesn't also select the row. */}
+                  {/* An unlisted row has no Amazon price to change, so no link — the Amazon price screen has nothing for it. */}
                   <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">
-                    <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
-                      {money(r.unit_profit)}
-                    </Link>
+                    {r.on_amazon ? (
+                      <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
+                        {money(r.unit_profit)}
+                      </Link>
+                    ) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">
-                    <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
-                      {money(r.profit_30d)}
-                    </Link>
+                    {r.on_amazon ? (
+                      <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
+                        {money(r.profit_30d)}
+                      </Link>
+                    ) : <span className="font-normal text-slate-300">—</span>}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     <button
@@ -2293,7 +2350,15 @@ function AmazonOrderContent() {
                           read") rather than one run-on xs line. */}
                       <div className="flex flex-wrap items-start gap-x-10 gap-y-4 py-1 pl-3">
                         <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
-                        <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} onSetPrice={onSetPrice} />
+                        {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file takes the price block's
+                            place. The same component as Add / Modify, so there is one way to make the file. */}
+                        {r.on_amazon
+                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} onSetPrice={onSetPrice} />
+                          : (
+                            <div className="max-w-sm">
+                              <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} />
+                            </div>
+                          )}
                         <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
                           <dt className="text-slate-500">RRP</dt>
                           <dd className="font-medium tabular-nums text-slate-900">{money(r.rrp)}</dd>

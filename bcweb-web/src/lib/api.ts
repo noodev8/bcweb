@@ -158,6 +158,10 @@ export interface AmazonOrderRow {
   no_supply_since: string | null;
   no_supply_until: string | null;
   no_supply_by: string | null;
+
+  // false = a stocked size with no Amazon listing (the list's off_amazon array) — Amazon-only fields are null/0. Shown only under a
+  // search; Order and Pick are open on it, rate fills skip it.
+  on_amazon: boolean;
 }
 // Screen-level, not per row: Amazon order lines queued from this screen that nobody has actually placed with a supplier yet
 // (orderstatus, ordertype 3, arrived=0, orderdate=''). Drives the "waiting to be placed" indicator on /amazon-order.
@@ -463,11 +467,31 @@ export function getAmzLosers(group: PricingGroup, days?: number, limit?: number,
   );
 }
 
+// Optional fields defaulted so an older server reads as blanks, not undefined. on_amazon says which of the two arrays the row came from.
+function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOrderRow {
+  return {
+    ...r,
+    season: r.season ?? null,
+    last_price: r.last_price ?? null,
+    rrp: r.rrp ?? null,
+    imagename: r.imagename ?? null,
+    queued_price: r.queued_price ?? null,
+    floor: r.floor ?? null,
+    no_supply: r.no_supply === true,
+    no_supply_since: r.no_supply_since ?? null,
+    no_supply_until: r.no_supply_until ?? null,
+    no_supply_by: r.no_supply_by ?? null,
+    on_amazon: onAmazon,
+  };
+}
+
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {
   return request<{
     count: number; no_supply_default_until: string | null; rows: AmazonOrderRow[];
+    // Stocked sizes not listed on Amazon (server header: off_amazon) — a search finds them, nothing else reads them.
+    off_amazon: AmazonOrderRow[];
     to_place: AmazonOrderToPlace; on_order: AmazonOrderOnOrder;
     // The Hot | Warm bars (server utils/portfolio.js). hot_bar = the 30-day profit at the top-20% line of sizes that sold in 30
     // days — Hot is profit_30d >= it; null when nothing sold (Hot empty). warm_min_unit_profit = Warm's unit-profit floor.
@@ -478,19 +502,8 @@ export function getAmazonOrderList() {
       count: b.count ?? (b.rows || []).length,
       // The day a "Can't get it" pressed today would last until (three months out — utils/noSupply.js), for the confirm's wording.
       no_supply_default_until: b.no_supply_default_until ?? null,
-      rows: ((b.rows || []) as AmazonOrderRow[]).map((r) => ({
-        ...r,
-        season: r.season ?? null,
-        last_price: r.last_price ?? null,
-        rrp: r.rrp ?? null,
-        imagename: r.imagename ?? null,
-        queued_price: r.queued_price ?? null,
-        floor: r.floor ?? null,
-        no_supply: r.no_supply === true,
-        no_supply_since: r.no_supply_since ?? null,
-        no_supply_until: r.no_supply_until ?? null,
-        no_supply_by: r.no_supply_by ?? null,
-      })),
+      rows: ((b.rows || []) as AmazonOrderRow[]).map((r) => normaliseAmazonOrderRow(r, true)),
+      off_amazon: ((b.off_amazon || []) as AmazonOrderRow[]).map((r) => normaliseAmazonOrderRow(r, false)),
       // Absent (an older server) reads as "nothing waiting" rather than NaN — the indicator then simply doesn't appear.
       to_place: {
         units: Number(b.to_place?.units) || 0,

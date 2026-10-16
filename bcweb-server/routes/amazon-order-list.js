@@ -87,6 +87,17 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
          no round-trip. A safety cap would only get in the way of "search everything".
 
+         `off_amazon` (owner, 2026-10-16) — styles we STOCK that aren't on Amazon, so a search for one finds it instead of coming up
+         empty. The case that asked for it: L7514-15 wasn't listed when it was created (poor Amazon ranking), later showed up as a
+         candidate, and the operator came here to pick it and found nothing. Same row shape as `rows`, but a SEPARATE array, so
+         nothing that reads `rows` (the Hot line, Can't get's counts, the ~520 list) sees them; the page shows them only under a
+         search. One row per skumap size with no amzfeed row, for any style with local stock in one of those sizes — 0-stock sizes of
+         that style come too, because Order is open on them (owner: "leave it to the operator if they want to order a potential high
+         ranking winner"). Pick is open as well: a pick needs only shelf stock, and the FNSKU it lacks is checked at Pack
+         (amz-shipment-pack.js → NO_SKU), by which time the listing is normally there. Birkenstock is left out — never on Amazon.
+         A size of a style that IS on Amazon but is missing one size counts too: that is the same "make the file" job.
+         Amazon-only figures (price, sales, profit, FBA live, Amazon SKU, floor) are null/0 — nothing to read them from.
+
 Schema landmines respected: skumap.amzprofit is a junk-prone VARCHAR (2dp string) -> safeNumeric. amzfeed.amzsold is a real integer.
 amzfeed is FBA-only, READ ONLY. Size = the code's suffix after the last '-' (not RIGHT(code,2), which reads '.5' on a half size). Human name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
@@ -108,9 +119,11 @@ Success Response:
       "last_sold": "2026-06-02", "last_price": 39.99, "rrp": 65.00, "imagename": "...jpg",   // detail row
       "queued_price": 39.69, "floor": 27.40,                        // pending upload (null if none); cost + FBA fee (null if unknown)
       "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
-      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },   // the STYLE's mark
+      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,     // the STYLE's mark
+      "on_amazon": true },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
-  ]
+  ],
+  "off_amazon": [ { ...same shape, "on_amazon": false, Amazon-only fields null/0 } ]   // stocked, not listed — see above
 }
 =======================================================================================================================================
 Return Codes:
@@ -134,6 +147,46 @@ router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
+// The four code-grain stock CTEs (loc, pending, staged, ord), shared by the listed rows and off_amazon so the two can't disagree
+// about what local / FBA-bound stock is. Each is explained where it stands.
+const STOCK_CTES = `
+  loc AS (
+    -- Sellable local shelf stock. EXCLUDES allocated='amz' as well as the C3-Amazon shelf: a unit flagged for Amazon by
+    -- /amz-pick-allocate is committed to FBA even while it still sits on a Back shelf, so it must stop reading as stock
+    -- available to cover the next shortfall. It moves into fba_total below, exactly like the staged and on-order units.
+    SELECT code, SUM(qty) AS units
+    FROM localstock
+    WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location <> 'C3-Amazon'
+      AND COALESCE(allocated,'') <> 'amz'
+    GROUP BY code
+  ),
+  pending AS (
+    -- Flagged for Amazon, not yet gathered onto the C3-Amazon shelf — i.e. exactly what the /pick Amazon tab is showing right
+    -- now (utils/pick.js -> modeFilter('amazon')). Surfaced as pick_pending so a row can SAY why its local stock dropped, and
+    -- folded into fba_total so a rate fill can't plan the same pick twice (the same double-count fix on-order lines got).
+    SELECT code, SUM(qty) AS units
+    FROM localstock
+    WHERE COALESCE(deleted,0) = 0 AND qty > 0 AND allocated = 'amz' AND location <> 'C3-Amazon'
+    GROUP BY code
+  ),
+  staged AS (
+    -- Picked and sitting at C3-Amazon, waiting for DPD to collect — Amazon-bound, not local. Folded into fba_total below.
+    SELECT code, SUM(qty) AS units
+    FROM localstock
+    WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location = 'C3-Amazon'
+    GROUP BY code
+  ),
+  ord AS (
+    -- Not-yet-arrived Amazon order lines (TO PLACE and ON ORDER both count — orderdate doesn't distinguish "arrived", only
+    -- "placed with the supplier"). One row per unit, so COUNT(*) is the unit count. Same predicate as routes/inv-styles.js's
+    -- own ord CTE, narrowed to Amazon only (ordertype=3) since this screen never orders local stock.
+    SELECT o.shopifysku AS code, COUNT(*) AS units
+    FROM orderstatus o
+    WHERE o.arrived = 0 AND o.ordertype = 3
+    GROUP BY o.shopifysku
+  )
+`;
+
 router.get('/', async (req, res) => {
   try {
     // skumap (amzprofit) and amzfeed (amzsold, amzprice) are both code-grain, so a straight JOIN pairs them one-to-one; skusummary
@@ -142,41 +195,7 @@ router.get('/', async (req, res) => {
     // Amazon orders are all pre-aggregated to code-grain in their own CTEs (so none of them can fan out the row set) and LEFT
     // JOINed — a SKU with none of any simply reads 0.
     const result = await query(`
-      WITH loc AS (
-        -- Sellable local shelf stock. EXCLUDES allocated='amz' as well as the C3-Amazon shelf: a unit flagged for Amazon by
-        -- /amz-pick-allocate is committed to FBA even while it still sits on a Back shelf, so it must stop reading as stock
-        -- available to cover the next shortfall. It moves into fba_total below, exactly like the staged and on-order units.
-        SELECT code, SUM(qty) AS units
-        FROM localstock
-        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location <> 'C3-Amazon'
-          AND COALESCE(allocated,'') <> 'amz'
-        GROUP BY code
-      ),
-      pending AS (
-        -- Flagged for Amazon, not yet gathered onto the C3-Amazon shelf — i.e. exactly what the /pick Amazon tab is showing right
-        -- now (utils/pick.js -> modeFilter('amazon')). Surfaced as pick_pending so a row can SAY why its local stock dropped, and
-        -- folded into fba_total so a rate fill can't plan the same pick twice (the same double-count fix on-order lines got).
-        SELECT code, SUM(qty) AS units
-        FROM localstock
-        WHERE COALESCE(deleted,0) = 0 AND qty > 0 AND allocated = 'amz' AND location <> 'C3-Amazon'
-        GROUP BY code
-      ),
-      staged AS (
-        -- Picked and sitting at C3-Amazon, waiting for DPD to collect — Amazon-bound, not local. Folded into fba_total below.
-        SELECT code, SUM(qty) AS units
-        FROM localstock
-        WHERE ordernum = '#FREE' AND COALESCE(deleted,0) = 0 AND qty > 0 AND location = 'C3-Amazon'
-        GROUP BY code
-      ),
-      ord AS (
-        -- Not-yet-arrived Amazon order lines (TO PLACE and ON ORDER both count — orderdate doesn't distinguish "arrived", only
-        -- "placed with the supplier"). One row per unit, so COUNT(*) is the unit count. Same predicate as routes/inv-styles.js's
-        -- own ord CTE, narrowed to Amazon only (ordertype=3) since this screen never orders local stock.
-        SELECT o.shopifysku AS code, COUNT(*) AS units
-        FROM orderstatus o
-        WHERE o.arrived = 0 AND o.ordertype = 3
-        GROUP BY o.shopifysku
-      ),
+      WITH ${STOCK_CTES},
       lastsold AS (
         -- Most recent Amazon sale date per code, same shape as routes/amz-losers.js's own 'ls' CTE — lets the web page tell a genuinely
         -- recent sale apart from unit_profit's STICKY last-seen figure (which can be a year+ stale and still pass a >£3 test).
@@ -237,7 +256,47 @@ router.get('/', async (req, res) => {
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
-    const rows = result.rows.map((r) => {
+    // OFF AMAZON — see `off_amazon` in the header. A style qualifies when one of its not-listed sizes has local stock; then EVERY
+    // not-listed size of it comes, 0-stock ones included, so Order can be typed against any size. Amazon-only columns are written as
+    // NULL/0 in SQL so both result sets go through the one toRow below.
+    const off = await query(`
+      WITH ${STOCK_CTES},
+      unlisted AS (
+        SELECT m.code, m.groupid
+        FROM skumap m
+        LEFT JOIN amzfeed a ON a.code = m.code
+        WHERE a.code IS NULL AND COALESCE(m.deleted,0) = 0 AND UPPER(COALESCE(m.supplier,'')) <> 'BIRKENSTOCK'
+      )
+      SELECT u.code, u.groupid, SUBSTRING(u.code FROM '[^-]*$') AS size,
+             t.shopifytitle AS title,
+             NULL AS price, 0 AS units_30d, 0 AS units_7d, NULL AS unit_profit,
+             COALESCE(staged.units,0) + COALESCE(ord.units,0) + COALESCE(pending.units,0) AS fba_total,
+             COALESCE(pending.units,0) AS pick_pending,
+             0 AS fba_live,
+             regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
+             NULL AS amz_sku,
+             m.supplier AS supplier,
+             sk.brand AS brand,
+             sk.season AS season,
+             COALESCE(loc.units,0) AS local_stock,
+             ${safeNumeric('sk.cost')} AS cost,
+             NULL AS last_sold, NULL AS last_price, NULL AS queued_price, NULL AS floor,
+             ${safeNumeric('sk.rrp')} AS rrp,
+             NULLIF(sk.imagename, '') AS imagename,
+             ${noSupplySelectSql('sk')}
+      FROM unlisted u
+      JOIN skumap m ON m.code = u.code
+      JOIN skusummary sk ON sk.groupid = u.groupid
+      LEFT JOIN title t ON t.groupid = u.groupid
+      LEFT JOIN loc ON loc.code = u.code
+      LEFT JOIN pending ON pending.code = u.code
+      LEFT JOIN staged ON staged.code = u.code
+      LEFT JOIN ord ON ord.code = u.code
+      WHERE u.groupid IN (SELECT u2.groupid FROM unlisted u2 JOIN loc l2 ON l2.code = u2.code)
+      ORDER BY u.groupid, u.code
+    `);
+
+    const toRow = (r, onAmazon) => {
       const units = Number(r.units_30d) || 0;
       const unitProfit = num(r.unit_profit);
       return {
@@ -267,8 +326,11 @@ router.get('/', async (req, res) => {
         rrp: num(r.rrp),
         imagename: r.imagename || null,
         ...noSupplyFields(r),
+        on_amazon: onAmazon,
       };
-    });
+    };
+    const rows = result.rows.map((r) => toRow(r, true));
+    const offAmazon = off.rows.map((r) => toRow(r, false));
 
     // The un-placed backlog, as its own aggregate — see `to_place` in the header for why it isn't derived from `rows`. Cheap: the
     // same narrow orderstatus scan the `ord` CTE above already does, filtered one step further.
@@ -309,7 +371,7 @@ router.get('/', async (req, res) => {
 
     return res.json({
       return_code: 'SUCCESS', count: rows.length, no_supply_default_until: parkUntil, to_place: toPlace, on_order: onOrder,
-      hot_bar: hotBar, warm_min_unit_profit: WARM_MIN_UNIT_PROFIT, rows,
+      hot_bar: hotBar, warm_min_unit_profit: WARM_MIN_UNIT_PROFIT, rows, off_amazon: offAmazon,
     });
   } catch (err) {
     logger.error('[amazon-order-list] error:', err.message);
