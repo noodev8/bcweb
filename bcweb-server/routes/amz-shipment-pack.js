@@ -16,17 +16,26 @@ Purpose: AMZ Shipment — "Pack": the user's active box is done, so store it and
          is written — the box stays in the browser to be fixed. Only a MEASURED AND WEIGHED box can be packed (as for lock, owner
          2026-10-15): all four measurements, positive numbers.
 
+         REFILL (owner, 2026-10-16: "unpack should keep the number - it just loads that box to the users box so they can add or remove
+         if needed. then packing it saves the new shoes but keeps that num. the only thing that changes numbers is deleting a box").
+         Unpack (or Empty, which starts it empty) on a stored box makes the user's box a refill of it: `refill` = that box's number and what the screen showed in it
+         (`expect`). The stored box KEEPS its old contents until this pack — so nobody else can be given its number meanwhile — and
+         here they're replaced: the box is checked unchanged (utils/amzShipment.js → lockBoxIfUnchanged), its rows deleted and the new
+         ones written under the same number. If it has changed (another bench deleted an earlier box and the numbers
+         moved), nothing is written (STALE) and the screen offers to pack it as a new box instead.
+
          Stock is untouched — boxing never moved localstock (see amz-shipment-ship).
 =======================================================================================================================================
 Request Payload:
-{ "lines": [ { "code": "1010551-039", "qty": 2 } ], "dims": { "length": "46", "width": "46", "height": "33", "weight": "12.5" } }
+{ "lines": [ { "code": "1010551-039", "qty": 2 } ], "dims": { "length": "46", "width": "46", "height": "33", "weight": "12.5" },
+  "refill": { "box": 7, "expect": [ { "code": "…", "qty": 3 } ] } }   // optional — repack Box 7 under its own number (see REFILL)
 
 Success Response:
 { "return_code": "SUCCESS", "box": 14, "units": 2 }
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "MISSING_FIELDS" · "NOT_MEASURED" (any of the four measurements missing) · "NO_SKU" (a code with no Amazon SKU/FNSKU) ·
-"UNAUTHORIZED" · "SERVER_ERROR"
+"STALE" (a refill whose box has changed) · "UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -34,7 +43,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { cleanDims, lookupAmzProduct } = require('../utils/amzShipment');
+const { cleanDims, lookupAmzProduct, lockBoxIfUnchanged } = require('../utils/amzShipment');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -58,6 +67,12 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'NOT_MEASURED', message: 'Put in the length, width, height and weight before packing' });
     }
 
+    const refill = req.body?.refill ?? null;
+    const refillBox = refill === null ? null : Number(refill.box);
+    if (refill !== null && (!Number.isInteger(refillBox) || refillBox < 1 || !Array.isArray(refill.expect))) {
+      return res.json({ return_code: 'MISSING_FIELDS', message: 'refill needs box and expect' });
+    }
+
     const out = await withTransaction(async (client) => {
       const products = [];
       for (const [code, qty] of qtyByCode) {
@@ -65,8 +80,16 @@ router.post('/', async (req, res) => {
         if (!p || !p.sku || !p.fnsku) return { noSku: code };
         products.push({ ...p, qty });
       }
+      // Serialised with Delete (same advisory lock), so numbers can't move mid-way.
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('amzshipment:new-box'))`);
-      const box = Number((await client.query(`SELECT COALESCE(MAX(box), 0) + 1 AS box FROM amzshipment`)).rows[0].box);
+      let box;
+      if (refillBox !== null) {
+        if (!(await lockBoxIfUnchanged(client, refillBox, refill.expect))) return { stale: true };
+        await client.query(`DELETE FROM amzshipment WHERE box = $1`, [refillBox]);
+        box = refillBox;
+      } else {
+        box = Number((await client.query(`SELECT COALESCE(MAX(box), 0) + 1 AS box FROM amzshipment`)).rows[0].box);
+      }
       for (const p of products) {
         // ON CONFLICT: two codes sharing one Amazon SKU are one row, as the key requires.
         await client.query(
@@ -79,10 +102,13 @@ router.post('/', async (req, res) => {
       return { box, units: products.reduce((n, p) => n + p.qty, 0) };
     });
 
+    if (out.stale) {
+      return res.json({ return_code: 'STALE', message: `Box ${refillBox} has changed on another screen, so it wasn't replaced` });
+    }
     if (out.noSku) {
       return res.json({ return_code: 'NO_SKU', message: `${out.noSku} has no Amazon SKU/FNSKU, so the box can't be packed — take it out first` });
     }
-    logger.info(`[amz-shipment-pack] box ${out.box}: ${out.units} units — by ${req.user.display_name}`);
+    logger.info(`[amz-shipment-pack] box ${out.box}${refillBox !== null ? ' (refilled)' : ''}: ${out.units} units — by ${req.user.display_name}`);
     return res.json({ return_code: 'SUCCESS', box: out.box, units: out.units });
   } catch (err) {
     logger.error('[amz-shipment-pack] error:', err.message);

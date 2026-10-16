@@ -183,7 +183,7 @@ app.use('/amz-shipment-boxes', require('./routes/amz-shipment-boxes')); // AMZ S
 app.use('/amz-shipment-scan', require('./routes/amz-shipment-scan'));   // AMZ Shipment: resolve a scan (code/EAN/FNSKU) + its FNSKU — READ ONLY
 app.use('/amz-shipment-ship',require('./routes/amz-shipment-ship'));   // Mark shipped: archive the shipment, stock off C3-Amazon, clear
 app.use('/amz-shipment-pack', require('./routes/amz-shipment-pack'));   // AMZ Shipment: Pack — store the user's box, give it its number
-app.use('/amz-shipment-unpack', require('./routes/amz-shipment-unpack')); // AMZ Shipment: Unpack — a packed box back to the user's box
+app.use('/amz-shipment-box-delete', require('./routes/amz-shipment-box-delete')); // AMZ Shipment: delete a stored box, later boxes move down
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.

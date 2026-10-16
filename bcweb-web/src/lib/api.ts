@@ -2772,19 +2772,20 @@ export function shipAmzShipment(boxes: number, units: number) {
   }));
 }
 
-// The user's box lives in the browser until it's packed (src/lib/amzActiveBox.ts); Pack stores it and returns its new number.
+// The user's box lives in the browser until it's packed (src/lib/amzActiveBox.ts); Pack stores it and returns its number.
 export interface AmzBoxDims { length: string; width: string; height: string; weight: string }
-export function packAmzShipmentBox(lines: { code: string; qty: number }[], dims: AmzBoxDims) {
-  return request<{ box: number; units: number }>({ url: '/amz-shipment-pack', method: 'POST', data: { lines, dims } }, (b) => ({
+// What the screen showed in a stored box — the server acts on that box by number only if it still holds exactly this (STALE otherwise).
+export type AmzBoxExpect = { code: string; qty: number }[];
+// `refill`: repack that stored box under its own number, replacing what's in it (Unpack / Empty on a stored box).
+export function packAmzShipmentBox(lines: { code: string; qty: number }[], dims: AmzBoxDims, refill?: { box: number; expect: AmzBoxExpect } | null) {
+  return request<{ box: number; units: number }>({ url: '/amz-shipment-pack', method: 'POST', data: { lines, dims, refill: refill ?? null } }, (b) => ({
     box: Number(b.box), units: Number(b.units) || 0,
   }));
 }
-// Unpack: a stored box comes out of amzshipment (later boxes move down one) and back into the user's box. `units` = what the screen
-// showed for it; the server refuses (STALE) if the stored box differs.
-export interface AmzUnpacked { box: number; lines: Omit<AmzBoxLine, 'supplier'>[]; dims: AmzBoxDims }
-export function unpackAmzShipmentBox(box: number, units: number) {
-  return request<AmzUnpacked>({ url: '/amz-shipment-unpack', method: 'POST', data: { box, units } }, (b) => ({
-    box: Number(b.box), lines: b.lines || [], dims: b.dims || { length: '', width: '', height: '', weight: '' },
+// Delete a stored box for good; later boxes move down one.
+export function deleteAmzShipmentBox(box: number, expect: AmzBoxExpect) {
+  return request<{ removed: number }>({ url: '/amz-shipment-box-delete', method: 'POST', data: { box, expect } }, (b) => ({
+    removed: Number(b.removed) || 0,
   }));
 }
 

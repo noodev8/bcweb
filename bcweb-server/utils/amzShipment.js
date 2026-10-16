@@ -1,4 +1,4 @@
-// Shared by the AMZ Shipment routes (amz-shipment-pack, amz-shipment-unpack) and by Goods In (goods-in-book), which looks up the Amazon
+// Shared by the AMZ Shipment routes (amz-shipment-pack, amz-shipment-box-delete) and by Goods In (goods-in-book), which looks up the Amazon
 // units it books in so the screen can put them in the user's box.
 //
 // A BOX IS ONLY STORED ONCE IT'S PACKED (owner, 2026-10-16: "dont want the box saved until its locked"). The box being filled is the
@@ -36,7 +36,7 @@ async function lookupAmzProduct(client, code) {
   )).rows[0] || null;
 }
 
-// Take box `box` out of amzshipment and close the gap: the boxes after it move down one, so our numbers always run 1..n and match
+// Take box `box` out of amzshipment and close the gap (Delete box — the ONLY thing that changes numbers, owner 2026-10-16): the boxes after it move down one, so our numbers always run 1..n and match
 // Amazon's B1..Bn in the Amazon upload file (owner, 2026-10-06: "if a box is deleted we renumber boxes"). The table's key is (box, sku)
 // and checked row by row, so a plain `box = box - 1` can collide mid-update; the shift goes through negatives instead. Run inside the
 // caller's transaction. Returns the rows deleted.
@@ -47,4 +47,28 @@ async function deleteBoxAndRenumber(client, box) {
   return del.rowCount;
 }
 
-module.exports = { cleanDims, lookupAmzProduct, deleteBoxAndRenumber };
+// STALE GUARD for anything that acts on a stored box by NUMBER (delete, a refill's pack). Numbers move when another bench
+// deletes an earlier box, so the screen sends what it showed in the box — [{ code, qty }] — and the action only goes ahead
+// if the stored box still holds exactly that. Locks the box's rows for the rest of the caller's transaction. Returns the rows (with
+// sku / fnsku / groupid / title / measurements) or null when the box isn't what the screen showed (or doesn't exist).
+async function lockBoxIfUnchanged(client, box, expect) {
+  const rows = (await client.query(
+    `SELECT s.code, s.sku, COALESCE(s.fnsku, '') AS fnsku, COALESCE(m.groupid, '') AS groupid,
+            COALESCE(t.shopifytitle, '') AS title, COALESCE(s.qty, 0) AS qty,
+            COALESCE(s.length, '') AS length, COALESCE(s.width, '') AS width,
+            COALESCE(s.height, '') AS height, COALESCE(s.weight, '') AS weight
+       FROM amzshipment s
+       LEFT JOIN LATERAL (SELECT m.groupid FROM skumap m WHERE m.code = s.code LIMIT 1) m ON true
+       LEFT JOIN title t ON t.groupid = m.groupid
+      WHERE s.box = $1
+      ORDER BY s.code
+      FOR UPDATE OF s`,
+    [box]
+  )).rows;
+  if (rows.length === 0) return null;
+  const sig = (list) => list.map((l) => `${String(l.code).trim()}=${Number(l.qty)}`).sort().join('|');
+  if (!Array.isArray(expect) || sig(rows) !== sig(expect)) return null;
+  return rows;
+}
+
+module.exports = { cleanDims, lookupAmzProduct, deleteBoxAndRenumber, lockBoxIfUnchanged };

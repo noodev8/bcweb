@@ -7,7 +7,13 @@ users active box - once they save /lock it they start a new active box").
 One box per user, held in THIS BROWSER (owner's choice, 2026-10-16), keyed by the logged-in display name: Goods In puts the Amazon
 units it books in here, AMZ Shipment scans into it, and the same PC sees the same box on both screens and after a reload. Nothing is
 in the DB until Pack (POST /amz-shipment-pack), which stores it under its new number; then the box is emptied here and the next scan
-starts the next one. Unpack (POST /amz-shipment-unpack) brings a stored box back into it.
+starts the next one.
+
+REFILL — UNPACK / EMPTY KEEP THE NUMBER (owner, 2026-10-16: "unpack should keep the number - it just loads that box to the users box so
+they can add or remove if needed. then packing it saves the new shoes but keeps that num. the only thing that changes numbers is
+deleting a box"). Unpack on a stored box loads its shoes and size into this box; Empty does the same with no shoes (rescan it). Either
+way `refill` = that box's number and what was in it, nothing is written yet — the stored box keeps its old contents, so its number
+can't be taken — and Pack replaces them under the same number (routes/amz-shipment-pack.js, REFILL).
 
 Accepted trade-off: cleared browser data loses an unpacked box (the shoes are still booked in to C3-Amazon — they're rescanned), and a
 different PC has its own box.
@@ -24,10 +30,12 @@ import { useSyncExternalStore } from 'react';
 export interface ActiveLine { code: string; qty: number; sku?: string; fnsku?: string; groupid?: string; title?: string }
 export interface ActiveDims { length: string; width: string; height: string; weight: string }
 // lastPacked = the number the last Pack gave this box, so Goods In can say it after going straight back there. Cleared by the next unit.
-export interface ActiveBox { lines: ActiveLine[]; dims: ActiveDims; lastPacked: number | null }
+// refill = the stored box this one will replace when packed (see REFILL), with what the screen showed in it.
+export interface ActiveRefill { box: number; expect: { code: string; qty: number }[] }
+export interface ActiveBox { lines: ActiveLine[]; dims: ActiveDims; lastPacked: number | null; refill: ActiveRefill | null }
 
 export const NO_DIMS: ActiveDims = { length: '', width: '', height: '', weight: '' };
-const EMPTY: ActiveBox = { lines: [], dims: NO_DIMS, lastPacked: null };
+const EMPTY: ActiveBox = { lines: [], dims: NO_DIMS, lastPacked: null, refill: null };
 const EVENT = 'amz-active-box';
 const keyOf = (user: string) => `amzShipment.activeBox.${user}`;
 
@@ -40,7 +48,11 @@ function parse(raw: string | null): ActiveBox {
       : [];
     const dims = { ...NO_DIMS };
     for (const k of Object.keys(NO_DIMS) as (keyof ActiveDims)[]) dims[k] = String(v?.dims?.[k] ?? '');
-    return { lines, dims, lastPacked: Number.isInteger(v?.lastPacked) ? v.lastPacked : null };
+    const r = v?.refill;
+    const refill = r && Number.isInteger(r.box) && Array.isArray(r.expect)
+      ? { box: r.box, expect: r.expect.map((l: { code: unknown; qty: unknown }) => ({ code: String(l.code), qty: Number(l.qty) })) }
+      : null;
+    return { lines, dims, lastPacked: Number.isInteger(v?.lastPacked) ? v.lastPacked : null, refill };
   } catch { return EMPTY; }
 }
 
@@ -95,17 +107,24 @@ export function emptyActiveBox(user: string) {
 
 // After Pack: a fresh box, remembering the number just given.
 export function packedActiveBox(user: string, box: number) {
-  write(user, { lines: [], dims: NO_DIMS, lastPacked: box });
+  write(user, { lines: [], dims: NO_DIMS, lastPacked: box, refill: null });
+}
+
+// Unpack (with its shoes) or Empty (none) on a stored box: this box becomes its refill. Only offered while this box is empty.
+export function startRefill(user: string, refill: ActiveRefill, lines: ActiveLine[], dims: ActiveDims) {
+  write(user, { lines, dims, lastPacked: null, refill });
+}
+
+// Stop refilling: the stored box stays as it was; whatever is in this box stays here, to pack as a new box. `box` changes the number
+// instead (this screen deleted an earlier box, so the refill's box moved down one).
+export function setRefill(user: string, refill: ActiveRefill | null) {
+  update(user, (b) => ({ ...b, refill }));
 }
 
 export function dismissPacked(user: string) {
   update(user, (b) => ({ ...b, lastPacked: null }));
 }
 
-// After Unpack: the stored box becomes this one. Only offered while this box is empty, so nothing is lost.
-export function replaceActiveBox(user: string, lines: ActiveLine[], dims: ActiveDims) {
-  write(user, { lines, dims, lastPacked: null });
-}
 
 function subscribe(onChange: () => void) {
   window.addEventListener('storage', onChange);

@@ -16,10 +16,15 @@ throw into the users active box - once they save /lock it they start a new activ
     Box 14, write 14 on the carton". Your box is then empty and the next scan starts the next one. Only a measured and weighed box can
     be packed (all four sizes). Enter on weight with all four filled packs, as Lock did.
   - PACKED BOXES are the stored ones (amzshipment; the column is still `locked`, the word on screen is "packed"). They can't be
-    changed in place. UNPACK (POST /amz-shipment-unpack, owner 2026-10-16) takes one back out of the DB into your box to change it,
-    and the boxes after it move down one, so the numbers stay 1..n (Amazon's B1..Bn). Only while your box is empty, so nothing gets
-    mixed. Packing it again gives it a new number. A stored box that ISN'T packed (one the legacy app wrote) shows "not packed" and
-    can be moved into your box the same way, then packed here.
+    changed in place. UNPACK KEEPS THE NUMBER (owner, 2026-10-16: "unpack should keep the number - it just loads that box to the users
+    box so they can add or remove if needed. then packing it saves the new shoes but keeps that num"): your box becomes "Box 7" with
+    its shoes and size, and Pack writes it back as Box 7. Nothing is written until then — the stored Box 7 keeps its old contents, so
+    its number can't be taken; Cancel leaves it as it was. EMPTY (in the ⋯ menu) is the same with no shoes: rescan it, keep the
+    number. Both need your box empty, so nothing gets mixed. A stored box that ISN'T packed (one the legacy app wrote) shows "not
+    packed"; Unpack then Pack packs it under its number.
+  - DELETE (⋯ menu, asks first; POST /amz-shipment-box-delete) is the ONLY thing that changes numbers (owner, 2026-10-16): the box
+    goes for good and the ones after it move down one, so the numbers stay 1..n (Amazon's B1..Bn). Delete and a refill's Pack check
+    the box still holds what this screen showed — numbers move when another bench deletes — and refuse if not.
   - AUTO BACK (owner, 2026-10-16): the tick-box in the header's Goods In button sends a Pack straight back to Goods In, which then
     shows the box's number. Unticked, the Packed panel here offers Back to Goods In.
 
@@ -72,7 +77,7 @@ what boxes and all box sizes"). Pick the box contents .xlsx Amazon gives you in 
 each SKU's quantity per box and every box's weight and size from the stored boxes, and downloads it as <name>-filled.xlsx to upload
 back. Done in the browser by src/lib/amzBoxUpload.ts (read its header) — the file never goes to our server. Problems (quantities that
 don't match Amazon's expected, missing sizes…) are listed but the file is still made; only a file it can't fill is refused. Our boxes
-are Amazon's B1..Bn in order, which is why Unpack renumbers.
+are Amazon's B1..Bn in order, which is why Delete renumbers.
 =======================================================================================================================================
 */
 
@@ -80,20 +85,20 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon, EllipsisHorizontalIcon, ChevronDownIcon, CheckCircleIcon, ArrowUturnUpIcon,
+  InboxArrowDownIcon, EllipsisHorizontalIcon, ChevronDownIcon, CheckCircleIcon, ArrowUturnUpIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, unpackAmzShipmentBox,
+  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { printFnskuLabel } from '@/lib/fnskuLabel';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import {
-  useActiveBox, addToActiveBox, takeFromActiveBox, setActiveDims, emptyActiveBox, packedActiveBox, dismissPacked, replaceActiveBox,
+  useActiveBox, addToActiveBox, takeFromActiveBox, setActiveDims, emptyActiveBox, packedActiveBox, dismissPacked, startRefill, setRefill,
   activeUnits, NO_DIMS, type ActiveLine, type ActiveDims,
 } from '@/lib/amzActiveBox';
 
@@ -109,6 +114,8 @@ const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slat
 // A row in the box's ⋯ menu.
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ';
 const boxUnits = (b: { lines: BoxLine[] }) => b.lines.reduce((n, l) => n + l.qty, 0);
+// What the screen shows in a stored box — sent with Delete / a refill's Pack so the server can check it's still that box.
+const expectOf = (b: Box) => b.lines.map((l) => ({ code: l.code, qty: l.qty }));
 // Size = the code's suffix after the last '-' (CLAUDE.md: not the last two characters — half sizes and UK sizes).
 const sizeOf = (code: string) => code.slice(code.lastIndexOf('-') + 1);
 const fromDb = (b: AmzBox): Box => ({
@@ -319,6 +326,8 @@ function Packing({ initial, autoBack, onShipped }: {
   // Lazy initialiser: read once on mount (this component only renders client-side after the boxes load), no effect needed.
   const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  // A stored box's ⋯ menu: which of Empty / Delete is waiting for its second click.
+  const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | null>(null);
   // The box's ⋯ menu (print switch, Empty) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
   const [menuOpen, setMenuOpen] = useState(false);
   // FINISH SHIPMENT starts folded to one line (owner, 2026-10-16): it's done once per shipment, not while packing.
@@ -351,7 +360,9 @@ function Packing({ initial, autoBack, onShipped }: {
   // What Mark shipped sends: the stored boxes and units on screen. The server refuses if its own counts differ.
   const totalUnits = boxes.reduce((n, b) => n + boxUnits(b), 0);
   const notPacked = boxes.filter((b) => !b.locked);
-  const allPacked = boxes.length > 0 && notPacked.length === 0 && mineUnits === 0;
+  // The stored box your box will replace when packed (Unpack / Empty) — see the header.
+  const refillNo = mine.refill?.box ?? null;
+  const allPacked = boxes.length > 0 && notPacked.length === 0 && mineUnits === 0 && refillNo === null;
   const warning = onMine ? dimsWarning(dims) : null;
   const canPack = mineUnits > 0 && dimsComplete(mine.dims) && !working;
 
@@ -366,6 +377,7 @@ function Packing({ initial, autoBack, onShipped }: {
     setView('mine');
     setMenuOpen(false);
     setConfirmEmpty(false);
+    setConfirmStored(null);
     setBoxError(null);
   }
 
@@ -473,14 +485,24 @@ function Packing({ initial, autoBack, onShipped }: {
     refocus();
   }
 
-  // PACK (see the header): store your box, get its number. Your box is emptied only once the server has it — a refusal leaves it as it
-  // is and says why. AUTO BACK goes straight to Goods In, which shows the number from the same store.
+  // PACK (see the header): store your box, get its number — or, refilling, write it back under the stored box's own number. Your box is
+  // emptied only once the server has it — a refusal leaves it as it is and says why. AUTO BACK goes straight to Goods In, which shows
+  // the number from the same store.
   async function pack() {
     if (!canPack) return;
     setWorking(true);
     setBoxError(null);
-    const res = await packAmzShipmentBox(mine.lines.map((l) => ({ code: l.code, qty: l.qty })), mine.dims);
+    const res = await packAmzShipmentBox(mine.lines.map((l) => ({ code: l.code, qty: l.qty })), mine.dims, mine.refill);
     if (!res.success || !res.data) {
+      // A refill whose box moved or changed on another screen: stop refilling, keep the shoes — the next Pack makes it a new box.
+      if (res.return_code === 'STALE' && mine.refill) {
+        const was = mine.refill.box;
+        setRefill(user, null);
+        await rereadBoxes();
+        setWorking(false);
+        setBoxError(`Box ${was} has changed on another screen, so it wasn’t replaced. Press Pack box again to pack this as a new box.`);
+        return;
+      }
       setWorking(false);
       setBoxError(`Not packed: ${res.error || 'error'}`);
       return;
@@ -495,21 +517,36 @@ function Packing({ initial, autoBack, onShipped }: {
     refocus();
   }
 
-  // UNPACK (see the header): a stored box back into your box, which must be empty. The server checks the box still holds what this
-  // screen showed (STALE) — then the list is re-read, as the numbers may have moved.
-  async function unpack(b: Box) {
-    if (mineUnits > 0 || working) return;
+  // UNPACK / EMPTY (see the header): your box becomes a refill of the stored box — with its shoes (Unpack) or none (Empty) — and Pack
+  // writes it back under the same number. Nothing is written now. Your box must be empty first. Empty asks first (second click).
+  function refill(b: Box, withShoes: boolean) {
+    if (mineUnits > 0) return;
+    if (!withShoes && confirmStored !== 'empty') { setConfirmStored('empty'); return; }
+    startRefill(user, { box: b.id, expect: expectOf(b) }, withShoes ? b.lines : [], b.dims);
+    setHistory([]);
+    setLastScan(null);
+    showMine();
+    refocus();
+  }
+
+  // DELETE a stored box for good; the boxes after it move down one — the only thing that changes numbers. Second click confirms. If
+  // your box is refilling a later box its number follows the move; if it was refilling this one, the refill is dropped (your shoes
+  // stay, to pack as a new box).
+  async function deleteStored(b: Box) {
+    if (working) return;
+    if (confirmStored !== 'delete') { setConfirmStored('delete'); return; }
     setWorking(true);
     setBoxError(null);
-    const res = await unpackAmzShipmentBox(b.id, boxUnits(b));
-    if (!res.success || !res.data) {
+    const res = await deleteAmzShipmentBox(b.id, expectOf(b));
+    if (!res.success) {
       await rereadBoxes();
       setWorking(false);
-      setBoxError(res.error || `Box ${b.id} couldn’t be unpacked`);
+      setConfirmStored(null);
+      setBoxError(res.error || `Box ${b.id} couldn’t be deleted`);
       return;
     }
-    replaceActiveBox(user, res.data.lines.map((l) => ({ ...l, qty: Number(l.qty) })), res.data.dims);
-    setHistory([]);
+    if (mine.refill && mine.refill.box === b.id) setRefill(user, null);
+    else if (mine.refill && mine.refill.box > b.id) setRefill(user, { ...mine.refill, box: mine.refill.box - 1 });
     await rereadBoxes();
     setWorking(false);
     showMine();
@@ -606,6 +643,7 @@ function Packing({ initial, autoBack, onShipped }: {
             <button type="button" onClick={() => { showMine(); refocus(); }} className={listCard(onMine)}>
               <CubeIcon className={'h-5 w-5 ' + (onMine ? 'text-brand-600' : 'text-slate-400')} />
               <span className="font-semibold text-slate-900">Your box</span>
+              {refillNo !== null && <span className="text-xs font-medium text-brand-700">Box {refillNo}</span>}
               <span className="ml-auto text-right text-sm tabular-nums text-slate-500">
                 {mineUnits} {mineUnits === 1 ? 'unit' : 'units'}
                 {mineUnits > 0 && !dimsComplete(mine.dims) && <span className="block text-xs text-amber-700">needs size</span>}
@@ -619,7 +657,7 @@ function Packing({ initial, autoBack, onShipped }: {
             const on = view === b.id;
             const units = boxUnits(b);
             return (
-              <button key={b.id} type="button" onClick={() => { setView(b.id); setMenuOpen(false); setBoxError(null); refocus(); }}
+              <button key={b.id} type="button" onClick={() => { setView(b.id); setMenuOpen(false); setConfirmStored(null); setBoxError(null); refocus(); }}
                 className={listCard(on)}>
                 {b.locked
                   ? <CheckCircleIcon className={'h-5 w-5 ' + (on ? 'text-brand-600' : 'text-emerald-600')} aria-label="Packed" />
@@ -627,7 +665,8 @@ function Packing({ initial, autoBack, onShipped }: {
                 <span className="font-medium text-slate-900">Box {b.id}</span>
                 <span className="ml-auto text-right text-sm tabular-nums text-slate-500">
                   {units} {units === 1 ? 'unit' : 'units'}
-                  {!b.locked && <span className="block text-xs text-amber-700">not packed</span>}
+                  {b.id === refillNo ? <span className="block text-xs text-brand-700">in your box</span>
+                    : !b.locked && <span className="block text-xs text-amber-700">not packed</span>}
                 </span>
                 {q && matchedList(b.lines.filter(lineMatches))}
               </button>
@@ -653,6 +692,7 @@ function Packing({ initial, autoBack, onShipped }: {
                 <span className={'block text-xs ' + (allPacked ? 'text-emerald-700' : 'text-slate-500')}>
                   {boxes.length === 0 ? 'Nothing packed yet'
                     : allPacked ? 'All packed — ready'
+                    : refillNo !== null ? `Box ${refillNo} is open in your box`
                     : mineUnits > 0 ? 'Your box isn’t packed yet'
                     : `${notPacked.length} ${notPacked.length === 1 ? 'box' : 'boxes'} not packed`}
                 </span>
@@ -705,7 +745,11 @@ function Packing({ initial, autoBack, onShipped }: {
               <div role="alertdialog" className="space-y-2 rounded-md border-2 border-red-400 bg-red-50 p-2.5 text-sm">
                 <div className="font-semibold text-red-800">Mark all {boxes.length} {boxes.length === 1 ? 'box' : 'boxes'} ({totalUnits} units) shipped?</div>
                 <div className="text-xs text-red-700">Takes them off the C3-Amazon shelf and clears every box. This can’t be undone.</div>
-                {mineUnits > 0 && (
+                {refillNo !== null ? (
+                  <div className="text-xs font-semibold text-red-800">
+                    Box {refillNo} is open in your box — it would go with its OLD contents. Pack it first.
+                  </div>
+                ) : mineUnits > 0 && (
                   <div className="text-xs font-semibold text-red-800">
                     Your box ({mineUnits} {mineUnits === 1 ? 'shoe' : 'shoes'}) isn’t packed, so it won’t go — it stays as your box.
                   </div>
@@ -741,11 +785,18 @@ function Packing({ initial, autoBack, onShipped }: {
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">{onMine ? 'Your box' : `Box ${shown.id}`}</h2>
+              <h2 className="text-lg font-semibold text-slate-900">
+                {!onMine ? `Box ${shown.id}` : refillNo !== null ? `Your box — Box ${refillNo}` : 'Your box'}
+              </h2>
               <span className="text-sm text-slate-500">{boxUnits({ lines })} {boxUnits({ lines }) === 1 ? 'unit' : 'units'}</span>
               {!onMine && (shown.locked
                 ? <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800"><CheckCircleIcon className="h-3 w-3" />PACKED</span>
                 : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">NOT PACKED</span>)}
+              {onMine && refillNo !== null && (
+                <button type="button" onClick={() => { setRefill(user, null); refocus(); }}
+                  title={`Leave Box ${refillNo} as it is stored — what's in your box stays, to pack as a new box`}
+                  className="text-xs font-medium text-slate-500 underline hover:text-slate-800">Cancel</button>
+              )}
               {onMine && !printOn && <span className="text-xs text-slate-400">labels off</span>}
               <div className="ml-auto flex items-center gap-1.5">
                 {onMine ? (
@@ -800,25 +851,60 @@ function Packing({ initial, autoBack, onShipped }: {
                       className="flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <CheckCircleIcon className="h-4 w-4" />
-                      {working ? 'Packing…' : 'Pack box'}
+                      {working ? 'Packing…' : refillNo !== null ? `Pack as Box ${refillNo}` : 'Pack box'}
                     </button>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => unpack(shown)}
-                    disabled={mineUnits > 0 || working}
-                    title={mineUnits > 0 ? 'Pack or empty your box first' : 'Moves it back into your box to change it — the boxes after it move down one'}
-                    className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ArrowUturnUpIcon className="h-4 w-4" />
-                    {working ? 'Moving…' : shown.locked ? 'Unpack' : 'Move to your box'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => refill(shown, true)}
+                      disabled={mineUnits > 0 || working || shown.id === refillNo}
+                      title={mineUnits > 0 ? 'Pack or empty your box first' : `Loads Box ${shown.id} into your box to add or take out — packing keeps the number`}
+                      className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ArrowUturnUpIcon className="h-4 w-4" />
+                      Unpack
+                    </button>
+                    {/* Empty (rescan it, keep the number) and Delete (gone — the only thing that renumbers), each asking first. */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen((o) => !o); setConfirmStored(null); }}
+                        aria-label="More box actions"
+                        aria-expanded={menuOpen}
+                        title="More"
+                        className={ICON_BTN + 'border-slate-300 text-slate-500 hover:bg-slate-50'}
+                      >
+                        <EllipsisHorizontalIcon className="h-4 w-4" />
+                      </button>
+                      {menuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => { setMenuOpen(false); setConfirmStored(null); refocus(); }} />
+                          <div className="absolute right-0 z-20 mt-1 w-72 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                            <button type="button" onClick={() => refill(shown, false)} disabled={mineUnits > 0 || working || shown.id === refillNo}
+                              title={mineUnits > 0 ? 'Pack or empty your box first' : undefined}
+                              className={MENU_ITEM + (confirmStored === 'empty' ? 'bg-amber-50 text-amber-800' : 'text-slate-700')}>
+                              <ArchiveBoxXMarkIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                              {confirmStored === 'empty' ? `Empty Box ${shown.id} to rescan it? Click again` : 'Empty box — rescan, keeps its number'}
+                            </button>
+                            <button type="button" onClick={() => deleteStored(shown)} disabled={working}
+                              className={MENU_ITEM + (confirmStored === 'delete' ? 'bg-red-50 text-red-700' : 'text-slate-700')}>
+                              <TrashIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                              {confirmStored === 'delete'
+                                ? `Delete Box ${shown.id}? Click again` + (boxes.some((x) => x.id > shown.id) ? ' (later boxes move down one)' : '')
+                                : 'Delete box'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
             {!onMine && mineUnits > 0 && (
-              <p className="mb-2 text-xs text-slate-500">To change this box, pack or empty your box first — then {shown.locked ? 'Unpack' : 'Move to your box'} brings it back into yours.</p>
+              <p className="mb-2 text-xs text-slate-500">To change this box, pack or empty your box first — then Unpack loads it into yours.</p>
             )}
             {boxError && <div className="mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{boxError}</div>}
             <input
