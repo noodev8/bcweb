@@ -1103,6 +1103,15 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                       value={active.dims[f.key]}
                       onChange={(e) => setDim(f.key, e.target.value)}
                       onBlur={() => { if (!active.locked) saveDims(active.id, active.dims); }}
+                      // ENTER ON WEIGHT LOCKS (owner, 2026-10-16): weight is the last field, so Enter there with all four filled locks the
+                      // box — then the usual after-lock (the "Box n locked" panel, or straight back to Goods In when ticked). Blurring
+                      // first queues the size save ahead of the lock, the order the server needs.
+                      onKeyDown={f.key === 'weight' ? (e) => {
+                        if (e.key !== 'Enter' || active.locked || boxUnits(active) === 0 || !dimsComplete(active.dims)) return;
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                        void toggleLock();
+                      } : undefined}
                       disabled={active.locked}
                       placeholder={f.label}
                       className={(leaveAsk?.from === active.id && dimNum(active.dims[f.key]) === null ? 'border-amber-400 bg-amber-50 ' : 'border-slate-300 bg-white ')
