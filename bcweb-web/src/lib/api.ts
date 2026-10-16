@@ -2772,36 +2772,19 @@ export function shipAmzShipment(boxes: number, units: number) {
   }));
 }
 
-// Saving the boxes as they're packed (2026-10-06) — every scan, −, measurement and box delete is written to amzshipment at once.
+// The user's box lives in the browser until it's packed (src/lib/amzActiveBox.ts); Pack stores it and returns its new number.
 export interface AmzBoxDims { length: string; width: string; height: string; weight: string }
-// +1 / −1 a unit of `code` in `box`. `dims` are used only when the box has no stored rows yet (its first unit).
-export function saveAmzShipmentLine(box: number, code: string, delta: 1 | -1, dims?: AmzBoxDims) {
-  return request<{ qty: number }>({ url: '/amz-shipment-line', method: 'POST', data: { box, code, delta, dims } }, (b) => ({
-    qty: Number(b.qty) || 0,
+export function packAmzShipmentBox(lines: { code: string; qty: number }[], dims: AmzBoxDims) {
+  return request<{ box: number; units: number }>({ url: '/amz-shipment-pack', method: 'POST', data: { lines, dims } }, (b) => ({
+    box: Number(b.box), units: Number(b.units) || 0,
   }));
 }
-export function saveAmzShipmentDims(box: number, dims: AmzBoxDims) {
-  return request<{ saved: boolean }>({ url: '/amz-shipment-dims', method: 'POST', data: { box, dims } }, (b) => ({
-    saved: !!b.saved,
-  }));
-}
-// Lock / unlock a finished box: while locked its contents and measurements can't change. Explicit value, not a toggle.
-export function setAmzShipmentBoxLock(box: number, locked: boolean) {
-  return request<{ locked: boolean }>({ url: '/amz-shipment-box-lock', method: 'POST', data: { box, locked } }, (b) => ({
-    locked: !!b.locked,
-  }));
-}
-
-// Empty box: its contents out, the box (number, measurements on screen) kept. No renumbering, unlike delete.
-export function emptyAmzShipmentBox(box: number) {
-  return request<{ removed: number }>({ url: '/amz-shipment-box-empty', method: 'POST', data: { box } }, (b) => ({
-    removed: Number(b.removed) || 0,
-  }));
-}
-
-export function deleteAmzShipmentBox(box: number) {
-  return request<{ removed: number }>({ url: '/amz-shipment-box-delete', method: 'POST', data: { box } }, (b) => ({
-    removed: Number(b.removed) || 0,
+// Unpack: a stored box comes out of amzshipment (later boxes move down one) and back into the user's box. `units` = what the screen
+// showed for it; the server refuses (STALE) if the stored box differs.
+export interface AmzUnpacked { box: number; lines: Omit<AmzBoxLine, 'supplier'>[]; dims: AmzBoxDims }
+export function unpackAmzShipmentBox(box: number, units: number) {
+  return request<AmzUnpacked>({ url: '/amz-shipment-unpack', method: 'POST', data: { box, units } }, (b) => ({
+    box: Number(b.box), lines: b.lines || [], dims: b.dims || { length: '', width: '', height: '', weight: '' },
   }));
 }
 
@@ -3134,8 +3117,9 @@ export interface GoodsInBooking {
   amzBox: GoodsInAmzBox | null; // an Amazon unit also goes into an AMZ box — null when it isn't an Amazon unit
 }
 // What the AMZ box step did. `boxed: false` is a WARNING — the unit still booked in to the Amazon bay, it just isn't in a box.
+// `boxed: true` carries what the screen adds to the user's AMZ box (src/lib/amzActiveBox.ts) — nothing is stored until it's packed.
 export type GoodsInAmzBox =
-  | { boxed: true; box: number; sku?: string; fnsku: string; qty: number } // sku: printed on the label
+  | { boxed: true; sku: string; fnsku: string; groupid: string; title: string }
   | { boxed: false; message: string };
 // What the Birk Tracker step did — it runs on every scan. A `marked: false` is a WARNING, not a failure: the unit was still
 // booked onto its shelf.
@@ -3143,7 +3127,7 @@ export type GoodsInBirk =
   | { marked: true; ordernum: string; code: string; requested: number; invoiced: number; arrived: number; invoicenum: string | null }
   | { marked: false; reason: 'NOT_ON_TRACKER' | 'ALL_ARRIVED' | 'ERROR'; message: string };
 
-export function goodsInBook(args: { scan: string; shelf: string; amzBox?: number | null }) {
+export function goodsInBook(args: { scan: string; shelf: string }) {
   return request<GoodsInBooking>(
     { url: '/goods-in-book', method: 'POST', data: args },
     (b) => ({
@@ -3163,15 +3147,13 @@ export function goodsInBook(args: { scan: string; shelf: string; amzBox?: number
 export function goodsInCancel(args: {
   incomingId: number; localstockId: string; ordernum: string | null; code: string;
   birk?: { ordernum: string; code: string } | null;
-  amzBox?: number | null;     // the AMZ box the booking put it in — it comes back out
 }) {
   type Undone = { undone: boolean; message?: string } | null;
-  return request<{ code: string; target: string; reopened: boolean; birk: Undone; amzBox: Undone }>(
+  return request<{ code: string; target: string; reopened: boolean; birk: Undone }>(
     { url: '/goods-in-cancel', method: 'POST', data: args },
     (b) => ({
       code: b.code, target: b.target, reopened: Boolean(b.reopened),
       birk: (b.birk as Undone) ?? null,
-      amzBox: (b.amzBox as Undone) ?? null,
     })
   );
 }

@@ -1,5 +1,10 @@
-// Shared by the AMZ Shipment write routes (amz-shipment-line, amz-shipment-dims) and by Goods In, which boxes the Amazon units it books
-// in (goods-in-book / goods-in-cancel). The +1 / −1 on an amzshipment line lives here so a box is written the same way from both screens.
+// Shared by the AMZ Shipment routes (amz-shipment-pack, amz-shipment-unpack) and by Goods In (goods-in-book), which looks up the Amazon
+// units it books in so the screen can put them in the user's box.
+//
+// A BOX IS ONLY STORED ONCE IT'S PACKED (owner, 2026-10-16: "dont want the box saved until its locked"). The box being filled is the
+// user's ACTIVE BOX, held in their browser (bcweb-web/src/lib/amzActiveBox.ts) and shared by Goods In and AMZ Shipment; Pack writes it
+// here in one go, under its new number. So every box this screen stores is packed (`amzshipment.locked = true` — the column keeps its
+// 2026-10-15 name; on screen it's "packed"). A box the legacy PowerBuilder app writes takes the column default (not packed).
 
 // A box's measurements as the screen sends them → the strings amzshipment stores (its weight/length/width/height are character
 // varying). Anything that isn't a plain positive number becomes '' (stored as NULL), so junk never reaches the table.
@@ -13,57 +18,33 @@ function cleanDims(raw) {
   return out;
 }
 
-// Put ONE unit of `code` into `box`. One amzshipment row per box + Amazon SKU (the table's key is (box, sku)), so this upserts it.
-// sku / fnsku come from amzfeed on CODE (not amzfeed.sku — see amz-shipment-scan), supplier = skusummary.supplier (what the legacy app
-// writes). A code with no Amazon SKU/FNSKU can't be stored (sku is NOT NULL): returns { noSku: true } and writes nothing.
-// MEASUREMENTS on a new row are copied from the box's existing rows when it has any, so every row of a box agrees; otherwise `dims`
-// (cleanDims output, or nothing). Returns { qty, sku, fnsku } — the line's qty after the add.
-async function addUnitToBox(client, box, code, dims) {
-  const product = (await client.query(
-    `SELECT COALESCE(af.sku, '') AS sku, COALESCE(af.fnsku, '') AS fnsku, ss.supplier
+// What a code is, for an Amazon box: sku / fnsku from amzfeed on CODE (not amzfeed.sku — see amz-shipment-scan), supplier =
+// skusummary.supplier (what the legacy app writes), groupid + title so the packer can see which shoe it is. A deleted skumap row only
+// wins when there is no live one. null when the code isn't in skumap; sku/fnsku are '' when amzfeed has no FNSKU for it.
+async function lookupAmzProduct(client, code) {
+  return (await client.query(
+    `SELECT m.code, COALESCE(af.sku, '') AS sku, COALESCE(af.fnsku, '') AS fnsku, ss.supplier,
+            COALESCE(m.groupid, '') AS groupid, COALESCE(t.shopifytitle, '') AS title
        FROM skumap m
        LEFT JOIN skusummary ss ON ss.groupid = m.groupid
+       LEFT JOIN title t ON t.groupid = m.groupid
        LEFT JOIN LATERAL (SELECT a.sku, a.fnsku FROM amzfeed a WHERE a.code = m.code AND COALESCE(a.fnsku, '') <> '' LIMIT 1) af ON true
       WHERE m.code = $1
       ORDER BY COALESCE(m.deleted, 0) ASC
       LIMIT 1`,
     [code]
-  )).rows[0];
-  if (!product || !product.sku || !product.fnsku) return { noSku: true };
-
-  const stored = (await client.query(
-    `SELECT MAX(length) AS length, MAX(width) AS width, MAX(height) AS height, MAX(weight) AS weight FROM amzshipment WHERE box = $1`,
-    [box]
-  )).rows[0];
-  const d = stored.length || stored.width || stored.height || stored.weight ? stored : (dims || {});
-
-  const row = (await client.query(
-    `INSERT INTO amzshipment (box, supplier, code, sku, fnsku, qty, weight, length, height, width)
-     VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9)
-     ON CONFLICT (box, sku) DO UPDATE SET qty = COALESCE(amzshipment.qty, 0) + 1
-     RETURNING qty`,
-    [box, product.supplier, code, product.sku, product.fnsku, d.weight || null, d.length || null, d.height || null, d.width || null]
-  )).rows[0];
-  return { qty: row.qty, sku: product.sku, fnsku: product.fnsku };
+  )).rows[0] || null;
 }
 
-// Take ONE unit of `code` out of `box`; the row is deleted at 0. Returns the line's qty after (0 = gone), or null when the box holds
-// no such line.
-async function removeUnitFromBox(client, box, code) {
-  const row = (await client.query(
-    `UPDATE amzshipment SET qty = COALESCE(qty, 0) - 1 WHERE box = $1 AND code = $2 RETURNING sku, qty`,
-    [box, code]
-  )).rows[0];
-  if (!row) return null;
-  if (row.qty <= 0) await client.query(`DELETE FROM amzshipment WHERE box = $1 AND sku = $2`, [box, row.sku]);
-  return Math.max(0, row.qty);
+// Take box `box` out of amzshipment and close the gap: the boxes after it move down one, so our numbers always run 1..n and match
+// Amazon's B1..Bn in the Amazon upload file (owner, 2026-10-06: "if a box is deleted we renumber boxes"). The table's key is (box, sku)
+// and checked row by row, so a plain `box = box - 1` can collide mid-update; the shift goes through negatives instead. Run inside the
+// caller's transaction. Returns the rows deleted.
+async function deleteBoxAndRenumber(client, box) {
+  const del = await client.query(`DELETE FROM amzshipment WHERE box = $1`, [box]);
+  await client.query(`UPDATE amzshipment SET box = -box WHERE box > $1`, [box]);
+  await client.query(`UPDATE amzshipment SET box = -box - 1 WHERE box < 0`);
+  return del.rowCount;
 }
 
-// LOCKED (owner, 2026-10-15): a box marked done — its contents and measurements are fixed until it's unlocked. The flag is on every row
-// of the box (amz-shipment-box-lock), so "any row locked" is the test. An empty box has no rows and is never locked.
-async function isBoxLocked(client, box) {
-  const r = await client.query(`SELECT COALESCE(bool_or(locked), false) AS locked FROM amzshipment WHERE box = $1`, [box]);
-  return r.rows[0].locked === true;
-}
-
-module.exports = { cleanDims, addUnitToBox, removeUnitFromBox, isBoxLocked };
+module.exports = { cleanDims, lookupAmzProduct, deleteBoxAndRenumber };

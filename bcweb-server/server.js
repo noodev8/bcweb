@@ -182,11 +182,8 @@ app.use('/amz-delete-file', require('./routes/amz-delete-file')); // build the S
 app.use('/amz-shipment-boxes', require('./routes/amz-shipment-boxes')); // AMZ Shipment: boxes packed so far (amzshipment) — READ ONLY
 app.use('/amz-shipment-scan', require('./routes/amz-shipment-scan'));   // AMZ Shipment: resolve a scan (code/EAN/FNSKU) + its FNSKU — READ ONLY
 app.use('/amz-shipment-ship',require('./routes/amz-shipment-ship'));   // Mark shipped: archive the shipment, stock off C3-Amazon, clear
-app.use('/amz-shipment-line', require('./routes/amz-shipment-line'));   // AMZ Shipment: +1/−1 a unit in a box (saved per scan)
-app.use('/amz-shipment-dims', require('./routes/amz-shipment-dims'));   // AMZ Shipment: save a box's measurements
-app.use('/amz-shipment-box-delete', require('./routes/amz-shipment-box-delete')); // AMZ Shipment: delete a box and its contents
-app.use('/amz-shipment-box-empty', require('./routes/amz-shipment-box-empty')); // AMZ Shipment: empty a box, keep the box
-app.use('/amz-shipment-box-lock', require('./routes/amz-shipment-box-lock')); // AMZ Shipment: lock / unlock a finished box
+app.use('/amz-shipment-pack', require('./routes/amz-shipment-pack'));   // AMZ Shipment: Pack — store the user's box, give it its number
+app.use('/amz-shipment-unpack', require('./routes/amz-shipment-unpack')); // AMZ Shipment: Unpack — a packed box back to the user's box
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.
