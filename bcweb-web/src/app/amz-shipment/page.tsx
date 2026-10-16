@@ -29,7 +29,8 @@ LOCK (owner, 2026-10-15: "if a box is done they lock whats in it and its values"
 measurements until Unlock: no scans in, no −, no Undo into it, no Empty / Delete, size fields read-only. Stored in amzshipment.locked
 (POST /amz-shipment-box-lock) so every bench sees it, and the write routes refuse a locked box. Goods In starts a new box rather than
 adding to a locked one. Arriving from Goods In (?box=newest) opens the newest box as stored — locked or not; arriving changes nothing.
-NEXT BOX (owner, 2026-10-16). Locking a box shows "Box n locked" with Start next box (and Back to Goods In when they came from there).
+NEXT BOX (owner, 2026-10-16). Locking a box shows "Box n locked" with Start next box and Back to Goods In — unless the tick-box in the
+header's Goods In button is ticked: then locking goes straight back to Goods In, whichever screen they came from.
 Scanning a shoe while a locked box is open starts the next box and puts the shoe in it — only once the scan has passed the check, and
 loudly: a "New box" banner over the scan field and a rising chime, so nobody packs it into the locked carton. Every start goes through
 newBox (re-reads the stored boxes), so with two benches the number is always free.
@@ -181,6 +182,17 @@ function savePrintOn(on: boolean) {
   try { localStorage.setItem(PRINT_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
 }
 
+// AUTO BACK TO GOODS IN (owner, 2026-10-16: "if they working goods in they may not want to keep needing to click"). Ticked: locking a
+// box goes straight back there, whichever screen they came from. Unticked: the Start next box / Back to Goods In panel asks. Remembered per
+// browser like Print labels — it's the bench's way of working. Default unticked; storage failures just mean unticked.
+const BACK_KEY = 'amzShipment.autoBackToGoodsIn';
+function loadAutoBack(): boolean {
+  try { return localStorage.getItem(BACK_KEY) === '1'; } catch { return false; }
+}
+function saveAutoBack(on: boolean) {
+  try { localStorage.setItem(BACK_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
+}
+
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
 // archive (15 boxes) and the owner confirmed it. Sides only — weight depends on what's packed.
 const BIRK_BOX: Partial<BoxDims> = { length: '46', width: '46', height: '33' };
@@ -259,6 +271,8 @@ function AmzShipmentContent() {
   // through. So every visit reads under its OWN cache key: nothing cached, `isLoading` until the fresh read lands. reload() re-reads
   // the same key and remounts Packing.
   const [visit] = useState(() => Math.random());
+  // Held here because its tick-box sits in the header, in the Goods In button.
+  const [autoBack, setAutoBack] = useState(loadAutoBack);
   const { data, error, isLoading, refresh } = useApiQuery(['amz-shipment-boxes', visit], getAmzShipmentBoxes);
   const [round, setRound] = useState(0);
   const [shipped, setShipped] = useState<AmzShipResult | null>(null);
@@ -275,11 +289,22 @@ function AmzShipmentContent() {
 
   return (
     // Goods In and this screen link to each other (owner, 2026-10-15).
+    // The AUTO BACK tick-box sits INSIDE the Goods In button — one bordered pill holding the tick-box and the link side by side (a
+    // checkbox can't go inside the <a>, or ticking it would navigate). Shown whichever screen they came from (owner, 2026-10-16).
     <AppShell title="AMZ Shipment" headerRight={
-        <Link href="/goods-in"
-          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50">
-          <InboxArrowDownIcon className="h-4 w-4" />Goods In
-        </Link>
+        <div className="flex items-center rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:border-slate-400">
+          <input
+            type="checkbox"
+            checked={autoBack}
+            onChange={(e) => { setAutoBack(e.target.checked); saveAutoBack(e.target.checked); }}
+            title={autoBack ? 'Locking a box goes straight back to Goods In — untick to be asked' : 'Tick to go straight back to Goods In after locking a box'}
+            aria-label="Go straight back to Goods In after locking a box"
+            className="ml-2.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          />
+          <Link href="/goods-in" className="flex items-center gap-1.5 rounded-md px-3 py-1.5 hover:bg-slate-50">
+            <InboxArrowDownIcon className="h-4 w-4" />Goods In
+          </Link>
+        </div>
       }>
       {shipped && <ShippedNotice result={shipped} onClose={() => setShipped(null)} />}
       {isLoading ? (
@@ -287,7 +312,7 @@ function AmzShipmentContent() {
       ) : error || !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error?.message || 'Failed to load the Amazon boxes'}</div>
       ) : (
-        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} onShipped={onShipped} onReload={reload} />
+        <Packing key={round} initial={data.boxes.map(fromDb)} startNewest={startNewest} autoBack={autoBack} onShipped={onShipped} onReload={reload} />
       )}
     </AppShell>
   );
@@ -316,8 +341,8 @@ function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: ()
   );
 }
 
-function Packing({ initial, startNewest, onShipped, onReload }: {
-  initial: Box[]; startNewest: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
+function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
+  initial: Box[]; startNewest: boolean; autoBack: boolean; onShipped: (r: AmzShipResult) => Promise<void>; onReload: () => Promise<void>;
 }) {
   // No boxes packed yet -> one empty Box 1 to scan into.
   const [boxes, setBoxes] = useState<Box[]>(initial.length ? initial : [newBoxOf(1)]);
@@ -611,10 +636,21 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
   // LOCK (owner, 2026-10-15): a finished box's contents and measurements are fixed until it's unlocked — every change on this screen is
   // blocked for it, and the server refuses one anyway. Only a box with something in it can be locked (an empty box isn't stored).
   // Locking only once the box is MEASURED AND WEIGHED (owner, 2026-10-15) — all four fields; unlocking always works.
-  function toggleLock() {
+  async function toggleLock() {
     if (boxUnits(active) === 0 || (!active.locked && !dimsComplete(active.dims))) return;
     const id = active.id;
     const locked = !active.locked;
+    // AUTO BACK (ticked — whichever screen they came from, owner 2026-10-16): the lock is written straight away — after any queued saves, not queued itself, as the
+    // page is about to go — and only once it's stored do we leave. A refusal stays here and says why.
+    if (locked && autoBack) {
+      setLockAsk(null);
+      await saveChain.current;
+      const res = await setAmzShipmentBoxLock(id, true);
+      if (!res.success) { setSaveError(`Locking Box ${id} wasn’t saved: ${res.error || 'error'}`); return; }
+      setBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, locked: true } : b)));
+      router.push('/goods-in');
+      return;
+    }
     persist(`${locked ? 'Locking' : 'Unlocking'} Box ${id}`, () => setAmzShipmentBoxLock(id, locked));
     setLockAsk(null);
     // Just locked -> ask "start the next box?" right there (see AFTER LOCK). A fresh lock (or an unlock) means a later scan into it
@@ -1064,12 +1100,10 @@ function Packing({ initial, startNewest, onShipped, onReload }: {
                 className="flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
                 <PlusIcon className="h-4 w-4" />{checkingNew ? 'Starting…' : 'Start next box'}
               </button>
-              {startNewest && (
-                <button type="button" onClick={() => router.push('/goods-in')}
-                  className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                  <InboxArrowDownIcon className="h-4 w-4" />Back to Goods In
-                </button>
-              )}
+              <button type="button" onClick={() => router.push('/goods-in')}
+                className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <InboxArrowDownIcon className="h-4 w-4" />Back to Goods In
+              </button>
             </div>
           )}
 
