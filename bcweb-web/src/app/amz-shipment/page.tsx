@@ -89,7 +89,7 @@ import { Suspense, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PlusIcon, MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TrashIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon, LockClosedIcon, LockOpenIcon, EllipsisHorizontalIcon, ChevronRightIcon, CheckCircleIcon,
+  InboxArrowDownIcon, LockClosedIcon, LockOpenIcon, EllipsisHorizontalIcon, ChevronDownIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
@@ -853,25 +853,33 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
 
           {/* FINISH SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
               3 Mark shipped. FOLDED to one line until clicked (owner, 2026-10-16) — it's done once per shipment, so while packing it
-              stays out of the way. The line turns green with a tick once every packed box is locked: the cue that it's time. "n of m
+              stays out of the way. The panel turns green with a tick once every packed box is locked: the cue that it's time. "n of m
               locked" is a guide only; the steps are usable any time, Mark shipped still behind its confirm. */}
-          <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+          {/* A PANEL, not a button (owner, 2026-10-16: the bare line "looks like a button"; the plain heading "looks crap"): a card
+              with an icon, a title and a status line underneath — "3 of 8 boxes locked", or green "All boxes locked — ready to finish"
+              — and a chevron. The header row opens it; the three steps sit inside the card, under a divider. */}
+          <div className={'mt-4 overflow-hidden rounded-lg border bg-white ' + (allLocked ? 'border-emerald-300' : 'border-slate-200')}>
             <button
               type="button"
               onClick={() => setFinishOpen((o) => !o)}
               aria-expanded={finishOpen}
-              className={'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-medium '
-                + (allLocked ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-slate-50"
             >
-              {allLocked ? <CheckCircleIcon className="h-4 w-4" /> : <ChevronRightIcon className={'h-4 w-4 text-slate-400 transition-transform ' + (finishOpen ? 'rotate-90' : '')} />}
-              <span className="flex-1">Finish shipment</span>
-              {packedBoxes > 0 && (
-                <span className={'text-xs font-normal ' + (allLocked ? 'text-emerald-700' : 'text-slate-500')}>
-                  {lockedBoxes} of {packedBoxes} locked
+              <span className={'flex h-8 w-8 shrink-0 items-center justify-center rounded-md '
+                + (allLocked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
+                {allLocked ? <CheckCircleIcon className="h-5 w-5" /> : <TruckIcon className="h-5 w-5" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900">Finish shipment</span>
+                <span className={'block text-xs ' + (allLocked ? 'text-emerald-700' : 'text-slate-500')}>
+                  {packedBoxes === 0 ? 'Nothing packed yet'
+                    : allLocked ? 'All boxes locked — ready'
+                    : `${lockedBoxes} of ${packedBoxes} boxes locked`}
                 </span>
-              )}
+              </span>
+              <ChevronDownIcon className={'h-4 w-4 shrink-0 text-slate-400 transition-transform ' + (finishOpen ? 'rotate-180' : '')} />
             </button>
-            {finishOpen && (<>
+            {finishOpen && (<div className="space-y-2 border-t border-slate-200 bg-slate-50 p-2">
             <button
               type="button"
               disabled={totalUnits === 0}
@@ -939,7 +947,7 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
               </button>
             )}
             {shipError && <div className="px-1 text-xs text-red-700">{shipError}</div>}
-            </>)}
+            </div>)}
           </div>
         </div>
 
