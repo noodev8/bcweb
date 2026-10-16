@@ -31,5 +31,9 @@
   },
   "overrides": {
     "qs": "^6.16.0"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "ssh2@1.17.0": true
   }
 }
