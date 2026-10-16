@@ -804,12 +804,14 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
                 key={b.id}
                 type="button"
                 onClick={() => { if (b.id !== active.id) leaveThen(() => selectBox(b.id)); }}
+                // A locked box in the list: grey card, faded name and a lock (owner, 2026-10-16) — no pill, it made the narrow cards wrap.
                 className={'flex w-full flex-wrap items-center gap-x-3 rounded-lg border px-3 py-2.5 text-left '
-                  + (on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50')}
+                  + (on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
+                    : b.locked ? 'border-slate-300 bg-slate-100 hover:bg-slate-200' : 'border-slate-200 bg-white hover:bg-slate-50')}
               >
                 <CubeIcon className={'h-5 w-5 ' + (on ? 'text-brand-600' : 'text-slate-400')} />
-                <span className="font-medium text-slate-900">Box {b.id}</span>
-                {b.locked && <LockClosedIcon className="h-4 w-4 text-slate-500" aria-label="Locked" />}
+                <span className={'font-medium ' + (b.locked && !on ? 'text-slate-500' : 'text-slate-900')}>Box {b.id}</span>
+                {b.locked && <LockClosedIcon className="h-4 w-4 text-slate-600" aria-label="Locked" />}
                 <span className="ml-auto text-right text-sm tabular-nums text-slate-500">
                   {units} {units === 1 ? 'unit' : 'units'}
                   {units > 0 && !b.locked && !dimsComplete(b.dims) && <span className="block text-xs text-amber-700">needs size</span>}
@@ -941,13 +943,25 @@ function Packing({ initial, startNewest, autoBack, onShipped, onReload }: {
           </div>
         </div>
 
-        {/* THE ACTIVE BOX — scan into it, see what's in it. */}
-        <div className="rounded-lg border border-slate-200 bg-white">
+        {/* THE ACTIVE BOX — scan into it, see what's in it. LOCKED AT A GLANCE (owner, 2026-10-16): a locked box gets a heavy dark
+            border, a dark LOCKED band across its top and a LOCKED pill by its name, on top of the greyed contents. */}
+        <div className={'overflow-hidden rounded-lg bg-white ' + (active.locked ? 'border-2 border-slate-700' : 'border border-slate-200')}>
+          {active.locked && (
+            <div className="flex items-center gap-2 bg-slate-700 px-4 py-2 text-sm text-white">
+              <LockClosedIcon className="h-5 w-5" />
+              <span className="font-bold tracking-wide">LOCKED</span>
+              <span className="text-slate-300">Box {active.id} is done — nothing in it can change until it’s unlocked.</span>
+            </div>
+          )}
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-900">Box {active.id}</h2>
               <span className="text-sm text-slate-500">{boxUnits(active)} {boxUnits(active) === 1 ? 'unit' : 'units'}</span>
-              {active.locked && <LockClosedIcon className="h-4 w-4 text-slate-500" aria-label="Locked" />}
+              {active.locked && (
+                <span className="flex items-center gap-1 rounded-full bg-slate-700 px-2 py-0.5 text-xs font-bold text-white">
+                  <LockClosedIcon className="h-3 w-3" />LOCKED
+                </span>
+              )}
               {!printOn && !active.locked && <span className="text-xs text-slate-400">labels off</span>}
               {/* Kept short (owner, 2026-10-15: "too much going on"; 2026-10-16: the rare ones in a menu). A LOCKED box offers only
                   Unlock — nothing else can change it. Open, it's Undo, the ⋯ menu (print switch, Empty, Delete — Empty and Delete ask
