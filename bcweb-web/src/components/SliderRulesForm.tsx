@@ -7,8 +7,8 @@ Purpose: The one form for a slider group's rules, used by "New slider" on /slide
          POST /slider-group-save; the server validates again (never trust the form).
 
 THE TWO HELPERS THAT ANSWER "WILL IT BE DONE IN TIME?" (owner, 2026-10-17: "I don't want it to wait too long and the season is over"):
-  - under the rules, live: "From RRP: 22 moves · reaches the floor in 42 days (28 Nov)". A product starting at RRP, every move pressed on
-    the day it is due, nothing selling (lib/sliderUi.ts → fromRrp).
+  - under the rules, live: "22 moves · floor in 42 days (28 Nov)". A product starting at RRP, every move pressed on the day it is due,
+    nothing selling (lib/sliderUi.ts → fromRrp). Kept to one short line (owner: "no need for so much text inside the cards").
   - "Reach the floor by [date] → Work out step": the reverse, sets the step % (lib/sliderUi.ts → stepForDays).
   The due date is optional (owner: "no need to over complicate that part") — "Use 28 Nov" fills it with the date above.
 
@@ -152,17 +152,15 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
 
       {/* Will it be done in time? */}
       <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        {/* From RRP, nothing selling. "Start from RRP" on a product below RRP spends one more interval on the lift. */}
         {run ? (
           <>
-            From RRP: <span className="font-semibold text-slate-800">{run.moves} move{run.moves === 1 ? '' : 's'}</span> · reaches the floor in{' '}
-            <span className="font-semibold text-slate-800">{run.days} days</span> ({fmtDay(runEnds, today)}) if nothing sells.
-            {/* "Start from RRP" on a product below RRP spends its first move on the lift, so its last cut lands one interval later. */}
-            <span className="text-slate-400"> One interval more for a product lifted to RRP first.</span>
+            <span className="font-semibold text-slate-800">{run.moves} move{run.moves === 1 ? '' : 's'}</span> · floor in{' '}
+            <span className="font-semibold text-slate-800">{run.days} days</span> ({fmtDay(runEnds, today)})
           </>
         ) : (
-          'Fill in step, every and floor to see how long it takes.'
+          '—'
         )}
-        {stopAfter > 1 && <span className="text-slate-400"> A sale before the {stopAfter === 2 ? '2nd' : '3rd'} holds the price for another interval.</span>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span>Reach the floor by</span>
           <input type="date" value={finishBy} min={addDays(today, 1)} onChange={(e) => setFinishBy(e.target.value)} className={box} aria-label="Reach the floor by" />
@@ -171,7 +169,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
               Use a step of {finishStep}%
             </button>
           ) : (
-            <span className="text-amber-700">Not possible with these rules — try a later date or fewer days between moves</span>
+            <span className="text-amber-700">Not possible</span>
           ))}
         </div>
       </div>
@@ -194,8 +192,6 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
           <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="What this slider is for" className={`w-full ${box}`} />
         </div>
       </div>
-
-      {!creating && <p className="mt-3 text-xs text-slate-400">Changed rules apply from the next move — nothing already set is re-priced.</p>}
 
       <div className="mt-4 flex items-center gap-3">
         <button type="submit" disabled={busy || !name.trim() || !run} className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">

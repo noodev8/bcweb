@@ -133,15 +133,6 @@ const GROUPS: Group[] = [
     link: '/segments',
     tiles: [],
   },
-  // A card of its own "for now" (owner, 2026-10-17) — it may move into Pricing once the team has a feel for how it gets used.
-  {
-    id: 'slider',
-    title: 'Pricing Slider',
-    blurb: 'Step prices down until they sell',
-    icon: AdjustmentsHorizontalIcon,
-    link: '/slider',
-    tiles: [],
-  },
   {
     id: 'ops',
     title: 'Operations',
@@ -456,6 +447,14 @@ const PART_GROUPS: Group[] = [
         description: 'See which segment needs attention next, and track who worked what.',
         href: '/segments',
         icon: Squares2X2Icon,
+      },
+      {
+        // Here only (owner, 2026-10-17). It was a top-level card for a day — a 7th card broke the main row's 6 columns.
+        title: 'Pricing Slider',
+        subtitle: 'Step prices down',
+        description: 'Groups whose price steps down by a % of RRP every few days until each product sells, then holds.',
+        href: '/slider',
+        icon: AdjustmentsHorizontalIcon,
       },
       {
         title: 'Shopify Price',

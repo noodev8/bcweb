@@ -7,7 +7,7 @@ Purpose: Everything about one slider (owner, 2026-10-17): its rules (edit, pause
          stands, adding and removing products, Reset to RRP, and its log. Consumes GET /slider-group.
 
 THE PRODUCTS TABLE — live first (sliding, found, at floor), with "Show the N that left" for the history:
-  Now        the current price on the channel and its % of RRP. "Priced outside the slider" = it isn't what the slider last set (someone
+  Now        the current price on the channel and its % of RRP. "Priced by hand" = it isn't what the slider last set (someone
              repriced it on another screen); the next move will take it out rather than fight it.
   Floor      floor % of RRP, or break-even when the group ticks it and break-even is higher (marked BE).
   Next move  the price and the day it's due. The first move is due straight away; with Start from RRP it's the lift back to RRP.
@@ -54,10 +54,10 @@ import {
 
 // The Next move column for a due product that the press settles rather than cuts.
 const SETTLE_NOTE: Partial<Record<SliderAction, [string, string]>> = {
-  found: ['Sold — holds at this price', 'text-emerald-700'],
-  hold: ['Sold — holds another interval', 'text-emerald-700'],
-  floor: ['At the floor — holds', 'text-amber-700'],
-  repriced: ['Priced by hand — leaves the slider', 'text-amber-700'],
+  found: ['Sold — found', 'text-emerald-700'],
+  hold: ['Sold — hold', 'text-emerald-700'],
+  floor: ['At floor', 'text-amber-700'],
+  repriced: ['Priced by hand — leaves', 'text-amber-700'],
 };
 
 // A failed live push. Honest about the state: the price is saved here, Shopify still shows the old one. (Re-Applying the same price
@@ -169,7 +169,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     setBusy(false);
     if (!(r.success && r.data)) { setMsg({ text: r.error || 'Could not update the slider', bad: true }); return; }
     if (action === 'delete') { mutateGlobal('slider-groups'); router.push('/slider'); return; }
-    if (action === 'end') setMsg({ text: `Ended — ${r.data.left} product${r.data.left === 1 ? '' : 's'} left at their current price`, bad: false });
+    if (action === 'end') setMsg({ text: 'Ended', bad: false });
     await refresh();
   }
 
@@ -180,7 +180,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     const r = await removeFromSlider(group.id, pickedLive.map((m) => m.id));
     setBusy(false);
     if (!(r.success && r.data)) { setMsg({ text: r.error || 'Could not remove', bad: true }); return; }
-    setMsg({ text: `Removed ${r.data.removed.length} — ${r.data.removed.length === 1 ? 'its price is as it was' : 'their prices are as they were'}`, bad: false });
+    setMsg({ text: `Removed ${r.data.removed.length}`, bad: false });
     setPicked(new Set());
     await refresh();
   }
@@ -209,8 +209,8 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     }
     setProgress(null); setBusy(false); setPicked(new Set());
     const parts = [`${changed} reset to RRP`];
-    if (already) parts.push(`${already} already at RRP (left the slider)`);
-    if (amz && changed) parts.push('in the upload basket — download and upload to Amazon');
+    if (already) parts.push(`${already} already at RRP`);
+    if (amz && changed) parts.push('in the upload basket');
     if (pushFailed.length) parts.push(PUSH_FAILED(pushFailed));
     if (errors.length) parts.push(`${errors.length} failed: ${errors.join('; ')}`);
     setMsg({ text: parts.join(' · '), bad: pushFailed.length > 0 || errors.length > 0 });
@@ -243,7 +243,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     }
     setProgress(null); setBusy(false);
     const parts = [tally(done) || 'Nothing moved'];
-    if (notDue) parts.push(`${notDue} no longer due (already moved, or waiting for stock)`);
+    if (notDue) parts.push(`${notDue} not due`);
     if (flagged.length) parts.push(`below cost: ${flagged.join(', ')}`);
     if (pushFailed.length) parts.push(PUSH_FAILED(pushFailed));
     if (errors.length) parts.push(`${errors.length} failed: ${errors.join('; ')}`);
@@ -305,7 +305,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         {/* The confirm sits on its own row, so End / Delete never move under the pointer: a double-click on Delete must not land on End. */}
         {confirm === 'end' && !ended && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-slate-600">End it? Every product leaves at its current price.</span>
+            <span className="text-slate-600">End it? Prices stay as they are.</span>
             <button type="button" onClick={() => groupAction('end')} disabled={busy} className="rounded-md bg-slate-800 px-3 py-1.5 font-medium text-white hover:bg-slate-900">End slider</button>
             <button type="button" onClick={() => setConfirm(null)} className="text-slate-500 hover:text-slate-800">Cancel</button>
           </div>
@@ -326,19 +326,19 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
             {left.length > 0 && <span><span className="font-semibold text-slate-500">{left.length}</span> <span className="text-slate-500">left</span></span>}
             {noStock > 0 && (
               <span className="text-slate-500" title="Due, but no stock — it can't sell, so it isn't cut. It's due again the moment stock arrives.">
-                <span className="font-semibold text-slate-700">{noStock}</span> waiting for stock
+                <span className="font-semibold text-slate-700">{noStock}</span> no stock
               </span>
             )}
             {offTrack > 0 && (
               <span className="inline-flex items-center gap-1 text-amber-700">
-                <ExclamationTriangleIcon className="h-4 w-4" /> {offTrack} priced outside the slider
+                <ExclamationTriangleIcon className="h-4 w-4" /> {offTrack} priced by hand
               </span>
             )}
           </div>
           {group.state === 'active' && live.length > 0 && (amz ? (
             dueNow > 0 && (
               <span className="text-slate-600">
-                <span className="font-semibold text-slate-900">{dueNow}</span> due — Amazon moves (through the upload basket) are the next step of the build
+                <span className="font-semibold text-slate-900">{dueNow}</span> due <span className="text-slate-400">(Amazon moves not built yet)</span>
               </span>
             )
           ) : (
@@ -357,7 +357,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         {/* Own row, away from the button above, so a double click can't confirm. */}
         {confirm === 'move' && dueNow > 0 && !amz && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm">
-            <span className="text-slate-700">{dueTally}. New prices go live on Shopify now.</span>
+            <span className="text-slate-700">{dueTally} — live on Shopify</span>
             <button type="button" onClick={onMove} disabled={busy} className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700">
               Move {dueNow}
             </button>
@@ -391,13 +391,11 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                 <PlusIcon className="h-4 w-4" /> Add products
               </button>
             )}
-            <span className="text-sm text-slate-500">{pickedLive.length > 0 ? `${pickedLive.length} ticked` : live.length > 0 ? 'Tick products to reset or remove them' : ''}</span>
+            {pickedLive.length > 0 && <span className="text-sm text-slate-500">{pickedLive.length} ticked</span>}
             {pickedLive.length > 0 && (
               confirm === 'reset' ? (
                 <span className="flex items-center gap-2 text-sm">
-                  <span className="text-slate-600">
-                    Put {pickedLive.length} back to RRP{amz ? ' (into the upload basket)' : ' — live on Shopify now'} and out of the slider?
-                  </span>
+                  <span className="text-slate-600">Reset {pickedLive.length} to RRP{amz ? ' (upload basket)' : ''}?</span>
                   <button type="button" onClick={onReset} disabled={busy} className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700">Reset {pickedLive.length}</button>
                   <button type="button" onClick={() => setConfirm(null)} className="text-slate-500 hover:text-slate-800">Cancel</button>
                 </span>
@@ -420,7 +418,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         </div>
 
         {shown.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-slate-500">{ended ? 'Nothing in this slider.' : 'No products yet — press Add products.'}</p>
+          <p className="px-4 py-4 text-sm text-slate-500">{ended ? 'Nothing in this slider.' : 'No products yet.'}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className={`w-full text-sm ${loading ? 'opacity-70' : ''}`}>
@@ -491,7 +489,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                           <>
                             <span className="tabular-nums">{money(m.next_price)}</span>
                             {m.action === 'no_stock' ? (
-                              <span className="ml-1.5 text-xs text-slate-400" title="It can't sell, so it isn't cut — due again the moment stock arrives">waits for stock</span>
+                              <span className="ml-1.5 text-xs text-slate-400" title="It can't sell, so it isn't cut — due again the moment stock arrives">no stock</span>
                             ) : (
                               <span className={`ml-1.5 text-xs ${isDue(m) ? 'font-semibold text-slate-900' : 'text-slate-400'}`}>
                                 {isDue(m) ? 'due now' : fmtDay(m.next_due, today)}
@@ -516,7 +514,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                       <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${MEMBER_STATE_COLOR[m.state]}`}>{MEMBER_STATE_LABEL[m.state]}</span>
                       {m.off_track && (
                         <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700" title={`The slider last set ${money(m.last_price)}`}>
-                          Priced outside the slider
+                          Priced by hand
                         </div>
                       )}
                     </td>

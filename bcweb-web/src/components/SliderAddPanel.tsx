@@ -193,7 +193,7 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
 
       {/* The add bar — ticked rows only */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 px-4 py-3 text-sm">
-        <span className="text-slate-500">{pickedRows.length > 0 ? `${pickedRows.length} ticked` : 'Tick rows to add them'}</span>
+        {pickedRows.length > 0 && <span className="text-slate-500">{pickedRows.length} ticked</span>}
         <span className="flex items-center gap-1.5">
           <span className="text-slate-500">Start from</span>
           <button type="button" onClick={() => setStartFrom('current')} className={toggle(startFrom === 'current')}>Current price</button>

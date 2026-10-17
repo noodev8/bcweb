@@ -14,7 +14,7 @@ Purpose: The Pricing Slider home (owner, 2026-10-17). A slider is a GROUP of pro
 
          NO CRON (owner): every price move is a button press, the way the team prices today. A Shopify slider works per STYLE, an Amazon
          slider per SIZE, so a group is one channel.
-         Own dashboard card "for now"; it may move into the Pricing group later.
+         On the dashboard it is a tile in the Pricing card (a top-level card of its own broke the main row, 2026-10-17).
 =======================================================================================================================================
 */
 
@@ -48,11 +48,6 @@ export default function SliderHomePage() {
 
   return (
     <AppShell title="Pricing Slider">
-      <p className="mb-4 max-w-3xl text-sm text-slate-500">
-        Step a group&apos;s price down a little at a time until each product sells — then it holds at that price. A product that reaches the
-        floor without selling holds there. Every move is made from the slider&apos;s page; nothing changes on its own.
-      </p>
-
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           <button type="button" onClick={() => setTab('live')} className={tabBtn(tab === 'live')}>Active · {live.length}</button>
@@ -85,7 +80,7 @@ export default function SliderHomePage() {
           <p className="px-5 py-4 text-sm text-slate-400">Loading…</p>
         ) : shown.length === 0 ? (
           <p className="px-5 py-4 text-sm text-slate-500">
-            {tab === 'live' ? 'No sliders yet — press New slider to make one.' : 'No ended sliders.'}
+            {tab === 'live' ? 'No sliders yet.' : 'No ended sliders.'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -113,18 +108,14 @@ export default function SliderHomePage() {
                           {g.name}
                         </Link>
                         <div className="mt-0.5 text-xs text-slate-500">{rulesSummary(g)}</div>
-                        {g.off_track > 0 && (
-                          <div className="mt-0.5 text-xs text-amber-700">{g.off_track} priced outside the slider since its last move</div>
-                        )}
+                        {g.off_track > 0 && <div className="mt-0.5 text-xs text-amber-700">{g.off_track} priced by hand</div>}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{g.counts.sliding}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{g.counts.found || ''}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-amber-700">{g.counts.floor || ''}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         <span className="font-semibold text-slate-900">{g.due_now || ''}</span>
-                        {g.no_stock > 0 && (
-                          <div className="text-xs text-slate-400" title="Due, but no stock — not cut until it can sell">{g.no_stock} waiting for stock</div>
-                        )}
+                        {g.no_stock > 0 && <div className="text-xs text-slate-400" title="Due, but no stock — not cut until it can sell">{g.no_stock} no stock</div>}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{fmtDay(g.floor_by, today)}</td>
                       <td className={`px-4 py-2.5 whitespace-nowrap ${overdue ? 'font-medium text-red-700' : ''}`} title={overdue ? 'Past its due date' : undefined}>

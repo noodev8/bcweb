@@ -39,9 +39,9 @@ export const isDue = (m: SliderMember) => DUE_ACTIONS.includes(m.action as Slide
 export const ACTION_TALLY: Record<SliderAction, [string, string]> = {
   step: ['cut', 'cuts'],
   lift: ['back to RRP', 'back to RRP'],
-  found: ['sold — holds for good', 'sold — hold for good'],
-  hold: ['sold — holds another interval', 'sold — hold another interval'],
-  floor: ['at the floor — holds', 'at the floor — hold'],
+  found: ['sold — found', 'sold — found'],
+  hold: ['sold — hold', 'sold — hold'],
+  floor: ['at floor', 'at floor'],
   repriced: ['priced by hand — leaves', 'priced by hand — leave'],
 };
 // The log's event names (slider_event.event).
