@@ -134,6 +134,33 @@ function amzProfit({ price, cost, fbafee, tax }) {
 }
 
 /**
+ * The lowest price at which a unit keeps £0 — amzProfit() solved for price at profit = 0, the Amazon counterpart of
+ * shopifyProfit.priceForProfit(0, cost).
+ *
+ * Its one caller is the Pricing Slider's OPT-IN break-even floor (owner, 2026-10-17: "let the human choose but allow them their
+ * protection"). That is not the legacy of_updateamzdatadb floor the NOT IN SCOPE note in the header dropped — nothing blocks on this; a
+ * slider group only uses it when its break-even box is ticked. It is derived from the rate card above, never typed as a literal, so a rate
+ * change moves it too. The /1.2 returns divisor drops out at profit = 0 (0 / 1.2 = 0), which is why it does not appear.
+ *
+ * The algebra, with v = 1/6 when VAT applies (else 0):
+ *     0 = p - v·p - cost - R·p - fee - D·(R·p + fee) - courier - wages
+ *     p = (cost + fee·(1 + D) + courier + wages) / (1 - v - R - D·R)
+ *
+ * Returns null when the cost is unknown (same load-bearing rule as amzProfit: show "—", never a confident wrong price).
+ */
+function breakevenPrice({ cost, fbafee, tax }) {
+  const c = strictNum(cost);
+  if (c === null || c <= 0) return null;
+  const feeRaw = strictNum(fbafee);
+  const fee = feeRaw === null || feeRaw <= 0 ? FBA_FEE_FALLBACK : feeRaw;
+  const v = Number(tax) === 1 ? 1 / VAT_DIVISOR : 0;
+  const coefficient = 1 - v - REFERRAL_RATE - DIGITAL_RATE * REFERRAL_RATE;
+  const p = (c + fee * (1 + DIGITAL_RATE) + COURIER_EACH + WAGES_EACH) / coefficient;
+  // Rounded UP to the penny: rounding to nearest could land a penny under break-even, the one direction this number must not err in.
+  return Number.isFinite(p) ? Math.ceil(p * 100 - 1e-9) / 100 : null;
+}
+
+/**
  * The profit to record on a RETURN row — per unit, and always negative.
  *
  * The legacy version (of_amzsalesload:317-326) was a bare reversal: negate the original sale's per-unit profit and stop. That models
@@ -187,6 +214,7 @@ function returnProfit({ originalProfit, originalQty, cost, disposition }) {
 
 module.exports = {
   amzProfit,
+  breakevenPrice,
   returnProfit,
   REFERRAL_RATE,
   DIGITAL_RATE,

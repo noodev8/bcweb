@@ -19,6 +19,8 @@ export function prettyPathLabel(p: string): string {
   if (RENAMED[path]) return RENAMED[path];
   // The per-style product page reads "Product" — the last segment of /product/<groupid> is a code, not a name.
   if (path.startsWith('/product/')) return 'Product';
+  // Likewise a slider's page, /slider/<id> — the last segment is a number.
+  if (path.startsWith('/slider/') || path === '/slider') return 'Pricing Slider';
   const seg = path.split('/').filter(Boolean).pop() || '';
   if (!seg) return 'Back';
   return seg.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

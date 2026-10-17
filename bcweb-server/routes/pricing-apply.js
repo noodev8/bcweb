@@ -26,6 +26,9 @@ Rules enforced here:
     merchant_feed.py --upload is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
+  - The write itself (the bounds, the hold rule, the UPDATE + INSERT) lives in utils/priceWrite.js → writeShopifyPrice since
+    2026-10-17, shared with the Pricing Slider so both write a Shopify price by the same rules. This route keeps the request
+    validation, the Shopify push and the response.
 =======================================================================================================================================
 Request Payload:
 {
@@ -64,17 +67,14 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { safeNumeric } = require('../utils/sql');
+const { writeShopifyPrice } = require('../utils/priceWrite');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
 // Google is NOT pushed here — it's decoupled to the periodic sweep (scripts/google-price-sweep.js). See the push section below.
 
 router.use(verifyToken);
-
-const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
 router.post('/', async (req, res) => {
   try {
@@ -109,67 +109,17 @@ router.post('/', async (req, res) => {
     const noteRaw = req.body ? req.body.note : undefined;
     const note = (noteRaw === undefined || noteRaw === null ? '' : String(noteRaw)).trim().slice(0, 500);
 
-    // 4) Load the current row for bounds + the old price for the audit log. Prices are legacy VARCHARs that can hold junk, so cast
-    //    with safeNumeric (NULL on non-numeric). A bound that reads back NULL is simply not enforced (can't check what we can't read).
-    const cur = await query(`
-      SELECT ${safeNumeric('shopifyprice')}    AS now,
-             ${safeNumeric('cost')}            AS cost,
-             ${safeNumeric('rrp')}             AS rrp,
-             match_amazon_price                AS match_amazon
-      FROM skusummary WHERE groupid = $1
-    `, [groupid]);
-
-    if (cur.rows.length === 0) {
-      return res.json({ return_code: 'NOT_FOUND', message: 'Style not found' });
-    }
-
-    const row = cur.rows[0];
-
-    // Auto-matched styles are on price autopilot (the amz-match cron pins the price to Amazon's lowest in-stock size). A manual price
-    // here would just be overwritten at the next sync, so refuse it — the operator must turn matching OFF (POST /pricing-match-toggle)
-    // to price by hand. Park/review (W2) is unaffected. This also guards the bulk loop, though matched styles are hidden from the lists.
-    if (row.match_amazon === true) {
-      return res.json({ return_code: 'MATCH_LOCKED', message: 'This style auto-matches its Amazon price. Turn off Amazon matching to set the price manually.' });
-    }
-    const oldPrice = num(row.now);
-    const cost = num(row.cost);
-    const rrp = num(row.rrp);
-
-    // 5) NON-blocking flags — allowed but surfaced so the UI can warn. (min/max bounds removed per owner.) BELOW_COST was a hard
-    //    block (PRICE_BELOW_COST) until 2026-10-11, when the owner asked to be able to apply any price — e.g. to clear stock at a loss.
-    const warnings = [];
-    if (cost !== null && roundedPrice < cost) warnings.push('BELOW_COST');
-    if (rrp !== null && roundedPrice > rrp) warnings.push('ABOVE_RRP');
-
-    const isHold = oldPrice !== null && oldPrice === roundedPrice;   // same price as now = a hold, nothing to push anywhere
-
     const changedBy = req.user.display_name; // resolved server-side from the token — never from the client body
 
-    // 7) Atomic write (W1, CLAUDE.md) — UPDATE skusummary + INSERT price_change_log in one transaction.
-    const nextReview = await withTransaction(async (client) => {
-      // W1 UPDATE — shopifyprice as string ($2). shopifychange is intentionally NOT set: we push to Shopify directly after this
-      // transaction commits (see pushIfLive below), so the nightly-sync flag would double-push. The review cooldown is set only when a
-      // period was supplied — with "None" we leave next_shopify_price_review completely untouched (build the SET clause both ways).
-      const setReview = reviewDays !== null ? `, next_shopify_price_review = CURRENT_DATE + $3::int` : '';
-      const updParams = reviewDays !== null ? [groupid, priceString, reviewDays] : [groupid, priceString];
-      const upd = await client.query(`
-        UPDATE skusummary
-           SET shopifyprice = $2${setReview}
-         WHERE groupid = $1
-         RETURNING next_shopify_price_review
-      `, updParams);
-
-      // W1 INSERT — audit row: (groupid, 'SHP', old_price, new_price, reason_code NULL, reason_notes, changed_by). reason_notes now
-      // carries the optional user note (was hardcoded ''); reason_code stays NULL by design (CLAUDE.md). change_date defaults to today
-      // and changed_at defaults to now() (the full timestamptz — set automatically, not listed here).
-      await client.query(`
-        INSERT INTO price_change_log
-           (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by, google_pushed_at)
-        VALUES ($1, 'SHP', $2, $3, NULL, $4, $5, CASE WHEN $6::boolean THEN now() END)
-      `, [groupid, oldPrice, roundedPrice, note, changedBy, isHold]);   // a hold is born pre-stamped: nothing for the Google sweep to send
-
-      return upd.rows[0].next_shopify_price_review;
-    });
+    // 4) Atomic write (W1, CLAUDE.md) — UPDATE skusummary + INSERT price_change_log in one transaction, by the shared rules in
+    //    utils/priceWrite.js: the bounds are flagged not blocked (BELOW_COST, ABOVE_RRP), a same price is a hold, and an auto-matched
+    //    style is refused (MATCH_LOCKED — the amz-match autopilot would overwrite a manual price; retired, every row false).
+    const written = await withTransaction((client) =>
+      writeShopifyPrice(client, { groupid, price: roundedPrice, reviewDays, note, changedBy }));
+    if (written.error) {
+      return res.json({ return_code: written.error, message: written.message });
+    }
+    const { oldPrice, warnings, isHold, nextReview } = written;
 
     // Format the returned cooldown date as YYYY-MM-DD (local components to avoid UTC day-shift). Null when the style has no review
     // date (review was None and none existed before) — don't coerce null through new Date() (that would yield the epoch).

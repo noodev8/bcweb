@@ -1511,6 +1511,229 @@ export function setCollectionTag(groupids: string[], tag: string, inCollection: 
   );
 }
 
+// --- Pricing Slider (2026-10-17) — groups that step a price down by a % of RRP every N days until each product sells. Shopify groups
+// work per STYLE, Amazon per SKU. No cron: every move is a button press. Rules: bcweb-server/utils/slider.js.
+export type SliderChannel = 'SHP' | 'AMZ';
+export type SliderGroupState = 'active' | 'paused' | 'ended';
+// Live (still in the slider, badged): sliding | found | floor. The rest say how it left.
+export type SliderMemberState = 'sliding' | 'found' | 'floor' | 'repriced' | 'moved' | 'removed' | 'reset' | 'ended';
+// What a "Move prices" press does to a product, and the two reasons a due product waits instead.
+export type SliderAction = 'repriced' | 'found' | 'hold' | 'floor' | 'lift' | 'step';
+export type SliderWait = 'no_stock' | 'no_price';
+export interface SliderRules {
+  step_pct: number;          // each move = this % of the product's RRP
+  every_days: number;        // a move is due this many days after the last
+  floor_pct: number;         // never below this % of RRP
+  floor_breakeven: boolean;  // also never below break-even (opt-in)
+  stop_after_sales: number;  // 1 | 2 | 3 — found after this many sales since joining
+}
+export interface SliderGroupSummary extends SliderRules {
+  id: number;
+  name: string;
+  channel: SliderChannel;
+  state: SliderGroupState;
+  due_date: string | null;   // YYYY-MM-DD
+  notes: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  counts: { sliding: number; found: number; floor: number; ended: number };
+  due_now: number;           // products the next "Move prices" press acts on (0 while paused)
+  no_stock: number;          // due, but waiting for stock — not cut while it can't sell
+  off_track: number;         // live products priced by hand since the slider last set them
+  floor_by: string | null;   // latest "reaches floor" date among sliding products
+}
+export interface SliderMember {
+  id: number;
+  group_id: number;
+  channel: SliderChannel;
+  key: string;               // groupid (SHP) or code (AMZ)
+  groupid: string;
+  size: string | null;       // AMZ only
+  amz_sku: string | null;    // AMZ only
+  title: string | null;
+  brand: string | null;
+  rrp: number;               // RRP when it joined — steps and floor are % of this
+  start_from: 'current' | 'rrp';
+  start_price: number;
+  last_price: number;        // the price the slider last set
+  now: number | null;        // current price on the channel
+  now_pct_rrp: number | null;
+  cost: number | null;
+  breakeven: number | null;
+  floor: number;
+  floor_by_breakeven: boolean;
+  step: number;              // one step in £
+  steps: number;
+  stock: number;             // SHP local sellable / AMZ FBA sellable
+  sold: number;              // units sold on its channel since it joined (until it left)
+  sold_since: number;        // since the slider's last action on it — what decides a hold
+  sold_last_at: string | null;
+  state: SliderMemberState;
+  live: boolean;
+  off_track: boolean;        // live, but the price isn't what the slider last set
+  action: SliderAction | SliderWait | null;   // what the next press does (bcweb-server/utils/slider.js → decide), or why it waits
+  next_due: string | null;   // YYYY-MM-DD; null unless sliding
+  next_price: number | null;
+  lift: boolean;             // the next move is the Start-from-RRP lift
+  moves_left: number;
+  floor_by: string | null;
+  found_price: number | null;
+  found_at: string | null;
+  last_move_at: string | null;
+  joined_by: string | null;
+  joined_at: string | null;
+  ended_by: string | null;
+  ended_at: string | null;
+}
+export interface SliderEvent {
+  id: number;
+  event: string;             // created | edited | paused | resumed | ended | joined | moved | removed | reset (+ phase 2 moves)
+  item: string | null;       // the member's groupid / code; null for a group event
+  old_price: number | null;
+  new_price: number | null;
+  detail: string | null;
+  created_by: string | null;
+  created_at: string | null;
+}
+export interface SliderGroupDetail {
+  today: string;
+  group: SliderGroupInfo;
+  members: SliderMember[];
+  events: SliderEvent[];
+}
+export interface SliderGroupInfo extends SliderRules {
+  id: number;
+  name: string;
+  channel: SliderChannel;
+  state: SliderGroupState;
+  due_date: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
+  ended_at: string | null;
+  priced: boolean;           // the slider has written a price — end it, can't delete it
+}
+export interface SliderCandidate {
+  key: string;               // groupid (SHP) or code (AMZ)
+  groupid: string;
+  size: string | null;
+  amz_sku: string | null;
+  title: string | null;
+  brand: string | null;
+  segment: string | null;
+  supplier: string | null;
+  season: string | null;
+  codes: string | null;      // haystack extras for the Contains search
+  price: number | null;
+  rrp: number | null;
+  cost: number | null;
+  breakeven: number | null;
+  stock: number;
+  sold30: number;            // this channel, 30 days
+  status: string | null;     // portfolio status (WINNERS | STEADY | NEW | LOSERS)
+  slider: { group_id: number; name: string; state: SliderMemberState } | null;   // live in a slider on this channel
+}
+export function getSliderGroups() {
+  return request<{ today: string; groups: SliderGroupSummary[] }>(
+    { url: '/slider-groups', method: 'GET' },
+    (b) => ({ today: b.today, groups: b.groups || [] })
+  );
+}
+export function getSliderGroup(id: number) {
+  return request<SliderGroupDetail>(
+    { url: '/slider-group', method: 'GET', params: { id } },
+    (b) => ({ today: b.today, group: b.group, members: b.members || [], events: b.events || [] })
+  );
+}
+export function getSliderCandidates(channel: SliderChannel) {
+  return request<SliderCandidate[]>({ url: '/slider-candidates', method: 'GET', params: { channel } }, (b) => b.rows || []);
+}
+// Create (no id) or edit a group. channel is read on create only.
+export interface SliderGroupInput {
+  id?: number;
+  name: string;
+  channel?: SliderChannel;
+  stepPct: number;
+  everyDays: number;
+  floorPct: number;
+  floorBreakeven: boolean;
+  stopAfterSales: number;
+  dueDate: string | null;
+  notes: string | null;
+}
+export function saveSliderGroup(input: SliderGroupInput) {
+  return request<{ id: number; created: boolean }>(
+    { url: '/slider-group-save', method: 'POST', data: input },
+    (b) => ({ id: b.id, created: !!b.created })
+  );
+}
+export type SliderGroupAction = 'pause' | 'resume' | 'end' | 'delete';
+export function setSliderGroupState(id: number, action: SliderGroupAction) {
+  return request<{ state: SliderGroupState | null; left: number }>(
+    { url: '/slider-group-state', method: 'POST', data: { id, action } },
+    (b) => ({ state: b.state ?? null, left: b.left ?? 0 })
+  );
+}
+// failed = refused per product with the reason (No RRP, In slider "x", …); moved = the subset of done that came from another slider.
+export function addToSlider(groupId: number, keys: string[], startFrom: 'current' | 'rrp', move: boolean) {
+  return request<{ done: string[]; moved: string[]; failed: { key: string; error: string }[] }>(
+    { url: '/slider-add', method: 'POST', data: { groupId, keys, startFrom, move } },
+    (b) => ({ done: b.done || [], moved: b.moved || [], failed: b.failed || [] })
+  );
+}
+export function removeFromSlider(groupId: number, memberIds: number[]) {
+  return request<{ removed: number[]; skipped: number[] }>(
+    { url: '/slider-remove', method: 'POST', data: { groupId, memberIds } },
+    (b) => ({ removed: b.removed || [], skipped: b.skipped || [] })
+  );
+}
+// ONE product back to RRP and out of the slider. The page loops this over ticked rows (like bulk Apply), so each Shopify push is its own.
+// AMZ returns the upload-basket item; SHP returns the live push outcome (null = not live / nothing sent).
+export interface SliderResetResult {
+  member_id: number;
+  channel: SliderChannel;
+  key: string;
+  old_price: number | null;
+  new_price: number;
+  changed: boolean;          // false = it was already at RRP (no price written)
+  warnings: string[];
+  shopify: { pushed: boolean; error?: string; message?: string } | null;
+  basket: AmzBasketFetchItem | null;
+}
+export function resetSliderMember(memberId: number) {
+  return request<SliderResetResult>(
+    { url: '/slider-reset', method: 'POST', data: { memberId } },
+    (b) => ({
+      member_id: b.member_id, channel: b.channel, key: b.key, old_price: b.old_price ?? null, new_price: b.new_price,
+      changed: !!b.changed, warnings: b.warnings || [], shopify: b.shopify ?? null, basket: b.basket ?? null,
+    })
+  );
+}
+// ONE product's next press (Shopify sliders). The server re-decides inside its transaction; action null = nothing was due any more
+// (already done by someone else, or `wait` says why). The page loops this over the due products, like bulk Apply.
+export interface SliderStepResult {
+  member_id: number;
+  key: string;
+  action: SliderAction | null;
+  wait: SliderWait | null;
+  old_price: number | null;
+  new_price: number | null;
+  state: SliderMemberState;
+  warnings: string[];
+  shopify: { pushed: boolean; error?: string; message?: string } | null;
+}
+export function stepSliderMember(memberId: number) {
+  return request<SliderStepResult>(
+    { url: '/slider-step', method: 'POST', data: { memberId } },
+    (b) => ({
+      member_id: b.member_id, key: b.key, action: b.action ?? null, wait: b.wait ?? null, old_price: b.old_price ?? null,
+      new_price: b.new_price ?? null, state: b.state, warnings: b.warnings || [], shopify: b.shopify ?? null,
+    })
+  );
+}
+
 // One newly-added Shopify style with its lifetime sales performance. `created` = effective creation date; sales figures are lifetime
 // (≈ since-add, as these are new products): units sold, revenue (qty×soldprice) and net profit. stock = current FREE stock.
 export interface NewAdditionRow {

@@ -45,15 +45,12 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { safeNumeric } = require('../utils/sql');
+const { writeAmzPrice } = require('../utils/priceWrite');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
-
-const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
 router.post('/', async (req, res) => {
   try {
@@ -84,65 +81,19 @@ router.post('/', async (req, res) => {
 
     const note = (body.note === undefined || body.note === null ? '' : String(body.note)).trim().slice(0, 500);
 
-    // Load the SKU's live price (for old_price) + economics for the floor, plus the Amazon SKU + RRP so the response carries everything
-    // the client's upload basket needs to build the Seller Central file (amz_sku, new_price, RRP) without a second round-trip.
-    // amzfeed is FBA/Amazon truth; cost/rrp on skusummary.
-    const cur = await query(`
-      SELECT a.sku AS amz_sku,
-             ${safeNumeric('a.amzprice')} AS live_price,
-             ${safeNumeric('a.fbafee')}   AS fbafee,
-             ${safeNumeric('sk.cost')}    AS cost,
-             ${safeNumeric('sk.rrp')}     AS rrp
-      FROM amzfeed a
-      LEFT JOIN skusummary sk ON sk.groupid = a.groupid
-      WHERE a.code = $1
-    `, [code]);
-
-    if (cur.rows.length === 0) {
-      return res.json({ return_code: 'NOT_FOUND', message: 'SKU not found in amzfeed' });
-    }
-
-    const row = cur.rows[0];
-    const oldPrice = num(row.live_price);
-    const cost = num(row.cost);
-    const fbafee = num(row.fbafee);
-    const rrp = num(row.rrp);
-
-    // FLAG below breakeven (only when both parts are known — can't check what we can't read). Was a hard block (PRICE_BELOW_FLOOR) until
-    // 2026-10-11, when the owner asked to be able to apply any price, same as Shopify W1.
-    const warnings = [];
-    if (cost !== null && fbafee !== null) {
-      const hardFloor = Math.round((cost + fbafee) * 100) / 100;
-      if (rounded < hardFloor) warnings.push('BELOW_FLOOR');
-    }
-    if (rrp !== null && rounded > rrp) warnings.push('ABOVE_RRP');
-
-    // old_price is NOT NULL on amz_price_log, but the live amzprice can read back NULL (a junk/blank VARCHAR that safeNumeric couldn't
-    // parse). Guard it: log the new price as old_price in that case (a zero-delta 'flat' audit row) rather than 500 on the constraint or
-    // fabricate a false delta. The RESPONSE keeps the true oldPrice (null when unknown) so the UI/basket shows "—" for the prior price.
-    const oldForLog = oldPrice !== null ? oldPrice : rounded;
     // changed_by = the logged-in operator, resolved server-side by verifyToken from the token's id — never sent by the client (CLAUDE.md).
     const changedBy = req.user.display_name;
 
     // INSERT the audit row AND (when a period was given) park the SKU in one transaction (spec §10.5A) — so a park can never land without
-    // its log row, nor vice-versa. This is the only time W-A1 writes a product row (skumap); still never amzfeed (READ ONLY). The skumap
-    // row always exists for a real SKU (§10.2), so a plain UPDATE is enough. When reviewDays is null ("None", mirroring Shopify W1) we skip
-    // the park entirely — the review date is left untouched and the SKU stays in the winners/losers list.
-    const { logId, nextReview } = await withTransaction(async (client) => {
-      // RETURNING id — the client puts this log-row id on the queued basket item so a later "I've uploaded" (POST /amz-mark-uploaded) can
-      // name exactly which rows the downloaded file covered (without waiting for a basket refresh to learn the id).
-      const ins = await client.query(
-        `INSERT INTO amz_price_log (code, old_price, new_price, notes, changed_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [code, oldForLog, rounded, note, changedBy]
-      );
-      const insertedId = ins.rows[0].id;
-      if (reviewDays === null) return { logId: insertedId, nextReview: null };
-      const upd = await client.query(
-        `UPDATE skumap SET next_amz_price_review = CURRENT_DATE + $2::int WHERE code = $1 RETURNING next_amz_price_review`,
-        [code, reviewDays]
-      );
-      return { logId: insertedId, nextReview: upd.rows[0] ? upd.rows[0].next_amz_price_review : null };
-    });
+    // its log row, nor vice-versa. The write and its rules (BELOW_FLOOR / ABOVE_RRP flagged, never blocked; the NOT NULL old_price guard;
+    // never amzfeed) live in utils/priceWrite.js → writeAmzPrice since 2026-10-17, shared with the Pricing Slider. Its result carries
+    // amz_sku + RRP so the response gives the client's upload basket everything the Seller Central file needs without a second round-trip.
+    const written = await withTransaction((client) =>
+      writeAmzPrice(client, { code, price: rounded, reviewDays, note, changedBy }));
+    if (written.error) {
+      return res.json({ return_code: written.error, message: written.message });
+    }
+    const { logId, nextReview, oldPrice, amzSku, rrp, warnings } = written;
 
     // Format the park date as YYYY-MM-DD (local components, no UTC day-shift). Null when review was None. Mirrors pricing-apply.
     let nextReviewIso = null;
@@ -151,7 +102,7 @@ router.post('/', async (req, res) => {
       nextReviewIso = `${nr.getFullYear()}-${String(nr.getMonth() + 1).padStart(2, '0')}-${String(nr.getDate()).padStart(2, '0')}`;
     }
 
-    return res.json({ return_code: 'SUCCESS', log_id: logId, code, amz_sku: row.amz_sku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings });
+    return res.json({ return_code: 'SUCCESS', log_id: logId, code, amz_sku: amzSku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings });
   } catch (err) {
     logger.error('[amz-apply] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to apply Amazon price' });

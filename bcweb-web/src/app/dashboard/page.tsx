@@ -71,7 +71,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon,
+  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -131,6 +131,15 @@ const GROUPS: Group[] = [
     blurb: 'Products pulling their weight',
     icon: TrophyIcon,
     link: '/segments',
+    tiles: [],
+  },
+  // A card of its own "for now" (owner, 2026-10-17) — it may move into Pricing once the team has a feel for how it gets used.
+  {
+    id: 'slider',
+    title: 'Pricing Slider',
+    blurb: 'Step prices down until they sell',
+    icon: AdjustmentsHorizontalIcon,
+    link: '/slider',
     tiles: [],
   },
   {

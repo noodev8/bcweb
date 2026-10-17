@@ -61,6 +61,7 @@ const STATIC = new Set([
   '/analytics/ad-daily',
   '/analytics/activity-log',
   '/analytics/winners',
+  '/slider',
 ]);
 
 // Dynamic routes — a fixed prefix plus exactly one variable segment, stored as the prefix + '/:id'. Listed longest-prefix first so a
@@ -71,6 +72,7 @@ const DYNAMIC = [
   '/amz/sku',
   '/amz',                // /amz/[segment]
   '/segments',           // /segments/[name]
+  '/slider',             // /slider/[id]
   '/order-status',       // /order-status/[supplier]
   '/product',            // /product/[groupid]. The bare /product list was retired 2026-10-06 (it redirects to /inventory).
 ];
