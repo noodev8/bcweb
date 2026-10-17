@@ -69,10 +69,10 @@ const MOVE_BTN =
   'transition hover:from-amber-600 hover:to-rose-600 hover:shadow-lg active:scale-[0.98] ' +
   'disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none';
 
-// A failed live push. Honest about the state: the price is saved here, Shopify still shows the old one. (Re-Applying the same price
-// on the price screen would NOT retry — W1 logs a same-price Apply as a hold and sends Shopify nothing.)
+// A failed live push: the price is saved here, Shopify still shows the old one. Applying the same price on its price screen resends it
+// (a same-price Apply pushes when Shopify's live price differs — bcweb-server/utils/shopify.js → pushIfStale).
 const PUSH_FAILED = (keys: string[]) =>
-  `Shopify didn't take ${keys.length} (${keys.join(', ')}) — the new price is saved here but the website still shows the old one`;
+  `Shopify didn't take ${keys.length} (${keys.join(', ')}) — saved here; Apply the same price on its price screen to resend`;
 
 // "9 cuts · 1 back to RRP · 2 sold — hold another interval"
 function tally(counts: Partial<Record<SliderAction, number>>): string {
@@ -112,6 +112,7 @@ function SliderGroupLoader() {
   const refresh = async () => {
     await q.refresh();
     mutateGlobal('slider-groups');   // the home list's counts
+    mutateGlobal('slider-marks');    // the badges on the pricing screens (components/SliderBadge)
   };
   if (q.data.group.channel === 'AMZ') {
     return (

@@ -132,9 +132,13 @@ router.post('/', async (req, res) => {
     // Push the new price to Shopify NOW (best-effort). Only fires when the style is live (skusummary.shopify=1) and Shopify is
     // configured; otherwise returns null and nothing is sent. Never throws, so a Shopify hiccup can't undo the committed price/review.
     // Owner decision: no shopifychange fallback — a failure is surfaced here and the operator re-Applies (productSet is idempotent).
-    // A same-price apply is a HOLD (docs/hold-logging-spec.md): logged and review-dated, but there is nothing to tell Shopify, so we
-    // don't touch their server (owner, 2026-09-30). null = "nothing sent", the same as a style that isn't live.
-    const shopifyResult = isHold ? null : await shopify.pushIfLive(groupid);
+    // A same-price apply is a HOLD (docs/hold-logging-spec.md): logged and review-dated, and normally nothing to tell Shopify (owner,
+    // 2026-09-30). But it is ALSO how an operator retries a failed push ("Press Apply again"), and by then the DB already holds the
+    // price — so a hold checks Shopify's live price and pushes only if it differs (utils/shopify.js → pushIfStale, owner 2026-10-17).
+    // null = "nothing sent", the same as a style that isn't live.
+    const shopifyResult = isHold
+      ? await shopify.pushIfStale(groupid, Number(written.newPrice))
+      : await shopify.pushIfLive(groupid);
 
     // Google is DECOUPLED (2026-07-24): this route no longer pushes to Google Merchant Center. The change is already recorded in
     // price_change_log above; the periodic sweep (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) picks up un-sent

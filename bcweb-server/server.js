@@ -350,6 +350,7 @@ app.use('/collection-tag-set', require('./routes/collection-tag-set'));         
 
 // --- Pricing Slider (2026-10-17): groups that step a price down by a % of RRP every N days until each product sells. NO CRON — every
 // price move is a button press. The rules live in utils/slider.js; prices go through the normal W1 / W-A1 writes (utils/priceWrite.js).
+app.use('/slider-marks', require('./routes/slider-marks'));                 // GET: every product live in a slider — the pricing screens' badge — READ ONLY
 app.use('/slider-groups', require('./routes/slider-groups'));               // GET: every group + counts, due now, reaches floor by — READ ONLY
 app.use('/slider-group', require('./routes/slider-group'));                 // GET ?id: one group, its members with live numbers, its log — READ ONLY
 app.use('/slider-candidates', require('./routes/slider-candidates'));       // GET ?channel: every product that can join, for the add search — READ ONLY

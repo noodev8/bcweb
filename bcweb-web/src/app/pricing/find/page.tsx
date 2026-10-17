@@ -13,6 +13,7 @@ import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import { findProducts, FindRow } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -49,6 +50,7 @@ function FindContent() {
     () => findProducts(query),
   );
   const error = searchError?.message ?? null;
+  const marks = useSliderMarks();   // the Pricing Slider badge per row
   // "We have run a search" — true as soon as one is committed. The no-results line is additionally gated on !loading && !error below,
   // so this reads the same as the old post-fetch flag.
   const searched = query !== '';
@@ -105,7 +107,10 @@ function FindContent() {
                   className="cursor-pointer hover:bg-slate-50"
                 >
                   <td className="px-4 py-2 font-mono text-xs text-slate-600">{r.groupid}</td>
-                  <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {r.title || <span className="text-slate-400">—</span>}
+                    <span className="ml-2"><SliderBadge mark={marks.shp(r.groupid)} /></span>
+                  </td>
                   <td className="px-4 py-2 text-slate-500">{r.segment || '—'}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{r.now !== null ? `£${r.now.toFixed(2)}` : '—'}</td>
                 </tr>

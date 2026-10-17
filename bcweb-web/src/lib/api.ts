@@ -1640,6 +1640,19 @@ export interface SliderCandidate {
   status: string | null;     // portfolio status (WINNERS | STEADY | NEW | LOSERS)
   slider: { group_id: number; name: string; state: SliderMemberState } | null;   // live in a slider on this channel
 }
+// One product live in a slider — the pricing screens' badge (components/SliderBadge.tsx). SHP key = groupid, AMZ key = code.
+export interface SliderMark {
+  channel: SliderChannel;
+  key: string;
+  groupid: string;
+  state: 'sliding' | 'found' | 'floor';
+  group_id: number;
+  name: string;
+  group_state: SliderGroupState;
+}
+export function getSliderMarks() {
+  return request<SliderMark[]>({ url: '/slider-marks', method: 'GET' }, (b) => b.marks || []);
+}
 export function getSliderGroups() {
   return request<{ today: string; groups: SliderGroupSummary[] }>(
     { url: '/slider-groups', method: 'GET' },

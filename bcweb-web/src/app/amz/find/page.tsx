@@ -25,6 +25,7 @@ import { Suspense, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MagnifyingGlassIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import { findAmzSkus, applyAmzPrice, markAmzReviewed, AmzFindRow, AmzFindStep } from '@/lib/api';
@@ -244,6 +245,7 @@ function AmzFindContent() {
   // This search as it currently stands (every step + origin) — handed to the SKU drill as its `from`, so "← Search" from the drill
   // returns to this NARROWED list (not an empty box, and not just the opening term), and this list's own breadcrumb still points back
   // to wherever we started.
+  const marks = useSliderMarks();   // Pricing Slider badge per size
   const selfUrl = useMemo(() => {
     const qs = steps.map((s) => `${s.op === 'has' ? 'has' : 'not'}=${encodeURIComponent(s.term)}`);
     if (from) qs.push(`from=${encodeURIComponent(from)}`);
@@ -392,7 +394,10 @@ function AmzFindContent() {
                 >
                   <td className="px-4 py-2"><RowBox checked={selected.has(r.code)} onToggle={() => toggle(r.code)} /></td>
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">{r.code}</td>
-                  <td className="px-4 py-2 text-slate-700">{r.title || <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {r.title || <span className="text-slate-400">—</span>}
+                    <span className="ml-2"><SliderBadge mark={marks.amz(r.code)} /></span>
+                  </td>
                   <td className="px-4 py-2 text-slate-500">{r.segment || '—'}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{r.price !== null ? `£${r.price.toFixed(2)}` : '—'}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{r.fba}</td>

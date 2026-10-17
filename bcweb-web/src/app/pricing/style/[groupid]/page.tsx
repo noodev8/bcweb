@@ -27,6 +27,7 @@ import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
 import MatchAmazonPanel from '@/components/MatchAmazonPanel';
+import { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
 import { AMZ_MATCH_UI } from '@/lib/features';
 import { getDrill, applyPrice, parkStyle } from '@/lib/api';
 import { prettyPathLabel } from '@/lib/nav';
@@ -94,6 +95,7 @@ function DrillContent() {
     () => getDrill(groupid),
   );
   const error = loadError?.message ?? null;
+  const marks = useSliderMarks();
 
   async function handleApply(newPrice: number, reviewDays: number | null, note: string) {
     setApplying(true);
@@ -195,6 +197,8 @@ function DrillContent() {
                  The Amazon-match autopilot is RETIRED (AMZ_MATCH_UI, see lib/features.ts): with it off, a style still carrying the
                  old flag falls through to the manual setter rather than showing a card for a cron that no longer runs. */}
           <section>
+            {/* In a Pricing Slider: say so before a price is set by hand — that takes it out of the slider (phase 4). */}
+            <SliderWarning mark={marks.shp(groupid)} from={priceHref} />
             {AMZ_MATCH_UI && data.header.match_amazon ? (
               <MatchAmazonPanel
                 groupid={groupid}

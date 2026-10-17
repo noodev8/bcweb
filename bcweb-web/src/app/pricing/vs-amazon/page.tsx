@@ -28,6 +28,7 @@ import { Fragment, Suspense, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import PricingCrumb from '@/components/PricingCrumb';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useAuth } from '@/contexts/AuthContext';
@@ -236,6 +237,7 @@ function VsAmazonContent() {
 
   const allTicked = sorted.length > 0 && sorted.every((r) => selected.has(r.groupid));
   const selfUrl = '/pricing/vs-amazon';
+  const marks = useSliderMarks();   // Pricing Slider badge — an Apply / Set to Amazon high here takes a slider product out of it
 
   return (
     <AppShell backHref="/pricing" backLabel="Shopify Pricing" crumb={<PricingCrumb name="Shopify vs Amazon" channel="shopify" />}>
@@ -387,6 +389,7 @@ function VsAmazonContent() {
                               {r.groupid}
                             </Link>
                             {r.title && <div className="truncate text-xs text-slate-500" title={r.title}>{r.title}</div>}
+                            {marks.shp(r.groupid) && <div className="my-0.5"><SliderBadge mark={marks.shp(r.groupid)} from={selfUrl} /></div>}
                             {/* Last change lives under the name, not in its own column — it's reference, and as a column it pushed the
                                 table off the page (owner, 2026-10-07). Full text on hover. */}
                             {r.last_change && (

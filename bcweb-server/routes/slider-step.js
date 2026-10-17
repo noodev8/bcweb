@@ -169,9 +169,12 @@ router.post('/', async (req, res) => {
     const { mb, action, newPrice, state, written } = out;
     const amz = mb.channel === 'AMZ';
 
-    // AFTER the commit, as W1 does: a Shopify hiccup must never undo the committed price. A hold (same price) sends nothing.
+    // AFTER the commit, as W1 does: a Shopify hiccup must never undo the committed price. A same-price write (can't really happen on a
+    // step) pushes only if Shopify's live price differs — the pricing-apply rule.
     let shopifyResult = null;
-    if (!amz && written && !written.isHold) shopifyResult = await shopify.pushIfLive(mb.groupid);
+    if (!amz && written) {
+      shopifyResult = written.isHold ? await shopify.pushIfStale(mb.groupid, newPrice) : await shopify.pushIfLive(mb.groupid);
+    }
     const basket = amz && written ? await amzBasketItem({ query }, { code: mb.key, written, price: newPrice }) : null;
 
     return res.json({

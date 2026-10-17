@@ -560,4 +560,46 @@ async function pushIfLive(groupid, { status = 'ACTIVE', dropMediaIds = [] } = {}
   }
 }
 
-module.exports = { isConfigured, buildProductSetInput, buildFiles, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive };
+const PRODUCT_PRICES_QUERY = `
+  query productPrices($q: String!) {
+    products(first: 5, query: $q) { nodes { handle variants(first: 250) { nodes { price } } } }
+  }
+`;
+
+/*
+ * pushIfStale(groupid, price)
+ * The push for a SAME-PRICE Apply (a W1 "hold" — utils/priceWrite.js). A hold has nothing new to tell Shopify, so it used to send nothing
+ * (owner, 2026-09-30) — but that also made "Press Apply again to retry" after a FAILED push a silent no-op: the DB already held the new
+ * price, the re-Apply was a hold, and the store kept the old price. Fixed 2026-10-17 (owner chose compare-to-live over always-resend): read
+ * the product's live variant prices — one small query — and push only if any differs from `price`. A true hold still sends nothing; a
+ * retry actually retries.
+ * Same contract as pushIfLive (null = not live / nothing sent; never throws). If the live prices can't be read it pushes anyway: that is
+ * the safe direction, and the push reports its own failure if Shopify is down.
+ */
+async function pushIfStale(groupid, price) {
+  if (!isConfigured()) return null;
+  const r = await query(`SELECT shopify, handle FROM skusummary WHERE groupid = $1`, [groupid]);
+  if (!r.rows.length || r.rows[0].shopify !== 1 || !r.rows[0].handle) return null;
+  const live = await liveVariantPrices(r.rows[0].handle);
+  const want = Math.round(Number(price) * 100) / 100;
+  if (live && live.length && live.every((p) => p === want)) return null;   // already live at this price — a real hold
+  logger.info(`[shopify] ${groupid}: same-price apply but Shopify shows ${live === null ? 'unreadable' : live.length ? [...new Set(live)].join('/') : 'no product'} — re-pushing ${want.toFixed(2)}`);
+  return pushIfLive(groupid);
+}
+
+/*
+ * liveVariantPrices(handle) -> number[] (2dp, one per variant; [] = no such product on the store) | null (couldn't read — Shopify down).
+ * Read-only: what the store is actually charging. Never throws.
+ */
+async function liveVariantPrices(handle) {
+  try {
+    const data = await shopifyGraphQL(PRODUCT_PRICES_QUERY, { q: `handle:${handle}` });
+    const node = ((data.products && data.products.nodes) || []).find((n) => n.handle === handle);
+    return node && node.variants ? node.variants.nodes.map((v) => Math.round(Number(v.price) * 100) / 100) : [];
+  } catch (err) {
+    logger.error(`[shopify] couldn't read live prices for ${handle}: ${err.message}`);
+    return null;
+  }
+}
+
+module.exports = { isConfigured, buildProductSetInput, buildFiles, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive, pushIfStale, liveVariantPrices };

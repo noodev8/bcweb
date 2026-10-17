@@ -50,6 +50,7 @@ import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
+import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import { getTriage, getLosers, getStatusList, getSittingList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -478,6 +479,7 @@ function ListTable({ rows: listRows, onOpen, selected, onToggle, onToggleAll }: 
   });
   const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.groupid));
+  const marks = useSliderMarks();
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full table-fixed text-sm">
@@ -531,7 +533,11 @@ function ListTable({ rows: listRows, onOpen, selected, onToggle, onToggleAll }: 
                 <td className="px-4 py-2 text-slate-400">{i + 1}</td>
                 <td className={'px-4 py-2 tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-semibold text-slate-800')}>{r.units ?? '—'}</td>
                 {/* The product name is this cell's tooltip — only here, not the whole row (owner, 2026-09-25). */}
-                <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>{r.groupid}</td>
+                {/* The slider badge sits beside it (phase 4): pricing a slider product by hand takes it out of its slider. */}
+                <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>
+                  {r.groupid}
+                  <span className="ml-2 font-sans"><SliderBadge mark={marks.shp(r.groupid)} /></span>
+                </td>
                 <td className={'truncate px-4 py-2 ' + tone}>
                   {r.brand || <span className="text-slate-400">—</span>}
                   {/* Amazon-match badge: the autopilot is retired (CLAUDE.md) but the badge stays for when it is revived. */}

@@ -38,7 +38,8 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
  *   - ALLOW+FLAG below cost (BELOW_COST — a hard block until 2026-10-11, owner: "I need to apply any price I want") and above RRP
  *     (ABOVE_RRP). A bound that reads back NULL (junk VARCHAR) is simply not checked — can't check what we can't read.
  *   - A same-price write is a HOLD (docs/hold-logging-spec.md): logged, born with google_pushed_at stamped so the Google sweep has
- *     nothing to send, and the caller doesn't push to Shopify either.
+ *     nothing to send. The caller pushes it to Shopify only if the live price differs (utils/shopify.js → pushIfStale) — that is
+ *     what makes re-Applying after a failed push a real retry.
  *   - Auto-matched styles (the retired amz-match autopilot, CLAUDE.md) are refused with MATCH_LOCKED — a manual price would just be
  *     overwritten at the next sync. Every row is false since 2026-09-15; the guard stays so the feature revives intact.
  * The row is read FOR UPDATE so the old price in the audit row is the one this write replaced, even with two operators on one style.
@@ -68,7 +69,7 @@ async function writeShopifyPrice(client, { groupid, price, reviewDays, note, cha
   if (cost !== null && price < cost) warnings.push('BELOW_COST');
   if (rrp !== null && price > rrp) warnings.push('ABOVE_RRP');
 
-  const isHold = oldPrice !== null && oldPrice === price;   // same price as now = a hold, nothing to push anywhere
+  const isHold = oldPrice !== null && oldPrice === price;   // same price as now = a hold (Shopify only if its live price differs)
 
   // The review cooldown is set only when a period was supplied — with "None" next_shopify_price_review is left completely untouched.
   const setReview = reviewDays !== null ? `, next_shopify_price_review = CURRENT_DATE + $3::int` : '';

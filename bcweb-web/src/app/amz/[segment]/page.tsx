@@ -38,6 +38,7 @@ import { Suspense, useMemo, useState } from 'react';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
@@ -440,6 +441,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
   });
   const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
+  const marks = useSliderMarks();
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full table-fixed text-sm">
@@ -499,6 +501,8 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>
                   {r.code}
                   {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
+                  {/* Pricing Slider badge (phase 4): pricing a slider size by hand takes it out of its slider. */}
+                  {marks.amz(r.code) && <span className="ml-2 font-sans"><SliderBadge mark={marks.amz(r.code)} /></span>}
                 </td>
                 <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
