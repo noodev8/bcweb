@@ -158,4 +158,27 @@ async function writeAmzPrice(client, { code, price, reviewDays, note, changedBy 
   return { logId, oldPrice, amzSku: row.amz_sku, rrp, warnings, nextReview };
 }
 
-module.exports = { writeShopifyPrice, writeAmzPrice };
+/*
+ * amzBasketItem(db, { code, written, price }) -> the upload-basket item for a W-A1 write, in the shape GET /amz-basket returns, so a
+ * screen can drop it straight into the team basket (contexts/AmzBasketContext) without re-reading. `db` = a pool query or a client.
+ */
+async function amzBasketItem(db, { code, written, price }) {
+  const d = await db.query(`
+    SELECT t.shopifytitle AS title, sk.segment
+    FROM amzfeed a LEFT JOIN skusummary sk ON sk.groupid = a.groupid LEFT JOIN title t ON t.groupid = a.groupid
+    WHERE a.code = $1
+  `, [code]);
+  return {
+    id: written.logId,
+    code,
+    amz_sku: written.amzSku,
+    size: code.split('-').pop(),
+    title: d.rows[0] ? d.rows[0].title : null,
+    segment: d.rows[0] ? d.rows[0].segment : null,
+    old_price: written.oldPrice,
+    new_price: price,
+    rrp: written.rrp,
+  };
+}
+
+module.exports = { writeShopifyPrice, writeAmzPrice, amzBasketItem };

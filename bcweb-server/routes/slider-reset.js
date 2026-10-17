@@ -46,7 +46,7 @@ const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
-const { writeShopifyPrice, writeAmzPrice } = require('../utils/priceWrite');
+const { writeShopifyPrice, writeAmzPrice, amzBasketItem } = require('../utils/priceWrite');
 const { AMZ_NOW_CTES, LIVE_STATES, round2 } = require('../utils/slider');
 const shopify = require('../utils/shopify');
 const logger = require('../utils/logger');
@@ -118,23 +118,9 @@ router.post('/', async (req, res) => {
     if (r.channel === 'SHP' && changed && written && !written.isHold) shopifyResult = await shopify.pushIfLive(r.groupid);
 
     // The Amazon basket item — the shape GET /amz-basket returns, so the page can drop it straight into the upload basket.
-    let basket = null;
-    if (r.channel === 'AMZ' && changed && written) {
-      const d = await query(`
-        SELECT t.shopifytitle AS title, sk.segment FROM skusummary sk LEFT JOIN title t ON t.groupid = sk.groupid WHERE sk.groupid = $1
-      `, [r.groupid]);
-      basket = {
-        id: written.logId,
-        code: r.item_key,
-        amz_sku: written.amzSku,
-        size: r.item_key.split('-').pop(),
-        title: d.rows[0] ? d.rows[0].title : null,
-        segment: d.rows[0] ? d.rows[0].segment : null,
-        old_price: written.oldPrice,
-        new_price: rrp,
-        rrp: written.rrp,
-      };
-    }
+    const basket = r.channel === 'AMZ' && changed && written
+      ? await amzBasketItem({ query }, { code: r.item_key, written, price: rrp })
+      : null;
 
     return res.json({
       return_code: 'SUCCESS',

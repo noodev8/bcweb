@@ -1519,7 +1519,7 @@ export type SliderGroupState = 'active' | 'paused' | 'ended';
 export type SliderMemberState = 'sliding' | 'found' | 'floor' | 'repriced' | 'moved' | 'removed' | 'reset' | 'ended';
 // What a "Move prices" press does to a product, and the two reasons a due product waits instead.
 export type SliderAction = 'repriced' | 'found' | 'hold' | 'floor' | 'lift' | 'step';
-export type SliderWait = 'no_stock' | 'no_price';
+export type SliderWait = 'no_stock' | 'no_price' | 'in_basket';
 export interface SliderRules {
   step_pct: number;          // each move = this % of the product's RRP
   every_days: number;        // a move is due this many days after the last
@@ -1572,6 +1572,11 @@ export interface SliderMember {
   live: boolean;
   off_track: boolean;        // live, but the price isn't what the slider last set
   action: SliderAction | SliderWait | null;   // what the next press does (bcweb-server/utils/slider.js → decide), or why it waits
+  amz_upload: 'live' | 'pending' | 'expired' | null;   // AMZ: its last move — uploaded, in the basket, or never uploaded (undone)
+  amz_undo: boolean;         // AMZ: that expired move is still to be written back by the next press
+  move_from: number | null;  // AMZ: the price before its last move
+  move_uploaded_at: string | null;
+  clock_at: string | null;   // what "due" counts from — on Amazon, the upload
   next_due: string | null;   // YYYY-MM-DD; null unless sliding
   next_price: number | null;
   lift: boolean;             // the next move is the Start-from-RRP lift
@@ -1711,25 +1716,30 @@ export function resetSliderMember(memberId: number) {
     })
   );
 }
-// ONE product's next press (Shopify sliders). The server re-decides inside its transaction; action null = nothing was due any more
-// (already done by someone else, or `wait` says why). The page loops this over the due products, like bulk Apply.
+// ONE product's next press. The server re-decides inside its transaction; action null = nothing was due any more (already done by
+// someone else, or `wait` says why). The page loops this over the due products, like bulk Apply. SHP returns the live push outcome;
+// AMZ returns the upload-basket item.
 export interface SliderStepResult {
   member_id: number;
+  channel: SliderChannel;
   key: string;
   action: SliderAction | null;
   wait: SliderWait | null;
   old_price: number | null;
   new_price: number | null;
   state: SliderMemberState;
+  expired: boolean;          // AMZ: its last move was never uploaded and has just been undone
   warnings: string[];
   shopify: { pushed: boolean; error?: string; message?: string } | null;
+  basket: AmzBasketFetchItem | null;
 }
 export function stepSliderMember(memberId: number) {
   return request<SliderStepResult>(
     { url: '/slider-step', method: 'POST', data: { memberId } },
     (b) => ({
-      member_id: b.member_id, key: b.key, action: b.action ?? null, wait: b.wait ?? null, old_price: b.old_price ?? null,
-      new_price: b.new_price ?? null, state: b.state, warnings: b.warnings || [], shopify: b.shopify ?? null,
+      member_id: b.member_id, channel: b.channel, key: b.key, action: b.action ?? null, wait: b.wait ?? null,
+      old_price: b.old_price ?? null, new_price: b.new_price ?? null, state: b.state, expired: !!b.expired,
+      warnings: b.warnings || [], shopify: b.shopify ?? null, basket: b.basket ?? null,
     })
   );
 }

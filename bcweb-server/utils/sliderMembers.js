@@ -21,11 +21,17 @@ SOLD = units sold on the member's OWN channel (SHP by style, AMZ by SKU), positi
   no time reads as the end of its day — so a live member mustn't be capped at now(), or today's untimed sale would be missed until
   tomorrow). SOLD SINCE = the same, from the slider's last action on it (last_move_at) — what decides a hold.
 
-OFF TRACK = a LIVE member whose current price is not the price the slider last set — someone priced it by hand on another screen (or, on
-  Amazon, the import has caught up with a price not set here). The next press settles it as 'repriced' (utils/slider.js → decide).
+OFF TRACK = a LIVE member someone priced by hand since the slider last set it (utils/slider.js → offTrack): on Shopify the live price
+  differs; on Amazon a newer amz_price_log row for the SKU (`hand_price` — an Apply, a review hold, or a Seller Central change the import
+  logged) carries a different price. The next press settles it as 'repriced' (utils/slider.js → decide).
 
 ACTION = utils/slider.js → decide(): what the next press does to it (or why it waits). POST /slider-step reads it through this same
   function inside its transaction (pass `client`), so the screen's "due" and the write can't disagree.
+
+AMAZON MOVES (utils/slider.js → AMAZON MOVES): the member's last move is its last_log_id row in amz_price_log → amz_upload live | pending
+  | expired. THE CLOCK (clock_at — what "due" and SOLD SINCE count from) is the upload for a live Amazon move (uploaded_at, or the import
+  that showed the price when nobody pressed "I've uploaded"), else last_move_at. An EXPIRED move is undone here, before plan / decide
+  see the member: last_price back to the price before it, one step fewer, due again — and it reads that way on screen too.
 
 Read-only.
 =======================================================================================================================================
@@ -34,7 +40,7 @@ Read-only.
 const { query } = require('../database');
 const { safeNumeric } = require('./sql');
 const {
-  AMZ_NOW_CTES, LIVE_STATES, breakevenFor, floorFor, stepAmount, plan, decide, soldAtSql, londonDate, round2,
+  AMZ_NOW_CTES, AMZ_PENDING_HOURS, LIVE_STATES, breakevenFor, floorFor, stepAmount, plan, offTrack, decide, soldAtSql, londonDate, round2,
 } = require('./slider');
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -74,18 +80,45 @@ async function loadMembers({ groupIds, liveOnly = false, memberIds = null, clien
            CASE WHEN m.channel = 'SHP' THEN COALESCE(lf.qty, 0) ELSE COALESCE(a.amzlive, 0) END AS stock,
            COALESCE(sold.units, 0) AS sold,
            COALESCE(sold.units_since, 0) AS sold_since,
-           sold.last_at AS sold_last_at
+           sold.last_at AS sold_last_at,
+           pl.old_price AS move_from,
+           pl.uploaded_at AS move_uploaded_at,
+           hand.new_price AS hand_price,
+           up.state AS amz_upload,
+           clk.at AS clock_at
     FROM slider_member m
     JOIN slider_group g       ON g.id = m.group_id
+    CROSS JOIN amz_import ai
     LEFT JOIN skusummary ss   ON ss.groupid = m.groupid
     LEFT JOIN title t         ON t.groupid = m.groupid
     LEFT JOIN amzfeed a       ON m.channel = 'AMZ' AND a.code = m.item_key
     LEFT JOIN amz_now an      ON m.channel = 'AMZ' AND an.code = m.item_key
     LEFT JOIN local_free lf   ON lf.groupid = m.groupid
+    -- An Amazon member's last move (a reset also sets last_log_id, but a reset member has left — nothing reads it).
+    LEFT JOIN amz_price_log pl ON m.channel = 'AMZ' AND pl.id = m.last_log_id
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN pl.id IS NULL THEN NULL
+                  WHEN pl.uploaded_at IS NOT NULL OR ROUND(pl.new_price, 2) = ROUND(${safeNumeric('a.amzprice')}, 2) THEN 'live'
+                  WHEN pl.changed_at >= now() - make_interval(hours => ${AMZ_PENDING_HOURS}) THEN 'pending'
+                  ELSE 'expired' END AS state
+    ) up
+    -- Amazon "priced by hand": the newest price logged for the SKU after the slider's own last row (or since it joined) by anyone else.
+    LEFT JOIN LATERAL (
+      SELECT l.new_price FROM amz_price_log l
+      WHERE m.channel = 'AMZ' AND l.code = m.item_key AND l.id > COALESCE(m.last_log_id, 0) AND l.changed_at >= m.joined_at
+      ORDER BY l.id DESC LIMIT 1
+    ) hand ON true
+    -- The clock: from the upload for a live Amazon move (or the import that showed it — never before the press), else last_move_at.
+    -- GREATEST with last_move_at so a later sale hold still restarts it.
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN up.state = 'live'
+                  THEN GREATEST(m.last_move_at, COALESCE(pl.uploaded_at, GREATEST(pl.changed_at, ai.at)))
+                  ELSE m.last_move_at END AS at
+    ) clk
     LEFT JOIN LATERAL (
       SELECT SUM(s.qty) AS units,
              -- strictly AFTER: a hold restarts the clock AT the sale's reading (slider-step), and that sale must not count again
-             SUM(s.qty) FILTER (WHERE ${soldAtSql('s')} > COALESCE(m.last_move_at, m.joined_at)) AS units_since,
+             SUM(s.qty) FILTER (WHERE ${soldAtSql('s')} > COALESCE(clk.at, m.joined_at)) AS units_since,
              MAX(${soldAtSql('s')}) AS last_at
       FROM sales s
       WHERE s.qty > 0
@@ -113,11 +146,20 @@ async function loadMembers({ groupIds, liveOnly = false, memberIds = null, clien
     const rrp = Number(r.rrp);
     const breakeven = breakevenFor(r.channel, { cost: r.cost, fbafee: r.fbafee, tax: r.tax });
     const f = floorFor(group, { rrp, breakeven });
-    const p = plan(group, r, { floor: f.floor });
+    const upload = live ? r.amz_upload : null;
+    // An expired Amazon move never happened: read the member as it was before it — its price, one step fewer, and due again (the
+    // move was due when it was pressed; plan() dates a member with no last_move_at from joined_at, so give it the press day).
+    // Once a press has written that back (slider-step), last_price IS the from price and nothing more is undone — the only way it is
+    // still sliding then is a sale hold, whose clock is the normal one.
+    const undo = upload === 'expired' && r.move_from !== null && round2(Number(r.last_price)) !== round2(Number(r.move_from));
+    const m = undo
+      ? { ...r, last_price: r.move_from, steps: Math.max(0, Number(r.steps) - 1), last_move_at: null, joined_at: r.clock_at }
+      : { ...r, last_move_at: r.clock_at };
+    const p = plan(group, m, { floor: f.floor });
     const stock = Number(r.stock) || 0;
     const sold = Number(r.sold) || 0;
     const soldSince = Number(r.sold_since) || 0;
-    const action = decide(group, r, { now, plan: p, sold, soldSince, stock, today });
+    const action = decide(group, m, { now, plan: p, sold, soldSince, stock, today, upload });
     return {
       id: r.id,
       group_id: r.group_id,
@@ -131,7 +173,7 @@ async function loadMembers({ groupIds, liveOnly = false, memberIds = null, clien
       rrp,
       start_from: r.start_from,
       start_price: Number(r.start_price),
-      last_price: Number(r.last_price),
+      last_price: Number(m.last_price),     // the price the slider last set (an expired Amazon move undone)
       now,
       now_pct_rrp: now !== null && rrp > 0 ? Math.round((now / rrp) * 100) : null,
       cost: num(r.cost),
@@ -139,15 +181,19 @@ async function loadMembers({ groupIds, liveOnly = false, memberIds = null, clien
       floor: f.floor,
       floor_by_breakeven: f.byBreakeven,
       step: stepAmount(group, rrp),
-      steps: Number(r.steps),
+      steps: Number(m.steps),
       stock,
       sold,
       sold_since: soldSince,            // since the slider's last action on it — what decides a hold
       sold_last_at: iso(r.sold_last_at),
       state: r.state,
       live,
-      off_track: live && now !== null && round2(now) !== round2(Number(r.last_price)),
+      off_track: live && offTrack(m, now),
       action,                           // utils/slider.js → decide(): what the next press does, or why it waits; null = nothing
+      amz_upload: upload,               // AMZ: live | pending | expired for its last move; null = Shopify / no move yet / left
+      amz_undo: undo,                   // AMZ: an expired move the next acting press will write back (slider-step)
+      move_from: num(r.move_from),      // AMZ: the price before its last move (what an expired move is undone to)
+      move_uploaded_at: iso(r.move_uploaded_at),
       next_due: p.nextDue,
       next_price: p.nextPrice,
       lift: p.lift,
@@ -156,6 +202,7 @@ async function loadMembers({ groupIds, liveOnly = false, memberIds = null, clien
       found_price: num(r.found_price),
       found_at: iso(r.found_at),
       last_move_at: iso(r.last_move_at),
+      clock_at: iso(r.clock_at),        // what "due" counts from — on Amazon, the upload
       joined_by: r.joined_by || null,
       joined_at: iso(r.joined_at),
       ended_by: r.ended_by || null,

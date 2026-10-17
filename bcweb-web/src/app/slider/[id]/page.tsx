@@ -19,13 +19,15 @@ TICK + ACT (live products only): Reset to RRP — each ticked product back to RR
          upload basket, whose download button sits in the title row here exactly as on the Amazon pricing pages. Remove — out of the
          slider, price left as it is.
 
-MOVE PRICES (Shopify sliders; owner: no cron — every move is a button press). The button carries out what each due product's Next move
-         says — a cut, the lift back to RRP, or settling one that sold (holds), reached the floor (holds) or was priced by hand on another
-         screen (leaves). ONE CALL PER PRODUCT (POST /slider-step), like bulk Apply, so each Shopify push fires and reports on its own; the
-         server re-decides each one inside its transaction (bcweb-server/utils/slider.js → decide), so a stale page or two people pressing
-         at once can't move a price twice. A product with no stock WAITS (it can't sell, so a cut only gives margin away) and is due the
-         moment stock arrives; a late press makes one move, not a catch-up. The confirm sits on its own row so a double click on the button
-         can't land on it. Amazon sliders move through the upload basket — the next step of the build.
+MOVE PRICES (owner: no cron — every move is a button press). The button carries out what each due product's Next move says — a cut,
+         the lift back to RRP, or settling one that sold (holds), reached the floor (holds) or was priced by hand on another screen
+         (leaves). ONE CALL PER PRODUCT (POST /slider-step), like bulk Apply, so each Shopify push fires and reports on its own; the server
+         re-decides each one inside its transaction (bcweb-server/utils/slider.js → decide), so a stale page or two people pressing at once
+         can't move a price twice. A product with no stock WAITS (it can't sell, so a cut only gives margin away) and is due the moment
+         stock arrives; a late press makes one move, not a catch-up. The confirm sits on its own row so a double click can't land on it.
+         AMAZON: each move lands in the team upload basket (the bar + download button in the title row, as on the Amazon pricing pages) and
+         its product reads "in upload basket" until the file is uploaded — the clock runs from the upload. A move never uploaded inside
+         the basket's 72h is undone at the next press ("not uploaded").
 
 The product's code links to its Shopify / Amazon price screen, with ?from= so ← Back returns here.
 =======================================================================================================================================
@@ -35,7 +37,7 @@ import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { mutate as mutateGlobal } from 'swr';
-import { PlusIcon, PencilSquareIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilSquareIcon, ExclamationTriangleIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import ChannelBadge from '@/components/ChannelBadge';
 import SliderRulesForm from '@/components/SliderRulesForm';
@@ -59,6 +61,13 @@ const SETTLE_NOTE: Partial<Record<SliderAction, [string, string]>> = {
   floor: ['At floor', 'text-amber-700'],
   repriced: ['Priced by hand — leaves', 'text-amber-700'],
 };
+
+// The slider's own action — warm, not the standard brand purple (owner, 2026-10-17), so "Move prices" is the one thing on the page that
+// reads as the slider doing its job. Grey when nothing is due.
+const MOVE_BTN =
+  'inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-rose-500 text-sm font-semibold text-white shadow-md shadow-rose-200 ' +
+  'transition hover:from-amber-600 hover:to-rose-600 hover:shadow-lg active:scale-[0.98] ' +
+  'disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none';
 
 // A failed live push. Honest about the state: the price is saved here, Shopify still shows the old one. (Re-Applying the same price
 // on the price screen would NOT retry — W1 logs a same-price Apply as a hold and sends Shopify nothing.)
@@ -158,6 +167,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     return tally(c);
   }, [dueRows]);
   const noStock = live.filter((m) => m.action === 'no_stock').length;
+  const inBasket = live.filter((m) => m.action === 'in_basket').length;
   const floorDates = sliding.map((m) => m.floor_by).filter((d): d is string => !!d).sort();
   const floorBy = floorDates.length ? floorDates[floorDates.length - 1] : null;
   const offTrack = live.filter((m) => m.off_track).length;
@@ -224,6 +234,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     setConfirm(null); setBusy(true); setMsg(null); setPicked(new Set());
     const done: Partial<Record<SliderAction, number>> = {};
     let notDue = 0;
+    let basketed = 0;
     const pushFailed: string[] = [];
     const flagged: string[] = [];
     const errors: string[] = [];
@@ -235,7 +246,9 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         const a = r.data.action;
         if (a) done[a] = (done[a] || 0) + 1; else notDue++;
         if (r.data.shopify && r.data.shopify.pushed === false) pushFailed.push(m.key);
-        if (r.data.warnings.includes('BELOW_COST')) flagged.push(m.key);
+        if (r.data.warnings.includes('BELOW_COST') || r.data.warnings.includes('BELOW_FLOOR')) flagged.push(m.key);
+        const b = r.data.basket;
+        if (b && b.amz_sku && basketAdd) { basketAdd({ ...b, amz_sku: b.amz_sku }); basketed++; }
       } else {
         errors.push(`${m.key}: ${r.error || 'failed'}`);
       }
@@ -243,6 +256,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
     }
     setProgress(null); setBusy(false);
     const parts = [tally(done) || 'Nothing moved'];
+    if (basketed) parts.push(`${basketed} in the upload basket`);
     if (notDue) parts.push(`${notDue} not due`);
     if (flagged.length) parts.push(`below cost: ${flagged.join(', ')}`);
     if (pushFailed.length) parts.push(PUSH_FAILED(pushFailed));
@@ -324,6 +338,11 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
             <span><span className="font-semibold text-emerald-700">{live.filter((m) => m.state === 'found').length}</span> <span className="text-slate-500">found</span></span>
             <span><span className="font-semibold text-amber-700">{live.filter((m) => m.state === 'floor').length}</span> <span className="text-slate-500">at floor</span></span>
             {left.length > 0 && <span><span className="font-semibold text-slate-500">{left.length}</span> <span className="text-slate-500">left</span></span>}
+            {inBasket > 0 && (
+              <span className="text-slate-500" title="Moved, waiting to be uploaded to Amazon — the clock starts at the upload">
+                <span className="font-semibold text-slate-700">{inBasket}</span> in upload basket
+              </span>
+            )}
             {noStock > 0 && (
               <span className="text-slate-500" title="Due, but no stock — it can't sell, so it isn't cut. It's due again the moment stock arrives.">
                 <span className="font-semibold text-slate-700">{noStock}</span> no stock
@@ -335,30 +354,25 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
               </span>
             )}
           </div>
-          {group.state === 'active' && live.length > 0 && (amz ? (
-            dueNow > 0 && (
-              <span className="text-slate-600">
-                <span className="font-semibold text-slate-900">{dueNow}</span> due <span className="text-slate-400">(Amazon moves not built yet)</span>
-              </span>
-            )
-          ) : (
+          {group.state === 'active' && live.length > 0 && (
             <button
               type="button"
               onClick={() => setConfirm(confirm === 'move' ? null : 'move')}
               disabled={busy || dueNow === 0}
               title={dueNow === 0 ? 'Nothing is due today' : undefined}
-              className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              className={MOVE_BTN + ' px-4 py-2'}
             >
-              {dueNow > 0 ? `Move prices · ${dueNow} due` : 'Nothing due'}
+              <ArrowTrendingDownIcon className="h-4 w-4" />
+              {dueNow > 0 ? <>Move prices <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-semibold">{dueNow} due</span></> : 'Nothing due'}
             </button>
-          ))}
+          )}
         </div>
 
         {/* Own row, away from the button above, so a double click can't confirm. */}
-        {confirm === 'move' && dueNow > 0 && !amz && (
+        {confirm === 'move' && dueNow > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm">
-            <span className="text-slate-700">{dueTally} — live on Shopify</span>
-            <button type="button" onClick={onMove} disabled={busy} className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700">
+            <span className="text-slate-700">{dueTally} — {amz ? 'into the upload basket' : 'live on Shopify'}</span>
+            <button type="button" onClick={onMove} disabled={busy} className={MOVE_BTN + ' px-3 py-1.5'}>
               Move {dueNow}
             </button>
             <button type="button" onClick={() => setConfirm(null)} className="text-slate-500 hover:text-slate-800">Cancel</button>
@@ -483,7 +497,11 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                         // Due, and the press settles it rather than cuts it (sold / floor / priced by hand).
                         <span className={`text-xs font-semibold ${SETTLE_NOTE[m.action as SliderAction]![1]}`}>{SETTLE_NOTE[m.action as SliderAction]![0]}</span>
                       ) : m.action === 'no_price' ? (
-                        <span className="text-xs text-red-700" title="Its Shopify price can't be read, so the slider won't step it">Price unreadable</span>
+                        <span className="text-xs text-red-700" title="Its price can't be read, so the slider won't step it">Price unreadable</span>
+                      ) : m.action === 'in_basket' ? (
+                        <span className="text-xs text-slate-500" title="Waiting to be uploaded to Amazon — the clock starts at the upload">
+                          {money(m.last_price)} in upload basket
+                        </span>
                       ) : m.state === 'sliding' && m.next_price !== null ? (
                         group.state === 'paused' ? <span className="text-slate-400">paused</span> : (
                           <>
@@ -496,6 +514,9 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                               </span>
                             )}
                             {m.lift && <span className="ml-1.5 text-xs text-slate-400">(back to RRP)</span>}
+                            {m.amz_undo && (
+                              <span className="ml-1.5 text-xs text-amber-700" title="Its last move was never uploaded to Amazon within 72 hours, so it didn't happen">not uploaded</span>
+                            )}
                           </>
                         )
                       ) : m.state === 'found' ? (

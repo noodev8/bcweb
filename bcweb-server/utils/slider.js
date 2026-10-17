@@ -43,7 +43,19 @@ transaction, so a stale screen can't make it do something else):
     floor      due, but already at (or, after a rules edit, below) the floor — holds there, price untouched
     lift       due, start_from='rrp' and not yet lifted — up (or down) to RRP
     step       due — one step down, never below the floor; a step that lands on the floor makes it 'floor'
-  and two that WAIT (shown, not acted on): no_stock, no_price (the current price can't be read). Paused group = nothing.
+  and the ones that WAIT (shown, not acted on): no_stock, no_price (the current price can't be read), in_basket (Amazon). Paused = nothing.
+
+AMAZON MOVES (phase 3) go into the team upload basket (a W-A1 amz_price_log row) and are only real once they reach Amazon. Each Amazon
+member's last move is read as one of (utils/sliderMembers.js → amz_upload):
+    live      uploaded_at is stamped ("I've uploaded"), OR amzfeed already shows the new price — the team often uploads without pressing
+              the button (10 of 16 real changes in the 30 days to 2026-10-17). The clock counts from the upload (or the import that
+              showed it), not from the press: "count from upload" (owner).
+    pending   not live yet, still inside the basket's 72h window → waits as in_basket. A sale while it waits is acted on after upload
+              (the price can't be pulled back out of a file someone may already have downloaded) — the upload lag's known cost.
+    expired   never went live and has aged out of the basket → the move DIDN'T HAPPEN: the member reads as it was before it (price and
+              step count), due again. The press that acts on it records that ('expired' event) and writes the undone price/steps back
+              before doing anything else (last_log_id stays on the expired row, so "already undone" = last_price is back at its from).
+  "Priced by hand" on Amazon is read from the log, never the feed — see offTrack().
 =======================================================================================================================================
 */
 
@@ -190,22 +202,41 @@ function plan(group, m, { floor }) {
 
 // What a press acts on, and what only waits. See WHAT A PRESS DOES in the header.
 const DUE_ACTIONS = ['repriced', 'found', 'hold', 'floor', 'lift', 'step'];
-const WAITS = ['no_stock', 'no_price'];
+const WAITS = ['no_stock', 'no_price', 'in_basket'];
 
 /*
- * decide(group, member, { now, plan, sold, soldSince, stock, today }) -> one of DUE_ACTIONS, one of WAITS, or null (nothing to do)
+ * offTrack(member, now) -> true when the price isn't where the slider left it — someone priced it by hand.
+ *   SHP  the live shopifyprice differs from the slider's last price (W1 writes it straight away, so it is the truth).
+ *   AMZ  judged from the LOG, not the feed: a newer amz_price_log row for the SKU (`hand_price`, utils/sliderMembers.js) whose price isn't
+ *        the slider's — an Apply or review hold from the Amazon pricing screens, or a Seller Central change the import detected (it logs
+ *        those as 'Manual' only when the price differs from the latest logged one, so a slider price that went live is never one).
+ *        The feed can't be used: it is whatever the last Update Amazon read, which may predate an upload by hours.
+ */
+function offTrack(m, now) {
+  if (m.channel === 'AMZ') {
+    return m.hand_price !== null && m.hand_price !== undefined && round2(Number(m.hand_price)) !== round2(Number(m.last_price));
+  }
+  return now !== null && round2(now) !== round2(Number(m.last_price));
+}
+
+/*
+ * decide(group, member, { now, plan, sold, soldSince, stock, today, upload }) -> one of DUE_ACTIONS, one of WAITS, or null (nothing to do)
  *   group      needs state + stop_after_sales
- *   member     needs state + last_price
+ *   member     needs channel, state, last_price (+ hand_price on Amazon)
  *   now        the current price on the channel (null = unreadable)
  *   plan       plan()'s result for this member
  *   sold       units sold on its channel since it joined; soldSince = since the slider's last action on it (or since joining)
  *   stock      what its channel can sell now
  *   today      'YYYY-MM-DD', London
- * The order is the rule: a hand-set price wins over everything (the human has taken over), then a sale, then the clock.
+ *   upload     Amazon only: live | pending | expired for its last move (null = Shopify, or no move yet). See AMAZON MOVES above;
+ *              an expired move is already undone in `member` by the caller.
+ * The order is the rule: a hand-set price wins over everything (the human has taken over), then a move still in the basket, then a sale,
+ * then the clock.
  */
-function decide(group, m, { now, plan: p, sold, soldSince, stock, today }) {
+function decide(group, m, { now, plan: p, sold, soldSince, stock, today, upload = null }) {
   if (group.state !== 'active' || !LIVE_STATES.includes(m.state)) return null;
-  if (now !== null && round2(now) !== round2(Number(m.last_price))) return 'repriced';
+  if (offTrack(m, now)) return 'repriced';
+  if (upload === 'pending') return 'in_basket';
   if (sold >= Number(group.stop_after_sales)) return m.state === 'found' ? null : 'found';
   if (m.state !== 'sliding' || !p.nextDue || p.nextDue > today) return null;
   if (soldSince > 0) return 'hold';
@@ -233,10 +264,12 @@ function soldAtSql(alias) {
 
 /*
  * AMZ_NOW_CTES — two CTEs giving each Amazon SKU's CURRENT price (join amz_now ON code; COALESCE(amz_now.price, amzprice)).
- * amzfeed.amzprice is Amazon's price as of the last Update Amazon import, so a price logged AFTER that import is newer — if it has been
- * uploaded, or is still pending in the basket. A pending change that aged out of the basket (AMZ_PENDING_HOURS) never went live and is
- * ignored. The other Amazon screens read amzprice alone; the slider can't, because it records a start price and must not record a stale
- * one minutes after an Apply. Prefix the query's WITH list with this (it ends without a trailing comma).
+ * amzfeed.amzprice is Amazon's price as of the last Update Amazon import, so a logged price is newer when it reached Amazon AFTER that
+ * import — uploaded after it — or is still pending in the basket and was set after it. A pending change that aged out of the basket
+ * (AMZ_PENDING_HOURS) never went live and is ignored. The other Amazon screens read amzprice alone; the slider can't, because it records
+ * a start price and must not record a stale one minutes after an Apply. Prefix the query's WITH list with this (no trailing comma).
+ * UPLOADED is judged by uploaded_at, not changed_at (fixed 2026-10-17): set Monday 10:00, Update Amazon 11:00, uploaded 12:00 — the
+ * import still shows the OLD price, and comparing changed_at threw the uploaded price away.
  */
 const AMZ_NOW_CTES = `
   amz_import AS (
@@ -245,12 +278,12 @@ const AMZ_NOW_CTES = `
   amz_now AS (
     SELECT DISTINCT ON (l.code) l.code, l.new_price AS price
     FROM amz_price_log l CROSS JOIN amz_import i
-    WHERE l.changed_at > i.at
-      AND (l.uploaded_at IS NOT NULL OR l.changed_at >= now() - make_interval(hours => ${AMZ_PENDING_HOURS}))
+    WHERE (l.uploaded_at IS NOT NULL AND l.uploaded_at > i.at)
+       OR (l.uploaded_at IS NULL AND l.changed_at > i.at AND l.changed_at >= now() - make_interval(hours => ${AMZ_PENDING_HOURS}))
     ORDER BY l.code, l.id DESC
   )`;
 
 module.exports = {
-  CHANNELS, LIVE_STATES, DUE_ACTIONS, WAITS, AMZ_NOW_CTES,
-  validateRules, breakevenFor, floorFor, stepAmount, plan, decide, soldAtSql, londonDate, addDays, round2,
+  CHANNELS, LIVE_STATES, DUE_ACTIONS, WAITS, AMZ_NOW_CTES, AMZ_PENDING_HOURS,
+  validateRules, breakevenFor, floorFor, stepAmount, plan, offTrack, decide, soldAtSql, londonDate, addDays, round2,
 };
