@@ -1,47 +1,61 @@
-# Fulfill button on Customer Orders — PLAN
+# Manifest and fulfil — Customer Orders — PLAN
 
-Status: **plan only, not built** (agreed with owner 2026-10-14). The decisions below are the owner's, don't re-ask them.
-The button already sits in the top row of Customer Orders (list-wide, not per order) and does nothing yet.
+Status: **manifest BUILT and live; Shopify fulfil is plan only** (plan updated 2026-10-19). The decisions below are the owner's, don't re-ask them.
+The "Manifest and fulfil" button sits in the Customer Orders title row (list-wide, not per order — `ManifestButton.tsx`).
 
 ## The job
-One press: manifest everything on Click & Drop that needs manifesting, save the manifest to Downloads, then fulfil every PACKED customer order on
-Shopify with its Royal Mail tracking number, so Shopify emails the customer.
+One press: manifest everything on Click & Drop that's waiting, save the manifest PDF to Downloads, then fulfil on Shopify — with the
+customer email — **every order we have as packed**: Royal Mail boxes (`batch = '2'`) with their tracking number, and FBA orders whose
+Amazon MCF file is made, marked fulfilled with the Amazon courier.
 
-## Owner decisions (2026-10-14)
-- **Manifest = everything Click & Drop has waiting**, whoever created it (PowerBuilder orders included). Don't worry about PowerBuilder.
-- **Send Shopify's shipping confirmation email** (`notifyCustomer: true`).
-- **Only fulfil a PACKED order.** Never a Waiting order (`customerwaiting = 1`) and never Pack only (courier `'0'`).
-- **Save the manifest PDF to Downloads** (owner, 2026-10-14 — changed from printing it).
+## Owner decisions
+- **Manifest = everything Click & Drop has waiting**, whoever created it (PowerBuilder orders included). (2026-10-14)
+- **Save the manifest PDF to Downloads**, not print it. (2026-10-14)
+- **Send Shopify's shipping confirmation email** (`notifyCustomer: true`). (2026-10-14)
+- **Fulfil = every order we have as packed (`batch = '2'`).** That is the whole rule (owner, 2026-10-19: "doesnt need to be on
+  manifest actually. just do manifest first then fulfil anything that we have as packed"). No Waiting test, no on-the-manifest test —
+  supersedes the 2026-10-14 "never a Waiting order". Manifest runs FIRST; the fulfil list is our packed rows, not the manifest's.
+- **FBA orders: mark fulfilled with the Amazon courier** (owner, 2026-10-19: "fba orders - mark as fulfilled with amz courier"). "Packed"
+  for FBA = what `customerOrders.js → rowState` already calls packed: `amz > 0` with `orderdate` stamped (the MCF file is made). An FBA
+  line still waiting for its file (`orderdate` blank) is NOT fulfilled.
 
 ## Flow
-1. **Confirm** ("Manifest and fulfil N packed orders?") — same ConfirmBox pattern as Cancel label. A manifest can't be undone.
-2. **Manifest** on Click & Drop (`clickDrop.js → manifest()`; `POST /manifests` from memory — check the exact path/body/response in the
-   C&D API docs before building). Returns the manifest number + PDF.
-3. **Download the manifest PDF** to the browser's Downloads folder.
-4. **Pick the orders to fulfil:** customer orders (ordertype 1) where EVERY line is packed (`batch = '2'`), none is Waiting, courier is
-   not `'0'`. A partly packed order is skipped.
-5. **Per order:** `findByReference(ordernum)` → `trackingNumber` (+ `manifestedOn`). No C&D order or no tracking number → skip, report why.
-6. **Fulfil on Shopify**, per order, failures don't stop the rest: find the order by name (`ordernum` = Shopify `order.name`, we store no
-   Shopify id) → its open fulfillment orders → `fulfillmentCreate` with `trackingInfo { company: 'Royal Mail', number, url }`,
-   `notifyCustomer: true`. Already fulfilled → skip (counts as done).
-7. **Summary** on screen: manifest number, fulfilled count, skipped/failed with reasons. Then refresh; the fulfilled orders leave the
-   list on the next Update orders (archive phase) — optionally trigger it automatically.
+1. **Confirm** ("Manifest and fulfil? This can't be undone.") — existing inline confirm.
+2. **Manifest** — BUILT: `routes/order-status-customer-manifest.js` → `clickDrop.createManifests()`. This account replies HTTP 201
+   `{ manifestNumber, documentPdf }` inline (live, 2026-10-15). PDF saved to Downloads by the button. **If the manifest fails, stop —
+   fulfil nothing.**
+3. **Fulfil** — a SECOND request from the same press, to a new route `order-status-customer-fulfil`, so a slow manifest can't push the
+   whole job past the browser's 120s wait. Only sent if the manifest succeeded (or there was nothing to manifest).
+   - **Candidates:** customer orders (`ordertype 1`, channel SHOPIFY) where every line reads `packed` by `rowState` — a Royal Mail
+     box (`batch = '2'`) or an FBA line with its MCF file made. A partly packed order is skipped (reported). (FBA orders are always
+     single-line — the FBA route refuses groups — so an order is one kind or the other.)
+   - **Royal Mail orders — tracking:** `clickDrop.findByReference(ordernum)` → `trackingNumber`. None (e.g. a Pack only order, no
+     label) → skip, report why.
+   - **FBA orders:** no Click & Drop lookup. `trackingInfo { company: <Shopify's Amazon carrier> }`, no number (we don't hold the MCF
+     tracking). Same `notifyCustomer: true`.
+   - **Shopify:** order by name (`ordernum` = Shopify `order.name` exactly, per `orderSync.js`) → its open fulfillment orders →
+     `fulfillmentCreate` with `trackingInfo` as above (Royal Mail: `{ company: 'Royal Mail', number, url }`), `notifyCustomer: true`. Already fulfilled → skip,
+     counts as done. One order failing doesn't stop the rest.
+4. **Summary** under the title row: manifest number, fulfilled count, skipped/failed with reasons.
+5. **Auto Update orders** (the existing order-sync) after the fulfil, so the fulfilled orders archive off the list straight away.
 
-**Order matters:** manifest before fulfil, so no customer gets tracking for an un-manifested parcel. If the manifest call fails, stop —
-fulfil nothing. Re-pressing is safe: nothing new to manifest is not an error, and fulfilled orders are skipped.
+**Re-press:** NOTHING_TO_MANIFEST is not an error — the fulfil still runs over whatever is packed. Already-fulfilled orders are
+skipped, so pressing again is safe.
+
+No DB writes — Shopify and the archive phase of Update orders do the rest.
 
 ## Build list
-- `utils/clickDrop.js`: `manifest()` (+ retry if the API offers it).
-- `utils/shopifyFulfil.js`: order-by-name lookup + `fulfillmentCreate`. Own token — **new `.env` var** (e.g.
-  `SHOPIFY_FULFIL_ACCESS_TOKEN`) with `read_orders`, `read_/write_merchant_managed_fulfillment_orders`. The existing
-  `SHOPIFY_ORDERS_ACCESS_TOKEN` is read-only. Owner creates it in the Shopify custom app and adds it locally + on the VPS.
-- Route `order-status-customer-fulfil` (one file, header block, HTTP 200 + `return_code`, per-order results). No DB writes needed —
-  Shopify + the archive phase do the rest.
-- Web: wire the button in `CustomerOrderList.tsx`, confirm, results panel, manifest print; `api.ts` call.
+- `utils/shopifyFulfil.js`: order-by-name lookup + open fulfillment orders + `fulfillmentCreate`. Own token — **new `.env` var
+  `SHOPIFY_FULFIL_ACCESS_TOKEN`** with `read_orders`, `read_merchant_managed_fulfillment_orders`,
+  `write_merchant_managed_fulfillment_orders` (the existing `SHOPIFY_ORDERS_ACCESS_TOKEN` is read-only). Owner creates it in the
+  custom app, adds it locally + on the VPS.
+- `routes/order-status-customer-fulfil.js`: one file, header block, HTTP 200 + `return_code`, per-order results.
+- Web: `ManifestButton.tsx` chains manifest → fulfil → Update orders, combined summary; `api.ts` call.
 
-## Open items
-- Exact C&D manifest endpoint and response (PDF inline or fetched separately).
-- **Printer for the manifest:** kiosk printing goes to the Windows default printer (the Zebra on the label PC). The manifest is
-  probably A4 — check what C&D returns and whether it needs a different printer/profile.
-- Tracking URL format for Royal Mail Tracked 24/48.
-- Testing: one real run with the owner's OK on a genuine collection day — a manifest can't be rolled back.
+## Open items — check against REAL replies before building (see the manifest lesson)
+- Read-only checks first: `findByReference` for one packed order (where the tracking number sits), and the Shopify order + its
+  fulfillment orders with the new token.
+- Royal Mail tracking URL format (or let Shopify build it from company 'Royal Mail').
+- The exact Amazon carrier name in Shopify's supported-carrier list (e.g. 'Amazon Logistics UK' vs 'Amazon') — check at build.
+- FBA email with no tracking number: confirm the shipping email reads OK without one (first live FBA run).
+- `fulfillmentCreate` can't be dry-run and emails a real customer: first live run = ONE order the owner picks, on a collection day.
