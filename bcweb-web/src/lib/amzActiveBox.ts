@@ -80,8 +80,9 @@ function update(user: string, fn: (b: ActiveBox) => ActiveBox) {
 // One unit in. The same code again is the same line; a new line goes on top (the newest scan first, as the box shows it).
 export function addToActiveBox(user: string, line: Omit<ActiveLine, 'qty'>) {
   update(user, (b) => {
+    // NEWEST SCAN AT THE TOP (owner, 2026-10-19): a repeat scan moves its line back to the top, not just its qty up.
     const hit = b.lines.find((l) => l.code === line.code);
-    const lines = hit ? b.lines.map((l) => (l.code === line.code ? { ...l, qty: l.qty + 1 } : l)) : [{ ...line, qty: 1 }, ...b.lines];
+    const lines = [hit ? { ...hit, qty: hit.qty + 1 } : { ...line, qty: 1 }, ...b.lines.filter((l) => l.code !== line.code)];
     return { ...b, lines, lastPacked: null };
   });
 }

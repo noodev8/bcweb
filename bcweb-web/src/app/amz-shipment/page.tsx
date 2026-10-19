@@ -42,8 +42,10 @@ FNSKU or title — your box too) and names the matching codes under each; the ma
 
 KEPT SIMPLE (owner, 2026-10-16: "dont want them to really need to think"). Your box's rare actions (Print labels switch, Empty) sit in
 a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; Finish shipment is folded to one line (green
-with a tick once everything is packed); the contents show the shoe's groupid with its title under it, and its size big; and a good
-scan flashes its line green and pops the qty (the animations are in tailwind.config.js).
+with a tick once everything is packed); and a good scan flashes its line green and pops the qty (the animations are in
+tailwind.config.js). FIND IT IN 3 SECONDS (owner, 2026-10-19): the contents are ONE LINE PER SIZE — groupid, then the title on the same
+line, then the size and qty big — in SCAN ORDER, NEWEST AT THE TOP, never sorted by anything else (owner, 2026-10-19). A repeat scan moves
+its line back to the top (src/lib/amzActiveBox.ts).
 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
 scan, scan, scan with no clicks. Every scan goes into YOUR BOX, whichever box is being looked at (the view switches back to it). The
@@ -61,11 +63,13 @@ A refused scan prints nothing, and NEITHER DOES SCANNING THE FNSKU ITSELF (owner
 is already labelled, so a scan that matches the product's FNSKU boxes it without printing. "Print labels" switches it off for shoes already labelled; the switch is remembered in this browser, as
 it belongs to the bench, not the shipment. The printer icon on a line reprints that line's label (a jam, a smudge, a test).
 
-MEASUREMENTS (owner, 2026-09-28). Once a box is filled, its length, width and height (cm) and weight (kg) go in above its contents —
-Amazon wants all four for every carton, and Pack needs them. Amazon's standard-carton limits (63.5 cm on any side, 23 kg) are shown as
-a warning only. Two quick fills (owner, 2026-10-01): "Birk box" puts in the Birkenstock carton's sides (BIRK_BOX — weight left blank,
-it depends on the contents), and "Set" (one click, 2026-10-15) saves your box's typed size in this browser, or fills an empty size with
-the saved one — the same box size packed again and again isn't retyped.
+MEASUREMENTS (owner, 2026-09-28). A box's length, width and height (cm) and weight (kg) — Amazon wants all four for every carton, and
+Pack needs them. NOT ON THE CONTENTS (owner, 2026-10-19: "dont want you to stack sizes on the table of whats in an amz box ... if a user
+tries to lock a box with no sizes bring the size thing up as a modal"): Pack on a box without all four opens the Box size pop-up
+(SizeDialog); once sized, the header shows the size as a chip that reopens it. Amazon's standard-carton limits (63.5 cm on any side,
+23 kg) are shown in it as a warning only. Two quick fills (owner, 2026-10-01): "Birk box" puts in the Birkenstock carton's sides
+(BIRK_BOX — weight left blank, it depends on the contents), and "Set" (one click, 2026-10-15) saves your box's typed size in this
+browser, or fills an empty size with the saved one — the same box size packed again and again isn't retyped.
 
 SHIPPING PLAN (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
 Downloads Amazon-ShippingPlan.txt, the Seller Central shipping-plan upload, in the legacy app's exact layout: the template's header block,
@@ -81,7 +85,7 @@ are Amazon's B1..Bn in order, which is why Delete renumbers.
 =======================================================================================================================================
 */
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
@@ -326,6 +330,8 @@ function Packing({ initial, autoBack, onShipped }: {
   // Lazy initialiser: read once on mount (this component only renders client-side after the boxes load), no effect needed.
   const [printOn, setPrintOn] = useState(loadPrintOn);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  // The Box size pop-up (see MEASUREMENTS) — opened by Pack on an unsized box, or by the size chip.
+  const [sizeOpen, setSizeOpen] = useState(false);
   // A stored box's ⋯ menu: which of Empty / Delete is waiting for its second click.
   const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | null>(null);
   // The box's ⋯ menu (print switch, Empty) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
@@ -363,8 +369,8 @@ function Packing({ initial, autoBack, onShipped }: {
   // The stored box your box will replace when packed (Unpack / Empty) — see the header.
   const refillNo = mine.refill?.box ?? null;
   const allPacked = boxes.length > 0 && notPacked.length === 0 && mineUnits === 0 && refillNo === null;
-  const warning = onMine ? dimsWarning(dims) : null;
-  const canPack = mineUnits > 0 && dimsComplete(mine.dims) && !working;
+  // Pack is pressable with anything in your box; an unsized box opens the Box size pop-up instead of packing.
+  const canPack = mineUnits > 0 && !working;
 
   async function rereadBoxes(): Promise<boolean> {
     const res = await getAmzShipmentBoxes();
@@ -470,7 +476,6 @@ function Packing({ initial, autoBack, onShipped }: {
   function setButton() {
     if (FIELDS.some((f) => mine.dims[f.key].trim() !== '')) savePreset(mine.dims);
     else fillDims(loadPreset());
-    refocus();
   }
 
   // Empty your box: everything out, the measurements kept. Confirmed inline first. Its scans leave Undo's history.
@@ -490,6 +495,8 @@ function Packing({ initial, autoBack, onShipped }: {
   // the number from the same store.
   async function pack() {
     if (!canPack) return;
+    if (!dimsComplete(mine.dims)) { setSizeOpen(true); return; }
+    setSizeOpen(false);
     setWorking(true);
     setBoxError(null);
     const res = await packAmzShipmentBox(mine.lines.map((l) => ({ code: l.code, qty: l.qty })), mine.dims, mine.refill);
@@ -600,21 +607,16 @@ function Packing({ initial, autoBack, onShipped }: {
 
   return (
     <>
-      {/* Shipment summary — counts only. The finishing steps live at the foot of the box list (owner, 2026-10-15). */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
-        <div className="text-sm text-slate-600">
-          <span className="font-semibold text-slate-900">{boxes.length}</span> {boxes.length === 1 ? 'box' : 'boxes'} packed
-          <span className="mx-2 text-slate-300">·</span>
-          <span className="font-semibold text-slate-900">{totalUnits}</span> {totalUnits === 1 ? 'unit' : 'units'}
-          <span className="mx-2 text-slate-300">·</span>
-          your box: <span className="font-semibold text-slate-900">{mineUnits}</span>
-        </div>
-      </div>
-
       {/* The open box on the LEFT, the box list on the RIGHT (owner, 2026-10-16). The list stays first in the source so a phone, one
           column, still shows it above the box; md:order-last moves it right on a wider screen. */}
-      <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+      <div className="grid gap-4 md:grid-cols-[1fr_240px]">
         <div className="space-y-2 md:order-last">
+          {/* Shipment totals — the stored boxes only (your box has its own count on its card). Top of the list, not a strip of its own,
+              so the open box starts at the top of the page (owner, 2026-10-19). */}
+          <div className="flex items-baseline justify-between px-1 text-sm text-slate-500">
+            <span><span className="text-base font-semibold text-slate-900">{boxes.length}</span> {boxes.length === 1 ? 'box' : 'boxes'}</span>
+            <span><span className="text-base font-semibold text-slate-900">{totalUnits}</span> {totalUnits === 1 ? 'unit' : 'units'}</span>
+          </div>
           {/* FIND — "which box is this SKU in?". Its own input, NOT the scan box — a scan here would otherwise go into a box. */}
           <div className="relative">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -785,10 +787,23 @@ function Packing({ initial, autoBack, onShipped }: {
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-xl font-bold text-slate-900">
                 {!onMine ? `Box ${shown.id}` : refillNo !== null ? `Your box — Box ${refillNo}` : 'Your box'}
               </h2>
               <span className="text-sm text-slate-500">{boxUnits({ lines })} {boxUnits({ lines }) === 1 ? 'unit' : 'units'}</span>
+              {/* THE BOX'S SIZE as one chip (see MEASUREMENTS) — yours opens the Box size pop-up; a stored box's is text, it can't change
+                  in place. Your unsized box shows nothing: Pack asks. */}
+              {onMine ? (dimsComplete(dims) || FIELDS.some((f) => dims[f.key].trim() !== '')) && (
+                <button type="button" onClick={() => setSizeOpen(true)} title="Change the box size"
+                  className={'rounded-full border px-2 py-0.5 text-xs tabular-nums hover:bg-slate-50 '
+                    + (dimsComplete(dims) ? 'border-slate-300 text-slate-600' : 'border-amber-300 text-amber-700')}>
+                  {dimsComplete(dims) ? `${dims.length} × ${dims.width} × ${dims.height} cm · ${dims.weight} kg` : 'size not finished'}
+                </button>
+              ) : (
+                <span className={'text-xs tabular-nums ' + (dimsComplete(dims) ? 'text-slate-500' : 'text-amber-700')}>
+                  {dimsComplete(dims) ? `${dims.length} × ${dims.width} × ${dims.height} cm · ${dims.weight} kg` : 'not measured'}
+                </span>
+              )}
               {!onMine && (shown.locked
                 ? <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800"><CheckCircleIcon className="h-3 w-3" />PACKED</span>
                 : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">NOT PACKED</span>)}
@@ -847,7 +862,7 @@ function Packing({ initial, autoBack, onShipped }: {
                       disabled={!canPack}
                       title={mineUnits === 0 ? 'Nothing in your box yet'
                         : dimsComplete(mine.dims) ? 'Box done — store it and get its number'
-                        : 'Put in its length, width, height and weight first'}
+                        : 'Box done — asks for its size, then stores it and gives its number'}
                       className="flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <CheckCircleIcon className="h-4 w-4" />
@@ -953,79 +968,33 @@ function Packing({ initial, autoBack, onShipped }: {
             </div>
           )}
 
-          {/* MEASUREMENTS — your box's size and weight on ONE row above the contents, then the two quick fills. A stored box shows
-              its measurements as text: it can't change in place. */}
-          <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-2.5">
-            {onMine ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="text-sm font-medium text-slate-700">Size</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  {FIELDS.map((f) => (
-                    <label key={f.key} className="relative block" title={`${f.label} (${f.unit})`}>
-                      <span className="sr-only">{f.label}</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={mine.dims[f.key]}
-                        onChange={(e) => setDim(f.key, e.target.value)}
-                        // ENTER ON WEIGHT PACKS (owner, 2026-10-16): weight is the last field, so Enter there with all four filled packs.
-                        onKeyDown={f.key === 'weight' ? (e) => {
-                          if (e.key !== 'Enter' || !canPack) return;
-                          e.preventDefault();
-                          void pack();
-                        } : undefined}
-                        placeholder={f.label}
-                        className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-right text-sm tabular-nums text-slate-900 placeholder:text-left placeholder:text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">{f.unit}</span>
-                    </label>
-                  ))}
-                </div>
-                {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends
-                    on what's packed. Set saves your box's typed size, or fills an empty one with the saved size (setButton). */}
-                <div className="ml-auto flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => { fillDims(BIRK_BOX); refocus(); }}
-                    title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
-                    className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Birk box
-                  </button>
-                  <button
-                    type="button"
-                    onClick={setButton}
-                    title="Typed a size? Set saves it. Empty size? Set fills in the saved one."
-                    className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Set
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-600">
-                <span className="font-medium text-slate-700">Size</span>{' '}
-                {dimsComplete(dims)
-                  ? <span className="tabular-nums">{dims.length} × {dims.width} × {dims.height} cm · {dims.weight} kg</span>
-                  : <span className="text-amber-700">not measured</span>}
-              </div>
-            )}
-            {warning && <div className="mt-1.5 text-xs text-amber-700">{warning}</div>}
-          </div>
+          {onMine && sizeOpen && (
+            <SizeDialog
+              dims={mine.dims}
+              packLabel={refillNo !== null ? `Pack as Box ${refillNo}` : 'Pack box'}
+              canPack={canPack}
+              onDim={setDim}
+              onBirk={() => fillDims(BIRK_BOX)}
+              onSet={setButton}
+              onPack={() => void pack()}
+              onClose={() => { setSizeOpen(false); refocus(); }}
+            />
+          )}
 
           {lines.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">
               {onMine ? 'Nothing in your box yet — scan a shoe to start.' : `Nothing in Box ${shown.id}.`}
             </div>
           ) : (
-            // CONTENTS (owner, 2026-10-16): the shoe's groupid with its title under it, its size big, the qty. The line a good scan just
-            // went to flashes green and its qty pops — re-keyed by the scan's number so a repeat scan replays it.
-            <table className="w-full">
+            // CONTENTS: ONE LINE PER SIZE (owner, 2026-10-19 — see FIND IT IN 3 SECONDS), newest scan at the top: groupid, the title
+            // beside it, the size and qty big. The line a good scan just went to flashes green and its qty pops — re-keyed by the scan's
+            // number so a repeat scan replays it.
+            <table className="w-full table-fixed">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
                   <th className="px-4 py-2 font-medium">Shoe</th>
-                  <th className="px-4 py-2 text-center font-medium">Size</th>
-                  <th className="px-4 py-2 text-right font-medium">Qty</th>
+                  <th className="w-20 px-4 py-2 text-center font-medium">Size</th>
+                  <th className="w-16 px-4 py-2 text-right font-medium">Qty</th>
                   <th className="w-20 px-4 py-2" />
                 </tr>
               </thead>
@@ -1035,16 +1004,19 @@ function Packing({ initial, autoBack, onShipped }: {
                   return (
                   <tr key={justScanned ? `${l.code}#${lastScan?.n}` : l.code}
                     className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : justScanned ? 'animate-scan-flash' : '')}>
-                    <td className="px-4 py-2.5">
-                      {/* Led by the groupid (owner, 2026-10-16) — the packer reads the style off the box, the title is the reminder. */}
-                      <div className="font-medium text-slate-900">{l.groupid || l.code}</div>
-                      {l.title && <div className="text-xs text-slate-500">{l.title}</div>}
+                    <td className="px-4 py-2" title={l.title ? `${l.code} — ${l.title}` : l.code}>
+                      {/* Led by the groupid (owner, 2026-10-16) — the packer reads the style off the box, the title is the reminder, on the
+                          same line and cut short rather than wrapped under it. */}
+                      <div className="truncate">
+                        <span className="font-semibold text-slate-900">{l.groupid || l.code}</span>
+                        {l.title && <span className="ml-2 text-sm text-slate-500">{l.title}</span>}
+                      </div>
                     </td>
-                    <td className="px-4 py-2.5 text-center text-lg font-semibold tabular-nums text-slate-900">{sizeOf(l.code)}</td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-4 py-2 text-center text-xl font-bold tabular-nums text-slate-900">{sizeOf(l.code)}</td>
+                    <td className="px-4 py-2 text-right">
                       <span className={'inline-block text-lg font-semibold tabular-nums text-slate-900 ' + (justScanned ? 'animate-qty-bump' : '')}>{l.qty}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                    <td className="whitespace-nowrap px-4 py-2 text-right">
                       {l.fnsku && (
                         <button
                           type="button"
@@ -1075,5 +1047,97 @@ function Packing({ initial, autoBack, onShipped }: {
         </div>
       </div>
     </>
+  );
+}
+
+// BOX SIZE pop-up (see MEASUREMENTS in the header). Opened by Pack on an unsized box, or the size chip. The four fields big, the two quick
+// fills, Amazon's limit warning, then Pack. Typing writes straight into your box (as the old inline row did), so Cancel keeps what was
+// typed. Enter: with all four filled it packs (ENTER ON WEIGHT PACKS, owner 2026-10-16 — now from any field); otherwise it moves to the
+// next empty field. Opens on the first empty field. Esc or the backdrop closes.
+function SizeDialog({ dims, packLabel, canPack, onDim, onBirk, onSet, onPack, onClose }: {
+  dims: BoxDims; packLabel: string; canPack: boolean;
+  onDim: (key: keyof BoxDims, value: string) => void; onBirk: () => void; onSet: () => void; onPack: () => void; onClose: () => void;
+}) {
+  const refs = useRef<Partial<Record<keyof BoxDims, HTMLInputElement | null>>>({});
+  const complete = dimsComplete(dims);
+  const warning = dimsWarning(dims);
+  const firstEmpty = FIELDS.find((f) => dimNum(dims[f.key]) === null)?.key ?? 'weight';
+
+  function onKey(e: KeyboardEvent, key: keyof BoxDims) {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (complete) { if (canPack) onPack(); return; }
+    const i = FIELDS.findIndex((f) => f.key === key);
+    const next = [...FIELDS.slice(i + 1), ...FIELDS.slice(0, i)].find((f) => dimNum(dims[f.key]) === null);
+    if (next) refs.current[next.key]?.focus();
+  }
+
+  // Quick fills move focus to whatever is still empty (weight, after Birk box) — read off the inputs once they've re-rendered, as this
+  // render's `dims` is from before the fill.
+  function afterFill(fill: () => void) {
+    fill();
+    setTimeout(() => {
+      const empty = FIELDS.map((f) => refs.current[f.key]).find((el) => el && el.value.trim() === '');
+      (empty ?? refs.current.weight)?.focus();
+    }, 0);
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-12" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="box-size-title" className="w-full max-w-md rounded-xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 id="box-size-title" className="text-lg font-semibold text-slate-900">Box size</h2>
+          <p className="text-sm text-slate-500">Amazon needs all four before the box can be packed.</p>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <div className="grid grid-cols-2 gap-3">
+            {FIELDS.map((f) => (
+              <label key={f.key} className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">{f.label}</span>
+                <span className="relative block">
+                  <input
+                    ref={(el) => { refs.current[f.key] = el; }}
+                    autoFocus={f.key === firstEmpty}
+                    type="text"
+                    inputMode="decimal"
+                    value={dims[f.key]}
+                    onChange={(e) => onDim(f.key, e.target.value)}
+                    onKeyDown={(e) => onKey(e, f.key)}
+                    className={'h-11 w-full rounded-md border bg-white pl-3 pr-10 text-right text-lg tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 '
+                      + (dimNum(dims[f.key]) === null ? 'border-amber-300' : 'border-slate-300')}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{f.unit}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
+              what's packed. Set saves the typed size, or fills an empty one with the saved size (setButton). */}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => afterFill(onBirk)}
+              title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
+              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Birk box
+            </button>
+            <button type="button" onClick={() => afterFill(onSet)}
+              title="Typed a size? Set saves it. Empty size? Set fills in the saved one."
+              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Set
+            </button>
+          </div>
+          {warning && <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{warning}</div>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          <button type="button" onClick={onClose}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onPack} disabled={!complete || !canPack}
+            className="flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40">
+            <CheckCircleIcon className="h-4 w-4" />{packLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
