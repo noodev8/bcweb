@@ -43,19 +43,20 @@ FNSKU or title — your box too) and names the matching codes under each; the ma
 KEPT SIMPLE (owner, 2026-10-16: "dont want them to really need to think"). Your box's rare actions (Print labels switch, Empty) sit in
 a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; Finish shipment is folded to one line (green
 with a tick once everything is packed); and a good scan flashes its line green and pops the qty (the animations are in
-tailwind.config.js). FIND IT IN 3 SECONDS (owner, 2026-10-19): the contents are ONE LINE PER SIZE — groupid, then the title on the same
-line, then the size and qty big — in SCAN ORDER, NEWEST AT THE TOP, never sorted by anything else (owner, 2026-10-19). A repeat scan moves
-its line back to the top (src/lib/amzActiveBox.ts).
+tailwind.config.js). FIND IT IN 3 SECONDS (owner, 2026-10-19): the contents are ONE LINE PER SHOE — "each scan is its own line", never a qty
+stacked on one line — groupid, then the title on the same line, then the size big; in SCAN ORDER, NEWEST AT THE TOP, never sorted by
+anything else. Your box keeps a line per scan (src/lib/amzActiveBox.ts); a stored box comes back as code + qty, so it is shown one row
+per unit (unitRows).
 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
 scan, scan, scan with no clicks. Every scan goes into YOUR BOX, whichever box is being looked at (the view switches back to it). The
-same code scanned twice is one line with qty 2. − takes one off a line; Undo takes off the last scan made on this screen.
+same code scanned twice is two lines (FIND IT IN 3 SECONDS). − takes that shoe out; Undo takes off the last scan made on this screen.
 
 SCAN CHECK (owner, 2026-10-02). Every scan is looked up (GET /amz-shipment-scan — our code, the EAN or the FNSKU all resolve to the
 product) BEFORE it goes in the box, and is refused if it isn't a product we know, or if Amazon hasn't given it an FNSKU ("it needs to have
 an fnsku to go in an amz box"). A refused scan goes in no box: the scan field turns red, the reason shows under it with the product's name,
 and the browser beeps — the packer is looking at the shoe, not the screen. It clears on the next good scan. A line made by a good scan
-carries the product's code, Amazon SKU, FNSKU, groupid and title, so an EAN and an FNSKU scan of the same shoe are one line.
+carries the product's code, Amazon SKU, FNSKU, groupid and title, so an EAN and an FNSKU scan of the same shoe are the same product.
 
 FNSKU LABELS (owner, 2026-10-02: "print a fnsku label when its scanned"). Every good scan prints one 54 × 25 mm Dymo label — the FNSKU's image from the
 barcode folder, as the old system printed, with our code under it (2026-10-08) — via src/lib/fnskuLabel.ts (silent on the packing PC's --kiosk-printing Chrome shortcut, a print dialog anywhere else).
@@ -119,6 +120,8 @@ const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slat
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ';
 const boxUnits = (b: { lines: BoxLine[] }) => b.lines.reduce((n, l) => n + l.qty, 0);
 // What the screen shows in a stored box — sent with Delete / a refill's Pack so the server can check it's still that box.
+// The contents as one row per shoe (see FIND IT IN 3 SECONDS): a line with qty 3 is three rows, the order kept.
+const unitRows = (lines: BoxLine[]) => lines.flatMap((l) => Array.from({ length: l.qty }, () => l));
 const expectOf = (b: Box) => b.lines.map((l) => ({ code: l.code, qty: l.qty }));
 // Size = the code's suffix after the last '-' (CLAUDE.md: not the last two characters — half sizes and UK sizes).
 const sizeOf = (code: string) => code.slice(code.lastIndexOf('-') + 1);
@@ -594,12 +597,13 @@ function Packing({ initial, autoBack, onShipped }: {
 
   const listCard = (on: boolean) => 'flex w-full flex-wrap items-center gap-x-3 rounded-lg border px-3 py-2.5 text-left '
     + (on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50');
+  // Find's per-box summary — added up by code here (your box holds one line per scan).
   const matchedList = (matched: BoxLine[]) => matched.length > 0 && (
     <span className="mt-1.5 w-full space-y-0.5">
-      {matched.map((l) => (
-        <span key={l.code} className="flex justify-between gap-2 font-mono text-xs text-amber-900">
-          <span className="truncate">{l.code}</span>
-          <span className="tabular-nums">×{l.qty}</span>
+      {[...matched.reduce((m, l) => m.set(l.code, (m.get(l.code) || 0) + l.qty), new Map<string, number>())].map(([code, qty]) => (
+        <span key={code} className="flex justify-between gap-2 font-mono text-xs text-amber-900">
+          <span className="truncate">{code}</span>
+          <span className="tabular-nums">×{qty}</span>
         </span>
       ))}
     </span>
@@ -986,23 +990,22 @@ function Packing({ initial, autoBack, onShipped }: {
               {onMine ? 'Nothing in your box yet — scan a shoe to start.' : `Nothing in Box ${shown.id}.`}
             </div>
           ) : (
-            // CONTENTS: ONE LINE PER SIZE (owner, 2026-10-19 — see FIND IT IN 3 SECONDS), newest scan at the top: groupid, the title
-            // beside it, the size and qty big. The line a good scan just went to flashes green and its qty pops — re-keyed by the scan's
-            // number so a repeat scan replays it.
+            // CONTENTS: ONE LINE PER SHOE (owner, 2026-10-19 — see FIND IT IN 3 SECONDS), newest scan at the top: groupid, the title
+            // beside it, the size big. A good scan's line is the top one and flashes green — re-keyed by the scan's number so a repeat
+            // scan of the same shoe replays it.
             <table className="w-full table-fixed">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
                   <th className="px-4 py-2 font-medium">Shoe</th>
                   <th className="w-20 px-4 py-2 text-center font-medium">Size</th>
-                  <th className="w-16 px-4 py-2 text-right font-medium">Qty</th>
                   <th className="w-20 px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
-                {lines.map((l) => {
-                  const justScanned = onMine && lastScan?.code === l.code;
+                {unitRows(lines).map((l, i) => {
+                  const justScanned = onMine && i === 0 && lastScan?.code === l.code;
                   return (
-                  <tr key={justScanned ? `${l.code}#${lastScan?.n}` : l.code}
+                  <tr key={justScanned ? `${i}#${lastScan?.n}` : i}
                     className={'border-b border-slate-100 last:border-0 ' + (lineMatches(l) ? 'bg-amber-50' : justScanned ? 'animate-scan-flash' : '')}>
                     <td className="px-4 py-2" title={l.title ? `${l.code} — ${l.title}` : l.code}>
                       {/* Led by the groupid (owner, 2026-10-16) — the packer reads the style off the box, the title is the reminder, on the
@@ -1013,9 +1016,6 @@ function Packing({ initial, autoBack, onShipped }: {
                       </div>
                     </td>
                     <td className="px-4 py-2 text-center text-xl font-bold tabular-nums text-slate-900">{sizeOf(l.code)}</td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={'inline-block text-lg font-semibold tabular-nums text-slate-900 ' + (justScanned ? 'animate-qty-bump' : '')}>{l.qty}</span>
-                    </td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">
                       {l.fnsku && (
                         <button
@@ -1032,7 +1032,7 @@ function Packing({ initial, autoBack, onShipped }: {
                         type="button"
                         onClick={() => takeOne(l.code)}
                         aria-label={`Take one ${l.code} out`}
-                        title="Take one out"
+                        title="Take this one out"
                         className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                       >
                         <MinusIcon className="h-4 w-4" />

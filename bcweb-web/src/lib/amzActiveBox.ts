@@ -77,13 +77,11 @@ function update(user: string, fn: (b: ActiveBox) => ActiveBox) {
   write(user, fn(readActiveBox(user)));
 }
 
-// One unit in. The same code again is the same line; a new line goes on top (the newest scan first, as the box shows it).
+// One unit in: EACH SCAN IS ITS OWN LINE (owner, 2026-10-19: "each scan is its own line"), on top — the newest scan first, as the box
+// shows it. Never merged here; Pack's route adds up repeated codes (routes/amz-shipment-pack.js).
 export function addToActiveBox(user: string, line: Omit<ActiveLine, 'qty'>) {
   update(user, (b) => {
-    // NEWEST SCAN AT THE TOP (owner, 2026-10-19): a repeat scan moves its line back to the top, not just its qty up.
-    const hit = b.lines.find((l) => l.code === line.code);
-    const lines = [hit ? { ...hit, qty: hit.qty + 1 } : { ...line, qty: 1 }, ...b.lines.filter((l) => l.code !== line.code)];
-    return { ...b, lines, lastPacked: null };
+    return { ...b, lines: [{ ...line, qty: 1 }, ...b.lines], lastPacked: null };
   });
 }
 
@@ -91,8 +89,11 @@ export function addToActiveBox(user: string, line: Omit<ActiveLine, 'qty'>) {
 export function takeFromActiveBox(user: string, code: string): boolean {
   let found = false;
   update(user, (b) => {
-    found = b.lines.some((l) => l.code === code);
-    return { ...b, lines: b.lines.map((l) => (l.code === code ? { ...l, qty: l.qty - 1 } : l)).filter((l) => l.qty > 0) };
+    // From the newest line of that code only (lines are newest first) — a refill's loaded lines can still hold a qty above 1.
+    const i = b.lines.findIndex((l) => l.code === code);
+    found = i >= 0;
+    if (!found) return b;
+    return { ...b, lines: b.lines.map((l, j) => (j === i ? { ...l, qty: l.qty - 1 } : l)).filter((l) => l.qty > 0) };
   });
   return found;
 }
