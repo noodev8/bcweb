@@ -791,10 +791,12 @@ function Packing({ initial, autoBack, onShipped }: {
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900">
-                {!onMine ? `Box ${shown.id}` : refillNo !== null ? `Your box — Box ${refillNo}` : 'Your box'}
-              </h2>
-              <span className="text-sm text-slate-500">{boxUnits({ lines })} {boxUnits({ lines }) === 1 ? 'unit' : 'units'}</span>
+              {/* No "Your box" heading (owner, 2026-10-19) — the unit count leads. A box NUMBER still shows: a stored box on view, or
+                  the one your box is refilling, so it's clear which carton this is. */}
+              {(!onMine || refillNo !== null) && (
+                <h2 className="text-xl font-bold text-slate-900">Box {onMine ? refillNo : shown.id}</h2>
+              )}
+              <span className="text-xl font-semibold tabular-nums text-slate-700">{boxUnits({ lines })} {boxUnits({ lines }) === 1 ? 'unit' : 'units'}</span>
               {/* THE BOX'S SIZE as one chip (see MEASUREMENTS) — yours opens the Box size pop-up; a stored box's is text, it can't change
                   in place. Your unsized box shows nothing: Pack asks. */}
               {onMine ? (dimsComplete(dims) || FIELDS.some((f) => dims[f.key].trim() !== '')) && (
