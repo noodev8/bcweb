@@ -238,7 +238,9 @@ export default function CustomerOrderList() {
               courier: l.courier, note: '', waiting: false, created: l.created };
         map.set(l.ordernum, o);
       }
-      o.lines.push(l);
+      // ONE LINE PER SHOE (owner, 2026-10-19, BC19335: "dont STACK them just cause they're the same size"). A customer row can carry
+      // qty 2; it's split into qty-1 lines here so each pair shows as its own row and takes its own scan, like two rows of one code.
+      for (let k = 0; k < Math.max(l.qty, 1); k++) o.lines.push({ ...l, qty: 1 });
       if (l.created < o.created) o.created = l.created;
       // First non-empty note in the group wins. Writes fan out across every line, so they normally agree — this only matters for
       // orders PowerBuilder noted line-by-line before this screen existed.

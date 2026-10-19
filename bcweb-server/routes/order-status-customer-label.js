@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`clickdrop:${ordernum}`]);
 
       const { rows } = await client.query(
-        `SELECT o.shopifysku AS code, o.orderdate, o.batch, o.courier,
+        `SELECT o.shopifysku AS code, GREATEST(COALESCE(o.qty, 1), 1) AS qty, o.orderdate, o.batch, o.courier,
                 COALESCE(o.localstock, 0) AS localstock, COALESCE(o.amz, 0) AS amz, COALESCE(o.ukd, 0) AS ukd,
                 COALESCE(o.othersupplier, 0) AS othersupplier, COALESCE(o.customerwaiting, 0) AS customerwaiting,
                 o.shippingname, o.company, o.address1, o.address2, o.city, o.county, o.postcode, o.country, o.phone, o.email,
@@ -123,9 +123,11 @@ router.post('/', async (req, res) => {
         throw new Refusal('NOTHING_TO_PACK', `${ordernum} has nothing left to pack — use Reprint if its label is lost`);
       }
 
-      // The scan check: every open unit, code for code. Extra scans of a code don't matter; a short one does.
+      // The scan check: every open unit, code for code. Extra scans of a code don't matter; a short one does. UNITS, not rows: a customer
+      // row can carry qty 2 (BC19335, 2026-10-19 — two pairs of one size on one row), and each pair is scanned.
       const need = new Map();
-      for (const r of open) need.set(r.code.toUpperCase(), (need.get(r.code.toUpperCase()) || 0) + 1);
+      for (const r of open) need.set(r.code.toUpperCase(), (need.get(r.code.toUpperCase()) || 0) + Number(r.qty));
+      const openUnits = open.reduce((n, r) => n + Number(r.qty), 0);
       const have = new Map();
       for (const c of codes) have.set(c, (have.get(c) || 0) + 1);
       const short = [...need].filter(([c, n]) => (have.get(c) || 0) < n).map(([c]) => c);
@@ -151,9 +153,9 @@ router.post('/', async (req, res) => {
       if (weightIn !== undefined && weightIn !== null && weightIn !== '') {
         weightKg = Number(weightIn);
         entered = true;
-      } else if (open.length > 1) {
+      } else if (openUnits > 1) {
         // GROUP ORDER (owner, 2026-10-13): always weighed as the parcel it is, never added up from the shoes' stored weights.
-        throw new Refusal('WEIGHT_NEEDED', `Group order (${open.length} pairs) — weigh the parcel and enter its weight`, { missing: [] });
+        throw new Refusal('WEIGHT_NEEDED', `Group order (${openUnits} pairs) — weigh the parcel and enter its weight`, { missing: [] });
       } else {
         const missing = [...new Set(open.filter((r) => r.weight_kg === null || Number(r.weight_kg) <= 0).map((r) => r.code))];
         if (missing.length) {
