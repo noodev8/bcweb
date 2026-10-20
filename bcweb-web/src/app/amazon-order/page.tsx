@@ -2181,8 +2181,9 @@ function AmazonOrderContent() {
       {!loading && !error && (
         // No overflow of its own — see panelHeight above. Anything with overflow:auto here would become the sticky positioning
         // context again and put the second scrollbar back; the rows scroll with the page, and the header row below pins itself
-        // under the panel instead.
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        // under the panel instead. w-max min-w-full like the table: a SKU carrying both tags (Not on Amazon + Can't get) makes the
+        // table wider than the page, and a fixed-width card left the Cut column hanging outside its border.
+        <div className="w-max min-w-full rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-max min-w-full text-sm">
             {/* Pinned under the live bottom edge of the panel rather than at top:0, which would tuck it behind. The panel is
                 z-30 and this is z-10, so the two overlap in the right order during the moment a scroll is settling. */}
