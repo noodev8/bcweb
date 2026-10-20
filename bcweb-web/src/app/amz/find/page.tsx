@@ -198,6 +198,35 @@ function AmzFindContent() {
     setSelected(new Set());
   }
 
+  // BULK RESET TO RRP (owner, 2026-10-20 — the segment lists had it, Find didn't). Each ticked SKU goes to its OWN RRP (skusummary.rrp,
+  // carried on the row), through the same per-row POST /amz-apply as the moves above. Same skips as the segment lists' version: no RRP,
+  // or already at it.
+  async function bulkResetToRrp(reviewDays: number | null, note: string) {
+    const targets = results.filter((r) => selected.has(r.code));
+    if (targets.length === 0) return;
+    setMarking(true); setMarkError(null); setResultSummary(null);
+    setProgress({ done: 0, total: targets.length });
+    let applied = 0, noRrp = 0, already = 0, skipped = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      if (row.rrp === null) noRrp++;
+      else if (row.price !== null && Math.round(row.price * 100) === Math.round(row.rrp * 100)) already++;
+      else {
+        const res = await applyAmzPrice(row.code, Math.round(row.rrp * 100) / 100, note || 'Reset to RRP', reviewDays);
+        if (res.success && res.data) {
+          const d = res.data;
+          add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: row.segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
+          applied++;
+        } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
+        else { skipped++; }
+      }
+      setProgress({ done: i + 1, total: targets.length });
+    }
+    setProgress(null); setMarking(false);
+    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setSelected(new Set());
+  }
+
   // BULK REVIEW ONLY — park the ticked SKUs with no price change (batch POST /amz-review). Clears the selection on success.
   async function bulkSetReview(days: number) {
     if (selected.size === 0) return;
@@ -361,6 +390,7 @@ function AmzFindContent() {
           error={markError}
           onApplyPrice={bulkApplyPrice}
           onApplySetPrice={bulkSetPrice}
+          onResetToRrp={bulkResetToRrp}
           onSetReview={bulkSetReview}
         />
       )}

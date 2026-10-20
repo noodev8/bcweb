@@ -53,7 +53,7 @@ Success Response:
   "has": ["RIEKER"], "not": ["WOMENS"],
   "results": [
     { "code": "17659-23-42", "amz_sku": "17659-23-42-2607", "groupid": "17659-23", "segment": "RIEKER-SUM",
-      "size": "42", "title": "Mens Rieker Wide Fit Shoes Brown", "price": 77.19, "fba": 0 },
+      "size": "42", "title": "Mens Rieker Wide Fit Shoes Brown", "price": 77.19, "rrp": 85.00, "fba": 0 },
     ...  // up to `limit`, ordered by groupid then code
   ],
   "total": 27,        // TRUE number of matching SKUs, ignoring the cap
@@ -163,6 +163,7 @@ router.get('/', async (req, res) => {
       SELECT a.code, a.sku AS amz_sku, a.groupid, NULLIF(sk.segment,'') AS segment, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
+             ${safeNumeric('sk.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP" (skusummary, same as amz-apply's bound)
              COALESCE(a.amzlive,0) AS fba
       ${baseFrom}
       ORDER BY a.groupid, a.code
@@ -177,6 +178,7 @@ router.get('/', async (req, res) => {
       size: r.size,
       title: r.title || null,
       price: num(r.price),
+      rrp: num(r.rrp),
       fba: Number(r.fba),
     }));
 

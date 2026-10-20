@@ -193,7 +193,7 @@ export interface AmzSaleRow { solddate: string | null; size: string | null; qty:
 export interface AmzSalesData { rows: AmzSaleRow[]; limit: number; truncated: boolean; }
 export interface AmzFindRow {
   code: string; amz_sku: string; groupid: string; segment: string | null; size: string; title: string | null;
-  price: number | null; fba: number;
+  price: number | null; rrp: number | null; fba: number;
 }
 // One committed narrowing step on the Amazon Find screen. Same idea as SalesFilterStep but kept as its own type (owner, 2026-07-25):
 // the two screens are deliberately NOT sharing a search implementation, so they can diverge without breaking each other.
