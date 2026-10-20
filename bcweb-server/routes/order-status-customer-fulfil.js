@@ -57,22 +57,10 @@ router.use(verifyToken);
 
 const BUDGET_MS = 90000;   // no order is started after this; one order's three calls fit in the remaining 30s of the client's 120s
 
-// The "why didn't it fulfil?" trail: every step and every outcome, per order. ERROR level on purpose — production runs LOG_LEVEL=error,
-// which would silence info, and this is the only record of what was sent to a real customer. It's pressed a few times a day, so the
-// volume is small. Read it with `pm2 logs` and grep `[fulfil]`.
-const trail = (msg) => logger.error(`[fulfil] ${msg}`);
-
-// One order: work out its tracking, check Shopify, fulfil. Never throws — every outcome is a result row (and a trail line).
+// One order: work out its tracking, check Shopify, fulfil. Never throws — every outcome is a result row.
 async function fulfilOne(ordernum, lines) {
-  const out = (outcome, reason, extra = {}) => {
-    const r = { ordernum, outcome, reason, kind: null, tracking: null, ...extra };
-    trail(`${ordernum} -> ${outcome.toUpperCase()}${reason ? `: ${reason}` : ''} (kind=${r.kind ?? '-'} tracking=${r.tracking ?? '-'})`);
-    return r;
-  };
-  let step = 'checking lines';
+  const out = (outcome, reason, extra = {}) => ({ ordernum, outcome, reason, kind: null, tracking: null, ...extra });
   try {
-    trail(`${ordernum} start: ${lines.length} line(s) — ${lines.map((l) =>
-      `[state=${rowState(l)} batch='${l.batch}' courier='${l.courier ?? ''}' amz=${l.amz} orderdate='${l.orderdate ?? ''}']`).join(' ')}`);
     if (!lines.every((l) => rowState(l) === 'packed')) return out('skipped', 'Not every line is packed');
 
     // An FBA order is ALWAYS sent by Amazon — Amazon courier, never Royal Mail, whatever else is on the row (owner, 2026-10-20).
@@ -83,20 +71,16 @@ async function fulfilOne(ordernum, lines) {
       trackingInfo = shopifyFulfil.FBA_TRACKING;
     } else {
       if (String(lines[0].courier ?? '').trim() === '0') return out('skipped', 'Pack only — no label, no tracking');
-      step = 'Click & Drop lookup';
       const cd = await clickDrop.findByReference(ordernum);
       if (!cd) return out('skipped', 'No Click & Drop label for this order', { kind: 'royalmail' });
       tracking = cd.trackingNumber || cd.packages?.find((p) => p.trackingNumber)?.trackingNumber || null;
-      trail(`${ordernum} Click & Drop: id=${cd.orderIdentifier ?? '?'} status=${cd.status ?? '?'} trackingNumber=${cd.trackingNumber ?? '-'} packages=${JSON.stringify(cd.packages ?? null)}`);
       if (!tracking) return out('skipped', 'No tracking number on Click & Drop yet', { kind: 'royalmail' });
       trackingInfo = shopifyFulfil.royalMailTracking(tracking);
     }
     const kind = fba ? 'fba' : 'royalmail';
 
-    step = 'Shopify order lookup';
     const order = await shopifyFulfil.findOrder(ordernum);
     if (!order) return out('failed', 'Not found on Shopify', { kind, tracking });
-    trail(`${ordernum} Shopify: ${order.id} status=${order.fulfillmentStatus} cancelled=${order.cancelled} fulfillmentOrders=${JSON.stringify(order.fulfillmentOrders)}`);
     if (order.cancelled) return out('skipped', 'Cancelled on Shopify', { kind, tracking });
     if (!order.openFulfillmentOrderIds.length) {
       return order.fulfillmentStatus === 'FULFILLED'
@@ -104,17 +88,12 @@ async function fulfilOne(ordernum, lines) {
         : out('skipped', `Nothing open to fulfill on Shopify (${order.fulfillmentStatus})`, { kind, tracking });
     }
 
-    step = 'Shopify fulfillmentCreate';
-    trail(`${ordernum} sending fulfillmentCreate: fulfillmentOrders=${JSON.stringify(order.openFulfillmentOrderIds)} trackingInfo=${JSON.stringify(trackingInfo)}`);
-    const f = await shopifyFulfil.fulfil(order.openFulfillmentOrderIds, trackingInfo);
-    trail(`${ordernum} Shopify fulfillment ${f.id} ${f.status} trackingInfo=${JSON.stringify(f.trackingInfo)}`);
+    await shopifyFulfil.fulfil(order.openFulfillmentOrderIds, trackingInfo);
     return out('fulfilled', null, { kind, tracking });
   } catch (err) {
-    // Everything we know about the failure: where it was, the coded reason, and Click & Drop's HTTP status/body when it was them.
-    const cdErr = err instanceof clickDrop.ClickDropError;
-    trail(`${ordernum} ERROR during ${step}: code=${err.code ?? '-'}${cdErr ? ` clickdrop_status=${err.status} clickdrop_body=${JSON.stringify(err.body ?? null).slice(0, 500)}` : ''} — ${err.message}`);
-    if (!err.code && !cdErr) logger.error(err.stack);   // an unexpected throw (a bug, not a refusal) — keep where it came from
-    return out('failed', (cdErr ? 'Click & Drop: ' : '') + err.message);
+    logger.error(`[order-status-customer-fulfil] ${ordernum}:`, err.message);
+    const where = err instanceof clickDrop.ClickDropError ? 'Click & Drop: ' : '';
+    return out('failed', where + err.message);
   }
 }
 
@@ -122,10 +101,7 @@ router.post('/', async (req, res) => {
   const startedAt = Date.now();
   const one = String(req.body?.ordernum || '').trim().toUpperCase();
 
-  trail(`pressed by ${req.user.display_name}: ${one ? `one order ${one}` : 'whole list'}`);
-
   if (!shopifyFulfil.isConfigured()) {
-    trail('stopped: SHOPIFY_FULFIL_CLIENT_ID / _SECRET (or the shop) not set in .env');
     return res.json({
       return_code: 'SHOPIFY_NOT_CONFIGURED',
       message: 'Fulfill needs SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env (the "bcweb fulfil" Dev Dashboard app)',
@@ -144,10 +120,7 @@ router.post('/', async (req, res) => {
         ORDER BY o.ordernum`,
       [CUSTOMER_ORDERTYPE, one]
     );
-    if (one && !rows.length) {
-      trail(`stopped: ${one} isn't a live Shopify customer order on the list (ordertype ${CUSTOMER_ORDERTYPE}, channel SHOPIFY, not discarded)`);
-      return res.json({ return_code: 'NOT_FOUND', message: `${one} isn't a Shopify customer order on the list` });
-    }
+    if (one && !rows.length) return res.json({ return_code: 'NOT_FOUND', message: `${one} isn't a Shopify customer order on the list` });
 
     const orders = new Map();
     for (const r of rows) {
@@ -160,12 +133,10 @@ router.post('/', async (req, res) => {
     const candidates = one
       ? [...orders]
       : [...orders].filter(([, lines]) => lines.every((l) => rowState(l) === 'packed'));
-    trail(`${orders.size} order(s) on the list, ${candidates.length} to try: ${candidates.map(([o]) => o).join(', ') || '(none)'}`);
 
     const results = [];
     for (const [ordernum, lines] of candidates) {
       if (Date.now() - startedAt > BUDGET_MS) {
-        trail(`${ordernum} -> SKIPPED: not reached, ${Math.round((Date.now() - startedAt) / 1000)}s used`);
         results.push({ ordernum, outcome: 'skipped', reason: 'Not reached in time — press Fulfill again', kind: null, tracking: null });
         continue;
       }
@@ -173,11 +144,9 @@ router.post('/', async (req, res) => {
     }
 
     const n = (o) => results.filter((r) => r.outcome === o).length;
-    trail(`done by ${req.user.display_name}${one ? ` (${one})` : ''} in ${Math.round((Date.now() - startedAt) / 1000)}s: ${n('fulfilled')} fulfilled, ${n('already')} already, ${n('skipped')} skipped, ${n('failed')} failed`);
     return res.json({ return_code: 'SUCCESS', results });
   } catch (err) {
-    trail(`run failed: ${err.message}`);
-    logger.error(err.stack);
+    logger.error('[order-status-customer-fulfil] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to fulfill' });
   }
 });
