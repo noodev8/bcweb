@@ -64,7 +64,7 @@ async function accessToken() {
       }
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.access_token) {
-        throw coded('SHOPIFY_ERROR', `Shopify wouldn't issue the fulfil token (HTTP ${res.status}${body.error ? `, ${body.error}` : ''}) — check SHOPIFY_FULFIL_CLIENT_ID / _SECRET and that the app is installed`);
+        throw coded('SHOPIFY_ERROR', `Shopify wouldn't issue the fulfill token (HTTP ${res.status}${body.error ? `, ${body.error}` : ''}) — check SHOPIFY_FULFIL_CLIENT_ID / _SECRET and that the app is installed`);
       }
       const life = (Number(body.expires_in) || 86399) * 1000;
       cached = { token: body.access_token, expiresAt: Date.now() + life - 5 * 60 * 1000 };
@@ -77,7 +77,7 @@ async function accessToken() {
 // Same shape as utils/shopify.js → shopifyGraphQL (429 backoff, schema errors thrown) but on the fulfil app's token, with a timeout.
 async function gql(queryStr, variables = {}) {
   if (!isConfigured()) {
-    throw coded('SHOPIFY_NOT_CONFIGURED', 'Shopify fulfil needs SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env');
+    throw coded('SHOPIFY_NOT_CONFIGURED', 'Shopify fulfill needs SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env');
   }
   const { shop, apiVersion } = config.shopify;
   const url = `https://${shop}.myshopify.com/admin/api/${apiVersion}/graphql.json`;

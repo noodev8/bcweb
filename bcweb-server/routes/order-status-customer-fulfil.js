@@ -85,7 +85,7 @@ async function fulfilOne(ordernum, lines) {
     if (!order.openFulfillmentOrderIds.length) {
       return order.fulfillmentStatus === 'FULFILLED'
         ? out('already', 'Already fulfilled on Shopify', { kind, tracking })
-        : out('skipped', `Nothing open to fulfil on Shopify (${order.fulfillmentStatus})`, { kind, tracking });
+        : out('skipped', `Nothing open to fulfill on Shopify (${order.fulfillmentStatus})`, { kind, tracking });
     }
 
     const f = await shopifyFulfil.fulfil(order.openFulfillmentOrderIds, trackingInfo);
@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
   if (!shopifyFulfil.isConfigured()) {
     return res.json({
       return_code: 'SHOPIFY_NOT_CONFIGURED',
-      message: 'Fulfil needs SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env (the "bcweb fulfil" Dev Dashboard app)',
+      message: 'Fulfill needs SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env (the "bcweb fulfil" Dev Dashboard app)',
     });
   }
 
@@ -138,7 +138,7 @@ router.post('/', async (req, res) => {
     const results = [];
     for (const [ordernum, lines] of candidates) {
       if (Date.now() - startedAt > BUDGET_MS) {
-        results.push({ ordernum, outcome: 'skipped', reason: 'Not reached in time — press Fulfil again', kind: null, tracking: null });
+        results.push({ ordernum, outcome: 'skipped', reason: 'Not reached in time — press Fulfill again', kind: null, tracking: null });
         continue;
       }
       results.push(await fulfilOne(ordernum, lines));
@@ -149,7 +149,7 @@ router.post('/', async (req, res) => {
     return res.json({ return_code: 'SUCCESS', results });
   } catch (err) {
     logger.error('[order-status-customer-fulfil] error:', err.message);
-    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to fulfil' });
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to fulfill' });
   }
 });
 

@@ -1,7 +1,7 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: FulfilButton  ("Fulfil", Customer Orders header bar)
+Component: FulfilButton  ("Fulfill" on screen, Customer Orders header bar)
 =======================================================================================================================================
 Purpose: Marks every PACKED order fulfilled on Shopify — Royal Mail ones with their Click & Drop tracking number, FBA ones with the
          Amazon courier — and Shopify emails each customer (docs/fulfil-plan.md). List-wide, like Manifest beside it.
@@ -22,7 +22,7 @@ import type { ManifestResult } from '@/components/ManifestButton';
 
 // One line for the outcome — shared with the per-order Fulfil button.
 export function fulfilSummary(results: CustomerFulfilResult[]): ManifestResult {
-  if (!results.length) return { ok: true, text: 'Nothing packed to fulfil' };
+  if (!results.length) return { ok: true, text: 'Nothing packed to fulfill' };
   const by = (o: CustomerFulfilResult['outcome']) => results.filter((r) => r.outcome === o);
   const done = by('fulfilled');
   const already = by('already');
@@ -50,7 +50,7 @@ export default function FulfilButton({ onResult, onUpdated, onUpdateError }: {
     const res = await fulfilCustomerOrders();
     setRunning(false);
     if (!res.success || !res.data) {
-      onResult({ ok: false, text: res.error || 'Fulfil didn’t go through' });
+      onResult({ ok: false, text: res.error || 'Fulfill didn’t go through' });
       return;
     }
     onResult(fulfilSummary(res.data));
@@ -60,9 +60,9 @@ export default function FulfilButton({ onResult, onUpdated, onUpdateError }: {
   if (confirm) {
     return (
       <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">
-        <span className="text-slate-700">Fulfil every packed order on Shopify? Customers are emailed.</span>
+        <span className="text-slate-700">Fulfill every packed order on Shopify? Customers are emailed.</span>
         <button type="button" onClick={() => { setConfirm(false); run(); }}
-          className="rounded bg-slate-800 px-2 py-0.5 font-medium text-white">Fulfil</button>
+          className="rounded bg-slate-800 px-2 py-0.5 font-medium text-white">Fulfill</button>
         <button type="button" onClick={() => setConfirm(false)}
           className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-600">Cancel</button>
       </span>
@@ -78,7 +78,7 @@ export default function FulfilButton({ onResult, onUpdated, onUpdateError }: {
       className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {running ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <CheckBadgeIcon className="h-3.5 w-3.5" />}
-      {running ? 'Fulfilling…' : 'Fulfil'}
+      {running ? 'Fulfilling…' : 'Fulfill'}
     </button>
   );
 }

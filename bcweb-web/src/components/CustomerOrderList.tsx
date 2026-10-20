@@ -363,7 +363,7 @@ export default function CustomerOrderList() {
     const res = await fulfilCustomerOrders(ordernum);
     setWorking(false);
     if (!res.success || !res.data) {
-      setActionError(res.error || 'Fulfil didn’t go through');
+      setActionError(res.error || 'Fulfill didn’t go through');
       return;
     }
     setFulfilNote({ ordernum, ...fulfilSummary(res.data) });
@@ -934,7 +934,7 @@ export default function CustomerOrderList() {
 
               {shown.length === 0 && (
                 <p className="px-3 py-10 text-center text-sm text-slate-400">
-                  {orders.size === 0 ? 'No customer orders to fulfil.' : 'No orders match. Clear the search or pick All orders.'}
+                  {orders.size === 0 ? 'No customer orders to fulfill.' : 'No orders match. Clear the search or pick All orders.'}
                 </p>
               )}
             </div>
@@ -1134,7 +1134,7 @@ function OrderBox({
           )}
           {confirm === 'fulfil' ? (
             <ConfirmBox
-              message="Fulfil on Shopify? The customer is emailed."
+              message="Fulfill on Shopify? The customer is emailed."
               onYes={() => { setConfirm(null); onFulfil(); }}
               onNo={() => setConfirm(null)}
             />
@@ -1148,7 +1148,7 @@ function OrderBox({
                 : 'Mark fulfilled on Shopify with the Royal Mail tracking number and email the customer'}
               className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
             >
-              <CheckBadgeIcon className="h-4 w-4" /> Fulfil
+              <CheckBadgeIcon className="h-4 w-4" /> Fulfill
             </button>
           )}
         </div>
