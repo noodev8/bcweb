@@ -25,6 +25,11 @@ NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have n
         from an old abandoned one. FILE MADE (owner, 2026-10-16 — "I load to Amazon then forget which one I did"): once the upload
         file downloads here, that style's tag turns green "File made", held in sessionStorage only (FILE_MADE_KEY), so it's this
         tab's memory and clears when the tab/browser closes. A reminder, not a record — deliberately not a stored "uploading" state.
+        ON AMAZON | NOT ON AMAZON | BOTH (owner, 2026-10-20 — "if not in Amazon, they are not there"): a switch over which of the two
+        sets the screen shows. On Amazon (the default, and Reset's) is the listed SKUs ONLY, search included, so an order is typed only
+        against what Amazon has; a search that also matches unlisted sizes says so ("+n not on Amazon", one click to Both) so a style
+        never listed still doesn't read as missing. Not on Amazon is every stocked unlisted size, no search needed — the "do I add
+        these" list; Hot / Warm / Cold are tests of Amazon sales, so they're off while it's on. Both = listed, then unlisted under them.
 
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
@@ -721,6 +726,8 @@ function AmazonOrderContent() {
     () => (supplyOn ? offRows.filter((r) => !supplyHidden(r)) : offRows),
     [offRows, supplyOn],
   );
+  // ON AMAZON | NOT ON AMAZON | BOTH — see the header. A view, like the presets: never touches the basket.
+  const [listing, setListing] = useState<'on' | 'off' | 'both'>('on');
   // What a search can land on — addInclude's "does this term find anything" check has to count the unlisted rows too, or a search for
   // one would throw the steps away as if it had found nothing.
   const searchRows = useMemo(() => [...baseRows, ...offBaseRows], [baseRows, offBaseRows]);
@@ -820,9 +827,16 @@ function AmazonOrderContent() {
   const [recycleOnly, setRecycleOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
   // qty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
-  function togglePotential() { setPotentialOnly((v) => !v); setWinnersOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
-  function toggleRecycle() { setRecycleOnly((v) => !v); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleWinners() { setWinnersOnly((v) => !v); if (listing === 'off') setListing('on'); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
+  function togglePotential() { setPotentialOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleRecycle() { setRecycleOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
+
+  // Not on Amazon has no Amazon sales for Hot / Warm / Cold to test, so choosing it switches them off.
+  function chooseListing(v: 'on' | 'off' | 'both') {
+    setListing(v);
+    if (v === 'off') { setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); }
+    deselectAll();
+  }
 
   // ORDERS ONLY — a third quick preset: show every row with a positive number currently sitting in the Order box, ACROSS THE WHOLE
   // ~520-row set — not just whatever search/Winners/Potential happened to be narrowing the screen down to at the time (owner,
@@ -918,6 +932,7 @@ function AmazonOrderContent() {
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
     setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
+    setListing('on');
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
     // Back into the Can't get cut if it was switched off — the screen as you arrived.
@@ -952,10 +967,10 @@ function AmazonOrderContent() {
       if (incTerms.length > 0 || excTerms.length > 0) o = o.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
       return o;
     };
-    let out = narrow(baseRows);
-    // Unlisted rows come in on an Include step only — never on the bare list, and never under Hot / Warm / Cold, which are tests
-    // of Amazon sales these rows don't have.
-    const unlisted = includes.length > 0 && !winnersOnly && !potentialOnly && !recycleOnly ? narrow(offBaseRows) : [];
+    // The listing switch picks the sets (see the header). Unlisted rows never come under Hot / Warm / Cold, which are tests of
+    // Amazon sales these rows don't have.
+    let out = listing === 'off' ? [] : narrow(baseRows);
+    const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !recycleOnly ? narrow(offBaseRows) : [];
     if (winnersOnly) out = out.filter((r) => isHot(r, hotBar));
     // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
     if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
@@ -970,9 +985,18 @@ function AmazonOrderContent() {
       });
     }
     return unlisted.length > 0 ? [...out, ...unlisted] : out;
-  }, [allRows, baseRows, offBaseRows, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly;
+  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly || listing !== 'on';
+
+  // On Amazon hides unlisted sizes even under a search — this counts the ones the search would find, for the "+n not on Amazon"
+  // hint by the row count, so a style that was never listed shows up as that rather than as "Nothing found".
+  const unlistedMatches = useMemo(() => {
+    if (listing !== 'on' || ordersOnly || includes.length === 0) return 0;
+    const incTerms = includes.map((t) => t.toLowerCase());
+    const excTerms = excludes.map((t) => t.toLowerCase());
+    return offBaseRows.filter((r) => inSeason(r, seasonFilter) && matchesSearch(haystack(r), incTerms, excTerms)).length;
+  }, [listing, ordersOnly, includes, excludes, seasonFilter, offBaseRows]);
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
   // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
@@ -1821,6 +1845,28 @@ function AmazonOrderContent() {
             </button>
           </div>
 
+          {/* ON AMAZON | NOT ON AMAZON | BOTH — same segmented look as the presets; see the header. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            {([
+              ['on', 'On Amazon', 'Only SKUs listed on Amazon'],
+              ['off', 'Not on Amazon', 'Stocked sizes with no Amazon listing — open the tag to build the upload file'],
+              ['both', 'Both', 'Listed SKUs, then the unlisted ones under them'],
+            ] as const).map(([v, label, title]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => chooseListing(v)}
+                title={title}
+                className={
+                  'whitespace-nowrap rounded px-2.5 py-1 text-sm font-medium ' +
+                  (listing === v ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* CAN'T GET — only when something is actually hidden. X shows them; once out, the same slot offers the way back in. */}
           {supplyHiddenCount > 0 && (supplyOn ? (
             <span
@@ -1874,6 +1920,11 @@ function AmazonOrderContent() {
                   is"). It used to switch to "Rows: X of Y" once anything narrowed the list; the "of Y" changed its width on a click. */}
               <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> SKUs</span>
             </span>
+            {unlistedMatches > 0 && (
+              <button type="button" onClick={() => chooseListing('both')} title="Show them under the listed SKUs" className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
+                +{unlistedMatches} not on Amazon
+              </button>
+            )}
           </div>
 
           {/* Reset — the escape hatch, alone at the end of the row you might need escaping from. Cut and Can't get moved to row 2
