@@ -66,8 +66,10 @@ it belongs to the bench, not the shipment. The printer icon on a line reprints t
 
 MEASUREMENTS (owner, 2026-09-28). A box's length, width and height (cm) and weight (kg) — Amazon wants all four for every carton, and
 Pack needs them. NOT ON THE CONTENTS (owner, 2026-10-19: "dont want you to stack sizes on the table of whats in an amz box ... if a user
-tries to lock a box with no sizes bring the size thing up as a modal"): Pack on a box without all four opens the Box size pop-up
-(SizeDialog); once sized, the header shows the size as a chip that reopens it. Amazon's standard-carton limits (63.5 cm on any side,
+tries to lock a box with no sizes bring the size thing up as a modal"): EVERY Pack opens the Box size pop-up (SizeDialog) — sized
+already or not, e.g. an unpacked box being edited (owner, 2026-10-20: "always load the measurement modal when packing a box") — and
+its Pack button stores the box. The pop-up edits a draft: the size reaches your box only on Pack, so a Cancel keeps nothing typed.
+Your box shows no size in the header (the chip was removed, owner 2026-10-20); a stored box's size shows as text. Amazon's standard-carton limits (63.5 cm on any side,
 23 kg) are shown in it as a warning only. Two quick fills (owner, 2026-10-01): "Birk box" puts in the Birkenstock carton's sides
 (BIRK_BOX — weight left blank, it depends on the contents), and "Set" (one click, 2026-10-15) saves your box's typed size in this
 browser, or fills an empty size with the saved one — the same box size packed again and again isn't retyped.
@@ -461,26 +463,6 @@ function Packing({ initial, autoBack, onShipped }: {
     refocus();
   }
 
-  function setDim(key: keyof BoxDims, value: string) {
-    setActiveDims(user, { ...mine.dims, [key]: value.replace(/[^0-9.]/g, '') });
-  }
-
-  // Quick fill: write the given measurements into your box. Only non-blank values are written, so Birk box (no weight) and a Set with
-  // a field left empty keep whatever was already there.
-  function fillDims(d: Partial<BoxDims>) {
-    const next = { ...mine.dims };
-    for (const f of FIELDS) { const v = (d[f.key] ?? '').trim(); if (v) next[f.key] = v; }
-    setActiveDims(user, next);
-  }
-
-  // SET (owner, 2026-10-15) — for packing the same size box again and again without retyping it. One click, no panel, no message:
-  //   your box has measurements typed  -> they become Set's saved values;
-  //   it has none                      -> the saved values are filled in.
-  function setButton() {
-    if (FIELDS.some((f) => mine.dims[f.key].trim() !== '')) savePreset(mine.dims);
-    else fillDims(loadPreset());
-  }
-
   // Empty your box: everything out, the measurements kept. Confirmed inline first. Its scans leave Undo's history.
   function emptyMine() {
     if (mineUnits === 0) return;
@@ -495,14 +477,15 @@ function Packing({ initial, autoBack, onShipped }: {
 
   // PACK (see the header): store your box, get its number — or, refilling, write it back under the stored box's own number. Your box is
   // emptied only once the server has it — a refusal leaves it as it is and says why. AUTO BACK goes straight to Goods In, which shows
-  // the number from the same store.
-  async function pack() {
-    if (!canPack) return;
-    if (!dimsComplete(mine.dims)) { setSizeOpen(true); return; }
+  // the number from the same store. Only the Box size pop-up calls it, with the size it holds — that size is written to your box here,
+  // the first time it reaches the box (see MEASUREMENTS).
+  async function pack(d: BoxDims) {
+    if (!canPack || !dimsComplete(d)) return;
+    setActiveDims(user, d);
     setSizeOpen(false);
     setWorking(true);
     setBoxError(null);
-    const res = await packAmzShipmentBox(mine.lines.map((l) => ({ code: l.code, qty: l.qty })), mine.dims, mine.refill);
+    const res = await packAmzShipmentBox(mine.lines.map((l) => ({ code: l.code, qty: l.qty })), d, mine.refill);
     if (!res.success || !res.data) {
       // A refill whose box moved or changed on another screen: stop refilling, keep the shoes — the next Pack makes it a new box.
       if (res.return_code === 'STALE' && mine.refill) {
@@ -797,15 +780,8 @@ function Packing({ initial, autoBack, onShipped }: {
                 <h2 className="text-xl font-bold text-slate-900">Box {onMine ? refillNo : shown.id}</h2>
               )}
               <span className="text-xl font-semibold tabular-nums text-slate-700">{boxUnits({ lines })} {boxUnits({ lines }) === 1 ? 'unit' : 'units'}</span>
-              {/* THE BOX'S SIZE as one chip (see MEASUREMENTS) — yours opens the Box size pop-up; a stored box's is text, it can't change
-                  in place. Your unsized box shows nothing: Pack asks. */}
-              {onMine ? (dimsComplete(dims) || FIELDS.some((f) => dims[f.key].trim() !== '')) && (
-                <button type="button" onClick={() => setSizeOpen(true)} title="Change the box size"
-                  className={'rounded-full border px-2 py-0.5 text-xs tabular-nums hover:bg-slate-50 '
-                    + (dimsComplete(dims) ? 'border-slate-300 text-slate-600' : 'border-amber-300 text-amber-700')}>
-                  {dimsComplete(dims) ? `${dims.length} × ${dims.width} × ${dims.height} cm · ${dims.weight} kg` : 'size not finished'}
-                </button>
-              ) : (
+              {/* A STORED box's size, as text (see MEASUREMENTS). Your box shows none — Pack opens the Box size pop-up every time. */}
+              {!onMine && (
                 <span className={'text-xs tabular-nums ' + (dimsComplete(dims) ? 'text-slate-500' : 'text-amber-700')}>
                   {dimsComplete(dims) ? `${dims.length} × ${dims.width} × ${dims.height} cm · ${dims.weight} kg` : 'not measured'}
                 </span>
@@ -864,11 +840,10 @@ function Packing({ initial, autoBack, onShipped }: {
                     </div>
                     <button
                       type="button"
-                      onClick={pack}
+                      onClick={() => setSizeOpen(true)}
                       disabled={!canPack}
                       title={mineUnits === 0 ? 'Nothing in your box yet'
-                        : dimsComplete(mine.dims) ? 'Box done — store it and get its number'
-                        : 'Box done — asks for its size, then stores it and gives its number'}
+                        : 'Box done — check its size, then store it and get its number'}
                       className="flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <CheckCircleIcon className="h-4 w-4" />
@@ -976,13 +951,10 @@ function Packing({ initial, autoBack, onShipped }: {
 
           {onMine && sizeOpen && (
             <SizeDialog
-              dims={mine.dims}
+              initial={mine.dims}
               packLabel={refillNo !== null ? `Pack as Box ${refillNo}` : 'Pack box'}
               canPack={canPack}
-              onDim={setDim}
-              onBirk={() => fillDims(BIRK_BOX)}
-              onSet={setButton}
-              onPack={() => void pack()}
+              onPack={(d) => void pack(d)}
               onClose={() => { setSizeOpen(false); refocus(); }}
             />
           )}
@@ -1052,15 +1024,40 @@ function Packing({ initial, autoBack, onShipped }: {
   );
 }
 
-// BOX SIZE pop-up (see MEASUREMENTS in the header). Opened by Pack on an unsized box, or the size chip. The four fields big, the two quick
-// fills, Amazon's limit warning, then Pack. Typing writes straight into your box (as the old inline row did), so Cancel keeps what was
-// typed. Enter: with all four filled it packs (ENTER ON WEIGHT PACKS, owner 2026-10-16 — now from any field); otherwise it moves to the
-// next empty field. Opens on the first empty field. Esc or the backdrop closes.
-function SizeDialog({ dims, packLabel, canPack, onDim, onBirk, onSet, onPack, onClose }: {
-  dims: BoxDims; packLabel: string; canPack: boolean;
-  onDim: (key: keyof BoxDims, value: string) => void; onBirk: () => void; onSet: () => void; onPack: () => void; onClose: () => void;
+// BOX SIZE pop-up (see MEASUREMENTS in the header). Opened by every Pack. The four fields big, the two quick fills,
+// Amazon's limit warning, then Pack. It edits a DRAFT seeded from your box's size (owner, 2026-10-20: "if i type in box size then cancel
+// the box cause i wasnt ready dont save those measurements") — only Pack writes it to your box; Cancel, Esc or the backdrop drop it.
+// Enter: with all four filled it packs (ENTER ON WEIGHT PACKS, owner 2026-10-16 — now from any field); otherwise it moves to the next
+// empty field. Opens on the first empty field.
+function SizeDialog({ initial, packLabel, canPack, onPack, onClose }: {
+  initial: BoxDims; packLabel: string; canPack: boolean; onPack: (d: BoxDims) => void; onClose: () => void;
 }) {
+  const [dims, setDims] = useState<BoxDims>(initial);
   const refs = useRef<Partial<Record<keyof BoxDims, HTMLInputElement | null>>>({});
+
+  function onDim(key: keyof BoxDims, value: string) {
+    setDims((d) => ({ ...d, [key]: value.replace(/[^0-9.]/g, '') }));
+  }
+
+  // Quick fill: only non-blank values are written, so Birk box (no weight) and a Set with a field left empty keep what's there.
+  function fill(src: Partial<BoxDims>) {
+    setDims((d) => {
+      const next = { ...d };
+      for (const f of FIELDS) { const v = (src[f.key] ?? '').trim(); if (v) next[f.key] = v; }
+      return next;
+    });
+  }
+
+  // SET (owner, 2026-10-15) — for packing the same size box again and again without retyping it. One click, no panel, no message:
+  //   a size is typed  -> it becomes Set's saved values;
+  //   none is          -> the saved values are filled in.
+  function onSet() {
+    if (FIELDS.some((f) => dims[f.key].trim() !== '')) savePreset(dims);
+    else fill(loadPreset());
+  }
+  const onBirk = () => fill(BIRK_BOX);
+  const doPack = () => onPack(dims);
+
   const complete = dimsComplete(dims);
   const warning = dimsWarning(dims);
   const firstEmpty = FIELDS.find((f) => dimNum(dims[f.key]) === null)?.key ?? 'weight';
@@ -1069,7 +1066,7 @@ function SizeDialog({ dims, packLabel, canPack, onDim, onBirk, onSet, onPack, on
     if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (complete) { if (canPack) onPack(); return; }
+    if (complete) { if (canPack) doPack(); return; }
     const i = FIELDS.findIndex((f) => f.key === key);
     const next = [...FIELDS.slice(i + 1), ...FIELDS.slice(0, i)].find((f) => dimNum(dims[f.key]) === null);
     if (next) refs.current[next.key]?.focus();
@@ -1116,7 +1113,7 @@ function SizeDialog({ dims, packLabel, canPack, onDim, onBirk, onSet, onPack, on
             ))}
           </div>
           {/* QUICK FILL (owner, 2026-10-01). Birk box = the standard carton's three sides; weight is left alone because it depends on
-              what's packed. Set saves the typed size, or fills an empty one with the saved size (setButton). */}
+              what's packed. Set saves the typed size, or fills an empty one with the saved size (onSet). */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => afterFill(onBirk)}
               title={`${BIRK_BOX.length} × ${BIRK_BOX.width} × ${BIRK_BOX.height} cm — weight left for you to enter`}
@@ -1134,7 +1131,7 @@ function SizeDialog({ dims, packLabel, canPack, onDim, onBirk, onSet, onPack, on
         <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">
           <button type="button" onClick={onClose}
             className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button type="button" onClick={onPack} disabled={!complete || !canPack}
+          <button type="button" onClick={doPack} disabled={!complete || !canPack}
             className="flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40">
             <CheckCircleIcon className="h-4 w-4" />{packLabel}
           </button>
