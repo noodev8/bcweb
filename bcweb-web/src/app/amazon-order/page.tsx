@@ -27,8 +27,7 @@ NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have n
         tab's memory and clears when the tab/browser closes. A reminder, not a record — deliberately not a stored "uploading" state.
         ON AMAZON | NOT ON AMAZON | BOTH (owner, 2026-10-20 — "if not in Amazon, they are not there"): a switch over which of the two
         sets the screen shows. On Amazon (the default, and Reset's) is the listed SKUs ONLY, search included, so an order is typed only
-        against what Amazon has; a search that also matches unlisted sizes says so ("+n not on Amazon", one click to Both) so a style
-        never listed still doesn't read as missing. Not on Amazon is every stocked unlisted size, no search needed — the "do I add
+        against what Amazon has — looking for a style that was never listed is a switch to Both. Not on Amazon is every stocked unlisted size, no search needed — the "do I add
         these" list; Hot / Warm / Cold are tests of Amazon sales, so they're off while it's on. Both = listed, then unlisted under them.
 
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
@@ -394,6 +393,11 @@ function supplyHidden(r: AmazonOrderRow): boolean {
   return r.no_supply && r.local_stock === 0;
 }
 
+// SEGMENTED CONTROLS — the pressed segment is a quiet slate fill, not solid brand (owner, 2026-10-20: a row of purple blocks shouted
+// louder than the one solid control that writes, Confirm Basket). Off segments are plain text.
+const SEG_ON = 'bg-slate-200 text-slate-900';
+const SEG_OFF = 'text-slate-600 hover:bg-slate-100';
+
 // NOT ON AMAZON rows sit under the listed ones whatever the sort — they're the "and also, not listed" tail of a search, not part of
 // the ranking. Stable: each group keeps the order the sort gave it.
 function listedFirst(list: AmazonOrderRow[]): AmazonOrderRow[] {
@@ -566,7 +570,7 @@ function renderColumnHeader(
   const active = sortKey === c.key;
   // The SKU column gets a tighter right pad (pr-2 instead of px-4's pr-4) — it's a fixed-width code, not prose, so the usual
   // breathing room just wastes width that the data columns further right can use instead (owner request, 2026-08-07).
-  const pad = c.key === 'code' ? 'pl-3 pr-2' : 'px-3';
+  const pad = c.key === 'code' ? 'pl-3 pr-2' : 'px-2';
   // The SKU column is also pinned LEFT (in addition to the whole thead being pinned TOP — see the table container below), so it
   // stays on screen through both scroll axes at once. It needs its own opaque background (sticky cells sit outside the thead's
   // normal paint order once scrolled) and a higher z-index than every other header cell so it wins the corner where both stick.
@@ -989,14 +993,6 @@ function AmazonOrderContent() {
 
   const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly || listing !== 'on';
 
-  // On Amazon hides unlisted sizes even under a search — this counts the ones the search would find, for the "+n not on Amazon"
-  // hint by the row count, so a style that was never listed shows up as that rather than as "Nothing found".
-  const unlistedMatches = useMemo(() => {
-    if (listing !== 'on' || ordersOnly || includes.length === 0) return 0;
-    const incTerms = includes.map((t) => t.toLowerCase());
-    const excTerms = excludes.map((t) => t.toLowerCase());
-    return offBaseRows.filter((r) => inSeason(r, seasonFilter) && matchesSearch(haystack(r), incTerms, excTerms)).length;
-  }, [listing, ordersOnly, includes, excludes, seasonFilter, offBaseRows]);
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
   // sortValue below. Not folded into sortValue itself since it isn't a row field — it's the client-only scratchpad. Read ONLY
@@ -1767,7 +1763,7 @@ function AmazonOrderContent() {
           Sticky to the viewport top, so the controls never scroll out of reach while working down the list — with the table's own
           scrollbox gone (see panelHeight above) this is what keeps them there, not a nicety (owner request, 2026-08-13 — "too
           much scrolling"). */}
-      <div ref={panelRef} className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div ref={panelRef} className="sticky top-0 z-30 mb-3 rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm">
         {/* ROW 1 — NARROW. Everything that decides WHICH rows are on screen, in one band: the two search boxes, the three
             mutually-exclusive presets, then the view actions. The old layout gave search its own full-width row and then put
             Cut/Reset on the right of the preset row, opposite the presets — a left/right split that said nothing true, since both
@@ -1786,7 +1782,7 @@ function AmazonOrderContent() {
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclude(); } }}
               autoFocus
               placeholder="Include, then Enter"
-              className="w-44 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-40 rounded-md border border-slate-300 py-1.5 pl-8 pr-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
           <div className="relative">
@@ -1796,61 +1792,16 @@ function AmazonOrderContent() {
               onChange={onExcludeInputChange}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExclude(); } }}
               placeholder="Exclude, then Enter"
-              className="w-44 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-40 rounded-md border border-slate-300 py-1.5 pl-8 pr-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
 
-          {/* PRESETS — a segmented control, not three free-standing buttons. They are already mutually exclusive in the handlers
-              (picking one clears the others); grouping them in one container makes that visible instead of leaving the operator to
-              discover it. Styled identically to the rate strip in row 2 — both are "pick one", so they read as siblings — and the
-              single brand fill replaces the old amber / sky / emerald trio. That mattered beyond tidiness: emerald was
-              simultaneously "a filter view" here and "this writes to the database" on the send button, so one colour carried two
-              very different meanings. Emerald is now reserved for the write, and nothing else on the screen wears it. */}
-          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
-            <button
-              type="button"
-              onClick={toggleWinners}
-              title={hotBar !== null ? `Top 20% by 30-day profit (£${hotBar.toFixed(2)}+)` : 'Top 20% by 30-day profit'}
-              className={
-                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
-                (winnersOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <FireIcon className="h-4 w-4" />
-              Hot
-            </button>
-            <button
-              type="button"
-              onClick={togglePotential}
-              title={`Not Hot, over £${warmMin} a unit`}
-              className={
-                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
-                (potentialOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <SunIcon className="h-4 w-4" />
-              Warm
-            </button>
-            <button
-              type="button"
-              onClick={toggleRecycle}
-              title="No sale in 6 months"
-              className={
-                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium ' +
-                (recycleOnly ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <CloudIcon className="h-4 w-4" />
-              Cold
-            </button>
-          </div>
-
-          {/* ON AMAZON | NOT ON AMAZON | BOTH — same segmented look as the presets; see the header. */}
-          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+          {/* ON AMAZON | NOT ON AMAZON | BOTH — on screen AMZ | NOT | BOTH (owner, 2026-10-20 — abbreviate); see the header. */}
+          <div className="flex items-center gap-0.5 rounded-md border border-slate-300 bg-white p-0.5">
             {([
-              ['on', 'On Amazon', 'Only SKUs listed on Amazon'],
-              ['off', 'Not on Amazon', 'Stocked sizes with no Amazon listing — open the tag to build the upload file'],
-              ['both', 'Both', 'Listed SKUs, then the unlisted ones under them'],
+              ['on', 'AMZ', 'On Amazon — only SKUs listed there'],
+              ['off', 'NOT', 'Not on Amazon — stocked sizes with no listing; open the tag to build the upload file'],
+              ['both', 'BOTH', 'Both — listed SKUs, then the unlisted ones under them'],
             ] as const).map(([v, label, title]) => (
               <button
                 key={v}
@@ -1858,8 +1809,8 @@ function AmazonOrderContent() {
                 onClick={() => chooseListing(v)}
                 title={title}
                 className={
-                  'whitespace-nowrap rounded px-2.5 py-1 text-sm font-medium ' +
-                  (listing === v ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+                  'whitespace-nowrap rounded px-2 py-1 text-sm font-medium ' +
+                  (listing === v ? SEG_ON : SEG_OFF)
                 }
               >
                 {label}
@@ -1867,28 +1818,8 @@ function AmazonOrderContent() {
             ))}
           </div>
 
-          {/* CAN'T GET — only when something is actually hidden. X shows them; once out, the same slot offers the way back in. */}
-          {supplyHiddenCount > 0 && (supplyOn ? (
-            <span
-              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 py-1 pl-2.5 pr-1 text-sm text-slate-600"
-            >
-              Can&rsquo;t get: <span className="font-semibold text-slate-800">{supplyHiddenCount}</span>
-              <span className="text-slate-400">hidden</span>
-              <button
-                type="button"
-                onClick={() => { setSupplyOn(false); deselectAll(); }}
-                aria-label="Show sizes you can't get"
-                title="Show them"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </span>
-          ) : (
-            <button type="button" onClick={() => { setSupplyOn(true); deselectAll(); }} className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
-              Hide can&rsquo;t-get
-            </button>
-          ))}
+          {/* CAN'T GET chip — gone (owner, 2026-10-20: "no need"). Sizes of a Can't get style with nothing to pick stay hidden, as
+              always; the chip that showed the count and let you bring them back is off the panel. */}
 
           {/* SEASON — the one search command that gets a chip: unlike a text step it matches a hidden field (and 'Any' too), so
               without one the list would be narrowed by something nowhere on screen. X clears just the season. */}
@@ -1920,11 +1851,6 @@ function AmazonOrderContent() {
                   is"). It used to switch to "Rows: X of Y" once anything narrowed the list; the "of Y" changed its width on a click. */}
               <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> SKUs</span>
             </span>
-            {unlistedMatches > 0 && (
-              <button type="button" onClick={() => chooseListing('both')} title="Show them under the listed SKUs" className="whitespace-nowrap text-sm font-medium text-brand-600 hover:underline">
-                +{unlistedMatches} not on Amazon
-              </button>
-            )}
           </div>
 
           {/* Reset — the escape hatch, alone at the end of the row you might need escaping from. Cut and Can't get moved to row 2
@@ -1946,10 +1872,56 @@ function AmazonOrderContent() {
             furniture, when it's really the second half of the core gesture (narrow the list in row 1, then fill what's left).
             Since 2026-09-27 the selection actions (Can't get, Cut) sit after the fill controls and the row count has moved up to
             row 1; since 2026-10-09 the basket actions have row 3 — see PANEL LAYOUT in the header. */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
           {/* The Order | Pick mode switch that led this row went 2026-10-09 — both columns are on screen now (see ORDER AND PICK). */}
 
-          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+          {/* PRESETS (row 2 since 2026-10-20, beside the rate they're usually filled with — row 1 is search and listing) — a segmented control, not three free-standing buttons. They are already mutually exclusive in the handlers
+              (picking one clears the others); grouping them in one container makes that visible instead of leaving the operator to
+              discover it. Styled identically to the rate strip in row 2 — both are "pick one", so they read as siblings — and the
+              single brand fill replaces the old amber / sky / emerald trio. That mattered beyond tidiness: emerald was
+              simultaneously "a filter view" here and "this writes to the database" on the send button, so one colour carried two
+              very different meanings. Emerald is now reserved for the write, and nothing else on the screen wears it. */}
+          <div className="flex items-center gap-0.5 rounded-md border border-slate-300 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={toggleWinners}
+              title={hotBar !== null ? `Top 20% by 30-day profit (£${hotBar.toFixed(2)}+)` : 'Top 20% by 30-day profit'}
+              className={
+                'flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium ' +
+                (winnersOnly ? SEG_ON : SEG_OFF)
+              }
+            >
+              <FireIcon className="h-4 w-4" />
+              Hot
+            </button>
+            <button
+              type="button"
+              onClick={togglePotential}
+              title={`Not Hot, over £${warmMin} a unit`}
+              className={
+                'flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium ' +
+                (potentialOnly ? SEG_ON : SEG_OFF)
+              }
+            >
+              <SunIcon className="h-4 w-4" />
+              Warm
+            </button>
+            <button
+              type="button"
+              onClick={toggleRecycle}
+              title="No sale in 6 months"
+              className={
+                'flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium ' +
+                (recycleOnly ? SEG_ON : SEG_OFF)
+              }
+            >
+              <CloudIcon className="h-4 w-4" />
+              Cold
+            </button>
+          </div>
+
+
+          <div className="flex items-center gap-0.5 rounded-md border border-slate-300 bg-white p-0.5">
             {COVERAGE_OPTIONS.map((months) => (
               <button
                 key={months}
@@ -1957,9 +1929,7 @@ function AmazonOrderContent() {
                 onClick={() => applyCoverage(months)}
                 className={
                   'rounded px-2.5 py-1 text-sm font-medium ' +
-                  (coverageMonths === months
-                    ? 'bg-brand-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100')
+                  (coverageMonths === months ? SEG_ON : SEG_OFF)
                 }
               >
                 {months === 0.5 ? '½' : months}
@@ -1979,7 +1949,7 @@ function AmazonOrderContent() {
               their structure rather than pinning a pixel value on one of them: change the padding on one and the other has to
               follow, which is exactly the coupling that should be visible in the markup. The focus ring moves to the wrapper
               (focus-within) since that's now the thing with the border. */}
-          <div className="flex items-center rounded-md border border-slate-300 bg-white p-1 focus-within:border-brand-400 focus-within:ring-1 focus-within:ring-brand-400">
+          <div className="flex items-center rounded-md border border-slate-300 bg-white p-0.5 focus-within:border-brand-400 focus-within:ring-1 focus-within:ring-brand-400">
             <select
               value={String(pickKeep)}
               onChange={(e) => onPickKeep(Number(e.target.value))}
@@ -2033,7 +2003,7 @@ function AmazonOrderContent() {
         {/* ROW 3 — THE BASKET (2026-10-09). With Order and Pick side by side row 2 no longer fitted, and the basket actions
             wrapped onto a stray line of their own; this gives that line a job. Left: clear ONE half for the rows on screen. Right:
             Load basket, Send, Clear basket (both halves, every row). */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
           {/* CLEAR ORDER / CLEAR PICK — empties that column for the rows ON SCREEN only (owner, 2026-10-09), the half-sized
               version of a rate re-tap (which clears both). No confirm, same as the re-tap: it's scoped to what you can see. */}
           <div className="flex items-center gap-2">
@@ -2073,7 +2043,7 @@ function AmazonOrderContent() {
               className={
                 'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ' +
                 (ordersOnly
-                  ? 'border-brand-600 bg-brand-600 text-white'
+                  ? 'border-slate-400 bg-slate-200 text-slate-900'
                   : 'border-slate-300 text-slate-600 hover:bg-slate-50')
               }
             >
@@ -2270,7 +2240,7 @@ function AmazonOrderContent() {
                 )}
                 {COLUMNS.slice(6, 8).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
                 {/* Cut — no sort, just a header label for the X button column. */}
-                <th className="whitespace-nowrap px-2 py-1.5 font-medium" />
+                <th className="whitespace-nowrap px-1 py-1.5 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -2302,9 +2272,11 @@ function AmazonOrderContent() {
                       ? 'border-brand-500 bg-brand-100'
                       : 'border-transparent bg-white group-hover:bg-slate-50')
                   }>
-                    <span className="inline-flex items-center gap-1">
+                    {/* Capped and wrapping: a SKU carrying BOTH tags (No AMZ + Can't get) used to set the column's width for the whole
+                        table and push it past the panel — now its second tag drops under the code on that one row. */}
+                    <span className="inline-flex max-w-[14.5rem] flex-wrap items-center gap-1 whitespace-nowrap">
                       <span title={r.title || undefined}>{r.code}</span>
-                      {/* NOT ON AMAZON tag — opens the detail row, where the Amazon upload file is built. Stays until the Update
+                      {/* NOT ON AMAZON tag ("No AMZ" on screen, owner 2026-10-20 — kept short so the SKU column doesn't push the table wide) — opens the detail row, where the Amazon upload file is built. Stays until the Update
                           Amazon import finds the listing; turns green "File made" once the file downloads this session. */}
                       {!r.on_amazon && (
                         <button
@@ -2318,7 +2290,7 @@ function AmazonOrderContent() {
                             + (fileMade.has(r.groupid) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-sky-200 bg-sky-50 text-sky-700')
                           }
                         >
-                          {fileMade.has(r.groupid) ? 'File made' : 'Not on Amazon'}
+                          {fileMade.has(r.groupid) ? 'File made' : 'No AMZ'}
                         </button>
                       )}
                       {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
@@ -2346,15 +2318,15 @@ function AmazonOrderContent() {
                       </button>
                     </span>
                   </td>
-                  <td className={'whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
-                  <td className={'whitespace-nowrap px-3 py-1.5 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">
+                  <td className={'whitespace-nowrap border-l border-slate-100 px-2 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
+                  <td className={'whitespace-nowrap px-2 py-1.5 text-right ' + (r.fba_live === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.fba_live}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-right text-slate-700">
                     {r.fba_total}
                     {/* Session-only "just queued" bump — see orderedBump above. Not a DB figure, so kept visually distinct. */}
                     {orderedBump[r.code] > 0 && <span className="ml-1 text-xs text-emerald-600">+{orderedBump[r.code]}</span>}
                   </td>
-                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap border-l border-slate-100 px-2 py-1.5 text-right text-slate-700">{r.units_30d || <span className="text-slate-300">0</span>}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-right text-slate-700">{r.units_7d || <span className="text-slate-300">0</span>}</td>
                   {(['order', 'pick'] as const).map((half) => {
                     const value = qtyByHalf[half][r.code];
                     /* Birkenstock's boxes are disabled in BOTH halves: it never goes to Amazon (owner, 2026-08-28) — it's bought
@@ -2392,21 +2364,21 @@ function AmazonOrderContent() {
                   {/* PROFIT -> the Amazon price screen for this SKU (owner, 2026-10-12), carrying ?from= so its Back, and Apply, come
                       straight back here. A link, so the click doesn't also select the row. */}
                   {/* An unlisted row has no Amazon price to change, so no link — the Amazon price screen has nothing for it. */}
-                  <td className="whitespace-nowrap border-l border-slate-100 px-3 py-1.5 text-right text-slate-700">
+                  <td className="whitespace-nowrap border-l border-slate-100 px-2 py-1.5 text-right text-slate-700">
                     {r.on_amazon ? (
                       <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
                         {money(r.unit_profit)}
                       </Link>
                     ) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-right font-medium text-slate-800">
                     {r.on_amazon ? (
                       <Link href={priceHref(r.code)} onClick={(e) => e.stopPropagation()} title="Change Amazon price" className="hover:underline">
                         {money(r.profit_30d)}
                       </Link>
                     ) : <span className="font-normal text-slate-300">—</span>}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5">
+                  <td className="whitespace-nowrap px-1 py-1.5">
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onCut(r.code); }}
