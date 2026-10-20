@@ -2868,6 +2868,30 @@ export function manifestCustomerOrders(manifestIds?: string[]) {
   );
 }
 
+export interface CustomerFulfilResult {
+  ordernum: string;
+  outcome: 'fulfilled' | 'already' | 'skipped' | 'failed';
+  reason: string | null;
+  kind: 'royalmail' | 'fba' | null;
+  tracking: string | null;
+}
+
+// Fulfil on Shopify with tracking + the customer's shipping email (irreversible). With `ordernum`, just that order (its own button);
+// without, every packed order on the list. Already-fulfilled orders come back `already`, so a second press is safe.
+export function fulfilCustomerOrders(ordernum?: string) {
+  return request<CustomerFulfilResult[]>(
+    // The route stops starting new orders at 90s — see BUDGET_MS in routes/order-status-customer-fulfil.js.
+    { url: '/order-status-customer-fulfil', method: 'POST', data: ordernum ? { ordernum } : {}, timeout: 120000 },
+    (b) => (Array.isArray(b.results) ? b.results : []).map((r: Record<string, unknown>) => ({
+      ordernum: String(r.ordernum || ''),
+      outcome: (['fulfilled', 'already', 'skipped', 'failed'].includes(String(r.outcome)) ? r.outcome : 'failed') as CustomerFulfilResult['outcome'],
+      reason: r.reason ? String(r.reason) : null,
+      kind: r.kind === 'royalmail' || r.kind === 'fba' ? r.kind : null,
+      tracking: r.tracking ? String(r.tracking) : null,
+    }))
+  );
+}
+
 // Voids the Click & Drop order (refused once Royal Mail has manifested it) and un-packs the order so it can be scanned again.
 export function cancelCustomerLabel(ordernum: string) {
   return request<{ unpacked: number }>(

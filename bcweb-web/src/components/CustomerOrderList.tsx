@@ -46,12 +46,12 @@ DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenan
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
-  ArrowPathIcon, ArrowUturnLeftIcon, ChevronDownIcon, ExclamationTriangleIcon,
+  ArrowPathIcon, ArrowUturnLeftIcon, CheckBadgeIcon, ChevronDownIcon, ExclamationTriangleIcon,
   MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
-  CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, getCustomerOrderFbaFile, getCustomerOrders,
+  CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, fulfilCustomerOrders, getCustomerOrderFbaFile, getCustomerOrders,
   printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
   setCustomerOrderWaiting,
   setCustomerOrderDoNotOrder,
@@ -63,6 +63,7 @@ import {
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 import PickLink from '@/components/PickLink';
+import { fulfilSummary } from '@/components/FulfilButton';
 
 // localStorage key for the "Last order" button (see lastPacked).
 const LAST_PACKED_KEY = 'customerOrders.lastPacked';
@@ -183,6 +184,8 @@ export default function CustomerOrderList() {
   const [stage, setStage] = useState<Stage>('all');
   const [term, setTerm] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  // The outcome of an order's own Fulfil button, shown in that order's box.
+  const [fulfilNote, setFulfilNote] = useState<{ ordernum: string; ok: boolean; text: string } | null>(null);
   const [working, setWorking] = useState(false);
 
   // --- scan to label (see the header: scans live here, the label lives in Click & Drop) -----------------------------------------
@@ -349,6 +352,21 @@ export default function CustomerOrderList() {
     URL.revokeObjectURL(url);
     await refresh();
     setWorking(false);
+  }
+
+  // One order's Fulfil (owner, 2026-10-20: one at a time while it's tested). Writes nothing here — Shopify only — so no refresh: the
+  // order stays on the list as Packed until Update orders sees it fulfilled and archives it. A second press reads "already fulfilled".
+  async function fulfilOne(ordernum: string) {
+    setWorking(true);
+    setActionError(null);
+    setFulfilNote(null);
+    const res = await fulfilCustomerOrders(ordernum);
+    setWorking(false);
+    if (!res.success || !res.data) {
+      setActionError(res.error || 'Fulfil didn’t go through');
+      return;
+    }
+    setFulfilNote({ ordernum, ...fulfilSummary(res.data) });
   }
 
   // --- scan to label -----------------------------------------------------------------------------------------------------------
@@ -718,7 +736,8 @@ export default function CustomerOrderList() {
                   label={labels.get(active.ordernum) ?? null}
                   working={working}
                   error={actionError}
-                  onClose={() => { setSelected(null); setActionError(null); scanRef.current?.focus(); }}
+                  fulfilNote={fulfilNote?.ordernum === active.ordernum ? fulfilNote : null}
+                  onClose={() => { setSelected(null); setActionError(null); setFulfilNote(null); scanRef.current?.focus(); }}
                   onNote={(note) => run(() => setCustomerOrderNote(active.ordernum, note))}
                   onWaiting={(w) => run(() => setCustomerOrderWaiting(active.ordernum, w))}
                   onDoNotOrder={(d) => run(() => setCustomerOrderDoNotOrder(active.ordernum, d))}
@@ -733,6 +752,7 @@ export default function CustomerOrderList() {
                   // Each label action hands focus back to the scan box: the next thing the packer does is scan the next shoe.
                   onPrint={() => printLabel(active.ordernum, { reprint: true })}
                   onCancelLabel={async () => { await cancelLabel(active.ordernum); scanRef.current?.focus(); }}
+                  onFulfil={() => fulfilOne(active.ordernum)}
                 />
               ) : (
                 // Nothing in hand. Says what to do next, in the box's own size, and offers the way back to the last box — the
@@ -978,8 +998,8 @@ function StageTile({ label, count, tone, active, onClick }: {
  * (same label, never buys postage twice) and Cancel label (behind a confirm, voids the shipment).
  */
 function OrderBox({
-  order, progress, ticked, label, working, error,
-  onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onPrint, onCancelLabel,
+  order, progress, ticked, label, working, error, fulfilNote,
+  onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onPrint, onCancelLabel, onFulfil,
 }: {
   order: OrderGroup;
   progress: { scanned: number; total: number } | null;
@@ -987,6 +1007,7 @@ function OrderBox({
   label: LabelInfo | null;
   working: boolean;
   error: string | null;
+  fulfilNote: { ok: boolean; text: string } | null;
   onClose: () => void;
   onNote: (note: string) => void;
   onWaiting: (w: boolean) => void;
@@ -997,9 +1018,10 @@ function OrderBox({
   onDelete: () => void;
   onPrint: () => void;
   onCancelLabel: () => void;
+  onFulfil: () => void;
 }) {
   const [note, setNote] = useState(order.note);
-  const [confirm, setConfirm] = useState<'fba' | 'delete' | 'cancelLabel' | null>(null);
+  const [confirm, setConfirm] = useState<'fba' | 'delete' | 'cancelLabel' | 'fulfil' | null>(null);
   const [more, setMore] = useState(false);
 
   const multiLine = order.lines.length > 1;
@@ -1098,6 +1120,35 @@ function OrderBox({
               className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
             >
               Cancel label
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* --- Fulfil on Shopify: a packed order, Royal Mail or FBA (file made). Its own button while the fulfil is tested (owner,
+          2026-10-20); the server says why if this one can't go (no tracking yet, pack only, already fulfilled). ----------------- */}
+      {order.state === 'packed' && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {fulfilNote && (
+            <span className={'mr-auto text-sm font-medium ' + (fulfilNote.ok ? 'text-emerald-700' : 'text-red-700')}>{fulfilNote.text}</span>
+          )}
+          {confirm === 'fulfil' ? (
+            <ConfirmBox
+              message="Fulfil on Shopify? The customer is emailed."
+              onYes={() => { setConfirm(null); onFulfil(); }}
+              onNo={() => setConfirm(null)}
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={working}
+              onClick={() => setConfirm('fulfil')}
+              title={hasFba
+                ? 'Mark fulfilled on Shopify with the Amazon courier and email the customer'
+                : 'Mark fulfilled on Shopify with the Royal Mail tracking number and email the customer'}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+            >
+              <CheckBadgeIcon className="h-4 w-4" /> Fulfil
             </button>
           )}
         </div>

@@ -1,6 +1,10 @@
 # Manifest and fulfil — Customer Orders — PLAN
 
-Status: **manifest BUILT and live; Shopify fulfil is plan only** (plan updated 2026-10-19). The decisions below are the owner's, don't re-ask them.
+Status: **manifest BUILT and live; Shopify fulfil BUILT 2026-10-20, not yet run live** — split from Manifest for testing (owner:
+"split it from manifest (own button) and give each order its own fulfil button so when testing can do one at a time"): `FulfilButton.tsx`
+(list-wide, header bar) and a Fulfil button in each packed order's box, both → `routes/order-status-customer-fulfil.js`. The one-press
+chain (step 3 below) is still to do. Tracking copied from what PowerBuilder writes (real orders, 2026-10-20): Royal Mail = company
+'Royal Mail' + royalmail.com tracking url; FBA = number 'AMZCourier', no company. The decisions below are the owner's, don't re-ask them.
 The "Manifest and fulfil" button sits in the Customer Orders title row (list-wide, not per order — `ManifestButton.tsx`).
 
 ## The job
@@ -45,10 +49,10 @@ skipped, so pressing again is safe.
 No DB writes — Shopify and the archive phase of Update orders do the rest.
 
 ## Build list
-- `utils/shopifyFulfil.js`: order-by-name lookup + open fulfillment orders + `fulfillmentCreate`. Own token — **new `.env` var
-  `SHOPIFY_FULFIL_ACCESS_TOKEN`** with `read_orders`, `read_merchant_managed_fulfillment_orders`,
-  `write_merchant_managed_fulfillment_orders` (the existing `SHOPIFY_ORDERS_ACCESS_TOKEN` is read-only). Owner creates it in the
-  custom app, adds it locally + on the VPS.
+- `utils/shopifyFulfil.js`: order-by-name lookup + open fulfillment orders + `fulfillmentCreate`. Own app — the **"bcweb
+  fulfil" Dev Dashboard app** (2026-10-20; legacy custom apps can't be created any more) with `read_orders`,
+  `read_merchant_managed_fulfillment_orders`, `write_merchant_managed_fulfillment_orders`. `.env`: `SHOPIFY_FULFIL_CLIENT_ID` +
+  `SHOPIFY_FULFIL_CLIENT_SECRET`, swapped for a 24h token by the util (client_credentials grant). Set locally; needed on the VPS too.
 - `routes/order-status-customer-fulfil.js`: one file, header block, HTTP 200 + `return_code`, per-order results.
 - Web: `ManifestButton.tsx` chains manifest → fulfil → Update orders, combined summary; `api.ts` call.
 

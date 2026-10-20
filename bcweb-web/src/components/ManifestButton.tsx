@@ -1,10 +1,11 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: ManifestButton  ("Manifest and fulfil", Customer Orders title row)
+Component: ManifestButton  ("Manifest", Customer Orders title row)
 =======================================================================================================================================
 Purpose: The end-of-day step. Acts on the LIST, not on one order (owner, 2026-10-14): manifests everything Click & Drop has waiting,
-         then saves the manifest PDF to Downloads. The Shopify fulfil step comes later (docs/fulfil-plan.md).
+         then saves the manifest PDF to Downloads. Shopify fulfil is its own button beside it for now (FulfilButton, owner 2026-10-20);
+         the plan's one press — manifest, then fulfil — comes later (docs/fulfil-plan.md).
 
 WHY THE TITLE ROW (owner, 2026-10-15). It used to sit among the list's controls, at the same weight as Refresh, where it read as one
 more filter-ish button and sat under the packer's hand. It's a once-a-day, can't-be-undone action on the whole list — the same kind
@@ -97,7 +98,7 @@ export default function ManifestButton({ onResult }: { onResult: (r: ManifestRes
       className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {running ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <TruckIcon className="h-3.5 w-3.5" />}
-      {running ? 'Manifesting…' : pending.length ? 'Collect manifest' : 'Manifest and fulfil'}
+      {running ? 'Manifesting…' : pending.length ? 'Collect manifest' : 'Manifest'}
     </button>
   );
 }

@@ -80,7 +80,15 @@ module.exports = {
     //            are two implementations of one business process (see the banner in utils/orderSync.js) and must see the SAME payload
     //            shape — a field renamed between API versions would silently diverge the two. Bump this only when the Python bumps too.
     ordersAccessToken: process.env.SHOPIFY_ORDERS_ACCESS_TOKEN || '',
-    ordersApiVersion: process.env.SHOPIFY_ORDERS_API_VERSION || '2024-01'
+    ordersApiVersion: process.env.SHOPIFY_ORDERS_API_VERSION || '2024-01',
+
+    // FULFIL (utils/shopifyFulfil.js) — a THIRD app: marking an order fulfilled needs read_orders +
+    // read/write_merchant_managed_fulfillment_orders, which neither token above has (SHOPIFY_ACCESS_TOKEN's scopes checked
+    // 2026-10-20). It's a Dev Dashboard app ("bcweb fulfil" — legacy custom apps can't be created any more), so there's no token to
+    // store: the client id + secret are swapped for a 24h token, which shopifyFulfil.js fetches and caches. GraphQL, so it uses
+    // `apiVersion` above, not the pinned REST orders version.
+    fulfilClientId: process.env.SHOPIFY_FULFIL_CLIENT_ID || '',
+    fulfilClientSecret: process.env.SHOPIFY_FULFIL_CLIENT_SECRET || ''
   },
 
   // Google Merchant Center Merchant API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
