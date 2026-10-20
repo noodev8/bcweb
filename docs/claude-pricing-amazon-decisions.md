@@ -20,3 +20,16 @@ Add new rows at the bottom. Fill **Result** when the SKU comes back due.
 | 2026-10-02 | 41323-FAIRMONT2-NAVY -04 | 45.30 → 47.70 | 30d (1 Nov) | £48 sold 6 at ~£5.90; £45 2 (1 returned) for £4.69 total. Matches other sizes. | _pending_ |
 | 2026-10-02 | JLH356-DEANAAII-PK -04 | 31 → 38.99 | 30d (1 Nov) | Last pair. £38.99 sold 9 Apr-Jul at £5.44; walked to 30-31 in Aug-Sep, 2 sold at £0.63-1.20. In-season price, may sit till spring. | _pending_ |
 | 2026-10-02 | JLH950-BLAZE-ROSE -05 | hold 32.99 | 30d (1 Nov) | Last pair. One sale at each price 27.49-34.99; £32.99 ~£4, £27.49 £0.93. | _pending_ |
+| 2026-10-20 | GLW030-NAVY (Lunar Parlour Navy) -05 | 44.99 → 55.49 | 30d (19 Nov) | 3 FBA. 44.99 (manual cut 6 Oct) sold 2 at £5.55/pair; 55.49 and 57 sold 1 each at ~£12, no slower. | _pending_ |
+| 2026-10-20 | GLW030-BURG (Lunar Parlour Burgundy) -04 / -05 -06, NAVY-07 | 53.98 → 57 / hold 57 | 30d (19 Nov) | Last pairs, new winter stock. 57 (RRP) sold at £12.36. | _pending_ |
+| 2026-10-20 | GLB123-TAN (Lunar Millie Tan) -05 -07 | hold 56.73 | 30d (19 Nov) | Sold 2 in 10 days at £8.87/pair. | _pending_ |
+| 2026-10-20 | GLB216-TAUPE (Lunar Chime III) -06 -08 | hold 68.49 | 30d (19 Nov) | Sold 1 at £14.71. | _pending_ |
+| 2026-10-20 | FLE050-EVIE Black -06/-07/-08, Navy -05/-06/-07/-08 | hold 44.99 (RRP) | 30d (19 Nov) | Sold 2 at £7.63/pair. | _pending_ |
+| 2026-10-20 | X9165-00 (Rieker wedge boot Black) -37 / X9165-35 Red -38 | hold 59.99 / hold 67 | 30d (19 Nov) | Black: 52.60-55 ~£2/pair, 59.99 £5.88 on 2 (1 returned). Red: at RRP, sold 3 at £9.85. 4 local each. | _pending_ |
+| 2026-10-20 | 72617-00 (Rieker fleece boot) -40 | hold 73.30 | 14d (3 Nov) | Size 40 never sold; other sizes sold 5 at ~£58 for only ~£1.30/pair. Testing the higher price. | _pending_ |
+| 2026-10-20 | 17659-00 -41 -42 / 17659-23 -42 | hold 67.19 / hold 77.19 | 30d (19 Nov) | Stock back since 2 Oct. 67.19 sold 2 at £5.46; below 60 ~breakeven or loss. 77.19 sold at £11.43. | _pending_ |
+| 2026-10-20 | D0700-22 (Remonte zip shoe Brown) -37 -38 -41 -42 | hold ~79-80 | 30d (19 Nov) | Sold 16 last winter at 70-80 for £7-12/pair; season just starting. | _pending_ |
+| 2026-10-20 | D0772-52 (Remonte boot Green) -38 -39 | hold 88 | 30d (19 Nov) | 84-85 sold last winter at ~£11; 69.48 only £3. | _pending_ |
+| 2026-10-20 | JLH950-BLAZE-ROSE -08 | 31.29 → 32.99 | 30d (19 Nov) | 32.99 sold 2 at £4.03/pair vs ~£1.75 at ≤31. Matches -05 (2 Oct). | _pending_ |
+| 2026-10-20 | L662NC (Mod Comfys Navy) -07 | 32.39 → 33.39 | 30d (19 Nov) | 33.39 best profit/pair (£1.72, 4 sold); 32.39 averaged £0.96. | _pending_ |
+| 2026-10-20 | STEADY due, all 0-FBA SKUs (92) | review only | 14d (3 Nov) | 0-FBA rule. None were Summer season. | n/a |

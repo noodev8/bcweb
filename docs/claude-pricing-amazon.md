@@ -10,7 +10,7 @@ Keep this file short. Decisions go in `docs/claude-pricing-amazon-decisions.md` 
 - **0 FBA = no reprice**, review-only 14d (out of season: until the season returns).
 - **The job:** same as Shopify — maximum margin from stock we already hold.
 - **Grain is the SKU (size), not the style.** Amazon prices per size (`code`); one style can run at several prices.
-- **Hard limits:** `/amz-apply` blocks below `cost + fbafee` and flags above RRP — but that floor is far below real breakeven (see Rules).
+- **No hard limits:** `/amz-apply` flags below `cost + fbafee` (a block until 2026-10-11) and above RRP — and that floor is far below real breakeven (see Mechanics).
 - **No live push.** An apply only logs to `amz_price_log`; the price reaches Amazon via the Seller Central upload file.
 
 ## Rules (owner-set, authoritative)
@@ -47,3 +47,4 @@ Keep this file short. Decisions go in `docs/claude-pricing-amazon-decisions.md` 
 ## Change log of this playbook
 
 - 2026-10-02: created when the pricing playbook was split by channel. Mechanics seeded from the codebase notes; no sessions yet.
+- 2026-10-20: second STEADY session. Floor is now a flag, not a block. New listings often have no `fbafee` in amzfeed yet — judge margin from `sales.profit` instead.
