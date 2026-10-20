@@ -1590,21 +1590,10 @@ export interface SliderMember {
   ended_by: string | null;
   ended_at: string | null;
 }
-export interface SliderEvent {
-  id: number;
-  event: string;             // created | edited | paused | resumed | ended | joined | moved | removed | reset (+ phase 2 moves)
-  item: string | null;       // the member's groupid / code; null for a group event
-  old_price: number | null;
-  new_price: number | null;
-  detail: string | null;
-  created_by: string | null;
-  created_at: string | null;
-}
 export interface SliderGroupDetail {
   today: string;
   group: SliderGroupInfo;
   members: SliderMember[];
-  events: SliderEvent[];
 }
 export interface SliderGroupInfo extends SliderRules {
   id: number;
@@ -1662,7 +1651,7 @@ export function getSliderGroups() {
 export function getSliderGroup(id: number) {
   return request<SliderGroupDetail>(
     { url: '/slider-group', method: 'GET', params: { id } },
-    (b) => ({ today: b.today, group: b.group, members: b.members || [], events: b.events || [] })
+    (b) => ({ today: b.today, group: b.group, members: b.members || [] })
   );
 }
 export function getSliderCandidates(channel: SliderChannel) {

@@ -14,7 +14,7 @@ Purpose: Create a Pricing Slider group, or change an existing group's rules. Rul
          The CHANNEL is set once, at creation — the members of a Shopify group are styles and of an Amazon group SKUs, so it can't change.
          Edited rules apply from the next move (nothing already set is re-priced). An ended group can't be edited.
 
-         WRITES slider_group + one slider_event ('created' / 'edited', the change in its detail) in one transaction, and one bclog line,
+         WRITES slider_group in one transaction, and one bclog line,
          section 'Slider' (who did what, the platform-wide activity log). Requires auth.
 =======================================================================================================================================
 Request Payload:
@@ -88,10 +88,6 @@ router.post('/', async (req, res) => {
           RETURNING id
         `, [r.name, r.channel, r.stepPct, r.everyDays, r.floorPct, r.floorBreakeven, r.stopAfterSales, r.dueDate, r.notes, who]);
         const newId = ins.rows[0].id;
-        await client.query(
-          `INSERT INTO slider_event (group_id, event, detail, created_by) VALUES ($1, 'created', $2, $3)`,
-          [newId, `${r.channel} · step ${r.stepPct}% every ${r.everyDays} days · floor ${r.floorPct}%${r.floorBreakeven ? ' + break-even' : ''} · stop after ${r.stopAfterSales}`, who]
-        );
         await writeBcLog(client, { who, section: 'Slider', log: `Created slider "${r.name}" (${r.channel})` });
         return { id: newId, created: true };
       }
@@ -114,10 +110,6 @@ router.post('/', async (req, res) => {
                due_date = $8::date, notes = $9, updated_by = $10, updated_at = now()
          WHERE id = $1
       `, [id, r.name, r.stepPct, r.everyDays, r.floorPct, r.floorBreakeven, r.stopAfterSales, r.dueDate, r.notes, who]);
-      await client.query(
-        `INSERT INTO slider_event (group_id, event, detail, created_by) VALUES ($1, 'edited', $2, $3)`,
-        [id, changes.slice(0, 250), who]
-      );
       await writeBcLog(client, { who, section: 'Slider', log: `Edited slider "${r.name}": ${changes}` });
       return { id, created: false };
     });

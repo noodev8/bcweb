@@ -53,7 +53,7 @@ member's last move is read as one of (utils/sliderMembers.js → amz_upload):
     pending   not live yet, still inside the basket's 72h window → waits as in_basket. A sale while it waits is acted on after upload
               (the price can't be pulled back out of a file someone may already have downloaded) — the upload lag's known cost.
     expired   never went live and has aged out of the basket → the move DIDN'T HAPPEN: the member reads as it was before it (price and
-              step count), due again. The press that acts on it records that ('expired' event) and writes the undone price/steps back
+              step count), due again. The press that acts on it writes the undone price/steps back
               before doing anything else (last_log_id stays on the expired row, so "already undone" = last_price is back at its from).
   "Priced by hand" on Amazon is read from the log, never the feed — see offTrack().
 =======================================================================================================================================

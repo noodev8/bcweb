@@ -12,7 +12,7 @@ Purpose: Pricing Slider "Reset to RRP" — put ONE product back to its RRP and t
                 after the commit (utils/shopify.js → pushIfLive, best-effort: a failed push leaves the DB price standing and says so);
                 Google follows on its own sweep. Review date untouched.
            AMZ  W-A1 — an amz_price_log row; it reaches Amazon in the team's upload basket, so the response carries the basket item.
-         The member update and its slider_event land in the SAME transaction as the price.
+         The member update lands in the SAME transaction as the price.
 
          RRP = skusummary.rrp now (if a buyer has corrected it since the product joined, the correction wins), else the RRP it joined
          with. A product already at RRP just leaves the slider — no price row is written for nothing.
@@ -102,10 +102,6 @@ router.post('/', async (req, res) => {
            SET state = 'reset', last_price = $2, last_log_id = COALESCE($3, last_log_id), ended_by = $4, ended_at = now()
          WHERE id = $1
       `, [memberId, rrp, written ? written.logId : null, who]);
-      await client.query(`
-        INSERT INTO slider_event (group_id, member_id, event, old_price, new_price, detail, created_by)
-        SELECT group_id, id, 'reset', $2, $3, $4, $5 FROM slider_member WHERE id = $1
-      `, [memberId, now, rrp, changed ? 'Reset to RRP' : 'Already at RRP — left the slider', who]);
 
       return { r, rrp, now, changed, written };
     });

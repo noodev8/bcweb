@@ -4,14 +4,13 @@
 Page: /slider/[id] — one Pricing Slider group
 =======================================================================================================================================
 Purpose: Everything about one slider (owner, 2026-10-17): its rules (edit, pause / resume, end, delete), its products and where each
-         stands, adding and removing products, Reset to RRP, and its log. Consumes GET /slider-group.
+         stands, adding and removing products, Reset to RRP. Consumes GET /slider-group.
 
 THE PRODUCTS TABLE — live first (sliding, found, at floor), with "Show the N that left" for the history:
   Now        the current price on the channel and its % of RRP. "Priced by hand" = it isn't what the slider last set (someone
              repriced it on another screen); the next move will take it out rather than fight it.
-  Floor      floor % of RRP, or break-even when the group ticks it and break-even is higher (marked BE).
+  Floor      floor % of RRP, or break-even when the group ticks it and break-even is higher (hover shows the break-even price).
   Next move  the price and the day it's due. The first move is due straight away; with Start from RRP it's the lift back to RRP.
-  Floor by   the day it reaches the floor if every move is made on time and nothing sells.
   Sold       units sold on this channel since it joined (shop-counter sales don't count for a Shopify slider).
 
 TICK + ACT (live products only): Reset to RRP — each ticked product back to RRP and out of the slider, ONE CALL PER PRODUCT
@@ -35,7 +34,7 @@ The product's code links to its Shopify / Amazon price screen, with ?from= so �
 
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { mutate as mutateGlobal } from 'swr';
 import { PlusIcon, PencilSquareIcon, ExclamationTriangleIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
@@ -50,7 +49,7 @@ import {
   SliderAction, SliderGroupAction, SliderGroupDetail, SliderMember,
 } from '@/lib/api';
 import {
-  ACTION_TALLY, DUE_ACTIONS, EVENT_LABEL, GROUP_STATE_COLOR, GROUP_STATE_LABEL, MEMBER_STATE_COLOR, MEMBER_STATE_LABEL,
+  ACTION_TALLY, DUE_ACTIONS, GROUP_STATE_COLOR, GROUP_STATE_LABEL, MEMBER_STATE_COLOR, MEMBER_STATE_LABEL,
   fmtDay, fmtWhen, isDue, money, rulesSummary,
 } from '@/lib/sliderUi';
 
@@ -138,13 +137,20 @@ interface BodyProps {
 
 function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
   const router = useRouter();
-  const { group, members, events, today } = data;
+  const { group, members, today } = data;
   const amz = group.channel === 'AMZ';
   const ended = group.state === 'ended';
   const selfUrl = `/slider/${group.id}`;
 
-  const [editing, setEditing] = useState(false);
-  const [adding, setAdding] = useState(false);
+  // Edit lives in the URL (?edit=1, owner 2026-10-20) so browser Back closes the form, and the page's back link does the same while
+  // it is open. Closing replaces rather than pops, so a deep link to ?edit=1 doesn't Back you off the site.
+  const searchParams = useSearchParams();
+  const editing = searchParams.get('edit') === '1';
+  const setEditing = (on: boolean) => (on ? router.push(`${selfUrl}?edit=1`, { scroll: false }) : router.replace(selfUrl, { scroll: false }));
+  // Add products the same way (?add=1), and it REPLACES the products table rather than stacking above it (owner, 2026-10-20: two
+  // tick-box tables on top of each other were confusing). Done / Back / the back link return to the slider's own table.
+  const adding = searchParams.get('add') === '1' && !ended;
+  const setAdding = (on: boolean) => (on ? router.push(`${selfUrl}?add=1`, { scroll: false }) : router.replace(selfUrl, { scroll: false }));
   const [showLeft, setShowLeft] = useState(false);
   const [confirm, setConfirm] = useState<'end' | 'delete' | 'reset' | 'move' | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -276,7 +282,11 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
   const overdue = group.due_date && group.due_date < today && !ended;
 
   return (
-    <AppShell title={group.name} backHref="/slider" backLabel="Pricing Slider" headerRight={amz ? <AmzUploadButton /> : undefined}>
+    <AppShell
+      title={group.name}
+      backHref={editing || adding ? selfUrl : '/slider'}
+      backLabel={editing || adding ? group.name : 'Pricing Slider'}
+      headerRight={amz ? <AmzUploadButton /> : undefined}>
       {amz && <AmzBasketBar />}
 
       {/* ---- The group ----------------------------------------------------------------------------------------------------------- */}
@@ -299,7 +309,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
 
           {!ended && (
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => setEditing((v) => !v)} disabled={busy} className={`${btn} inline-flex items-center gap-1.5`}>
+              <button type="button" onClick={() => setEditing(!editing)} disabled={busy} className={`${btn} inline-flex items-center gap-1.5`}>
                 <PencilSquareIcon className="h-4 w-4" /> Edit rules
               </button>
               {group.state === 'active' ? (
@@ -327,7 +337,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         )}
         {confirm === 'delete' && !group.priced && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-slate-600">Delete it and its log?</span>
+            <span className="text-slate-600">Delete it?</span>
             <button type="button" onClick={() => groupAction('delete')} disabled={busy} className="rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">Delete</button>
             <button type="button" onClick={() => setConfirm(null)} className="text-slate-500 hover:text-slate-800">Cancel</button>
           </div>
@@ -391,18 +401,18 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
         </div>
       )}
 
-      {adding && !ended && (
+      {adding ? (
         <div className="mb-4">
-          <SliderAddPanel groupId={group.id} channel={group.channel} onAdded={refresh} onClose={() => setAdding(false)} />
+          <SliderAddPanel groupId={group.id} groupName={group.name} channel={group.channel} onAdded={refresh} onClose={() => setAdding(false)} />
         </div>
-      )}
-
+      ) : (
+      <>
       {/* ---- The products ------------------------------------------------------------------------------------------------------- */}
       <div className="mb-4 rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-100 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {!ended && !adding && (
-              <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
+            {!ended && (
+              <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
                 <PlusIcon className="h-4 w-4" /> Add products
               </button>
             )}
@@ -411,7 +421,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
               confirm === 'reset' ? (
                 <span className="flex items-center gap-2 text-sm">
                   <span className="text-slate-600">Reset {pickedLive.length} to RRP{amz ? ' (upload basket)' : ''}?</span>
-                  <button type="button" onClick={onReset} disabled={busy} className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700">Reset {pickedLive.length}</button>
+                  <button type="button" onClick={onReset} disabled={busy} className="rounded-md bg-slate-900 px-3 py-1.5 font-medium text-white hover:bg-slate-800">Reset {pickedLive.length}</button>
                   <button type="button" onClick={() => setConfirm(null)} className="text-slate-500 hover:text-slate-800">Cancel</button>
                 </span>
               ) : (
@@ -454,8 +464,6 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                   <th className="px-3 py-2 text-right font-medium">RRP</th>
                   <th className="px-3 py-2 text-right font-medium">Floor</th>
                   <th className="px-3 py-2 font-medium">Next move</th>
-                  <th className="px-3 py-2 font-medium" title="If every move is made on time and nothing sells">Floor by</th>
-                  <th className="px-3 py-2 text-right font-medium">Moves</th>
                   <th className="px-3 py-2 text-right font-medium">{amz ? 'FBA' : 'Stock'}</th>
                   <th className="px-3 py-2 text-right font-medium" title="Units sold on this channel since it joined">Sold</th>
                   <th className="px-3 py-2 font-medium">State</th>
@@ -481,7 +489,6 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                         <Link href={priceHref(m)} title={amz ? 'Amazon price' : 'Shopify price'} className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
                           {m.key}
                         </Link>
-                        {amz && m.size && <span className="ml-2 text-xs text-slate-400">size {m.size}</span>}
                       </div>
                       {m.title && <div className="truncate text-xs text-slate-500" title={m.title}>{m.title}</div>}
                     </td>
@@ -491,7 +498,7 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{money(m.rrp)}</td>
                     <td className="px-3 py-2 text-right tabular-nums" title={m.breakeven !== null ? `Break-even ${money(m.breakeven)}` : 'Break-even unknown (no cost)'}>
-                      {money(m.floor)}{m.floor_by_breakeven && <span className="ml-1 text-[10px] font-semibold text-slate-400">BE</span>}
+                      {money(m.floor)}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {m.action && SETTLE_NOTE[m.action as SliderAction] ? (
@@ -507,9 +514,8 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                         group.state === 'paused' ? <span className="text-slate-400">paused</span> : (
                           <>
                             <span className="tabular-nums">{money(m.next_price)}</span>
-                            {m.action === 'no_stock' ? (
-                              <span className="ml-1.5 text-xs text-slate-400" title="It can't sell, so it isn't cut — due again the moment stock arrives">no stock</span>
-                            ) : (
+                            {/* No stock: the Stock column says so (red 0) — no word here. */}
+                            {m.action !== 'no_stock' && (
                               <span className={`ml-1.5 text-xs ${isDue(m) ? 'font-semibold text-slate-900' : 'text-slate-400'}`}>
                                 {isDue(m) ? 'due now' : fmtDay(m.next_due, today)}
                               </span>
@@ -526,11 +532,12 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
                         <span className="text-amber-700">holding at floor</span>
                       ) : m.live ? '' : <span className="whitespace-normal text-xs">{fmtWhen(m.ended_at)}{m.ended_by ? ` · ${m.ended_by}` : ''}</span>}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{m.state === 'sliding' ? fmtDay(m.floor_by, today) : ''}</td>
-                    <td className="px-3 py-2 text-right tabular-nums" title={`${m.steps} made so far`}>
-                      {m.state === 'sliding' ? m.moves_left : m.steps || ''}
+                    <td
+                      className={`px-3 py-2 text-right tabular-nums ${m.action === 'no_stock' ? 'font-semibold text-red-700' : ''}`}
+                      title={m.action === 'no_stock' ? "No stock, so it can't sell and isn't cut — due again the moment stock arrives" : undefined}
+                    >
+                      {m.stock}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.stock}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{m.sold || ''}</td>
                     <td className="px-3 py-2">
                       <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${MEMBER_STATE_COLOR[m.state]}`}>{MEMBER_STATE_LABEL[m.state]}</span>
@@ -547,35 +554,8 @@ function SliderBody({ data, refresh, busy: loading, basketAdd }: BodyProps) {
           </div>
         )}
       </div>
-
-      {/* ---- The log --------------------------------------------------------------------------------------------------------------- */}
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <h2 className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-800">Log</h2>
-        {events.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-slate-500">Nothing yet.</p>
-        ) : (
-          <div className="max-h-[24rem] overflow-auto">
-            <table className="w-full text-sm">
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id} className="border-b border-slate-100 text-slate-700 last:border-0">
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{fmtWhen(e.created_at)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{e.created_by || ''}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-medium">{EVENT_LABEL[e.event] || e.event}</td>
-                    <td className="whitespace-nowrap px-3 py-2">{e.item || ''}</td>
-                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                      {e.old_price !== null && e.new_price !== null && e.old_price !== e.new_price
-                        ? `${money(e.old_price)} → ${money(e.new_price)}`
-                        : e.new_price !== null ? money(e.new_price) : ''}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">{e.detail || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      </>
+      )}
     </AppShell>
   );
 }

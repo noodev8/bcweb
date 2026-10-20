@@ -11,7 +11,7 @@ Purpose: Pause, resume, end or delete a Pricing Slider group.
                    The group and its log stay as history under the Ended tab. Final: make a new group to slide again.
            delete  only a group that has NEVER written a price (no move, no reset to RRP) — i.e. a mistake. Its rows go entirely. Once
                    the slider has set a price, price_change_log / amz_price_log carry its notes, so the group must stay: end it instead.
-         WRITES slider_group (+ slider_member on end) + a slider_event in one transaction, and one bclog line, section 'Slider'.
+         WRITES slider_group (+ slider_member on end) in one transaction, and one bclog line, section 'Slider'.
          Requires auth.
 =======================================================================================================================================
 Request Payload:
@@ -60,14 +60,12 @@ router.post('/', async (req, res) => {
 
       if (action === 'delete') {
         const priced = await client.query(`
-          SELECT EXISTS (SELECT 1 FROM slider_member WHERE group_id = $1 AND steps > 0)
-              OR EXISTS (SELECT 1 FROM slider_event WHERE group_id = $1 AND event = 'reset'
-                                    AND old_price IS DISTINCT FROM new_price) AS priced
+          SELECT EXISTS (SELECT 1 FROM slider_member WHERE group_id = $1 AND last_log_id IS NOT NULL) AS priced
         `, [id]);
         if (priced.rows[0].priced) {
           return { error: 'ALREADY_PRICED', message: 'This slider has changed prices, so it stays as history — end it instead' };
         }
-        // ON DELETE CASCADE takes its members and events with it.
+        // ON DELETE CASCADE takes its members with it.
         await client.query(`DELETE FROM slider_group WHERE id = $1`, [id]);
         await writeBcLog(client, { who, section: 'Slider', log: `Deleted slider "${name}"` });
         return { state: null, left: 0 };
@@ -79,16 +77,11 @@ router.post('/', async (req, res) => {
         const next = action === 'pause' ? 'paused' : 'active';
         if (next === state) return { state, left: 0 };   // already there: nothing to write
         await client.query(`UPDATE slider_group SET state = $2, updated_by = $3, updated_at = now() WHERE id = $1`, [id, next, who]);
-        await client.query(
-          `INSERT INTO slider_event (group_id, event, created_by) VALUES ($1, $2, $3)`,
-          [id, action === 'pause' ? 'paused' : 'resumed', who]
-        );
         await writeBcLog(client, { who, section: 'Slider', log: `${action === 'pause' ? 'Paused' : 'Resumed'} slider "${name}"` });
         return { state: next, left: 0 };
       }
 
-      // end — every live product leaves at the price it has. One event for the group (not one per product: nothing happened to their
-      // prices, and the member rows' state + ended_at already record it).
+      // end — every live product leaves at the price it has (the member rows' state + ended_at record it).
       const left = await client.query(`
         UPDATE slider_member SET state = 'ended', ended_by = $2, ended_at = now()
          WHERE group_id = $1 AND state = ANY($3::text[])
@@ -96,10 +89,6 @@ router.post('/', async (req, res) => {
       await client.query(
         `UPDATE slider_group SET state = 'ended', ended_at = now(), updated_by = $2, updated_at = now() WHERE id = $1`,
         [id, who]
-      );
-      await client.query(
-        `INSERT INTO slider_event (group_id, event, detail, created_by) VALUES ($1, 'ended', $2, $3)`,
-        [id, `${left.rowCount} product${left.rowCount === 1 ? '' : 's'} left at their current price`, who]
       );
       await writeBcLog(client, { who, section: 'Slider', log: `Ended slider "${name}" (${left.rowCount} left)` });
       return { state: 'ended', left: left.rowCount };

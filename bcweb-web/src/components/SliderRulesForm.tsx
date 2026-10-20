@@ -53,7 +53,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
   const [step, setStep] = useState(String(initial?.step_pct ?? 2));
   const [every, setEvery] = useState(String(initial?.every_days ?? 2));
   const [floor, setFloor] = useState(String(initial?.floor_pct ?? 50));
-  const [breakeven, setBreakeven] = useState(initial?.floor_breakeven ?? false);
+  const [breakeven, setBreakeven] = useState(initial?.floor_breakeven ?? true); // ticked for a new slider (owner, 2026-10-20) — untick to clear rubbish below cost
   const [stopAfter, setStopAfter] = useState(initial?.stop_after_sales ?? 1);
   const [dueDate, setDueDate] = useState(initial?.due_date ?? '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
@@ -92,7 +92,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
   const label = 'mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500';
   const chip = (on: boolean) =>
     'rounded-md border px-3 py-1.5 text-sm font-medium transition ' +
-    (on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50');
+    (on ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-50');
 
   return (
     <form onSubmit={onSubmit} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -165,7 +165,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
           <span>Reach the floor by</span>
           <input type="date" value={finishBy} min={addDays(today, 1)} onChange={(e) => setFinishBy(e.target.value)} className={box} aria-label="Reach the floor by" />
           {finishBy && (finishStep !== null ? (
-            <button type="button" onClick={() => setStep(String(finishStep))} className="text-sm font-medium text-brand-700 hover:underline">
+            <button type="button" onClick={() => setStep(String(finishStep))} className="text-sm font-medium text-slate-900 hover:underline">
               Use a step of {finishStep}%
             </button>
           ) : (
@@ -180,7 +180,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
           <div className="flex items-center gap-2">
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={box} aria-label="Due date" />
             {runEnds && dueDate !== runEnds && (
-              <button type="button" onClick={() => setDueDate(runEnds)} className="text-sm font-medium text-brand-700 hover:underline">
+              <button type="button" onClick={() => setDueDate(runEnds)} className="text-sm font-medium text-slate-900 hover:underline">
                 Use {fmtDay(runEnds, today)}
               </button>
             )}
@@ -194,7 +194,7 @@ export default function SliderRulesForm({ initial, onSaved, onCancel }: Props) {
       </div>
 
       <div className="mt-4 flex items-center gap-3">
-        <button type="submit" disabled={busy || !name.trim() || !run} className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+        <button type="submit" disabled={busy || !name.trim() || !run} className="rounded-md bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
           {busy ? 'Saving…' : creating ? 'Create slider' : 'Save rules'}
         </button>
         <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-800">Cancel</button>

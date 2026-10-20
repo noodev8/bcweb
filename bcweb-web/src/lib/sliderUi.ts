@@ -44,13 +44,6 @@ export const ACTION_TALLY: Record<SliderAction, [string, string]> = {
   floor: ['at floor', 'at floor'],
   repriced: ['priced by hand — leaves', 'priced by hand — leave'],
 };
-// The log's event names (slider_event.event).
-export const EVENT_LABEL: Record<string, string> = {
-  created: 'Created', edited: 'Rules changed', paused: 'Paused', resumed: 'Resumed', ended: 'Ended',
-  joined: 'Joined', moved: 'Moved out', removed: 'Removed', reset: 'Reset to RRP',
-  step: 'Price cut', lift: 'Back to RRP', hold: 'Sold — holding', found: 'Found', floor: 'At floor', repriced: 'Priced by hand',
-  expired: 'Not uploaded',
-};
 
 export const GROUP_STATE_LABEL: Record<SliderGroupState, string> = { active: 'Active', paused: 'Paused', ended: 'Ended' };
 export const GROUP_STATE_COLOR: Record<SliderGroupState, string> = {

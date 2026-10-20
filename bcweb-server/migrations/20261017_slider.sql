@@ -15,7 +15,7 @@
 --                  reset to RRP or the group ending; the row stays as history (state says how it left). The partial unique index is the
 --                  rule "one live slider per product per channel" — sliding, found and at-floor are all still IN the slider (found and
 --                  floor hold their price and keep their badge on the pricing screens).
---   slider_event   the slider's log: created / edited / paused / ended, joined / moved / removed / reset, and (phase 2) each step.
+--   slider_event   the slider's log — DROPPED 2026-10-20 (migrations/20261020_slider_event_drop.sql).
 --
 -- No foreign key to skusummary / amzfeed on purpose — a style deleted there must not be blocked by its slider history.
 -- =====================================================================================================================================

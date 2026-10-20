@@ -19,7 +19,7 @@ Purpose: The "Add products" panel on /slider/[id]. Owner, 2026-10-17: "group a s
 */
 
 import { useMemo, useRef, useState } from 'react';
-import { MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { addToSlider, getSliderCandidates, SliderCandidate, SliderChannel } from '@/lib/api';
@@ -52,12 +52,13 @@ const NO_ROWS: SliderCandidate[] = [];
 
 interface Props {
   groupId: number;
+  groupName: string;
   channel: SliderChannel;
   onAdded: () => void;
   onClose: () => void;
 }
 
-export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: Props) {
+export default function SliderAddPanel({ groupId, groupName, channel, onAdded, onClose }: Props) {
   const q = useApiQuery(['slider-candidates', channel], () => getSliderCandidates(channel));
   const rows = q.data ?? NO_ROWS;
   const amz = channel === 'AMZ';
@@ -89,7 +90,7 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
     sold30: (r) => r.sold30,
     slider: (r) => r.slider?.name ?? null,
   });
-  const th = { sort, onSort };
+  const th = { sort, onSort, compact: true };
 
   // Ticks only count while their row is on screen and can join — a filter change never leaves an invisible row ticked for the Add.
   // A row already in THIS slider can't be ticked.
@@ -140,13 +141,15 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
   const input = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
   const toggle = (on: boolean) =>
     'rounded-md border px-3 py-1.5 text-sm font-medium transition ' +
-    (on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50');
+    (on ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-50');
 
   return (
     <div className="rounded-lg border border-brand-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-800">Add products</h2>
-        <button type="button" onClick={onClose} title="Close" className="rounded text-slate-400 hover:text-slate-700"><XMarkIcon className="h-5 w-5" /></button>
+        <h2 className="text-base font-semibold text-slate-900">Adding to {groupName}</h2>
+        <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Done — back to the slider
+        </button>
       </div>
 
       {/* The standard Contains / Does not contain */}
@@ -163,7 +166,7 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Does not contain</label>
             <input value={notContains} onChange={(e) => setNotContains(e.target.value.toUpperCase())} placeholder="e.g. WOMEN" className={input} />
           </div>
-          <button type="submit" className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700">Find</button>
+          <button type="submit" className="rounded-md bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-800">Find</button>
           <button type="button" onClick={onReset} title="Clear the search and re-read" className="flex items-center gap-1.5 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
             <ArrowPathIcon className={`h-4 w-4 ${q.busy ? 'animate-spin' : ''}`} /> Reset
           </button>
@@ -205,7 +208,7 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
             Move {inOther} from another slider
           </label>
         )}
-        <button type="button" onClick={onAdd} disabled={busy || pickedRows.length === 0} className="rounded-md bg-brand-600 px-4 py-1.5 font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+        <button type="button" onClick={onAdd} disabled={busy || pickedRows.length === 0} className="rounded-md bg-slate-900 px-4 py-1.5 font-medium text-white hover:bg-slate-800 disabled:opacity-50">
           {busy ? 'Adding…' : `Add ${pickedRows.length || ''}`.trim()}
         </button>
         {msg && <span className={msg.bad ? 'text-red-700' : 'text-slate-600'}>{msg.text}</span>}
@@ -237,7 +240,7 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
                 <SortableTh {...th} sortKey="price" label="Price" align="right" />
                 <SortableTh {...th} sortKey="rrp" label="RRP" align="right" />
                 <SortableTh {...th} sortKey="pct" label="% RRP" align="right" />
-                <th className="px-4 py-2 text-right font-medium" title="The price that keeps £0 after fees">Break-even</th>
+                <th className="px-3 py-2 text-right font-medium" title="The price that keeps £0 after fees">Break-even</th>
                 <SortableTh {...th} sortKey="stock" label={amz ? 'FBA' : 'Stock'} align="right" />
                 <SortableTh {...th} sortKey="sold30" label="Sold 30d" align="right" />
                 <SortableTh {...th} sortKey="slider" label="Slider" firstDir="asc" />
@@ -259,21 +262,21 @@ export default function SliderAddPanel({ groupId, channel, onAdded, onClose }: P
                         className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
                       />
                     </td>
-                    <td className="max-w-[24rem] px-4 py-2">
+                    <td className="max-w-[16rem] px-3 py-2">
                       <div className="whitespace-nowrap font-medium text-slate-800">
-                        {r.key}{amz && r.size && <span className="ml-2 text-xs font-normal text-slate-400">size {r.size}</span>}
+                        {r.key}
                       </div>
                       {r.title && <div className="truncate text-xs text-slate-500" title={r.title}>{r.title}</div>}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500">{r.status || '—'}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(r.price)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.rrp === null ? <span className="text-red-600">none</span> : money(r.rrp)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-500">{p === null ? '—' : `${p}%`}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-500">{money(r.breakeven)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.stock}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.sold30}</td>
-                    <td className="px-4 py-2 text-xs">
-                      {here ? <span className="text-slate-500">In this slider</span> : r.slider ? <span className="text-amber-700">{r.slider.name}</span> : ''}
+                    <td className="px-3 py-2 text-xs text-slate-500">{r.status || '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(r.price)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.rrp === null ? <span className="text-red-600">none</span> : money(r.rrp)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-500">{p === null ? '—' : `${p}%`}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.breakeven)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.stock}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.sold30}</td>
+                    <td className="max-w-[10rem] truncate px-3 py-2 text-xs" title={r.slider && !here ? r.slider.name : undefined}>
+                      {here ? <span className="whitespace-nowrap text-slate-500">In this slider</span> : r.slider ? <span className="text-amber-700">{r.slider.name}</span> : ''}
                     </td>
                   </tr>
                 );

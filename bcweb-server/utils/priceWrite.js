@@ -6,8 +6,8 @@ Purpose: The DATABASE half of the two price writes, in one place, so every scree
            writeShopifyPrice(client, …)  — W1   (routes/pricing-apply.js, and the Pricing Slider's reset / steps)
            writeAmzPrice(client, …)      — W-A1 (routes/amz-apply.js, and the Pricing Slider's reset / steps)
 
-WHY IT WAS PULLED OUT OF THE ROUTES (2026-10-17): the Pricing Slider moves prices too, and its own bookkeeping (slider_member,
-slider_event) has to land in the SAME transaction as the price — a slider that believes it set £52.65 when the price never changed, or
+WHY IT WAS PULLED OUT OF THE ROUTES (2026-10-17): the Pricing Slider moves prices too, and its own bookkeeping (slider_member)
+has to land in the SAME transaction as the price — a slider that believes it set £52.65 when the price never changed, or
 the reverse, is the drift this platform keeps paying for (see the order-sync banner for the worst case). Copying W1 into the slider
 routes would have been a second set of rules for the same write. So the routes keep what is theirs — reading and validating the request,
 pushing to Shopify after the commit, shaping the response — and call this for the write itself.

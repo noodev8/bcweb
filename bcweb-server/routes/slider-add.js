@@ -22,7 +22,7 @@ Purpose: Put chosen products into a Pricing Slider group (the add screen's ticke
                                              leaves that group (state 'moved') and joins this one, starting from its price now
          The checks use the same floor rule the slider steps with (utils/slider.js → floorFor).
 
-         WRITES slider_member (+ the moved-from row) and slider_event rows in one transaction, and one bclog line, section 'Slider'.
+         WRITES slider_member (+ the moved-from row) in one transaction, and one bclog line, section 'Slider'.
          A paused group accepts products (they wait with it); an ended group doesn't. Requires auth.
 =======================================================================================================================================
 Request Payload:
@@ -152,26 +152,12 @@ router.post('/', async (req, res) => {
             `UPDATE slider_member SET state = 'moved', ended_by = $2, ended_at = now() WHERE id = $1`,
             [current.id, who]
           );
-          await client.query(
-            `INSERT INTO slider_event (group_id, member_id, event, old_price, new_price, detail, created_by)
-             VALUES ($1, $2, 'moved', $3, $3, $4, $5)`,
-            [current.group_id, current.id, price, `Moved to "${group.name}"`.slice(0, 250), who]
-          );
         }
 
-        const ins = await client.query(`
+        await client.query(`
           INSERT INTO slider_member (group_id, channel, item_key, groupid, rrp, start_from, start_price, last_price, joined_by)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)
-          RETURNING id
         `, [groupId, group.channel, key, f.groupid, rrp, from, price, who]);
-        const detail = [
-          from === 'rrp' ? `Start from RRP ${money(rrp)}` : 'Start from current price',
-          current ? `moved from "${current.name}"` : null,
-        ].filter(Boolean).join(', ');
-        await client.query(
-          `INSERT INTO slider_event (group_id, member_id, event, new_price, detail, created_by) VALUES ($1, $2, 'joined', $3, $4, $5)`,
-          [groupId, ins.rows[0].id, price, detail.slice(0, 250), who]
-        );
         done.push(key);
         if (current) moved.push(key);
       }

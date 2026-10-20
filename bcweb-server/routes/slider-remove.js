@@ -7,7 +7,7 @@ Purpose: Take chosen products out of a Pricing Slider group, LEAVING THEIR PRICE
          Reset to RRP — POST /slider-reset). The member row stays as history with state 'removed'; the product loses its slider badge
          and can join another slider. Only live members (sliding / found / at floor) of THIS group are touched — an id that already
          left, or belongs to another group, is skipped and reported.
-         WRITES slider_member + one slider_event per product in one transaction, and one bclog line, section 'Slider'. Requires auth.
+         WRITES slider_member in one transaction, and one bclog line, section 'Slider'. Requires auth.
 =======================================================================================================================================
 Request Payload:
 { "groupId": 3, "memberIds": [11, 12] }      // 1-500
@@ -58,13 +58,7 @@ router.post('/', async (req, res) => {
         RETURNING id, last_price
       `, [groupId, ids, who, LIVE_STATES]);
 
-      // One event per product, in one statement: each row's own price is the price it was left at.
       if (upd.rows.length > 0) {
-        await client.query(`
-          INSERT INTO slider_event (group_id, member_id, event, old_price, new_price, detail, created_by)
-          SELECT $1, u.id, 'removed', u.price, u.price, 'Left at its current price', $4
-          FROM unnest($2::int[], $3::numeric[]) AS u(id, price)
-        `, [groupId, upd.rows.map((r) => r.id), upd.rows.map((r) => r.last_price), who]);
         await writeBcLog(client, { who, section: 'Slider', log: `Removed ${upd.rows.length} from slider "${g.rows[0].name}"` });
       }
 

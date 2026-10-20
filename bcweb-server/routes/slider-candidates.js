@@ -11,6 +11,8 @@ Purpose: Pricing Slider "Add products" — EVERY product the channel can slide, 
 
          SHP  one row per STYLE live on Shopify (skusummary.shopify = 1). An off-Shopify style can't sell there, so sliding it tests nothing.
          AMZ  one row per Amazon SKU (amzfeed — the FBA catalogue). Size = the code's suffix after the last '-' (CLAUDE.md, never RIGHT(…,2)).
+              Only SKUs whose style still has a skusummary row: amzfeed keeps listings for styles deleted from our DB (owner, 2026-10-20 —
+              e.g. Y0783-00, 9 styles / 54 SKUs), and with no RRP, cost or name they can't join a slider anyway.
 
          Price, stock and sold use the slider's own definitions (utils/sliderMembers.js header): SHP price = shopifyprice, stock = sellable
          local; AMZ price = utils/slider.js → AMZ_NOW_CTES (a logged change newer than the last import wins), stock = amzlive.
@@ -120,7 +122,7 @@ const AMZ_SQL = `
          ss.portfolio_status     AS status,
          live.group_id, live.name AS group_name, live.state AS slider_state
   FROM amzfeed a
-  LEFT JOIN skusummary ss ON ss.groupid = a.groupid
+  JOIN skusummary ss      ON ss.groupid = a.groupid      -- inner: drops listings of styles deleted from our DB
   LEFT JOIN title t       ON t.groupid = a.groupid
   LEFT JOIN amz_now an    ON an.code = a.code
   LEFT JOIN sold          ON sold.code = a.code

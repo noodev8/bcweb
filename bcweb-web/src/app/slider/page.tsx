@@ -18,9 +18,9 @@ Purpose: The Pricing Slider home (owner, 2026-10-17). A slider is a GROUP of pro
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import SliderRulesForm from '@/components/SliderRulesForm';
@@ -31,13 +31,25 @@ import { GROUP_STATE_COLOR, GROUP_STATE_LABEL, fmtDay, rulesSummary } from '@/li
 
 const NO_GROUPS: SliderGroupSummary[] = [];
 
+// useSearchParams must sit inside a Suspense boundary for Next's build (App Router). Thin wrapper does that.
 export default function SliderHomePage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <SliderHome />
+    </Suspense>
+  );
+}
+
+function SliderHome() {
   const router = useRouter();
   const q = useApiQuery('slider-groups', getSliderGroups);
   const groups = q.data?.groups ?? NO_GROUPS;
   const today = q.data?.today;
   const [tab, setTab] = useState<'live' | 'ended'>('live');
-  const [creating, setCreating] = useState(false);
+  // New slider lives in the URL (?new=1, owner 2026-10-20) so browser Back closes the form, and the back link does the same while it
+  // is open. Closing replaces rather than pops, so a deep link to ?new=1 doesn't Back you off the site.
+  const creating = useSearchParams().get('new') === '1';
+  const setCreating = (on: boolean) => (on ? router.push('/slider?new=1', { scroll: false }) : router.replace('/slider', { scroll: false }));
 
   const live = useMemo(() => groups.filter((g) => g.state !== 'ended'), [groups]);
   const ended = useMemo(() => groups.filter((g) => g.state === 'ended'), [groups]);
@@ -47,7 +59,7 @@ export default function SliderHomePage() {
     'rounded-md px-3 py-1.5 text-sm font-medium transition ' + (on ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100');
 
   return (
-    <AppShell title="Pricing Slider">
+    <AppShell title="Pricing Slider" backHref={creating ? '/slider' : undefined} backLabel="Pricing Slider">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           <button type="button" onClick={() => setTab('live')} className={tabBtn(tab === 'live')}>Active · {live.length}</button>
@@ -57,7 +69,7 @@ export default function SliderHomePage() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
             <PlusIcon className="h-4 w-4" /> New slider
           </button>
@@ -101,7 +113,11 @@ export default function SliderHomePage() {
                 {shown.map((g) => {
                   const overdue = g.due_date && today && g.due_date < today && g.state !== 'ended';
                   return (
-                    <tr key={g.id} className="border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50">
+                    <tr
+                      key={g.id}
+                      onClick={() => router.push(`/slider/${g.id}`)}
+                      className="cursor-pointer border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50"
+                    >
                       <td className="px-4 py-2.5">
                         <Link href={`/slider/${g.id}`} className="inline-flex items-center gap-2 font-medium text-slate-900 hover:text-brand-700 hover:underline">
                           <ChannelLogo channel={g.channel === 'SHP' ? 'shopify' : 'amazon'} />

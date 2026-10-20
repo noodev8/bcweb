@@ -4,8 +4,7 @@ API Route: slider_group
 =======================================================================================================================================
 Method: GET
 Purpose: One Pricing Slider group's page — the group's rules, EVERY member it has ever had (live ones first: sliding, found, at floor;
-         then the ones that left, with how they left) with their live numbers from utils/sliderMembers.js, and the group's log
-         (slider_event, newest first). The member numbers are the same ones the step acts on: current price on the
+         then the ones that left, with how they left) with their live numbers from utils/sliderMembers.js. The member numbers are the same ones the step acts on: current price on the
          channel, floor, the next move and its date, units sold since joining, `off_track` (priced by hand since the slider last
          set it), and `action` — what the next press of "Move prices" (POST /slider-step) does to it. Read-only. Requires auth.
 =======================================================================================================================================
@@ -29,9 +28,7 @@ Success Response:
       "next_due": "2026-10-17", "next_price": 63.5, "lift": false, "moves_left": 22, "floor_by": "2026-11-28",
       "found_price": null, "found_at": null, "last_move_at": null,
       "joined_by": "Andreas", "joined_at": "…", "ended_by": null, "ended_at": null }
-  ],
-  "events": [ { "id": 40, "event": "joined", "item": "22152-42-019", "old_price": null, "new_price": 65, "detail": "Start from current price",
-                "created_by": "Andreas", "created_at": "…" } ]          // newest first, up to 200
+  ]
 }
 =======================================================================================================================================
 Return Codes:
@@ -53,9 +50,7 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
-const EVENT_LIMIT = 200;
 const iso = (v) => (v ? new Date(v).toISOString() : null);
-const num = (v) => (v === null || v === undefined ? null : Number(v));
 
 router.get('/', async (req, res) => {
   try {
@@ -64,30 +59,19 @@ router.get('/', async (req, res) => {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'id is required' });
     }
 
-    // `priced`: has the slider ever written a price for this group? A step moves steps above 0; a reset to RRP that changed the price
-    // is a reset event whose prices differ (one already at RRP writes no price). Either means price_change_log / amz_price_log rows point at this group's work, so it must stay as history.
+    // `priced`: has the slider ever written a price for this group? Every price it writes (a step, the lift, a reset that changed the
+    // price) stamps the member's last_log_id, which is NULL until then. Either way price_change_log / amz_price_log rows point at this
+    // group's work, so it must stay as history.
     const g = await query(`
       SELECT g.id, g.name, g.channel, g.state, g.step_pct, g.every_days, g.floor_pct, g.floor_breakeven, g.stop_after_sales,
              g.due_date::text AS due_date, g.notes, g.created_by, g.created_at, g.updated_by, g.updated_at, g.ended_at,
-             EXISTS (SELECT 1 FROM slider_member m WHERE m.group_id = g.id AND m.steps > 0)
-               OR EXISTS (SELECT 1 FROM slider_event e WHERE e.group_id = g.id AND e.event = 'reset'
-                                         AND e.old_price IS DISTINCT FROM e.new_price) AS priced
+             EXISTS (SELECT 1 FROM slider_member m WHERE m.group_id = g.id AND m.last_log_id IS NOT NULL) AS priced
       FROM slider_group g WHERE g.id = $1
     `, [id]);
     if (g.rows.length === 0) return res.json({ return_code: 'NOT_FOUND', message: 'Slider not found' });
     const r = g.rows[0];
 
-    const [members, events] = await Promise.all([
-      loadMembers({ groupIds: [id] }),
-      query(`
-        SELECT e.id, e.event, m.item_key AS item, e.old_price, e.new_price, e.detail, e.created_by, e.created_at
-        FROM slider_event e
-        LEFT JOIN slider_member m ON m.id = e.member_id
-        WHERE e.group_id = $1
-        ORDER BY e.created_at DESC, e.id DESC
-        LIMIT ${EVENT_LIMIT}
-      `, [id]),
-    ]);
+    const members = await loadMembers({ groupIds: [id] });
 
     return res.json({
       return_code: 'SUCCESS',
@@ -112,16 +96,6 @@ router.get('/', async (req, res) => {
         priced: r.priced,
       },
       members,
-      events: events.rows.map((e) => ({
-        id: e.id,
-        event: e.event,
-        item: e.item || null,
-        old_price: num(e.old_price),
-        new_price: num(e.new_price),
-        detail: e.detail,
-        created_by: e.created_by,
-        created_at: iso(e.created_at),
-      })),
     });
   } catch (err) {
     logger.error('[slider-group] error:', err.message);
