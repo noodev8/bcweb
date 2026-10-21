@@ -171,6 +171,20 @@ HOT / WARM / COLD — the three presets' ON-SCREEN names since 2026-09-27 (owner
       over £3, sold in 6 months. COLD = sold before, not in 6 months — every such size (until 2026-10-12 a slip in its "would be
       Warm" check also dropped the ones with a > £3 unit profit, half of Cold on the day).
 
+BOOST (owner, 2026-10-21) — a Warm-only lever beside Pick keep. Warm runs from just over £3 a unit to just under the Hot line (~£16),
+      and the rate fill reads units sold only, so a £12 size and a £3.50 size that each sold once got the same 1–2 units. A £10+ size
+      is ONE more sale a month from Hot, and at 0 on Amazon that sale can't happen — so it stays Warm while the season runs out.
+      The dialog picks sizes by unit profit (£1 steps, default £10+), FBA TOTAL 0 / ≤1 / ≤2 (default 0 — total, not live, owner's
+      call: units already inbound or on order are being refilled, and boosting them is the double order fba_total exists to stop), and
+      multiplies that size's whole basket need (Order + Pick) by ×2 / ×3; 0 becomes 1. Extra units go to PICK FIRST, above Pick keep, then Order — the fill's
+      own split; Can't get leaves Order alone. NO SEASON TEST (owner, 2026-10-21 — "ignore season for the boost. Can't get will
+      filter them out naturally"): an in-season tick was built and taken out the same day; a style the supplier has finished with is
+      marked Can't get, and one still sold while in stock is worth having. It previews the whole basket now and after (numbers only, no item list — owner), and writes nothing until
+      Apply — and Apply only writes the boxes (scratchpad), Confirm Basket sends them as ever. Enabled only on the WHOLE Warm list
+      (cuts allowed; any search step or season filter disables it). Applying again works from the pre-boost numbers, never on top;
+      a size stops counting as boosted the moment its boxes are rewritten (a rate fill, a Pick keep change, a hand edit, a send) — so
+      boost AFTER the rate fill. planBoost holds the arithmetic.
+
 NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 an Amazon
       Repricing status list linked here with ?status=&bar= and the screen showed only that list's SKUs behind a "Repricing: Winners"
       chip. Both the link and this end of it are gone; the screen always opens on every SKU (a ?q= arrival still seeds a search).
@@ -193,7 +207,7 @@ CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, CloudIcon, ShoppingCartIcon,
-  FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon, MinusIcon, PlusIcon,
+  FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon, MinusIcon, PlusIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -448,6 +462,217 @@ function isHot(r: AmazonOrderRow, hotBar: number | null): boolean {
 // Warm = not Hot, last-sale unit profit over the floor (£3), and an Amazon sale in 6 months (the sticky-figure guard above).
 function isWarm(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
   return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
+}
+
+/*
+ * BOOST — Warm's extra lever (owner, 2026-10-21). See BOOST in the header for the why; this is the arithmetic, kept pure so the
+ * dialog's preview and its Apply can never disagree.
+ *
+ * A size qualifies on two tests: unit profit >= minProfit, and FBA TOTAL <= fbaMax (live + inbound + on order + picked — not FBA live,
+ * owner's call: 0 live with units on their way is already being refilled, and boosting it re-creates the double order fba_total was
+ * built to stop). No season test — see BOOST in the header.
+ *
+ * The boost is on the size's WHOLE need (Order + Pick), x factor, and 0 becomes 1. The extra units go to PICK FIRST, up to the shelf
+ * above Pick keep, and Order buys the rest — the same split fillCoverage uses (owner: "pick first"). A live Can't get mark leaves the
+ * Order half alone, as the fill does.
+ *
+ * `bases` holds the pre-boost numbers of sizes still carrying an earlier boost, so a second Apply works from those rather than
+ * multiplying the boost again; a boosted size that no longer qualifies under the new settings goes back to its base.
+ */
+const BOOST_FBA_OPTIONS = [0, 1, 2] as const;
+const BOOST_FACTOR_OPTIONS = [2, 3] as const; // ×1 went the same day (owner) — all it did was turn empty boxes into 1, which ×2 does too
+interface BoostSettings { minProfit: number; fbaMax: number; factor: number }
+const BOOST_DEFAULTS: BoostSettings = { minProfit: 10, fbaMax: 0, factor: 2 };
+interface HalfQty { order: number; pick: number }
+interface BoostLine { row: AmazonOrderRow; now: HalfQty; base: HalfQty; after: HalfQty; restore: boolean }
+interface BoostPlan { lines: BoostLine[]; cantGet: number }
+
+function boxQty(raw: string | undefined): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function planBoost(
+  candidates: AmazonOrderRow[], s: BoostSettings, qty: Record<BasketHalf, Record<string, string>>,
+  bases: Map<string, HalfQty>, keep: number,
+): BoostPlan {
+  const lines: BoostLine[] = [];
+  let cantGet = 0;
+  for (const r of candidates) {
+    if (!r.on_amazon || isBirkenstock(r) || isLoss(r) || r.unit_profit === null) continue;
+    const now = { order: boxQty(qty.order[r.code]), pick: boxQty(qty.pick[r.code]) };
+    const base = bases.get(r.code) ?? now;
+    if (r.unit_profit < s.minProfit || r.fba_total > s.fbaMax) {
+      if (bases.has(r.code)) lines.push({ row: r, now, base, after: base, restore: true });
+      continue;
+    }
+    const need = base.order + base.pick;
+    const extra = (need === 0 ? 1 : need * s.factor) - need;
+    const pickAdd = Math.min(extra, Math.max(0, r.local_stock - keep - base.pick));
+    const orderAdd = r.no_supply || !r.supplier ? 0 : extra - pickAdd; // no supplier = nothing to place an order line against
+    if (extra > 0 && pickAdd + orderAdd === 0) { cantGet++; continue; }
+    const after = { order: base.order + orderAdd, pick: base.pick + pickAdd };
+    if (after.order !== now.order || after.pick !== now.pick) lines.push({ row: r, now, base, after, restore: false });
+  }
+  return { lines, cantGet };
+}
+
+// What the whole basket holds — both halves, every row, with the Order half's buy-in cost. The dialog shows it before and after.
+interface BasketSum { order: number; pick: number; cost: number; unpriced: number }
+
+interface BoostDialogProps {
+  candidates: AmazonOrderRow[];
+  qty: Record<BasketHalf, Record<string, string>>;
+  bases: Map<string, HalfQty>;
+  pickKeep: number;
+  initial: BoostSettings;
+  basket: BasketSum;
+  onApply: (plan: BoostPlan, settings: BoostSettings) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}
+function BoostDialog({ candidates, qty, bases, pickKeep, initial, basket, onApply, onRemove, onClose }: BoostDialogProps) {
+  const [s, setS] = useState<BoostSettings>(initial);
+  const plan = useMemo(() => planBoost(candidates, s, qty, bases, pickKeep), [candidates, s, qty, bases, pickKeep]);
+  const boosted = plan.lines.filter((l) => !l.restore);
+  const restored = plan.lines.length - boosted.length;
+
+  // The change the Apply makes to the basket, from what the boxes hold NOW (a restore can make it negative).
+  const delta: BasketSum = { order: 0, pick: 0, cost: 0, unpriced: 0 };
+  for (const l of plan.lines) {
+    const dOrder = l.after.order - l.now.order;
+    delta.order += dOrder;
+    delta.pick += l.after.pick - l.now.pick;
+    if (l.row.cost === null) delta.unpriced += dOrder; else delta.cost += dOrder * l.row.cost;
+  }
+  const after: BasketSum = {
+    order: basket.order + delta.order, pick: basket.pick + delta.pick, cost: basket.cost + delta.cost,
+    unpriced: basket.unpriced + delta.unpriced,
+  };
+  // NOW is the basket WITHOUT any boost still standing on screen (each boosted size back at its base), so the Boost column is always
+  // what boosting adds to the ORIGINAL basket — never negative, and the same figure however many times Apply has been pressed (owner).
+  const original: BasketSum = { ...basket };
+  for (const [code, base] of bases) {
+    const r = candidates.find((c) => c.code === code);
+    const dOrder = boxQty(qty.order[code]) - base.order;
+    original.order -= dOrder;
+    original.pick -= boxQty(qty.pick[code]) - base.pick;
+    if (!r || r.cost === null) original.unpriced -= dOrder; else original.cost -= dOrder * r.cost;
+  }
+  const added = { order: after.order - original.order, pick: after.pick - original.pick, cost: Math.max(0, after.cost - original.cost) }; // max: float dust can read -0.00
+
+  // Escape closes, like the page's other dialogs. The page's own list keys are off while this is open (see useListCursor's enabled).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const minProfitFloor = 4; // Warm starts over £3, so £4 is the lowest bar that can still narrow it
+  const seg = (on: boolean) => 'rounded px-2.5 py-1 text-sm font-medium tabular-nums ' + (on ? SEG_ON : SEG_OFF);
+  const step = (dir: 1 | -1) => setS((p) => ({ ...p, minProfit: Math.max(minProfitFloor, p.minProfit + dir) }));
+
+  const gbp = (v: number) => v.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
+  const notes = [
+    added.pick > 0 && `${added.pick} unit${added.pick === 1 ? '' : 's'} also picked from the shelf`,
+    restored > 0 && `${restored} earlier boost${restored === 1 ? '' : 's'} put back`,
+    plan.cantGet > 0 && `${plan.cantGet} Can’t get skipped`,
+    after.unpriced > 0 && `${after.unpriced} unit${after.unpriced === 1 ? '' : 's'} with no cost`,
+  ].filter(Boolean);
+
+  // THREE LAYERS (owner, 2026-10-21 — "looks bolted on"): the levers on a tinted band, then the answer as TWO BIG NUMBERS — Order
+  // units and cost after the boost, the figures the decision is made on — each with what the boost added underneath, then the
+  // buttons. Pick has no figure of its own (rarely used); a line says so when a boost does pick. Amber is Boost's colour (the
+  // panel button's bolt); emerald stays reserved for Confirm Basket, the one control that writes to the database.
+  const lever = 'flex flex-col gap-1.5';
+  const leverLabel = 'text-[11px] font-semibold uppercase tracking-wider text-slate-500';
+  const box = 'flex items-center gap-0.5 rounded-md border border-slate-300 bg-white p-0.5 shadow-sm';
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-12" onClick={onClose}>
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="Boost Warm" onClick={(e) => e.stopPropagation()}>
+        <header className="flex items-center gap-3 px-6 pb-4 pt-5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <BoltIcon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold leading-tight text-slate-900">Boost Warm</h2>
+            <p className="text-sm text-slate-500">More stock for the high-margin Warm sizes on screen</p>
+          </div>
+          <button type="button" onClick={onClose} className="ml-auto self-start rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </header>
+
+        <div className="grid grid-cols-3 gap-4 border-y border-slate-200 bg-slate-50 px-6 py-4">
+          <div className={lever}>
+            <span className={leverLabel}>Profit / unit</span>
+            <div className={box + ' w-fit'}>
+              <button type="button" onClick={() => step(-1)} disabled={s.minProfit <= minProfitFloor} aria-label="£1 less"
+                className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"><MinusIcon className="h-4 w-4" /></button>
+              <span className="w-12 text-center text-sm font-semibold tabular-nums text-slate-900">£{s.minProfit}+</span>
+              <button type="button" onClick={() => step(1)} aria-label="£1 more"
+                className="rounded p-1 text-slate-600 hover:bg-slate-100"><PlusIcon className="h-4 w-4" /></button>
+            </div>
+          </div>
+          <div className={lever} title="FBA Total — live, inbound, on order and picked. Stock already on its way isn't boosted.">
+            <span className={leverLabel}>FBA total</span>
+            <div className={box + ' w-fit'}>
+              {BOOST_FBA_OPTIONS.map((n) => (
+                <button key={n} type="button" onClick={() => setS((p) => ({ ...p, fbaMax: n }))} className={seg(s.fbaMax === n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={lever}>
+            <span className={leverLabel}>Boost</span>
+            <div className={box + ' w-fit'}>
+              {BOOST_FACTOR_OPTIONS.map((n) => (
+                <button key={n} type="button" onClick={() => setS((p) => ({ ...p, factor: n }))}
+                  className={'rounded px-2.5 py-1 text-sm font-medium tabular-nums ' + (s.factor === n ? 'bg-amber-100 text-amber-800' : SEG_OFF)}>
+                  ×{n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-5">
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              ['Order units', String(after.order), `${added.order} added to ${original.order}`],
+              ['Order cost', gbp(after.cost), `${gbp(added.cost)} added to ${gbp(original.cost)}`],
+            ] as const).map(([label, big, sub]) => (
+              <div key={label} className="rounded-xl border border-slate-200 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">{label} after boost</p>
+                <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{big}</p>
+                <p className="mt-1 text-xs tabular-nums text-amber-700">{sub}</p>
+              </div>
+            ))}
+          </div>
+          {plan.lines.length === 0 && <p className="mt-3 text-sm text-slate-500">Nothing to boost at these settings.</p>}
+          {notes.length > 0 && <p className="mt-3 text-xs text-slate-500">{notes.join(' · ')}</p>}
+        </div>
+
+        <footer className="flex items-center gap-2 border-t border-slate-200 px-6 py-3">
+          {bases.size > 0 && (
+            <button type="button" onClick={onRemove} className="text-sm font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline">
+              Remove boost
+            </button>
+          )}
+          <button type="button" onClick={onClose}
+            className="ml-auto rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
+            Cancel
+          </button>
+          <button type="button" onClick={() => onApply(plan, s)} disabled={plan.lines.length === 0}
+            className="flex items-center gap-1.5 rounded-md bg-slate-800 px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none">
+            <BoltIcon className="h-4 w-4" />
+            Apply boost
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
 }
 
 // A ref callback that keeps `set` fed with the element's live height, and zeroed when it unmounts. Used for the two pieces of
@@ -1517,6 +1742,78 @@ function AmazonOrderContent() {
     return { total, unpriced };
   }, [orderOnScreen, rowByCode]);
 
+  // BOOST (owner, 2026-10-21) — see BOOST in the header and planBoost above. Only on the WHOLE Warm list: no search step, no season
+  // filter, listed SKUs only. Cuts are allowed — they are how the operator works the list down first.
+  const boostReady = potentialOnly && includes.length === 0 && excludes.length === 0 && seasonFilter === null
+    && listing === 'on' && supplyOn && !ordering;
+  const boostWhyNot = !potentialOnly ? 'Boost works on Warm only' : !boostReady ? 'Boost works on the whole Warm list — no search or season filter' : undefined;
+  const boostCandidates = useMemo(() => (boostReady ? visible.filter((r) => r.on_amazon) : NO_ROWS), [boostReady, visible]);
+  const [boostOpen, setBoostOpen] = useState(false);
+  const [boostSettings, setBoostSettings] = useState<BoostSettings>(BOOST_DEFAULTS);
+  // What the last Applies did per size: the numbers before (base) and the numbers written (set). A boost is LIVE only while the boxes
+  // still read what it wrote — a rate fill, a Pick keep change, a hand edit, a send or a clear all rewrite the boxes, and that size
+  // quietly stops being boosted without any of them having to know Boost exists. Scratchpad only, like the basket; lost on reload.
+  const [boostLog, setBoostLog] = useState<Record<string, { base: HalfQty; set: HalfQty }>>({});
+  const boostBases = useMemo(() => {
+    const m = new Map<string, HalfQty>();
+    for (const [code, l] of Object.entries(boostLog)) {
+      if (boxQty(qtyByHalf.order[code]) === l.set.order && boxQty(qtyByHalf.pick[code]) === l.set.pick) m.set(code, l.base);
+    }
+    return m;
+  }, [boostLog, qtyByHalf]);
+  // Bases for the sizes the dialog can act on — a boosted size cut since stays boosted and out of reach, rather than being put back
+  // from a screen that can't show it.
+  const boostBasesOnScreen = useMemo(
+    () => new Map([...boostBases].filter(([code]) => boostCandidates.some((r) => r.code === code))),
+    [boostBases, boostCandidates],
+  );
+  const boostedOnScreen = boostBasesOnScreen.size > 0;
+  const basketSum = useMemo<BasketSum>(() => {
+    const sum: BasketSum = { order: orderUnits, pick: pickUnits, cost: 0, unpriced: 0 };
+    for (const t of orderTargets) {
+      const cost = rowByCode.get(t.code)?.cost ?? null;
+      if (cost === null) sum.unpriced += t.qty; else sum.cost += t.qty * cost;
+    }
+    return sum;
+  }, [orderUnits, pickUnits, orderTargets, rowByCode]);
+
+  // Writes a plan's lines into the boxes (an empty half is deleted, never written as 0) and records them in the boost log.
+  function writeBoost(lines: BoostLine[]) {
+    setQtyByHalf((prev) => {
+      const order = { ...prev.order };
+      const pick = { ...prev.pick };
+      for (const l of lines) {
+        if (l.after.order > 0) order[l.row.code] = String(l.after.order); else delete order[l.row.code];
+        if (l.after.pick > 0) pick[l.row.code] = String(l.after.pick); else delete pick[l.row.code];
+      }
+      return { order, pick };
+    });
+    setBoostLog((prev) => {
+      const next = { ...prev };
+      for (const l of lines) {
+        if (l.restore) delete next[l.row.code];
+        else next[l.row.code] = { base: l.base, set: l.after };
+      }
+      return next;
+    });
+  }
+  function applyBoost(plan: BoostPlan, settings: BoostSettings) {
+    writeBoost(plan.lines);
+    setBoostSettings(settings);
+    setBoostOpen(false);
+  }
+  // Puts every boosted size on screen back to its pre-boost numbers.
+  function removeBoost() {
+    const lines: BoostLine[] = [];
+    for (const [code, base] of boostBasesOnScreen) {
+      const row = rowByCode.get(code);
+      if (row) lines.push({ row, now: base, base, after: base, restore: true });
+    }
+    writeBoost(lines);
+    setBoostOpen(false);
+  }
+  const closeBoost = useCallback(() => setBoostOpen(false), []);
+
   // Keyboard movement over the visible rows. Keys are the VISIBLE rows only, so a cut row can never be arrowed onto and every move
   // lands on something on screen.
   //
@@ -1530,7 +1827,8 @@ function AmazonOrderContent() {
   const cursorKeys = useMemo(() => visible.map((r) => r.code), [visible]);
   const cursor = useListCursor({
     keys: cursorKeys,
-    enabled: !loading && !error,
+    // Off while the Boost dialog is open — Enter would otherwise cut the selected rows behind it.
+    enabled: !loading && !error && !boostOpen,
     onMove: (code) => selectOnly(code),
     // Enter cuts what's blue — the whole selection, not one row. With a single highlight there's no longer a "current row" that
     // could differ from it, so the old single-row Enter would have been cutting an invisible subset of what the screen shows.
@@ -1961,6 +2259,22 @@ function AmazonOrderContent() {
               ))}
             </select>
           </div>
+
+          {/* BOOST — Warm only, always on the panel so the row never moves; disabled (with the reason as its title) off the whole
+              Warm list. Fixed width: "Boosted ×2" must not re-wrap the row. See BOOST in the header. */}
+          <button
+            type="button"
+            onClick={() => setBoostOpen(true)}
+            disabled={!boostReady}
+            title={boostWhyNot ?? 'Order more of the high-margin Warm sizes'}
+            className={
+              'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
+              + (boostedOnScreen ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+            }
+          >
+            <BoltIcon className={'h-4 w-4 ' + (boostReady ? 'text-amber-500' : '')} />
+            {boostedOnScreen ? `Boosted ×${boostSettings.factor}` : 'Boost'}
+          </button>
 
           {/* SELECTION ACTIONS — Can't get and Cut act on the selected rows (see CLICK, SELECT, EXPAND in the header). Both are a
               FIXED width with no count: a width that moved with the selection re-wrapped this row and made the sticky panel jump. Left, straight after the fill controls, so the row reads: set up the fill, deal with the rows, then send. */}
@@ -2491,6 +2805,19 @@ function AmazonOrderContent() {
             </div>
           )}
         </div>
+      )}
+      {boostOpen && boostReady && (
+        <BoostDialog
+          candidates={boostCandidates}
+          qty={qtyByHalf}
+          bases={boostBasesOnScreen}
+          pickKeep={pickKeep}
+          initial={boostSettings}
+          basket={basketSum}
+          onApply={applyBoost}
+          onRemove={removeBoost}
+          onClose={closeBoost}
+        />
       )}
     </AppShell>
   );
