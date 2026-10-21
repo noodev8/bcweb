@@ -71,7 +71,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon,
+  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -266,6 +266,15 @@ const GROUPS: Group[] = [
         description: 'Every Shopify product with a single image, Winners and in-stock first — open one to add its pictures.',
         href: '/images-missing',
         icon: PhotoIcon,
+      },
+      {
+        // Mining for NEW products on Amazon (owner, 2026-10-21) — the team's shared list of finds, beside New Products. Research only:
+        // no links from it to pricing or ordering.
+        title: 'Prospects',
+        subtitle: 'New products to look into',
+        description: 'Log finds from Amazon — rank, price, sellers — check them again later, share notes, then order or delete.',
+        href: '/prospects',
+        icon: LightBulbIcon,
       },
       {
         title: 'New Products',

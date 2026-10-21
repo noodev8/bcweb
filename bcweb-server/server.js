@@ -361,6 +361,15 @@ app.use('/slider-add', require('./routes/slider-add'));                     // P
 app.use('/slider-remove', require('./routes/slider-remove'));               // POST: take products out, price left as is — WRITES slider_member
 app.use('/slider-reset', require('./routes/slider-reset'));                 // POST: one product back to RRP + out — WRITES PRICES (W1 / W-A1)
 app.use('/slider-step', require('./routes/slider-step'));                   // POST: one product's next press (step / lift / hold / found…) — WRITES PRICES (W1)
+
+// --- Prospects (2026-10-21): the shared notepad of possible NEW products found on Amazon. Light on purpose; a delete is a real delete.
+// Nothing here touches our products or prices — the only link to our stock is the read-only "do we already have it?".
+app.use('/prospect-list', require('./routes/prospect-list'));               // GET: every line + its checks, notes and "have it" — READ ONLY
+app.use('/prospect-have', require('./routes/prospect-have'));               // GET ?term: search our catalogue — READ ONLY
+app.use('/prospect-save', require('./routes/prospect-save'));               // POST: add / edit a line — WRITES prospect
+app.use('/prospect-check-add', require('./routes/prospect-check-add'));     // POST: rank / price / sellers seen — WRITES prospect_check
+app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // POST: a note on a line — WRITES prospect_note
+app.use('/prospect-delete', require('./routes/prospect-delete'));           // POST: delete a line / check / note for good — WRITES
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.

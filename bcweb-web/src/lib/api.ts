@@ -4716,4 +4716,47 @@ export async function logScreenView(path: string): Promise<void> {
   }
 }
 
+// --- Prospects (2026-10-21) — the shared notepad of possible NEW products found on Amazon. One line = one style; checks are rank /
+// price / sellers typed by hand (size optional — rank differs by size); notes are a thread. A delete is a real delete.
+export type ProspectRating = 'diamond' | 'good' | 'sketchy';
+export interface ProspectCheck {
+  id: number; size: string | null; asin: string | null; rank: number | null; price: number | null; sellers: number | null;
+  checked_by: string; checked_at: string;
+}
+export interface ProspectNote { id: number; body: string; created_by: string; created_at: string }
+export interface Prospect {
+  id: number; name: string; asin: string | null; rating: ProspectRating | null; owner: string;
+  created_at: string; updated_at: string | null;
+  have: { groupid: string } | null;   // one of our Amazon listings carries an ASIN on this line
+  checks: ProspectCheck[];            // oldest first
+  notes: ProspectNote[];              // oldest first
+}
+export function getProspects() {
+  return request<Prospect[]>({ url: '/prospect-list', method: 'GET' }, (b) => b.rows || []);
+}
+export interface ProspectHaveRow { groupid: string; title: string | null; brand: string | null; in_stock: boolean }
+export function findInCatalogue(term: string) {
+  return request<{ results: ProspectHaveRow[]; truncated: boolean }>(
+    { url: '/prospect-have', method: 'GET', params: { term } },
+    (b) => ({ results: b.results || [], truncated: !!b.truncated })
+  );
+}
+// amazon = an ASIN or any Amazon product URL ('' clears it). ALREADY_LISTED = that ASIN is on another line (the message names it).
+// check = the first check, on add only (saved in the same transaction).
+export function saveProspect(args: {
+  id?: number; name: string; amazon: string; rating: ProspectRating | null;
+  check?: { size: string; rank: string; price: string; sellers: string };
+}) {
+  return request<{ id: number }>({ url: '/prospect-save', method: 'POST', data: args }, (b) => ({ id: b.id }));
+}
+export function addProspectCheck(args: { prospect_id: number; size: string; amazon: string; rank: string; price: string; sellers: string }) {
+  return request<{ id: number }>({ url: '/prospect-check-add', method: 'POST', data: args }, (b) => ({ id: b.id }));
+}
+export function addProspectNote(prospect_id: number, body: string) {
+  return request<{ id: number }>({ url: '/prospect-note-add', method: 'POST', data: { prospect_id, body } }, (b) => ({ id: b.id }));
+}
+export function deleteProspectItem(kind: 'prospect' | 'check' | 'note', id: number) {
+  return request<null>({ url: '/prospect-delete', method: 'POST', data: { kind, id } }, () => null);
+}
+
 export default api;
