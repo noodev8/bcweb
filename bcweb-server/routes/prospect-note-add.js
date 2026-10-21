@@ -7,7 +7,7 @@ Purpose: Add a note to a Prospects line — the team's thread on it ("38 is the 
          who wrote it. Replaces emailing finds back and forth. WRITES prospect_note (and touches prospect.updated_at). Requires auth.
 =======================================================================================================================================
 Request Payload:
-{ "prospect_id": 4, "body": "38 is the one selling" }   // body up to 2000 chars
+{ "prospect_id": 4, "body": "38 is the one selling" }   // body up to 10,000 chars — free text, any length
 
 Success Response:
 { "return_code": "SUCCESS", "id": 2 }
@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body || {};
     const prospectId = Number(body.prospect_id);
-    const text = typeof body.body === 'string' ? body.body.trim().slice(0, 2000) : '';
+    const text = typeof body.body === 'string' ? body.body.trim().slice(0, 10000) : '';
     if (!Number.isInteger(prospectId) || prospectId < 1 || !text) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'Write a note first' });
     }

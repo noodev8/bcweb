@@ -7,13 +7,15 @@ Purpose: Add a line to Prospects, or edit one (name, Amazon link/ASIN, rating). 
          change on an edit. The ASIN is pulled out of whatever was pasted — a bare ASIN or any Amazon product URL (utils/prospect.js).
          Refuses an ASIN that is already on another line, naming it and who added it, so two people don't research the same listing.
          A NEW line can carry its first check (what you see on Amazon right now) — saved in the same transaction, so a refused check
-         never leaves a half-added line. WRITES prospect (+ prospect_check on add). Requires auth.
+         never leaves a half-added line. WRITES prospect (+ prospect_check / prospect_note on add). Requires auth.
 =======================================================================================================================================
 Request Payload:
 { "id": 4,                                   // omit to add a new line
   "name": "Rieker Y3453 ankle boot black",   // required, up to 200 chars
   "amazon": "https://www.amazon.co.uk/dp/B0C1234567/...",   // optional — ASIN or URL; "" clears it
   "rating": "diamond",                       // optional — 'diamond' | 'good' | 'sketchy' | null
+  "rrp": "89.95",                            // optional — free text, to guess the profit; OMIT to leave it as it is
+  "comment": "free text…",                   // optional, add only — the line's first comment (prospect_note), same transaction
   "check": { "rank": "2,140", "price": "64.99", "sellers": "3", "size": "" } }   // optional, add only — as prospect-check-add
 
 Success Response:
@@ -34,7 +36,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck } = require('../utils/prospect');
+const { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull } = require('../utils/prospect');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -48,6 +50,10 @@ router.post('/', async (req, res) => {
     if (!name || (id !== null && (!Number.isInteger(id) || id < 1)) || (rating !== null && !RATINGS.includes(rating))) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'A name is required' });
     }
+    // The first comment, add only (the add form's Comments box). Up to 10,000 chars; blank = none.
+    const comment = id === null ? textOrNull(body.comment, 10000) : null;
+    const hasRrp = typeof body.rrp === 'string';
+    const rrp = hasRrp ? textOrNull(body.rrp, 30) : null;
     const amazon = typeof body.amazon === 'string' ? body.amazon.trim() : '';
     const asin = amazon ? parseAsin(amazon) : null;
     if (amazon && !asin) {
@@ -71,8 +77,8 @@ router.post('/', async (req, res) => {
       }
       if (id === null) {
         const ins = await client.query(
-          `INSERT INTO prospect (name, asin, rating, owner) VALUES ($1, $2, $3, $4) RETURNING id`,
-          [name, asin, rating, req.user.display_name]
+          `INSERT INTO prospect (name, asin, rating, owner, rrp) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [name, asin, rating, req.user.display_name, rrp]
         );
         const newId = ins.rows[0].id;
         if (check) {
@@ -81,10 +87,17 @@ router.post('/', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
           `, [newId, check.size, check.asin, check.rank, check.price, check.sellers, req.user.display_name]);
         }
+        if (comment) {
+          await client.query(
+            `INSERT INTO prospect_note (prospect_id, body, created_by) VALUES ($1, $2, $3)`, [newId, comment, req.user.display_name]
+          );
+        }
         return { id: newId };
       }
       const upd = await client.query(
-        `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now() WHERE id = $1`, [id, name, asin, rating]
+        `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now(),
+                rrp = CASE WHEN $5::boolean THEN $6 ELSE rrp END
+          WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp]
       );
       if (upd.rowCount === 0) return { error: 'NOT_FOUND', message: 'That line has been deleted' };
       return { id };

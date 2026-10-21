@@ -4720,12 +4720,13 @@ export async function logScreenView(path: string): Promise<void> {
 // price / sellers typed by hand (size optional — rank differs by size); notes are a thread. A delete is a real delete.
 export type ProspectRating = 'diamond' | 'good' | 'sketchy';
 export interface ProspectCheck {
-  id: number; size: string | null; asin: string | null; rank: number | null; price: number | null; sellers: number | null;
+  id: number; size: string | null; asin: string | null; rank: string | null; price: string | null; sellers: string | null;   // free text, as typed
   checked_by: string; checked_at: string;
 }
 export interface ProspectNote { id: number; body: string; created_by: string; created_at: string }
 export interface Prospect {
   id: number; name: string; asin: string | null; rating: ProspectRating | null; owner: string;
+  rrp: string | null;                 // typed by hand, free text — to guess the profit
   created_at: string; updated_at: string | null;
   have: { groupid: string } | null;   // one of our Amazon listings carries an ASIN on this line
   checks: ProspectCheck[];            // oldest first
@@ -4734,17 +4735,20 @@ export interface Prospect {
 export function getProspects() {
   return request<Prospect[]>({ url: '/prospect-list', method: 'GET' }, (b) => b.rows || []);
 }
-export interface ProspectHaveRow { groupid: string; title: string | null; brand: string | null; in_stock: boolean }
-export function findInCatalogue(term: string) {
-  return request<{ results: ProspectHaveRow[]; truncated: boolean }>(
-    { url: '/prospect-have', method: 'GET', params: { term } },
-    (b) => ({ results: b.results || [], truncated: !!b.truncated })
+// Duplicate check for an ASIN, asked as soon as a link is pasted: listed = already a line on Prospects; have = one of our Amazon listings.
+export interface ProspectAsinCheck { listed: { id: number; name: string; owner: string } | null; have: { groupid: string } | null }
+export function checkProspectAsin(asin: string, exclude?: number) {
+  return request<ProspectAsinCheck>(
+    { url: '/prospect-asin-check', method: 'GET', params: { asin, ...(exclude ? { exclude } : {}) } },
+    (b) => ({ listed: b.listed ?? null, have: b.have ?? null })
   );
 }
 // amazon = an ASIN or any Amazon product URL ('' clears it). ALREADY_LISTED = that ASIN is on another line (the message names it).
 // check = the first check, on add only (saved in the same transaction).
 export function saveProspect(args: {
   id?: number; name: string; amazon: string; rating: ProspectRating | null;
+  comment?: string;   // the first comment, add only
+  rrp?: string;       // omit = leave it as it is
   check?: { size: string; rank: string; price: string; sellers: string };
 }) {
   return request<{ id: number }>({ url: '/prospect-save', method: 'POST', data: args }, (b) => ({ id: b.id }));

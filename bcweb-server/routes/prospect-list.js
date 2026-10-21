@@ -14,10 +14,11 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "rows": [
-    { "id": 4, "name": "Rieker Y3453 ankle boot black", "asin": "B0C1234567", "rating": "diamond", "owner": "Andreas",
+    { "id": 4, "name": "Rieker Y3453 ankle boot black", "asin": "B0C1234567", "rating": "diamond", "rrp": "89.95" | null,
+      "owner": "Andreas",
       "created_at": "2026-10-21T09:12:00Z", "updated_at": null,
       "have": { "groupid": "RIE-Y3453-BLACK" } | null,
-      "checks": [ { "id": 9, "size": "38", "asin": null, "rank": 2140, "price": 64.99, "sellers": 3, "checked_by": "Summer",
+      "checks": [ { "id": 9, "size": "38", "asin": null, "rank": "58k", "price": "64.99", "sellers": "3", "checked_by": "Summer",
                     "checked_at": "..." } ],                      // oldest first
       "notes":  [ { "id": 2, "body": "38 is the one selling", "created_by": "Summer", "created_at": "..." } ] }   // oldest first
   ]
@@ -43,7 +44,7 @@ router.get('/', async (req, res) => {
     const [lines, checks, notes] = await Promise.all([
       // have: the first of our Amazon listings matching any ASIN on the line. amzfeed.asin is stored as-is, so compare upper-cased.
       query(`
-        SELECT p.id, p.name, p.asin, p.rating, p.owner, p.created_at, p.updated_at,
+        SELECT p.id, p.name, p.asin, p.rating, p.rrp, p.owner, p.created_at, p.updated_at,
                (SELECT f.groupid FROM amzfeed f
                  WHERE UPPER(TRIM(f.asin)) IN (SELECT p.asin UNION SELECT c.asin FROM prospect_check c WHERE c.prospect_id = p.id)
                  ORDER BY f.groupid LIMIT 1) AS have_groupid
@@ -60,7 +61,7 @@ router.get('/', async (req, res) => {
     const byId = new Map();
     const rows = lines.rows.map((p) => {
       const row = {
-        id: p.id, name: p.name, asin: p.asin, rating: p.rating, owner: p.owner,
+        id: p.id, name: p.name, asin: p.asin, rating: p.rating, rrp: p.rrp, owner: p.owner,
         created_at: p.created_at, updated_at: p.updated_at,
         have: p.have_groupid ? { groupid: p.have_groupid } : null,
         checks: [], notes: [],
@@ -71,7 +72,7 @@ router.get('/', async (req, res) => {
     for (const c of checks.rows) {
       byId.get(c.prospect_id)?.checks.push({
         id: c.id, size: c.size, asin: c.asin, rank: c.rank,
-        price: c.price === null ? null : Number(c.price), sellers: c.sellers,
+        price: c.price, sellers: c.sellers,   // free text, as typed
         checked_by: c.checked_by, checked_at: c.checked_at,
       });
     }

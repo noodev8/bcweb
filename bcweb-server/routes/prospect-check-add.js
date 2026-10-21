@@ -9,7 +9,7 @@ Purpose: Record one look at a Prospects line — rank, price and number of selle
          parsing is utils/prospect.js → parseCheck. WRITES prospect_check (and touches prospect.updated_at). Requires auth.
 =======================================================================================================================================
 Request Payload:
-{ "prospect_id": 4, "size": "38", "amazon": "B0C1234567", "rank": "2,140", "price": "64.99", "sellers": "3" }   // all but prospect_id optional
+{ "prospect_id": 4, "size": "38", "amazon": "B0C1234567", "rank": "58k", "price": "64.99", "sellers": "3" }   // all free text, all but prospect_id optional
 
 Success Response:
 { "return_code": "SUCCESS", "id": 9 }

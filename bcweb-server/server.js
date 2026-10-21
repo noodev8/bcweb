@@ -363,9 +363,9 @@ app.use('/slider-reset', require('./routes/slider-reset'));                 // P
 app.use('/slider-step', require('./routes/slider-step'));                   // POST: one product's next press (step / lift / hold / found…) — WRITES PRICES (W1)
 
 // --- Prospects (2026-10-21): the shared notepad of possible NEW products found on Amazon. Light on purpose; a delete is a real delete.
-// Nothing here touches our products or prices — the only link to our stock is the read-only "do we already have it?".
+// Nothing here touches our products or prices — the only link to our stock is the read-only DUPLICATE check (amzfeed ASINs).
 app.use('/prospect-list', require('./routes/prospect-list'));               // GET: every line + its checks, notes and "have it" — READ ONLY
-app.use('/prospect-have', require('./routes/prospect-have'));               // GET ?term: search our catalogue — READ ONLY
+app.use('/prospect-asin-check', require('./routes/prospect-asin-check'));   // GET ?asin: on the list already / one of ours? — READ ONLY
 app.use('/prospect-save', require('./routes/prospect-save'));               // POST: add / edit a line — WRITES prospect
 app.use('/prospect-check-add', require('./routes/prospect-check-add'));     // POST: rank / price / sellers seen — WRITES prospect_check
 app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // POST: a note on a line — WRITES prospect_note

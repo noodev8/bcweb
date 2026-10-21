@@ -10,26 +10,25 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
          Deliberately loose — "an extended Google Docs specific for us":
            - one line = one style: a name, an optional Amazon link/ASIN, an owner (who added it), a gut rating (Diamond / Good / Sketchy)
            - CHECKS: rank / price / sellers typed by hand each time someone looks (no scraping, no API — owner's call). Size is optional
-             because rank differs by size on the same listing; the line shows the latest check per size and how rank moved since the
-             check before ("was 4,200 on 19 Oct")
+             because rank differs by size on the same listing; the line shows the latest check per size, History shows them all (rank
+             changes are read by eye — owner)
            - NOTES: a thread with names, about any size or anything
            - DELETE IS FOR GOOD — a line, a check or a note. Nothing hangs around.
          Two tools: "WE HAVE IT" on a line when one of its ASINs is one of our Amazon listings, and "Do we have it?" — a search of our own
          catalogue. Both are yes/no on purpose: there are NO links to the pricing or order screens (owner: this is mining for new; managing
          existing stock is another process, and the research must not drift into repricing).
-         On the dashboard it is a tile in the Back Office card. One column: the toolbar (Do we have it? | Add a find), then the list.
+         On the dashboard it is a tile in the Back Office card. One column: the toolbar (paste an Amazon URL | Add a find), then the list.
 =======================================================================================================================================
 */
 
 import { useMemo, useState } from 'react';
-import { ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { useDebounced } from '@/lib/useDebounced';
 import {
-  addProspectCheck, addProspectNote, deleteProspectItem, findInCatalogue, getProspects, saveProspect,
-  Prospect, ProspectCheck, ProspectRating,
+  addProspectCheck, addProspectNote, checkProspectAsin, deleteProspectItem, getProspects, saveProspect,
+  Prospect, ProspectRating,
 } from '@/lib/api';
 
 const NO_ROWS: Prospect[] = [];
@@ -60,26 +59,38 @@ function fmtWhen(iso: string): string {
   if (d < 7) return `${d}d ago`;
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
 }
-const fmtRank = (n: number) => n.toLocaleString('en-GB');
-const fmtMoney = (n: number) => `£${n.toFixed(2)}`;
+// Rank / price / sellers are free text, shown as typed. A plain number gets a £ in front when it's a price.
+const fmtMoney = (t: string) => (/^[0-9]+([.][0-9]+)?$/.test(t) ? `£${t}` : t);
 
-// The latest check of each size (no size = the listing as a whole), each with the check before it of the SAME size, so rank movement
-// compares like with like. Ordered by most recent first.
-function latestBySize(checks: ProspectCheck[]): { cur: ProspectCheck; prev: ProspectCheck | null }[] {
-  const by = new Map<string, ProspectCheck[]>();
-  for (const c of checks) {   // checks arrive oldest first
-    const k = (c.size || '').toUpperCase();
-    if (!by.has(k)) by.set(k, []);
-    by.get(k)!.push(c);
-  }
-  return [...by.values()]
-    .map((list) => {
-      const cur = list[list.length - 1];
-      // The previous check that had a rank, so "was X" is always a rank the screen can compare against.
-      const prev = [...list.slice(0, -1)].reverse().find((c) => c.rank !== null) || null;
-      return { cur, prev };
-    })
-    .sort((a, b) => b.cur.checked_at.localeCompare(a.cur.checked_at));
+
+// Most Amazon product links carry the product name before /dp/: amazon.co.uk/Rieker-Womens-Y3453-Ankle-Boots/dp/B0C1234567/...
+// Pasting a link into an empty "What is it" fills it from that (owner, 2026-10-21: "I'm pasting the Amazon URL and then thinking of a
+// title"). Nothing is fetched — it is only the text of the link. '' when the link has no name in it (a bare /dp/B0… link).
+function nameFromAmazonUrl(url: string): string {
+  const m = url.trim().match(/amazon\.[a-z.]+\/([^/?#]+)\/(?:dp|gp\/product)\//i);
+  if (!m) return '';
+  let slug = m[1];
+  try { slug = decodeURIComponent(slug); } catch { /* a malformed %-escape: use it as it is */ }
+  // A hyphen between two digits is part of a model number (Rieker "Z4263-24" = style + colour), so it stays; every other -, _ or +
+  // is a word break.
+  return slug.replace(/(?<![0-9])-|-(?![0-9])|[_+]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+// The ASIN out of a product link (the 10 characters after /dp/ or /gp/product/); null when it isn't such a link — a bare ASIN being
+// typed stays as typed. The server parses it again (utils/prospect.js → parseAsin), so this is only to tidy the box.
+function asinFromAmazonUrl(v: string): string | null {
+  const m = v.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Za-z0-9]{10})(?=[/?#]|$)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Opens the product's Amazon page in a new tab — the ASIN is all the link needs (amazon.co.uk/dp/<ASIN>).
+function AmazonLink({ asin, label }: { asin: string; label: string }) {
+  return (
+    <a href={`https://www.amazon.co.uk/dp/${asin}`} target="_blank" rel="noopener noreferrer"
+      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+      {label} <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+    </a>
+  );
 }
 
 function lastActivity(p: Prospect): string {
@@ -92,7 +103,11 @@ export default function ProspectsPage() {
   const q = useApiQuery('prospect-list', getProspects);
   const rows = q.data ?? NO_ROWS;
 
-  const [adding, setAdding] = useState(false);
+  // The add form, open or not. seed = the Amazon link it was opened with (from the toolbar box); key remounts it for a new paste.
+  const [adding, setAdding] = useState<{ seed: string; key: number } | null>(null);
+  const [paste, setPaste] = useState('');
+  // The one find open for editing; the rest are narrow rows (owner, 2026-10-21: "Only edit one at a time").
+  const [openId, setOpenId] = useState<number | null>(null);
   const [mine, setMine] = useState(false);
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState('');
@@ -117,21 +132,39 @@ export default function ProspectsPage() {
 
   return (
     <AppShell title="Prospects">
-      {/* One column, top to bottom: the two things you DO (add a find, check if we have it), the add form, then the list with its
-          controls on one line directly above it. (A side column for "Do we have it?" left the screen disjointed — owner, 2026-10-21.) */}
+      {/* One column, top to bottom: the toolbar (paste an Amazon link, or Add a find by hand), the add form, then the list with its
+          controls on one line directly above it. Pasting a link opens the form filled in — the quick way to log a find (owner,
+          2026-10-21: "Replace do we have it with Amazon URL so I can quickly add it. If a duplicate I will then know"). */}
       <div className="max-w-5xl space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          {/* items-start: when search results open under the box, the button stays level with the box, not the middle of the results. */}
-          <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-            <HaveItSearch />
-            <button type="button" onClick={() => setAdding(true)} disabled={adding}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className="flex min-w-0 flex-1 basis-80 items-center gap-3">
+              <span className="shrink-0 text-sm font-semibold text-slate-900">Amazon URL</span>
+              <input value={paste} placeholder="Paste a product link to add it"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  // A product link (or a bare ASIN) opens the form with it; anything else stays in the box while being typed.
+                  if (asinFromAmazonUrl(v) || /^[A-Za-z0-9]{10}$/.test(v.trim())) {
+                    setAdding({ seed: v.trim(), key: Date.now() });
+                    setOpenId(null);   // one thing open at a time
+                    setPaste('');
+                  } else {
+                    setPaste(v);
+                  }
+                }}
+                className={`${inputCls} min-w-0 flex-1`} />
+            </label>
+            <button type="button" onClick={() => { setAdding({ seed: '', key: Date.now() }); setOpenId(null); }} disabled={!!adding}
               className={`${primaryBtn} inline-flex shrink-0 items-center gap-1.5`}>
               <PlusIcon className="h-4 w-4" /> Add a find
             </button>
           </div>
         </div>
 
-        {adding && <ProspectForm onDone={() => { setAdding(false); q.refresh(); }} onCancel={() => setAdding(false)} />}
+        {adding && (
+          <ProspectForm key={adding.key} seed={adding.seed}
+            onDone={() => { setAdding(null); q.refresh(); }} onCancel={() => setAdding(null)} />
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
@@ -158,8 +191,10 @@ export default function ProspectsPage() {
             {rows.length === 0 ? 'Nothing logged yet — "Add a find" to start.' : 'Nothing matches.'}
           </p>
         ) : (
-          <div className="space-y-3">
-            {shown.map((p) => <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} />)}
+          <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            {shown.map((p) => (p.id === openId
+              ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
+              : <ProspectRow key={p.id} p={p} onOpen={() => setOpenId(p.id)} />))}
           </div>
         )}
       </div>
@@ -169,18 +204,31 @@ export default function ProspectsPage() {
 
 // ---- Add / edit a line ------------------------------------------------------------------------------------------------------------
 // Adding can carry the first check too (rank / price / sellers seen right now), so logging a find is one form, not two.
-function ProspectForm({ edit, onDone, onCancel }: { edit?: Prospect; onDone: () => void; onCancel: () => void }) {
-  const [name, setName] = useState(edit?.name ?? '');
-  const [amazon, setAmazon] = useState(edit?.asin ?? '');
+function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?: string; onDone: () => void; onCancel: () => void }) {
+  // seed = a link pasted in the toolbar: the form opens with its name and ASIN already in.
+  const [name, setName] = useState(edit?.name ?? (seed ? nameFromAmazonUrl(seed) : ''));
+  const [amazon, setAmazon] = useState(edit?.asin ?? (seed ? asinFromAmazonUrl(seed) ?? seed.toUpperCase() : ''));
   const [rating, setRating] = useState<ProspectRating | null>(edit?.rating ?? null);
+  const [comment, setComment] = useState('');
+  const [rrp, setRrp] = useState(edit?.rrp ?? '');
   const [check, setCheck] = useState({ size: '', rank: '', price: '', sellers: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A pasted link: take the name from it (if none yet), then keep only the ASIN in the box — the rest of the link is noise.
+  function pasteAmazon(v: string) {
+    if (!name.trim()) setName(nameFromAmazonUrl(v));
+    setAmazon(asinFromAmazonUrl(v) ?? v);
+  }
+
+  // Duplicate? Asked as soon as the box holds an ASIN, so you know before saving: already on this list, or one of our Amazon listings.
+  const asinNow = /^[A-Za-z0-9]{10}$/.test(amazon.trim()) ? amazon.trim().toUpperCase() : null;
+  const dup = useApiQuery(asinNow ? ['prospect-asin-check', asinNow, edit?.id ?? 0] : null, () => checkProspectAsin(asinNow!, edit?.id));
+
   async function save() {
     setBusy(true);
     setError(null);
-    const res = await saveProspect({ id: edit?.id, name, amazon, rating, check: edit ? undefined : check });
+    const res = await saveProspect({ id: edit?.id, name, amazon, rating, rrp, ...(edit ? {} : { check, comment }) });
     setBusy(false);
     if (!res.success) { setError(res.error || 'Failed to save'); return; }
     onDone();
@@ -190,30 +238,55 @@ function ProspectForm({ edit, onDone, onCancel }: { edit?: Prospect; onDone: () 
     <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-slate-600">
-          What is it
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
-            placeholder="e.g. Rieker Y3453 ankle boot, black" className={`${inputCls} mt-1 block w-full`} />
+          Amazon link or ASIN <span className="font-normal text-slate-400">(optional)</span>
+          <span className="mt-1 flex gap-2">
+            <input autoFocus={!seed} value={amazon} onChange={(e) => pasteAmazon(e.target.value)}
+              placeholder="Paste the Amazon page address" className={`${inputCls} block min-w-0 flex-1`} />
+            {/^[A-Za-z0-9]{10}$/.test(amazon.trim()) && <AmazonLink asin={amazon.trim().toUpperCase()} label="Open" />}
+          </span>
         </label>
         <label className="text-xs font-medium text-slate-600">
-          Amazon link or ASIN <span className="font-normal text-slate-400">(optional)</span>
-          <input value={amazon} onChange={(e) => setAmazon(e.target.value)}
-            placeholder="Paste the Amazon page address" className={`${inputCls} mt-1 block w-full`} />
+          What is it
+          <input autoFocus={!!seed} value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
+            placeholder="e.g. Rieker Y3453 ankle boot, black" className={`${inputCls} mt-1 block w-full`} />
         </label>
       </div>
+      {asinNow && dup.data && (dup.data.listed || dup.data.have) && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="font-semibold">DUPLICATE</span>
+          {dup.data.listed && <> — already on this list: &ldquo;{dup.data.listed.name}&rdquo;, added by {dup.data.listed.owner}</>}
+          {dup.data.have && <> — we already have it on Amazon as <span className="font-mono">{dup.data.have.groupid}</span></>}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-slate-600">Rating</span>
         <RatingChips value={rating} onChange={setRating} />
       </div>
-      {!edit && (
-        <div className="mt-3">
-          <div className="text-xs font-medium text-slate-600">What you see now <span className="font-normal text-slate-400">(optional)</span></div>
-          <CheckFields value={check} onChange={setCheck} />
+      {/* RRP sits with what you see on Amazon (owner: "saves putting it as the notes"). It belongs to the find, not to a check, so on
+          an edit — where there are no check fields — it is on its own. */}
+      <div className="mt-3">
+        <div className="text-xs font-medium text-slate-600">
+          {edit ? 'RRP' : <>What you see now <span className="font-normal text-slate-400">(optional)</span></>}
         </div>
+        <div className="mt-1 flex flex-wrap items-end gap-2">
+          {!edit && <CheckFields value={check} onChange={setCheck} />}
+          <label className="text-xs text-slate-500">
+            RRP £
+            <input value={rrp} onChange={(e) => setRrp(e.target.value)} maxLength={30} className={`${inputCls} mt-1 block w-24`} />
+          </label>
+        </div>
+      </div>
+      {!edit && (
+        <label className="mt-3 block text-xs font-medium text-slate-600">
+          Comment <span className="font-normal text-slate-400">(optional)</span>
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={4} maxLength={10000}
+            placeholder="Anything — sizes, why it looks good, what to order…" className={`${inputCls} mt-1 block w-full`} />
+        </label>
       )}
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       <div className="mt-4 flex gap-2">
         <button type="button" onClick={save} disabled={busy || !name.trim()} className={primaryBtn}>
-          {busy ? 'Saving…' : edit ? 'Save' : 'Add'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
         <button type="button" onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
       </div>
@@ -242,25 +315,51 @@ function RatingChips({ value, onChange, disabled }: { value: ProspectRating | nu
 
 type CheckInput = { size: string; rank: string; price: string; sellers: string };
 function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: CheckInput) => void }) {
-  const field = (k: keyof CheckInput, label: string, w: string, mode: 'text' | 'numeric' | 'decimal') => (
+  // All free text (owner: "Rank is 58k for example") — whatever is typed is kept.
+  const field = (k: keyof CheckInput, label: string, w: string) => (
     <label className="text-xs text-slate-500">
       {label}
-      <input value={value[k]} inputMode={mode} onChange={(e) => onChange({ ...value, [k]: e.target.value })}
+      <input value={value[k]} onChange={(e) => onChange({ ...value, [k]: e.target.value })}
         className={`${inputCls} mt-1 block ${w}`} />
     </label>
   );
   return (
-    <div className="mt-1 flex flex-wrap gap-2">
-      {field('rank', 'Rank', 'w-28', 'numeric')}
-      {field('price', 'Price £', 'w-24', 'decimal')}
-      {field('sellers', 'Sellers', 'w-20', 'numeric')}
-      {field('size', 'Size (optional)', 'w-28', 'text')}
+    <div className="flex flex-wrap gap-2">
+      {field('rank', 'Rank', 'w-28')}
+      {field('price', 'Price £', 'w-24')}
     </div>
   );
 }
 
 // ---- One line --------------------------------------------------------------------------------------------------------------------
-function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) {
+// ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
+function ProspectRow({ p, onOpen }: { p: Prospect; onOpen: () => void }) {
+  const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
+  const rating = RATINGS.find((r) => r.key === p.rating);
+  const sinceLook = daysAgo(lastActivity(p));
+  return (
+    <button type="button" onClick={onOpen}
+      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-slate-50">
+      <ChevronRightIcon className="h-4 w-4 shrink-0 text-slate-400" />
+      <span className="w-20 shrink-0">
+        {rating && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${rating.on}`}>{rating.label}</span>}
+      </span>
+      <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{p.name}</span>
+      {p.have && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">DUPLICATE</span>}
+      <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{latest?.rank ? `Rank ${latest.rank}` : ''}</span>
+      <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
+      <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">{p.rrp ? `RRP ${fmtMoney(p.rrp)}` : ''}</span>
+      <span className="hidden w-8 shrink-0 text-right text-xs text-slate-400 md:block" title="Comments">{p.notes.length ? `💬${p.notes.length}` : ''}</span>
+      <span className={`w-28 shrink-0 text-right text-xs ${sinceLook >= STALE_DAYS ? 'text-amber-700' : 'text-slate-400'}`}
+        title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : undefined}>
+        {p.owner} · {fmtWhen(lastActivity(p))}
+      </span>
+    </button>
+  );
+}
+
+// ---- One find, open: everything, editable. -----------------------------------------------------------------------------------------
+function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () => void; onClose: () => void }) {
   const [editing, setEditing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [history, setHistory] = useState(false);
@@ -270,7 +369,7 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const latest = useMemo(() => latestBySize(p.checks), [p.checks]);
+  const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;   // checks arrive oldest first
   const sinceLook = daysAgo(lastActivity(p));
 
   // Every write on a line goes through here: one at a time, show the error, refresh the list on success.
@@ -289,22 +388,24 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
   }
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="bg-slate-50/70 p-4 ring-1 ring-inset ring-slate-300">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="font-semibold text-slate-900">{p.name}</h3>
+          <button type="button" onClick={onClose} title="Close" className="flex items-center gap-1.5 text-left font-semibold text-slate-900 hover:text-slate-600">
+            <ChevronDownIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            {p.name}
+          </button>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-            {p.asin && (
-              <a href={`https://www.amazon.co.uk/dp/${p.asin}`} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-mono text-sky-700 hover:underline">
-                {p.asin} <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
-              </a>
-            )}
+            {p.asin && <span className="font-mono">{p.asin}</span>}
+            {p.rrp && <span className="font-medium text-slate-700">RRP {fmtMoney(p.rrp)}</span>}
             <span>{p.owner} · added {fmtWhen(p.created_at)}</span>
             {sinceLook >= STALE_DAYS && <span className="text-amber-700">not checked for {sinceLook} days</span>}
           </div>
         </div>
-        <HaveBadge p={p} />
+        <div className="flex items-center gap-2">
+          {p.asin && <AmazonLink asin={p.asin} label="Open on Amazon" />}
+          <HaveBadge p={p} />
+        </div>
       </div>
 
       <div className="mt-2">
@@ -312,34 +413,23 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
           onChange={(r) => run(() => saveProspect({ id: p.id, name: p.name, amazon: p.asin ?? '', rating: r }))} />
       </div>
 
-      {/* Latest check per size, with how rank moved since that size's check before. Lower rank = selling better. */}
-      {latest.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm">
-          {latest.map(({ cur, prev }) => (
-            <li key={cur.id} className="flex flex-wrap items-baseline gap-x-2 text-slate-700">
-              {cur.size && <span className="rounded bg-slate-100 px-1.5 text-xs font-medium text-slate-600">Size {cur.size}</span>}
-              {cur.rank !== null && <span>Rank <span className="font-semibold tabular-nums">{fmtRank(cur.rank)}</span></span>}
-              {cur.rank !== null && prev?.rank != null && prev.rank !== cur.rank && (
-                <span className={`text-xs ${cur.rank < prev.rank ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {cur.rank < prev.rank ? '▲ better' : '▼ worse'} — was {fmtRank(prev.rank)} {fmtWhen(prev.checked_at)}
-                </span>
-              )}
-              {cur.price !== null && <span>· {fmtMoney(cur.price)}</span>}
-              {cur.sellers !== null && <span>· {cur.sellers} seller{cur.sellers === 1 ? '' : 's'}</span>}
-              <span className="text-xs text-slate-400">{cur.checked_by}, {fmtWhen(cur.checked_at)}</span>
-            </li>
-          ))}
-        </ul>
+      {/* The latest check — earlier ones are in History. Sellers and size are hidden for now (owner, 2026-10-21); the columns stay. */}
+      {latest && (
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-2 text-sm text-slate-700">
+          {latest.rank !== null && <span>Rank <span className="font-semibold tabular-nums">{latest.rank}</span></span>}
+          {latest.price !== null && <span>{latest.rank !== null && '· '}{fmtMoney(latest.price)}</span>}
+          <span className="text-xs text-slate-400">{latest.checked_by}, {fmtWhen(latest.checked_at)}</span>
+        </div>
       )}
 
-      {/* Notes thread */}
+      {/* Comments — the line's one place for writing (owner, 2026-10-21: "Should we just have comments?"), each with who and when */}
       {p.notes.length > 0 && (
         <ul className="mt-3 space-y-1.5 border-l-2 border-slate-100 pl-3">
           {p.notes.map((n) => (
             <li key={n.id} className="group text-sm text-slate-700">
               <span className="whitespace-pre-wrap">{n.body}</span>
               <span className="ml-2 text-xs text-slate-400">{n.created_by}, {fmtWhen(n.created_at)}</span>
-              <button type="button" title="Delete this note" disabled={busy}
+              <button type="button" title="Delete this comment" disabled={busy}
                 onClick={() => run(() => deleteProspectItem('note', n.id))}
                 className="ml-1 align-middle text-slate-300 opacity-0 hover:text-red-600 group-hover:opacity-100">
                 <TrashIcon className="inline h-3.5 w-3.5" />
@@ -352,9 +442,11 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
         className="mt-3 flex gap-2"
         onSubmit={(e) => { e.preventDefault(); if (note.trim()) run(() => addProspectNote(p.id, note), () => setNote('')); }}
       >
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000}
-          placeholder="Add a note — sizes, price thoughts, anything" className={`${inputCls} min-w-0 flex-1`} />
-        <button type="submit" disabled={busy || !note.trim()} className={smallBtn}>Add note</button>
+        {/* Multi-line, any length: Enter is a new line, the button posts it. */}
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={10000}
+          rows={Math.min(10, Math.max(2, note.split('\n').length))}
+          placeholder="Add a comment — sizes, price thoughts, anything" className={`${inputCls} min-w-0 flex-1`} />
+        <button type="submit" disabled={busy || !note.trim()} className={`${smallBtn} self-end`}>Comment</button>
       </form>
 
       {checking && (
@@ -362,11 +454,6 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
           <div className="text-xs font-medium text-slate-600">What you see on Amazon now</div>
           <div className="flex flex-wrap items-end gap-2">
             <CheckFields value={check} onChange={(v) => setCheck({ ...check, ...v })} />
-            <label className="text-xs text-slate-500">
-              That size&apos;s ASIN (optional)
-              <input value={check.amazon} onChange={(e) => setCheck({ ...check, amazon: e.target.value })}
-                className={`${inputCls} mt-1 block w-36`} />
-            </label>
           </div>
           <div className="mt-2 flex gap-2">
             <button type="button" disabled={busy || !(check.rank || check.price || check.sellers)} className={smallBtn}
@@ -386,10 +473,8 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
           <thead>
             <tr className="border-b border-slate-200 text-left text-slate-500">
               <th className="py-1 pr-3 font-medium">When</th>
-              <th className="py-1 pr-3 font-medium">Size</th>
               <th className="py-1 pr-3 text-right font-medium">Rank</th>
               <th className="py-1 pr-3 text-right font-medium">Price</th>
-              <th className="py-1 pr-3 text-right font-medium">Sellers</th>
               <th className="py-1 pr-3 font-medium">Who</th>
               <th />
             </tr>
@@ -398,10 +483,8 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
             {[...p.checks].reverse().map((c) => (
               <tr key={c.id} className="border-b border-slate-100 text-slate-700 last:border-0">
                 <td className="py-1 pr-3 whitespace-nowrap">{fmtWhen(c.checked_at)}</td>
-                <td className="py-1 pr-3">{c.size || '—'}{c.asin && <span className="ml-1 font-mono text-slate-400">{c.asin}</span>}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{c.rank !== null ? fmtRank(c.rank) : ''}</td>
+                <td className="py-1 pr-3 text-right tabular-nums">{c.rank ?? ''}</td>
                 <td className="py-1 pr-3 text-right tabular-nums">{c.price !== null ? fmtMoney(c.price) : ''}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{c.sellers ?? ''}</td>
                 <td className="py-1 pr-3">{c.checked_by}</td>
                 <td className="py-1 text-right">
                   <button type="button" title="Delete this check" disabled={busy}
@@ -418,7 +501,7 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
       {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-        {!checking && <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check again</button>}
+        {!checking && <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check rank again</button>}
         {p.checks.length > 1 && (
           <button type="button" onClick={() => setHistory(!history)} className={smallBtn}>
             {history ? 'Hide history' : `History · ${p.checks.length}`}
@@ -445,65 +528,13 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
   );
 }
 
-// "Do we already have it?" for a line: only an ASIN can answer it for sure, so with no ASIN the badge says so instead of guessing.
+// Shown ONLY when we already have it — one of our Amazon listings carries an ASIN on this line. Every find is meant to be new, so new
+// says nothing (owner, 2026-10-21: "Do we need NEW TO US? They should all be. Maybe just show if DUPLICATE").
 function HaveBadge({ p }: { p: Prospect }) {
-  if (p.have) {
-    return (
-      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800" title={`On our Amazon listings as ${p.have.groupid}`}>
-        WE HAVE IT
-      </span>
-    );
-  }
-  const anyAsin = p.asin || p.checks.some((c) => c.asin);
-  if (!anyAsin) {
-    return <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500" title="Add the Amazon link to check it against our listings">no ASIN</span>;
-  }
-  return <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800" title="None of its ASINs is one of our Amazon listings">NEW TO US</span>;
-}
-
-// ---- Do we have it? — search our own catalogue --------------------------------------------------------------------------------------
-function HaveItSearch() {
-  const [term, setTerm] = useState('');
-  const debounced = useDebounced(term.trim(), 350);
-  const q = useApiQuery(debounced.length >= 2 ? ['prospect-have', debounced] : null, () => findInCatalogue(debounced));
-
+  if (!p.have) return null;
   return (
-    <div className="min-w-0 flex-1 basis-80">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-sm font-semibold text-slate-900">Do we have it?</span>
-        <div className="relative min-w-0 flex-1">
-          <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
-          <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search our catalogue — model number, brand or name"
-            className={`${inputCls} w-full pl-8`} />
-        </div>
-      </div>
-      {debounced.length >= 2 && (
-        <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
-          {q.error ? (
-            <p className="text-red-700">{q.error.message}</p>
-          ) : !q.data ? (
-            <p className="text-slate-400">Searching…</p>
-          ) : q.data.results.length === 0 ? (
-            <p className="font-medium text-emerald-700">Nothing — we don&apos;t have it.</p>
-          ) : (
-            <>
-              <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                {q.data.results.map((r) => (
-                  <li key={r.groupid} className="leading-tight">
-                    <div className="text-slate-800">{r.title || r.groupid}</div>
-                    <div className="text-xs text-slate-500">
-                      <span className="font-mono">{r.groupid}</span>
-                      {' · '}
-                      {r.in_stock ? <span className="text-amber-700">in stock</span> : <span>none in stock</span>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {q.data.truncated && <p className="mt-2 text-xs text-slate-400">More than 25 — add another word.</p>}
-            </>
-          )}
-        </div>
-      )}
-    </div>
+    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800" title={`We already have this on Amazon as ${p.have.groupid}`}>
+      DUPLICATE
+    </span>
   );
 }

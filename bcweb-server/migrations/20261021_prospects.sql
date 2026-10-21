@@ -45,3 +45,24 @@ CREATE TABLE IF NOT EXISTS prospect_note (
   created_at   timestamptz   NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS prospect_note_prospect_idx ON prospect_note (prospect_id, created_at);
+
+-- Free-text notes on a line (owner, 2026-10-21: "I will need some free text notes area for a find") — one editable block, like a
+-- paragraph in a doc. The prospect_note thread stays for quick back-and-forth (labelled Comments on screen).
+ALTER TABLE prospect ADD COLUMN IF NOT EXISTS details text;
+
+-- Rank / price / sellers are FREE TEXT (owner, 2026-10-21: "All should be optional free text. Rank is 58k for example") — kept as typed.
+-- The screen reads "58k" / "1.2m" / "2,140" as a number only to say whether rank went up or down.
+ALTER TABLE prospect_check DROP CONSTRAINT IF EXISTS prospect_check_rank_check;
+ALTER TABLE prospect_check DROP CONSTRAINT IF EXISTS prospect_check_price_check;
+ALTER TABLE prospect_check DROP CONSTRAINT IF EXISTS prospect_check_sellers_check;
+ALTER TABLE prospect_check ALTER COLUMN rank TYPE varchar(30), ALTER COLUMN price TYPE varchar(30), ALTER COLUMN sellers TYPE varchar(30);
+-- RRP of a find, typed by hand, to guess the profit (owner, 2026-10-21). Free text too.
+ALTER TABLE prospect ADD COLUMN IF NOT EXISTS rrp varchar(30);
+
+-- JUST COMMENTS (owner, 2026-10-21: "Im confused by the main comment and the others. Should we just have comments?"). The free-text
+-- block is folded into the comment thread: comments take long text now, and any notes already written become a comment by the
+-- line's owner, then the column goes.
+ALTER TABLE prospect_note ALTER COLUMN body TYPE varchar(10000);
+INSERT INTO prospect_note (prospect_id, body, created_by, created_at)
+  SELECT id, LEFT(details, 10000), owner, COALESCE(updated_at, created_at) FROM prospect WHERE NULLIF(TRIM(details), '') IS NOT NULL;
+ALTER TABLE prospect DROP COLUMN IF EXISTS details;

@@ -8,8 +8,9 @@ Purpose: Small shared helpers for the Prospects screen (migrations/20261021_pros
 Exports:
   RATINGS             the gut-call ratings a line can carry (NULL = not rated)
   parseAsin(input)    -> 'B0ABC12345' | null — from a bare ASIN or any Amazon product URL
-  parseCheck(body)    -> { size, asin, rank, price, sellers } | { error, message } — one check as typed (prospect-check-add and the
-                         first check on prospect-save share it, so both read "2,140" and "£64.99" the same way)
+  textOrNull(v, max)  -> trimmed text, or null when blank
+  parseCheck(body)    -> { size, asin, rank, price, sellers } | { error, message } — one check, all free text as typed (prospect-check-add
+                         and the first check on prospect-save share it)
 =======================================================================================================================================
 */
 
@@ -17,25 +18,19 @@ const RATINGS = ['diamond', 'good', 'sketchy'];
 
 const BAD_ASIN_MESSAGE = "Couldn't find an ASIN in that — paste the Amazon product link or the 10-character ASIN";
 
-// '' / null / undefined = not given. Anything else must be a whole number in [min, max] — NaN when it isn't.
-function wholeOrNull(v, min, max) {
-  if (v === undefined || v === null || v === '') return null;
-  const n = Number(String(v).replace(/[,\s]/g, ''));   // "2,140" as typed off the Amazon page
-  return Number.isInteger(n) && n >= min && n <= max ? n : NaN;
+// Free text, as typed (owner, 2026-10-21: "All should be optional free text. Rank is 58k for example"). Blank = not given.
+function textOrNull(v, max) {
+  if (v === undefined || v === null) return null;
+  const t = String(v).trim().slice(0, max);
+  return t || null;
 }
 
 function parseCheck(body) {
-  const size = typeof body.size === 'string' && body.size.trim() ? body.size.trim().slice(0, 10) : null;
-  const rank = wholeOrNull(body.rank, 1, 2147483647);
-  const sellers = wholeOrNull(body.sellers, 0, 32767);
-  const priceRaw = body.price === undefined || body.price === null || body.price === ''
-    ? null : Number(String(body.price).replace(/[£,\s]/g, ''));
-  const price = priceRaw === null ? null
-    : (Number.isFinite(priceRaw) && priceRaw >= 0 && priceRaw < 100000 ? Math.round(priceRaw * 100) / 100 : NaN);
-  if (Number.isNaN(rank) || Number.isNaN(sellers) || Number.isNaN(price)) {
-    return { error: 'MISSING_FIELDS', message: 'Rank and sellers must be whole numbers, price a number' };
-  }
-  // A check with no numbers says nothing.
+  const size = textOrNull(body.size, 10);
+  const rank = textOrNull(body.rank, 30);
+  const price = textOrNull(body.price, 30);
+  const sellers = textOrNull(body.sellers, 30);
+  // A check with nothing in it says nothing.
   if (rank === null && price === null && sellers === null) {
     return { error: 'MISSING_FIELDS', message: 'Enter a rank, price or number of sellers' };
   }
@@ -58,4 +53,4 @@ function parseAsin(input) {
   return m ? m[1].toUpperCase() : null;
 }
 
-module.exports = { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck };
+module.exports = { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull };
