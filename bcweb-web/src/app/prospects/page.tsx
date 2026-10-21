@@ -17,7 +17,7 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
          Two tools: "WE HAVE IT" on a line when one of its ASINs is one of our Amazon listings, and "Do we have it?" — a search of our own
          catalogue. Both are yes/no on purpose: there are NO links to the pricing or order screens (owner: this is mining for new; managing
          existing stock is another process, and the research must not drift into repricing).
-         On the dashboard it is a tile in the Back Office card. One column: the toolbar (Add a find | Do we have it?), then the list.
+         On the dashboard it is a tile in the Back Office card. One column: the toolbar (Do we have it? | Add a find), then the list.
 =======================================================================================================================================
 */
 
@@ -121,12 +121,13 @@ export default function ProspectsPage() {
           controls on one line directly above it. (A side column for "Do we have it?" left the screen disjointed — owner, 2026-10-21.) */}
       <div className="max-w-5xl space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* items-start: when search results open under the box, the button stays level with the box, not the middle of the results. */}
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+            <HaveItSearch />
             <button type="button" onClick={() => setAdding(true)} disabled={adding}
-              className={`${primaryBtn} inline-flex items-center gap-1.5`}>
+              className={`${primaryBtn} inline-flex shrink-0 items-center gap-1.5`}>
               <PlusIcon className="h-4 w-4" /> Add a find
             </button>
-            <HaveItSearch />
           </div>
         </div>
 
