@@ -17,7 +17,7 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
          Two tools: "WE HAVE IT" on a line when one of its ASINs is one of our Amazon listings, and "Do we have it?" — a search of our own
          catalogue. Both are yes/no on purpose: there are NO links to the pricing or order screens (owner: this is mining for new; managing
          existing stock is another process, and the research must not drift into repricing).
-         On the dashboard it is a tile in the Back Office card.
+         On the dashboard it is a tile in the Back Office card. One column: the toolbar (Add a find | Do we have it?), then the list.
 =======================================================================================================================================
 */
 
@@ -36,7 +36,7 @@ const NO_ROWS: Prospect[] = [];
 const STALE_DAYS = 7;   // a line nobody has checked for this long is flagged "check again"
 
 const RATINGS: { key: ProspectRating; label: string; on: string }[] = [
-  { key: 'diamond', label: '◆ Diamond', on: 'border-violet-300 bg-violet-100 text-violet-800' },
+  { key: 'diamond', label: '◆ Diamond', on: 'border-sky-300 bg-sky-100 text-sky-800' },
   { key: 'good', label: 'Good', on: 'border-emerald-300 bg-emerald-100 text-emerald-800' },
   { key: 'sketchy', label: 'Sketchy', on: 'border-amber-300 bg-amber-100 text-amber-800' },
 ];
@@ -44,9 +44,10 @@ const RATING_ORDER: Record<string, number> = { diamond: 0, good: 1, sketchy: 2 }
 
 type Sort = 'newest' | 'rating' | 'stale';
 
-const inputCls = 'rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+const inputCls = 'rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
 const smallBtn = 'rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
-const primaryBtn = 'rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50';
+// Dark slate, like the All / Mine switch — not the brand purple (owner, 2026-10-21).
+const primaryBtn = 'rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50';
 
 const DAY = 86400000;
 function daysAgo(iso: string): number {
@@ -116,57 +117,50 @@ export default function ProspectsPage() {
 
   return (
     <AppShell title="Prospects">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <section className="min-w-0">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {rows.length}</button>
-              <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
-                Mine · {rows.filter((p) => p.owner === displayName).length}
-              </button>
-            </div>
-            <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={inputCls} aria-label="Sort">
-              <option value="newest">Newest first</option>
-              <option value="rating">Diamonds first</option>
-              <option value="stale">Longest since checked</option>
-            </select>
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter the list…"
-              className={`${inputCls} w-44`}
-            />
-            {!adding && (
-              <button type="button" onClick={() => setAdding(true)} className={`${primaryBtn} ml-auto inline-flex items-center gap-1.5`}>
-                <PlusIcon className="h-4 w-4" /> Add a find
-              </button>
-            )}
+      {/* One column, top to bottom: the two things you DO (add a find, check if we have it), the add form, then the list with its
+          controls on one line directly above it. (A side column for "Do we have it?" left the screen disjointed — owner, 2026-10-21.) */}
+      <div className="max-w-5xl space-y-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <button type="button" onClick={() => setAdding(true)} disabled={adding}
+              className={`${primaryBtn} inline-flex items-center gap-1.5`}>
+              <PlusIcon className="h-4 w-4" /> Add a find
+            </button>
+            <HaveItSearch />
           </div>
+        </div>
 
-          {adding && (
-            <div className="mb-4">
-              <ProspectForm onDone={() => { setAdding(false); q.refresh(); }} onCancel={() => setAdding(false)} />
-            </div>
-          )}
+        {adding && <ProspectForm onDone={() => { setAdding(false); q.refresh(); }} onCancel={() => setAdding(false)} />}
 
-          {q.error ? (
-            <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-red-700">{q.error.message}</p>
-          ) : q.isLoading ? (
-            <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-400">Loading…</p>
-          ) : shown.length === 0 ? (
-            <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500">
-              {rows.length === 0 ? 'Nothing logged yet — "Add a find" to start.' : 'Nothing matches.'}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {shown.map((p) => <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} />)}
-            </div>
-          )}
-        </section>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {rows.length}</button>
+            <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
+              Mine · {rows.filter((p) => p.owner === displayName).length}
+            </button>
+          </div>
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={`${inputCls} bg-white`} aria-label="Sort">
+            <option value="newest">Newest first</option>
+            <option value="rating">Diamonds first</option>
+            <option value="stale">Longest since checked</option>
+          </select>
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter the list…"
+            className={`${inputCls} w-52`} />
+        </div>
 
-        <aside>
-          <HaveItSearch />
-        </aside>
+        {q.error ? (
+          <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-red-700">{q.error.message}</p>
+        ) : q.isLoading ? (
+          <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-400">Loading…</p>
+        ) : shown.length === 0 ? (
+          <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500">
+            {rows.length === 0 ? 'Nothing logged yet — "Add a find" to start.' : 'Nothing matches.'}
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {shown.map((p) => <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} />)}
+          </div>
+        )}
       </div>
     </AppShell>
   );
@@ -192,7 +186,7 @@ function ProspectForm({ edit, onDone, onCancel }: { edit?: Prospect; onDone: () 
   }
 
   return (
-    <div className="rounded-lg border border-brand-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-slate-600">
           What is it
@@ -301,7 +295,7 @@ function ProspectCard({ p, onChanged }: { p: Prospect; onChanged: () => void }) 
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
             {p.asin && (
               <a href={`https://www.amazon.co.uk/dp/${p.asin}`} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-mono text-brand-700 hover:underline">
+                className="inline-flex items-center gap-1 font-mono text-sky-700 hover:underline">
                 {p.asin} <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
               </a>
             )}
@@ -473,16 +467,17 @@ function HaveItSearch() {
   const q = useApiQuery(debounced.length >= 2 ? ['prospect-have', debounced] : null, () => findInCatalogue(debounced));
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4">
-      <h2 className="text-sm font-semibold text-slate-900">Do we have it?</h2>
-      <p className="mt-0.5 text-xs text-slate-500">Search our catalogue by model number, brand or words from the name.</p>
-      <div className="relative mt-2">
-        <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
-        <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="e.g. Y3453 or rieker chelsea"
-          className={`${inputCls} w-full pl-8`} />
+    <div className="min-w-0 flex-1 basis-80">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-sm font-semibold text-slate-900">Do we have it?</span>
+        <div className="relative min-w-0 flex-1">
+          <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
+          <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search our catalogue — model number, brand or name"
+            className={`${inputCls} w-full pl-8`} />
+        </div>
       </div>
       {debounced.length >= 2 && (
-        <div className="mt-3 text-sm">
+        <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
           {q.error ? (
             <p className="text-red-700">{q.error.message}</p>
           ) : !q.data ? (
@@ -491,7 +486,7 @@ function HaveItSearch() {
             <p className="font-medium text-emerald-700">Nothing — we don&apos;t have it.</p>
           ) : (
             <>
-              <ul className="space-y-1.5">
+              <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
                 {q.data.results.map((r) => (
                   <li key={r.groupid} className="leading-tight">
                     <div className="text-slate-800">{r.title || r.groupid}</div>
