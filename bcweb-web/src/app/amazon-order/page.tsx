@@ -2705,7 +2705,9 @@ function AmazonOrderContent() {
                     return (
                       <td
                         key={half}
-                        className={'whitespace-nowrap px-2 py-1.5' + (half === 'order' ? ' border-l border-slate-100' : '')}
+                        // text-right: the box sits flush right under its right-aligned ORDER / PICK heading, like the number
+                        // columns either side (owner, 2026-10-22 — it sat at the left of the cell, out of line with the titles).
+                        className={'whitespace-nowrap px-2 py-1.5 text-right' + (half === 'order' ? ' border-l border-slate-100' : '')}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
