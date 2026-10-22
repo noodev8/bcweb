@@ -41,8 +41,9 @@ FIND (owner, 2026-10-01). "Which box is this SKU in?" — the box above the list
 FNSKU or title — your box too) and names the matching codes under each; the matching lines are highlighted in the open box.
 
 KEPT SIMPLE (owner, 2026-10-16: "dont want them to really need to think"). Your box's rare actions (Print labels switch, Empty) sit in
-a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; Finish shipment is folded to one line (green
-with a tick once everything is packed); and a good scan flashes its line green and pops the qty (the animations are in
+a ⋯ menu beside Undo, a small "labels off" shows by the box name while printing is off; THE BOX IS THE SCREEN (owner, 2026-10-22:
+"dont need to see all the boxes on the side") — the open box is full width, and the page's own ⋯ (top right, by the shipment totals)
+opens a side panel: Box details (every box, Find) or Do shipment (the three finishing steps); and a good scan flashes its line green and pops the qty (the animations are in
 tailwind.config.js). FIND IT IN 3 SECONDS (owner, 2026-10-19): the contents are ONE LINE PER SHOE — "each scan is its own line", never a qty
 stacked on one line — groupid, then the title on the same line, then the size big; in SCAN ORDER, NEWEST AT THE TOP, never sorted by
 anything else. Your box keeps a line per scan (src/lib/amzActiveBox.ts); a stored box comes back as code + qty, so it is shown one row
@@ -92,7 +93,7 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon, EllipsisHorizontalIcon, ChevronDownIcon, CheckCircleIcon, ArrowUturnUpIcon, TrashIcon,
+  InboxArrowDownIcon, EllipsisHorizontalIcon, CheckCircleIcon, ArrowUturnUpIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
@@ -116,7 +117,7 @@ interface Box { id: number; lines: BoxLine[]; dims: BoxDims; locked: boolean; }
 
 // The box's small square button (the ⋯ menu).
 const ICON_BTN = 'flex items-center gap-1 rounded-md border p-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 ';
-// The Finish shipment steps — full width, quiet: outline, numbered, nothing that shouts before it's time.
+// The Do shipment steps — full width, quiet: outline, numbered, nothing that shouts before it's time.
 const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white';
 // A row in the box's ⋯ menu.
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ';
@@ -341,8 +342,9 @@ function Packing({ initial, autoBack, onShipped }: {
   const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | null>(null);
   // The box's ⋯ menu (print switch, Empty) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
   const [menuOpen, setMenuOpen] = useState(false);
-  // FINISH SHIPMENT starts folded to one line (owner, 2026-10-16): it's done once per shipment, not while packing.
-  const [finishOpen, setFinishOpen] = useState(false);
+  // The side panel, opened from the page's ⋯ menu (owner, 2026-10-22 — see THE BOX IS THE SCREEN): the box list, or the shipment steps.
+  const [panel, setPanel] = useState<'boxes' | 'ship' | null>(null);
+  const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
   const [shipError, setShipError] = useState<string | null>(null);
@@ -592,18 +594,70 @@ function Packing({ initial, autoBack, onShipped }: {
     </span>
   );
 
+  // Closing the box list goes back to your box — a stored box on view with no list beside it would leave no way back but a scan.
+  function openPanel(p: 'boxes' | 'ship' | null) {
+    setPanel(p);
+    setPageMenuOpen(false);
+    if (p !== 'boxes') { setFind(''); if (!onMine) showMine(); }
+    refocus();
+  }
+
   return (
     <>
-      {/* The open box on the LEFT, the box list on the RIGHT (owner, 2026-10-16). The list stays first in the source so a phone, one
-          column, still shows it above the box; md:order-last moves it right on a wider screen. */}
-      <div className="grid gap-4 md:grid-cols-[1fr_240px]">
+      {/* TOP LINE: the shipment totals (stored boxes only — your box has its own count) and the ⋯ menu that opens the side panel. */}
+      <div className="mb-3 flex items-center gap-3 px-1 text-sm text-slate-500">
+        <span><span className="text-base font-semibold text-slate-900">{boxes.length}</span> packed {boxes.length === 1 ? 'box' : 'boxes'}</span>
+        <span><span className="text-base font-semibold text-slate-900">{totalUnits}</span> {totalUnits === 1 ? 'unit' : 'units'}</span>
+        {allPacked && (
+          <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+            <CheckCircleIcon className="h-4 w-4" />All packed — ready to ship
+          </span>
+        )}
+        <div className="relative ml-auto">
+          <button
+            type="button"
+            onClick={() => setPageMenuOpen((o) => !o)}
+            aria-label="Shipment options"
+            aria-expanded={pageMenuOpen}
+            title="Box details, or do the shipment"
+            className={ICON_BTN + 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}
+          >
+            <EllipsisHorizontalIcon className="h-5 w-5" />
+          </button>
+          {pageMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => { setPageMenuOpen(false); refocus(); }} />
+              <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                <button type="button" onClick={() => openPanel(panel === 'boxes' ? null : 'boxes')}
+                  className={MENU_ITEM + (panel === 'boxes' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-700')}>
+                  <MagnifyingGlassIcon className="h-4 w-4 text-slate-400" />
+                  <span className="flex-1">Box details</span>
+                  {panel === 'boxes' && <span className="text-xs text-slate-400">open</span>}
+                </button>
+                <button type="button" onClick={() => openPanel(panel === 'ship' ? null : 'ship')}
+                  className={MENU_ITEM + (panel === 'ship' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-700')}>
+                  <TruckIcon className="h-4 w-4 text-slate-400" />
+                  <span className="flex-1">Do shipment</span>
+                  {panel === 'ship' && <span className="text-xs text-slate-400">open</span>}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* THE BOX IS THE SCREEN (owner, 2026-10-22: "dont need to see all the boxes on the side"). The open box is full width; the box
+          list (Box details) or the shipment steps (Do shipment) open beside it on the RIGHT only when picked from the ⋯ menu. The panel
+          stays first in the source so a phone, one column, shows it above the box; md:order-last moves it right on a wider screen. */}
+      <div className={panel ? 'grid gap-4 md:grid-cols-[1fr_260px]' : ''}>
+        {panel && (
         <div className="space-y-2 md:order-last">
-          {/* Shipment totals — the stored boxes only (your box has its own count on its card). Top of the list, not a strip of its own,
-              so the open box starts at the top of the page (owner, 2026-10-19). */}
-          <div className="flex items-baseline justify-between px-1 text-sm text-slate-500">
-            <span><span className="text-base font-semibold text-slate-900">{boxes.length}</span> {boxes.length === 1 ? 'box' : 'boxes'}</span>
-            <span><span className="text-base font-semibold text-slate-900">{totalUnits}</span> {totalUnits === 1 ? 'unit' : 'units'}</span>
+          <div className="flex items-center justify-between px-1">
+            <span className="text-sm font-semibold text-slate-900">{panel === 'boxes' ? 'Box details' : 'Shipment'}</span>
+            <button type="button" onClick={() => openPanel(null)} aria-label="Close"
+              className="rounded px-2 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
           </div>
+          {panel === 'boxes' && (<>
           {/* FIND — "which box is this SKU in?". Its own input, NOT the scan box — a scan here would otherwise go into a box. */}
           <div className="relative">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -662,33 +716,22 @@ function Packing({ initial, autoBack, onShipped }: {
             );
           })}
 
-          {/* FINISH SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
-              3 Mark shipped. A PANEL folded to one line until clicked (owner, 2026-10-16); green with a tick once everything is packed.
-              The status line is a guide only; the steps are usable any time, Mark shipped still behind its confirm. */}
-          <div className={'mt-4 overflow-hidden rounded-lg border bg-white ' + (allPacked ? 'border-emerald-300' : 'border-slate-200')}>
-            <button
-              type="button"
-              onClick={() => setFinishOpen((o) => !o)}
-              aria-expanded={finishOpen}
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-slate-50"
-            >
-              <span className={'flex h-8 w-8 shrink-0 items-center justify-center rounded-md '
-                + (allPacked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
-                {allPacked ? <CheckCircleIcon className="h-5 w-5" /> : <TruckIcon className="h-5 w-5" />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-slate-900">Finish shipment</span>
-                <span className={'block text-xs ' + (allPacked ? 'text-emerald-700' : 'text-slate-500')}>
-                  {boxes.length === 0 ? 'Nothing packed yet'
-                    : allPacked ? 'All packed — ready'
-                    : refillNo !== null ? `Box ${refillNo} is open in your box`
-                    : mineUnits > 0 ? 'Your box isn’t packed yet'
-                    : `${notPacked.length} ${notPacked.length === 1 ? 'box' : 'boxes'} not packed`}
-                </span>
-              </span>
-              <ChevronDownIcon className={'h-4 w-4 shrink-0 text-slate-400 transition-transform ' + (finishOpen ? 'rotate-180' : '')} />
-            </button>
-            {finishOpen && (<div className="space-y-2 border-t border-slate-200 bg-slate-50 p-2">
+          </>)}
+
+          {/* DO SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
+              3 Mark shipped. Opened from the ⋯ menu (owner, 2026-10-22); green once everything is packed. The status line is a guide
+              only; the steps are usable any time, Mark shipped still behind its confirm. */}
+          {panel === 'ship' && (
+          <div className={'overflow-hidden rounded-lg border bg-white ' + (allPacked ? 'border-emerald-300' : 'border-slate-200')}>
+            <div className={'flex items-center gap-2 px-3 py-2.5 text-xs ' + (allPacked ? 'text-emerald-700' : 'text-slate-500')}>
+              {allPacked ? <CheckCircleIcon className="h-4 w-4 shrink-0" /> : <TruckIcon className="h-4 w-4 shrink-0" />}
+              {boxes.length === 0 ? 'Nothing packed yet'
+                : allPacked ? 'All packed — ready'
+                : refillNo !== null ? `Box ${refillNo} is open in your box`
+                : mineUnits > 0 ? 'Your box isn’t packed yet'
+                : `${notPacked.length} ${notPacked.length === 1 ? 'box' : 'boxes'} not packed`}
+            </div>
+            <div className="space-y-2 border-t border-slate-200 bg-slate-50 p-2">
             <button
               type="button"
               disabled={totalUnits === 0}
@@ -766,9 +809,11 @@ function Packing({ initial, autoBack, onShipped }: {
               </button>
             )}
             {shipError && <div className="px-1 text-xs text-red-700">{shipError}</div>}
-            </div>)}
+            </div>
           </div>
+          )}
         </div>
+        )}
 
         {/* THE OPEN BOX — your box (scan into it, size it, Pack), or a stored box (look, reprint, Unpack). */}
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
