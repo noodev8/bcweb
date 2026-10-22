@@ -563,11 +563,15 @@ export default function CustomerOrderList() {
     }
   }
 
-  // The parcel weight typed in after WEIGHT_NEEDED. Whole order, kg, this label only.
+  // The parcel weight typed in after WEIGHT_NEEDED. Whole order, kg, this label only. The modal closes the moment the weight is
+  // entered (owner, 2026-10-22) — before, it stayed up whenever the print then failed. The weight is kept, so if the label doesn't
+  // print, re-scanning a shoe retries with it rather than asking again; only a fresh WEIGHT_NEEDED brings the modal back.
   async function submitWeight(kg: number) {
     if (!weightAsk) return;
-    weights.current.set(weightAsk.ordernum, kg);
-    await printLabel(weightAsk.ordernum, { weightKg: kg });
+    const { ordernum } = weightAsk;
+    weights.current.set(ordernum, kg);
+    setWeightAsk(null);
+    await printLabel(ordernum, { weightKg: kg });
   }
 
   // --- render ------------------------------------------------------------------------------------------------------------------
@@ -714,14 +718,13 @@ export default function CustomerOrderList() {
 
             <div className="p-4">
               {/* The parcel weight: one, for the whole packed box (a group order always; a single pair only when it has none stored).
-                  Enter prints; Not now leaves the order fully scanned, so re-scanning any of its shoes asks again. Gone once the order
-                  is packed or labelled. */}
+                  A full-screen modal (owner, 2026-10-22: the inline box was easy to miss). Enter prints and closes it; Not now (or Esc)
+                  leaves the order fully scanned, so re-scanning any of its shoes asks again. Gone once the order is packed or labelled. */}
               {weightAsk && !labels.has(weightAsk.ordernum) && !orderPackedNum(weightAsk.ordernum) && (
                 <WeightPrompt
                   key={weightAsk.ordernum}
                   ordernum={weightAsk.ordernum}
                   message={weightAsk.message}
-                  working={working}
                   onSubmit={submitWeight}
                   onCancel={() => { setWeightAsk(null); scanRef.current?.focus(); }}
                 />
@@ -1356,44 +1359,54 @@ function ShoeRow({ line, scanned }: { line: CustomerOrderLine; scanned: boolean 
 }
 
 /*
- * WeightPrompt — the whole parcel's weight in kg, asked only when a shoe in the order has no stored weight (skumap.weight). Focused
- * on arrival so the packer can put the box on the scale, type, Enter. Used for this label only; not saved back to the product.
+ * WeightPrompt — the whole parcel's weight in kg, asked only when a shoe in the order has no stored weight (skumap.weight). A modal
+ * over the whole screen so it can't be missed, focused on arrival so the packer can put the box on the scale, type, Enter. Used for
+ * this label only; not saved back to the product.
  */
-function WeightPrompt({ ordernum, message, working, onSubmit, onCancel }: {
-  ordernum: string; message: string; working: boolean; onSubmit: (kg: number) => void; onCancel: () => void;
+function WeightPrompt({ ordernum, message, onSubmit, onCancel }: {
+  ordernum: string; message: string; onSubmit: (kg: number) => void; onCancel: () => void;
 }) {
   const [value, setValue] = useState('');
   const kg = Number(value);
   const valid = value.trim() !== '' && Number.isFinite(kg) && kg > 0 && kg <= 20;
   return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); if (valid && !working) onSubmit(kg); }}
-      className={'mb-4 rounded-lg border-2 border-amber-400 bg-amber-50 p-3'}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="weight-prompt-title"
+      onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
     >
-      <p className={'font-semibold text-amber-900 text-base'}>Weigh the box for {ordernum}</p>
-      <p className={'mt-0.5 text-amber-800 text-sm'}>{message}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          autoFocus
-          inputMode="decimal"
-          value={value}
-          onChange={(e) => setValue(e.target.value.replace(',', '.'))}
-          placeholder="0.0"
-          aria-label="Parcel weight in kg"
-          className={'rounded-md border border-amber-300 bg-white px-2 tabular-nums focus:border-amber-500 focus:outline-none ' +
-            'w-24 py-1.5 text-lg'}
-        />
-        <span className={'text-amber-800 text-base'}>kg</span>
-        <button
-          type="submit"
-          disabled={!valid || working}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {working ? 'Printing…' : 'Print label'}
-        </button>
-        <button type="button" onClick={onCancel} className="text-sm text-amber-800 hover:text-amber-950">Not now</button>
-      </div>
-    </form>
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (valid) onSubmit(kg); }}
+        className="w-full max-w-md rounded-xl border-4 border-amber-400 bg-white p-6 shadow-2xl"
+      >
+        <p id="weight-prompt-title" className="text-2xl font-semibold text-slate-900">Weigh the box for {ordernum}</p>
+        <p className="mt-2 text-base text-amber-800">{message}</p>
+        <div className="mt-5 flex items-center gap-3">
+          <input
+            autoFocus
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value.replace(',', '.'))}
+            placeholder="0.0"
+            aria-label="Parcel weight in kg"
+            className="w-36 rounded-md border-2 border-amber-300 bg-white px-3 py-2 text-3xl tabular-nums focus:border-amber-500 focus:outline-none"
+          />
+          <span className="text-2xl text-slate-700">kg</span>
+        </div>
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button type="button" onClick={onCancel} className="px-3 py-2 text-base text-slate-600 hover:text-slate-900">Not now</button>
+          <button
+            type="submit"
+            disabled={!valid}
+            className="rounded-md bg-slate-800 px-5 py-2 text-base font-medium text-white disabled:opacity-40"
+          >
+            Print label
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
