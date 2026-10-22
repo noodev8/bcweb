@@ -45,6 +45,7 @@ DATA comes from useApiQuery (SWR). Never fetch in a useEffect — docs/maintenan
 */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowPathIcon, ArrowUturnLeftIcon, CheckBadgeIcon, ChevronDownIcon, ExclamationTriangleIcon,
   MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon, XMarkIcon,
@@ -718,11 +719,12 @@ export default function CustomerOrderList() {
 
             <div className="p-4">
               {/* The parcel weight: one, for the whole packed box (a group order always; a single pair only when it has none stored).
-                  A full-screen modal (owner, 2026-10-22: the inline box was easy to miss). Enter prints and closes it; Not now (or Esc)
+                  A full-screen modal (owner, 2026-10-22: the inline box was easy to miss). Enter prints and closes it; Cancel (or Esc)
                   leaves the order fully scanned, so re-scanning any of its shoes asks again. Gone once the order is packed or labelled. */}
               {weightAsk && !labels.has(weightAsk.ordernum) && !orderPackedNum(weightAsk.ordernum) && (
                 <WeightPrompt
-                  key={weightAsk.ordernum}
+                  // Not the bare ordernum: the OrderBox beside it is keyed by that, and a shared key left the modal on screen after Cancel.
+                  key={`weight-${weightAsk.ordernum}`}
                   ordernum={weightAsk.ordernum}
                   message={weightAsk.message}
                   onSubmit={submitWeight}
@@ -1361,7 +1363,8 @@ function ShoeRow({ line, scanned }: { line: CustomerOrderLine; scanned: boolean 
 /*
  * WeightPrompt — the whole parcel's weight in kg, asked only when a shoe in the order has no stored weight (skumap.weight). A modal
  * over the whole screen so it can't be missed, focused on arrival so the packer can put the box on the scale, type, Enter. Used for
- * this label only; not saved back to the product.
+ * this label only; not saved back to the product. Portalled to <body>: drawn inside the sticky panel it sat in that panel's stacking
+ * context, and the sticky board above showed through the backdrop un-dimmed.
  */
 function WeightPrompt({ ordernum, message, onSubmit, onCancel }: {
   ordernum: string; message: string; onSubmit: (kg: number) => void; onCancel: () => void;
@@ -1369,7 +1372,7 @@ function WeightPrompt({ ordernum, message, onSubmit, onCancel }: {
   const [value, setValue] = useState('');
   const kg = Number(value);
   const valid = value.trim() !== '' && Number.isFinite(kg) && kg > 0 && kg <= 20;
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
       role="dialog"
@@ -1396,7 +1399,7 @@ function WeightPrompt({ ordernum, message, onSubmit, onCancel }: {
           <span className="text-2xl text-slate-700">kg</span>
         </div>
         <div className="mt-6 flex items-center justify-end gap-3">
-          <button type="button" onClick={onCancel} className="px-3 py-2 text-base text-slate-600 hover:text-slate-900">Not now</button>
+          <button type="button" onClick={onCancel} className="px-3 py-2 text-base text-slate-600 hover:text-slate-900">Cancel</button>
           <button
             type="submit"
             disabled={!valid}
@@ -1406,7 +1409,8 @@ function WeightPrompt({ ordernum, message, onSubmit, onCancel }: {
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
