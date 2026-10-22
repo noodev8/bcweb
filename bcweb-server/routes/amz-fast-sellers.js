@@ -24,6 +24,9 @@ ORDER: priced_to_sold ascending (fastest first), sizes with no measurable price 
 PRICE IN THE BASKET: `queued_price` is the newest price set but not yet uploaded — the same pending rule as routes/amz-basket.js and
          routes/amazon-order-list.js (not uploaded, inside 72h, newest per code, not already the live price); keep the three in step.
 
+PRICE STEPS: `price_steps` = the last 3 real price changes, newest first, each with its days held and units sold at it — for the
+         expanded row. The rules are utils/sellSpeed.js's (PRICE STEPS there).
+
 `next_review` is skumap.next_amz_price_review as text — the page's Set uses it for the review rule (7 days, or the later date kept).
 
 Schema landmines respected: amzfeed price/fee and skumap.amzprofit / skusummary cost/rrp are VARCHAR -> safeNumeric. Size = the suffix
@@ -42,7 +45,9 @@ Success Response:
       "units_30d": 1, "units_7d": 0, "unit_profit": 1.91, "fba_live": 1, "fba_total": 1, "next_review": "2026-10-29",
       "last_sold": "2026-10-06", "last_sold_price": 52.99,
       "priced_on": "2026-10-06", "priced_to_sold": 0, "shipped_on": "2026-10-01", "shipped_to_sold": 5,
-      "last_priced": { "on": "2026-10-06", "by": "Andreas", "note": "...", "price": 52.99, "uploaded": true } },   // null if never
+      "last_priced": { "on": "2026-10-06", "by": "Andreas", "note": "...", "price": 52.99, "uploaded": true },   // null if never
+      "price_steps": [ { "on": "2026-10-06", "old": 67.00, "new": 52.99, "by": "Manual", "note": "...", "uploaded": true,
+                         "current": false, "days": 3, "sold": 1 } ] },   // max 3, newest first; on = the day it went live
     ...
   ]
 }

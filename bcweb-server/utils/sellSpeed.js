@@ -39,7 +39,13 @@ THE RULES (agreed with the owner 2026-10-22 — change them here and nowhere els
 lastPriced (separate from the speed counts): the newest real change on ANY date — when, who, where (the note: "Amazon Order", "Fast
 sellers", a slider step...) and to what — so a screen can say "already priced" whichever screen did it.
 
-Usage: interpolate SELL_SPEED_CTES into a WITH (it defines ss_sale, ss_priced, ss_shipped, ss_last_priced — all one row per code), LEFT
+PRICE STEPS (owner, 2026-10-22 — the Fast sellers detail row): the size's last 3 real changes, each with how long it held and how many
+units sold at it — "did the last rise still sell? let it ride, or go again?". A step runs from its LIVE day (as THE PRICE above) to the
+next step's live day; the current one runs to today. Units = Amazon sales with qty > 0 in that window — GROSS: a return is dated when it
+comes back and books at £0, so it can't be placed against a price. A sale on a boundary day goes to whichever of the two prices it was
+sold nearer (the same-day guard above, on both ends). Days never go below 0 (a change uploaded after a newer one was set).
+
+Usage: interpolate SELL_SPEED_CTES into a WITH (it defines ss_sale, ss_priced, ss_shipped, ss_last_priced, ss_steps — all one row per code; ss_chg is their working set), LEFT
 JOIN them on code, and select sellSpeedSelectSql(); shape a row with sellSpeedFields(r).
 =======================================================================================================================================
 */
@@ -76,6 +82,35 @@ const SELL_SPEED_CTES = `
     WHERE a.created_at::date <= s.sold_on
     GROUP BY a.code
   ),
+  ss_chg AS (
+    SELECT l.id, l.code, l.old_price, l.new_price, l.changed_by, l.notes, l.uploaded_at IS NOT NULL AS uploaded,
+           ${LIVE_DAY} AS live_on, ROW_NUMBER() OVER (PARTITION BY l.code ORDER BY l.id DESC) AS rn
+    FROM amz_price_log l
+    WHERE ${REAL_CHANGE}
+  ),
+  ss_steps AS (
+    -- One json array per code, newest step first — see PRICE STEPS in the header.
+    SELECT c.code, json_agg(json_build_object(
+             'on', to_char(c.live_on, 'YYYY-MM-DD'), 'old', c.old_price, 'new', c.new_price,
+             'by', c.changed_by, 'note', c.notes, 'uploaded', c.uploaded, 'current', nx.live_on IS NULL,
+             'days', GREATEST(COALESCE(nx.live_on, (now() AT TIME ZONE 'Europe/London')::date) - c.live_on, 0),
+             'sold', COALESCE(sold.units, 0)
+           ) ORDER BY c.id DESC) AS steps
+    FROM ss_chg c
+    LEFT JOIN ss_chg nx ON nx.code = c.code AND nx.rn = c.rn - 1
+    LEFT JOIN LATERAL (
+      SELECT SUM(x.qty) AS units
+      FROM sales x
+      WHERE x.code = c.code AND x.channel = 'AMZ' AND x.qty > 0
+        AND x.solddate >= c.live_on AND (nx.live_on IS NULL OR x.solddate <= nx.live_on)
+        AND (x.solddate > c.live_on OR c.old_price IS NULL
+             OR ABS(x.soldprice - c.new_price) <= ABS(x.soldprice - c.old_price))
+        AND (nx.live_on IS NULL OR x.solddate < nx.live_on
+             OR ABS(x.soldprice - c.new_price) < ABS(x.soldprice - nx.new_price))
+    ) sold ON true
+    WHERE c.rn <= 3
+    GROUP BY c.code
+  ),
   ss_last_priced AS (
     SELECT DISTINCT ON (l.code) l.code, l.new_price, l.changed_by, l.notes,
            ${LIVE_DAY} AS live_on, (l.changed_at AT TIME ZONE 'Europe/London')::date AS set_on, l.uploaded_at IS NOT NULL AS uploaded
@@ -98,7 +133,8 @@ function sellSpeedSelectSql() {
     ss_last_priced.changed_by AS ss_last_priced_by,
     ss_last_priced.notes AS ss_last_priced_note,
     ss_last_priced.new_price AS ss_last_priced_price,
-    ss_last_priced.uploaded AS ss_last_priced_uploaded
+    ss_last_priced.uploaded AS ss_last_priced_uploaded,
+    ss_steps.steps AS ss_steps
   `;
 }
 
@@ -109,6 +145,7 @@ function sellSpeedJoinSql(codeCol) {
     LEFT JOIN ss_priced ON ss_priced.code = ${codeCol}
     LEFT JOIN ss_shipped ON ss_shipped.code = ${codeCol}
     LEFT JOIN ss_last_priced ON ss_last_priced.code = ${codeCol}
+    LEFT JOIN ss_steps ON ss_steps.code = ${codeCol}
   `;
 }
 
@@ -131,6 +168,10 @@ function sellSpeedFields(r) {
         uploaded: !!r.ss_last_priced_uploaded,
       }
       : null,
+    price_steps: (r.ss_steps || []).map((c) => ({
+      on: c.on, old: n(c.old), new: n(c.new), by: c.by || null, note: c.note || null,
+      uploaded: !!c.uploaded, current: !!c.current, days: n(c.days), sold: n(c.sold) || 0,
+    })),
   };
 }
 

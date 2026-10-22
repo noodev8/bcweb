@@ -26,24 +26,34 @@ REVIEW (owner, 2026-10-22): a price set here reviews the size 7 days from the da
          is kept (the same shape as Shopify vs Amazon's 10-day rule). The box names which before Set. The review hides the size from the
          Amazon segment lists, not from this one.
 
+THE DETAIL ROW (owner, 2026-10-22, from a screenshot — "tidy it up without losing our approach"): the product name with the Full price
+         screen link beside it as a header line; then the price box, and PRICE STEPS — the last 3 real changes (price_steps, rules in
+         utils/sellSpeed.js), newest first, each with the day it went live, the move, how long it held and how many sold at it. That is
+         the question the screen asks of a size: did the last rise still sell — let it ride, or go again? Who is a By column (the list's Last priced shows the date only); note / old price are in
+         each step's tooltip. What the first cut repeated from the row (last sold, price live, shipped) is gone; those dates are in the
+         row's tooltips. A price Set here goes on top at once, as "queued".
+
 SLIDER: a size in a Pricing Slider carries its badge, and the price box the warning — pricing it here takes it out at the next Move.
 
 WHERE (owner, 2026-10-22): a tile in the dashboard's Pricing group, "for now — not through Amazon": no link on the /amz home, and no back
          link (the logo returns to the group, as for every dashboard tile). The route stays under /amz for the upload basket's provider.
 
-UPDATE (owner, 2026-10-22): the list changes only when the Update button is pressed. SWR's own refetches (on coming back to the page,
+CUT (owner, 2026-10-22): the × at the end of a row takes it off the screen "to get items out of the way while working" — kept in
+         this page's memory only: nothing is written, nothing remembered, and Refresh (or reopening the page) brings every row back.
+
+REFRESH (owner, 2026-10-22 — the button was "Update"): the list changes only when the Refresh button is pressed. SWR's own refetches (on coming back to the page,
          on reconnect) are switched off for this key, so the rows don't reshuffle under someone working down them; prices set here show
-         at once from local state (setHere) and are read back from the server at the next Update. Opening the page fresh loads it.
+         at once from local state (setHere) and are read back from the server at the next Refresh. Opening the page fresh loads it.
 =======================================================================================================================================
 */
 
 import { Fragment, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, MagnifyingGlassIcon, MinusIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, MagnifyingGlassIcon, MinusIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import SliderBadge, { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
-import { getAmzFastSellers, applyAmzPrice, AmzFastRow, AmzFastLastPriced, SliderMark } from '@/lib/api';
+import { getAmzFastSellers, applyAmzPrice, AmzFastRow, AmzFastLastPriced, AmzFastStep, SliderMark } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
@@ -122,16 +132,20 @@ export default function AmzFastSellersPage() {
 
   // Set this visit, by code — the price now queued and the Last priced line, so a row reads "done" at once without a reload (the
   // next load reads both back from the log). Review dates likewise, so a second Set judges the rule against the date just written.
-  const [setHere, setSetHere] = useState<Record<string, { price: number; last: AmzFastLastPriced; nextReview: string | null }>>({});
+  const [setHere, setSetHere] = useState<Record<string, { price: number; last: AmzFastLastPriced; nextReview: string | null; steps: AmzFastStep[] }>>({});
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('priced_to_sold');
   const [asc, setAsc] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  // Codes cut with × this visit — see CUT in the header. Refresh empties it.
+  const [cut, setCut] = useState<Set<string>>(() => new Set());
 
   const visible = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const filtered = terms.length === 0 ? rows : rows.filter((r) => {
+    const filtered = rows.filter((r) => {
+      if (cut.has(r.code)) return false;
+      if (terms.length === 0) return true;
       const hay = `${r.code} ${r.title || ''} ${r.brand || ''} ${r.groupid}`.toLowerCase();
       return terms.every((t) => hay.includes(t));
     });
@@ -147,12 +161,19 @@ export default function AmzFastSellersPage() {
       const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
       return c !== 0 ? (asc ? c : -c) : index.get(a.code)! - index.get(b.code)!;
     });
-  }, [rows, search, sortKey, asc, setHere]);
+  }, [rows, search, sortKey, asc, setHere, cut]);
 
-  // UPDATE — refetch, then drop this visit's local overlays: the fresh rows carry those prices, review dates and Last priced themselves.
-  async function onUpdate() {
+  // REFRESH — refetch, then drop this visit's local overlays: the fresh rows carry those prices, review dates and Last priced themselves.
+  // Cut rows come back too.
+  async function onRefresh() {
     await refresh();
     setSetHere({});
+    setCut(new Set());
+  }
+
+  function onCut(code: string) {
+    setCut((prev) => new Set(prev).add(code));
+    if (open === code) setOpen(null);
   }
 
   function onSort(col: Column) {
@@ -166,6 +187,7 @@ export default function AmzFastSellersPage() {
     if (res.return_code === 'UNAUTHORIZED') { logout(); return { error: 'Session expired', aboveRrp: false }; }
     if (!res.success || !res.data) return { error: res.error || 'Couldn’t set the price', aboveRrp: false };
     const d = res.data;
+    const prevSteps = (setHere[r.code]?.steps ?? r.price_steps).map((st) => ({ ...st, current: false }));
     add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: r.size, title: r.title, segment: r.segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
     setSetHere((prev) => ({
       ...prev,
@@ -173,6 +195,8 @@ export default function AmzFastSellersPage() {
         price: d.new_price,
         last: { on: TODAY, by: displayName, note: NOTE, price: d.new_price, uploaded: false },
         nextReview: d.next_review ?? nextReview,
+        steps: [{ on: TODAY, old: d.old_price, new: d.new_price, by: displayName, note: NOTE, uploaded: false, current: true, days: 0, sold: 0 },
+          ...prevSteps].slice(0, 3),
       },
     }));
     return { error: null, aboveRrp: d.warnings.includes('ABOVE_RRP') };
@@ -194,15 +218,15 @@ export default function AmzFastSellersPage() {
         </div>
         <button
           type="button"
-          onClick={onUpdate}
+          onClick={onRefresh}
           disabled={busy}
           className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
         >
           <ArrowPathIcon className={'h-4 w-4 ' + (busy ? 'animate-spin' : '')} />
-          {busy ? 'Updating…' : 'Update'}
+          {busy ? 'Refreshing…' : 'Refresh'}
         </button>
         <p className="text-sm text-slate-500">
-          Amazon sizes sold in the last 30 days{data ? ` — ${visible.length}${visible.length !== rows.length ? ` of ${rows.length}` : ''}` : ''}.
+          Amazon sizes sold in the last 30 days.
           Fastest first: days from the price going live, and from the last FBA shipment, to the last sale.
         </p>
       </div>
@@ -211,23 +235,28 @@ export default function AmzFastSellersPage() {
       {loadError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError.message}</div>}
 
       {data && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        // STICKY HEADINGS (owner, 2026-10-22): the list scrolls inside its own box so the heading row can stick — `overflow-x-auto` alone
+        // makes the box a scroll container that never scrolls vertically, and a sticky th inside it just slides off with the page (the
+        // Birkenstock grid's note has the whole story). Underscores in the calc() are required — Tailwind turns them into spaces.
+        // Each th carries its own background and a bottom shadow: a sticky cell doesn't take the thead's background or a collapsed border with it.
+        <div className="max-h-[calc(100vh_-_14rem)] min-h-[20rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+            <thead className="text-xs text-slate-500">
               <tr>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} title={c.title} className={`whitespace-nowrap px-2 py-1.5 font-medium ${c.align === 'right' ? 'text-right' : 'text-left'} ${c.key === 'code' ? 'pl-3' : ''}`}>
+                  <th key={c.key} title={c.title} className={`sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-2 py-1.5 font-medium shadow-[inset_0_-1px_0_rgb(226_232_240)] ${c.align === 'right' ? 'text-right' : 'text-left'} ${c.key === 'code' ? 'pl-3' : ''}`}>
                     <button type="button" onClick={() => onSort(c)} className="inline-flex items-center gap-0.5 hover:text-slate-800">
                       {c.label}
                       {sortKey === c.key && (asc ? <ChevronUpIcon className="h-3 w-3" /> : <ChevronDownIcon className="h-3 w-3" />)}
                     </button>
                   </th>
                 ))}
+                <th className="sticky top-0 z-10 w-8 bg-slate-50 shadow-[inset_0_-1px_0_rgb(226_232_240)]" aria-label="Cut" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {visible.length === 0 && (
-                <tr><td colSpan={COLUMNS.length} className="px-3 py-6 text-center text-slate-400">Nothing matches.</td></tr>
+                <tr><td colSpan={COLUMNS.length + 1} className="px-3 py-6 text-center text-slate-400">Nothing matches.</td></tr>
               )}
               {visible.map((r) => {
                 const here = setHere[r.code];
@@ -269,13 +298,27 @@ export default function AmzFastSellersPage() {
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700">{money(r.rrp)}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700" title={`Live + inbound ${r.fba_total}`}>{r.fba_live}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-slate-600" title={last ? `${money(last.price)}${last.note ? ` — ${last.note}` : ''}` : 'No price change logged in the last year'}>
-                        {last ? <>{shortDate(last.on)}<span className="text-slate-400"> · {last.by || '—'}</span></> : '—'}
+                        {/* Date only (owner, 2026-10-22) — who changed it is in the detail row's price steps. */}
+                        {last ? shortDate(last.on) : '—'}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onCut(r.code); }}
+                          title="Cut from the list — Refresh brings it back" aria-label={`Cut ${r.code}`}
+                          className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-700">
+                          <XMarkIcon className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-slate-50/70">
-                        <td colSpan={COLUMNS.length} className="px-3 py-3">
-                          <div className="flex flex-wrap items-start gap-x-10 gap-y-3 pl-4">
+                        <td colSpan={COLUMNS.length + 1} className="px-3 py-3">
+                          <div className="mb-2 flex flex-wrap items-baseline gap-x-4 pl-4">
+                            <span className="text-sm font-medium text-slate-900">{r.title || r.code}</span>
+                            <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/fast')}`} className="text-xs text-brand-700 hover:underline">
+                              Full price screen →
+                            </Link>
+                          </div>
+                          <div className="flex flex-wrap items-start gap-x-12 gap-y-3 pl-4">
                             <PriceBox
                               row={r}
                               queued={queued}
@@ -283,15 +326,7 @@ export default function AmzFastSellersPage() {
                               sliderMark={mark}
                               onSetPrice={(price) => onSetPrice(r, price)}
                             />
-                            <dl className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 text-sm">
-                              <dt className="text-slate-500">Product</dt><dd className="text-slate-900">{r.title || '—'}</dd>
-                              <dt className="text-slate-500">Last sold</dt><dd className="text-slate-900">{money(r.last_sold_price)} on {shortDate(r.last_sold)}</dd>
-                              <dt className="text-slate-500">Price live</dt><dd className="text-slate-900">{shortDate(r.priced_on)}</dd>
-                              <dt className="text-slate-500">Shipped</dt><dd className="text-slate-900">{shortDate(r.shipped_on)}</dd>
-                            </dl>
-                            <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/fast')}`} className="self-end text-sm text-brand-700 hover:underline">
-                              Full price screen →
-                            </Link>
+                            <PriceSteps steps={here?.steps ?? r.price_steps} />
                           </div>
                         </td>
                       </tr>
@@ -304,6 +339,66 @@ export default function AmzFastSellersPage() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+/*
+ * PRICE STEPS — see THE DETAIL ROW in the header. Columns: the day it went live ("queued" until uploaded), the price with its move,
+ * days held (to today on the current one) and units sold at it (gross — utils/sellSpeed.js). 0 sold reads grey so a step that stalled
+ * stands out from the ones that sold.
+ */
+function moveText(old: number | null, now: number | null): string {
+  if (old === null || now === null) return '';
+  const d = Math.round((now - old) * 100) / 100;
+  const abs = Math.abs(d);
+  return (d > 0 ? '+' : '−') + (abs < 1 ? `${Math.round(abs * 100)}p` : `£${abs.toFixed(2)}`);
+}
+function PriceSteps({ steps }: { steps: AmzFastStep[] }) {
+  const head = 'pb-1 text-xs font-medium uppercase tracking-wide text-slate-400';
+  if (steps.length === 0) {
+    return (
+      <div className="text-sm">
+        <div className={head}>Price steps</div>
+        <div className="text-slate-400">No price change logged in the last year</div>
+      </div>
+    );
+  }
+  return (
+    <table className="text-sm">
+      <thead>
+        <tr>
+          <th className={`${head} pr-4 text-left`}>Live</th>
+          <th className={`${head} pr-4 text-left`}>Price</th>
+          <th className={`${head} pr-4 text-right`}>Held</th>
+          <th className={`${head} pr-4 text-right`}>Sold</th>
+          <th className={`${head} text-left`}>By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {steps.map((st, i) => {
+          const up = st.old !== null && st.new !== null && st.new > st.old;
+          const tip = `${money(st.old)} → ${money(st.new)}${st.note ? ` · ${st.note}` : ''}`;
+          return (
+            <tr key={i} title={tip} className={st.current ? 'text-slate-900' : 'text-slate-600'}>
+              <td className="whitespace-nowrap py-0.5 pr-4">
+                {st.uploaded ? shortDate(st.on) : <span className="text-emerald-700">queued</span>}
+              </td>
+              <td className="whitespace-nowrap py-0.5 pr-4 tabular-nums">
+                {money(st.new)}
+                <span className={'ml-1.5 text-xs ' + (up ? 'text-emerald-700' : 'text-red-600')}>{moveText(st.old, st.new)}</span>
+              </td>
+              <td className="whitespace-nowrap py-0.5 pr-4 text-right tabular-nums">
+                {st.days !== null ? `${st.days}d` : '—'}
+              </td>
+              <td className={'whitespace-nowrap py-0.5 pr-4 text-right tabular-nums ' + (st.sold === 0 ? 'text-slate-400' : 'font-medium')}>
+                {st.sold}
+              </td>
+              <td className="whitespace-nowrap py-0.5 text-xs text-slate-500">{st.by || '—'}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -384,13 +479,20 @@ function PriceBox({ row, queued, nextReview, sliderMark, onSetPrice }: PriceBoxP
         >
           {busy ? 'Setting…' : 'Set'}
         </button>
+        {/* Reset (owner, 2026-10-22): puts the box back to the current price after nudges or typing, as Escape does. It undoes only
+            what is in the box, never a price already Set. Always in the layout and only made VISIBLE while the box differs, so its
+            appearing doesn't shift the price steps beside it (owner: "dont like the box shifting"). */}
+        <button type="button" onClick={() => { setDraft(current !== null ? current.toFixed(2) : ''); setMsg(null); }}
+          disabled={!changed || busy} tabIndex={changed && !busy ? 0 : -1}
+          className={'ml-1 text-xs text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline ' + (changed && !busy ? '' : 'invisible')}>
+          Reset
+        </button>
       </div>
       <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+        {/* Live and floor left out (owner, 2026-10-22): the row shows the price, and the below-floor warning still appears when it matters. */}
         <div>
-          Live {money(row.price)}
-          {queued !== null && <span> · queued {money(queued)}</span>}
-          {row.rrp !== null && <span> · RRP {money(row.rrp)}</span>}
-          {row.floor !== null && <span className="text-slate-400"> · floor {money(row.floor)}</span>}
+          {queued !== null && <span>Queued {money(queued)} · </span>}
+          {row.rrp !== null ? <span>RRP {money(row.rrp)}</span> : <span>No RRP</span>}
         </div>
         <div>
           {reviewDays !== null

@@ -491,6 +491,11 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
 // sold: days from its price going live to the sale, and from its last FBA shipment to the sale (server utils/sellSpeed.js owns the rules).
 // Day counts are null when there is nothing to measure from. last_priced = the newest real price change on any date, from any screen.
 export interface AmzFastLastPriced { on: string; by: string | null; note: string | null; price: number | null; uploaded: boolean }
+// One price step (utils/sellSpeed.js PRICE STEPS): `on` = the day it went live; days held (to today for the current one); units sold at it.
+export interface AmzFastStep {
+  on: string; old: number | null; new: number | null; by: string | null; note: string | null;
+  uploaded: boolean; current: boolean; days: number | null; sold: number;
+}
 export interface AmzFastRow {
   code: string; groupid: string; size: string; title: string | null; brand: string | null; segment: string | null;
   price: number | null; queued_price: number | null; rrp: number | null; floor: number | null;
@@ -500,6 +505,7 @@ export interface AmzFastRow {
   priced_on: string | null; priced_to_sold: number | null;
   shipped_on: string | null; shipped_to_sold: number | null;
   last_priced: AmzFastLastPriced | null;
+  price_steps: AmzFastStep[];   // last 3 real price changes, newest first
 }
 export function getAmzFastSellers() {
   return request<{ count: number; warm_min_unit_profit: number; rows: AmzFastRow[] }>(
