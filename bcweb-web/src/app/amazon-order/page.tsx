@@ -183,8 +183,9 @@ SIMMER (owner, 2026-10-21) took the place of COLD (sold before, not in 6 months 
           an ordering one, and its break-even is often pounds above what it sold at. Same line as isLoss, which the fill skips.
         - FBA TOTAL 0, not live (owner's call, as Boost): stock inbound, on order or picked is already the try; ordering again is the
           double order fba_total exists to stop. So a row leaves the list once its unit is sent — the list is the job.
-        - THE £3 PRICE column (warm_price, server-side: the price whose next sale books £3.01 — Warm is OVER £3) beside the price
-          to beat (queued, else live), and a "£3 price" button in the detail row's price control that puts it in the box. Nothing
+        - THE £3 PRICE column (warm_price, server-side: the price whose next sale books £3.01 — Warm is OVER £3) — the figure
+          alone; the rise on the price to beat (queued, else live) is its tooltip and sort, not printed (owner, 2026-10-22: the row
+          got too wide) — and a "£3 price" button in the detail row's price control that puts it in the box. Nothing
           is written until Set, as ever. In the Simmer view only.
         - 1 EACH — Simmer's lever, in Boost's slot on the panel (Boost is Warm's). One press puts 1 against every Simmer size on screen: Pick 1 if the shelf
           has one above Pick keep, else Order 1 (pick first, the fill's own rule). Can't get, or no supplier, leaves Order empty.
@@ -2804,19 +2805,17 @@ function AmazonOrderContent() {
                       </Link>
                     ) : <span className="font-normal text-slate-300">—</span>}
                   </td>
-                  {/* £3 PRICE — Simmer only (see WARM_COLUMN): the price to push to, and the rise on the price now. The caret opens the
-                      price control, whose "£3 price" button puts it in the box. */}
+                  {/* £3 PRICE — Simmer only (see WARM_COLUMN): the price to push to, nothing else. The rise on the price now ("+1.24" /
+                      "priced") was dropped from the cell 2026-10-22 (owner: it pushed the row too wide, and the detail row's price
+                      control already shows live, queued and the £3 price) — it lives on in the tooltip and the sort. The caret opens
+                      the price control, whose "£3 price" button puts it in the box. */}
                   {simmerOnly && (() => {
                     const lift = warmLift(r, queuedByCode[r.code]);
+                    const now = `Price now ${money(priceToBeat(r, queuedByCode[r.code]))}`;
                     return (
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700" title={`Price now ${money(priceToBeat(r, queuedByCode[r.code]))}`}>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700"
+                        title={lift === null ? now : lift > 0 ? `${now} — £${lift.toFixed(2)} to go` : `${now} — already there`}>
                         {money(r.warm_price)}
-                        {lift !== null && (
-                          <span className={'ml-1.5 text-xs ' + (lift > 0 ? 'text-amber-700' : 'text-emerald-600')}>
-                            {/* "priced" = the price now already reaches it — that size is waiting on stock, not on a price. */}
-                            {lift > 0 ? `+${lift.toFixed(2)}` : 'priced'}
-                          </span>
-                        )}
                       </td>
                     );
                   })()}
