@@ -235,10 +235,11 @@ import AppShell from '@/components/AppShell';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import AmazonExport from '@/components/AmazonExport';
+import SliderBadge, { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
 import { prettyPathLabel } from '@/lib/nav';
 import {
   getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
-  AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
+  AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder, SliderMark,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
@@ -281,14 +282,19 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
  * £3 PRICE (owner, 2026-10-21 — see SIMMER in the header): on a size whose last sale made £3 or less, a button puts row.warm_price in
  * the box — the price whose next sale would count as Warm. It only fills the box; Set still writes. Shown only when it's a RISE on the
  * price to beat, so it can never be a one-click cut.
+ *
+ * SLIDER WARNING (owner, 2026-10-22): a size in a Pricing Slider gets the same line the pricing drills carry above their setter. A
+ * price set here is a hand price like any other, so the slider reads it as "priced by hand" at its next Move and lets the size go —
+ * this screen was the one Amazon price setter without the warning. Nothing blocks; Set still works.
  */
 interface PriceControlProps {
   row: AmazonOrderRow;
   queued: number | null;
   warmMin: number;
+  sliderMark: SliderMark | null;
   onSetPrice: (code: string, price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
 }
-function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
+function PriceControl({ row, queued, warmMin, sliderMark, onSetPrice }: PriceControlProps) {
   const current = queued ?? row.price;
   const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
   const [busy, setBusy] = useState(false);
@@ -321,6 +327,7 @@ function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
   const stepBtn = 'flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40';
   return (
     <div>
+      <SliderWarning mark={sliderMark} />
       <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Amazon price</div>
       <div className="flex items-center gap-1.5">
         <button type="button" onClick={() => nudge(-0.1)} disabled={busy} aria-label="10p down" title="10p down" className={stepBtn}>
@@ -1104,6 +1111,9 @@ function AmazonOrderContent() {
   // Mutually exclusive (turning one on turns the other off): Warm is defined as not-Hot, so having both on at once would always
   // return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
+  // Pricing Slider marks — the shared SWR-cached lookup the pricing screens use (components/SliderBadge.tsx): the row's badge and the
+  // price box's warning both read amz(code).
+  const sliderMarks = useSliderMarks();
   const [potentialOnly, setPotentialOnly] = useState(false);
   // SIMMER — sold at a profit in 30 days but under Warm's £3, and nothing at Amazon (isSimmer; see SIMMER in the header). In the
   // same group as Hot and Warm, so one preset governs the screen at a time.
@@ -2690,6 +2700,8 @@ function AmazonOrderContent() {
                         table and push it past the panel — now its second tag drops under the code on that one row. */}
                     <span className="inline-flex max-w-[14.5rem] flex-wrap items-center gap-1 whitespace-nowrap">
                       <span title={r.title || undefined}>{r.code}</span>
+                      {/* PRICING SLIDER badge — the same pill as the Amazon pricing lists; links to the slider (stops the row's click). */}
+                      <SliderBadge mark={sliderMarks.amz(r.code)} />
                       {/* NOT ON AMAZON tag ("No AMZ" on screen, owner 2026-10-20 — kept short so the SKU column doesn't push the table wide) — opens the detail row, where the Amazon upload file is built. Stays until the Update
                           Amazon import finds the listing; turns green "File made" once the file downloads this session. */}
                       {!r.on_amazon && (
@@ -2835,7 +2847,7 @@ function AmazonOrderContent() {
                         {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file takes the price block's
                             place. The same component as Add / Modify, so there is one way to make the file. */}
                         {r.on_amazon
-                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} onSetPrice={onSetPrice} />
+                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} sliderMark={sliderMarks.amz(r.code)} onSetPrice={onSetPrice} />
                           : (
                             <div className="max-w-sm">
                               <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} />
