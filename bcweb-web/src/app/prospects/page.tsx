@@ -135,7 +135,7 @@ export default function ProspectsPage() {
       {/* One column, top to bottom: the toolbar (paste an Amazon link, or Add a find by hand), the add form, then the list with its
           controls on one line directly above it. Pasting a link opens the form filled in — the quick way to log a find (owner,
           2026-10-21: "Replace do we have it with Amazon URL so I can quickly add it. If a duplicate I will then know"). */}
-      <div className="max-w-5xl space-y-4">
+      <div className="space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <label className="flex min-w-0 flex-1 basis-80 items-center gap-3">
