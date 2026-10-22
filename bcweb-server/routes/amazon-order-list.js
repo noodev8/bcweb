@@ -62,6 +62,12 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          amzfeed would be invisible in `rows`, and the one thing this figure must never do is under-report. `oldest_days` is the age
          of the longest-waiting line, which is what makes it worth acting on rather than just true.
 
+         warm_price = the lowest Amazon price at which this size's NEXT sale would count as Warm (utils/amzProfit.js → priceForProfit,
+         the inverse of the formula the sale rows — and so skumap.amzprofit — are booked with), for Amazon Order's SIMMER preset (owner,
+         2026-10-21): the "£3 price" a thin-margin size is pushed towards. Aimed at £3.01, not £3.00, because Warm is unit_profit OVER
+         £3 and the booked profit is rounded to the penny — a sale at exactly the £3.00 price books "3.00" and stays Simmer. On today's
+         cost and FBA fee, so it moves when they do. Null when the cost is unknown, and on off_amazon rows (no fee, nothing to price).
+
          `hot_bar` / `warm_min_unit_profit` are the page's Hot | Warm bars (utils/portfolio.js, owner 2026-10-12). Hot is the top
          20% of sizes that sold in 30 days by profit_30d, so its £ line is computed here, over EVERY row, from the same rounded
          profit_30d the page tests — the page never ranks a filtered subset. Warm's £3 is a fixed floor, sent so the page holds no
@@ -118,6 +124,7 @@ Success Response:
       "barcode": "5057459068326", "amz_sku": "AD-0XF8D-48L", "supplier": "...", "brand": "...", "local_stock": 3, "cost": 18.50,
       "last_sold": "2026-06-02", "last_price": 39.99, "rrp": 65.00, "imagename": "...jpg",   // detail row
       "queued_price": 39.69, "floor": 27.40,                        // pending upload (null if none); cost + FBA fee (null if unknown)
+      "warm_price": 41.26,                  // Amazon price whose sale would make £3.01 — Simmer's "£3 price" (null if no cost)
       "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,     // the STYLE's mark
       "on_amazon": true },
@@ -141,11 +148,15 @@ const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
 const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
 const { HOT_SHARE, WARM_MIN_UNIT_PROFIT } = require('../utils/portfolio');
+const { priceForProfit } = require('../utils/amzProfit');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+// SIMMER's "£3 price" target — a penny over Warm's floor, because Warm is OVER it and a booked profit is rounded (see warm_price above).
+const WARM_PRICE_PROFIT = WARM_MIN_UNIT_PROFIT + 0.01;
 
 // The four code-grain stock CTEs (loc, pending, staged, ord), shared by the listed rows and off_amazon so the two can't disagree
 // about what local / FBA-bound stock is. Each is explained where it stands.
@@ -238,6 +249,8 @@ router.get('/', async (req, res) => {
              queued.new_price AS queued_price,
              -- The floor /amz-apply blocks below (cost + FBA fee), shown beside the price box so the operator isn't surprised by it.
              ${safeNumeric('sk.cost')} + ${safeNumeric('a.fbafee')} AS floor,
+             -- warm_price's inputs (utils/amzProfit.js → priceForProfit): the raw fee (it falls back itself) and the VAT flag.
+             ${safeNumeric('a.fbafee')} AS fbafee, sk.tax AS tax,
              -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
@@ -281,6 +294,7 @@ router.get('/', async (req, res) => {
              COALESCE(loc.units,0) AS local_stock,
              ${safeNumeric('sk.cost')} AS cost,
              NULL AS last_sold, NULL AS last_price, NULL AS queued_price, NULL AS floor,
+             NULL AS fbafee, NULL AS tax,
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
              ${noSupplySelectSql('sk')}
@@ -323,6 +337,7 @@ router.get('/', async (req, res) => {
         last_price: num(r.last_price),
         queued_price: num(r.queued_price),
         floor: r.floor === null ? null : Math.round(Number(r.floor) * 100) / 100,
+        warm_price: onAmazon ? priceForProfit({ cost: r.cost, fbafee: r.fbafee, tax: r.tax }, WARM_PRICE_PROFIT) : null,
         rrp: num(r.rrp),
         imagename: r.imagename || null,
         ...noSupplyFields(r),

@@ -20,7 +20,7 @@ NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have n
         which builds the Amazon upload file (AmazonExport, the same control as Add / Modify) in place of the price block. Order and
         Pick are open on these rows and go through Confirm Basket like any other: a pick needs only shelf stock, and the missing
         FNSKU is checked at Pack (AMZ Shipment refuses a size with none), by when the listing is normally in. Typed by hand only —
-        rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Cold never show them. The tag stays until
+        rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Simmer never show them. The tag stays until
         the Update Amazon import finds the listing — nothing is stored server-side, because skumap's stamp can't tell a fresh file
         from an old abandoned one. FILE MADE (owner, 2026-10-16 — "I load to Amazon then forget which one I did"): once the upload
         file downloads here, that style's tag turns green "File made", held in sessionStorage only (FILE_MADE_KEY), so it's this
@@ -28,7 +28,7 @@ NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have n
         ON AMAZON | NOT ON AMAZON | BOTH (owner, 2026-10-20 — "if not in Amazon, they are not there"): a switch over which of the two
         sets the screen shows. On Amazon (the default, and Reset's) is the listed SKUs ONLY, search included, so an order is typed only
         against what Amazon has — looking for a style that was never listed is a switch to Both. Not on Amazon is every stocked unlisted size, no search needed — the "do I add
-        these" list; Hot / Warm / Cold are tests of Amazon sales, so they're off while it's on. Both = listed, then unlisted under them.
+        these" list; Hot / Warm / Simmer are tests of Amazon sales, so they're off while it's on. Both = listed, then unlisted under them.
 
 SORT: every column header is clickable. Same click-to-reverse gesture as /inventory: picking a new column adopts its default
       direction (numeric columns start high-to-low, text starts A-Z), clicking the active column again flips it. Client-side, like
@@ -74,8 +74,8 @@ CLICK, SELECT, EXPAND (owner, 2026-09-27 — "use the Windows system"). Selectio
       was tried twice and both moved the screen on every click: "(n)" in the Cut / Can't get labels widened row 2 until the basket
       buttons wrapped, and a badge in the SKU header grew the header row. Cut and Can't get are a fixed width for the same reason.
 
-PANEL LAYOUT (2026-09-27, row 3 added 2026-10-09): row 1 FINDS — search, Hot | Warm | Cold, the Can't get chip, the row
-      count (what the finding produced), Reset. Row 2 ACTS — the rates, Pick keep, then Can't get, Cut and "0 local". Row 3 is
+PANEL LAYOUT (2026-09-27, row 3 added 2026-10-09): row 1 FINDS — search, the AMZ | NOT | BOTH switch, the row count (what the
+      finding produced), Reset. Row 2 ACTS — Hot | Warm | Simmer, the rates, Pick keep, Boost / 1 each, then Can't get, Cut and "0 local". Row 3 is
       THE BASKET — Reset order on screen / Reset pick on screen on the left, Load basket, Confirm Basket and the bin on the right.
       Can't get's confirm takes the strip under the panel, so a long sentence never wraps a row.
 
@@ -133,7 +133,7 @@ SEND: the "Confirm Basket" button turns BOTH scratchpads into real rows in one p
       taking the same free rows, so the stock figure on screen is always a little old — and the shortfall is reported per SKU in
       amber under the panel. The cost on the button is the Order half only: picked stock is already paid for and on the shelf.
 
-LOAD ORDER: a third quick preset, mutually exclusive with Winners/Potential/Recycle (owner, 2026-08-20) — show every row with a
+LOAD ORDER: a third quick preset, mutually exclusive with Hot/Warm/Simmer (owner, 2026-08-20) — show every row with a
       positive number currently in Order OR Pick, ACROSS THE FULL ~520-row set, regardless of search/Winners/Potential AND restoring every
       cut row as it goes (owner, 2026-09-03: "just show what's in my basket") — it stands alone
       rather than stacking on top of them, so a row filled while a different filter was active never silently drops out of view. A
@@ -157,19 +157,32 @@ OPEN AMAZON ORDERS BANNER: whenever Order Status holds ANY Amazon line that hasn
       Held in React state, not storage — a fresh visit to the screen should show it again. Not sticky: it is read once on arrival,
       and the panel's own "waiting to be placed" chip stays for the rest of the sitting.
 
-RECYCLE: a fourth preset, mutually exclusive with the others — SKUs that HAVE sold at some point, just not within the last 6
-      months, and don't already qualify for Winners or Potential (owner, 2026-08-20). Distinct from "never sold" (last_sold ===
-      null, excluded): this is stock with a track record that's gone quiet, worth a fresh look (reprice, re-list, bundle) rather
-      than the dead-stock problem a never-sold row represents.
+HOT / WARM / SIMMER — the three presets' ON-SCREEN names. Hot and Warm since 2026-09-27 (owner picked them from three sets); they
+      were Winners / Potential, and "Winners" collided with the portfolio WINNERS status (Repricing's Status tab). A temperature reads
+      as "how is this SIZE selling on Amazon right now" — a per-SKU reading — where the status is a style's 12 months. Labels only:
+      the handlers and the code identifiers (winnersOnly, 'potential', …) keep the old words, the same labels-only rule as
+      Repricing's Selling | Stuck. Simmer is new (2026-10-21), so its identifiers say simmer.
+      THE TESTS (owner, 2026-10-12 — isHot / isWarm / isSimmer; bars from the server, utils/portfolio.js): HOT = the top 20% of sizes
+      that sold in 30 days, ranked by 30-day profit (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit
+      profit over £3, sold in 6 months. SIMMER = not Hot, unit profit over £0 and up to £3, sold in 6 months, FBA TOTAL 0.
 
-HOT / WARM / COLD — the three presets' ON-SCREEN names since 2026-09-27 (owner picked them from three sets). They were Winners /
-      Potential / Recycle, and "Winners" collided with the portfolio WINNERS status (Repricing's Status tab). A temperature reads as "how is this SIZE selling on Amazon right now" — a 30-day, per-SKU reading — where the status
-      is a style's 12 months. Labels only: the handlers and the code identifiers (winnersOnly, 'potential', …) keep the
-      old words, the same labels-only rule as Repricing's Selling | Stuck.
-      THE TESTS (owner, 2026-10-12 — isHot / isWarm; bars from the server, utils/portfolio.js): HOT = the top 20% of sizes that sold
-      in 30 days, ranked by 30-day profit (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit profit
-      over £3, sold in 6 months. COLD = sold before, not in 6 months — every such size (until 2026-10-12 a slip in its "would be
-      Warm" check also dropped the ones with a > £3 unit profit, half of Cold on the day).
+SIMMER (owner, 2026-10-21) took the place of COLD (sold before, not in 6 months — "I don't use it"; git history has it). The sizes
+      no other preset shows: they sold at a profit, recently, but too thin for Warm, and Amazon has none — ignored, and potential
+      diamonds. The case that asked for it: a Rieker dropped to the Buy Box price sold at once, at £1.93 a unit — sold that fast,
+      there's room to push the price towards £3 and buy one to try it. The job on each row: raise the price, then order 1.
+        - THE BAR is Warm's £3 floor (the server's warm_min_unit_profit), so the two meet with no gap: the next sale at £3+ moves a
+          size to Warm by itself, nothing stored. Six months, as Warm (the sticky unit_profit guard, isRecentlySold).
+        - NO LOSSES (owner — "we dont want to order losers"): a size whose last sale made £0 or less is a pricing job before it is
+          an ordering one, and its break-even is often pounds above what it sold at. Same line as isLoss, which the fill skips.
+        - FBA TOTAL 0, not live (owner's call, as Boost): stock inbound, on order or picked is already the try; ordering again is the
+          double order fba_total exists to stop. So a row leaves the list once its unit is sent — the list is the job.
+        - THE £3 PRICE column (warm_price, server-side: the price whose next sale books £3.01 — Warm is OVER £3) beside the price
+          to beat (queued, else live), and a "£3 price" button in the detail row's price control that puts it in the box. Nothing
+          is written until Set, as ever. In the Simmer view only.
+        - 1 EACH — Simmer's lever, in Boost's slot on the panel (Boost is Warm's). One press puts 1 against every Simmer size on screen: Pick 1 if the shelf
+          has one above Pick keep, else Order 1 (pick first, the fill's own rule). Can't get, or no supplier, leaves Order empty.
+          It rewrites those rows' boxes like a rate fill, and writes only the boxes — Confirm Basket sends them as ever. Search is
+          allowed (unlike Boost): one each is the same answer for any slice of the list.
 
 BOOST (owner, 2026-10-21) — a Warm-only lever beside Pick keep. Warm runs from just over £3 a unit to just under the Hot line (~£16),
       and the rate fill reads units sold only, so a £12 size and a £3.50 size that each sold once got the same 1–2 units. A £10+ size
@@ -206,7 +219,7 @@ CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, CloudIcon, ShoppingCartIcon,
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, SparklesIcon, ShoppingCartIcon,
   FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon, MinusIcon, PlusIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
@@ -257,13 +270,18 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
  *
  * The box starts from the QUEUED price when there is one (set, not yet uploaded), else the live one, so a second nudge builds on the
  * first rather than on a live price Amazon hasn't caught up with.
+ *
+ * £3 PRICE (owner, 2026-10-21 — see SIMMER in the header): on a size whose last sale made £3 or less, a button puts row.warm_price in
+ * the box — the price whose next sale would count as Warm. It only fills the box; Set still writes. Shown only when it's a RISE on the
+ * price to beat, so it can never be a one-click cut.
  */
 interface PriceControlProps {
   row: AmazonOrderRow;
   queued: number | null;
+  warmMin: number;
   onSetPrice: (code: string, price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
 }
-function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
+function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
   const current = queued ?? row.price;
   const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
   const [busy, setBusy] = useState(false);
@@ -273,6 +291,8 @@ function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
   const price = draft.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
   const changed = price !== null && (current === null || Math.abs(price - current) >= 0.005);
   const belowFloor = price !== null && row.floor !== null && price < row.floor;
+  const warmPrice = row.warm_price !== null && row.unit_profit !== null && row.unit_profit <= warmMin
+    && (current === null || row.warm_price > current) ? row.warm_price : null;
 
   function nudge(delta: number) {
     const base = price ?? current ?? 0;
@@ -328,6 +348,17 @@ function PriceControl({ row, queued, onSetPrice }: PriceControlProps) {
         >
           {busy ? 'Setting…' : 'Set'}
         </button>
+        {warmPrice !== null && (
+          <button
+            type="button"
+            onClick={() => { setDraft(warmPrice.toFixed(2)); setMsg(null); }}
+            disabled={busy || price === warmPrice}
+            title={`The price whose next sale makes over £${warmMin} a unit — Warm. Fills the box; Set writes it.`}
+            className="ml-1 h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            £{warmMin} price {money(warmPrice)}
+          </button>
+        )}
       </div>
       <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
         <div>
@@ -452,7 +483,7 @@ function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
   return new Date(r.last_sold + 'T00:00:00Z').getTime() >= cutoffMs;
 }
 
-// HOT / WARM — the presets' tests, in one place so Cold's "not already Hot or Warm" can't drift from them. The bars come from the
+// HOT / WARM / SIMMER — the presets' tests, in one place so each "not Hot" can't drift from the others. The bars come from the
 // server (utils/portfolio.js, owner 2026-10-12): hotBar is the 30-day profit at the top-20% line of sizes that sold in 30 days,
 // ranked over EVERY row, so Hot is the same set whatever search or cut is on screen. units_30d > 0 matches the server's ranking
 // pool — without it a quiet month with a line at £0 would turn every unsold size Hot.
@@ -462,6 +493,12 @@ function isHot(r: AmazonOrderRow, hotBar: number | null): boolean {
 // Warm = not Hot, last-sale unit profit over the floor (£3), and an Amazon sale in 6 months (the sticky-figure guard above).
 function isWarm(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
   return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
+}
+// Simmer = not Hot, a last-sale unit profit over £0 (not isLoss) and up to Warm's floor, an Amazon sale in 6 months, and FBA TOTAL 0
+// (live + inbound + on order + picked). See SIMMER in the header. Not Warm by construction — the two meet at the floor.
+function isSimmer(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
+  return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > 0 && r.unit_profit <= warmMin
+    && isRecentlySold(r, RECENT_SALE_CUTOFF_MS) && r.fba_total === 0;
 }
 
 /*
@@ -708,8 +745,8 @@ const PICK_KEEP_DEFAULT = 1;
 
 // The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
 // rate PER VIEW (see coverageByView) so flicking between Winners and Potential shows each one's own rate still lit.
-type ViewKey = 'all' | 'winners' | 'potential' | 'recycle' | 'basket';
-const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, recycle: null, basket: null };
+type ViewKey = 'all' | 'winners' | 'potential' | 'simmer' | 'basket';
+const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, simmer: null, basket: null };
 
 // LOCAL DRAFT SAVE — Order is still not sent anywhere until the button is pressed (owner decision), but it's now saved to THIS
 // BROWSER via localStorage (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon
@@ -739,7 +776,7 @@ interface AmazonOrderDraft {
 }
 // 'order_qty' / 'pick_qty' are NOT row fields (they're the client-only scratchpads, keyed by code) — sortValue can't resolve them,
 // so they only ever sort through a manualOrder snapshot (onSort).
-type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty' | 'pick_qty';
+type SortKey = 'code' | 'local_stock' | 'fba_live' | 'fba_total' | 'units_7d' | 'units_30d' | 'unit_profit' | 'profit_30d' | 'barcode' | 'amz_sku' | 'brand' | 'order_qty' | 'pick_qty' | 'warm_lift';
 // The sort key each half's column header carries.
 const HALF_SORT: Record<BasketHalf, SortKey> = { order: 'order_qty', pick: 'pick_qty' };
 function isQtySort(key: SortKey): boolean {
@@ -761,6 +798,17 @@ const COLUMNS: { key: SortKey; label: string; title?: string; align: 'left' | 'r
   { key: 'amz_sku', label: 'Amazon SKU', title: 'Amazon Seller SKU (amzfeed.sku)', align: 'left' },
   { key: 'brand', label: 'Brand', title: 'skusummary.brand', align: 'left' },
 ];
+// SIMMER'S £3 PRICE column — shown in the Simmer view only, after Profit (30d). It SORTS on the lift (the £3 price less the price to
+// beat), smallest first: the smallest push is the likeliest to still sell. Lift is read off the server's queued/live price, so a price
+// set this visit moves the figure on screen at once (the cell reads queuedByCode) but the order only on the next load.
+const WARM_COLUMN = { key: 'warm_lift' as const, label: '£3 price', align: 'right' as const };
+function priceToBeat(r: AmazonOrderRow, queued?: number): number | null {
+  return queued ?? r.queued_price ?? r.price;
+}
+function warmLift(r: AmazonOrderRow, queued?: number): number | null {
+  const now = priceToBeat(r, queued);
+  return r.warm_price === null || now === null ? null : Math.round((r.warm_price - now) * 100) / 100;
+}
 // Text columns default A-Z; every numeric column defaults high-to-low (the biggest number is usually the interesting end).
 // Where the table sits with nothing chosen — best performers first, the screen's whole premise (see the header).
 const DEFAULT_SORT: SortKey = 'profit_30d';
@@ -768,6 +816,7 @@ const DEFAULT_SORT: SortKey = 'profit_30d';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   code: 'asc', local_stock: 'desc', fba_live: 'desc', fba_total: 'desc', units_7d: 'desc', units_30d: 'desc',
   unit_profit: 'desc', profit_30d: 'desc', barcode: 'asc', amz_sku: 'asc', brand: 'asc', order_qty: 'desc', pick_qty: 'desc',
+  warm_lift: 'asc',
 };
 
 // COLUMN GROUPS — the table is really four blocks wearing eleven columns: identity (SKU), stock on hand (Local / FBA Live / FBA
@@ -783,6 +832,7 @@ const GROUP_START: ReadonlySet<SortKey> = new Set<SortKey>(['local_stock', 'unit
 function sortValue(r: AmazonOrderRow, key: SortKey): number | string | null {
   if (key === 'order_qty' || key === 'pick_qty') return null;
   if (key === 'barcode' || key === 'amz_sku' || key === 'brand') return r[key] ? r[key]!.toLowerCase() : null;
+  if (key === 'warm_lift') return warmLift(r);
   return r[key];
 }
 
@@ -1047,23 +1097,19 @@ function AmazonOrderContent() {
   // return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
-  // RECYCLE — the mirror of Potential's 6mo check: SKUs that HAVE sold at some point, but not within the last 6 months, and don't
-  // already qualify for Winners or Potential (owner, 2026-08-20). Not "never sold" (last_sold === null) — that's dead stock with
-  // no track record at all, a different problem — this is stock that USED to move and might again, worth a fresh look (reprice,
-  // re-list, bundle) rather than sitting untouched. The Winners/Potential exclusion is belt-and-braces: a genuinely stale last_sold
-  // already fails Potential's own isRecentlySold test and Winners' profit_30d>30 (which implies a sale inside 30d), so the two
-  // can't overlap in practice, but the explicit check keeps Recycle honest if either test's window ever changes independently.
-  const [recycleOnly, setRecycleOnly] = useState(false);
+  // SIMMER — sold at a profit in 6 months but under Warm's £3, and nothing at Amazon (isSimmer; see SIMMER in the header). In the
+  // same group as Hot and Warm, so one preset governs the screen at a time.
+  const [simmerOnly, setSimmerOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
   // qty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); if (listing === 'off') setListing('on'); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
-  function togglePotential() { setPotentialOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setRecycleOnly(false); setOrdersOnly(false); deselectAll(); }
-  function toggleRecycle() { setRecycleOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleWinners() { setWinnersOnly((v) => !v); if (listing === 'off') setListing('on'); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false); deselectAll(); }
+  function togglePotential() { setPotentialOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setSimmerOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleSimmer() { setSimmerOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
 
-  // Not on Amazon has no Amazon sales for Hot / Warm / Cold to test, so choosing it switches them off.
+  // Not on Amazon has no Amazon sales for Hot / Warm / Simmer to test, so choosing it switches them off.
   function chooseListing(v: 'on' | 'off' | 'both') {
     setListing(v);
-    if (v === 'off') { setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); }
+    if (v === 'off') { setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); }
     deselectAll();
   }
 
@@ -1106,7 +1152,7 @@ function AmazonOrderContent() {
     const next = !ordersOnly;
     setOrdersOnly(next);
     setBasketSnapshot(next ? basketCodes() : null);
-    setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false);
     if (next) setCut(new Set());
     deselectAll();
   }
@@ -1122,7 +1168,7 @@ function AmazonOrderContent() {
   // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
   // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
   const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
-  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : recycleOnly ? 'recycle' : ordersOnly ? 'basket' : 'all';
+  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : simmerOnly ? 'simmer' : ordersOnly ? 'basket' : 'all';
   const coverageMonths = coverageByView[viewKey];
   const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
   function setCoverageForView(months: number | null) {
@@ -1142,8 +1188,13 @@ function AmazonOrderContent() {
 
   // Sort state is declared up here, before onReset, because onReset reads and resets it. Declaring it below the function that uses
   // it made the React Compiler treat `sortKey` as possibly reassigned and bail out of memoizing `sorted`.
-  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(DEFAULT_DIR[DEFAULT_SORT]);
+  const [chosenSortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  const [chosenSortDir, setSortDir] = useState<'asc' | 'desc'>(DEFAULT_DIR[DEFAULT_SORT]);
+  // The £3 price column exists in the Simmer view only, so a sort on it falls back to the default the moment Simmer goes off —
+  // derived here rather than reset in each of the six ways out of Simmer. Everything below reads these two.
+  const sortGone = chosenSortKey === 'warm_lift' && !simmerOnly;
+  const sortKey: SortKey = sortGone ? DEFAULT_SORT : chosenSortKey;
+  const sortDir: 'asc' | 'desc' = sortGone ? DEFAULT_DIR[DEFAULT_SORT] : chosenSortDir;
 
   // MANUAL ORDER — an explicit row order, either set by a coverage-fill click (see applyCoverage below) or by picking the Order
   // column header. Both exist so the ranking is a SNAPSHOT taken at the moment of the click, not a live re-sort — editing a box
@@ -1160,7 +1211,7 @@ function AmazonOrderContent() {
   // confirmed action for exactly that reason.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
-    setWinnersOnly(false); setPotentialOnly(false); setRecycleOnly(false); setOrdersOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false);
     setListing('on');
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
@@ -1196,27 +1247,19 @@ function AmazonOrderContent() {
       if (incTerms.length > 0 || excTerms.length > 0) o = o.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
       return o;
     };
-    // The listing switch picks the sets (see the header). Unlisted rows never come under Hot / Warm / Cold, which are tests of
+    // The listing switch picks the sets (see the header). Unlisted rows never come under Hot / Warm / Simmer, which are tests of
     // Amazon sales these rows don't have.
     let out = listing === 'off' ? [] : narrow(baseRows);
-    const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !recycleOnly ? narrow(offBaseRows) : [];
+    const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !simmerOnly ? narrow(offBaseRows) : [];
     if (winnersOnly) out = out.filter((r) => isHot(r, hotBar));
     // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
     if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
-    if (recycleOnly) {
-      // RECYCLE — see its declaration above: HAS sold before, just not within the last 6 months, and isn't already claimed by
-      // Hot or Warm. last_sold === null (never sold at all) is excluded — that's dead stock with no track record, not
-      // something that "used to move". Until 2026-10-12 the "would be Warm" check here left out Warm's 6-month test, so every
-      // stale size with a >£3 unit profit was dropped from Cold as well — half of them on the day (27 of 54).
-      out = out.filter((r) => {
-        if (!r.last_sold || isRecentlySold(r, RECENT_SALE_CUTOFF_MS)) return false;
-        return !isHot(r, hotBar) && !isWarm(r, hotBar, warmMin);
-      });
-    }
+    // Simmer reads FBA Total live from the server, so a size leaves the list once the refresh after Confirm Basket counts its unit.
+    if (simmerOnly) out = out.filter((r) => isSimmer(r, hotBar, warmMin));
     return unlisted.length > 0 ? [...out, ...unlisted] : out;
-  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, recycleOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || recycleOnly || ordersOnly || listing !== 'on';
+  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
 
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
@@ -1251,7 +1294,8 @@ function AmazonOrderContent() {
       return;
     }
     setManualOrder(null);
-    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    // Both set from the EFFECTIVE sort (see sortGone), so a flip after a fallen-back sort flips what's on screen.
+    if (key === sortKey) { setSortKey(key); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }
     else { setSortKey(key); setSortDir(DEFAULT_DIR[key]); }
   };
 
@@ -1814,6 +1858,36 @@ function AmazonOrderContent() {
   }
   const closeBoost = useCallback(() => setBoostOpen(false), []);
 
+  // 1 EACH — Simmer's lever (see SIMMER in the header). Every Simmer size on screen gets one unit: Pick 1 when the shelf holds one above
+  // Pick keep, else Order 1 (pick first, the fill's own split) — Can't get, or no supplier to place it with, leaves Order empty. It
+  // rewrites both halves of those rows, as a rate fill does, so a second press is the same answer rather than a second unit. On screen
+  // `visible` is already Simmer only, listed only; Birkenstock and losses can't be in it, but the guards are the fill's own and stay.
+  const oneEachReady = simmerOnly && !ordering;
+  function fillOneEach() {
+    const rowsOnScreen = visible.filter((r) => r.on_amazon && !isBirkenstock(r) && !isLoss(r));
+    const codes = new Set(rowsOnScreen.map((r) => r.code));
+    const pick: string[] = [];
+    const order: string[] = [];
+    for (const r of rowsOnScreen) {
+      if (r.local_stock - pickKeep >= 1) pick.push(r.code);
+      else if (!r.no_supply && r.supplier) order.push(r.code);
+    }
+    setQtyByHalf((prev) => {
+      const refill = (basket: Record<string, string>, ones: string[]) => {
+        const next = { ...basket };
+        for (const code of codes) delete next[code];
+        ones.forEach((code) => { next[code] = '1'; });
+        return next;
+      };
+      return { order: refill(prev.order, order), pick: refill(prev.pick, pick) };
+    });
+    // The lit rate described these rows' boxes; they've just been rewritten, so it goes out (as Reset order on screen does).
+    setCoverageForView(null);
+    if (ordersOnly) {
+      setBasketSnapshot((prev) => new Set([...[...(prev ?? [])].filter((c) => !codes.has(c)), ...pick, ...order]));
+    }
+  }
+
   // Keyboard movement over the visible rows. Keys are the VISIBLE rows only, so a cut row can never be arrowed onto and every move
   // lands on something on screen.
   //
@@ -2206,15 +2280,15 @@ function AmazonOrderContent() {
             </button>
             <button
               type="button"
-              onClick={toggleRecycle}
-              title="No sale in 6 months"
+              onClick={toggleSimmer}
+              title={`Sold at a profit in 6 months, but £${warmMin} a unit or less — and none at Amazon`}
               className={
                 'flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium ' +
-                (recycleOnly ? SEG_ON : SEG_OFF)
+                (simmerOnly ? SEG_ON : SEG_OFF)
               }
             >
-              <CloudIcon className="h-4 w-4" />
-              Cold
+              <SparklesIcon className="h-4 w-4" />
+              Simmer
             </button>
           </div>
 
@@ -2260,21 +2334,35 @@ function AmazonOrderContent() {
             </select>
           </div>
 
-          {/* BOOST — Warm only, always on the panel so the row never moves; disabled (with the reason as its title) off the whole
-              Warm list. Fixed width: "Boosted ×2" must not re-wrap the row. See BOOST in the header. */}
-          <button
-            type="button"
-            onClick={() => setBoostOpen(true)}
-            disabled={!boostReady}
-            title={boostWhyNot ?? 'Order more of the high-margin Warm sizes'}
-            className={
-              'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
-              + (boostedOnScreen ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
-            }
-          >
-            <BoltIcon className={'h-4 w-4 ' + (boostReady ? 'text-amber-500' : '')} />
-            {boostedOnScreen ? `Boosted ×${boostSettings.factor}` : 'Boost'}
-          </button>
+          {/* THE PRESET'S LEVER — one fixed-width slot, always on the panel so the row never moves: 1 EACH on Simmer (see SIMMER in the
+              header), BOOST otherwise — disabled (with the reason as its title) off the whole Warm list. Fixed width: "Boosted ×2"
+              must not re-wrap the row, and a second button here did wrap it (2026-10-21). See BOOST in the header. */}
+          {simmerOnly ? (
+            <button
+              type="button"
+              onClick={fillOneEach}
+              disabled={!oneEachReady || visible.length === 0}
+              title="One unit for every Simmer size on screen — Pick 1 if the shelf has one above Pick keep, else Order 1"
+              className="flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <PlusIcon className="h-4 w-4 text-amber-500" />
+              1 each
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setBoostOpen(true)}
+              disabled={!boostReady}
+              title={boostWhyNot ?? 'Order more of the high-margin Warm sizes'}
+              className={
+                'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
+                + (boostedOnScreen ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <BoltIcon className={'h-4 w-4 ' + (boostReady ? 'text-amber-500' : '')} />
+              {boostedOnScreen ? `Boosted ×${boostSettings.factor}` : 'Boost'}
+            </button>
+          )}
 
           {/* SELECTION ACTIONS — Can't get and Cut act on the selected rows (see CLICK, SELECT, EXPAND in the header). Both are a
               FIXED width with no count: a width that moved with the selection re-wrapped this row and made the sticky panel jump. Left, straight after the fill controls, so the row reads: set up the fill, deal with the rows, then send. */}
@@ -2348,9 +2436,9 @@ function AmazonOrderContent() {
               their heights together whichever state Send is in — each child centres its own contents, so nothing else moves. */}
           <div className="ml-auto flex items-stretch gap-2">
             {/* LOAD BASKET — moved here beside Send (owner, 2026-08-20): it's a basket action like its two neighbours,
-                not a narrowing filter like Winners/Potential/Recycle, so it reads more clearly sitting with the other two things
+                not a narrowing filter like Hot/Warm/Simmer, so it reads more clearly sitting with the other two things
                 that act on the basket rather than in row 1's segmented preset control. Still the same toggle underneath
-                (toggleOrdersOnly/ordersOnly), still mutually exclusive with Winners/Potential/Recycle. */}
+                (toggleOrdersOnly/ordersOnly), still mutually exclusive with Hot/Warm/Simmer. */}
             <button
               type="button"
               onClick={toggleOrdersOnly}
@@ -2553,6 +2641,10 @@ function AmazonOrderContent() {
                   sortKey, sortDir, onSort,
                 )}
                 {COLUMNS.slice(6, 8).map((c) => renderColumnHeader(c, sortKey, sortDir, onSort))}
+                {simmerOnly && renderColumnHeader(
+                  { ...WARM_COLUMN, title: `The Amazon price whose next sale makes over £${warmMin} a unit (Warm), and the rise on the price now — queued, else live. Sorts smallest rise first` },
+                  sortKey, sortDir, onSort,
+                )}
                 {/* Cut — no sort, just a header label for the X button column. */}
                 <th className="whitespace-nowrap px-1 py-1.5 font-medium" />
               </tr>
@@ -2692,6 +2784,22 @@ function AmazonOrderContent() {
                       </Link>
                     ) : <span className="font-normal text-slate-300">—</span>}
                   </td>
+                  {/* £3 PRICE — Simmer only (see WARM_COLUMN): the price to push to, and the rise on the price now. The caret opens the
+                      price control, whose "£3 price" button puts it in the box. */}
+                  {simmerOnly && (() => {
+                    const lift = warmLift(r, queuedByCode[r.code]);
+                    return (
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700" title={`Price now ${money(priceToBeat(r, queuedByCode[r.code]))}`}>
+                        {money(r.warm_price)}
+                        {lift !== null && (
+                          <span className={'ml-1.5 text-xs ' + (lift > 0 ? 'text-amber-700' : 'text-emerald-600')}>
+                            {/* "priced" = the price now already reaches it — that size is waiting on stock, not on a price. */}
+                            {lift > 0 ? `+${lift.toFixed(2)}` : 'priced'}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })()}
                   <td className="whitespace-nowrap px-1 py-1.5">
                     <button
                       type="button"
@@ -2710,7 +2818,7 @@ function AmazonOrderContent() {
                     clickable — a bare click target you can't see the boundary of invites mis-clicks on a line with three values. */}
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
-                    <td colSpan={11} className="px-3 py-2">
+                    <td colSpan={simmerOnly ? 12 : 11} className="px-3 py-2">
                       {/* Four blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
                           went for, and the codes you copy; Can't get and Inventory sit on the action line below. Label beside value at text-sm (owner, 2026-09-28: "easier to
                           read") rather than one run-on xs line. */}
@@ -2719,7 +2827,7 @@ function AmazonOrderContent() {
                         {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file takes the price block's
                             place. The same component as Add / Modify, so there is one way to make the file. */}
                         {r.on_amazon
-                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} onSetPrice={onSetPrice} />
+                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} onSetPrice={onSetPrice} />
                           : (
                             <div className="max-w-sm">
                               <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} />

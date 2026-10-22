@@ -152,6 +152,7 @@ export interface AmazonOrderRow {
   imagename: string | null; // bare filename on images.brookfieldcomfort.com
   queued_price: number | null; // a price set but not yet uploaded to Seller Central (the /amz basket's pending rule)
   floor: number | null; // cost + FBA fee — /amz-apply blocks below it; null when either part is unknown
+  warm_price: number | null; // the Amazon price whose next sale would count as Warm (Simmer's "£3 price"); null = no cost, or not listed
 
   // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
   no_supply: boolean;
@@ -477,6 +478,7 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
     imagename: r.imagename ?? null,
     queued_price: r.queued_price ?? null,
     floor: r.floor ?? null,
+    warm_price: r.warm_price ?? null,
     no_supply: r.no_supply === true,
     no_supply_since: r.no_supply_since ?? null,
     no_supply_until: r.no_supply_until ?? null,

@@ -149,14 +149,28 @@ function amzProfit({ price, cost, fbafee, tax }) {
  * Returns null when the cost is unknown (same load-bearing rule as amzProfit: show "—", never a confident wrong price).
  */
 function breakevenPrice({ cost, fbafee, tax }) {
+  return priceForProfit({ cost, fbafee, tax }, 0);
+}
+
+/**
+ * The lowest gross Amazon price at which one unit keeps `profit` — breakevenPrice with a target above £0. Its second caller is Amazon
+ * Order's SIMMER preset (owner, 2026-10-21): the "£3 price" a size has to be pushed to before its next sale counts as Warm.
+ *
+ * Same algebra as above, with the returns divisor back in, because it no longer drops out at a non-zero profit:
+ *     profit·1.2 = p - v·p - cost - R·p - fee - D·(R·p + fee) - courier - wages
+ *     p = (cost + fee·(1 + D) + courier + wages + profit·1.2) / (1 - v - R - D·R)
+ *
+ * Returns null when the cost is unknown, as breakevenPrice does.
+ */
+function priceForProfit({ cost, fbafee, tax }, profit) {
   const c = strictNum(cost);
   if (c === null || c <= 0) return null;
   const feeRaw = strictNum(fbafee);
   const fee = feeRaw === null || feeRaw <= 0 ? FBA_FEE_FALLBACK : feeRaw;
   const v = Number(tax) === 1 ? 1 / VAT_DIVISOR : 0;
   const coefficient = 1 - v - REFERRAL_RATE - DIGITAL_RATE * REFERRAL_RATE;
-  const p = (c + fee * (1 + DIGITAL_RATE) + COURIER_EACH + WAGES_EACH) / coefficient;
-  // Rounded UP to the penny: rounding to nearest could land a penny under break-even, the one direction this number must not err in.
+  const p = (c + fee * (1 + DIGITAL_RATE) + COURIER_EACH + WAGES_EACH + profit * RETURNS_DIVISOR) / coefficient;
+  // Rounded UP to the penny: rounding to nearest could land a penny under the target, the one direction this number must not err in.
   return Number.isFinite(p) ? Math.ceil(p * 100 - 1e-9) / 100 : null;
 }
 
@@ -215,6 +229,7 @@ function returnProfit({ originalProfit, originalQty, cost, disposition }) {
 module.exports = {
   amzProfit,
   breakevenPrice,
+  priceForProfit,
   returnProfit,
   REFERRAL_RATE,
   DIGITAL_RATE,

@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Module: utils/portfolio.js
 =======================================================================================================================================
-Purpose: The winner BAR, in one place — and Amazon Order's Hot | Warm bars beside it:
+Purpose: The winner BAR, in one place — and Amazon Order's Hot | Warm | Simmer bars beside it:
 
            WINNER_BAR         — utils/portfolioStatus.js, the rule that tags a style WINNERS
            WINNER_BAR_LADDER  — the Winners screen's dial (routes/portfolio-status.js) and the status lists' ?bar=
@@ -99,6 +99,12 @@ const HOT_SHARE = 0.2;
 // the median recently-sold size made £4.52 a unit and £3 cut the bottom third (129 of 356). Owner's original figure (2026-08-07),
 // kept with that reason on 2026-10-12.
 const WARM_MIN_UNIT_PROFIT = 3;
+
+// SIMMER (owner, 2026-10-21; took Cold's place) = not Hot, last-sale unit profit over £0 and up to WARM_MIN_UNIT_PROFIT, an Amazon sale
+// in 6 months, and FBA TOTAL 0. Sizes that sold at a profit but too thin for Warm — fresh, and ignored by both other presets. The job is
+// to push the price towards the £3 line and order 1 to try it: the next sale at £3+ makes the size Warm by itself. Losses are left out
+// on purpose (owner: "we dont want to order losers") — a loss is a pricing job before it is an ordering one. No constant of its own: the
+// top is Warm's floor, read by the same name, so the two can't leave a gap or overlap. Tested on the page (isSimmer).
 
 module.exports = {
   WINNER_BAR,
