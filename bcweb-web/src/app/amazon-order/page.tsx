@@ -1830,7 +1830,6 @@ function AmazonOrderContent() {
     () => new Map([...boostBases].filter(([code]) => boostCandidates.some((r) => r.code === code))),
     [boostBases, boostCandidates],
   );
-  const boostedOnScreen = boostBasesOnScreen.size > 0;
   const basketSum = useMemo<BasketSum>(() => {
     const sum: BasketSum = { order: orderUnits, pick: pickUnits, cost: 0, unpriced: 0 };
     for (const t of orderTargets) {
@@ -2354,8 +2353,9 @@ function AmazonOrderContent() {
           </div>
 
           {/* THE PRESET'S LEVER — one fixed-width slot, always on the panel so the row never moves: 1 EACH on Simmer (see SIMMER in the
-              header), BOOST otherwise — disabled (with the reason as its title) off the whole Warm list. Fixed width: "Boosted ×2"
-              must not re-wrap the row, and a second button here did wrap it (2026-10-21). See BOOST in the header. */}
+              header), BOOST otherwise — disabled (with the reason as its title) off the whole Warm list. Fixed width: a second button
+              here wrapped the row (2026-10-21). It reads "Boost" whether or not a boost is live (owner, 2026-10-22 — the "Boosted ×2"
+              label and its pressed look went: "we dont need anything there"); the dialog says what is boosted. See BOOST in the header. */}
           {simmerOnly ? (
             <button
               type="button"
@@ -2373,13 +2373,10 @@ function AmazonOrderContent() {
               onClick={() => setBoostOpen(true)}
               disabled={!boostReady}
               title={boostWhyNot ?? 'Order more of the high-margin Warm sizes'}
-              className={
-                'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
-                + (boostedOnScreen ? 'border-slate-400 bg-slate-200 text-slate-900' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
-              }
+              className="flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-slate-400 disabled:opacity-40"
             >
               <BoltIcon className={'h-4 w-4 ' + (boostReady ? 'text-amber-500' : '')} />
-              {boostedOnScreen ? `Boosted ×${boostSettings.factor}` : 'Boost'}
+              Boost
             </button>
           )}
 
