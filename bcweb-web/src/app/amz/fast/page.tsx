@@ -203,7 +203,7 @@ export default function AmzFastSellersPage() {
   }
 
   return (
-    <AppShell title="Fast sellers" headerRight={<AmzUploadButton />} wide>
+    <AppShell title="Fast sellers" headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

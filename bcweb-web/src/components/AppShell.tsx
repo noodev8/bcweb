@@ -55,14 +55,9 @@ interface AppShellProps {
   // screens where the top rows are worth more as data than as a "← Dashboard / Title" line (owner, 2026-09-24: the three Birk
   // screens). The header bar above still names where you are and gets you out.
   bare?: boolean;
-  // WIDE — the page's own column (sub-header + main) widened from max-w-5xl to most of the screen, for a working screen laid out side
-  // by side (Customer Orders: the order list with the packing panel beside it). The platform header bar widens with it so the brand
-  // and Logout line up with the page's edges, but its tab bar is CENTRED (owner, 2026-10-15) so the tabs stay roughly where they sit
-  // on every other screen.
-  wide?: boolean;
 }
 
-export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, bigTitle, headerRight, headerBarRight, crumb, bare, wide }: AppShellProps) {
+export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, bigTitle, headerRight, headerBarRight, crumb, bare }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { ready, isAuthenticated, displayName, logout } = useAuth();
@@ -129,10 +124,11 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
     return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
 
-  // One shared container so the header, sub-header and main all align to the same width across every module — a single comfortable
-  // reading-measure column. (px only here; each site adds its own vertical padding.)
-  const container = 'mx-auto max-w-5xl px-4';
-  const pageContainer = wide ? 'mx-auto max-w-[1600px] px-4' : container;
+  // One shared container so the header, sub-header and main all align to the same width across every module.
+  // WIDE FOR EVERY SCREEN (owner, 2026-10-22 — "use as much of the free space as possible"). It was a 1024px reading column
+  // (max-w-5xl) with a per-page `wide` opt-in up to 1600px (Customer Orders, Fast sellers); the opt-in is now the default and the
+  // prop is gone. The header bar's tab switcher is CENTRED (owner, 2026-10-15) so the tabs sit in the middle whatever the width.
+  const container = 'mx-auto max-w-[1600px] px-4';
 
   return (
     <div className="min-h-screen">
@@ -144,13 +140,11 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
           The "Platform" pill next to the brand is gone with the same pass — it labelled the product to the only people who already
           knew what it was. */}
       <header className="border-b border-slate-200 bg-white">
-        <div className={wide
-          ? pageContainer + ' grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-2.5'
-          : container + ' flex items-center justify-between gap-4 py-2.5'}>
+        <div className={container + ' grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-2.5'}>
           {/* Brand + switcher. The switcher scrolls on its own (min-w-0 + overflow-x-auto) so a narrow window shortens the tabs
-              rather than pushing Logout off the edge. On a wide page the wrapper dissolves (`contents`) so the brand and the switcher
+              rather than pushing Logout off the edge. The wrapper dissolves (`contents`) so the brand and the switcher
               become the grid's first two cells — brand left, switcher centred. */}
-          <div className={wide ? 'contents' : 'flex min-w-0 items-center gap-4'}>
+          <div className="contents">
             {/* The way home — there is no "← Dashboard" link on any page (see the `from` note above). The house icon says so. */}
             <Link href={homeHref} className="inline-flex shrink-0 items-center justify-self-start gap-2 text-lg font-semibold tracking-tight text-slate-900 hover:text-brand-700">
               <HomeIcon className="h-5 w-5 text-slate-400" />
@@ -201,7 +195,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
 
       {/* Optional page sub-header (back link [+ crumb] + title). */}
       {!bare && (hasTitleRow || effectiveBackHref || headerRight) && (
-        <div className={pageContainer + ' pt-6'}>
+        <div className={container + ' pt-6'}>
           {/* The back-link row. Also carries headerRight on a page with no title row — which, since the page titles went (owner,
               2026-09-24), can mean a row holding ONLY headerRight. */}
           {(effectiveBackHref || (!hasTitleRow && headerRight)) && (
@@ -250,7 +244,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
         </div>
       )}
 
-      <main className={pageContainer + ' py-6'}>{children}</main>
+      <main className={container + ' py-6'}>{children}</main>
     </div>
   );
 }

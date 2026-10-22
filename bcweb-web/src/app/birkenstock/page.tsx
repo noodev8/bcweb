@@ -886,7 +886,9 @@ export default function BirkenstockPage() {
               The min-width is a floor for narrow screens: below it the grid scrolls sideways as a unit rather than squeezing the last
               sizes off the right-hand edge.
 
-              THE WIDTH BUDGET, AND IT IS TIGHT — this is what a horizontal scrollbar under the grid always turns out to be
+              (2026-10-22: the shell is now max-w-[1600px] on every screen, so the 992px ceiling below is history — the budget has
+              ~600px more room, and Style takes it. The min-w floor reasoning still holds for narrow windows.)
+              THE WIDTH BUDGET, AND IT WAS TIGHT — this is what a horizontal scrollbar under the grid always turns out to be
               (2026-09-04, and again 2026-09-05). AppShell's container is `max-w-5xl px-4`, so the widest this table can EVER be is
               1024 − 32 = 992px, whatever the monitor: past that the shell centres and stops. Take off the vertical scrollbar the box
               now carries (~15px, Windows Chrome) and the real ceiling is about 977. So every fixed width below has to sum, plus a

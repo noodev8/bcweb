@@ -1282,7 +1282,9 @@ function GoogleAdsScreen() {
               layout the browser sizes from this list, and a column the list does not mention gets whatever is left, which is
               nothing. Count them against the <thead> row before changing either.
 
-              THE TOTAL IS CAPPED AT 992px AND NOT BY THE SCREEN — AppShell's container is max-w-5xl (1024px) less px-4, shared by
+              (2026-10-22: the shell is now max-w-[1600px] on every screen, so the 992px cap described here no longer binds — the
+              trims below stand, Style simply gets the extra width.)
+              THE TOTAL WAS CAPPED AT 992px AND NOT BY THE SCREEN — AppShell's container is max-w-5xl (1024px) less px-4, shared by
               every module on purpose. That is the real reason 1100px forced a horizontal scrollbar (owner, 2026-09-06); a wider
               monitor never helped. So B/E ROAS was paid for out of the columns beside it rather than added to the width:
                 Campaign 28->24  'standard' is the longest bucket in use and fits 96px with room

@@ -997,7 +997,7 @@ export default function BirkTrackerBook() {
           invoice, many sizes — and typing them once is the whole reason editing batches. */}
       {dirtyRows.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <span className="text-sm font-medium text-slate-800">
               <span className="tabular-nums">{dirtyRows.length}</span> {dirtyRows.length === 1 ? 'size' : 'sizes'} changed
             </span>

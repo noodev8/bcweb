@@ -57,8 +57,6 @@ export default function CustomerOrdersPage() {
 
   return (
     <AppShell
-      // Wide: the list and the packing panel sit side by side, which the standard 1024px column can't hold.
-      wide
       /* Update orders (pull in what's sold), then Fulfill (manifest + fulfil, the day's last job, the solid button), in the platform
          header bar where Logout usually sits (owner, 2026-10-15) — their own row under it was wasted space. The pick count is a
          number like the board's, so it lives on the board (CustomerOrderList). */
