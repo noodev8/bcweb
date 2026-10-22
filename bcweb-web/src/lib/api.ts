@@ -487,6 +487,27 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
   };
 }
 
+// Amazon Fast sellers (/amz/fast, server routes/amz-fast-sellers.js) — every Amazon size sold in the last 30 days (net), with how fast it
+// sold: days from its price going live to the sale, and from its last FBA shipment to the sale (server utils/sellSpeed.js owns the rules).
+// Day counts are null when there is nothing to measure from. last_priced = the newest real price change on any date, from any screen.
+export interface AmzFastLastPriced { on: string; by: string | null; note: string | null; price: number | null; uploaded: boolean }
+export interface AmzFastRow {
+  code: string; groupid: string; size: string; title: string | null; brand: string | null; segment: string | null;
+  price: number | null; queued_price: number | null; rrp: number | null; floor: number | null; warm_price: number | null;
+  units_30d: number; units_7d: number; unit_profit: number | null; fba_live: number; fba_total: number;
+  next_review: string | null;   // skumap.next_amz_price_review, YYYY-MM-DD
+  last_sold: string | null; last_sold_price: number | null;
+  priced_on: string | null; priced_to_sold: number | null;
+  shipped_on: string | null; shipped_to_sold: number | null;
+  last_priced: AmzFastLastPriced | null;
+}
+export function getAmzFastSellers() {
+  return request<{ count: number; warm_min_unit_profit: number; rows: AmzFastRow[] }>(
+    { url: '/amz-fast-sellers', method: 'GET' },
+    (b) => ({ count: b.count ?? (b.rows || []).length, warm_min_unit_profit: b.warm_min_unit_profit ?? 3, rows: (b.rows || []) as AmzFastRow[] })
+  );
+}
+
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {

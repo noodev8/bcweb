@@ -153,6 +153,7 @@ app.use('/amz-drill', require('./routes/amz-drill'));        // Stage 2: one SKU
 app.use('/amz-history', require('./routes/amz-history'));    // drill report (lazy): recent amz_price_log changes for the SKU
 app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (lazy): recent raw Amazon sales (incl. returns) for the SKU
 app.use('/amz-find', require('./routes/amz-find'));          // direct SKU search across all managed segments
+app.use('/amz-fast-sellers', require('./routes/amz-fast-sellers')); // Fast sellers: sold in 30d, priced->sold / shipped->sold (utils/sellSpeed.js)
 app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price + auto-park the SKU (skumap.next_amz_price_review)
 app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark-reviewed — park a selection of un-changed SKUs at once
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
