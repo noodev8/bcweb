@@ -66,7 +66,8 @@ function FindContent() {
 
   return (
     <AppShell title="Find a product" backHref={backHref} backLabel={backLabel}>
-      <form onSubmit={onSearch} className="mb-5 flex gap-2">
+      {/* Capped at max-w-3xl, like the Products search bar — full width on the 1600px column is a stretched line. */}
+      <form onSubmit={onSearch} className="mb-5 flex max-w-3xl gap-2">
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input

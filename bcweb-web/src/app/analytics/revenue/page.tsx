@@ -133,7 +133,8 @@ function Revenue({ data }: { data: RevenueData }) {
       </section>
 
       {/* THE SMALL PRINT (owner, 2026-10-15: "put them all at the bottom including what to provide"). */}
-      <footer className="space-y-1.5 border-t border-slate-200 pt-4 text-xs text-slate-400">
+      <footer className="space-y-1.5 border-t border-slate-200 pt-4 text-xs text-slate-400 [&>*]:max-w-4xl">
+        {/* Lines capped at max-w-4xl — on the 1600px column they ran ~250 characters, too long to read. */}
         <p>
           This year {dateLabel(data.from)} – {dateLabel(data.to)}, year before {dateLabel(data.prev_from)} – {dateLabel(data.prev_to)}.
           Revenue is net of returns, inc. VAT.

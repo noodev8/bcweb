@@ -236,7 +236,8 @@ function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?
 
   return (
     <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-      <div className="grid gap-3 sm:grid-cols-2">
+      {/* The card spans the page; its fields stop at max-w-4xl so the boxes stay a typing width on a wide screen (2026-10-22). */}
+      <div className="grid max-w-4xl gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-slate-600">
           Amazon link or ASIN <span className="font-normal text-slate-400">(optional)</span>
           <span className="mt-1 flex gap-2">
@@ -277,7 +278,7 @@ function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?
         </div>
       </div>
       {!edit && (
-        <label className="mt-3 block text-xs font-medium text-slate-600">
+        <label className="mt-3 block max-w-4xl text-xs font-medium text-slate-600">
           Comment <span className="font-normal text-slate-400">(optional)</span>
           <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={4} maxLength={10000}
             placeholder="Anything — sizes, why it looks good, what to order…" className={`${inputCls} mt-1 block w-full`} />

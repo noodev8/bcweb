@@ -538,9 +538,9 @@ function ProductsContent() {
 
   return (
     <AppShell backHref={backHref} backLabel={backLabel}>
-      {/* Search bar — fills the shared max-w-5xl column (same as the Pricing "Find a product" bar), so it lines up with the header,
-          the results and the detail panel below. */}
-      <form onSubmit={onSearch} className="mb-5 flex gap-2">
+      {/* Search bar — capped at max-w-3xl (same as the Pricing "Find a product" bar). It used to fill the 1024px column; since every
+          screen went 1600px wide (2026-10-22) a full-width box was a stretched line on an empty page. */}
+      <form onSubmit={onSearch} className="mb-5 flex max-w-3xl gap-2">
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
           <input

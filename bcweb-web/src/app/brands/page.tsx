@@ -270,7 +270,7 @@ export default function BrandsPage() {
 
           {/* FOOTNOTES — what the totals leave out, stated rather than buried. A number is only honest if its exclusions are on the
               same screen as it. */}
-          <p className="mt-3 text-xs text-slate-400">
+          <p className="mt-3 max-w-4xl text-xs text-slate-400">
             {data.excluded.length > 0 && <>Excludes {data.excluded.join(', ')} entirely — no line, and not in the totals. </>}
             Brands under {data.othersSharePct}% of window revenue are folded into Others (recomputed per channel, so the row can
             hold different brands on each). {data.channel === 'all' && 'All channels includes the shop (CM3). '}
