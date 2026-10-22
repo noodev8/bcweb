@@ -27,9 +27,9 @@ and the route it calls (/order-sync) use different words. In the title row rathe
 in the pinned control block below because it acts on the WHOLE list, not on the selected order, and pressing it is a once-in-a-while
 thing — the pinned block is for the actions you take mid-scroll.
 
-MANIFEST sits beside it (2026-10-15) for the same reason — it acts on the whole list, once a day — and then FULFIL (2026-10-20: split
-from Manifest while it's tested; each order box has its own Fulfil too). Manifest and Fulfil are the solid buttons in the row because
-they're the day's last jobs, in that order. Their outcome shows under the row, where Update orders' errors already go.
+FULFILL sits beside it (ManifestButton) for the same reason — it acts on the whole list, once a day. One press manifests on Click &
+Drop, then fulfils every packed order on Shopify (owner, 2026-10-22: one button again; each order box keeps its own Fulfil). It's the
+solid button in the row because it's the day's last job. Its outcome shows under the row, where Update orders' errors already go.
 =======================================================================================================================================
 */
 
@@ -40,7 +40,6 @@ import AppShell from '@/components/AppShell';
 import CustomerOrderList, { focusCustomerScan } from '@/components/CustomerOrderList';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import ManifestButton, { type ManifestResult } from '@/components/ManifestButton';
-import FulfilButton from '@/components/FulfilButton';
 import { CUSTOMER_ORDERS_KEY } from '@/lib/orderStatusUi';
 
 export default function CustomerOrdersPage() {
@@ -60,14 +59,13 @@ export default function CustomerOrdersPage() {
     <AppShell
       // Wide: the list and the packing panel sit side by side, which the standard 1024px column can't hold.
       wide
-      /* Update orders (pull in what's sold), then Manifest and Fulfil (the day's last jobs, the solid buttons), in the platform
+      /* Update orders (pull in what's sold), then Fulfill (manifest + fulfil, the day's last job, the solid button), in the platform
          header bar where Logout usually sits (owner, 2026-10-15) — their own row under it was wasted space. The pick count is a
          number like the board's, so it lives on the board (CustomerOrderList). */
       headerBarRight={(
         <div className="flex items-center gap-2">
           <UpdateOrdersButton compact onDone={onUpdated} onError={onUpdateError} />
-          <ManifestButton onResult={setManifestResult} />
-          <FulfilButton onResult={setManifestResult} onUpdated={onUpdated} onUpdateError={onUpdateError} />
+          <ManifestButton onResult={setManifestResult} onUpdated={onUpdated} onUpdateError={onUpdateError} />
         </div>
       )}
     >

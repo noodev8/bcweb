@@ -63,7 +63,7 @@ import {
 } from '@/lib/orderStatusUi';
 import { useApiQuery } from '@/lib/useApiQuery';
 import PickLink from '@/components/PickLink';
-import { fulfilSummary } from '@/components/FulfilButton';
+import { fulfilSummary } from '@/components/ManifestButton';
 
 // localStorage key for the "Last order" button (see lastPacked).
 const LAST_PACKED_KEY = 'customerOrders.lastPacked';

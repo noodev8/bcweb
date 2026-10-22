@@ -1,11 +1,10 @@
 # Manifest and fulfil — Customer Orders — PLAN
 
-Status: **manifest BUILT and live; Shopify fulfil BUILT 2026-10-20, not yet run live** — split from Manifest for testing (owner:
-"split it from manifest (own button) and give each order its own fulfil button so when testing can do one at a time"): `FulfilButton.tsx`
-(list-wide, header bar) and a Fulfil button in each packed order's box, both → `routes/order-status-customer-fulfil.js`. The one-press
-chain (step 3 below) is still to do. Tracking copied from what PowerBuilder writes (real orders, 2026-10-20): Royal Mail = company
-'Royal Mail' + royalmail.com tracking url; FBA = number 'AMZCourier', no company. The decisions below are the owner's, don't re-ask them.
-The "Manifest and fulfil" button sits in the Customer Orders title row (list-wide, not per order — `ManifestButton.tsx`).
+Status: **manifest BUILT and live; Shopify fulfil BUILT 2026-10-20; ONE button again 2026-10-22** (owner: "put manifest and fulfill
+as one button now") — `ManifestButton.tsx` ("Fulfill" on screen, Customer Orders header bar) runs the flow below in one press. Each
+packed order's box keeps its own Fulfil (`routes/order-status-customer-fulfil.js` with `{ ordernum }`). Tracking copied from what
+PowerBuilder writes (real orders, 2026-10-20): Royal Mail = company 'Royal Mail' + royalmail.com tracking url; FBA = number
+'AMZCourier', no company. The decisions below are the owner's, don't re-ask them.
 
 ## The job
 One press: manifest everything on Click & Drop that's waiting, save the manifest PDF to Downloads, then fulfil on Shopify — with the

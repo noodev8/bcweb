@@ -9,9 +9,9 @@ Purpose: Marks PACKED customer orders fulfilled on Shopify, with tracking, and s
 TWO WAYS IN (owner, 2026-10-20 — "split it from manifest, own button, and give each order its own fulfil button so when testing can do
 one at a time"):
   { "ordernum": "BC19343" }   one order, from its Fulfil button in the order box — the testing path
-  {}                          every packed order on the list, from the Fulfil button in the title row
-
-Manifest is a separate button for now (routes/order-status-customer-manifest.js); the plan's one-press chain comes later.
+  {}                          every packed order on the list, from the Fulfill button in the title row — which first runs the
+                              manifest (routes/order-status-customer-manifest.js) and only calls this if that went through (one
+                              button again, owner 2026-10-22)
 
 WHAT IS FULFILLED — every order we have as packed, nothing else (owner, 2026-10-19). An order qualifies when EVERY line reads `packed`
 by utils/customerOrders.js → rowState:
