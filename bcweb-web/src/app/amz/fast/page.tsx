@@ -19,14 +19,17 @@ THE LIST (owner's calls): no speed cutoff — sort and judge by eye; any margin,
 
 THE PRICE BOX (click a row): − / + move 10p, the box can be typed, Set writes it — POST /amz-apply (W-A1), into the team's upload basket
          like every Amazon pricing screen; nothing goes to Amazon until the file is uploaded. It starts from the queued price when there
-         is one, so a second nudge builds on the first. "£3 price" puts the price whose next sale makes over £3 a unit in the box; it only
-         fills the box. The note on the log row is "Fast sellers", so other screens can say where a change came from.
+         is one, so a second nudge builds on the first. No "£3 price" (owner, 2026-10-22): that is Simmer's bar for thin sizes about to
+         be ordered; here the aim is as much as a fast seller will take, so RRP is shown as the ceiling instead. The note on the log row is "Fast sellers", so other screens can say where a change came from.
 
 REVIEW (owner, 2026-10-22): a price set here reviews the size 7 days from the day it is set — UNLESS its review is already later, which
          is kept (the same shape as Shopify vs Amazon's 10-day rule). The box names which before Set. The review hides the size from the
          Amazon segment lists, not from this one.
 
 SLIDER: a size in a Pricing Slider carries its badge, and the price box the warning — pricing it here takes it out at the next Move.
+
+WHERE (owner, 2026-10-22): a tile in the dashboard's Pricing group, "for now — not through Amazon": no link on the /amz home, and no back
+         link (the logo returns to the group, as for every dashboard tile). The route stays under /amz for the upload basket's provider.
 
 UPDATE (owner, 2026-10-22): the list changes only when the Update button is pressed. SWR's own refetches (on coming back to the page,
          on reconnect) are switched off for this key, so the rows don't reshuffle under someone working down them; prices set here show
@@ -80,7 +83,7 @@ function days(n: number | null): string {
   return n === null ? '—' : `${n}d`;
 }
 
-type SortKey = 'code' | 'units_30d' | 'last_sold' | 'priced_to_sold' | 'shipped_to_sold' | 'unit_profit' | 'price' | 'warm_price' | 'fba_live' | 'last_priced';
+type SortKey = 'code' | 'units_30d' | 'last_sold' | 'priced_to_sold' | 'shipped_to_sold' | 'unit_profit' | 'price' | 'rrp' | 'fba_live' | 'last_priced';
 interface Column { key: SortKey; label: string; title: string; align: 'left' | 'right'; asc: boolean }
 // `asc` = the direction a first click sorts: the day counts fastest first, the figures biggest first, dates newest first.
 const COLUMNS: Column[] = [
@@ -91,7 +94,7 @@ const COLUMNS: Column[] = [
   { key: 'shipped_to_sold', label: 'Shipped→sold', title: 'Days from the last FBA shipment of this size to the last sale (shipments kept 60 days)', align: 'right', asc: true },
   { key: 'unit_profit', label: 'Unit profit', title: "Profit per unit on the last Amazon sale", align: 'right', asc: false },
   { key: 'price', label: 'Price', title: 'Live Amazon price — or the queued one, waiting for upload', align: 'right', asc: false },
-  { key: 'warm_price', label: '£3 price', title: 'The price whose next sale makes over £3 a unit', align: 'right', asc: false },
+  { key: 'rrp', label: 'RRP', title: "The style's RRP (skusummary.rrp) — the ceiling for a price rise", align: 'right', asc: false },
   { key: 'fba_live', label: 'FBA', title: 'Sellable FBA stock now (amzlive); hover for live + inbound', align: 'right', asc: false },
   { key: 'last_priced', label: 'Last priced', title: 'The newest price change from any screen — hover for its note', align: 'left', asc: false },
 ];
@@ -114,7 +117,8 @@ export default function AmzFastSellersPage() {
     revalidateIfStale: false, revalidateOnReconnect: false,
   });
   const rows = data?.rows ?? NO_ROWS;
-  const warmMin = data?.warm_min_unit_profit ?? 3;
+  // Unit profit at or under Simmer's £3 line reads amber — a thin fast seller is the likeliest to take a rise.
+  const thinLine = data?.warm_min_unit_profit ?? 3;
 
   // Set this visit, by code — the price now queued and the Last priced line, so a row reads "done" at once without a reload (the
   // next load reads both back from the log). Review dates likewise, so a second Set judges the rule against the date just written.
@@ -175,7 +179,7 @@ export default function AmzFastSellersPage() {
   }
 
   return (
-    <AppShell title="Fast sellers" backHref="/amz" backLabel="Amazon Pricing" headerRight={<AmzUploadButton />} wide>
+    <AppShell title="Fast sellers" headerRight={<AmzUploadButton />} wide>
       <AmzBasketBar />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -254,7 +258,7 @@ export default function AmzFastSellersPage() {
                         title={r.shipped_on ? `Shipped ${shortDate(r.shipped_on)}` : 'No FBA shipment in the 60-day archive before this sale — it went to Amazon earlier than that'}>
                         {days(r.shipped_to_sold)}
                       </td>
-                      <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.unit_profit !== null && r.unit_profit <= warmMin ? 'text-amber-700' : 'text-slate-700')}>
+                      <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.unit_profit !== null && r.unit_profit <= thinLine ? 'text-amber-700' : 'text-slate-700')}>
                         {money(r.unit_profit)}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700"
@@ -262,7 +266,7 @@ export default function AmzFastSellersPage() {
                         {money(queued ?? r.price)}
                         {queued !== null && <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700">{money(r.warm_price)}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700">{money(r.rrp)}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700" title={`Live + inbound ${r.fba_total}`}>{r.fba_live}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-slate-600" title={last ? `${money(last.price)}${last.note ? ` — ${last.note}` : ''}` : 'No price change logged in the last year'}>
                         {last ? <>{shortDate(last.on)}<span className="text-slate-400"> · {last.by || '—'}</span></> : '—'}
@@ -276,7 +280,6 @@ export default function AmzFastSellersPage() {
                               row={r}
                               queued={queued}
                               nextReview={here?.nextReview ?? r.next_review}
-                              warmMin={warmMin}
                               sliderMark={mark}
                               onSetPrice={(price) => onSetPrice(r, price)}
                             />
@@ -285,7 +288,6 @@ export default function AmzFastSellersPage() {
                               <dt className="text-slate-500">Last sold</dt><dd className="text-slate-900">{money(r.last_sold_price)} on {shortDate(r.last_sold)}</dd>
                               <dt className="text-slate-500">Price live</dt><dd className="text-slate-900">{shortDate(r.priced_on)}</dd>
                               <dt className="text-slate-500">Shipped</dt><dd className="text-slate-900">{shortDate(r.shipped_on)}</dd>
-                              <dt className="text-slate-500">RRP</dt><dd className="text-slate-900">{money(r.rrp)}</dd>
                             </dl>
                             <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/fast')}`} className="self-end text-sm text-brand-700 hover:underline">
                               Full price screen →
@@ -314,11 +316,10 @@ interface PriceBoxProps {
   row: AmzFastRow;
   queued: number | null;
   nextReview: string | null;
-  warmMin: number;
   sliderMark: SliderMark | null;
   onSetPrice: (price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
 }
-function PriceBox({ row, queued, nextReview, warmMin, sliderMark, onSetPrice }: PriceBoxProps) {
+function PriceBox({ row, queued, nextReview, sliderMark, onSetPrice }: PriceBoxProps) {
   const current = queued ?? row.price;
   const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
   const [busy, setBusy] = useState(false);
@@ -383,22 +384,12 @@ function PriceBox({ row, queued, nextReview, warmMin, sliderMark, onSetPrice }: 
         >
           {busy ? 'Setting…' : 'Set'}
         </button>
-        {row.warm_price !== null && (
-          <button
-            type="button"
-            onClick={() => { setDraft(row.warm_price!.toFixed(2)); setMsg(null); }}
-            disabled={busy || price === row.warm_price}
-            title={`The price whose next sale makes over £${warmMin} a unit. Fills the box; Set writes it.`}
-            className="ml-1 h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-          >
-            £{warmMin} price {money(row.warm_price)}
-          </button>
-        )}
       </div>
       <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
         <div>
           Live {money(row.price)}
           {queued !== null && <span> · queued {money(queued)}</span>}
+          {row.rrp !== null && <span> · RRP {money(row.rrp)}</span>}
           {row.floor !== null && <span className="text-slate-400"> · floor {money(row.floor)}</span>}
         </div>
         <div>

@@ -71,7 +71,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon,
+  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -485,6 +485,14 @@ const PART_GROUPS: Group[] = [
         description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread. Lift Shopify to Amazon’s highest price, one style or ticked in bulk.',
         href: '/pricing/vs-amazon',
         icon: ScaleIcon,
+      },
+      {
+        // Here, not on the Amazon Pricing home (owner, 2026-10-22: "under pricing for now - not through Amazon").
+        title: 'Fast sellers',
+        subtitle: 'Amazon sizes selling fast',
+        description: 'Every Amazon size sold in 30 days, fastest after being priced or shipped first — room to push the price up.',
+        href: '/amz/fast',
+        icon: BoltIcon,
       },
       {
         title: 'Price Changes',

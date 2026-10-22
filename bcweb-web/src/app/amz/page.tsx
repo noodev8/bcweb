@@ -5,15 +5,14 @@ Page: /amz  (Amazon Pricing module home)
 =======================================================================================================================================
 Purpose: Stage 0 — the segment picker, mirroring the Shopify /pricing home. Lists the managed Amazon segments (those with live amzfeed
          SKUs) from GET /amz-segments with a SKU count each; clicking one goes to its WINNERS | LOSERS lists. Also a "Find a SKU" entry
-         for the direct-search path (/amz/find), and "Fast sellers" (/amz/fast — sizes sold in 30 days, by how fast they sold after
-         being priced or shipped; owner, 2026-10-22). The upload basket bar (AmzBasketBar) sits above it so a mid-sitting queue is always
+         for the direct-search path (/amz/find). The upload basket bar (AmzBasketBar) sits above it so a mid-sitting queue is always
          visible/downloadable from here too.
 =======================================================================================================================================
 */
 
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MagnifyingGlassIcon, ChevronRightIcon, BoltIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import { getAmzSegments, AmzSegment } from '@/lib/api';
@@ -46,16 +45,6 @@ export default function AmzHome() {
         <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
         <span className="font-medium text-slate-700">Find a SKU</span>
         <span className="text-slate-400">— search by product name, group id or SKU code</span>
-      </Link>
-
-      {/* Fast sellers — every size sold in 30 days, fastest after being priced or shipped first (a pricing list, not an order one). */}
-      <Link
-        href="/amz/fast"
-        className="-mt-4 mb-6 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:border-brand-500"
-      >
-        <BoltIcon className="h-5 w-5 text-slate-400" />
-        <span className="font-medium text-slate-700">Fast sellers</span>
-        <span className="text-slate-400">— sold in 30 days, fastest after pricing or shipping first</span>
       </Link>
 
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Segments</h2>

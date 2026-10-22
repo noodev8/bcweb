@@ -35,10 +35,10 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "count": 152,
-  "warm_min_unit_profit": 3,                // the £3 line (utils/portfolio.js) — the page's "£3 price" button aims a penny over it
+  "warm_min_unit_profit": 3,                // the £3 line (utils/portfolio.js) — the page marks unit profit at or under it
   "rows": [
     { "code": "X9165-00-38", "groupid": "X9165-00", "size": "38", "title": "...", "brand": "Rieker", "segment": "RIEKER-WIN",
-      "price": 52.99, "queued_price": null, "rrp": 85.00, "floor": 44.10, "warm_price": 54.11,
+      "price": 52.99, "queued_price": null, "rrp": 85.00, "floor": 44.10,
       "units_30d": 1, "units_7d": 0, "unit_profit": 1.91, "fba_live": 1, "fba_total": 1, "next_review": "2026-10-29",
       "last_sold": "2026-10-06", "last_sold_price": 52.99,
       "priced_on": "2026-10-06", "priced_to_sold": 0, "shipped_on": "2026-10-01", "shipped_to_sold": 5,
@@ -60,16 +60,12 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { WARM_MIN_UNIT_PROFIT } = require('../utils/portfolio');
-const { priceForProfit } = require('../utils/amzProfit');
 const { SELL_SPEED_CTES, sellSpeedSelectSql, sellSpeedJoinSql, sellSpeedFields } = require('../utils/sellSpeed');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
-
-// The "£3 price" — a penny over the £3 line, because Warm is unit profit OVER £3 and a booked profit is rounded (as amazon-order-list).
-const WARM_PRICE_PROFIT = WARM_MIN_UNIT_PROFIT + 0.01;
 
 router.get('/', async (req, res) => {
   try {
@@ -90,9 +86,7 @@ router.get('/', async (req, res) => {
              ${safeNumeric('a.amzprice')} AS price,
              queued.new_price AS queued_price,
              ${safeNumeric('sk.rrp')} AS rrp,
-             ${safeNumeric('sk.cost')} AS cost,
              ${safeNumeric('sk.cost')} + ${safeNumeric('a.fbafee')} AS floor,
-             ${safeNumeric('a.fbafee')} AS fbafee, sk.tax AS tax,
              GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
              ${safeNumeric('m.amzprofit')} AS unit_profit,
@@ -121,7 +115,6 @@ router.get('/', async (req, res) => {
       queued_price: num(r.queued_price),
       rrp: num(r.rrp),
       floor: r.floor === null ? null : Math.round(Number(r.floor) * 100) / 100,
-      warm_price: priceForProfit({ cost: r.cost, fbafee: r.fbafee, tax: r.tax }, WARM_PRICE_PROFIT),
       units_30d: Number(r.units_30d) || 0,
       units_7d: Number(r.units_7d) || 0,
       unit_profit: num(r.unit_profit),

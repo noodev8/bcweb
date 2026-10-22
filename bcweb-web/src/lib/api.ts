@@ -493,7 +493,7 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
 export interface AmzFastLastPriced { on: string; by: string | null; note: string | null; price: number | null; uploaded: boolean }
 export interface AmzFastRow {
   code: string; groupid: string; size: string; title: string | null; brand: string | null; segment: string | null;
-  price: number | null; queued_price: number | null; rrp: number | null; floor: number | null; warm_price: number | null;
+  price: number | null; queued_price: number | null; rrp: number | null; floor: number | null;
   units_30d: number; units_7d: number; unit_profit: number | null; fba_live: number; fba_total: number;
   next_review: string | null;   // skumap.next_amz_price_review, YYYY-MM-DD
   last_sold: string | null; last_sold_price: number | null;
