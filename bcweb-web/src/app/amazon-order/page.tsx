@@ -202,9 +202,12 @@ BOOST (owner, 2026-10-21) — a Warm-only lever beside Pick keep. Warm runs from
       filter them out naturally"): an in-season tick was built and taken out the same day; a style the supplier has finished with is
       marked Can't get, and one still sold while in stock is worth having. It previews the whole basket now and after (numbers only, no item list — owner), and writes nothing until
       Apply — and Apply only writes the boxes (scratchpad), Confirm Basket sends them as ever. Enabled only on the WHOLE Warm list
-      (cuts allowed; any search step or season filter disables it). Applying again works from the pre-boost numbers, never on top;
-      a size stops counting as boosted the moment its boxes are rewritten (a rate fill, a Pick keep change, a hand edit, a send) — so
-      boost AFTER the rate fill. planBoost holds the arithmetic.
+      (cuts allowed; any search step or season filter disables it). NOTHING REMEMBERED (owner, 2026-10-22 — "a boost should simply be
+      a quicker way for me to go down the list... Its like a calculator as such. Nothing remembered. My core list is the list and units
+      itself"): every Apply multiplies what the boxes hold NOW, so ×2 then ×2 again is ×4, and a number typed by hand is boosted like
+      any other. There is no Remove — Clear basket is the way back ("if I got confused, I would clear basket and carry on"). Until
+      2026-10-22 it kept each size's pre-boost numbers and re-planned from those, which silently stopped the moment a box was edited —
+      a hand +1 then re-boosted from the edited figure. planBoost holds the arithmetic.
 
 NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 an Amazon
       Repricing status list linked here with ?status=&bar= and the screen showed only that list's SKUs behind a "Repricing: Winners"
@@ -529,15 +532,14 @@ function isSimmer(r: AmazonOrderRow, hotBar: number | null, warmMin: number): bo
  * above Pick keep, and Order buys the rest — the same split fillCoverage uses (owner: "pick first"). A live Can't get mark leaves the
  * Order half alone, as the fill does.
  *
- * `bases` holds the pre-boost numbers of sizes still carrying an earlier boost, so a second Apply works from those rather than
- * multiplying the boost again; a boosted size that no longer qualifies under the new settings goes back to its base.
+ * It reads the boxes as they stand and nothing else — no memory of an earlier boost (see NOTHING REMEMBERED in the header).
  */
 const BOOST_FBA_OPTIONS = [0, 1, 2] as const;
 const BOOST_FACTOR_OPTIONS = [2, 3] as const; // ×1 went the same day (owner) — all it did was turn empty boxes into 1, which ×2 does too
 interface BoostSettings { minProfit: number; fbaMax: number; factor: number }
 const BOOST_DEFAULTS: BoostSettings = { minProfit: 10, fbaMax: 0, factor: 2 };
 interface HalfQty { order: number; pick: number }
-interface BoostLine { row: AmazonOrderRow; now: HalfQty; base: HalfQty; after: HalfQty; restore: boolean }
+interface BoostLine { row: AmazonOrderRow; now: HalfQty; after: HalfQty }
 interface BoostPlan { lines: BoostLine[]; cantGet: number }
 
 function boxQty(raw: string | undefined): number {
@@ -546,26 +548,21 @@ function boxQty(raw: string | undefined): number {
 }
 
 function planBoost(
-  candidates: AmazonOrderRow[], s: BoostSettings, qty: Record<BasketHalf, Record<string, string>>,
-  bases: Map<string, HalfQty>, keep: number,
+  candidates: AmazonOrderRow[], s: BoostSettings, qty: Record<BasketHalf, Record<string, string>>, keep: number,
 ): BoostPlan {
   const lines: BoostLine[] = [];
   let cantGet = 0;
   for (const r of candidates) {
     if (!r.on_amazon || isBirkenstock(r) || isLoss(r) || r.unit_profit === null) continue;
     const now = { order: boxQty(qty.order[r.code]), pick: boxQty(qty.pick[r.code]) };
-    const base = bases.get(r.code) ?? now;
-    if (r.unit_profit < s.minProfit || r.fba_total > s.fbaMax) {
-      if (bases.has(r.code)) lines.push({ row: r, now, base, after: base, restore: true });
-      continue;
-    }
-    const need = base.order + base.pick;
+    if (r.unit_profit < s.minProfit || r.fba_total > s.fbaMax) continue;
+    const need = now.order + now.pick;
     const extra = (need === 0 ? 1 : need * s.factor) - need;
-    const pickAdd = Math.min(extra, Math.max(0, r.local_stock - keep - base.pick));
+    const pickAdd = Math.min(extra, Math.max(0, r.local_stock - keep - now.pick));
     const orderAdd = r.no_supply || !r.supplier ? 0 : extra - pickAdd; // no supplier = nothing to place an order line against
     if (extra > 0 && pickAdd + orderAdd === 0) { cantGet++; continue; }
-    const after = { order: base.order + orderAdd, pick: base.pick + pickAdd };
-    if (after.order !== now.order || after.pick !== now.pick) lines.push({ row: r, now, base, after, restore: false });
+    const after = { order: now.order + orderAdd, pick: now.pick + pickAdd };
+    if (after.order !== now.order || after.pick !== now.pick) lines.push({ row: r, now, after });
   }
   return { lines, cantGet };
 }
@@ -576,21 +573,17 @@ interface BasketSum { order: number; pick: number; cost: number; unpriced: numbe
 interface BoostDialogProps {
   candidates: AmazonOrderRow[];
   qty: Record<BasketHalf, Record<string, string>>;
-  bases: Map<string, HalfQty>;
   pickKeep: number;
   initial: BoostSettings;
   basket: BasketSum;
   onApply: (plan: BoostPlan, settings: BoostSettings) => void;
-  onRemove: () => void;
   onClose: () => void;
 }
-function BoostDialog({ candidates, qty, bases, pickKeep, initial, basket, onApply, onRemove, onClose }: BoostDialogProps) {
+function BoostDialog({ candidates, qty, pickKeep, initial, basket, onApply, onClose }: BoostDialogProps) {
   const [s, setS] = useState<BoostSettings>(initial);
-  const plan = useMemo(() => planBoost(candidates, s, qty, bases, pickKeep), [candidates, s, qty, bases, pickKeep]);
-  const boosted = plan.lines.filter((l) => !l.restore);
-  const restored = plan.lines.length - boosted.length;
+  const plan = useMemo(() => planBoost(candidates, s, qty, pickKeep), [candidates, s, qty, pickKeep]);
 
-  // The change the Apply makes to the basket, from what the boxes hold NOW (a restore can make it negative).
+  // The change the Apply makes to the basket, from what the boxes hold NOW — the basket as it stands is the "before".
   const delta: BasketSum = { order: 0, pick: 0, cost: 0, unpriced: 0 };
   for (const l of plan.lines) {
     const dOrder = l.after.order - l.now.order;
@@ -602,17 +595,9 @@ function BoostDialog({ candidates, qty, bases, pickKeep, initial, basket, onAppl
     order: basket.order + delta.order, pick: basket.pick + delta.pick, cost: basket.cost + delta.cost,
     unpriced: basket.unpriced + delta.unpriced,
   };
-  // NOW is the basket WITHOUT any boost still standing on screen (each boosted size back at its base), so the Boost column is always
-  // what boosting adds to the ORIGINAL basket — never negative, and the same figure however many times Apply has been pressed (owner).
-  const original: BasketSum = { ...basket };
-  for (const [code, base] of bases) {
-    const r = candidates.find((c) => c.code === code);
-    const dOrder = boxQty(qty.order[code]) - base.order;
-    original.order -= dOrder;
-    original.pick -= boxQty(qty.pick[code]) - base.pick;
-    if (!r || r.cost === null) original.unpriced -= dOrder; else original.cost -= dOrder * r.cost;
-  }
-  const added = { order: after.order - original.order, pick: after.pick - original.pick, cost: Math.max(0, after.cost - original.cost) }; // max: float dust can read -0.00
+  // "Added to" is measured from the basket on screen, whatever it holds — an earlier boost included (NOTHING REMEMBERED).
+  const original: BasketSum = basket;
+  const added = { order: delta.order, pick: delta.pick, cost: Math.max(0, delta.cost) }; // max: float dust can read -0.00
 
   // Escape closes, like the page's other dialogs. The page's own list keys are off while this is open (see useListCursor's enabled).
   useEffect(() => {
@@ -628,7 +613,6 @@ function BoostDialog({ candidates, qty, bases, pickKeep, initial, basket, onAppl
   const gbp = (v: number) => v.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
   const notes = [
     added.pick > 0 && `${added.pick} unit${added.pick === 1 ? '' : 's'} also picked from the shelf`,
-    restored > 0 && `${restored} earlier boost${restored === 1 ? '' : 's'} put back`,
     plan.cantGet > 0 && `${plan.cantGet} Can’t get skipped`,
     after.unpriced > 0 && `${after.unpriced} unit${after.unpriced === 1 ? '' : 's'} with no cost`,
   ].filter(Boolean);
@@ -708,11 +692,6 @@ function BoostDialog({ candidates, qty, bases, pickKeep, initial, basket, onAppl
         </div>
 
         <footer className="flex items-center gap-2 border-t border-slate-200 px-6 py-3">
-          {bases.size > 0 && (
-            <button type="button" onClick={onRemove} className="text-sm font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline">
-              Remove boost
-            </button>
-          )}
           <button type="button" onClick={onClose}
             className="ml-auto rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
             Cancel
@@ -1813,23 +1792,7 @@ function AmazonOrderContent() {
   const boostCandidates = useMemo(() => (boostReady ? visible.filter((r) => r.on_amazon) : NO_ROWS), [boostReady, visible]);
   const [boostOpen, setBoostOpen] = useState(false);
   const [boostSettings, setBoostSettings] = useState<BoostSettings>(BOOST_DEFAULTS);
-  // What the last Applies did per size: the numbers before (base) and the numbers written (set). A boost is LIVE only while the boxes
-  // still read what it wrote — a rate fill, a Pick keep change, a hand edit, a send or a clear all rewrite the boxes, and that size
-  // quietly stops being boosted without any of them having to know Boost exists. Scratchpad only, like the basket; lost on reload.
-  const [boostLog, setBoostLog] = useState<Record<string, { base: HalfQty; set: HalfQty }>>({});
-  const boostBases = useMemo(() => {
-    const m = new Map<string, HalfQty>();
-    for (const [code, l] of Object.entries(boostLog)) {
-      if (boxQty(qtyByHalf.order[code]) === l.set.order && boxQty(qtyByHalf.pick[code]) === l.set.pick) m.set(code, l.base);
-    }
-    return m;
-  }, [boostLog, qtyByHalf]);
-  // Bases for the sizes the dialog can act on — a boosted size cut since stays boosted and out of reach, rather than being put back
-  // from a screen that can't show it.
-  const boostBasesOnScreen = useMemo(
-    () => new Map([...boostBases].filter(([code]) => boostCandidates.some((r) => r.code === code))),
-    [boostBases, boostCandidates],
-  );
+  // The dialog opens on the settings last applied — a convenience only; the NUMBERS are never remembered (see the header).
   const basketSum = useMemo<BasketSum>(() => {
     const sum: BasketSum = { order: orderUnits, pick: pickUnits, cost: 0, unpriced: 0 };
     for (const t of orderTargets) {
@@ -1839,7 +1802,7 @@ function AmazonOrderContent() {
     return sum;
   }, [orderUnits, pickUnits, orderTargets, rowByCode]);
 
-  // Writes a plan's lines into the boxes (an empty half is deleted, never written as 0) and records them in the boost log.
+  // Writes a plan's lines into the boxes (an empty half is deleted, never written as 0). Nothing else is kept.
   function writeBoost(lines: BoostLine[]) {
     setQtyByHalf((prev) => {
       const order = { ...prev.order };
@@ -1850,28 +1813,10 @@ function AmazonOrderContent() {
       }
       return { order, pick };
     });
-    setBoostLog((prev) => {
-      const next = { ...prev };
-      for (const l of lines) {
-        if (l.restore) delete next[l.row.code];
-        else next[l.row.code] = { base: l.base, set: l.after };
-      }
-      return next;
-    });
   }
   function applyBoost(plan: BoostPlan, settings: BoostSettings) {
     writeBoost(plan.lines);
     setBoostSettings(settings);
-    setBoostOpen(false);
-  }
-  // Puts every boosted size on screen back to its pre-boost numbers.
-  function removeBoost() {
-    const lines: BoostLine[] = [];
-    for (const [code, base] of boostBasesOnScreen) {
-      const row = rowByCode.get(code);
-      if (row) lines.push({ row, now: base, base, after: base, restore: true });
-    }
-    writeBoost(lines);
     setBoostOpen(false);
   }
   const closeBoost = useCallback(() => setBoostOpen(false), []);
@@ -2934,12 +2879,10 @@ function AmazonOrderContent() {
         <BoostDialog
           candidates={boostCandidates}
           qty={qtyByHalf}
-          bases={boostBasesOnScreen}
           pickKeep={pickKeep}
           initial={boostSettings}
           basket={basketSum}
           onApply={applyBoost}
-          onRemove={removeBoost}
           onClose={closeBoost}
         />
       )}
