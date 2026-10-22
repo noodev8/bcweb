@@ -17,10 +17,9 @@ than trimmed to what bcweb alone would need. Revisit when the legacy screen is r
 THE ONE COLUMN THAT ACTUALLY DOES SOMETHING is `amz`. utils/orderSync.js phase E (and its twin, update_orders.py) only considers lines
 where all four sourcing flags are zero, so setting amz > 0 permanently removes the line from the sync's candidate set.
 
-  !! THIS IS ONE-WAY. !! The legacy undo was "Reset", which was deliberately NOT ported (owner's call — it was never used, and its
-  stock handling needs the wider stock-process review first). Once a line is flagged FBA, nothing in bcweb puts it back: the sync will
-  never re-sweep it. The remaining routes out are the legacy Reset button, or Delete + let the next sync re-insert the line from
-  Shopify. Say so in the UI before firing this.
+  THE UNDO IS RESET (routes/order-status-customer-reset.js, owner 2026-10-22): it clears every flag back to a new row, so the next
+  sync re-sorts the line — which, with nothing on the shelf and stock at Amazon, is FBA again. (The legacy Reset was not ported; that
+  one zeroed shelf qty too.)
 
 SINGLE-LINE ORDERS ONLY, exactly as the legacy guarded it ("Cannot order an FBA group"). A multi-line order would need its lines
 sourced independently — some from the shelf, some from FBA — and the legacy write had no way to express that, so it refused rather

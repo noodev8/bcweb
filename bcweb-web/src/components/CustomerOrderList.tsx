@@ -52,7 +52,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
-  CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, fulfilCustomerOrders, getCustomerOrderFbaFile, getCustomerOrders,
+  CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, resetCustomerOrder, fulfilCustomerOrders, getCustomerOrderFbaFile, getCustomerOrders,
   printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
   setCustomerOrderWaiting,
   setCustomerOrderDoNotOrder,
@@ -754,6 +754,7 @@ export default function CustomerOrderList() {
                   }}
                   onFbaFile={() => downloadFbaFile(active.ordernum)}
                   onDelete={async () => { if (await run(() => deleteCustomerOrder(active.ordernum))) setSelected(null); }}
+                  onReset={() => run(() => resetCustomerOrder(active.ordernum))}
                   // Each label action hands focus back to the scan box: the next thing the packer does is scan the next shoe.
                   onPrint={() => printLabel(active.ordernum, { reprint: true })}
                   onCancelLabel={async () => { await cancelLabel(active.ordernum); scanRef.current?.focus(); }}
@@ -1004,7 +1005,7 @@ function StageTile({ label, count, tone, active, onClick }: {
  */
 function OrderBox({
   order, progress, ticked, label, working, error, fulfilNote,
-  onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onPrint, onCancelLabel, onFulfil,
+  onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onReset, onPrint, onCancelLabel, onFulfil,
 }: {
   order: OrderGroup;
   progress: { scanned: number; total: number } | null;
@@ -1021,12 +1022,13 @@ function OrderBox({
   onFba: () => void;
   onFbaFile: () => void;
   onDelete: () => void;
+  onReset: () => void;
   onPrint: () => void;
   onCancelLabel: () => void;
   onFulfil: () => void;
 }) {
   const [note, setNote] = useState(order.note);
-  const [confirm, setConfirm] = useState<'fba' | 'delete' | 'cancelLabel' | 'fulfil' | null>(null);
+  const [confirm, setConfirm] = useState<'fba' | 'delete' | 'reset' | 'cancelLabel' | 'fulfil' | null>(null);
   const [more, setMore] = useState(false);
 
   const multiLine = order.lines.length > 1;
@@ -1294,6 +1296,26 @@ function OrderBox({
                 className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-40"
               >
                 Send from FBA
+              </button>
+            )}
+
+            {/* RESET (owner, 2026-10-22): back to how the sync first inserted it — FBA, the Amazon file stamp, shelf picks and Do not
+                order all cleared; the next Update orders sorts it again. Refused server-side while it has a label. */}
+            {confirm === 'reset' ? (
+              <ConfirmBox
+                message="Reset to new?"
+                onYes={() => { setConfirm(null); onReset(); }}
+                onNo={() => setConfirm(null)}
+              />
+            ) : (
+              <button
+                type="button"
+                disabled={working}
+                title="Clear FBA, picks and Do not order — the next Update orders sorts it again (shelf, then FBA, then supplier)"
+                onClick={() => setConfirm('reset')}
+                className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-slate-300 disabled:opacity-40"
+              >
+                <ArrowPathIcon className="h-4 w-4" /> Reset
               </button>
             )}
 

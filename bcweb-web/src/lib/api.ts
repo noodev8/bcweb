@@ -2792,8 +2792,8 @@ export function setCustomerOrderCourier(ordernum: string, courier: string) {
   );
 }
 
-// ONE-WAY. Sets amz > 0, which permanently removes the line from the order-sync's candidate set — the legacy undo ("Reset") was not
-// ported. Returns FBA_GROUP for a multi-line order, which the legacy guard also refused.
+// Sets amz > 0, which removes the line from the order-sync's candidate set; resetCustomerOrder is the undo. Returns FBA_GROUP for a
+// multi-line order, which the legacy guard also refused.
 export function setCustomerOrderFba(ordernum: string) {
   return request<{ picksReleased: number; fba: number }>(
     { url: '/order-status-customer-fba', method: 'POST', data: { ordernum } },
@@ -2808,6 +2808,15 @@ export function getCustomerOrderFbaFile(ordernum: string) {
   return request<{ filename: string; content: string }>(
     { url: '/order-status-customer-fba-file', method: 'POST', data: { ordernum } },
     (b) => ({ filename: String(b.filename || `AMZ-Order-${ordernum}.txt`), content: String(b.content || '') })
+  );
+}
+
+// Back to new: every sourcing flag and the orderdate stamp cleared, shelf picks released — the next Update orders sorts it again
+// (shelf, then FBA, then supplier). PACKED when a line has a label; cancel that first.
+export function resetCustomerOrder(ordernum: string) {
+  return request<{ lines: number; picksReleased: number }>(
+    { url: '/order-status-customer-reset', method: 'POST', data: { ordernum } },
+    (b) => ({ lines: Number(b.lines) || 0, picksReleased: Number(b.picksReleased) || 0 })
   );
 }
 
