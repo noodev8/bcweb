@@ -2831,8 +2831,10 @@ function AmazonOrderContent() {
                           the table (Can't get's confirm sentence and the pick note both did, side by side). Can't get first; then WHERE
                           THE STOCK IS: FBA Total quietly includes units committed to a pick but still on a local shelf (pick_pending), so a
                           SKU can read FBA Total 1 while Seller Central says 0 — say so, and hand off to Inventory (sizes and racks) to find
-                          the unit. ?from=/&back= is Inventory's Back convention. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-200 pl-3 pt-2 text-sm">
+                          the unit. ?from=/&back= is Inventory's Back convention.
+                          No rule above it (owner, 2026-10-22): a border-t there read as the table's next row divider, as if Can't get
+                          were outside the expanded section. Spacing alone separates it from the blocks. */}
+                      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 pl-3 text-sm">
                         <SupplyControl
                           row={r}
                           sizes={sizesByStyle.get(r.groupid) ?? 1}
