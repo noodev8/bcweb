@@ -22,7 +22,7 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
 */
 
 import { useMemo, useState } from 'react';
-import { ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -111,11 +111,22 @@ export default function ProspectsPage() {
   const [mine, setMine] = useState(false);
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState('');
+  // CUT (owner, 2026-10-22) — × takes a line off the screen for this visit only: nothing saved, no undo, no count. Refresh (or
+  // reopening the page) brings the WHOLE list back. Not a delete — that is the open card's Delete, and it is for good.
+  const [cut, setCut] = useState<Set<number>>(() => new Set());
+  const [refreshing, setRefreshing] = useState(false);
+  async function onRefresh() {
+    setRefreshing(true);
+    await q.refresh();
+    setCut(new Set());
+    setRefreshing(false);
+  }
 
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const list = rows.filter((p) =>
-      (!mine || p.owner === displayName)
+      !cut.has(p.id)
+      && (!mine || p.owner === displayName)
       && (!f || p.name.toLowerCase().includes(f) || (p.asin || '').toLowerCase().includes(f)
           || p.notes.some((n) => n.body.toLowerCase().includes(f)))
     );
@@ -125,7 +136,7 @@ export default function ProspectsPage() {
       list.sort((a, b) => lastActivity(a).localeCompare(lastActivity(b)));   // longest since anyone looked, first
     }
     return list;   // 'newest' is the server's order
-  }, [rows, mine, displayName, filter, sort]);
+  }, [rows, mine, displayName, filter, sort, cut]);
 
   const tabBtn = (on: boolean) =>
     'rounded-md px-3 py-1.5 text-sm font-medium transition ' + (on ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100');
@@ -180,6 +191,10 @@ export default function ProspectsPage() {
           </select>
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter the list…"
             className={`${inputCls} w-52`} />
+          <button type="button" onClick={onRefresh} disabled={refreshing} title="Bring back every line cut with ×"
+            className={`${smallBtn} inline-flex items-center gap-1.5 py-1.5 text-sm`}>
+            <ArrowPathIcon className={'h-4 w-4 ' + (refreshing ? 'animate-spin' : '')} /> Refresh
+          </button>
         </div>
 
         {q.error ? (
@@ -194,7 +209,7 @@ export default function ProspectsPage() {
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {shown.map((p) => (p.id === openId
               ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
-              : <ProspectRow key={p.id} p={p} onOpen={() => setOpenId(p.id)} />))}
+              : <ProspectRow key={p.id} p={p} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
           </div>
         )}
       </div>
@@ -334,13 +349,15 @@ function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: Che
 
 // ---- One line --------------------------------------------------------------------------------------------------------------------
 // ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
-function ProspectRow({ p, onOpen }: { p: Prospect; onOpen: () => void }) {
+function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; onCut: () => void }) {
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
   const rating = RATINGS.find((r) => r.key === p.rating);
   const sinceLook = daysAgo(lastActivity(p));
+  // The row is a button (opens the card), so × sits beside it rather than inside — a button can't hold another button.
   return (
+    <div className="flex items-center hover:bg-slate-50">
     <button type="button" onClick={onOpen}
-      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-slate-50">
+      className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left text-sm">
       <ChevronRightIcon className="h-4 w-4 shrink-0 text-slate-400" />
       <span className="w-20 shrink-0">
         {rating && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${rating.on}`}>{rating.label}</span>}
@@ -356,6 +373,11 @@ function ProspectRow({ p, onOpen }: { p: Prospect; onOpen: () => void }) {
         {p.owner} · {fmtWhen(lastActivity(p))}
       </span>
     </button>
+    <button type="button" onClick={onCut} title="Cut from the list — Refresh brings it back" aria-label={`Cut ${p.name}`}
+      className="mx-2 shrink-0 rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-700">
+      <XMarkIcon className="h-4 w-4" />
+    </button>
+    </div>
   );
 }
 
