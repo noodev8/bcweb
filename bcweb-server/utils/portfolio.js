@@ -100,8 +100,8 @@ const HOT_SHARE = 0.2;
 // kept with that reason on 2026-10-12.
 const WARM_MIN_UNIT_PROFIT = 3;
 
-// SIMMER (owner, 2026-10-21; took Cold's place) = not Hot, last-sale unit profit over £0 and up to WARM_MIN_UNIT_PROFIT, an Amazon sale
-// in 6 months, and FBA TOTAL 0. Sizes that sold at a profit but too thin for Warm — fresh, and ignored by both other presets. The job is
+// SIMMER (owner, 2026-10-21; took Cold's place) = not Hot, last-sale unit profit over £0 and up to WARM_MIN_UNIT_PROFIT, sold in the
+// last 30 days net of returns (units_30d > 0 — was 6 months until 2026-10-22, which let in sizes that sat for months), and FBA TOTAL 0. Sizes that sold at a profit but too thin for Warm — fresh, and ignored by both other presets. The job is
 // to push the price towards the £3 line and order 1 to try it: the next sale at £3+ makes the size Warm by itself. Losses are left out
 // on purpose (owner: "we dont want to order losers") — a loss is a pricing job before it is an ordering one. No constant of its own: the
 // top is Warm's floor, read by the same name, so the two can't leave a gap or overlap. Tested on the page (isSimmer).

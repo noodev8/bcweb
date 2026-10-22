@@ -164,14 +164,21 @@ HOT / WARM / SIMMER — the three presets' ON-SCREEN names. Hot and Warm since 2
       Repricing's Selling | Stuck. Simmer is new (2026-10-21), so its identifiers say simmer.
       THE TESTS (owner, 2026-10-12 — isHot / isWarm / isSimmer; bars from the server, utils/portfolio.js): HOT = the top 20% of sizes
       that sold in 30 days, ranked by 30-day profit (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit
-      profit over £3, sold in 6 months. SIMMER = not Hot, unit profit over £0 and up to £3, sold in 6 months, FBA TOTAL 0.
+      profit over £3, sold in 6 months. SIMMER = not Hot, unit profit over £0 and up to £3, sold in 30 days (net), FBA TOTAL 0.
 
 SIMMER (owner, 2026-10-21) took the place of COLD (sold before, not in 6 months — "I don't use it"; git history has it). The sizes
       no other preset shows: they sold at a profit, recently, but too thin for Warm, and Amazon has none — ignored, and potential
       diamonds. The case that asked for it: a Rieker dropped to the Buy Box price sold at once, at £1.93 a unit — sold that fast,
       there's room to push the price towards £3 and buy one to try it. The job on each row: raise the price, then order 1.
         - THE BAR is Warm's £3 floor (the server's warm_min_unit_profit), so the two meet with no gap: the next sale at £3+ moves a
-          size to Warm by itself, nothing stored. Six months, as Warm (the sticky unit_profit guard, isRecentlySold).
+          size to Warm by itself, nothing stored.
+        - SOLD IN 30 DAYS, NET (owner, 2026-10-22 — was six months, as Warm): units_30d > 0, the same net-of-returns 30-day count
+          Hot ranks by. Simmer is for sizes that sold QUICKLY at a thin price; six months let in sizes that sat for months at the
+          low price and sold once ("if a product has been sitting around for 4 months at the lower price, i dont want to order
+          more") — on 2026-10-22, 48 of the 55 Simmer sizes last sold over 30 days ago. Net, so a sale returned the next day
+          doesn't count. A 30-day sale doesn't prove the unit sold fast (it could have sat, then sold last week); that is accepted:
+          Simmer orders 1 each and FBA TOTAL 0 blocks a second while it sits, so a slow one costs one unit. How FAST a size sold
+          (priced -> sold, shipped -> sold) is the planned fast-seller pricing screen's job, not this preset's.
         - NO LOSSES (owner — "we dont want to order losers"): a size whose last sale made £0 or less is a pricing job before it is
           an ordering one, and its break-even is often pounds above what it sold at. Same line as isLoss, which the fill skips.
         - FBA TOTAL 0, not live (owner's call, as Boost): stock inbound, on order or picked is already the try; ordering again is the
@@ -494,11 +501,12 @@ function isHot(r: AmazonOrderRow, hotBar: number | null): boolean {
 function isWarm(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
   return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
 }
-// Simmer = not Hot, a last-sale unit profit over £0 (not isLoss) and up to Warm's floor, an Amazon sale in 6 months, and FBA TOTAL 0
-// (live + inbound + on order + picked). See SIMMER in the header. Not Warm by construction — the two meet at the floor.
+// Simmer = not Hot, a last-sale unit profit over £0 (not isLoss) and up to Warm's floor, sold in the last 30 days net of returns
+// (units_30d > 0), and FBA TOTAL 0 (live + inbound + on order + picked). See SIMMER in the header. Not Warm by construction — the
+// two meet at the floor. A 30-day sale also keeps unit_profit fresh, so the six-month sticky guard Warm needs isn't needed here.
 function isSimmer(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
   return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > 0 && r.unit_profit <= warmMin
-    && isRecentlySold(r, RECENT_SALE_CUTOFF_MS) && r.fba_total === 0;
+    && r.units_30d > 0 && r.fba_total === 0;
 }
 
 /*
@@ -1097,7 +1105,7 @@ function AmazonOrderContent() {
   // return nothing — a toggle GROUP reads correctly, two independent toggles would silently confuse.
   const [winnersOnly, setWinnersOnly] = useState(false);
   const [potentialOnly, setPotentialOnly] = useState(false);
-  // SIMMER — sold at a profit in 6 months but under Warm's £3, and nothing at Amazon (isSimmer; see SIMMER in the header). In the
+  // SIMMER — sold at a profit in 30 days but under Warm's £3, and nothing at Amazon (isSimmer; see SIMMER in the header). In the
   // same group as Hot and Warm, so one preset governs the screen at a time.
   const [simmerOnly, setSimmerOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
