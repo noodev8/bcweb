@@ -26,7 +26,7 @@ Cons: only works from that Chrome shortcut (other browsers/PCs show the dialog);
 | Option | Why not (for now) |
 |---|---|
 | WebUSB / raw ZPL/TSPL from browser | Needs USB driver swap (Zadig) + per-device permission prompt; fragile |
-| QZ Tray / PrintNode / Zebra Browser Print | Work well, but need an installed agent (owner doesn't want extra tools) |
+| QZ Tray / PrintNode / Zebra Browser Print | Work well, but need an installed agent (owner doesn't want extra tools). **QZ Tray revisited 2026-10-23 — see `docs/qz-tray-plan.md`.** |
 | Server-side printing from the API | VPS can't reach the LAN printer without a VPN |
 
 ## Open questions
