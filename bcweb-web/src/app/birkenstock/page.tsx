@@ -84,7 +84,7 @@ PARK — THE LEGACY "1 2 3" (owner, 2026-09-04; review-date.txt). Mark the style
 
 IT IS FILTERED ONLY WHEN A PROFIT BAND IS ON, and that pairing is the feature rather than an implementation detail. With a band you are
 WORKING the sheet — deciding what to order — and a style already ordered is settled noise on the list; parked rows drop out. On ALL you
-are LOOKING at the sheet, the whole brand, and nothing is hidden: parked styles are there, wearing the month they come back. So the
+are LOOKING at the sheet, the whole brand, and nothing is hidden: parked styles are there (no marker since 2026-10-24). So the
 same row is present or absent according to which of those two jobs is in hand, and nothing can be lost behind the park — press All and
 it is back. The count strip says how many the band is holding back, so a short list is never a mystery.
 
@@ -177,14 +177,6 @@ function todayIso(): string {
 // on the sheet — which is exactly the test the owner's own performance query makes (check_stock IS NULL OR check_stock <= today).
 function isParked(r: BirkStockRow, today: string): boolean {
   return r.review !== null && r.review > today;
-}
-
-// 'Oct' from '2026-10-01', for the marker on a parked row. Built off the string's own month digits: `new Date('2026-10-01')` is parsed
-// as UTC midnight and prints as September in any timezone west of London.
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function parkedLabel(review: string): string {
-  const m = Number(review.slice(5, 7));
-  return MONTH_ABBR[m - 1] ?? review;
 }
 
 // Whole pounds with thousands separators. The figure is an indication, not accounting (see the route header), so pence would be
@@ -979,17 +971,8 @@ export default function BirkenstockPage() {
                     </td>
                     <td className="truncate px-2 py-1.5 text-slate-800" title={r.title || ''}>
                       {styleName(r.title) || <span className="text-slate-400">—</span>}
-                      {/* A parked row is only ever seen on ALL (a band filters it out), and there it has to say WHY it looks settled
-                          — otherwise the sheet shows a red under-stocked style with no hint that it has already been ordered and
-                          dealt with. The month it comes back is the useful half of the date; the full date is on the hover. */}
-                      {isParked(r, today) && (
-                        <span
-                          className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 align-middle text-[10px] font-medium text-slate-500"
-                          title={`Ordered — parked off the working list until ${r.review}`}
-                        >
-                          {parkedLabel(r.review as string)}
-                        </span>
-                      )}
+                      {/* NO PARKED PILL (owner, 2026-10-24). A parked row on ALL used to carry the month it comes back ("Nov") after
+                          the title; it came out. The park still filters the working list under a band — that is unchanged. */}
                     </td>
                     {/* KEPT — what the style actually left behind over the year: net profit (VAT, cost, payment fee, packing, postage
                         and the returns haircut all already deducted) LESS the Google spend that went on it. It replaced the gross
