@@ -30,8 +30,14 @@ worse than no filter at all. The ONE divergence is that this screen has no Find 
 and on leaving its box, so the button had nothing left to do. See commitSteps. The other thing NOT carried over is Inventory's worded
 STOCK/SOLD commands — this grid is read by eye down a short list, and a "STOCK LESS 10" here would just be the red colouring twice.
 
-THE PLANNER (owner, 2026-09-04 — the legacy screen's Planner button). Clicking any line opens its delivery months underneath it: one
-row per month still to come, sizes under their own columns. It answers the question FULL raises but cannot settle — three units in May
+  3. SOLD (owner, 2026-10-24) — a third position on the same switch: the size columns show what each size SOLD over 365 days instead
+     of what we hold (hover a figure for its share of the style). Some sizes sell better than others and the Sold 365 total hides
+     it. Stock stays on LIVE in this mode, so the red rule and the planner's "+N" read exactly as they do there. No extra cost: these
+     are the same skumap counters Sold 365 already adds up, shipped split by size.
+
+THE PLANNER (owner, 2026-09-04 — the legacy screen's Planner button). Clicking a line's GROUPID opens its delivery months underneath
+it (it was a double-click until 2026-10-24 — owner: too rare a gesture on the web to be found; the groupid used to copy itself to the
+clipboard, and gave that up for this): one row per month still to come, sizes under their own columns. It answers the question FULL raises but cannot settle — three units in May
 and thirty-two in August is a different season from thirty-five in May. The months are rows of THIS table, not a nested one, so each
 figure sits directly beneath the size it belongs to and beneath the stock we already hold in that size. See SEASON for why they run
 September -> August, and routes/birk-planner.js for why a delivery that has fully landed shows nothing at all.
@@ -100,7 +106,14 @@ interface FilterStep {
 }
 
 // Which quantity the grid is drawing. Not a filter — see the header block.
-type Mode = 'live' | 'full';
+type Mode = 'live' | 'full' | 'sold';
+
+const MODE_LABEL: Record<Mode, string> = { live: 'Live', full: 'Full', sold: 'Sold' };
+const MODE_HINT: Record<Mode, string> = {
+  live: 'On the shelf now, ready to sell',
+  full: 'On the shelf plus everything still to come from Birkenstock',
+  sold: 'Units sold in the last 365 days, by size (Stock stays on Live)',
+};
 
 // The sort keys the owner asked for, and only those: the raw identity and the two numbers the decision is made on. Every key works in
 // both directions; clicking the active key reverses it.
@@ -191,15 +204,18 @@ function haystack(r: BirkStockRow): string {
 
 interface IndexedRow { row: BirkStockRow; hay: string }
 
-// The displayed stock for a row in the current mode: shelf only, or shelf + still to come.
+// The displayed stock for a row in the current mode: shelf only, or shelf + still to come. SOLD swaps only the size columns, so its
+// Stock is the LIVE figure.
 function stockOf(r: BirkStockRow, mode: Mode): number {
-  return mode === 'live' ? r.live : r.live + r.incoming;
+  return mode === 'full' ? r.live + r.incoming : r.live;
 }
 
 // The displayed stock for ONE size in the current mode. The two maps share a key set (the server builds them off the same size list),
 // so an absent key means the style does not carry that size at all — which is a blank cell, not a zero.
 function sizeStockOf(r: BirkStockRow, size: string, mode: Mode): number | null {
   if (!(size in r.liveSizes)) return null;
+  // `?? {}` so a server that predates soldSizes draws blanks rather than throwing.
+  if (mode === 'sold') return (r.soldSizes ?? {})[size] || 0;
   const live = r.liveSizes[size] || 0;
   return mode === 'live' ? live : live + (r.incomingSizes[size] || 0);
 }
@@ -333,7 +349,7 @@ export default function BirkenstockPage() {
   // second closes the first, so the sheet never fills with panels and the row you are reading always has the grid around it.
   const [planned, setPlanned] = useState<string | null>(null);
 
-  // SELECTION, kept apart from the planner (owner, 2026-09-04): clicking marks lines, a double click opens one's months. They are two
+  // SELECTION, kept apart from the planner (owner, 2026-09-04): clicking marks lines, clicking the groupid opens its months. They are two
   // different jobs. It began as a single place-marker — reading a 14-column row of small digits means holding your place across the
   // width of the screen — and became a MULTI-selection when Cut arrived, because you cut a handful of lines, not one.
   //
@@ -378,29 +394,12 @@ export default function BirkenstockPage() {
 
   const containsRef = useRef<HTMLInputElement>(null);
 
-  // ---- COPY THE GROUPID (owner, 2026-09-15) ---------------------------------------------------------------------------------------
-  // The groupid is the handle every other system takes — the legacy screen, Shopify admin, a supplier email — and it was being read off
-  // the screen and retyped. Clicking the code itself copies it.
-  // The click does NOT bubble: the rest of the row marks on click, and copying a code is not a statement about wanting to Cut or Park
-  // it. Double-click still reaches the row, so deliveries open from this cell like any other.
-  // THE CONFIRMATION CHANGES NO LAYOUT — the code turns green for a moment and turns back. It deliberately does not add a tick, a
-  // toast or a line of text: anything that takes up room moves the grid under a mouse that is mid-click, which is the whole reason
-  // the count strip above was emptied out.
-  const [copied, setCopied] = useState<string | null>(null);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const onCopyGroupid = useCallback(async (e: React.MouseEvent, groupid: string) => {
+  // OPEN THE PLANNER FROM THE GROUPID (owner, 2026-10-24). Replaced both the double-click (rare on the web, so nobody found it) and
+  // the copy-to-clipboard this click used to do. The click does NOT bubble: the rest of the row marks on click, and opening a style's
+  // deliveries is not a statement about wanting to Cut or Park it.
+  const onOpenPlanner = useCallback((e: React.MouseEvent, groupid: string) => {
     e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(groupid);
-    } catch {
-      // A browser that refuses the clipboard (an insecure origin, a denied permission) should say nothing happened rather than flash
-      // green over a copy that never took place.
-      return;
-    }
-    setCopied(groupid);
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(null), 900);
+    setPlanned((cur) => (cur === groupid ? null : groupid));
   }, []);
 
   // The whole catalogue, once. Re-read on Reset (which is the "start a fresh hunt" moment, so it doubles as refresh-from-DB — the
@@ -734,17 +733,17 @@ export default function BirkenstockPage() {
             <div className="ml-auto">
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Showing</label>
               <div className="inline-flex rounded-md bg-slate-100 p-1">
-                {(['live', 'full'] as Mode[]).map((m) => (
+                {(['live', 'full', 'sold'] as Mode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
                     onClick={() => setMode(m)}
-                    title={m === 'live' ? 'On the shelf now, ready to sell' : 'On the shelf plus everything still to come from Birkenstock'}
+                    title={MODE_HINT[m]}
                     className={`rounded px-4 py-1.5 text-sm font-medium ${
                       mode === m ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {m === 'live' ? 'Live' : 'Full'}
+                    {MODE_LABEL[m]}
                   </button>
                 ))}
               </div>
@@ -952,12 +951,9 @@ export default function BirkenstockPage() {
                 const open = planned === r.groupid;
                 return (
                   <Fragment key={r.groupid}>
-                  {/* THE WHOLE ROW IS THE PLANNER BUTTON. The legacy screen needed a line selected and then a Planner button pressed;
-                      here the row is the only thing on it to click, so making the click itself open the month breakdown removes the
-                      button entirely. The caret is what says so — a row with no affordance at all is a row nobody clicks. */}
+                  {/* THE GROUPID IS THE PLANNER BUTTON (see onOpenPlanner); the rest of the row marks. The caret beside it says so. */}
                   <tr
                     onClick={(e) => onRowClick(e, r.groupid)}
-                    onDoubleClick={() => setPlanned(open ? null : r.groupid)}
                     // No `title` on the row: see the hint at the end of the count strip for where the gestures are said instead.
                     // select-none matters more than it looks: without it a shift-click drags a text selection across the grid and the
                     // sheet ends up half-highlighted blue underneath the marks it is supposed to be showing.
@@ -971,15 +967,12 @@ export default function BirkenstockPage() {
                       ) : (
                         <ChevronRightIcon className="mr-1 inline h-3 w-3 text-slate-300" />
                       )}
-                      {/* The code is the click target, not the whole cell — the chevron beside it belongs to the row's own gestures. */}
                       <span
                         role="button"
                         tabIndex={-1}
-                        onClick={(e) => onCopyGroupid(e, r.groupid)}
-                        title={`Copy ${r.groupid}`}
-                        className={`cursor-copy rounded px-0.5 ${
-                          copied === r.groupid ? 'font-medium text-emerald-600' : 'hover:text-slate-900 hover:underline'
-                        }`}
+                        onClick={(e) => onOpenPlanner(e, r.groupid)}
+                        title={open ? 'Close deliveries' : 'Show deliveries still to come, by month'}
+                        className="rounded px-0.5 hover:text-slate-900 hover:underline"
                       >
                         {r.groupid}
                       </span>
@@ -1041,10 +1034,13 @@ export default function BirkenstockPage() {
                     </td>
                     {sizeCols.map((sz, i) => {
                       const q = sizeStockOf(r, sz, mode);
+                      // SOLD figures are drawn blue, so a glance at the grid says which numbers are on it; the share is on the hover.
+                      const sold = mode === 'sold';
                       return (
                         <td
                           key={sz}
-                          className={`py-1.5 text-center tabular-nums text-slate-700 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
+                          title={sold && q && r.sold365 ? `${sz}: ${q} sold — ${Math.round((q / r.sold365) * 100)}% of the style` : undefined}
+                          className={`py-1.5 text-center tabular-nums ${sold ? 'text-sky-700' : 'text-slate-700'} ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                         >
                           {q ? q : ''}
                         </td>
@@ -1085,7 +1081,7 @@ export default function BirkenstockPage() {
                           printing it again beneath invites it to be added twice. The per-size figures stay in both modes — they are
                           the month's SHAPE, which no single total can carry. */}
                       <td className={`${STOCK_PAD} py-1 text-right text-xs font-semibold tabular-nums text-slate-700`}>
-                        {mode === 'live' && <span className="inline-block px-1.5">+{m.units}</span>}
+                        {mode !== 'full' && <span className="inline-block px-1.5">+{m.units}</span>}
                       </td>
                       {sizeCols.map((sz, i) => (
                         <td

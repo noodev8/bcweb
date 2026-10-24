@@ -2337,6 +2337,7 @@ export interface BirkStockRow {
   incoming: number;              // still to arrive on the Birkenstock order book (requested - arrived)
   liveSizes: Record<string, number>;      // {size: units} for EVERY size the style carries (0 = none)
   incomingSizes: Record<string, number>;  // same key set as liveSizes, so one map's keys index the other
+  soldSizes: Record<string, number>;      // Sold 365 by size (same skumap counters, same key set) — the SOLD switch
 }
 
 // The whole Birkenstock catalogue in one call (~176 styles) — no term/mode/sort params by design: the screen fetches once and does its

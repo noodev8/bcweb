@@ -125,7 +125,8 @@ Success Response:
       "live": 45,                                             // FREE local units, all sizes
       "incoming": 0,                                          // still to arrive on the Birk order book (requested - arrived)
       "liveSizes":     { "35": 3, "36": 10, "37": 8 },        // 0 for a size the style carries but has none of
-      "incomingSizes": { "35": 0, "36": 0,  "37": 0 }         // same key set as liveSizes
+      "incomingSizes": { "35": 0, "36": 0,  "37": 0 },        // same key set as liveSizes
+      "soldSizes":     { "35": 1, "36": 12, "37": 9 }         // Sold 365 split by size — the same skumap counters, same key set
     }
   ]
 }
@@ -196,6 +197,14 @@ router.get('/', async (req, res) => {
         JOIN styles st ON st.groupid = m.groupid
         GROUP BY m.groupid, substring(m.code from '[^-]+$')
       ),
+      sold_sz AS (
+        -- Sold 365 split by size (owner, 2026-10-24 — the SOLD switch: some sizes sell better than others, and the style total hides
+        -- it). The SAME counters the sold CTE below sums, read one level finer, so a style's sizes always add up to its Sold 365.
+        SELECT m.groupid, substring(m.code from '[^-]+$') AS sz, SUM(COALESCE(m.shp365, 0) + COALESCE(m.cmb365, 0)) AS units
+        FROM skumap m
+        JOIN styles st ON st.groupid = m.groupid
+        GROUP BY m.groupid, substring(m.code from '[^-]+$')
+      ),
       sold AS (
         -- The 365-day counters held on skumap, summed over the style's variants. shp365 + cmb365 = Shopify + the CM3 shop (owner).
         SELECT m.groupid, SUM(COALESCE(m.shp365, 0) + COALESCE(m.cmb365, 0)) AS units
@@ -240,11 +249,13 @@ router.get('/', async (req, res) => {
         SELECT z.groupid,
                jsonb_object_agg(z.sz, COALESCE(live.units, 0)) AS live_sizes,
                jsonb_object_agg(z.sz, COALESCE(inc.units, 0))  AS incoming_sizes,
+               jsonb_object_agg(z.sz, COALESCE(ss.units, 0))   AS sold_sizes,
                SUM(COALESCE(live.units, 0))                    AS live_units,
                SUM(COALESCE(inc.units, 0))                     AS incoming_units
         FROM sizes z
         LEFT JOIN live ON live.groupid = z.groupid AND live.sz = z.sz
         LEFT JOIN inc  ON inc.groupid  = z.groupid AND inc.sz  = z.sz
+        LEFT JOIN sold_sz ss ON ss.groupid = z.groupid AND ss.sz = z.sz
         GROUP BY z.groupid
       )
       SELECT st.groupid, st.title, st.segment,
@@ -262,7 +273,8 @@ router.get('/', async (req, res) => {
              COALESCE(grid.live_units, 0)               AS live_units,
              COALESCE(grid.incoming_units, 0)           AS incoming_units,
              COALESCE(grid.live_sizes, '{}'::jsonb)     AS live_sizes,
-             COALESCE(grid.incoming_sizes, '{}'::jsonb) AS incoming_sizes
+             COALESCE(grid.incoming_sizes, '{}'::jsonb) AS incoming_sizes,
+             COALESCE(grid.sold_sizes, '{}'::jsonb)     AS sold_sizes
       FROM styles st
       LEFT JOIN grid ON grid.groupid = st.groupid
       LEFT JOIN sold ON sold.groupid = st.groupid
@@ -297,6 +309,7 @@ router.get('/', async (req, res) => {
       incoming: Number(r.incoming_units) || 0,
       liveSizes: toIntMap(r.live_sizes),
       incomingSizes: toIntMap(r.incoming_sizes),
+      soldSizes: toIntMap(r.sold_sizes),
     }));
 
     // ---- AD DATA FRESHNESS — a dead-feed alarm, not a correction ------------------------------------------------------------
