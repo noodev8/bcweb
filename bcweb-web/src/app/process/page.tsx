@@ -89,6 +89,13 @@ export default function ProcessPage() {
   // Sizes sold on ANY channel — one count per size however many channels it sold on.
   const soldAny = d ? d.rows.filter((r) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold')).length : 0;
 
+  // WINNER (owner, 2026-10-25): a new size that sold at the channel's line or better — £3 a unit, Shopify £3 after Google — on ANY
+  // channel (good on one = keep). Deliberately the low bar: these are NEW, and the other screens measure staying power. A 30-day
+  // top-20% bar was looked at and rejected — it gave 0 on Amazon while good new Riekers were still building up.
+  const winners = d
+    ? d.rows.filter((r) => CHANNELS.some((c) => ['once_good', 'multi_good'].includes(r.channels[c.id].block))).length
+    : 0;
+
   // The block whose sizes are listed below the grid. null = none open.
   const [open, setOpen] = useState<{ ch: ProcessChannel; block: Pick } | null>(null);
 
@@ -122,6 +129,11 @@ export default function ProcessPage() {
                 {soldAny}
               </span>
               <span className="text-xs text-slate-400">{pct(soldAny, d.rows.length)} of new · any channel</span>
+            </div>
+            <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Winner</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{winners}</span>
+              <span className="text-xs text-slate-400">£3+ a unit</span>
             </div>
           </section>
 
