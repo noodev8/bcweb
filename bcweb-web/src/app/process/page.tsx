@@ -175,9 +175,7 @@ function ChannelGrid({ data, channel, label, open, onOpen }: {
         }
       >
         <span className="text-xs text-slate-500">{boxLabel(p)}</span>
-        <span className={(big ? 'text-3xl ' : 'text-lg ') + 'font-semibold tabular-nums text-slate-900'}>{n}</span>
-        {p === 'sold' && <span className="text-xs text-slate-400">{pct(n, data.rows.length)} of new</span>}
-      </button>
+        <span className={(big ? 'text-3xl ' : 'text-lg ') + 'font-semibold tabular-nums text-slate-900'}>{n}</span>      </button>
     );
   };
 
