@@ -291,22 +291,22 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
   );
 
   return (
-    <div className="mt-6 max-w-5xl rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="mt-6 w-fit max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">
           New <span className="font-normal text-slate-500">· {styles.length} styles · {data.rows.length} sizes</span>
         </h3>
         <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
       </div>
-      <table className="w-full text-sm">
+      <table className="text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
             {th('groupid', 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
             {th('brand', 'Brand', 'px-3 py-2.5 font-medium')}
             {th('added', 'Added', 'px-3 py-2.5 font-medium')}
-            {th('sizes', 'Sizes', 'px-3 py-2.5 text-right font-medium')}
-            {th('local', 'Local', 'px-3 py-2.5 text-right font-medium')}
-            {th('fba', 'FBA', 'px-4 py-2.5 text-right font-medium')}
+            {th('sizes', 'Sizes', 'px-2 py-2.5 text-right font-medium')}
+            {th('local', 'Local', 'px-2 py-2.5 text-right font-medium')}
+            {th('fba', 'FBA', 'py-2.5 pl-2 pr-4 text-right font-medium')}
           </tr>
         </thead>
         <tbody>
@@ -325,15 +325,15 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{local(st)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fba(st)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">{local(st)}</td>
+                  <td className="py-2 pl-2 pr-4 text-right tabular-nums text-slate-700">{fba(st)}</td>
                 </tr>
                 {isOpen && st.sizes.map((r) => (
                   <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
                     <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={4}>{r.code}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-slate-700">{r.fbaStock}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>
+                    <td className="py-1.5 pl-2 pr-4 text-right tabular-nums text-slate-700">{r.fbaStock}</td>
                   </tr>
                 ))}
               </Fragment>
