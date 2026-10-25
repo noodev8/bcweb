@@ -13,6 +13,7 @@ Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big n
   - WINNER: sold at £3+ a unit on ANY channel; Shopify's £3 is AFTER the fixed Google allowance (line = £3 + allowance). The low bar
     on purpose — these are NEW, the other screens measure staying power. A 30-day top-20% bar was rejected (0 on Amazon while good new
     Riekers were still building up).
+  - UNSOLD: New minus Sold. Sold + Unsold = New; the pair sits together.
   - LOSER: every new size that is NOT a winner — not sold, or sold under £3 (owner: "even though we sold it, may as well be a loser").
     Winner + Loser = New.
   The caption under Sold / Winner / Loser is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
@@ -43,7 +44,7 @@ const CHANNELS: { id: ProcessChannel; label: string }[] = [
   { id: 'CM3', label: 'Shop' },
 ];
 
-type Pick = 'new' | 'sold' | 'winner' | 'loser';
+type Pick = 'new' | 'sold' | 'unsold' | 'winner' | 'loser';
 
 const SELF = '/process';
 
@@ -52,10 +53,11 @@ const isWinner = (r: ProcessSizeRow) => CHANNELS.some((c) => ['once_good', 'mult
 const FILTERS: Record<Pick, (r: ProcessSizeRow) => boolean> = {
   new: () => true,
   sold: isSold,
+  unsold: (r) => !isSold(r),
   winner: isWinner,
   loser: (r) => !isWinner(r),
 };
-const PICK_LABEL: Record<Pick, string> = { new: 'New', sold: 'Sold', winner: 'Winner', loser: 'Loser' };
+const PICK_LABEL: Record<Pick, string> = { new: 'New', sold: 'Sold', unsold: 'Unsold', winner: 'Winner', loser: 'Loser' };
 
 function money(v: number): string {
   const r = Math.round(v);
@@ -120,9 +122,16 @@ export default function ProcessPage() {
               <span className="text-xs text-slate-400">on the list</span>
             </Link>
             {box('new', `${d.styles} styles`)}
-            {box('sold', pct(count('sold'), total))}
-            {box('winner', pct(count('winner'), total))}
-            {box('loser', pct(count('loser'), total))}
+            {/* Two PAIRS, each adding up to New (100%): Sold + Unsold, Winner + Loser (owner: "so the numbers add up"). Set closer
+                together than the other boxes so each pair reads as one. */}
+            <div className="flex gap-1.5">
+              {box('sold', pct(count('sold'), total))}
+              {box('unsold', pct(count('unsold'), total))}
+            </div>
+            <div className="flex gap-1.5">
+              {box('winner', pct(count('winner'), total))}
+              {box('loser', pct(count('loser'), total))}
+            </div>
           </section>
 
           {open && <SizeList data={d} pick={open} onClose={() => setOpen(null)} />}
@@ -230,10 +239,10 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 // Each channel cell links to where that channel is acted on: Amazon → the SKU's Amazon pricing; Shopify / the shop → the style's
 // Shopify pricing (the shop sells local stock at the same price).
 function SizeList({ data, pick, onClose }: { data: ProcessOverview; pick: Pick; onClose: () => void }) {
-  // Losers OLDEST first (owner, 2026-10-25) — longest without a win at the top. The sort is stable, so a style's sizes stay together
+  // Losers (and Unsold) OLDEST first (owner, 2026-10-25) — longest without a win at the top. The sort is stable, so a style's sizes stay together
   // in size order. Everything else keeps the server's newest-first.
   const rows = data.rows.filter(FILTERS[pick]);
-  if (pick === 'loser') rows.sort((a, b) => a.created.localeCompare(b.created));
+  if (pick === 'loser' || pick === 'unsold') rows.sort((a, b) => a.created.localeCompare(b.created));
   const from = encodeURIComponent(SELF);
   return (
     <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
