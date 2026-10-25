@@ -140,7 +140,7 @@ export default function ProcessPage() {
             <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Loser</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.rows.length - winners}</span>
-              <span className="text-xs text-slate-400">not sold or under £3</span>
+              <span className="text-xs text-slate-400">Not a winner</span>
             </div>
           </section>
 
