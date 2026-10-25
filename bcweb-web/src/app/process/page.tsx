@@ -82,25 +82,29 @@ export default function ProcessPage() {
 
       {d && (
         <>
-          {/* PROSPECTS */}
-          <section className="mb-8">
+          {/* THE BIG TOTALS: prospects, and how many NEW sizes there are (owner: sizes big, styles under — every box below counts
+              sizes). */}
+          <section className="mb-8 flex flex-wrap gap-4">
             <Link
               href={`/prospects?from=${encodeURIComponent(SELF)}`}
-              className="inline-flex flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm transition hover:border-brand-500 hover:shadow-md"
+              className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm transition hover:border-brand-500 hover:shadow-md"
             >
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Prospects</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.prospects}</span>
               <span className="text-xs text-slate-400">on the list</span>
             </Link>
+            <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">New</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.rows.length}</span>
+              <span className="text-xs text-slate-400">sizes · {d.styles} styles</span>
+            </div>
           </section>
 
           {/* NEW SIZES */}
           <section>
             <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
               <h2 className="text-base font-semibold text-slate-900">New sizes</h2>
-              <span className="text-sm text-slate-500">
-                created in the last {d.newDays} days · {d.styles} styles · {d.rows.length} sizes, each judged on every channel
-              </span>
+              <span className="text-sm text-slate-500">last {d.newDays} days, by channel</span>
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
