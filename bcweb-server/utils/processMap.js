@@ -109,6 +109,23 @@ const NEW_SIZES_SQL = `
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 
+// The Process screen's UNSOLD · AT FBA card as a code list, for the Amazon repricer (routes/amz-process-list.js) — the same rules as
+// the page: a NEW size ($1 = NEW_DAYS, plain created_at) that has netted no sale on ANY channel since its style was created, and has
+// FBA stock (amzfeed.amzlive > 0; stock in both places counts here — it is already on Amazon).
+const UNSOLD_FBA_CODES_SQL = `
+  SELECT m.code
+    FROM skusummary ss
+    JOIN skumap m ON m.groupid = ss.groupid
+   WHERE ss.created_at >= now() - make_interval(days => $1::int)
+     AND (SELECT COALESCE(SUM(f.amzlive), 0) FROM amzfeed f WHERE f.code = m.code) > 0
+     AND NOT EXISTS (
+       SELECT 1 FROM sales x
+        WHERE x.code = m.code AND x.channel IN ('AMZ', 'SHP', 'CM3')
+          AND x.solddate >= (ss.created_at AT TIME ZONE 'Europe/London')::date
+        GROUP BY x.channel HAVING SUM(x.qty) > 0
+     )
+`;
+
 // The allowance in force: the newest accepted row. null if the table is empty (never, after the migration's seed).
 async function readAllowance(q) {
   const r = await q(`
@@ -162,6 +179,7 @@ module.exports = {
   MEASURE_DAYS,
   ALLOWANCE_DUE_DAYS,
   NEW_SIZES_SQL,
+  UNSOLD_FBA_CODES_SQL,
   lineFor,
   blockFor,
   readAllowance,

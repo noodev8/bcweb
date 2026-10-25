@@ -17,6 +17,10 @@ are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (serv
 Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb. `by` (and bar) ride along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
 campaign grouping on Amazon (campaigns are Shopify only).
 
+PROCESS (?by=process, 2026-10-25): the [segment] param names a list behind a Process card — 'unsold-fba' (Process → Unsold → At FBA:
+new sizes that sold nothing anywhere, with FBA stock) — from GET /amz-process-list. One unsplit list, handled exactly like a status
+(view pinned to 'all', no tabs); the crumb shows its plain name (PROCESS_LISTS). Back goes to the Process screen it came from (?from=).
+
 NO STOCK & ORDER LINK (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 a status list
 linked to /amazon-order?status=&bar=, scoping Amazon Order to the list; that arrival was taken out of Amazon Order the same day.
 Shopify's status lists keep their own link to Shopify Order.
@@ -43,7 +47,7 @@ import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getAmzWinners, getAmzLosers, getAmzStatusList, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
+import { getAmzWinners, getAmzLosers, getAmzStatusList, getAmzProcessList, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -57,6 +61,9 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+
+// The Process lists' on-screen names (the path param is the API's list key).
+const PROCESS_LISTS: Record<string, string> = { 'unsold-fba': 'Unsold at FBA' };
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
 const NO_SELECTION: Set<string> = new Set();
@@ -106,8 +113,12 @@ function SegmentContent() {
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
   // Only segment | status exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
+  // ?by=process (a Process card's list) is Amazon-only and not a PricingGroup — it is read on its own and then rides as a status-like
+  // one-list view. `by` stays 'segment' for it, but nothing below sends `group` for a process list.
+  const isProcess = searchParams.get('by') === 'process';
   const by = parseGroupBy(searchParams.get('by')) === 'status' ? 'status' : 'segment';
   const isStatus = by === 'status';
+  const isOneList = isStatus || isProcess;   // one unsplit list: no Selling / Stuck tabs, view pinned to 'all'
   // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
   const barRaw = Number(searchParams.get('bar'));
   const bar = isStatus && barRaw > 0 ? barRaw : null;
@@ -117,7 +128,7 @@ function SegmentContent() {
 
   // A status list has no Selling / Stuck split, so its view is pinned to 'all' (= the one list) whatever the URL says.
   const [modeState, setMode] = useState<ListView>(parseListView(searchParams.get('mode')));
-  const mode: ListView = isStatus ? 'all' : modeState;
+  const mode: ListView = isOneList ? 'all' : modeState;
   const [showPending, setShowPending] = useState(searchParams.get('pending') === '1');
 
   // Back target — threaded via ?from=/&back= so arriving from the Segments heatmap returns you there rather than to /amz (the Amazon
@@ -131,8 +142,23 @@ function SegmentContent() {
   // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
   // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['amz-lists', by, segment, bar],
+    ['amz-lists', isProcess ? 'process' : by, segment, bar],
     async () => {
+      // A PROCESS list — the same handling as a status list just below, from GET /amz-process-list.
+      if (isProcess) {
+        const s = await getAmzProcessList(segment);
+        if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
+        const rows: ListRow[] = s.data.rows.map((r) => ({
+          kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
+          fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
+        };
+      }
       // A STATUS is one unsplit list (GET /amz-status-list — every SKU of the status's styles, 0 FBA included). Its rows go in
       // `winners` with `losers` empty, and the view is pinned to 'all' above, so the rest of the page works unchanged.
       if (isStatus) {
@@ -201,7 +227,7 @@ function SegmentContent() {
 
   // Bulk selection + last-run feedback belong to ONE view of ONE segment, so they're scoped and discarded during render on a switch —
   // no reset effect, and no frame showing the previous view's ticks.
-  const scope = `${mode}|${showPending}|${by}|${segment}|${bar ?? ''}`;
+  const scope = `${mode}|${showPending}|${isProcess ? 'process' : by}|${segment}|${bar ?? ''}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -209,14 +235,14 @@ function SegmentContent() {
   const error = markError ?? data?.partialError ?? loadError?.message ?? null;
   // The basket item's segment is display-only and the server rebuild fills the real one (amz-basket: sk.segment). On a status list the
   // page name isn't a segment, so leave it blank rather than label a SKU "WINNERS" until the next rebuild.
-  const basketSegment = isStatus ? null : segment;
+  const basketSegment = isOneList ? null : segment;
 
   // This list's own URL — the view (mode + pending) and the back-context (from/back) included — so anything opened from here returns
   // to the same view with the same "← back" target. The return ticket for a SKU's drill and for Amazon Order alike.
   function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
-    return `/amz/${encodeURIComponent(segment)}?${isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
+    return `/amz/${encodeURIComponent(segment)}?${isProcess ? 'by=process&' : isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
   }
 
   function openSku(code: string) {
@@ -350,7 +376,7 @@ function SegmentContent() {
   const ready = !loading && !error && !!data;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={segment} channel="amazon" note={isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isProcess ? (PROCESS_LISTS[segment] || segment) : segment} channel="amazon" note={isProcess ? 'process' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <ListViewControls
@@ -359,7 +385,7 @@ function SegmentContent() {
         counts={data ? view.counts : null}
         dueOnly={!showPending}
         onDueOnlyChange={(due) => setShowPending(!due)}
-        showTabs={!isStatus}
+        showTabs={!isOneList}
         summary={data ? (
           // At the top, so it's seen without scrolling (owner, 2026-09-26): the STYLES in the table below as the header — as the
           // Repricing card counts them — and under it the items (sizes = table rows). Both follow the Due switch.
@@ -375,7 +401,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isStatus ? 'status' : 'segment'} right now.
+          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isProcess ? 'list' : isStatus ? 'status' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}

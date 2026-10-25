@@ -428,6 +428,21 @@ export function getAmzStatusList(status: string, bar?: number | null) {
   );
 }
 
+// The Amazon repricer list behind a Process card (GET /amz-process-list — 'unsold-fba' = Process → Unsold → At FBA). Same row shape
+// as getAmzStatusList, so /amz/[segment]?by=process renders it unchanged.
+export function getAmzProcessList(list: string) {
+  return request<{ list: string; total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
+    { url: '/amz-process-list', method: 'GET', params: { list, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({
+      list: String(b.list || list),
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
+      outOfStock: Number(b.out_of_stock) || 0,
+      rows: b.rows || [],
+    })
+  );
+}
+
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
 // `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
 // includeParked = also return styles whose review date is still in the future, flagged parked:true (server ?parked=include).

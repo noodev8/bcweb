@@ -5,7 +5,7 @@ Page: /process — Process (owner's work in progress, 2026-10-25)
 =======================================================================================================================================
 Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big numbers:
 
-    Prospects → New → Sold → Winner → Loser
+    Prospects → New → Unsold → [Winner · Loser]   (the Sold card was taken off 2026-10-25 — Winner + Loser = Sold)
 
   - PROSPECTS: one plain total. Opens /prospects (which links back here).
   - NEW: every size of every style created in the last 90 days (counted in sizes; styles underneath).
@@ -13,12 +13,13 @@ Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big n
   - WINNER: sold at £3+ a unit on ANY channel; Shopify's £3 is AFTER the fixed Google allowance (line = £3 + allowance). The low bar
     on purpose — these are NEW, the other screens measure staying power. A 30-day top-20% bar was rejected (0 on Amazon while good new
     Riekers were still building up).
-  - UNSOLD: New minus Sold. Sold + Unsold = New; the pair sits together.
-  - LOSER: every new size that is NOT a winner — not sold, or sold under £3 (owner: "even though we sold it, may as well be a loser").
-    Winner + Loser = New.
-  The caption under Sold / Winner / Loser is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
+  - LOSER: SOLD but not a winner — under £3 on every channel it sold on (owner, 2026-10-25: "sold but not qualified").
+  - UNSOLD: New minus Sold.
+    Winner + Loser + Unsold = New: Unsold sits straight after New (top priority), Winner · Loser as a pair; their %s are rounded to add up to exactly 100%
+    (largest remainder). Winner + Loser = Sold. (Until 2026-10-25 Loser took in the unsold too, and Unsold sat paired with Sold.)
+  The caption under Winner / Loser / Unsold is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
 
-Tap New / Sold / Unsold / Winner / Loser for its list below the row (see BoxList for what each shows).
+Tap New / Winner / Loser for its list below the row (see BoxList for what each shows). Unsold opens /process/unsold.
 The per-channel cards were removed (owner: "those boxes aren't helping"). The Monday job: load prospects, then fight the losers.
 
 Rules (sold, £ a unit, the line) are server-side in bcweb-server/utils/processMap.js; this page only counts and lists.
@@ -35,28 +36,22 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
   getProcessOverview, measureProcessAllowance, acceptProcessAllowance,
-  type ProcessChannel, type ProcessAllowanceMeasure, type ProcessOverview, type ProcessSizeRow,
+  type ProcessAllowanceMeasure, type ProcessOverview, type ProcessSizeRow,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { boxCls, CHANNELS, isSold, isWinner, shortDate } from './shared';
 
-const CHANNELS: { id: ProcessChannel; label: string }[] = [
-  { id: 'AMZ', label: 'Amazon' },
-  { id: 'SHP', label: 'Shopify' },
-  { id: 'CM3', label: 'Shop' },
-];
 
 type Pick = 'new' | 'sold' | 'unsold' | 'winner' | 'loser';
 
 const SELF = '/process';
 
-const isSold = (r: ProcessSizeRow) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold');
-const isWinner = (r: ProcessSizeRow) => CHANNELS.some((c) => ['once_good', 'multi_good'].includes(r.channels[c.id].block));
 const FILTERS: Record<Pick, (r: ProcessSizeRow) => boolean> = {
   new: () => true,
   sold: isSold,
   unsold: (r) => !isSold(r),
   winner: isWinner,
-  loser: (r) => !isWinner(r),
+  loser: (r) => isSold(r) && !isWinner(r),
 };
 const PICK_LABEL: Record<Pick, string> = { new: 'New', sold: 'Sold', unsold: 'Unsold', winner: 'Winner', loser: 'Loser' };
 
@@ -68,18 +63,19 @@ function money2(v: number): string {
   return `${v < 0 ? '-' : ''}£${Math.abs(v).toFixed(2)}`;
 }
 // % of new — the owner's "future mindset comparison".
-function pct(n: number, of: number): string {
-  return of > 0 ? `${Math.round((n / of) * 100)}%` : '—';
-}
-// 'YYYY-MM-DD' -> '25 Oct'. Parsed as parts, never through Date (a bare date string is read as UTC/local and can shift a day).
-function shortDate(d: string | null): string {
-  if (!d) return '—';
-  const [y, m, day] = d.split('-').map(Number);
-  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1];
-  return `${day} ${mon}${y !== new Date().getFullYear() ? ` ${y}` : ''}`;
+// Whole %s for parts that make up the total, rounded so they add up to exactly 100 (largest remainder: round all down, then give the
+// leftover points to the biggest fractions).
+function pctsTo100(parts: number[], of: number): string[] {
+  if (of <= 0) return parts.map(() => '—');
+  const raw = parts.map((n) => (n / of) * 100);
+  const out = raw.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  raw.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac).forEach(({ i }) => {
+    if (left > 0) { out[i] += 1; left -= 1; }
+  });
+  return out.map((v) => `${v}%`);
 }
 
-const boxCls = 'inline-flex min-w-[10rem] flex-col rounded-xl border bg-white px-6 py-4 text-left shadow-sm transition';
 
 export default function ProcessPage() {
   const q = useApiQuery('process-overview', () => getProcessOverview());
@@ -102,6 +98,7 @@ export default function ProcessPage() {
 
   const count = (p: Pick) => (d ? d.rows.filter(FILTERS[p]).length : 0);
   const total = d ? d.rows.length : 0;
+  const [winPct, losePct, unsoldPct] = pctsTo100([count('winner'), count('loser'), count('unsold')], total);
 
   const box = (p: Pick, caption: string) => {
     const isOpen = open === p;
@@ -135,15 +132,17 @@ export default function ProcessPage() {
               <span className="text-xs text-slate-400">on the list</span>
             </Link>
             {box('new', `${d.styles} styles`)}
-            {/* Two PAIRS, each adding up to New (100%): Sold + Unsold, Winner + Loser (owner: "so the numbers add up"). Set closer
-                together than the other boxes so each pair reads as one. */}
+            {/* UNSOLD straight after New — the highest priority (owner, 2026-10-25). It opens its own screen, split by where the stock
+                sits (owner: these lists belong on the screens where you act, not here). Winner / Loser still open below until theirs
+                are decided. Unsold + Winner + Loser = New: their %s are rounded to add up to exactly 100%. */}
+            <Link href="/process/unsold" className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}>
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{PICK_LABEL.unsold}</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{count('unsold')}</span>
+              <span className="text-xs text-slate-400">{unsoldPct}</span>
+            </Link>
             <div className="flex gap-1.5">
-              {box('sold', pct(count('sold'), total))}
-              {box('unsold', pct(count('unsold'), total))}
-            </div>
-            <div className="flex gap-1.5">
-              {box('winner', pct(count('winner'), total))}
-              {box('loser', pct(count('loser'), total))}
+              {box('winner', winPct)}
+              {box('loser', losePct)}
             </div>
           </section>
 
@@ -252,16 +251,17 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 // rather than across. No channel columns (owner: noise here; "where it sold — perhaps not yet") and no links out yet — the owner is
 // still deciding whether this screen is a report or a place to act from ("I may not even want to see the list unless I go somewhere
 // and do something with it").
-//   NEW     by STYLE: Group ID (title in the tooltip) · Brand · Added · Sizes · Local · FBA; a row opens its sizes by CODE.
+//   NEW     by STYLE: Group ID (title in the tooltip) · Brand · Added; a row opens its sizes by CODE (Sizes / Local / FBA taken
+//           off, owner 2026-10-25).
 //   SOLD    by SIZE ("by size feels better"; a By style toggle was tried and removed): Code · Brand · Added · Sold.
 //   UNSOLD  by size: Code · Brand · Added.
 //   WINNER  by size: Code · Brand · Added · Sold · £ a unit.
-//   LOSER   by size: Code · Brand · Added · Sold · £ a unit (the ones that sold, under £3).
+//   LOSER   by size: Code · Brand · Added · Sold · £ a unit (sold, but under £3).
 //   Sold = units net of returns, every channel added together. £ a unit = the size's BEST channel (a winner is good on at least one).
 //   Opening order: newest added first; Unsold and Loser OLDEST first — longest without a win at the top (owner chose that for Loser).
-//   Local / FBA are HIDDEN on the by-size lists, not removed (owner: "do we need to know where the stock is? Perhaps not but don't
+//   Local / FBA are HIDDEN on every list (New too), not removed (owner: "do we need to know where the stock is? Perhaps not but don't
 //   remove, just hide") — flip LIST_SHOWS_STOCK.
-type ListSortKey = 'groupid' | 'brand' | 'added' | 'sizes' | 'sold' | 'perunit' | 'local' | 'fba';
+type ListSortKey = 'groupid' | 'brand' | 'added' | 'sold' | 'perunit' | 'local' | 'fba';
 type ListRow = { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] };
 
 const LIST_SHOWS_STOCK = false;
@@ -278,7 +278,7 @@ function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pi
   const flat = pick !== 'new';
   const showSold = pick === 'sold' || pick === 'winner' || pick === 'loser';
   const showPerUnit = pick === 'winner' || pick === 'loser';
-  const showStock = !flat || LIST_SHOWS_STOCK;
+  const showStock = LIST_SHOWS_STOCK;
   const [openStyle, setOpenStyle] = useState<string | null>(null);
   // Every column sorts; tap again to reverse. Text columns start A→Z, numbers and dates high→low.
   const [sort, setSort] = useState<{ key: ListSortKey; desc: boolean }>({
@@ -311,7 +311,6 @@ function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pi
     groupid: (st) => st.groupid,
     brand: (st) => (st.brand || '').toLowerCase(),
     added: (st) => st.created,
-    sizes: (st) => st.sizes.length,
     sold,
     perunit: (st) => perUnit(st) ?? -Infinity,
     local,
@@ -350,7 +349,6 @@ function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pi
             {th('groupid', flat ? 'Code' : 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
             {th('brand', 'Brand', 'px-3 py-2.5 font-medium')}
             {th('added', 'Added', 'px-3 py-2.5 font-medium')}
-            {!flat && th('sizes', 'Sizes', 'px-2 py-2.5 text-right font-medium')}
             {showSold && th('sold', 'Sold', 'px-2 py-2.5 text-right font-medium')}
             {showPerUnit && th('perunit', '£ a unit', 'py-2.5 pl-2 pr-4 text-right font-medium')}
             {showStock && th('local', 'Local', 'px-2 py-2.5 text-right font-medium')}
@@ -374,7 +372,6 @@ function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pi
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
-                  {!flat && <td className="px-2 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>}
                   {showSold && (
                     <td className={'px-2 py-2 text-right tabular-nums ' + (sold(st) > 0 ? 'font-medium text-slate-900' : 'text-slate-300')}>{sold(st)}</td>
                   )}
@@ -388,7 +385,7 @@ function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pi
                 </tr>
                 {isOpen && !flat && st.sizes.map((r) => (
                   <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
-                    <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={4}>{r.code}</td>
+                    <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={3}>{r.code}</td>
                     {showStock && <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>}
                     {showStock && <td className="py-1.5 pl-2 pr-4 text-right tabular-nums text-slate-700">{r.fbaStock}</td>}
                   </tr>
