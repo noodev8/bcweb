@@ -15,7 +15,7 @@ Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big n
     Riekers were still building up).
   - LOSER: every new size that is NOT a winner — not sold, or sold under £3 (owner: "even though we sold it, may as well be a loser").
     Winner + Loser = New.
-  % under Sold and Winner is of New — the share is what should improve quarter on quarter ("future mindset comparison").
+  The caption under Sold / Winner / Loser is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
 
 Tap New / Sold / Winner / Loser for its sizes below the row; each row shows all three channels and links to where you act on it.
 The per-channel cards were removed (owner: "those boxes aren't helping"). The Monday job: load prospects, then fight the losers.
@@ -120,9 +120,9 @@ export default function ProcessPage() {
               <span className="text-xs text-slate-400">on the list</span>
             </Link>
             {box('new', `${d.styles} styles`)}
-            {box('sold', `${pct(count('sold'), total)} of new · any channel`)}
-            {box('winner', `${pct(count('winner'), total)} of new · £3+ a unit`)}
-            {box('loser', 'Not a winner')}
+            {box('sold', pct(count('sold'), total))}
+            {box('winner', pct(count('winner'), total))}
+            {box('loser', pct(count('loser'), total))}
           </section>
 
           {open && <SizeList data={d} pick={open} onClose={() => setOpen(null)} />}
@@ -230,7 +230,10 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 // Each channel cell links to where that channel is acted on: Amazon → the SKU's Amazon pricing; Shopify / the shop → the style's
 // Shopify pricing (the shop sells local stock at the same price).
 function SizeList({ data, pick, onClose }: { data: ProcessOverview; pick: Pick; onClose: () => void }) {
+  // Losers OLDEST first (owner, 2026-10-25) — longest without a win at the top. The sort is stable, so a style's sizes stay together
+  // in size order. Everything else keeps the server's newest-first.
   const rows = data.rows.filter(FILTERS[pick]);
+  if (pick === 'loser') rows.sort((a, b) => a.created.localeCompare(b.created));
   const from = encodeURIComponent(SELF);
   return (
     <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
