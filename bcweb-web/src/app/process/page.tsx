@@ -240,8 +240,14 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 // NEW: what was added, and when (owner, 2026-10-25 — the channels are noise here). One row per STYLE, laid out like the other list
 // screens (groupid first, in mono; title; brand in its own column), narrow so it reads down rather than across. A row opens its sizes
 // underneath, by CODE — no pills. Newest first, as the server sends it.
+type NewSortKey = 'groupid' | 'title' | 'brand' | 'added' | 'sizes' | 'local' | 'fba';
+
 function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void }) {
   const [openStyle, setOpenStyle] = useState<string | null>(null);
+  // Every column sorts; tap again to reverse. Opens newest-added first. Text columns start A→Z, numbers and dates high→low.
+  const [sort, setSort] = useState<{ key: NewSortKey; desc: boolean }>({ key: 'added', desc: true });
+  const toggleSort = (key: NewSortKey) =>
+    setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: !['groupid', 'title', 'brand'].includes(key) }));
 
   // Group the size rows into styles, keeping the server's order (newest created first, then groupid, sizes in size order).
   const styles: { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] }[] = [];
@@ -256,8 +262,37 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
     st.sizes.push(r);
   }
 
+  const local = (st: (typeof styles)[number]) => st.sizes.reduce((n, r) => n + r.localStock, 0);
+  const fba = (st: (typeof styles)[number]) => st.sizes.reduce((n, r) => n + r.fbaStock, 0);
+  const sortVal: Record<NewSortKey, (st: (typeof styles)[number]) => string | number> = {
+    groupid: (st) => st.groupid,
+    title: (st) => (st.title || '').toLowerCase(),
+    brand: (st) => (st.brand || '').toLowerCase(),
+    added: (st) => st.created,
+    sizes: (st) => st.sizes.length,
+    local,
+    fba,
+  };
+  const val = sortVal[sort.key];
+  styles.sort((a, b) => {
+    const x = val(a), y = val(b);
+    const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+    return sort.desc ? -c : c;
+  });
+
+  const th = (key: NewSortKey, label: string, cls: string) => (
+    <th className={cls}>
+      <button
+        type="button" onClick={() => toggleSort(key)}
+        className={'inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ' + (sort.key === key ? 'text-slate-800' : '')}
+      >
+        {label}{sort.key === key && <span className="text-[10px]">{sort.desc ? '▼' : '▲'}</span>}
+      </button>
+    </th>
+  );
+
   return (
-    <div className="mt-6 max-w-4xl rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="mt-6 max-w-5xl rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">
           New <span className="font-normal text-slate-500">· {styles.length} styles · {data.rows.length} sizes</span>
@@ -267,20 +302,18 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="px-4 py-2.5 font-medium">Group ID</th>
-            <th className="px-3 py-2.5 font-medium">Title</th>
-            <th className="px-3 py-2.5 font-medium">Brand</th>
-            <th className="px-3 py-2.5 font-medium">Added</th>
-            <th className="px-3 py-2.5 text-right font-medium">Sizes</th>
-            <th className="px-3 py-2.5 text-right font-medium">Local</th>
-            <th className="px-4 py-2.5 text-right font-medium">FBA</th>
+            {th('groupid', 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
+            {th('title', 'Title', 'px-3 py-2.5 font-medium')}
+            {th('brand', 'Brand', 'px-3 py-2.5 font-medium')}
+            {th('added', 'Added', 'px-3 py-2.5 font-medium')}
+            {th('sizes', 'Sizes', 'px-3 py-2.5 text-right font-medium')}
+            {th('local', 'Local', 'px-3 py-2.5 text-right font-medium')}
+            {th('fba', 'FBA', 'px-4 py-2.5 text-right font-medium')}
           </tr>
         </thead>
         <tbody>
           {styles.map((st) => {
             const isOpen = openStyle === st.groupid;
-            const local = st.sizes.reduce((n, r) => n + r.localStock, 0);
-            const fba = st.sizes.reduce((n, r) => n + r.fbaStock, 0);
             return (
               <Fragment key={st.groupid}>
                 <tr
@@ -295,8 +328,8 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{local}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fba}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{local(st)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fba(st)}</td>
                 </tr>
                 {isOpen && st.sizes.map((r) => (
                   <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
