@@ -4802,4 +4802,51 @@ export function deleteProspectItem(kind: 'prospect' | 'check' | 'note', id: numb
   return request<null>({ url: '/prospect-delete', method: 'POST', data: { kind, id } }, () => null);
 }
 
+// ---- Process (2026-10-25): the owner's read-only map of blocks — rules in bcweb-server/utils/processMap.js -----------------------
+export type ProcessChannel = 'AMZ' | 'SHP' | 'CM3';
+export type ProcessBlock = 'multi_thin' | 'multi_good' | 'once_thin' | 'once_good' | 'not_sold';
+export interface ProcessAllowance {
+  perUnit: number; spend: number | null; units: number | null; windowFrom: string | null; windowTo: string | null;
+  acceptedBy: string; acceptedOn: string; dueOn: string; due: boolean;
+}
+export interface ProcessSizeChannel {
+  net: number;               // units NET of returns since the style was created
+  sold: number;              // positive units — what perUnit is averaged over
+  profit: number;            // £ earned on the positive rows
+  perUnit: number | null;    // null = nothing sold
+  block: ProcessBlock;
+}
+export interface ProcessSizeRow {
+  code: string; groupid: string; title: string | null; brand: string | null; size: string; created: string;
+  localStock: number; fbaStock: number;
+  channels: Record<ProcessChannel, ProcessSizeChannel>;
+}
+export interface ProcessBlockTotal { sizes: number; units: number; profit: number }
+export interface ProcessOverview {
+  newDays: number;
+  prospects: number;
+  allowance: ProcessAllowance | null;
+  lines: Record<ProcessChannel, number>;
+  styles: number;
+  summary: Record<ProcessChannel, Record<ProcessBlock, ProcessBlockTotal>>;
+  rows: ProcessSizeRow[];
+}
+export function getProcessOverview() {
+  return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
+    newDays: b.newDays, prospects: b.prospects, allowance: b.allowance ?? null, lines: b.lines, styles: b.styles,
+    summary: b.summary, rows: b.rows || [],
+  }));
+}
+export interface ProcessAllowanceMeasure { windowFrom: string; windowTo: string; spend: number; units: number; perUnit: number | null }
+// What a re-measure would give — nothing saved.
+export function measureProcessAllowance() {
+  return request<ProcessAllowanceMeasure>({ url: '/process-allowance-measure', method: 'GET' }, (b) => b.measure);
+}
+// Accept the figure the page SHOWED. MEASURE_CHANGED = it moved since (late sales / a re-import) — re-measure and show it again.
+export function acceptProcessAllowance(perUnit: number, windowTo: string) {
+  return request<ProcessAllowance>(
+    { url: '/process-allowance-accept', method: 'POST', data: { perUnit, windowTo } }, (b) => b.allowance
+  );
+}
+
 export default api;

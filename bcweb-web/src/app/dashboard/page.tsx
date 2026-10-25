@@ -65,6 +65,7 @@ import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
+import { PROCESS_STRIP } from '@/lib/features';
 import {
   ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
@@ -693,6 +694,15 @@ export default function DashboardPage() {
           <GroupRow groups={PART_GROUPS.slice(i, i + 4)} openId={openId} onToggle={setOpenId} cols="lg:grid-cols-4" />
         </div>
       ))}
+
+      {/* The owner's work-in-progress strip (lib/features.ts → PROCESS_STRIP): one quiet line under the menu, so nothing in the
+          team's menu moves while the page is being settled. */}
+      {PROCESS_STRIP && (
+        <div className="mt-10 border-t border-slate-200 pt-3 text-xs text-slate-400">
+          Work in progress →{' '}
+          <Link href="/process" className="font-medium text-slate-500 hover:text-brand-700 hover:underline">Process</Link>
+        </div>
+      )}
 
     </AppShell>
   );

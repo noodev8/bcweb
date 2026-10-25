@@ -372,6 +372,13 @@ app.use('/prospect-save', require('./routes/prospect-save'));               // P
 app.use('/prospect-check-add', require('./routes/prospect-check-add'));     // POST: rank / price / sellers seen — WRITES prospect_check
 app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // POST: a note on a line — WRITES prospect_note
 app.use('/prospect-delete', require('./routes/prospect-delete'));           // POST: delete a line / check / note for good — WRITES
+
+// --- Process (2026-10-25): the owner's read-only map of blocks — prospects total + the new-sizes grid per channel. Acting happens on
+// the existing screens; the only write is accepting a re-measured Google allowance (utils/processMap.js has the rules).
+app.use('/process-overview', require('./routes/process-overview'));                   // GET: prospects, allowance, new-sizes grid — READ ONLY
+app.use('/process-allowance-measure', require('./routes/process-allowance-measure')); // GET: what a re-measure would give — READ ONLY
+app.use('/process-allowance-accept', require('./routes/process-allowance-accept'));   // POST: make the shown figure the one in force — WRITES google_allowance
+
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.
