@@ -238,16 +238,16 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 }
 
 // NEW: what was added, and when (owner, 2026-10-25 — the channels are noise here). One row per STYLE, laid out like the other list
-// screens (groupid first, in mono; title; brand in its own column), narrow so it reads down rather than across. A row opens its sizes
+// screens (groupid first, in mono, its title in the tooltip; brand in its own column), narrow so it reads down rather than across. A row opens its sizes
 // underneath, by CODE — no pills. Newest first, as the server sends it.
-type NewSortKey = 'groupid' | 'title' | 'brand' | 'added' | 'sizes' | 'local' | 'fba';
+type NewSortKey = 'groupid' | 'brand' | 'added' | 'sizes' | 'local' | 'fba';
 
 function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void }) {
   const [openStyle, setOpenStyle] = useState<string | null>(null);
   // Every column sorts; tap again to reverse. Opens newest-added first. Text columns start A→Z, numbers and dates high→low.
   const [sort, setSort] = useState<{ key: NewSortKey; desc: boolean }>({ key: 'added', desc: true });
   const toggleSort = (key: NewSortKey) =>
-    setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: !['groupid', 'title', 'brand'].includes(key) }));
+    setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: !['groupid', 'brand'].includes(key) }));
 
   // Group the size rows into styles, keeping the server's order (newest created first, then groupid, sizes in size order).
   const styles: { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] }[] = [];
@@ -266,7 +266,6 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
   const fba = (st: (typeof styles)[number]) => st.sizes.reduce((n, r) => n + r.fbaStock, 0);
   const sortVal: Record<NewSortKey, (st: (typeof styles)[number]) => string | number> = {
     groupid: (st) => st.groupid,
-    title: (st) => (st.title || '').toLowerCase(),
     brand: (st) => (st.brand || '').toLowerCase(),
     added: (st) => st.created,
     sizes: (st) => st.sizes.length,
@@ -303,7 +302,6 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
             {th('groupid', 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
-            {th('title', 'Title', 'px-3 py-2.5 font-medium')}
             {th('brand', 'Brand', 'px-3 py-2.5 font-medium')}
             {th('added', 'Added', 'px-3 py-2.5 font-medium')}
             {th('sizes', 'Sizes', 'px-3 py-2.5 text-right font-medium')}
@@ -320,11 +318,11 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
                   onClick={() => setOpenStyle(isOpen ? null : st.groupid)}
                   className={'cursor-pointer border-b border-slate-100 ' + (isOpen ? 'bg-brand-50' : 'hover:bg-slate-50/60')}
                 >
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-sm tracking-tight text-slate-900">
+                  {/* Title in the tooltip (owner, 2026-10-25) — the groupid is what gets read, as on New Additions. */}
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-sm tracking-tight text-slate-900" title={st.title || 'Untitled'}>
                     <ChevronRightIcon className={'mr-1 inline h-3 w-3 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />
                     {st.groupid}
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{st.title || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
@@ -333,7 +331,7 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
                 </tr>
                 {isOpen && st.sizes.map((r) => (
                   <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
-                    <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={5}>{r.code}</td>
+                    <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={4}>{r.code}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-slate-700">{r.fbaStock}</td>
                   </tr>
