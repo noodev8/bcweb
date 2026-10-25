@@ -133,7 +133,14 @@ export default function ProcessPage() {
             <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Winner</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{winners}</span>
-              <span className="text-xs text-slate-400">£3+ a unit</span>
+              <span className="text-xs text-slate-400">{pct(winners, d.rows.length)} of new · £3+ a unit</span>
+            </div>
+            {/* LOSER = every new size that isn't a winner: not sold anywhere, OR sold under £3 a unit (owner: "even though we sold it,
+                may as well be a loser"). Winner + Loser = New. */}
+            <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Loser</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.rows.length - winners}</span>
+              <span className="text-xs text-slate-400">not sold or under £3</span>
             </div>
           </section>
 
