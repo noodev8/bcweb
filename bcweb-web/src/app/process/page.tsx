@@ -29,7 +29,8 @@ until Accept (owner: "display the new fixed number before it is accepted").
 =======================================================================================================================================
 */
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import { ChevronRightIcon } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
@@ -134,7 +135,8 @@ export default function ProcessPage() {
             </div>
           </section>
 
-          {open && <SizeList data={d} pick={open} onClose={() => setOpen(null)} />}
+          {open === 'new' && <NewList data={d} onClose={() => setOpen(null)} />}
+          {open && open !== 'new' && <SizeList data={d} pick={open} onClose={() => setOpen(null)} />}
 
           <AllowanceBar data={d} onAccepted={() => q.refresh()} />
         </>
@@ -231,6 +233,83 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
         </div>
       )}
       {msg && <p className="mt-2 text-xs text-red-700">{msg}</p>}
+    </div>
+  );
+}
+
+// NEW: what was added, and when (owner, 2026-10-25 — the channels are noise here). One row per STYLE, laid out like the other list
+// screens (groupid first, in mono; title; brand in its own column), narrow so it reads down rather than across. A row opens its sizes
+// underneath, by CODE — no pills. Newest first, as the server sends it.
+function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void }) {
+  const [openStyle, setOpenStyle] = useState<string | null>(null);
+
+  // Group the size rows into styles, keeping the server's order (newest created first, then groupid, sizes in size order).
+  const styles: { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] }[] = [];
+  const byId = new Map<string, (typeof styles)[number]>();
+  for (const r of data.rows) {
+    let st = byId.get(r.groupid);
+    if (!st) {
+      st = { groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [] };
+      byId.set(r.groupid, st);
+      styles.push(st);
+    }
+    st.sizes.push(r);
+  }
+
+  return (
+    <div className="mt-6 max-w-4xl rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-900">
+          New <span className="font-normal text-slate-500">· {styles.length} styles · {data.rows.length} sizes</span>
+        </h3>
+        <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+            <th className="px-4 py-2.5 font-medium">Group ID</th>
+            <th className="px-3 py-2.5 font-medium">Title</th>
+            <th className="px-3 py-2.5 font-medium">Brand</th>
+            <th className="px-3 py-2.5 font-medium">Added</th>
+            <th className="px-3 py-2.5 text-right font-medium">Sizes</th>
+            <th className="px-3 py-2.5 text-right font-medium">Local</th>
+            <th className="px-4 py-2.5 text-right font-medium">FBA</th>
+          </tr>
+        </thead>
+        <tbody>
+          {styles.map((st) => {
+            const isOpen = openStyle === st.groupid;
+            const local = st.sizes.reduce((n, r) => n + r.localStock, 0);
+            const fba = st.sizes.reduce((n, r) => n + r.fbaStock, 0);
+            return (
+              <Fragment key={st.groupid}>
+                <tr
+                  onClick={() => setOpenStyle(isOpen ? null : st.groupid)}
+                  className={'cursor-pointer border-b border-slate-100 ' + (isOpen ? 'bg-brand-50' : 'hover:bg-slate-50/60')}
+                >
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-sm tracking-tight text-slate-900">
+                    <ChevronRightIcon className={'mr-1 inline h-3 w-3 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />
+                    {st.groupid}
+                  </td>
+                  <td className="px-3 py-2 text-slate-700">{st.title || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{local}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fba}</td>
+                </tr>
+                {isOpen && st.sizes.map((r) => (
+                  <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
+                    <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={5}>{r.code}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-slate-700">{r.fbaStock}</td>
+                  </tr>
+                ))}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
