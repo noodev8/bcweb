@@ -18,7 +18,7 @@ Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big n
     Winner + Loser = New.
   The caption under Sold / Winner / Loser is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
 
-Tap New / Sold / Winner / Loser for its sizes below the row; each row shows all three channels and links to where you act on it.
+Tap New / Sold / Unsold / Winner / Loser for its list below the row (see BoxList for what each shows).
 The per-channel cards were removed (owner: "those boxes aren't helping"). The Monday job: load prospects, then fight the losers.
 
 Rules (sold, £ a unit, the line) are server-side in bcweb-server/utils/processMap.js; this page only counts and lists.
@@ -88,6 +88,18 @@ export default function ProcessPage() {
   // The box whose sizes are listed below the row. null = none open.
   const [open, setOpen] = useState<Pick | null>(null);
 
+  // THE CARDS STAY ON SCREEN, AND SO DO A LIST'S COLUMN HEADERS (owner, 2026-10-25: keep the columns while sorting, without a second
+  // scrollbar). The cards row is sticky at the top of the page; a list's header row sticks just under it, so it needs the row's
+  // height — measured, because the cards wrap onto more lines on a narrow screen. The list itself has no scroll box of its own:
+  // an overflow container would capture the sticky header and bring the extra scrollbar back.
+  const [cardsHeight, setCardsHeight] = useState(0);
+  const cardsRef = (el: HTMLElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setCardsHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  };
+
   const count = (p: Pick) => (d ? d.rows.filter(FILTERS[p]).length : 0);
   const total = d ? d.rows.length : 0;
 
@@ -113,7 +125,7 @@ export default function ProcessPage() {
 
       {d && (
         <>
-          <section className="flex flex-wrap gap-4">
+          <section ref={cardsRef} className="sticky top-0 z-20 -mx-4 flex flex-wrap gap-4 bg-slate-100 px-4 py-3">
             <Link
               href={`/prospects?from=${encodeURIComponent(SELF)}`}
               className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}
@@ -135,8 +147,7 @@ export default function ProcessPage() {
             </div>
           </section>
 
-          {open === 'new' && <NewList data={d} onClose={() => setOpen(null)} />}
-          {open && open !== 'new' && <SizeList data={d} pick={open} onClose={() => setOpen(null)} />}
+          {open && <BoxList key={open} data={d} pick={open} stickyTop={cardsHeight} onClose={() => setOpen(null)} />}
 
           <AllowanceBar data={d} onAccepted={() => q.refresh()} />
         </>
@@ -237,50 +248,84 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
   );
 }
 
-// NEW: what was added, and when (owner, 2026-10-25 — the channels are noise here). One row per STYLE, laid out like the other list
-// screens (groupid first, in mono, its title in the tooltip; brand in its own column), narrow so it reads down rather than across. A row opens its sizes
-// underneath, by CODE — no pills. Newest first, as the server sends it.
-type NewSortKey = 'groupid' | 'brand' | 'added' | 'sizes' | 'local' | 'fba';
+// THE LISTS behind the boxes (owner, 2026-10-25), laid out like the other list screens and sized to their content so they read down
+// rather than across. No channel columns (owner: noise here; "where it sold — perhaps not yet") and no links out yet — the owner is
+// still deciding whether this screen is a report or a place to act from ("I may not even want to see the list unless I go somewhere
+// and do something with it").
+//   NEW     by STYLE: Group ID (title in the tooltip) · Brand · Added · Sizes · Local · FBA; a row opens its sizes by CODE.
+//   SOLD    by SIZE ("by size feels better"; a By style toggle was tried and removed): Code · Brand · Added · Sold.
+//   UNSOLD  by size: Code · Brand · Added.
+//   WINNER  by size: Code · Brand · Added · Sold · £ a unit.
+//   LOSER   by size: Code · Brand · Added · Sold · £ a unit (the ones that sold, under £3).
+//   Sold = units net of returns, every channel added together. £ a unit = the size's BEST channel (a winner is good on at least one).
+//   Opening order: newest added first; Unsold and Loser OLDEST first — longest without a win at the top (owner chose that for Loser).
+//   Local / FBA are HIDDEN on the by-size lists, not removed (owner: "do we need to know where the stock is? Perhaps not but don't
+//   remove, just hide") — flip LIST_SHOWS_STOCK.
+type ListSortKey = 'groupid' | 'brand' | 'added' | 'sizes' | 'sold' | 'perunit' | 'local' | 'fba';
+type ListRow = { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] };
 
-function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void }) {
+const LIST_SHOWS_STOCK = false;
+
+// Units sold on every channel together, net of returns (a channel that netted below 0 counts 0).
+const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Math.max(r.channels[c.id].net, 0), 0);
+// The best £ a unit across the channels it sold on; null = sold nowhere.
+const bestPerUnit = (r: ProcessSizeRow): number | null => {
+  const v = CHANNELS.map((c) => r.channels[c.id]).filter((c) => c.net > 0 && c.perUnit !== null).map((c) => c.perUnit as number);
+  return v.length ? Math.max(...v) : null;
+};
+
+function BoxList({ data, pick, stickyTop, onClose }: { data: ProcessOverview; pick: Pick; stickyTop: number; onClose: () => void }) {
+  const flat = pick !== 'new';
+  const showSold = pick === 'sold' || pick === 'winner' || pick === 'loser';
+  const showPerUnit = pick === 'winner' || pick === 'loser';
+  const showStock = !flat || LIST_SHOWS_STOCK;
   const [openStyle, setOpenStyle] = useState<string | null>(null);
-  // Every column sorts; tap again to reverse. Opens newest-added first. Text columns start A→Z, numbers and dates high→low.
-  const [sort, setSort] = useState<{ key: NewSortKey; desc: boolean }>({ key: 'added', desc: true });
-  const toggleSort = (key: NewSortKey) =>
+  // Every column sorts; tap again to reverse. Text columns start A→Z, numbers and dates high→low.
+  const [sort, setSort] = useState<{ key: ListSortKey; desc: boolean }>({
+    key: 'added', desc: !(pick === 'unsold' || pick === 'loser'),
+  });
+  const toggleSort = (key: ListSortKey) =>
     setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: !['groupid', 'brand'].includes(key) }));
 
-  // Group the size rows into styles, keeping the server's order (newest created first, then groupid, sizes in size order).
-  const styles: { groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[] }[] = [];
-  const byId = new Map<string, (typeof styles)[number]>();
-  for (const r of data.rows) {
-    let st = byId.get(r.groupid);
+  // Group into styles (New) or one row per code (the rest — each code its own "style" of one size, so the row, sort and columns are
+  // shared), keeping the server's order (newest created first, then groupid, sizes in size order) as the tie-break.
+  const rows = data.rows.filter(FILTERS[pick]);
+  const list: ListRow[] = [];
+  const byId = new Map<string, ListRow>();
+  for (const r of rows) {
+    const key = flat ? r.code : r.groupid;
+    let st = byId.get(key);
     if (!st) {
-      st = { groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [] };
-      byId.set(r.groupid, st);
-      styles.push(st);
+      st = { groupid: key, title: r.title, brand: r.brand, created: r.created, sizes: [] };
+      byId.set(key, st);
+      list.push(st);
     }
     st.sizes.push(r);
   }
 
-  const local = (st: (typeof styles)[number]) => st.sizes.reduce((n, r) => n + r.localStock, 0);
-  const fba = (st: (typeof styles)[number]) => st.sizes.reduce((n, r) => n + r.fbaStock, 0);
-  const sortVal: Record<NewSortKey, (st: (typeof styles)[number]) => string | number> = {
+  const local = (st: ListRow) => st.sizes.reduce((n, r) => n + r.localStock, 0);
+  const fba = (st: ListRow) => st.sizes.reduce((n, r) => n + r.fbaStock, 0);
+  const sold = (st: ListRow) => st.sizes.reduce((n, r) => n + unitsSold(r), 0);
+  const perUnit = (st: ListRow) => bestPerUnit(st.sizes[0]);
+  const sortVal: Record<ListSortKey, (st: ListRow) => string | number> = {
     groupid: (st) => st.groupid,
     brand: (st) => (st.brand || '').toLowerCase(),
     added: (st) => st.created,
     sizes: (st) => st.sizes.length,
+    sold,
+    perunit: (st) => perUnit(st) ?? -Infinity,
     local,
     fba,
   };
   const val = sortVal[sort.key];
-  styles.sort((a, b) => {
+  list.sort((a, b) => {
     const x = val(a), y = val(b);
     const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
     return sort.desc ? -c : c;
   });
 
-  const th = (key: NewSortKey, label: string, cls: string) => (
-    <th className={cls}>
+  const th = (key: ListSortKey, label: string, cls: string) => (
+    <th className={'sticky z-10 bg-white shadow-[inset_0_-1px_0_rgb(226_232_240)] ' + cls} style={{ top: stickyTop }}>
       <button
         type="button" onClick={() => toggleSort(key)}
         className={'inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ' + (sort.key === key ? 'text-slate-800' : '')}
@@ -291,49 +336,61 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
   );
 
   return (
-    <div className="mt-6 w-fit max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
+    <div className="mt-3 w-fit max-w-full rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-baseline justify-between gap-6 border-b border-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          New <span className="font-normal text-slate-500">· {styles.length} styles · {data.rows.length} sizes</span>
+          {PICK_LABEL[pick]}{' '}
+          <span className="font-normal text-slate-500">· {flat ? `${rows.length} sizes` : `${list.length} styles · ${rows.length} sizes`}</span>
         </h3>
         <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
       </div>
       <table className="text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            {th('groupid', 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
+            {th('groupid', flat ? 'Code' : 'Group ID', 'w-64 px-4 py-2.5 font-medium')}
             {th('brand', 'Brand', 'px-3 py-2.5 font-medium')}
             {th('added', 'Added', 'px-3 py-2.5 font-medium')}
-            {th('sizes', 'Sizes', 'px-2 py-2.5 text-right font-medium')}
-            {th('local', 'Local', 'px-2 py-2.5 text-right font-medium')}
-            {th('fba', 'FBA', 'py-2.5 pl-2 pr-4 text-right font-medium')}
+            {!flat && th('sizes', 'Sizes', 'px-2 py-2.5 text-right font-medium')}
+            {showSold && th('sold', 'Sold', 'px-2 py-2.5 text-right font-medium')}
+            {showPerUnit && th('perunit', '£ a unit', 'py-2.5 pl-2 pr-4 text-right font-medium')}
+            {showStock && th('local', 'Local', 'px-2 py-2.5 text-right font-medium')}
+            {showStock && th('fba', 'FBA', 'py-2.5 pl-2 pr-4 text-right font-medium')}
           </tr>
         </thead>
         <tbody>
-          {styles.map((st) => {
+          {list.map((st) => {
             const isOpen = openStyle === st.groupid;
+            const pu = showPerUnit ? perUnit(st) : null;
             return (
               <Fragment key={st.groupid}>
                 <tr
-                  onClick={() => setOpenStyle(isOpen ? null : st.groupid)}
-                  className={'cursor-pointer border-b border-slate-100 ' + (isOpen ? 'bg-brand-50' : 'hover:bg-slate-50/60')}
+                  onClick={flat ? undefined : () => setOpenStyle(isOpen ? null : st.groupid)}
+                  className={'border-b border-slate-100 ' + (flat ? 'hover:bg-slate-50/60' : 'cursor-pointer ' + (isOpen ? 'bg-brand-50' : 'hover:bg-slate-50/60'))}
                 >
-                  {/* Title in the tooltip (owner, 2026-10-25) — the groupid is what gets read, as on New Additions. */}
+                  {/* Title in the tooltip (owner, 2026-10-25) — the code / groupid is what gets read, as on New Additions. */}
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-sm tracking-tight text-slate-900" title={st.title || 'Untitled'}>
-                    <ChevronRightIcon className={'mr-1 inline h-3 w-3 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />
+                    {!flat && <ChevronRightIcon className={'mr-1 inline h-3 w-3 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />}
                     {st.groupid}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{st.brand || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">{shortDate(st.created)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-700">{local(st)}</td>
-                  <td className="py-2 pl-2 pr-4 text-right tabular-nums text-slate-700">{fba(st)}</td>
+                  {!flat && <td className="px-2 py-2 text-right tabular-nums text-slate-700">{st.sizes.length}</td>}
+                  {showSold && (
+                    <td className={'px-2 py-2 text-right tabular-nums ' + (sold(st) > 0 ? 'font-medium text-slate-900' : 'text-slate-300')}>{sold(st)}</td>
+                  )}
+                  {showPerUnit && (
+                    <td className={'py-2 pl-2 pr-4 text-right tabular-nums ' + (pu === null ? 'text-slate-300' : 'text-slate-700')}>
+                      {pu === null ? '—' : money2(pu)}
+                    </td>
+                  )}
+                  {showStock && <td className="px-2 py-2 text-right tabular-nums text-slate-700">{local(st)}</td>}
+                  {showStock && <td className="py-2 pl-2 pr-4 text-right tabular-nums text-slate-700">{fba(st)}</td>}
                 </tr>
-                {isOpen && st.sizes.map((r) => (
+                {isOpen && !flat && st.sizes.map((r) => (
                   <tr key={r.code} className="border-b border-slate-100 bg-slate-50/50 text-xs">
                     <td className="py-1.5 pl-10 pr-4 font-mono text-slate-700" colSpan={4}>{r.code}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>
-                    <td className="py-1.5 pl-2 pr-4 text-right tabular-nums text-slate-700">{r.fbaStock}</td>
+                    {showStock && <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{r.localStock}</td>}
+                    {showStock && <td className="py-1.5 pl-2 pr-4 text-right tabular-nums text-slate-700">{r.fbaStock}</td>}
                   </tr>
                 ))}
               </Fragment>
@@ -341,79 +398,6 @@ function NewList({ data, onClose }: { data: ProcessOverview; onClose: () => void
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// The sizes behind a box, every channel side by side (owner's rule of thumb reads across them: keep a size that is good on ONE).
-// Each channel cell links to where that channel is acted on: Amazon → the SKU's Amazon pricing; Shopify / the shop → the style's
-// Shopify pricing (the shop sells local stock at the same price).
-function SizeList({ data, pick, onClose }: { data: ProcessOverview; pick: Pick; onClose: () => void }) {
-  // Losers (and Unsold) OLDEST first (owner, 2026-10-25) — longest without a win at the top. The sort is stable, so a style's sizes stay together
-  // in size order. Everything else keeps the server's newest-first.
-  const rows = data.rows.filter(FILTERS[pick]);
-  if (pick === 'loser' || pick === 'unsold') rows.sort((a, b) => a.created.localeCompare(b.created));
-  const from = encodeURIComponent(SELF);
-  return (
-    <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-900">
-          {PICK_LABEL[pick]} <span className="font-normal text-slate-500">· {rows.length}</span>
-        </h3>
-        <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-2 text-left font-semibold">Style</th>
-              <th className="px-2 py-2 text-left font-semibold">Size</th>
-              <th className="px-2 py-2 text-left font-semibold">Created</th>
-              {CHANNELS.map((c) => (
-                <th key={c.id} className="px-2 py-2 text-right font-semibold">
-                  {c.label}
-                  <span className="block text-[10px] font-normal normal-case tracking-normal text-slate-400">
-                    sold · £ a unit · {c.id === 'AMZ' ? 'FBA' : 'local'}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.code} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                <td className="px-4 py-2">
-                  <div className="font-medium text-slate-800">{r.title || r.groupid}</div>
-                  <div className="text-xs text-slate-400">{r.groupid}{r.brand ? ` · ${r.brand}` : ''}</div>
-                </td>
-                <td className="px-2 py-2 tabular-nums">{r.size}</td>
-                <td className="whitespace-nowrap px-2 py-2 text-slate-500">{shortDate(r.created)}</td>
-                {CHANNELS.map((c) => {
-                  const s = r.channels[c.id];
-                  const good = s.block === 'once_good' || s.block === 'multi_good';
-                  const href = c.id === 'AMZ'
-                    ? `/amz/sku/${encodeURIComponent(r.code)}?from=${from}`
-                    : `/pricing/style/${encodeURIComponent(r.groupid)}?from=${from}`;
-                  return (
-                    <td key={c.id} className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
-                      <Link href={href} className="hover:underline">
-                        <span className={s.net > 0 ? 'text-slate-800' : 'text-slate-300'}>{s.net}</span>
-                        <span className={'mx-1 ' + (s.perUnit === null ? 'text-slate-300' : good ? 'font-semibold text-emerald-700' : 'text-amber-700')}>
-                          {s.perUnit === null ? '—' : money2(s.perUnit)}
-                        </span>
-                        <span className="text-slate-400">{c.id === 'AMZ' ? r.fbaStock : r.localStock}</span>
-                      </Link>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
-        Green = £3+ a unit (Shopify {money2(data.lines.SHP)}, £3 after Google). Tap a channel to price it.
-      </p>
     </div>
   );
 }
