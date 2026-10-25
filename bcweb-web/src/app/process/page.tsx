@@ -57,6 +57,20 @@ function money(v: number): string {
   const r = Math.round(v);
   return `${r < 0 ? '-' : ''}£${Math.abs(r).toLocaleString('en-GB')}`;
 }
+// % of new, the owner's "future mindset comparison" — the share is what should improve quarter on quarter, not the count.
+function pct(n: number, of: number): string {
+  return of > 0 ? `${Math.round((n / of) * 100)}%` : '—';
+}
+// £3 not £3.00; £10.77 as is.
+function moneyShort(v: number): string {
+  return Number.isInteger(v) ? `£${v}` : `£${v.toFixed(2)}`;
+}
+// The breakdown boxes are labelled with their RULE — "2+ sold · £3+" — not a word (owner: the words confused).
+function pickLabel(p: Pick, lineValue: number): string {
+  if (p === 'sold' || p === 'not_sold') return PICK_INFO[p].label;
+  const line = moneyShort(lineValue);
+  return `${p.startsWith('multi') ? '2+' : '1'} sold · ${p.endsWith('good') ? `${line}+` : `under ${line}`}`;
+}
 function money2(v: number): string {
   return `${v < 0 ? '-' : ''}£${Math.abs(v).toFixed(2)}`;
 }
@@ -71,6 +85,9 @@ function shortDate(d: string | null): string {
 export default function ProcessPage() {
   const q = useApiQuery('process-overview', () => getProcessOverview());
   const d = q.data;
+
+  // Sizes sold on ANY channel — one count per size however many channels it sold on.
+  const soldAny = d ? d.rows.filter((r) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold')).length : 0;
 
   // The block whose sizes are listed below the grid. null = none open.
   const [open, setOpen] = useState<{ ch: ProcessChannel; block: Pick } | null>(null);
@@ -102,9 +119,9 @@ export default function ProcessPage() {
             <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sold</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">
-                {d.rows.filter((r) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold')).length}
+                {soldAny}
               </span>
-              <span className="text-xs text-slate-400">any channel</span>
+              <span className="text-xs text-slate-400">{pct(soldAny, d.rows.length)} of new · any channel</span>
             </div>
           </section>
 
@@ -139,6 +156,7 @@ function ChannelGrid({ data, channel, label, open, onOpen }: {
   const mine = open?.ch === channel ? open.block : null;
   const soldOpen = mine !== null && mine !== 'not_sold';
 
+  const boxLabel = (p: Pick) => pickLabel(p, data.lines[channel]);
   const box = (p: Pick, big: boolean) => {
     const n = count(p);
     const isOpen = mine === p;
@@ -156,8 +174,9 @@ function ChannelGrid({ data, channel, label, open, onOpen }: {
               : 'border-slate-200 bg-white hover:border-brand-500')
         }
       >
-        <span className="text-xs text-slate-500">{PICK_INFO[p].label}</span>
+        <span className="text-xs text-slate-500">{boxLabel(p)}</span>
         <span className={(big ? 'text-3xl ' : 'text-lg ') + 'font-semibold tabular-nums text-slate-900'}>{n}</span>
+        {p === 'sold' && <span className="text-xs text-slate-400">{pct(n, data.rows.length)} of new</span>}
       </button>
     );
   };
@@ -171,10 +190,12 @@ function ChannelGrid({ data, channel, label, open, onOpen }: {
       </div>
       {soldOpen && (
         <>
-          <div className="mt-2 grid grid-cols-4 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             {SOLD_BLOCKS.map((b) => <div key={b}>{box(b, false)}</div>)}
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">good = {money2(data.lines[channel])}+ a unit</p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            £ = profit a unit{channel === 'SHP' ? ` (£3 + ${money2(data.allowance?.perUnit ?? 0)} Google)` : ''}
+          </p>
         </>
       )}
     </div>
@@ -283,7 +304,7 @@ function BlockList({ data, ch, block, onClose }: { data: ProcessOverview; ch: Pr
     <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          {chLabel} · {PICK_INFO[block].label} <span className="font-normal text-slate-500">· {rows.length} · {PICK_INFO[block].hint}</span>
+          {chLabel} · {pickLabel(block, data.lines[ch])} <span className="font-normal text-slate-500">· {rows.length} · {PICK_INFO[block].hint}</span>
         </h3>
         <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
       </div>
