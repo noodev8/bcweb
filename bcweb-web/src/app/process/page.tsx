@@ -98,6 +98,14 @@ export default function ProcessPage() {
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.rows.length}</span>
               <span className="text-xs text-slate-400">{d.styles} styles</span>
             </div>
+            {/* Sold ANYWHERE: a size sold on two channels counts once (owner, 2026-10-25). Net of returns, as every box below. */}
+            <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sold</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">
+                {d.rows.filter((r) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold')).length}
+              </span>
+              <span className="text-xs text-slate-400">any channel</span>
+            </div>
           </section>
 
           {/* NEW SIZES */}
@@ -110,7 +118,8 @@ export default function ProcessPage() {
 
             <AllowanceBar data={d} onAccepted={() => q.refresh()} />
 
-            {open && <BlockList data={d} ch={open.ch} block={open.block} onClose={() => setOpen(null)} />}
+            {/* Opening Sold only shows its breakdown — the list waits for one of the breakdown boxes (owner: "don't show the list yet"). */}
+            {open && open.block !== 'sold' && <BlockList data={d} ch={open.ch} block={open.block} onClose={() => setOpen(null)} />}
           </section>
         </>
       )}
