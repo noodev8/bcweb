@@ -26,6 +26,8 @@ import { ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRight
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useUrlParam } from '@/lib/useUrlParam';
+import { prettyPathLabel } from '@/lib/nav';
 import {
   addProspectCheck, addProspectNote, checkProspectAsin, deleteProspectItem, getProspects, saveProspect,
   Prospect, ProspectRating,
@@ -100,6 +102,9 @@ function lastActivity(p: Prospect): string {
 
 export default function ProspectsPage() {
   const { displayName } = useAuth();
+  // Reached from Process (?from=/process) — a back link to it. A dashboard tile's ?from=<group> is AppShell's own business.
+  const fromParam = useUrlParam('from');
+  const backHref = fromParam && fromParam.startsWith('/') ? fromParam : undefined;
   const q = useApiQuery('prospect-list', getProspects);
   const rows = q.data ?? NO_ROWS;
 
@@ -142,7 +147,7 @@ export default function ProspectsPage() {
     'rounded-md px-3 py-1.5 text-sm font-medium transition ' + (on ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100');
 
   return (
-    <AppShell title="Prospects">
+    <AppShell title="Prospects" backHref={backHref} backLabel={backHref ? prettyPathLabel(backHref) : undefined}>
       {/* One column, top to bottom: the toolbar (paste an Amazon link, or Add a find by hand), the add form, then the list with its
           controls on one line directly above it. Pasting a link opens the form filled in — the quick way to log a find (owner,
           2026-10-21: "Replace do we have it with Amazon URL so I can quickly add it. If a duplicate I will then know"). */}

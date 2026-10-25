@@ -38,14 +38,18 @@ const CHANNELS: { id: ProcessChannel; label: string }[] = [
   { id: 'CM3', label: 'Shop' },
 ];
 
-// The owner's grid. `hint` is the Monday action the block leads to — wording to edit.
-const BLOCK_INFO: Record<ProcessBlock, { label: string; hint: string }> = {
-  multi_thin: { label: 'Sold 2+ · thin', hint: 'Price up' },
-  multi_good: { label: 'Sold 2+ · good', hint: 'Order more / feed' },
-  once_thin:  { label: 'Sold once · thin', hint: 'Watch / nudge up' },
-  once_good:  { label: 'Sold once · good', hint: 'Watch' },
+// What a box or list is called, and (on the list only — owner: less text on the boxes) the Monday action it leads to. `sold` = every
+// sold block together: the channel's SOLD total, which opens its profit breakdown.
+type Pick = ProcessBlock | 'sold';
+const PICK_INFO: Record<Pick, { label: string; hint: string }> = {
+  sold:       { label: 'Sold', hint: 'All sold sizes' },
+  multi_thin: { label: '2+ thin', hint: 'Price up' },
+  multi_good: { label: '2+ good', hint: 'Order more / feed' },
+  once_thin:  { label: '1 thin', hint: 'Watch / nudge up' },
+  once_good:  { label: '1 good', hint: 'Watch' },
   not_sold:   { label: 'Not sold', hint: 'Price down / Slider / drop' },
 };
+const SOLD_BLOCKS: ProcessBlock[] = ['multi_thin', 'multi_good', 'once_thin', 'once_good'];
 
 const SELF = '/process';
 
@@ -69,14 +73,10 @@ export default function ProcessPage() {
   const d = q.data;
 
   // The block whose sizes are listed below the grid. null = none open.
-  const [open, setOpen] = useState<{ ch: ProcessChannel; block: ProcessBlock } | null>(null);
+  const [open, setOpen] = useState<{ ch: ProcessChannel; block: Pick } | null>(null);
 
   return (
     <AppShell title="Process">
-      <p className="mb-5 text-sm text-slate-500">
-        Where we stand, block by block. Click a number for the list; act on it in the usual screens.
-      </p>
-
       {q.isLoading && <div className="py-10 text-center text-sm text-slate-400">Loading…</div>}
       {q.error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{q.error.message}</div>}
 
@@ -96,17 +96,12 @@ export default function ProcessPage() {
             <div className="inline-flex min-w-[10rem] flex-col rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">New</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.rows.length}</span>
-              <span className="text-xs text-slate-400">sizes · {d.styles} styles</span>
+              <span className="text-xs text-slate-400">{d.styles} styles</span>
             </div>
           </section>
 
           {/* NEW SIZES */}
           <section>
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
-              <h2 className="text-base font-semibold text-slate-900">New sizes</h2>
-              <span className="text-sm text-slate-500">last {d.newDays} days, by channel</span>
-            </div>
-
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               {CHANNELS.map((c) => (
                 <ChannelGrid key={c.id} data={d} channel={c.id} label={c.label} open={open} onOpen={setOpen} />
@@ -123,56 +118,56 @@ export default function ProcessPage() {
   );
 }
 
-// One channel's five blocks: Sold 2+ and Sold once split thin | good, Not sold across the bottom.
+// One channel: two big totals, SOLD | NOT SOLD (owner: "show what has sold and not sold totals first"). Opening Sold shows its
+// breakdown — sold 2+ / once, thin / good against the channel's line — as four small boxes, numbers only.
 function ChannelGrid({ data, channel, label, open, onOpen }: {
   data: ProcessOverview; channel: ProcessChannel; label: string;
-  open: { ch: ProcessChannel; block: ProcessBlock } | null;
-  onOpen: (v: { ch: ProcessChannel; block: ProcessBlock } | null) => void;
+  open: { ch: ProcessChannel; block: Pick } | null;
+  onOpen: (v: { ch: ProcessChannel; block: Pick } | null) => void;
 }) {
-  const line = data.lines[channel];
-  const allowance = data.allowance?.perUnit ?? 0;
-  const cell = (block: ProcessBlock, wide = false) => {
-    const t = data.summary[channel][block];
-    const isOpen = open?.ch === channel && open.block === block;
+  const sum = data.summary[channel];
+  const count = (p: Pick) => (p === 'sold' ? SOLD_BLOCKS.reduce((n, b) => n + sum[b].sizes, 0) : sum[p].sizes);
+  const mine = open?.ch === channel ? open.block : null;
+  const soldOpen = mine !== null && mine !== 'not_sold';
+
+  const box = (p: Pick, big: boolean) => {
+    const n = count(p);
+    const isOpen = mine === p;
     return (
       <button
         type="button"
-        onClick={() => onOpen(isOpen ? null : { ch: channel, block })}
-        disabled={t.sizes === 0}
+        onClick={() => onOpen(isOpen ? null : { ch: channel, block: p })}
+        disabled={n === 0}
         className={
-          'flex flex-col rounded-lg border p-3 text-left transition ' + (wide ? 'col-span-2 ' : '') +
+          'flex flex-col rounded-lg border text-left transition ' + (big ? 'p-3 ' : 'px-2 py-1.5 ') +
           (isOpen
             ? 'border-brand-500 bg-white ring-1 ring-brand-500'
-            : t.sizes === 0
+            : n === 0
               ? 'border-slate-100 bg-slate-50 text-slate-400'
               : 'border-slate-200 bg-white hover:border-brand-500')
         }
       >
-        <span className="text-xs text-slate-500">{BLOCK_INFO[block].label}</span>
-        <span className="text-2xl font-semibold tabular-nums text-slate-900">{t.sizes}</span>
-        {block !== 'not_sold' && t.sizes > 0 && (
-          <span className="text-xs tabular-nums text-slate-500">{t.units} sold · {money(t.profit)}</span>
-        )}
-        <span className="mt-1 text-[11px] text-slate-400">{BLOCK_INFO[block].hint}</span>
+        <span className="text-xs text-slate-500">{PICK_INFO[p].label}</span>
+        <span className={(big ? 'text-3xl ' : 'text-lg ') + 'font-semibold tabular-nums text-slate-900'}>{n}</span>
       </button>
     );
   };
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">{label}</h3>
-        <span className="text-xs text-slate-500">
-          good = {money2(line)}+ a unit
-          {channel === 'SHP' && <span className="text-slate-400"> (£3 + {money2(allowance)} Google)</span>}
-        </span>
-      </div>
+      <h3 className="mb-3 text-sm font-semibold text-slate-900">{label}</h3>
       <div className="grid grid-cols-2 gap-2">
-        {cell('multi_thin')}
-        {cell('multi_good')}
-        {cell('once_thin')}
-        {cell('once_good')}
-        {cell('not_sold', true)}
+        {box('sold', true)}
+        {box('not_sold', true)}
       </div>
+      {soldOpen && (
+        <>
+          <div className="mt-2 grid grid-cols-4 gap-2">
+            {SOLD_BLOCKS.map((b) => <div key={b}>{box(b, false)}</div>)}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">good = {money2(data.lines[channel])}+ a unit</p>
+        </>
+      )}
     </div>
   );
 }
@@ -271,15 +266,15 @@ function AllowanceBar({ data, onAccepted }: { data: ProcessOverview; onAccepted:
 
 // The sizes behind one block. Each row links to where it is acted on: Amazon → the SKU's Amazon pricing; Shopify and the shop → the
 // style's Shopify pricing (the shop sells local stock at the same price).
-function BlockList({ data, ch, block, onClose }: { data: ProcessOverview; ch: ProcessChannel; block: ProcessBlock; onClose: () => void }) {
-  const rows = data.rows.filter((r) => r.channels[ch].block === block);
+function BlockList({ data, ch, block, onClose }: { data: ProcessOverview; ch: ProcessChannel; block: Pick; onClose: () => void }) {
+  const rows = data.rows.filter((r) => (block === 'sold' ? r.channels[ch].block !== 'not_sold' : r.channels[ch].block === block));
   const chLabel = CHANNELS.find((c) => c.id === ch)?.label;
   const from = encodeURIComponent(SELF);
   return (
     <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-baseline justify-between border-b border-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          {chLabel} · {BLOCK_INFO[block].label} <span className="font-normal text-slate-500">· {rows.length} sizes · {BLOCK_INFO[block].hint}</span>
+          {chLabel} · {PICK_INFO[block].label} <span className="font-normal text-slate-500">· {rows.length} · {PICK_INFO[block].hint}</span>
         </h3>
         <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
       </div>
