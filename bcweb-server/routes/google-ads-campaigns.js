@@ -58,10 +58,12 @@ Success Response:
   ],
   "adsCampaigns": [
     { "campaign": "STANDARD", "days": 30, "clicks": 8672, "impressions": 383557, "cost": 3645.11,
-      "conversions": null, "convValue": null,
+      "conversions": 316.22, "convValue": 20436.98,
       "searchImpShare": 91.9, "lostIsRank": 8.1, "lostIsBudget": 0.0 }
   ]
 }
+  - `lostIsBudget` and `conversions`/`convValue` are WORKED OUT where the campaign report lacks them (it has since 2026-09-07):
+    lost-to-budget = 100 - impr. share - lost to rank per day; conversions = the product report summed per campaign per day.
   - `buckets` includes every name in google_campaign PLUS any value found on skusummary.googlecampaign that is not in that table
     (an unmanaged name — shown so it can be adopted or cleaned up, never hidden).
   - Impression-share figures are AVERAGED over the days that reported one; days Google censored are excluded, not counted as zero.
@@ -202,6 +204,31 @@ router.get('/', async (req, res) => {
                  SELECT MAX(snapshot_date) FROM google_product_daily
                  WHERE (imported_at AT TIME ZONE 'Europe/London')::date > snapshot_date
                )) AS d
+      ),
+      -- The product report carries the campaign on every row, and its day x campaign totals match the campaign report's exactly
+      -- (checked 2026-10-26: clicks, impressions and £841.22 of cost identical over 26 Sep - 25 Oct). So conversions per campaign
+      -- are the product rows summed — the fallback below for days the campaign report did not carry them.
+      prod AS (
+        SELECT snapshot_date, campaign, SUM(conversions) AS conversions, SUM(conv_value) AS conv_value
+        FROM google_product_daily CROSS JOIN asof a
+        WHERE snapshot_date BETWEEN a.d - ($1::int - 1) AND a.d
+        GROUP BY snapshot_date, campaign
+      ),
+      -- LOST-TO-BUDGET AND CONVERSIONS ARE WORKED OUT, NOT EXPORTED (owner, 2026-10-26). The saved campaign report dropped
+      -- Search lost IS (budget) on 2026-09-07 and never carried Conversions / Conv. value — asking Google for them kept crashing
+      -- the report. Neither is needed: Google defines search IS + lost (rank) + lost (budget) = 100%, so the budget figure is the
+      -- remainder on any day both others were reported (a censored day stays NULL, as before), and conversions come from prod.
+      -- A stored figure always wins over a derived one, so the history imported with the columns reads exactly as it did.
+      -- GREATEST(0, …) because Google rounds each share to 2dp and the three can overshoot 100 by a hair.
+      daily AS (
+        SELECT c.snapshot_date, c.campaign, c.clicks, c.impressions, c.cost, c.search_imp_share, c.lost_is_rank,
+               COALESCE(c.conversions, p.conversions) AS conversions,
+               COALESCE(c.conv_value,  p.conv_value)  AS conv_value,
+               COALESCE(c.lost_is_budget, GREATEST(0, 100 - c.search_imp_share - c.lost_is_rank)) AS lost_is_budget
+        FROM google_campaign_daily c
+        CROSS JOIN asof a
+        LEFT JOIN prod p ON p.snapshot_date = c.snapshot_date AND p.campaign = c.campaign
+        WHERE c.snapshot_date BETWEEN a.d - ($1::int - 1) AND a.d
       )
       SELECT campaign,
              COUNT(*)                 AS days,
@@ -217,8 +244,7 @@ router.get('/', async (req, res) => {
       -- Anchored to the PRODUCT table's last day, not this table's own, so the two lists cover the same calendar window and can be
       -- read against each other. google_campaign_daily is usually further behind (a second report, and it has silently lost 22 days
       -- once); when it is, the per-campaign days count above says so — that is exactly what that column is for.
-      FROM google_campaign_daily CROSS JOIN asof a
-      WHERE snapshot_date BETWEEN a.d - ($1::int - 1) AND a.d
+      FROM daily
       GROUP BY campaign
       ORDER BY SUM(cost) DESC
     `, [days]);
@@ -287,8 +313,8 @@ router.get('/', async (req, res) => {
       clicks: int(r.clicks),
       impressions: int(r.impressions),
       cost: round2(r.cost),
-      // Null, not 0, when the column has never been populated — these were only added to the export in 2026 and backfilling them as
-      // zero would read as "this campaign converted nothing".
+      // Null, not 0, when neither the campaign report nor the product report has a figure for the window — reading that as zero
+      // would say "this campaign converted nothing". Normally filled from the product report (see `prod` in the query).
       conversions: r.conversions === null ? null : round2(r.conversions),
       convValue: r.conv_value === null ? null : round2(r.conv_value),
       searchImpShare: orNull(r.search_imp_share),

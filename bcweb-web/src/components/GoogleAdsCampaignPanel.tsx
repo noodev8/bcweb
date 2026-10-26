@@ -73,6 +73,10 @@ function blendedBreakEven(b: GoogleAdsBucket): number | null {
 // something never once achieved on any cohort — not a bidding problem, and no target fixes it.
 const BE_UNREACHABLE = 10;
 
+// Lost-to-budget is worked out server-side (100% - impr. share - lost to rank) since the campaign report stopped carrying it — see
+// the google-ads-campaigns header. Said on the tooltip so nobody goes looking for the column in the export.
+const LOST_BUDGET_TIP =
+  'Near zero means spending more buys nothing — the impressions are already being won. Worked out as 100% − impr. share − lost to rank.';
 
 // Whether the panel is expanded, remembered per browser. It is COLLAPSED BY DEFAULT (owner, 2026-09-06): the two tables plus their
 // footnotes took about 40% of the page and pushed the filter bar below the fold, so the screen opened on context instead of on the
@@ -479,7 +483,7 @@ export default function GoogleAdsCampaignPanel({
               <span className="tabular-nums text-slate-500">{pct(adsCampaigns[0].lostIsRank)} lost to rank</span>
               <span
                 className={`tabular-nums ${adsCampaigns[0].lostIsBudget !== null && adsCampaigns[0].lostIsBudget >= 10 ? 'font-medium text-amber-700' : 'text-slate-500'}`}
-                title="Near zero means spending more buys nothing — the impressions are already being won."
+                title={LOST_BUDGET_TIP}
               >
                 {pct(adsCampaigns[0].lostIsBudget)} lost to budget
               </span>
@@ -503,7 +507,7 @@ export default function GoogleAdsCampaignPanel({
                 <th className="px-2 py-2 text-right font-semibold">Click rate</th>
                 <th className="px-2 py-2 text-right font-semibold">Impr. share</th>
                 <th className="px-2 py-2 text-right font-semibold" title="A bid or quality problem, not a budget one.">Lost to rank</th>
-                <th className="px-4 py-2 text-right font-semibold" title="Near zero means spending more buys nothing — the impressions are already being won.">Lost to budget</th>
+                <th className="px-4 py-2 text-right font-semibold" title={LOST_BUDGET_TIP}>Lost to budget</th>
               </tr>
             </thead>
             <tbody>
