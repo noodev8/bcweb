@@ -62,8 +62,20 @@ function blockFor(net, perUnit, line) {
 // Every size of every NEW style, with its sales per channel since the style was created and its stock. One query, no N+1.
 //   created_on is the London date of skusummary.created_at, so a sale booked on the creation day counts.
 //   Stock: local = sellable localstock (#FREE — CLAUDE.md, never stockvariants), the stock Shopify and the shop both sell from;
-//   fba = amzfeed.amzlive, Amazon's sellable FBA units.
+//   fba = amzfeed.amzlive, Amazon's sellable FBA units, PLUS the Amazon-bound local units (LOCAL_SQL / AMZ_BOUND_SQL above).
 //   Size = suffix after the last '-' (CLAUDE.md — not RIGHT(code,2)), sorted numerically where it is a number.
+//   NEVER-STOCKED SIZES ARE LEFT OUT (owner, 2026-10-25): a size with no stock now AND no sale since creation is one we listed in the
+//   size run but never bought (the edge 36s/37s, UK 3s and 8s) — not unsold stock. Counting it swelled New and Unsold and pulled the
+//   Winner % down. A sold-out size has sales, so it stays.
+// AMAZON-BOUND local units count as FBA, not local (owner, 2026-10-26: "due for Pick and in location C3 Amazon") — the same split as
+// Amazon Order (routes/amazon-order-list.js): flagged allocated='amz' (due for Pick) or picked and staged on the C3-Amazon shelf
+// waiting for DPD. They sit in localstock until collected but are already on their way, so a size whose only stock is Amazon-bound
+// is AT FBA, not Local only. Both predicates on localstock alias `l`.
+const LOCAL_SQL = `l.ordernum = '#FREE' AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0
+                   AND COALESCE(l.location, '') <> 'C3-Amazon' AND COALESCE(l.allocated, '') <> 'amz'`;
+const AMZ_BOUND_SQL = `COALESCE(l.deleted, 0) = 0 AND l.qty > 0
+                       AND (l.allocated = 'amz' OR (l.ordernum = '#FREE' AND l.location = 'C3-Amazon'))`;
+
 const NEW_SIZES_SQL = `
   WITH nw AS (
     SELECT ss.groupid, ss.brand, (ss.created_at AT TIME ZONE 'Europe/London')::date AS created_on
@@ -86,13 +98,16 @@ const NEW_SIZES_SQL = `
   loc AS (
     SELECT l.code, SUM(l.qty) AS qty
       FROM localstock l JOIN sz ON sz.code = l.code
-     WHERE l.ordernum = '#FREE' AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0
+     WHERE ${LOCAL_SQL}
      GROUP BY l.code
   ),
   fba AS (
-    SELECT f.code, SUM(f.amzlive) AS qty
-      FROM amzfeed f JOIN sz ON sz.code = f.code
-     GROUP BY f.code
+    SELECT x.code, SUM(x.qty) AS qty FROM (
+      SELECT f.code, f.amzlive AS qty FROM amzfeed f JOIN sz ON sz.code = f.code
+      UNION ALL
+      SELECT l.code, l.qty FROM localstock l JOIN sz ON sz.code = l.code WHERE ${AMZ_BOUND_SQL}
+    ) x
+     GROUP BY x.code
   )
   SELECT sz.code, sz.groupid, sz.brand, sz.size, sz.created_on::text AS created_on,
          t.shopifytitle AS title,
@@ -105,19 +120,21 @@ const NEW_SIZES_SQL = `
     LEFT JOIN fba   ON fba.code = sz.code
     LEFT JOIN title t ON t.groupid = sz.groupid
    GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, t.shopifytitle, loc.qty, fba.qty
+  HAVING COALESCE(loc.qty, 0) > 0 OR COALESCE(fba.qty, 0) > 0 OR COUNT(sl.channel) > 0   -- never stocked = left out (see above)
    ORDER BY sz.created_on DESC, sz.groupid,
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 
-// The Process screen's UNSOLD · AT FBA card as a code list, for the Amazon repricer (routes/amz-process-list.js) — the same rules as
-// the page: a NEW size ($1 = NEW_DAYS, plain created_at) that has netted no sale on ANY channel since its style was created, and has
-// FBA stock (amzfeed.amzlive > 0; stock in both places counts here — it is already on Amazon).
-const UNSOLD_FBA_CODES_SQL = `
-  SELECT m.code
+// The Process screen's UNSOLD sizes with their stock — the same rules as the page: a NEW size ($1 = NEW_DAYS, plain created_at) that
+// has netted no sale on ANY channel since its style was created. fba = amzfeed.amzlive + Amazon-bound local units, local = the rest of sellable #FREE localstock (LOCAL_SQL / AMZ_BOUND_SQL).
+const UNSOLD_SIZES_SQL = `
+  SELECT m.code, m.groupid,
+         (SELECT COALESCE(SUM(f.amzlive), 0) FROM amzfeed f WHERE f.code = m.code)
+           + (SELECT COALESCE(SUM(l.qty), 0) FROM localstock l WHERE l.code = m.code AND ${AMZ_BOUND_SQL}) AS fba,
+         (SELECT COALESCE(SUM(l.qty), 0) FROM localstock l WHERE l.code = m.code AND ${LOCAL_SQL}) AS local
     FROM skusummary ss
     JOIN skumap m ON m.groupid = ss.groupid
    WHERE ss.created_at >= now() - make_interval(days => $1::int)
-     AND (SELECT COALESCE(SUM(f.amzlive), 0) FROM amzfeed f WHERE f.code = m.code) > 0
      AND NOT EXISTS (
        SELECT 1 FROM sales x
         WHERE x.code = m.code AND x.channel IN ('AMZ', 'SHP', 'CM3')
@@ -125,6 +142,12 @@ const UNSOLD_FBA_CODES_SQL = `
         GROUP BY x.channel HAVING SUM(x.qty) > 0
      )
 `;
+// UNSOLD · AT FBA as a code list, for the Amazon repricer (routes/amz-process-list.js): FBA stock > 0 (stock in both places counts
+// here — it is already on Amazon).
+const UNSOLD_FBA_CODES_SQL = `SELECT us.code FROM (${UNSOLD_SIZES_SQL}) us WHERE us.fba > 0`;
+// UNSOLD · LOCAL ONLY as a STYLE list, for the Shopify repricer (routes/pricing-process-list.js): every style with at least one unsold
+// size held locally and not at FBA. Shopify prices per style, so the style is the row.
+const UNSOLD_LOCAL_STYLES_SQL = `SELECT DISTINCT us.groupid FROM (${UNSOLD_SIZES_SQL}) us WHERE us.fba <= 0 AND us.local > 0`;
 
 // The allowance in force: the newest accepted row. null if the table is empty (never, after the migration's seed).
 async function readAllowance(q) {
@@ -180,6 +203,7 @@ module.exports = {
   ALLOWANCE_DUE_DAYS,
   NEW_SIZES_SQL,
   UNSOLD_FBA_CODES_SQL,
+  UNSOLD_LOCAL_STYLES_SQL,
   lineFor,
   blockFor,
   readAllowance,

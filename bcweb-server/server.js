@@ -378,6 +378,7 @@ app.use('/prospect-delete', require('./routes/prospect-delete'));           // P
 app.use('/process-overview', require('./routes/process-overview'));                   // GET: prospects, allowance, new-sizes grid — READ ONLY
 app.use('/process-allowance-measure', require('./routes/process-allowance-measure')); // GET: what a re-measure would give — READ ONLY
 app.use('/amz-process-list', require('./routes/amz-process-list'));                     // GET ?list=unsold-fba: the Amazon repricer list behind a Process card — READ ONLY
+app.use('/pricing-process-list', require('./routes/pricing-process-list'));             // GET ?list=unsold-local: the Shopify repricer list behind a Process card — READ ONLY
 app.use('/process-allowance-accept', require('./routes/process-allowance-accept'));   // POST: make the shown figure the one in force — WRITES google_allowance
 
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales

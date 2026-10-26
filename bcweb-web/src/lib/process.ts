@@ -1,4 +1,4 @@
-// Shared by the Process page and the screens its cards open (/process/unsold). The rules themselves are server-side in
+// Shared by the Process page and the screens its cards open (/process/unsold, and Amazon Order's ?process= arrival). The rules themselves are server-side in
 // bcweb-server/utils/processMap.js — these only read the per-channel blocks it returns.
 import type { ProcessChannel, ProcessSizeRow } from '@/lib/api';
 
@@ -21,3 +21,8 @@ export function shortDate(d: string | null): string {
 
 // The big-number card, shared so the screens the cards open look like Process itself.
 export const boxCls = 'inline-flex min-w-[10rem] flex-col rounded-xl border bg-white px-6 py-4 text-left shadow-sm transition';
+
+// PROCESS → UNSOLD → LOCAL ONLY as codes: new sizes unsold on every channel, held locally and not at FBA. Read by the Unsold screen's
+// card and by Amazon Order's ?process=unsold-local arrival, so the two can't count differently. (The Shopify repricer's list of the
+// same styles is server-side: utils/processMap.js → UNSOLD_LOCAL_STYLES_SQL, the same rule.)
+export const isUnsoldLocalOnly = (r: ProcessSizeRow) => !isSold(r) && r.fbaStock <= 0 && r.localStock > 0;

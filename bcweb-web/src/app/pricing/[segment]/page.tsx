@@ -37,6 +37,10 @@ so the counts match). One unsplit list like a status (tabs hidden, mode pinned t
 there) — deliberately no tab or tile on Repricing (owner: don't disturb navigation). The Stock column is local + Amazon. It replaces the
 ?by=excess list removed the same day (git e4f91fd), same plumbing.
 
+?by=process (2026-10-25) — a list behind a Process card (path name = the list key: 'unsold-local' = Process → Unsold → Local only,
+new styles with an unsold size held locally and not at FBA), from GET /pricing-process-list. One unsplit list like a status; the crumb
+shows its plain name (PROCESS_LISTS). Back returns to the Process screen it came from (?from=).
+
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
 clear it. The server still caps each response (utils/listLimit.js, default 100) purely so a pathological segment can't flood the
 browser; when that cap bites the page says so.
@@ -51,7 +55,7 @@ import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
 import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
-import { getTriage, getLosers, getStatusList, getSittingList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
+import { getTriage, getLosers, getStatusList, getSittingList, getProcessList, applyPrice, parkStyleBulk, PricingGroup, PricingGroupBy, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -105,8 +109,11 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   campaign: 'Google campaign',
   status: 'status',
   sitting: 'no sale in 90 days',
+  process: 'process',
 };
-const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list' };
+const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list', process: 'list' };
+// The Process lists' on-screen names (the path param is the API's list key).
+const PROCESS_LISTS: Record<string, string> = { 'unsold-local': 'Unsold, local only' };
 // The sitting list's path name is 'sitting'; the crumb shows the word on Slow's sitting box.
 const SITTING_LABEL = 'Sitting';
 
@@ -123,7 +130,8 @@ function SegmentContent() {
   const group: PricingGroup = { by, name: segment };
   const isStatus = by === 'status';
   const isSitting = by === 'sitting';
-  const oneList = isStatus || isSitting;   // no Selling / Stuck split — one list, view pinned to 'all'
+  const isProcess = by === 'process';
+  const oneList = isStatus || isSitting || isProcess;   // no Selling / Stuck split — one list, view pinned to 'all'
   // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
   const barRaw = Number(searchParams.get('bar'));
   const bar = isStatus && barRaw > 0 ? barRaw : null;
@@ -169,6 +177,21 @@ function SegmentContent() {
       }
       // The SITTING list is one unsplit list too (GET /pricing-sitting-list — the styles behind the Slow page's sitting box), same
       // treatment as a status: rows in `winners`, view pinned to 'all'. kind 'loser' — every row has sold nothing.
+      // A PROCESS list (GET /pricing-process-list) — the same treatment as a status.
+      if (isProcess) {
+        const x = await getProcessList(segment);
+        if (x.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
+        if (!(x.success && x.data)) return { success: false, return_code: x.return_code, error: x.error || 'Failed to load list' };
+        const rows: ListRow[] = x.data.rows.map((r) => ({
+          kind: 'winner', groupid: r.groupid, title: r.title, brand: r.brand, units: r.u30, stock: r.stock, price: r.price, rrp: r.rrp,
+          match_amazon: r.match_amazon, next_review: r.next_review, parked: r.parked,
+        }));
+        return {
+          success: true,
+          return_code: 'SUCCESS',
+          data: { winners: rows, losers: [] as ListRow[], capped: x.data.truncated, partialError: null, outOfStock: x.data.outOfStock },
+        };
+      }
       if (isSitting) {
         const x = await getSittingList();
         if (x.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
@@ -392,7 +415,7 @@ function SegmentContent() {
   const ready = !loading && !error && !!data;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isSitting ? SITTING_LABEL : segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isSitting ? SITTING_LABEL : isProcess ? (PROCESS_LISTS[segment] || segment) : segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}>
       <ListViewControls
         view={mode}
         onViewChange={setMode}

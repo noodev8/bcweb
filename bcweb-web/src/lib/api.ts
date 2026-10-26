@@ -309,12 +309,14 @@ export function getSegments() {
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
 // 'sitting' (2026-10-10, SHOPIFY ONLY) = the sitting styles from Winners → Slow (path name 'sitting'), also one unsplit
 // list (getSittingList). Reached ONLY from the Slow link — no tab or tile on Repricing (owner: don't disturb navigation).
-export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting';
+// 'process' (2026-10-25, SHOPIFY grouping; Amazon reads ?by=process on its own) = a list behind a Process card (path name = the list
+// key, e.g. 'unsold-local'), one unsplit list (getProcessList). Reached only from the Process screens.
+export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting' | 'process';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'status' || v === 'sitting' ? v : 'segment';
+  return v === 'campaign' || v === 'status' || v === 'sitting' || v === 'process' ? v : 'segment';
 }
 
 // Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
@@ -408,6 +410,21 @@ export function getSittingList() {
     (b) => ({
       total: Number(b.total) || 0,
       truncated: !!b.truncated,
+      rows: b.rows || [],
+    })
+  );
+}
+
+// The Shopify repricer list behind a Process card (GET /pricing-process-list — 'unsold-local' = Process → Unsold → Local only).
+// Same row shape as getStatusList, so /pricing/[segment]?by=process renders it unchanged.
+export function getProcessList(list: string) {
+  return request<{ list: string; total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
+    { url: '/pricing-process-list', method: 'GET', params: { list, limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({
+      list: String(b.list || list),
+      total: Number(b.total) || 0,
+      truncated: !!b.truncated,
+      outOfStock: Number(b.out_of_stock) || 0,
       rows: b.rows || [],
     })
   );

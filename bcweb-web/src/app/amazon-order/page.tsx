@@ -242,10 +242,11 @@ import AmazonExport from '@/components/AmazonExport';
 import SliderBadge, { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
+  getAmazonOrderList, getProcessOverview, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
   AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder, SliderMark,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { isUnsoldLocalOnly } from '@/lib/process';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -881,6 +882,11 @@ interface SupplyControlProps {
   onPark: (groupids: string[]) => Promise<string | null>;
   onClearSupply: (groupids: string[]) => Promise<string | null>;
 }
+// THE DETAIL ROW'S ACTION BUTTONS — Can't get it, Find in Inventory and the Amazon upload file share one quiet outline look
+// (owner, 2026-10-26: the Find in Inventory text link "looks out of place" beside the upload button). Same classes as
+// components/AmazonExport's quiet button.
+const actionBtnCls = 'inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-brand-500 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40';
+
 function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyControlProps) {
   const [choosing, setChoosing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -934,8 +940,9 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
         <button
           type="button"
           onClick={() => setChoosing(true)}
-          className="text-slate-500 hover:text-slate-700 hover:underline"
+          className={actionBtnCls}
         >
+          <NoSymbolIcon className="h-4 w-4" />
           Can&rsquo;t get it
         </button>
       )}
@@ -952,6 +959,12 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
  *               so Reset clears it and the operator carries on with a normal, fully working screen rather than a locked-down view.
  *   ?from=      where the back arrow goes (Inventory, or whichever screen's product menu opened it), so the trip returns instead of dead-ending.
  *   ?back=      that link's label. Both default to the dashboard, which is what every arrival before this used.
+ *   ?process=unsold-local  (2026-10-25) — arriving from Process → Unsold → Local only ("send to Amazon?"): the screen narrows to
+ *               exactly those sizes (new, unsold everywhere, held locally, nothing at FBA — lib/process.ts → isUnsoldLocalOnly, read
+ *               from the same process-overview data as the card, so the counts match) and opens on BOTH, because about half are
+ *               listed on Amazon with 0 FBA (Pick them) and half were never listed (No AMZ → the upload file). A quiet chip says so
+ *               and its × lifts it; Reset lifts it too. Hot / Warm / Simmer and the rate fill test Amazon sales these sizes don't
+ *               have, so this is ordering / picking by hand.
  * useSearchParams forces a Suspense boundary for Next's build (App Router), so the page body moved into AmazonOrderContent and this
  * thin wrapper is all the default export does - the same split /product, /pricing/find and the drills already use.
  */
@@ -1000,8 +1013,17 @@ function AmazonOrderContent() {
     () => (supplyOn ? offRows.filter((r) => !supplyHidden(r)) : offRows),
     [offRows, supplyOn],
   );
-  // ON AMAZON | NOT ON AMAZON | BOTH — see the header. A view, like the presets: never touches the basket.
-  const [listing, setListing] = useState<'on' | 'off' | 'both'>('on');
+  // PROCESS ARRIVAL (?process=unsold-local — see DEEP LINK IN): the codes it narrows to, from the Process data (SWR-cached if the
+  // operator came through Process). Read once like ?q=; null = not narrowed.
+  const [processScope, setProcessScope] = useState<'unsold-local' | null>(searchParams.get('process') === 'unsold-local' ? 'unsold-local' : null);
+  const processQ = useApiQuery(processScope ? 'process-overview' : null, () => getProcessOverview());
+  const processCodes = useMemo(
+    () => (processQ.data ? new Set(processQ.data.rows.filter(isUnsoldLocalOnly).map((r) => r.code)) : null),
+    [processQ.data],
+  );
+  // ON AMAZON | NOT ON AMAZON | BOTH — see the header. A view, like the presets: never touches the basket. A Process arrival opens on
+  // BOTH: its sizes are half listed, half not.
+  const [listing, setListing] = useState<'on' | 'off' | 'both'>(processScope ? 'both' : 'on');
   // What a search can land on — addInclude's "does this term find anything" check has to count the unlisted rows too, or a search for
   // one would throw the steps away as if it had found nothing.
   const searchRows = useMemo(() => [...baseRows, ...offBaseRows], [baseRows, offBaseRows]);
@@ -1211,6 +1233,7 @@ function AmazonOrderContent() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
     setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false);
     setListing('on');
+    setProcessScope(null);
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
     // Back into the Can't get cut if it was switched off — the screen as you arrived.
@@ -1242,6 +1265,8 @@ function AmazonOrderContent() {
     const excTerms = excludes.map((t) => t.toLowerCase());
     const narrow = (list: AmazonOrderRow[]) => {
       let o = seasonFilter ? list.filter((r) => inSeason(r, seasonFilter)) : list;
+      // A Process arrival: only its sizes. Nothing until its data is in, rather than a flash of the whole list.
+      if (processScope) o = processCodes ? o.filter((r) => processCodes.has(r.code)) : [];
       if (incTerms.length > 0 || excTerms.length > 0) o = o.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
       return o;
     };
@@ -1255,9 +1280,9 @@ function AmazonOrderContent() {
     // Simmer reads FBA Total live from the server, so a size leaves the list once the refresh after Confirm Basket counts its unit.
     if (simmerOnly) out = out.filter((r) => isSimmer(r, hotBar, warmMin));
     return unlisted.length > 0 ? [...out, ...unlisted] : out;
-  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+  }, [allRows, baseRows, offBaseRows, listing, processScope, processCodes, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
+  const filtering = processScope !== null || includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
 
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
@@ -2186,6 +2211,19 @@ function AmazonOrderContent() {
                   is"). It used to switch to "Rows: X of Y" once anything narrowed the list; the "of Y" changed its width on a click. */}
               <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> SKUs</span>
             </span>
+            {/* The Process arrival's chip — the one narrowing with a chip, because it came from another screen and the operator
+                didn't type it. × lifts it (the BOTH view stays — it's just a view). */}
+            {processScope && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1 text-xs text-slate-600">
+                Process: unsold, local only
+                <button
+                  type="button" onClick={() => setProcessScope(null)} aria-label="Show every SKU" title="Show every SKU"
+                  className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                >
+                  <XMarkIcon className="h-3 w-3" />
+                </button>
+              </span>
+            )}
           </div>
 
           {/* Reset — the escape hatch, alone at the end of the row you might need escaping from. Cut and Can't get moved to row 2
@@ -2640,8 +2678,18 @@ function AmazonOrderContent() {
                       : 'border-transparent bg-white group-hover:bg-slate-50')
                   }>
                     {/* Capped and wrapping: a SKU carrying BOTH tags (No AMZ + Can't get) used to set the column's width for the whole
-                        table and push it past the panel — now its second tag drops under the code on that one row. */}
-                    <span className="inline-flex max-w-[14.5rem] flex-wrap items-center gap-1 whitespace-nowrap">
+                        table and push it past the panel — now its second tag drops under the code on that one row. 16rem (was 14.5) fits a
+                        long code + No AMZ + the Can't get icon on one line (owner, 2026-10-26). */}
+                    <span className="inline-flex max-w-[16rem] flex-wrap items-center gap-1 whitespace-nowrap">
+                      {/* The details caret sits LEFT of the code (owner, 2026-10-25: "I was looking for the arrow on the left"). */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
+                        title="Details"
+                        className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-500"
+                      >
+                        <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expandedCode === r.code ? 'rotate-180' : '')} />
+                      </button>
                       <span title={r.title || undefined}>{r.code}</span>
                       {/* PRICING SLIDER badge — the same pill as the Amazon pricing lists; links to the slider (stops the row's click). */}
                       <SliderBadge mark={sliderMarks.amz(r.code)} />
@@ -2669,22 +2717,17 @@ function AmazonOrderContent() {
                           type="button"
                           onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
                           title={r.no_supply ? `Can’t get until ${shortDate(r.no_supply_until)}` : `Couldn’t get — ${shortDate(r.no_supply_since)}`}
+                          aria-label={r.no_supply ? 'Can’t get' : 'Couldn’t get'}
                           className={
-                            'rounded border px-1 font-sans text-[10px] font-medium leading-4 '
-                            + (r.no_supply ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500')
+                            'rounded border px-0.5 leading-4 '
+                            + (r.no_supply ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-400')
                           }
                         >
-                          {r.no_supply ? 'Can’t get' : 'Couldn’t get'}
+                          {/* An icon, not the words (owner, 2026-10-26): with No AMZ beside it the words wrapped onto a second line.
+                              The tooltip says which and until when. */}
+                          <NoSymbolIcon className="h-3 w-3" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
-                        title="Details"
-                        className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-500"
-                      >
-                        <ChevronDownIcon className={'h-3 w-3 transition-transform ' + (expandedCode === r.code ? 'rotate-180' : '')} />
-                      </button>
                     </span>
                   </td>
                   <td className={'whitespace-nowrap border-l border-slate-100 px-2 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
@@ -2787,15 +2830,11 @@ function AmazonOrderContent() {
                           read") rather than one run-on xs line. */}
                       <div className="flex flex-wrap items-start gap-x-10 gap-y-4 py-1 pl-3">
                         <DetailThumb imagename={r.imagename} alt={r.title || r.code} />
-                        {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file takes the price block's
-                            place. The same component as Add / Modify, so there is one way to make the file. */}
-                        {r.on_amazon
-                          ? <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} sliderMark={sliderMarks.amz(r.code)} onSetPrice={onSetPrice} />
-                          : (
-                            <div className="max-w-sm">
-                              <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} />
-                            </div>
-                          )}
+                        {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file leads the action line
+                            below instead (owner, 2026-10-26: the buttons were "scattered and floating"). */}
+                        {r.on_amazon && (
+                          <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} sliderMark={sliderMarks.amz(r.code)} onSetPrice={onSetPrice} />
+                        )}
                         <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
                           <dt className="text-slate-500">RRP</dt>
                           <dd className="font-medium tabular-nums text-slate-900">{money(r.rrp)}</dd>
@@ -2834,7 +2873,12 @@ function AmazonOrderContent() {
                           the unit. ?from=/&back= is Inventory's Back convention.
                           No rule above it (owner, 2026-10-22): a border-t there read as the table's next row divider, as if Can't get
                           were outside the expanded section. Spacing alone separates it from the blocks. */}
-                      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 pl-3 text-sm">
+                      {/* ONE ROW OF BUTTONS (owner, 2026-10-26): Amazon upload file (unlisted only — the same component as Add / Modify,
+                          so there is one way to make the file), Can't get it, Find in Inventory — side by side, left edge on the picture's. */}
+                      <div className="mt-3 flex flex-wrap items-center gap-2 pl-3 text-sm">
+                        {!r.on_amazon && (
+                          <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} quiet />
+                        )}
                         <SupplyControl
                           row={r}
                           sizes={sizesByStyle.get(r.groupid) ?? 1}
@@ -2852,9 +2896,10 @@ function AmazonOrderContent() {
                         )}
                         <Link
                           href={`/inventory?q=${encodeURIComponent(r.code)}&from=${encodeURIComponent(selfHref)}&back=${encodeURIComponent('Amazon Order')}`}
-                          className="font-medium text-brand-600 hover:underline"
+                          className={actionBtnCls}
                         >
-                          Find in Inventory →
+                          <MagnifyingGlassIcon className="h-4 w-4" />
+                          Find in Inventory
                         </Link>
                       </div>
                     </td>

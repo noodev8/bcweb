@@ -5,10 +5,11 @@ Page: /process — Process (owner's work in progress, 2026-10-25)
 =======================================================================================================================================
 Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big numbers:
 
-    Prospects → New → Unsold → [Winner · Loser]   (the Sold card was taken off 2026-10-25 — Winner + Loser = Sold)
+    Prospects → New → Unsold → [Winner · Loser] → Amazon Order (a navigation card, no number)   (the Sold card was taken off 2026-10-25 — Winner + Loser = Sold)
 
   - PROSPECTS: one plain total. Opens /prospects (which links back here).
-  - NEW: every size of every style created in the last 90 days (counted in sizes; styles underneath).
+  - NEW: every size of every style created in the last 90 days (counted in sizes; styles underneath) — except sizes never stocked
+    (no stock, no sale ever: listed but never bought), left out 2026-10-25 (server, utils/processMap.js).
   - SOLD: sold on ANY channel (Amazon, Shopify, shop counter), net of returns — a size counts once however many channels it sold on.
   - WINNER: sold at £3+ a unit on ANY channel; Shopify's £3 is AFTER the fixed Google allowance (line = £3 + allowance). The low bar
     on purpose — these are NEW, the other screens measure staying power. A 30-day top-20% bar was rejected (0 on Amazon while good new
@@ -39,7 +40,7 @@ import {
   type ProcessAllowanceMeasure, type ProcessOverview, type ProcessSizeRow,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { boxCls, CHANNELS, isSold, isWinner, shortDate } from './shared';
+import { boxCls, CHANNELS, isSold, isWinner, shortDate } from '@/lib/process';
 
 
 type Pick = 'new' | 'sold' | 'unsold' | 'winner' | 'loser';
@@ -144,6 +145,14 @@ export default function ProcessPage() {
               {box('winner', winPct)}
               {box('loser', losePct)}
             </div>
+            {/* AMAZON ORDER (owner, 2026-10-25): a big navigation card to the ordering screen — no number, the name is the card.
+                ?from= gives Amazon Order its back link to here. */}
+            <Link
+              href={`/amazon-order?from=${encodeURIComponent(SELF)}`}
+              className={boxCls + ' justify-center border-slate-200 hover:border-brand-500 hover:shadow-md'}
+            >
+              <span className="text-2xl font-semibold text-slate-900">Amazon Order</span>
+            </Link>
           </section>
 
           {open && <BoxList key={open} data={d} pick={open} stickyTop={cardsHeight} onClose={() => setOpen(null)} />}
