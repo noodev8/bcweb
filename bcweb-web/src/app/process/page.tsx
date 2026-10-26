@@ -21,7 +21,9 @@ Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big n
     (largest remainder). Winner + Loser = Sold. (Until 2026-10-25 Loser took in the unsold too, and Unsold sat paired with Sold.)
   The caption under Winner / Loser / Unsold is ONLY the % of New (owner: just the %) — the share is what should improve quarter on quarter ("future mindset comparison").
 
-Tap New / Winner / Loser for its list below the row (see BoxList for what each shows). Unsold opens /process/unsold.
+Tap Winner / Loser for its list below the row (see BoxList for what each shows). Unsold opens /process/unsold — one list of every
+unsold size, FBA and local together (owner, 2026-10-26). New opens Reports →
+New Additions (/analytics/new-additions, owner 2026-10-26), with a back arrow to Today.
 The per-channel cards were removed (owner: "those boxes aren't helping"). The Monday job: load prospects, then fight the losers.
 
 Rules (sold, £ a unit, the line) are server-side in bcweb-server/utils/processMap.js; this page only counts and lists.
@@ -42,6 +44,7 @@ import {
   type ProcessAllowanceMeasure, type ProcessOverview, type ProcessSizeRow,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { PROCESS_CLEARANCE_CARD } from '@/lib/features';
 import { boxCls, CHANNELS, isSold, isWinner, shortDate } from '@/lib/process';
 
 
@@ -134,10 +137,20 @@ export default function ProcessPage() {
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.prospects}</span>
               <span className="text-xs text-slate-400">on the list</span>
             </Link>
-            {box('new', `${d.styles} styles`)}
+            {/* NEW opens Reports → New Additions (owner, 2026-10-26), no longer its list below the row; the 'new' BoxList is kept. */}
+            <Link
+              href={`/analytics/new-additions?from=${encodeURIComponent(SELF)}&back=Today`}
+              className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{PICK_LABEL.new}</span>
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{count('new')}</span>
+              <span className="text-xs text-slate-400">{d.styles} styles</span>
+            </Link>
             {/* UNSOLD straight after New — the highest priority (owner, 2026-10-25). It opens its own screen, split by where the stock
                 sits (owner: these lists belong on the screens where you act, not here). Winner / Loser still open below until theirs
                 are decided. Unsold + Winner + Loser = New: their %s are rounded to add up to exactly 100%. */}
+            {/* Opens /process/unsold, which since 2026-10-26 is ONE list of every unsold size, FBA and local together (owner: "I don't
+                care about fba vs local, just give me the list of all of them" — on its own screen, not a drop-down here). */}
             <Link href="/process/unsold" className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}>
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{PICK_LABEL.unsold}</span>
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{count('unsold')}</span>
@@ -149,8 +162,9 @@ export default function ProcessPage() {
             </div>
             {/* CLEARANCE (owner, 2026-10-26: "Something that hasnt been sold for 9 months is a proper loser"). Held SIZES, any style age,
                 unsold (net) on every channel for 9 months and here that long — sold anywhere is good. A count only: it opens Slow Sizes
-                on its Clearance box, which is the same rows (server: utils/slowSizes.js) — one list, not two (owner, 2026-10-26). */}
-            <Link
+                on its Clearance box, which is the same rows (server: utils/slowSizes.js) — one list, not two (owner, 2026-10-26).
+                HIDDEN 2026-10-26 behind lib/features.ts → PROCESS_CLEARANCE_CARD (owner: hide, don't delete). */}
+            {PROCESS_CLEARANCE_CARD && <Link
               href={`/analytics/slow-sizes?band=cl&from=${encodeURIComponent(SELF)}&back=Today`}
               className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}
             >
@@ -159,7 +173,7 @@ export default function ProcessPage() {
                   headline as Slow Sizes' Clearance box. */}
               <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.clearance.units}</span>
               <span className="text-xs text-slate-400">unsold {d.clearance.months} months+</span>
-            </Link>
+            </Link>}
           </section>
 
           {/* GO TO (owner, 2026-10-26): small buttons BELOW the cards, side by side, to the screens you act on from here (the big Amazon

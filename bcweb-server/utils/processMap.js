@@ -127,6 +127,10 @@ const NEW_SIZES_SQL = `
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 
+// The NEW styles ($1 = days) — the styles behind the Today screen's New card, i.e. any style with a size on NEW_SIZES_SQL. Reports →
+// New Additions lists exactly these (owner, 2026-10-26: "make the count work the same"), so the card and the screen it opens agree.
+const NEW_STYLES_SQL = `SELECT DISTINCT ns.groupid FROM (${NEW_SIZES_SQL}) ns`;
+
 // The Process screen's UNSOLD sizes with their stock — the same rules as the page: a NEW size ($1 = NEW_DAYS, plain created_at) that
 // has netted no sale on ANY channel since its style was created. fba = amzfeed.amzlive + Amazon-bound local units, local = the rest of sellable #FREE localstock (LOCAL_SQL / AMZ_BOUND_SQL).
 const UNSOLD_SIZES_SQL = `
@@ -219,6 +223,7 @@ module.exports = {
   MEASURE_DAYS,
   ALLOWANCE_DUE_DAYS,
   NEW_SIZES_SQL,
+  NEW_STYLES_SQL,
   UNSOLD_FBA_CODES_SQL,
   UNSOLD_LOCAL_STYLES_SQL,
   lineFor,

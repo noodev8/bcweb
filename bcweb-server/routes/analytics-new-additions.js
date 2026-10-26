@@ -8,12 +8,9 @@ Purpose: Analytics module — New Additions. The catalogue-GROWTH pulse: which S
          again" tells the owner at a glance whether the month brought a lot of new product or a little, and whether the new lines are
          actually selling.
 
-         Grain: Shopify STYLE (skusummary.groupid, live = shopify=1). Creation date lives on skusummary — there is no equivalent for
-         Amazon (amzfeed is rebuilt nightly with no birth date), so this is a Shopify-catalogue view by nature.
-
-         Created date: prefer the going-forward `created_at timestamptz` (added for real date logic); fall back to the legacy `created`
-         TEXT stamp ('YYYYMMDD HH24:MI:SS', Europe/London) for rows written before created_at existed. A short window only ever catches
-         freshly-added rows, which all have created_at — the COALESCE is belt-and-braces so a wider window still behaves.
+         Grain: STYLE (skusummary.groupid). Since 2026-10-26 the styles are EXACTLY the Today screen's New card (owner: "make the count
+         work the same") — utils/processMap.js → NEW_STYLES_SQL: created_at in the window, ALL channels (the old shopify=1 filter
+         went), and a style whose every size was never stocked (no stock now, no sale since creation) left out.
 
          Sales figures are LIFETIME (all sales for that style to date). Because these are brand-new products, lifetime ≈ "since it was
          added" — the truest read of how the new line has done. Shopify channel only, positive lines (qty>0, soldprice>0). Matched by
@@ -50,6 +47,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { NEW_STYLES_SQL } = require('../utils/processMap');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -79,10 +77,11 @@ router.get('/', async (req, res) => {
     const result = await query(
       `
       WITH created AS (
-        SELECT ss.groupid,
-               COALESCE(ss.created_at, to_timestamp(NULLIF(ss.created, ''), 'YYYYMMDD HH24:MI:SS')) AS created_ts
+        -- THE SAME STYLES AS THE TODAY SCREEN'S NEW CARD (owner, 2026-10-26): utils/processMap.js → NEW_STYLES_SQL — created_at in
+        -- the last $1 days, ALL channels (no shopify=1 filter), never-stocked styles left out. Was shopify=1 with a legacy-stamp fallback.
+        SELECT ss.groupid, ss.created_at AS created_ts
         FROM skusummary ss
-        WHERE ss.shopify = 1
+        WHERE ss.groupid IN (${NEW_STYLES_SQL})
       ),
       stk AS (
         SELECT groupid, SUM(qty) AS stock FROM (
@@ -136,7 +135,6 @@ router.get('/', async (req, res) => {
       LEFT JOIN sold  s  ON s.groupid  = c.groupid
       LEFT JOIN last_sale ls ON ls.groupid = c.groupid
       LEFT JOIN title t  ON t.groupid  = c.groupid
-      WHERE c.created_ts >= CURRENT_DATE - ($1::int - 1)
       ORDER BY c.created_ts DESC, c.groupid
       `,
       [days]
