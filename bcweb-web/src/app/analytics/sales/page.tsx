@@ -59,7 +59,6 @@ import { Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import ProcessNav, { PROCESS_PATH } from '@/components/ProcessNav';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -440,9 +439,7 @@ function SalesPageContent() {
   }, [range, searchActive]);
 
   return (
-    // Arrived from Process: its Process / Amazon Order buttons in the header row (components/ProcessNav.tsx).
-    <AppShell backHref={backHref} backLabel={backLabel}
-      headerRight={fromParam === PROCESS_PATH ? <ProcessNav current="sales" /> : undefined}>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* SEARCH SITS FIRST, directly under the title (owner, 2026-07-25: "I just want to search for sales"). It used to sit below the
           explainer paragraph AND the headline tiles, which pushed the boxes to the fold — on a screen whose primary action is "find this
           product". The paragraph went entirely: two labelled boxes and a Find need no instructions, and the one genuinely non-obvious

@@ -29,8 +29,8 @@ pass nothing and it runs each statement on the shared pool. It never writes to s
 const { query: poolQuery } = require('../database');
 const logger = require('./logger');
 
-// Canonical "which segments exist right now" definition — DISTINCT non-blank skusummary.segment. Mirrors GET /pricing-segments'
-// membership rule (segment <> ''), plus btrim() so a whitespace-only tag counts as blank. The raw (un-trimmed) value is what gets
+// Canonical "which segments exist right now" definition — DISTINCT non-blank skusummary.segment (segment <> '')
+// plus btrim() so a whitespace-only tag counts as blank. The raw (un-trimmed) value is what gets
 // stored, because that string is the join key back to the products (spec §4).
 const PRESENT_NAMES_SQL = `
   SELECT DISTINCT segment

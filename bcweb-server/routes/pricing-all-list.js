@@ -7,7 +7,7 @@ Purpose: Shopify Pricing's home list — EVERY in-stock Shopify style, not one s
          just be a list of all, with a due and not due toggle"). Membership = live on Shopify (skusummary.shopify = 1) with sellable
          local stock (localstock #FREE — CLAUDE.md, never stockvariants). One unsplit list: no Selling / Stuck bars.
 
-         Same row shape as pricing-status-list / pricing-process-list, so /pricing/all?by=all renders it with the same table, drill,
+         Same row shape as pricing-status-list, so /pricing/all?by=all renders it with the same table, drill,
          Due switch and bulk bar. Apply is the usual W1.
 
          Order: most stock first, then groupid. Parked styles (skusummary.next_shopify_price_review in the future) are dropped unless

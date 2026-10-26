@@ -29,10 +29,3 @@ export const AMZ_MATCH_UI = false;
  * and the nightly stock_daily job are all kept. Set true to bring both back, below the sitting list.
  */
 export const STOCK_SALES_FLOW = false;
-
-/*
- * Today (/process) — the Clearance card — HIDDEN 2026-10-26 (owner: "just hide clearance, dont delete"). With this false the card
- * isn't rendered; the server still returns clearance in /process-overview, and Slow Sizes' Clearance box is untouched.
- * Set true to bring the card back.
- */
-export const PROCESS_CLEARANCE_CARD = false;

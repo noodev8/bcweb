@@ -83,7 +83,6 @@ async function request<T>(config: AxiosRequestConfig, pick: (body: any) => T): P
 // =============================================================================================================================
 // Domain types (mirror the server response shapes in routes/*)
 // =============================================================================================================================
-export interface Segment { segment: string; styles: number; }
 // WINNERS: styles that sold >= 2 units in the window AND averaged >= £2 realised net profit per unit. Same bar on Amazon.
 export interface TriageRow {
   rank: number; groupid: string; title: string | null; brand: string | null; units: number; stock: number; price: number | null; match_amazon: boolean;
@@ -103,8 +102,6 @@ export interface LoserRow {
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
 }
 // --- Amazon Pricing module (SKU-grain; mirrors the Shopify flow — segment picker -> WINNERS|LOSERS -> per-SKU drill) -----------
-// Stage 0: one managed segment (has live amzfeed SKUs) + its SKU count.
-export interface AmzSegment { segment: string; skus: number; }
 // Stage 1 WINNERS: in-stock SKUs that sold >= 2 units in the window AND averaged >= £2 net profit per unit (candidates to price UP /
 // harvest). Same bar as Shopify's TriageRow — the owner's instruction is that both channels share one definition of a winner.
 export interface AmzWinnerRow {
@@ -297,10 +294,6 @@ export function login(username: string, password: string) {
   );
 }
 
-export function getSegments() {
-  return request<Segment[]>({ url: '/pricing-segments', method: 'GET' }, (b) => b.segments || []);
-}
-
 // Which group a WINNERS / LOSERS list is scoped to — a segment, a Google campaign bucket (skusummary.googlecampaign, 2026-09-23,
 // SHOPIFY ONLY), or a portfolio STATUS (2026-09-24 — the stored skusummary.portfolio_status; the name is WINNERS | STEADY | NEW |
 // LOSERS). `by` becomes the query param name (?segment= / ?campaign= / ?status=). The Amazon list functions take the same
@@ -309,16 +302,14 @@ export function getSegments() {
 // getAmzStatusList). It REPLACED Top earners (removed 2026-09-24) as Repricing's first tab.
 // 'sitting' (2026-10-10, SHOPIFY ONLY) = the sitting styles from Winners → Slow (path name 'sitting'), also one unsplit
 // list (getSittingList). Reached ONLY from the Slow link — no tab or tile on Repricing (owner: don't disturb navigation).
-// 'process' (2026-10-25, SHOPIFY grouping; Amazon reads ?by=process on its own) = a list behind a Process card (path name = the list
-// key, e.g. 'unsold-local'), one unsplit list (getProcessList). Reached only from the Process screens.
 // 'all' (2026-10-26) = every in-stock style, not one segment (path name 'all') — Shopify Pricing's home (/pricing redirects there),
-// one unsplit list (getAllList). Amazon reads ?by=all on its own, like process (getAmzAllList).
-export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting' | 'process' | 'all';
+// one unsplit list (getAllList). Amazon reads ?by=all on its own (getAmzAllList).
+export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting' | 'all';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'status' || v === 'sitting' || v === 'process' || v === 'all' ? v : 'segment';
+  return v === 'campaign' || v === 'status' || v === 'sitting' || v === 'all' ? v : 'segment';
 }
 
 // Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
@@ -417,21 +408,6 @@ export function getSittingList() {
   );
 }
 
-// The Shopify repricer list behind a Process card (GET /pricing-process-list — 'unsold-local' = Process → Unsold → Local only).
-// Same row shape as getStatusList, so /pricing/[segment]?by=process renders it unchanged.
-export function getProcessList(list: string) {
-  return request<{ list: string; total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
-    { url: '/pricing-process-list', method: 'GET', params: { list, limit: STATUS_LIST_LIMIT, parked: 'include' } },
-    (b) => ({
-      list: String(b.list || list),
-      total: Number(b.total) || 0,
-      truncated: !!b.truncated,
-      outOfStock: Number(b.out_of_stock) || 0,
-      rows: b.rows || [],
-    })
-  );
-}
-
 // Shopify Pricing's home list (2026-10-26) — every in-stock Shopify style, parked included (the Due switch filters client-side).
 export function getAllList() {
   return request<{ total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
@@ -504,20 +480,6 @@ export function getAmzStatusList(status: string, bar?: number | null) {
   );
 }
 
-// The Amazon repricer list behind a Process card (GET /amz-process-list — 'unsold-fba' = Process → Unsold → At FBA). Same row shape
-// as getAmzStatusList, so /amz/[segment]?by=process renders it unchanged.
-export function getAmzProcessList(list: string) {
-  return request<{ list: string; total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
-    { url: '/amz-process-list', method: 'GET', params: { list, limit: STATUS_LIST_LIMIT, parked: 'include' } },
-    (b) => ({
-      list: String(b.list || list),
-      total: Number(b.total) || 0,
-      truncated: !!b.truncated,
-      outOfStock: Number(b.out_of_stock) || 0,
-      rows: b.rows || [],
-    })
-  );
-}
 
 // WINNERS / LOSERS return the WHOLE qualifying list, not a top-10 shortlist: `limit` is only a safety cap (server default 100), and
 // `total`/`truncated` report the pre-cap count so the page can say "showing 100 of N" on the rare segment that overflows.
@@ -538,11 +500,6 @@ export function getLosers(group: PricingGroup, days?: number, limit?: number, in
 }
 
 // ALL list for a segment — every style, unfiltered, most-recently-changed first (browse/lookup view).
-// Amazon Pricing — Stage 0: the segment picker (managed segments + SKU count). Mirrors getSegments().
-export function getAmzSegments() {
-  return request<AmzSegment[]>({ url: '/amz-segments', method: 'GET' }, (b) => b.segments || []);
-}
-
 // Amazon Pricing — Stage 1 WINNERS: in-stock SKUs that sold in `days` (default 30), best first. Mirrors getTriage(), incl. total/truncated.
 export function getAmzWinners(group: PricingGroup, days?: number, limit?: number, includeParked?: boolean) {
   return request<{ segment: string; days: number; total: number; truncated: boolean; rows: AmzWinnerRow[] }>(
@@ -1865,33 +1822,6 @@ export function stepSliderMember(memberId: number) {
       old_price: b.old_price ?? null, new_price: b.new_price ?? null, state: b.state, expired: !!b.expired,
       warnings: b.warnings || [], shopify: b.shopify ?? null, basket: b.basket ?? null,
     })
-  );
-}
-
-// One newly-added Shopify style with its lifetime sales performance. `created` = effective creation date; sales figures are lifetime
-// (≈ since-add, as these are new products): units sold, revenue (qty×soldprice) and net profit. stock = current FREE stock.
-export interface NewAdditionRow {
-  groupid: string;
-  title: string | null;
-  brand: string | null;
-  created: string | null;
-  price: number | null;
-  rrp: number | null;
-  stock: number;
-  units: number;
-  revenue: number;
-  profit: number;
-  lastProfit: number | null; // profit on the style's MOST RECENT sale (null = never sold) — what it earns at the price it's on now
-  lastSold: string | null;   // date of that sale, 'YYYY-MM-DD'
-}
-
-export interface NewAdditionsData { days: number; count: number; rows: NewAdditionRow[]; }
-
-// Load the New Additions report — Shopify styles created in the last `days` (default 30), newest first, each with lifetime sales.
-export function getNewAdditions(days?: number) {
-  return request<NewAdditionsData>(
-    { url: '/analytics-new-additions', method: 'GET', params: { days } },
-    (b) => ({ days: b.days, count: b.count ?? 0, rows: b.rows || [] })
   );
 }
 
@@ -4895,52 +4825,50 @@ export function deleteProspectItem(kind: 'prospect' | 'check' | 'note', id: numb
   return request<null>({ url: '/prospect-delete', method: 'POST', data: { kind, id } }, () => null);
 }
 
-// ---- Process (2026-10-25): the owner's read-only map of blocks — rules in bcweb-server/utils/processMap.js -----------------------
+// ---- New sizes (GET /process-overview) — Daily's New stuff / Prospects counts and New Additions' list. Rules in
+// bcweb-server/utils/processMap.js. (The Today screen they were built for was removed 2026-10-26; the route kept its name.) -------
 export type ProcessChannel = 'AMZ' | 'SHP' | 'CM3';
-export type ProcessBlock = 'multi_thin' | 'multi_good' | 'once_thin' | 'once_good' | 'not_sold';
-export interface ProcessAllowance {
-  perUnit: number; spend: number | null; units: number | null; windowFrom: string | null; windowTo: string | null;
-  acceptedBy: string; acceptedOn: string; dueOn: string; due: boolean;
-}
 export interface ProcessSizeChannel {
   net: number;               // units NET of returns since the style was created
   sold: number;              // positive units — what perUnit is averaged over
   profit: number;            // £ earned on the positive rows
   perUnit: number | null;    // null = nothing sold
-  block: ProcessBlock;
 }
 export interface ProcessSizeRow {
   code: string; groupid: string; title: string | null; brand: string | null; size: string; created: string;
   localStock: number; fbaStock: number;
   channels: Record<ProcessChannel, ProcessSizeChannel>;
 }
-export interface ProcessBlockTotal { sizes: number; units: number; profit: number }
 export interface ProcessOverview {
   newDays: number;
   prospects: number;
-  allowance: ProcessAllowance | null;
-  lines: Record<ProcessChannel, number>;
   styles: number;
-  summary: Record<ProcessChannel, Record<ProcessBlock, ProcessBlockTotal>>;
-  // Held sizes unsold (net) on every channel for `months`, here at least that long (server: utils/processMap.js → clearanceCount).
-  clearance: { months: number; sizes: number; units: number; styles: number };
   rows: ProcessSizeRow[];
 }
 export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
-    newDays: b.newDays, prospects: b.prospects, allowance: b.allowance ?? null, lines: b.lines, styles: b.styles,
-    summary: b.summary, clearance: b.clearance ?? { months: 9, sizes: 0, units: 0, styles: 0 }, rows: b.rows || [],
+    newDays: b.newDays, prospects: b.prospects, styles: b.styles, rows: b.rows || [],
   }));
 }
-export interface ProcessAllowanceMeasure { windowFrom: string; windowTo: string; spend: number; units: number; perUnit: number | null }
-// What a re-measure would give — nothing saved.
-export function measureProcessAllowance() {
-  return request<ProcessAllowanceMeasure>({ url: '/process-allowance-measure', method: 'GET' }, (b) => b.measure);
+// ---- The Google allowance (google_allowance) — Google spend per Shopify unit over 90 days, fixed, re-measured quarterly by button.
+// Shown on the Google Ads screen (components/GoogleAllowanceBar) since 2026-10-26. Rules in bcweb-server/utils/googleAllowance.js.
+export interface GoogleAllowance {
+  perUnit: number; spend: number | null; units: number | null; windowFrom: string | null; windowTo: string | null;
+  acceptedBy: string; acceptedOn: string; dueOn: string; due: boolean;
 }
-// Accept the figure the page SHOWED. MEASURE_CHANGED = it moved since (late sales / a re-import) — re-measure and show it again.
-export function acceptProcessAllowance(perUnit: number, windowTo: string) {
-  return request<ProcessAllowance>(
-    { url: '/process-allowance-accept', method: 'POST', data: { perUnit, windowTo } }, (b) => b.allowance
+export interface GoogleAllowanceMeasure { windowFrom: string; windowTo: string; spend: number; units: number; perUnit: number | null }
+// The figure in force (null only if the table is empty).
+export function getGoogleAllowance() {
+  return request<GoogleAllowance | null>({ url: '/google-allowance', method: 'GET' }, (b) => b.allowance ?? null);
+}
+// What a re-measure would give — nothing saved.
+export function measureGoogleAllowance() {
+  return request<GoogleAllowanceMeasure>({ url: '/google-allowance-measure', method: 'GET' }, (b) => b.measure);
+}
+// Accept the figure the screen SHOWED. MEASURE_CHANGED = it moved since (late sales / a re-import) — re-measure and show it again.
+export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
+  return request<GoogleAllowance>(
+    { url: '/google-allowance-accept', method: 'POST', data: { perUnit, windowTo } }, (b) => b.allowance
   );
 }
 

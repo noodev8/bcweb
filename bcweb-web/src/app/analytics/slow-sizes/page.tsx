@@ -16,8 +16,8 @@ SUMMARY FIRST, THEN THE SIZES (owner, same day: "maybe a summary of your breakdo
          overlap, so they add up to the line above them:
            Clearance (9 months+) | 6–9 months | 3–6 months
          (Until 2026-10-26: over a year | 6–12 months | 3–6 months. Owner, 2026-10-26: "Something that hasnt been sold for 9 months is
-         a proper loser" — the top box is now CLEARANCE, the server's per-size flag (9 calendar months; utils/slowSizes.js), the very
-         rows Process's Clearance card counts, so the two show the same numbers. Days are since the last NET sale — a sale that came
+         a proper loser" — the top box is now CLEARANCE, the server's per-size flag (9 calendar months; utils/slowSizes.js). Days
+         are since the last NET sale — a sale that came
          back doesn't count.)
          ("Up to 3 months" went the same day — owner: "Thats the winners mindset". Sizes that sold in 91 days aren't shown at all;
          the server still returns them, the page just has no box for them.)
@@ -80,7 +80,7 @@ const n = (v: number) => v.toLocaleString('en-GB');
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // The bands, longest wait first, by days since the last net sale (never sold = days on the shelf). CLEARANCE is the server's flag
-// (9 calendar months — Process's Clearance card counts the same rows); the shorter bands are day steps. Colours = the style screen's
+// (9 calendar months); the shorter bands are day steps. Colours = the style screen's
 // TONES ([groupid]/page.tsx): bar = the box's top edge, on = the open box's tint and border.
 const BANDS = [
   { key: 'cl', label: 'Clearance', sub: 'not sold for 9 months+', test: (s: SlowSize) => s.clearance,
@@ -137,7 +137,7 @@ function SlowSizesBody() {
   });
   const openBand = summary.find((b) => b.key === open);
 
-  // THE BOXES AND THE LIST'S HEADERS STAY ON SCREEN, WITH ONE SCROLLBAR (owner, 2026-10-26 — the trick on Today, /process): the boxes
+  // THE BOXES AND THE LIST'S HEADERS STAY ON SCREEN, WITH ONE SCROLLBAR (owner, 2026-10-26): the boxes
   // stick to the top of the page, the header row just under them, so it needs their height — measured, since the boxes stack on a
   // phone. The table has no scroll box of its own: an overflow container would capture the sticky header and add a second scrollbar.
   const [boxesHeight, setBoxesHeight] = useState(0);

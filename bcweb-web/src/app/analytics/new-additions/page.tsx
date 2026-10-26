@@ -16,20 +16,19 @@ THE BACK LINK NAMES WHERE YOU CAME FROM. This screen is reachable from the Repor
          they would have to navigate back down two levels to return to the screen they were reading.
 
 BY SIZE, GROUPED BY STYLE, NO CHART (owner, 2026-10-26: "simplify the table and do it by size not just style. get rid of the chart
-         at the top", then "sort out the ui"). The rows are SIZES from the SAME data as the Today screen's New card (GET
+         at the top", then "sort out the ui"). The rows are SIZES from the SAME data as Daily's New stuff count (GET
          /process-overview — utils/processMap.js → NEW_SIZES_SQL: every size of every style created in the last 90 days, never-stocked
          sizes left out), so the two screens count alike. They are shown UNDER THEIR STYLE: a style heading row (group id, brand, added
          date, title, and the style's totals) and one compact line per size (just the size — the code is in its tooltip). Printing the
          code and title on every size repeated one style six times over, which is what made it unreadable.
          Columns (owner, 2026-10-26): Sold AMZ · Sold SHP (net of returns — no Shop column, "rare so dont care", and no Total) ·
-         Stock local · Stock AMZ (Amazon-bound local units count as AMZ, as on Today) · Profit (£ on its sales, every channel). Zeros
+         Stock local · Stock AMZ (Amazon-bound local units count as AMZ) · Profit (£ on its sales, every channel). Zeros
          are a faint dot. The table is FULL WIDTH (owner, 2026-10-26, after trying it narrow) — the style column takes the spare room, the number columns
          are fixed — with a sticky header; a strip of totals sits above it.
          Sorting orders the STYLES (by their totals); sizes stay in size order under each. Opens newest added first; the 20+ days
-         filter stays. The production-pace chart (AdditionsTrend) is HIDDEN, not deleted — flip SHOW_TREND. GET
-         /analytics-new-additions (the old by-style list) is no longer read by this screen.
+         filter stays. The production-pace chart (AdditionsTrend) is HIDDEN, not deleted — flip SHOW_TREND.
 
-Guarded by AppShell. Consumes GET /process-overview (the list, as on Today) and GET /analytics-new-additions-trend (the pace
+Guarded by AppShell. Consumes GET /process-overview (the list behind Daily's New stuff count) and GET /analytics-new-additions-trend (the pace
          figures in the hero; the chart, when shown, reads the same request).
 =======================================================================================================================================
 */
@@ -66,7 +65,7 @@ const SOLD_COLS = [
   { id: 'AMZ', label: 'AMZ' },
   { id: 'SHP', label: 'SHP' },
 ] as const;
-// £ earned on the size's sales, every channel added together (the positive rows — returns are not netted off, as on Today).
+// £ earned on the size's sales, every channel added together (the positive rows — returns are not netted off).
 const profitOf = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + (r.channels[c.id].profit || 0), 0);
 
 // Table cell classes: number columns are a fixed width so the columns line up down the grouped rows. The COUNTS (sold, stock) are
@@ -137,7 +136,7 @@ function NewAdditionsPageInner() {
   // "Now" is captured HERE, inside the fetcher, not during render. Date.now() is impure, so reading it while rendering makes the
   // output depend on when React happens to re-render (react-hooks/purity). Capturing it alongside the rows also reads better: the
   // ages shown are "as at the time we loaded the list", which is what the numbers next to each row actually mean.
-  // The Today screen's data (GET /process-overview), under this screen's own key because loadedAt rides with it.
+  // GET /process-overview (Daily reads it too), under this screen's own key because loadedAt rides with it.
   const { data, error: loadError, busy: loading } = useApiQuery(
     ['new-additions-sizes'],
     async () => {

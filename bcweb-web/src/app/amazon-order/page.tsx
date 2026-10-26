@@ -236,18 +236,16 @@ import {
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
-import ProcessNav, { PROCESS_PATH } from '@/components/ProcessNav';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import AmazonExport from '@/components/AmazonExport';
 import SliderBadge, { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, getProcessOverview, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
+  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
   AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder, SliderMark,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { isUnsoldLocalOnly } from '@/lib/process';
 import { useListCursor } from '@/lib/useListCursor';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -960,12 +958,6 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
  *               so Reset clears it and the operator carries on with a normal, fully working screen rather than a locked-down view.
  *   ?from=      where the back arrow goes (Inventory, or whichever screen's product menu opened it), so the trip returns instead of dead-ending.
  *   ?back=      that link's label. Both default to the dashboard, which is what every arrival before this used.
- *   ?process=unsold-local  (2026-10-25) — arriving from Process → Unsold → Local only ("send to Amazon?"): the screen narrows to
- *               exactly those sizes (new, unsold everywhere, held locally, nothing at FBA — lib/process.ts → isUnsoldLocalOnly, read
- *               from the same process-overview data as the card, so the counts match) and opens on BOTH, because about half are
- *               listed on Amazon with 0 FBA (Pick them) and half were never listed (No AMZ → the upload file). A quiet chip says so
- *               and its × lifts it; Reset lifts it too. Hot / Warm / Simmer and the rate fill test Amazon sales these sizes don't
- *               have, so this is ordering / picking by hand.
  * useSearchParams forces a Suspense boundary for Next's build (App Router), so the page body moved into AmazonOrderContent and this
  * thin wrapper is all the default export does - the same split /product, /pricing/find and the drills already use.
  */
@@ -1014,17 +1006,8 @@ function AmazonOrderContent() {
     () => (supplyOn ? offRows.filter((r) => !supplyHidden(r)) : offRows),
     [offRows, supplyOn],
   );
-  // PROCESS ARRIVAL (?process=unsold-local — see DEEP LINK IN): the codes it narrows to, from the Process data (SWR-cached if the
-  // operator came through Process). Read once like ?q=; null = not narrowed.
-  const [processScope, setProcessScope] = useState<'unsold-local' | null>(searchParams.get('process') === 'unsold-local' ? 'unsold-local' : null);
-  const processQ = useApiQuery(processScope ? 'process-overview' : null, () => getProcessOverview());
-  const processCodes = useMemo(
-    () => (processQ.data ? new Set(processQ.data.rows.filter(isUnsoldLocalOnly).map((r) => r.code)) : null),
-    [processQ.data],
-  );
-  // ON AMAZON | NOT ON AMAZON | BOTH — see the header. A view, like the presets: never touches the basket. A Process arrival opens on
-  // BOTH: its sizes are half listed, half not.
-  const [listing, setListing] = useState<'on' | 'off' | 'both'>(processScope ? 'both' : 'on');
+  // ON AMAZON | NOT ON AMAZON | BOTH — see the header. A view, like the presets: never touches the basket.
+  const [listing, setListing] = useState<'on' | 'off' | 'both'>('on');
   // What a search can land on — addInclude's "does this term find anything" check has to count the unlisted rows too, or a search for
   // one would throw the steps away as if it had found nothing.
   const searchRows = useMemo(() => [...baseRows, ...offBaseRows], [baseRows, offBaseRows]);
@@ -1234,7 +1217,6 @@ function AmazonOrderContent() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
     setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false);
     setListing('on');
-    setProcessScope(null);
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
     // Back into the Can't get cut if it was switched off — the screen as you arrived.
@@ -1266,8 +1248,6 @@ function AmazonOrderContent() {
     const excTerms = excludes.map((t) => t.toLowerCase());
     const narrow = (list: AmazonOrderRow[]) => {
       let o = seasonFilter ? list.filter((r) => inSeason(r, seasonFilter)) : list;
-      // A Process arrival: only its sizes. Nothing until its data is in, rather than a flash of the whole list.
-      if (processScope) o = processCodes ? o.filter((r) => processCodes.has(r.code)) : [];
       if (incTerms.length > 0 || excTerms.length > 0) o = o.filter((r) => matchesSearch(haystack(r), incTerms, excTerms));
       return o;
     };
@@ -1281,9 +1261,9 @@ function AmazonOrderContent() {
     // Simmer reads FBA Total live from the server, so a size leaves the list once the refresh after Confirm Basket counts its unit.
     if (simmerOnly) out = out.filter((r) => isSimmer(r, hotBar, warmMin));
     return unlisted.length > 0 ? [...out, ...unlisted] : out;
-  }, [allRows, baseRows, offBaseRows, listing, processScope, processCodes, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
 
-  const filtering = processScope !== null || includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
+  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
 
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
@@ -2080,9 +2060,7 @@ function AmazonOrderContent() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    // Arrived from Process: its Process / Sales buttons in the header row (components/ProcessNav.tsx).
-    <AppShell backHref={backHref} backLabel={backLabel}
-      headerRight={from === PROCESS_PATH ? <ProcessNav current="amazon-order" /> : undefined}>
+    <AppShell backHref={backHref} backLabel={backLabel}>
       {/* OPEN AMAZON ORDERS BANNER — see the header block. */}
       {showOpenBanner && (
         <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -2214,19 +2192,6 @@ function AmazonOrderContent() {
                   is"). It used to switch to "Rows: X of Y" once anything narrowed the list; the "of Y" changed its width on a click. */}
               <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> SKUs</span>
             </span>
-            {/* The Process arrival's chip — the one narrowing with a chip, because it came from another screen and the operator
-                didn't type it. × lifts it (the BOTH view stays — it's just a view). */}
-            {processScope && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1 text-xs text-slate-600">
-                Today: unsold, local only
-                <button
-                  type="button" onClick={() => setProcessScope(null)} aria-label="Show every SKU" title="Show every SKU"
-                  className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-                >
-                  <XMarkIcon className="h-3 w-3" />
-                </button>
-              </span>
-            )}
           </div>
 
           {/* Reset — the escape hatch, alone at the end of the row you might need escaping from. Cut and Can't get moved to row 2

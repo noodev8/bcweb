@@ -102,7 +102,7 @@ function lastActivity(p: Prospect): string {
 
 export default function ProspectsPage() {
   const { displayName } = useAuth();
-  // Reached from Process (?from=/process) — a back link to it. A dashboard tile's ?from=<group> is AppShell's own business.
+  // Reached with ?from=/<path> — a back link to it. A dashboard tile's ?from=<group> is AppShell's own business.
   const fromParam = useUrlParam('from');
   const backHref = fromParam && fromParam.startsWith('/') ? fromParam : undefined;
   const q = useApiQuery('prospect-list', getProspects);

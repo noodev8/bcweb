@@ -27,8 +27,8 @@ NEVER SOLD: idle days = on shelf days (it has been waiting since its oldest pair
 STOCK = the utils/financeStock.js definition at code grain (local #FREE not deleted + amzfeed.amztotal), LIVE — one number, no Amazon
          split, the same as Slow and Sell-through.
 
-CLEARANCE (2026-10-26) = idle since on or before today minus 9 calendar months — the same test as Process's Clearance card (both read
-         utils/slowSizes.js → readSlowSizes, where the rows are built).
+CLEARANCE (2026-10-26) = idle since on or before today minus 9 calendar months (rows built in
+         utils/slowSizes.js → readSlowSizes).
 
 STYLE SOLD (12M) = net units of the whole STYLE in the last 12 months (was 90 days until 2026-10-15 — owner: "shall we say a
          year ... its basically saying the style has sold this many in this time"), so a dead size in a selling style (the Milano case) can be told apart from a

@@ -97,7 +97,6 @@ app.use('/segment-work', require('./routes/segment-work'));     // W-seg-1: log 
 app.use('/segment-rename', require('./routes/segment-rename')); // W-seg-2: rewrite skusummary.segment + registry name atomically
 
 // Pricing routes (all require verifyToken, applied inside each router).
-app.use('/pricing-segments', require('./routes/pricing-segments'));
 app.use('/pricing-triage', require('./routes/pricing-triage'));
 app.use('/pricing-losers', require('./routes/pricing-losers'));
 app.use('/pricing-campaigns', require('./routes/pricing-campaigns'));  // Segments screen, campaign view (Shopify only)
@@ -146,7 +145,6 @@ app.use('/product-variants', require('./routes/product-variants')); // one style
 // Amazon Pricing module (SKU-grain; mirrors the Shopify Pricing flow — segment picker -> WINNERS|LOSERS lists -> per-SKU drill).
 // Read side + the one write. All routes require verifyToken, applied inside each router. Amazon has no park/review concept and no live
 // price push: a price change is logged to amz_price_log and reaches Amazon via the client-built one-file Seller Central upload.
-app.use('/amz-segments', require('./routes/amz-segments'));  // Stage 0: segment picker (managed segments + SKU count)
 app.use('/amz-winners', require('./routes/amz-winners'));    // Stage 1: WINNERS — top in-stock SKUs by units sold (price up / harvest)
 app.use('/amz-losers', require('./routes/amz-losers'));      // Stage 1: LOSERS — dead/slow FBA stock at risk (price down / cut)
 app.use('/amz-drill', require('./routes/amz-drill'));        // Stage 2: one SKU's header + 6-week velocity + 60d price bands
@@ -222,6 +220,11 @@ app.use('/google-ads-import-last', require('./routes/google-ads-import-last')); 
 app.use('/google-ads-styles', require('./routes/google-ads-styles'));
 app.use('/google-ads-campaigns', require('./routes/google-ads-campaigns'));
 app.use('/google-ads-drill', require('./routes/google-ads-drill'));
+// The Google allowance — Google spend per Shopify unit over 90 days, fixed, re-measured quarterly by button (utils/googleAllowance.js).
+// Moved here from the Today screen when it was removed (2026-10-26).
+app.use('/google-allowance', require('./routes/google-allowance'));                   // GET: the figure in force — READ ONLY
+app.use('/google-allowance-measure', require('./routes/google-allowance-measure'));   // GET: what a re-measure would give — READ ONLY
+app.use('/google-allowance-accept', require('./routes/google-allowance-accept'));     // POST: make the shown figure the one in force — WRITES google_allowance
 
 // Writes. google-ads-assign is the ONLY write this module makes to product data — it sets skusummary.googlecampaign and nothing
 // else (a style is pulled out of Google by assigning it 'pause', never by touching googlestatus). Bulk is one transaction rather
@@ -373,20 +376,15 @@ app.use('/prospect-check-add', require('./routes/prospect-check-add'));     // P
 app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // POST: a note on a line — WRITES prospect_note
 app.use('/prospect-delete', require('./routes/prospect-delete'));           // POST: delete a line / check / note for good — WRITES
 
-// --- Process (2026-10-25): the owner's read-only map of blocks — prospects total + the new-sizes grid per channel. Acting happens on
-// the existing screens; the only write is accepting a re-measured Google allowance (utils/processMap.js has the rules).
-app.use('/process-overview', require('./routes/process-overview'));                   // GET: prospects, allowance, new-sizes grid — READ ONLY
-app.use('/process-allowance-measure', require('./routes/process-allowance-measure')); // GET: what a re-measure would give — READ ONLY
-app.use('/amz-process-list', require('./routes/amz-process-list'));                     // GET ?list=unsold-fba: the Amazon repricer list behind a Process card — READ ONLY
-app.use('/pricing-process-list', require('./routes/pricing-process-list'));             // GET ?list=unsold-local: the Shopify repricer list behind a Process card — READ ONLY
+// --- New sizes (2026-10-25; built for the Today screen, removed 2026-10-26): Daily's New stuff / Prospects counts and New Additions'
+// list (utils/processMap.js has the rules).
+app.use('/process-overview', require('./routes/process-overview'));                   // GET: prospects total + new sizes per channel — READ ONLY
 app.use('/pricing-all-list', require('./routes/pricing-all-list'));                     // GET: Shopify Pricing home — every in-stock Shopify style — READ ONLY
 app.use('/amz-all-list', require('./routes/amz-all-list'));                             // GET: Amazon Pricing home — every in-stock FBA SKU — READ ONLY
 // --- AMZ loaded (2026-10-26): styles held locally with no size on Amazon, Birkenstock left out, with a "looked at" review date.
 app.use('/amz-loaded-list', require('./routes/amz-loaded-list'));                       // GET: styles not on Amazon yet — READ ONLY
 app.use('/amz-loaded-review', require('./routes/amz-loaded-review'));                   // POST: mark looked at — WRITES skusummary.next_amz_load_review
-app.use('/process-allowance-accept', require('./routes/process-allowance-accept'));   // POST: make the shown figure the one in force — WRITES google_allowance
 
-app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales
 // The production read on the same screen: creations per month from product_event_log (which survives a delete, unlike
 // skusummary.created_at), this year against last.
 app.use('/analytics-new-additions-trend', require('./routes/analytics-new-additions-trend'));

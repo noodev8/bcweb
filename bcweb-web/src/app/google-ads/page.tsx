@@ -53,6 +53,7 @@ import GoogleAdsMoneyBar from '@/components/GoogleAdsMoneyBar';
 import GoogleAdsCampaignPanel from '@/components/GoogleAdsCampaignPanel';
 import GoogleAdsImport from '@/components/GoogleAdsImport';
 import GoogleAdsDrill from '@/components/GoogleAdsDrill';
+import GoogleAllowanceBar from '@/components/GoogleAllowanceBar';
 import {
   getGoogleAdsStyles, getGoogleAdsCampaigns, googleAdsAssign, getStockSitting,
   GoogleAdsStyleRow, GoogleAdsWindow, GoogleAdsWindowKey,
@@ -1051,6 +1052,11 @@ function GoogleAdsScreen() {
           />
         </div>
       )}
+
+      {/* ---- The Google allowance — spend per Shopify unit, 90 days, fixed; re-measured by button (moved from Today, 2026-10-26) ---- */}
+      <div className="mb-4">
+        <GoogleAllowanceBar />
+      </div>
 
       {/* ---- Campaigns -------------------------------------------------------------------------------------------------- */}
       <div className="mb-4">

@@ -1,26 +1,26 @@
 /*
 =======================================================================================================================================
-API Route: process_allowance_accept
+API Route: google_allowance_accept
 =======================================================================================================================================
 Method: POST
 Purpose: The second half of Re-measure: make the figure the owner was SHOWN the Google allowance in force (a new google_allowance row;
-         rows are never edited, so the history stays). Nothing else changes — no price, no product row. The Process page's Shopify
-         thin/good line moves on its next load.
+         rows are never edited, so the history stays). Nothing else changes — no price, no product row. Was process-allowance-accept
+         until 2026-10-26, when the figure moved from the removed Today screen to Google Ads. Rules: utils/googleAllowance.js.
 
-         THE SHOWN FIGURE, NOT A FRESH ONE: the page sends the per-unit figure and the window end it displayed. The server re-measures
+         THE SHOWN FIGURE, NOT A FRESH ONE: the screen sends the per-unit figure and the window end it displayed. The server re-measures
          that SAME window and saves only if it still comes to the same figure; if late sales or a re-import moved it, nothing is saved
-         and the new figure comes back (MEASURE_CHANGED) for the page to show again. So what is accepted is always what was seen.
+         and the new figure comes back (MEASURE_CHANGED) for the screen to show again. So what is accepted is always what was seen.
 =======================================================================================================================================
 Request Payload:
 {
-  "perUnit": 7.75,              // number, required — the figure the page showed
-  "windowTo": "2026-10-23"      // string YYYY-MM-DD, required — the window end the page showed
+  "perUnit": 7.75,              // number, required — the figure the screen showed
+  "windowTo": "2026-10-23"      // string YYYY-MM-DD, required — the window end the screen showed
 }
 
 Success Response:
 {
   "return_code": "SUCCESS",
-  "allowance": { "perUnit": 7.75, ... }            // the row now in force, as process-overview returns it
+  "allowance": { "perUnit": 7.75, ... }            // the row now in force, as GET /google-allowance returns it
 }
 MEASURE_CHANGED Response:
 {
@@ -46,7 +46,7 @@ const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { measureAllowance, readAllowance } = require('../utils/processMap');
+const { measureAllowance, readAllowance } = require('../utils/googleAllowance');
 
 router.use(verifyToken);
 
@@ -80,7 +80,7 @@ router.post('/', async (req, res) => {
     if (out.error) return res.json({ return_code: out.error, message: out.message, measure: out.measure });
     return res.json({ return_code: 'SUCCESS', allowance: await readAllowance(query) });
   } catch (err) {
-    logger.error('[process-allowance-accept] error:', err.message);
+    logger.error('[google-allowance-accept] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Could not save the Google allowance' });
   }
 });

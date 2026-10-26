@@ -15,8 +15,8 @@ duplicates"). The page reads top to bottom in order of importance:
        Pricing    Shopify due · Amazon due — the counts of the in-stock lists' Due view (GET /pricing-all-list, /amz-all-list),
                   each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
-       New stuff  new SIZES not sold anywhere yet, of the styles added in 90 days — the Today screen's Unsold, from the same data
-                  (GET /process-overview, shared SWR key). Opens New Additions.
+       New stuff  new SIZES not sold anywhere yet, of the styles added in 90 days (GET /process-overview, the same data as New
+                  Additions' list). Opens New Additions.
        Prospects  finds on the list (same request). Opens Prospects.
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
                   key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
@@ -25,8 +25,8 @@ duplicates"). The page reads top to bottom in order of importance:
   3. EVERYTHING ELSE — the menu, EVERY SCREEN ONCE (Sales is in Daily, so not here). Until 2026-10-26 screens were deliberately repeated across "mindset" groups
      and a second find-by-part row; the owner asked for no duplicates, so the two rows were merged into one set of groups, each
      screen filed where it is used, and anything in Daily taken out of the menu. Repricing's Status tab is the old "Winners" tile
-     (both opened /segments), so that tile went. A card that is a single screen (Today) links straight there; the rest open
-     in place, one at a time, with their contents named on the closed card.
+     (both opened /segments), so that tile went. Each card opens in place, one at a time, with its contents named on the closed
+     card. The Today card (/process, a map of the new-sizes funnel) was removed 2026-10-26 — Daily carries its numbers now.
 
 COMING BACK. Every menu tile links with `?from=<group id>`; AppShell points the header logo at /dashboard?g=<group id>, and this page
 re-opens that group on arrival (read from the URL, nothing remembered between visits).
@@ -69,7 +69,6 @@ interface Group {
   title: string;
   blurb: string;         // one line under the heading
   icon: Icon;
-  link?: string;         // a card that IS a screen: clicking goes straight there; `tiles` stays empty
   tiles: Tile[];
 }
 
@@ -78,10 +77,6 @@ interface Group {
    Prospects) are not in it. ORDER IS THE OWNER'S; don't sort.
 ===================================================================================================================================== */
 const GROUPS: Group[] = [
-  {
-    // TODAY (owner, 2026-10-26): the map of the business in blocks — /process (the route kept its first name).
-    id: 'today', title: 'Today', blurb: 'New lines, unsold, winners and losers', icon: SunIcon, link: '/process', tiles: [],
-  },
   {
     id: 'ops',
     title: 'Operations',
@@ -170,7 +165,7 @@ const GROUPS: Group[] = [
 export default function DashboardPage() {
   // Re-open the group you left from (?g=, see the header). An unknown id just leaves the menu closed.
   const g = useUrlParam('g');
-  const urlGroup = g && GROUPS.some((x) => x.id === g && !x.link) ? g : null;
+  const urlGroup = g && GROUPS.some((x) => x.id === g) ? g : null;
   // undefined = no click yet, so the ?g= group (or nothing) shows; null = every group closed.
   const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const openId = chosenId === undefined ? urlGroup : chosenId;
@@ -185,10 +180,10 @@ export default function DashboardPage() {
       <Daily />
 
       <h2 className="mb-3 mt-8 text-sm font-semibold text-slate-500">Everything else</h2>
-      {/* Two rows of four; each row's panel opens directly under it. */}
-      {[0, 4].map((i) => (
+      {/* Two rows of three; each row's panel opens directly under it. */}
+      {[0, 3].map((i) => (
         <div key={i} className={i === 0 ? '' : 'mt-3'}>
-          <GroupRow groups={GROUPS.slice(i, i + 4)} openId={openId} onToggle={setOpenId} />
+          <GroupRow groups={GROUPS.slice(i, i + 3)} openId={openId} onToggle={setOpenId} />
         </div>
       ))}
     </AppShell>
@@ -201,7 +196,7 @@ export default function DashboardPage() {
 ===================================================================================================================================== */
 function Daily() {
   const due = useApiQuery('dashboard-pricing-due', () => getPricingDueCounts());
-  // Shared with the Today screen (same key), so whichever opens first fills the other's cache.
+  // The new-sizes data New Additions lists (GET /process-overview).
   const overview = useApiQuery('process-overview', () => getProcessOverview());
   const unsold = overview.data ? overview.data.rows.filter((r) => !isSold(r)).length : null;
   const newStyles = overview.data ? overview.data.styles : null;
@@ -325,22 +320,8 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
   const card = 'flex h-full flex-col rounded-xl border bg-white p-4 text-left transition ';
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {groups.map((g) => {
-          if (g.link) {
-            return (
-              <Link key={g.id} href={g.link + '?from=' + g.id} className={card + 'border-slate-200 shadow-sm hover:border-brand-500 hover:shadow-md'}>
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-                    <g.icon className="h-4 w-4" />
-                  </span>
-                  <h3 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h3>
-                  <ChevronRightIcon className="ml-auto h-4 w-4 text-slate-400" />
-                </div>
-                <p className="mt-2 text-xs leading-snug text-slate-500">{g.blurb}</p>
-              </Link>
-            );
-          }
           const isOpen = g.id === openId;
           return (
             <button

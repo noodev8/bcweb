@@ -24,15 +24,15 @@ IDLE SINCE (owner, 2026-10-15: "We are penalising sizes that have no stock" ... 
          The LOG_FLOOR is not an arrival, so it never moves the clock past a real last sale (a size that sold in 2024 and still holds
          pre-log pairs stays dated from that sale). The style-creation floor is a real bound and counts.
 
-LAST NET SALE (owner, 2026-10-26: "Net" — Slow Sizes and Process's Clearance card use the same numbers). A sale that came back is
+LAST NET SALE (owner, 2026-10-26: "Net"). A sale that came back is
          not a sale: on each channel, walking newest -> oldest, a return (qty < 0) cancels the next sale(s) before it, unit for unit;
          the newest sale left uncancelled is that channel's last net sale, and the size's is the newest across channels (sold
          anywhere = good). sales.returnsaleid can't be used to pair them — Amazon returns never carry it and many Shopify ones don't.
          A return with no earlier sale on its channel (sold before the log) just cancels nothing.
 
 CLEARANCE (owner, 2026-10-26: "Something that hasnt been sold for 9 months is a proper loser"). A held size whose idle clock started on
-         or before today minus CLEARANCE_MONTHS calendar months. Months, not days, so Slow Sizes' top box and Process's Clearance
-         card are the one test (utils/slowSizes.js).
+         or before today minus CLEARANCE_MONTHS calendar months. Months, not days (Slow Sizes' top box,
+         utils/slowSizes.js).
 
          READ-ONLY.
 =======================================================================================================================================

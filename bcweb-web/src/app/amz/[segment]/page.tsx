@@ -17,12 +17,8 @@ are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (serv
 Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb. `by` (and bar) ride along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
 campaign grouping on Amazon (campaigns are Shopify only).
 
-PROCESS (?by=process, 2026-10-25): the [segment] param names a list behind a Process card — 'unsold-fba' (Process → Unsold → At FBA:
-new sizes that sold nothing anywhere, with FBA stock) — from GET /amz-process-list. One unsplit list, handled exactly like a status
-(view pinned to 'all', no tabs); the crumb shows its plain name (PROCESS_LISTS). Back goes to the Process screen it came from (?from=).
-
 ALL (?by=all, 2026-10-26): AMAZON PRICING'S HOME (/amz redirects to /amz/all?by=all; owner: "shouldn't go off segments — just be a list
-of all, with a due and not due toggle") — every in-stock FBA SKU, one unsplit list from GET /amz-all-list, handled like a process list.
+of all, with a due and not due toggle") — every in-stock FBA SKU, one unsplit list from GET /amz-all-list, handled like a status list.
 No back link (it IS the home); Find sits top right beside Upload.
 
 NO STOCK & ORDER LINK (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 a status list
@@ -53,7 +49,7 @@ import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
 import PricingCrumb from '@/components/PricingCrumb';
-import { getAmzWinners, getAmzLosers, getAmzStatusList, getAmzProcessList, getAmzAllList, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
+import { getAmzWinners, getAmzLosers, getAmzStatusList, getAmzAllList, markAmzReviewed, applyAmzPrice, PricingGroup, parseGroupBy } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useScopedState } from '@/lib/useScopedState';
@@ -67,9 +63,6 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
-
-// The Process lists' on-screen names (the path param is the API's list key).
-const PROCESS_LISTS: Record<string, string> = { 'unsold-fba': 'Unsold at FBA' };
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
 const NO_SELECTION: Set<string> = new Set();
@@ -119,13 +112,12 @@ function SegmentContent() {
   const searchParams = useSearchParams();
   const segment = decodeURIComponent(params.segment);
   // Only segment | status exist on Amazon; a stray ?by=campaign falls back to segment rather than asking the server for a campaign.
-  // ?by=process (a Process card's list) is Amazon-only and not a PricingGroup — it is read on its own and then rides as a status-like
-  // one-list view. `by` stays 'segment' for it, but nothing below sends `group` for a process list.
-  const isProcess = searchParams.get('by') === 'process';
-  const isAll = searchParams.get('by') === 'all';   // Amazon Pricing's home list — read on its own, like process
+  // ?by=all (Amazon Pricing's home list) is not a PricingGroup — it is read on its own and then rides as a status-like one-list view.
+  // `by` stays 'segment' for it, but nothing below sends `group` for the all list.
+  const isAll = searchParams.get('by') === 'all';
   const by = parseGroupBy(searchParams.get('by')) === 'status' ? 'status' : 'segment';
   const isStatus = by === 'status';
-  const isOneList = isStatus || isProcess || isAll;   // one unsplit list: no Selling / Stuck tabs, view pinned to 'all'
+  const isOneList = isStatus || isAll;   // one unsplit list: no Selling / Stuck tabs, view pinned to 'all'
   // WINNERS read at a Winners-screen dial mark (?bar=2500): only the winners over it (server-validated). Status lists only.
   const barRaw = Number(searchParams.get('bar'));
   const bar = isStatus && barRaw > 0 ? barRaw : null;
@@ -149,9 +141,9 @@ function SegmentContent() {
   // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
   // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['amz-lists', isAll ? 'all' : isProcess ? 'process' : by, segment, bar],
+    ['amz-lists', isAll ? 'all' : by, segment, bar],
     async () => {
-      // ALL (Amazon Pricing's home) — the same handling as a process list.
+      // ALL (Amazon Pricing's home) — the same handling as a status list just below.
       if (isAll) {
         const s = await getAmzAllList();
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
@@ -164,21 +156,6 @@ function SegmentContent() {
           success: true,
           return_code: 'SUCCESS',
           data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: null as number | null },
-        };
-      }
-      // A PROCESS list — the same handling as a status list just below, from GET /amz-process-list.
-      if (isProcess) {
-        const s = await getAmzProcessList(segment);
-        if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
-        if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
-        const rows: ListRow[] = s.data.rows.map((r) => ({
-          kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
-          fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
-        }));
-        return {
-          success: true,
-          return_code: 'SUCCESS',
-          data: { winners: rows, losers: [] as ListRow[], capped: s.data.truncated, partialError: null, outOfStock: s.data.outOfStock },
         };
       }
       // A STATUS is one unsplit list (GET /amz-status-list — every SKU of the status's styles, 0 FBA included). Its rows go in
@@ -249,7 +226,7 @@ function SegmentContent() {
 
   // Bulk selection + last-run feedback belong to ONE view of ONE segment, so they're scoped and discarded during render on a switch —
   // no reset effect, and no frame showing the previous view's ticks.
-  const scope = `${mode}|${showPending}|${isAll ? 'all' : isProcess ? 'process' : by}|${segment}|${bar ?? ''}`;
+  const scope = `${mode}|${showPending}|${isAll ? 'all' : by}|${segment}|${bar ?? ''}`;
   const [selected, setSelected] = useScopedState<Set<string>>(scope, NO_SELECTION);
   const [markError, setMarkError] = useScopedState<string | null>(scope, null);
   const [resultSummary, setResultSummary] = useScopedState<string | null>(scope, null);
@@ -264,7 +241,7 @@ function SegmentContent() {
   function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
-    return `/amz/${encodeURIComponent(segment)}?${isAll ? 'by=all&' : isProcess ? 'by=process&' : isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
+    return `/amz/${encodeURIComponent(segment)}?${isAll ? 'by=all&' : isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
   }
 
   function openSku(code: string) {
@@ -402,7 +379,7 @@ function SegmentContent() {
       // The ALL list IS Amazon Pricing's home, so no back link unless something sent you here with ?from=.
       backHref={isAll && !searchParams.get('from') ? undefined : backHref}
       backLabel={backLabel}
-      crumb={<PricingCrumb name={isAll ? 'All' : isProcess ? (PROCESS_LISTS[segment] || segment) : segment} channel="amazon" note={isAll ? 'in stock' : isProcess ? 'today' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
+      crumb={<PricingCrumb name={isAll ? 'All' : segment} channel="amazon" note={isAll ? 'in stock' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
       headerRight={isAll ? (
         // The old home's Find entry, now on the home list itself, beside Upload.
         <div className="flex items-center gap-2">
@@ -437,7 +414,7 @@ function SegmentContent() {
 
       {ready && rows.length === 0 && (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isProcess || isAll ? 'list' : isStatus ? 'status' : 'segment'} right now.
+          {mode === 'winners' ? 'Nothing selling' : mode === 'losers' ? 'Nothing stuck' : 'Nothing'} due for review in this {isAll ? 'list' : isStatus ? 'status' : 'segment'} right now.
           {!showPending && view.pendingCount > 0 && <> {view.pendingCount} not due yet — switch off &ldquo;Due&rdquo; to see them.</>}
         </div>
       )}

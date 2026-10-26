@@ -7,7 +7,7 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
          just be a list of all, with a due and not due toggle"). Membership = an amzfeed listing with live FBA stock (amzlive > 0).
          One unsplit list: no Selling / Stuck bars.
 
-         Same row shape as amz-status-list / amz-process-list, so /amz/all?by=all renders it with the same table, drill, Due switch,
+         Same row shape as amz-status-list, so /amz/all?by=all renders it with the same table, drill, Due switch,
          bulk bar and upload basket. Apply is unchanged: amz_price_log + the Seller Central upload; amzfeed stays READ ONLY.
 
          Order: most FBA stock first, then code. Parked SKUs (skumap.next_amz_price_review in the future) are dropped unless

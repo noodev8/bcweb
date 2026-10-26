@@ -1,19 +1,18 @@
 /*
 =======================================================================================================================================
-API Route: process_allowance_measure
+API Route: google_allowance
 =======================================================================================================================================
 Method: GET
-Purpose: The first half of the Process page's Re-measure button: what the Google allowance WOULD be if re-measured now — Google spend /
-         Shopify units over the last 90 complete days of ad data. Nothing is saved; the page shows this beside the figure in force
-         and the owner accepts it (process-allowance-accept) or walks away (owner, 2026-10-25: "display the new fixed number before
-         it is accepted"). Rules: utils/processMap.js → measureAllowance. READ ONLY. Requires auth.
+Purpose: The Google allowance IN FORCE — the newest accepted google_allowance row — for the Google Ads screen's allowance line, with
+         when it falls due for its quarterly re-measure. Rules: utils/googleAllowance.js. READ ONLY. Requires auth.
 =======================================================================================================================================
 Success Response:
 {
   "return_code": "SUCCESS",
-  "measure": { "windowFrom": "2026-07-26", "windowTo": "2026-10-23", "spend": 6191.40, "units": 799, "perUnit": 7.75 }
+  "allowance": { "perUnit": 7.77, "spend": 6653.26, "units": 856, "windowFrom": "2026-07-24", "windowTo": "2026-10-21",
+                 "acceptedBy": "Andreas", "acceptedOn": "2026-10-25", "dueOn": "2027-01-23", "due": false } | null
 }
-  - perUnit is null when nothing sold on Shopify in the window — there is nothing to accept.
+  - null only if the table is empty (the migration seeds a first row).
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -27,17 +26,16 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { measureAllowance } = require('../utils/processMap');
+const { readAllowance } = require('../utils/googleAllowance');
 
 router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    const measure = await measureAllowance(query);
-    return res.json({ return_code: 'SUCCESS', measure });
+    return res.json({ return_code: 'SUCCESS', allowance: await readAllowance(query) });
   } catch (err) {
-    logger.error('[process-allowance-measure] error:', err.message);
-    return res.json({ return_code: 'SERVER_ERROR', message: 'Could not measure the Google allowance' });
+    logger.error('[google-allowance] error:', err.message);
+    return res.json({ return_code: 'SERVER_ERROR', message: 'Could not load the Google allowance' });
   }
 });
 

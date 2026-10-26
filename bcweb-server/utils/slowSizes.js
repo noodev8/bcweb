@@ -2,9 +2,8 @@
 =======================================================================================================================================
 Util: slowSizes
 =======================================================================================================================================
-Purpose: Every SIZE (code) we hold, with its idle clock — the list behind Back Office -> Slow Sizes (routes/analytics-slow-sizes.js)
-         and the count on Process's CLEARANCE card (utils/processMap.js → clearanceCount). One function, so the card and the list's
-         Clearance box can't count differently (owner, 2026-10-26: "lets use the same numbers").
+Purpose: Every SIZE (code) we hold, with its idle clock — the list behind Slow Sizes (routes/analytics-slow-sizes.js).
+         (Today's Clearance card counted the same rows until the screen was removed, 2026-10-26.)
 
 IDLE = since the LATER of the size's last NET sale (any channel — a sale that came back is not a sale) and its oldest held pair's
          arrival (utils/onShelf.js → lastNetSales / idleSince — read that header). CLEARANCE = idle since on or before
