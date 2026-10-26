@@ -8,8 +8,8 @@ Purpose: Slow Sizes -> click a style (its own screen, /analytics/slow-sizes/[gro
          So a stuck size can be read against its neighbours — one dead 46 in a run that sells, or a whole tail that has stopped.
 
          ALL SIZES: the full range from skumap (one row per variant, CLAUDE.md), 0-stock sizes included — a sold-out neighbour is part
-         of the picture. Stock = local #FREE not deleted + amzfeed.amztotal, one number (same as Slow Sizes). Last sale = any channel,
-         qty > 0 (a return is not a sale), same as Slow Sizes. Sizes sort numerically (CLAUDE.md: suffix after the last dash).
+         of the picture. Stock = local #FREE not deleted + amzfeed.amztotal, one number (same as Slow Sizes). Last sale = the last NET
+         sale on any channel (utils/onShelf.js → lastNetSales; a sale that came back doesn't count), same as Slow Sizes. Sizes sort numerically (CLAUDE.md: suffix after the last dash).
          On shelf = days since the oldest held pair arrived (utils/onShelf.js, before the log = 31 Dec 2024); null at 0 stock.
          Idle days = the Slow Sizes list's own number (utils/onShelf.js → idleSince): since the LATER of the last sale and the oldest
          held pair's arrival, so a restocked size isn't charged for the months it was sold out. Null at 0 stock — nothing held,
@@ -26,7 +26,7 @@ Success Response:
   "title": "Birkenstock Milano …" | null, "brand": "Birkenstock" | null,
   "imagename": "milano-black.jpg" | null,     // served from https://images.brookfieldcomfort.com/<imagename>, as on the price drill
   "sizes": [ { "code": "0034791-MILANO-35", "size": "35", "units": 5, "last_sale": "2025-08-02" | null, "idle_days": 439 | null,
-               "idle_from": "sale" | "arrival" | null,
+               "idle_from": "sale" | "arrival" | null, "clearance": false,
                "on_shelf_days": 289 | null,   // null = none held
                "sold_12m": 0 } ]     // sold_12m = this size, last 12 months, net of returns
 }
@@ -44,7 +44,7 @@ const router = express.Router();
 const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
 const logger = require('../utils/logger');
-const { oldestHeldArrival, idleSince } = require('../utils/onShelf');
+const { oldestHeldArrival, idleSince, lastNetSales, clearanceCutoff } = require('../utils/onShelf');
 
 router.use(verifyToken);
 
@@ -62,14 +62,12 @@ const SQL = `
   ),
   sold AS (
     SELECT code,
-           MAX(solddate) FILTER (WHERE qty > 0) AS d,
            COALESCE(SUM(qty) FILTER (WHERE solddate > (now() AT TIME ZONE 'Europe/London')::date - 365), 0)::int AS sold_12m
     FROM sales WHERE code IN (SELECT code FROM codes)
     GROUP BY code
   )
   SELECT c.code, SUBSTRING(c.code FROM '[^-]*$') AS size,
          GREATEST(COALESCE(h.units, 0), 0) AS units,
-         to_char(s.d, 'YYYY-MM-DD') AS last_sale,
          to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today,
          COALESCE(s.sold_12m, 0) AS sold_12m
   FROM codes c
@@ -90,19 +88,25 @@ router.get('/', async (req, res) => {
              FROM skusummary ss LEFT JOIN title t ON t.groupid = ss.groupid WHERE ss.groupid = $1`, [groupid]),
     ]);
     const meta = metaQ.rows[0] || {};
-    const shelf = await oldestHeldArrival(new Map(r.rows.map((x) => [x.code, Number(x.units)])));
+    const [shelf, lastSale] = await Promise.all([
+      oldestHeldArrival(new Map(r.rows.map((x) => [x.code, Number(x.units)]))),
+      lastNetSales(r.rows.map((x) => x.code)),
+    ]);
+    const cutoff = r.rows.length ? clearanceCutoff(r.rows[0].today) : null;
     // Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day.
     const day = (v) => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
     const sizes = r.rows.map((x) => {
       const onShelf = shelf.get(x.code) || null;
-      const idle = idleSince(x.last_sale, onShelf);
+      const last = lastSale.get(x.code) || null;
+      const idle = idleSince(last, onShelf);
       return {
         code: x.code,
         size: x.size,
         units: Number(x.units),
-        last_sale: x.last_sale,
+        last_sale: last,
         idle_days: idle ? day(x.today) - day(idle.since) : null,
         idle_from: idle ? idle.from : null,
+        clearance: idle ? idle.since <= cutoff : false,   // the Slow Sizes / Process Clearance test (utils/slowSizes.js)
         on_shelf_days: onShelf ? day(x.today) - day(onShelf) : null,
         sold_12m: Number(x.sold_12m),
       };

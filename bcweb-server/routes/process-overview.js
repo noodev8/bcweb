@@ -8,6 +8,8 @@ Purpose: Everything the Process page shows (owner, 2026-10-25 — a read-only ma
            - the Google allowance in force, and whether its quarterly re-measure is due.
            - the NEW-SIZES GRID: every size of every style created in the last 90 days, put in one of five blocks on EACH channel
              (Amazon, Shopify, shop counter), with the block totals. The rules live in utils/processMap.js — read its header.
+           - clearance: the count of Slow Sizes' Clearance box — held sizes unsold (net) on every channel for 9 months, here at
+             least that long (utils/processMap.js → clearanceCount, rows from utils/slowSizes.js). The card opens Slow Sizes.
          Every size comes back (a quarter's new styles is a few hundred sizes), so the page groups and lists them without a second
          call. READ ONLY. Requires auth.
 =======================================================================================================================================
@@ -20,6 +22,7 @@ Success Response:
                  "acceptedBy": "Andreas", "acceptedOn": "2026-10-25", "dueOn": "2027-01-23", "due": false } | null,
   "lines": { "AMZ": 3, "SHP": 11, "CM3": 3 },          // £ a unit that counts as good
   "styles": 30,                                         // new styles behind the sizes
+  "clearance": { "months": 9, "sizes": 812, "units": 1430, "styles": 260 },
   "summary": {
     "AMZ": { "multi_thin": { "sizes": 1, "units": 3, "profit": 4.20 }, "multi_good": {...}, "once_thin": {...},
              "once_good": {...}, "not_sold": {...} },
@@ -48,7 +51,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { NEW_DAYS, CHANNELS, BLOCKS, NEW_SIZES_SQL, lineFor, blockFor, readAllowance } = require('../utils/processMap');
+const { NEW_DAYS, CHANNELS, BLOCKS, NEW_SIZES_SQL, lineFor, blockFor, readAllowance, clearanceCount } = require('../utils/processMap');
 
 router.use(verifyToken);
 
@@ -56,10 +59,11 @@ const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
 router.get('/', async (req, res) => {
   try {
-    const [prospects, allowance, sizes] = await Promise.all([
+    const [prospects, allowance, sizes, clearance] = await Promise.all([
       query(`SELECT COUNT(*)::int AS n FROM prospect`),
       readAllowance(query),
       query(NEW_SIZES_SQL, [NEW_DAYS]),
+      clearanceCount(),
     ]);
 
     // With no allowance row Shopify falls back to the bare £3 — the page says so rather than hiding the grid.
@@ -102,6 +106,7 @@ router.get('/', async (req, res) => {
       lines,
       styles: styles.size,
       summary,
+      clearance,
       rows,
     });
   } catch (err) {

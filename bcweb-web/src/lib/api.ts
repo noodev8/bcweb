@@ -1463,6 +1463,7 @@ export interface SlowSize {
   on_shelf: string;           // oldest held pair's arrival, YYYY-MM-DD ('2024-12-31' = before the log)
   on_shelf_days: number;
   style_sold_12m: number;     // the whole style, net, last 12 months
+  clearance: boolean;         // idle 9+ calendar months — Slow Sizes' Clearance box = Process's Clearance card
 }
 
 export function getSlowSizes() {
@@ -1480,6 +1481,7 @@ export interface StyleSizeRow {
   last_sale: string | null;   // YYYY-MM-DD; null = never sold
   idle_days: number | null;   // as SlowSize.idle_days; null = none held
   idle_from: 'sale' | 'arrival' | null;
+  clearance: boolean;         // as SlowSize.clearance; false = none held
   on_shelf_days: number | null;   // null = none held
   sold_12m: number;           // this size, last 12 months, net of returns
 }
@@ -4861,12 +4863,14 @@ export interface ProcessOverview {
   lines: Record<ProcessChannel, number>;
   styles: number;
   summary: Record<ProcessChannel, Record<ProcessBlock, ProcessBlockTotal>>;
+  // Held sizes unsold (net) on every channel for `months`, here at least that long (server: utils/processMap.js → clearanceCount).
+  clearance: { months: number; sizes: number; units: number; styles: number };
   rows: ProcessSizeRow[];
 }
 export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
     newDays: b.newDays, prospects: b.prospects, allowance: b.allowance ?? null, lines: b.lines, styles: b.styles,
-    summary: b.summary, rows: b.rows || [],
+    summary: b.summary, clearance: b.clearance ?? { months: 9, sizes: 0, units: 0, styles: 0 }, rows: b.rows || [],
   }));
 }
 export interface ProcessAllowanceMeasure { windowFrom: string; windowTo: string; spend: number; units: number; perUnit: number | null }

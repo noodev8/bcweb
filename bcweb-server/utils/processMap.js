@@ -36,6 +36,8 @@ style that sells anything leaves NEW. Read through that status this grid could o
 */
 
 const { NEW_DAYS } = require('./portfolioStatus');
+const { CLEARANCE_MONTHS } = require('./onShelf');
+const { readSlowSizes } = require('./slowSizes');
 
 const CHANNELS = ['AMZ', 'SHP', 'CM3'];
 const BLOCKS = ['multi_thin', 'multi_good', 'once_thin', 'once_good', 'not_sold'];
@@ -149,6 +151,21 @@ const UNSOLD_FBA_CODES_SQL = `SELECT us.code FROM (${UNSOLD_SIZES_SQL}) us WHERE
 // size held locally and not at FBA. Shopify prices per style, so the style is the row.
 const UNSOLD_LOCAL_STYLES_SQL = `SELECT DISTINCT us.groupid FROM (${UNSOLD_SIZES_SQL}) us WHERE us.fba <= 0 AND us.local > 0`;
 
+// CLEARANCE (owner, 2026-10-26: "Something that hasnt been sold for 9 months is a proper loser"). The count of Slow Sizes' Clearance
+// box — the SAME rows (utils/slowSizes.js; owner: "lets use the same numbers"): a held SIZE, any style age, whose idle clock (the later
+// of its last NET sale on any channel and its oldest held pair's arrival) started 9+ calendar months ago. Sold anywhere = good.
+// READ ONLY; counts only — the card opens Slow Sizes.
+async function clearanceCount() {
+  const { sizes } = await readSlowSizes();
+  const c = sizes.filter((x) => x.clearance);
+  return {
+    months: CLEARANCE_MONTHS,
+    sizes: c.length,
+    units: c.reduce((t, x) => t + x.units, 0),
+    styles: new Set(c.map((x) => x.groupid)).size,
+  };
+}
+
 // The allowance in force: the newest accepted row. null if the table is empty (never, after the migration's seed).
 async function readAllowance(q) {
   const r = await q(`
@@ -206,6 +223,8 @@ module.exports = {
   UNSOLD_LOCAL_STYLES_SQL,
   lineFor,
   blockFor,
+  CLEARANCE_MONTHS,
+  clearanceCount,
   readAllowance,
   measureAllowance,
 };

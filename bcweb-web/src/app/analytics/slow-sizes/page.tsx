@@ -14,12 +14,16 @@ SUMMARY FIRST, THEN THE SIZES (owner, same day: "maybe a summary of your breakdo
          Bands, each a box with its QTY IN STOCK (the headline — owner, 2026-10-15: "Change the headline figure of the card to Pairs.
          Dont need sizes") and styles. The bands DON'T
          overlap, so they add up to the line above them:
-           over a year | 6–12 months | 3–6 months
+           Clearance (9 months+) | 6–9 months | 3–6 months
+         (Until 2026-10-26: over a year | 6–12 months | 3–6 months. Owner, 2026-10-26: "Something that hasnt been sold for 9 months is
+         a proper loser" — the top box is now CLEARANCE, the server's per-size flag (9 calendar months; utils/slowSizes.js), the very
+         rows Process's Clearance card counts, so the two show the same numbers. Days are since the last NET sale — a sale that came
+         back doesn't count.)
          ("Up to 3 months" went the same day — owner: "Thats the winners mindset". Sizes that sold in 91 days aren't shown at all;
          the server still returns them, the page just has no box for them.)
          (A fifth, "never sold, here since before 2025", went the same day when pre-log pairs were dated 31 Dec 2024 — owner:
          "everything rolls as standard instead of putting text in". Never-sold sizes now sit in the band their shelf days put them in.)
-         (91 / 183 / 365 days — the same steps as Sell-through's age bands, utils/unitAge.js). Clicking a box opens its sizes below,
+         (91 / 183 days — Sell-through's age steps, utils/unitAge.js — then the 9-month Clearance flag). Clicking a box opens its sizes below,
          longest first; clicking it again closes them. The open band sits in the URL (?band=), so ← Back from the drill reopens it.
          Nothing opens by default — the summary is the first read.
 
@@ -75,14 +79,15 @@ const n = (v: number) => v.toLocaleString('en-GB');
 // Month names for 'YYYY-MM-DD' read by split, never the JS Date parser (CLAUDE.md: a pg date handed to Date drifts a day in BST).
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// The bands, longest wait first, by days since the last sale (never sold = days on the shelf). Colours = the style screen's TONES
-// ([groupid]/page.tsx): bar = the box's top edge, on = the open box's tint and border.
+// The bands, longest wait first, by days since the last net sale (never sold = days on the shelf). CLEARANCE is the server's flag
+// (9 calendar months — Process's Clearance card counts the same rows); the shorter bands are day steps. Colours = the style screen's
+// TONES ([groupid]/page.tsx): bar = the box's top edge, on = the open box's tint and border.
 const BANDS = [
-  { key: 'y1', label: 'Over a year', sub: 'over 365 days', test: (d: number) => d > 365,
+  { key: 'cl', label: 'Clearance', sub: 'not sold for 9 months+', test: (s: SlowSize) => s.clearance,
     bar: 'border-t-rose-300', on: 'border-rose-300 bg-rose-50' },
-  { key: 'm6', label: '6–12 months', sub: '184–365 days', test: (d: number) => d > 183 && d <= 365,
+  { key: 'm6', label: '6–9 months', sub: '184 days – 9 months', test: (s: SlowSize) => !s.clearance && s.idle_days > 183,
     bar: 'border-t-orange-300', on: 'border-orange-300 bg-orange-50' },
-  { key: 'm3', label: '3–6 months', sub: '92–183 days', test: (d: number) => d > 91 && d <= 183,
+  { key: 'm3', label: '3–6 months', sub: '92–183 days', test: (s: SlowSize) => s.idle_days > 91 && s.idle_days <= 183,
     bar: 'border-t-yellow-300', on: 'border-yellow-300 bg-yellow-50' },
 ] as const;
 type BandKey = (typeof BANDS)[number]['key'];
@@ -122,7 +127,7 @@ function SlowSizesBody() {
   }
 
   const summary = BANDS.map((b) => {
-    const rows = sizes.filter((s) => b.test(s.idle_days));
+    const rows = sizes.filter((s) => b.test(s));
     return {
       ...b,
       rows,

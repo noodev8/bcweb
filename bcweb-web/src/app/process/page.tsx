@@ -5,7 +5,7 @@ Page: /process — Process (owner's work in progress, 2026-10-25)
 =======================================================================================================================================
 Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big numbers:
 
-    Prospects → New → Unsold → [Winner · Loser] → Amazon Order (a navigation card, no number)   (the Sold card was taken off 2026-10-25 — Winner + Loser = Sold)
+    Prospects → New → Unsold → [Winner · Loser] → Clearance (2026-10-26), with small Go-to links underneath (Amazon Order, Sales)   (the Sold card was taken off 2026-10-25 — Winner + Loser = Sold)
 
   - PROSPECTS: one plain total. Opens /prospects (which links back here).
   - NEW: every size of every style created in the last 90 days (counted in sizes; styles underneath) — except sizes never stocked
@@ -35,6 +35,7 @@ import { Fragment, useState } from 'react';
 import { ChevronRightIcon } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
+import ProcessNav from '@/components/ProcessNav';
 import {
   getProcessOverview, measureProcessAllowance, acceptProcessAllowance,
   type ProcessAllowanceMeasure, type ProcessOverview, type ProcessSizeRow,
@@ -145,15 +146,25 @@ export default function ProcessPage() {
               {box('winner', winPct)}
               {box('loser', losePct)}
             </div>
-            {/* AMAZON ORDER (owner, 2026-10-25): a big navigation card to the ordering screen — no number, the name is the card.
-                ?from= gives Amazon Order its back link to here. */}
+            {/* CLEARANCE (owner, 2026-10-26: "Something that hasnt been sold for 9 months is a proper loser"). Held SIZES, any style age,
+                unsold (net) on every channel for 9 months and here that long — sold anywhere is good. A count only: it opens Slow Sizes
+                on its Clearance box, which is the same rows (server: utils/slowSizes.js) — one list, not two (owner, 2026-10-26). */}
             <Link
-              href={`/amazon-order?from=${encodeURIComponent(SELF)}`}
-              className={boxCls + ' justify-center border-slate-200 hover:border-brand-500 hover:shadow-md'}
+              href={`/analytics/slow-sizes?band=cl&from=${encodeURIComponent(SELF)}&back=Process`}
+              className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}
             >
-              <span className="text-2xl font-semibold text-slate-900">Amazon Order</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clearance</span>
+              {/* Headline = QTY IN STOCK, not sizes (owner, 2026-10-26: "these items have been bought and still sitting") — the same
+                  headline as Slow Sizes' Clearance box. */}
+              <span className="text-4xl font-semibold tabular-nums text-slate-900">{d.clearance.units}</span>
+              <span className="text-xs text-slate-400">unsold {d.clearance.months} months+</span>
             </Link>
           </section>
+
+          {/* GO TO (owner, 2026-10-26): small buttons BELOW the cards, side by side, to the screens you act on from here (the big Amazon
+              Order card was too big). Not sticky — only the cards stay on screen. The same buttons show on those screens when you
+              arrive from here (components/ProcessNav.tsx). */}
+          <ProcessNav current="process" className="mt-1" />
 
           {open && <BoxList key={open} data={d} pick={open} stickyTop={cardsHeight} onClose={() => setOpen(null)} />}
 

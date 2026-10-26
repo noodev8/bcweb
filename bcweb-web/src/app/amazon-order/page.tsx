@@ -236,6 +236,7 @@ import {
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import ProcessNav, { PROCESS_PATH } from '@/components/ProcessNav';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import AmazonExport from '@/components/AmazonExport';
@@ -2079,7 +2080,9 @@ function AmazonOrderContent() {
   const stickyOffset = panelHeight + headHeight;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel}>
+    // Arrived from Process: its Process / Sales buttons in the header row (components/ProcessNav.tsx).
+    <AppShell backHref={backHref} backLabel={backLabel}
+      headerRight={from === PROCESS_PATH ? <ProcessNav current="amazon-order" /> : undefined}>
       {/* OPEN AMAZON ORDERS BANNER — see the header block. */}
       {showOpenBanner && (
         <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

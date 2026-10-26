@@ -53,10 +53,10 @@ const monthLabel = (s: string) => {
   return y === THIS_YEAR ? MONTHS[m - 1] : `${MONTHS[m - 1]} ${String(y).slice(2)}`;
 };
 
-// How long since it sold -> tile colour. Same steps as the list's boxes (91 / 183 / 365 days).
+// How long since it sold -> tile colour. Same bands as the list's boxes: Clearance (the server's 9-month flag) / 183 / 91 days.
 const TONES = {
-  y1: { chip: 'bg-rose-100 text-rose-800', label: 'Over a year' },
-  m6: { chip: 'bg-orange-100 text-orange-800', label: '6–12 months' },
+  cl: { chip: 'bg-rose-100 text-rose-800', label: 'Clearance (9 months+)' },
+  m6: { chip: 'bg-orange-100 text-orange-800', label: '6–9 months' },
   m3: { chip: 'bg-yellow-100 text-yellow-800', label: '3–6 months' },
   m0: { chip: 'bg-emerald-100 text-emerald-800', label: 'Within 3 months' },
 } as const;
@@ -68,7 +68,7 @@ const TONES = {
 function tone(x: StyleSizeRow) {
   const days = x.idle_days;
   if (days === null) return null;
-  if (days > 365) return TONES.y1;
+  if (x.clearance) return TONES.cl;
   if (days > 183) return TONES.m6;
   if (days > 91) return TONES.m3;
   return TONES.m0;
@@ -96,7 +96,7 @@ function Body() {
   const sizes = d?.sizes ?? [];
   const inStock = sizes.reduce((t, x) => t + x.units, 0);
   const sold12m = sizes.reduce((t, x) => t + x.sold_12m, 0);
-  const overYear = sizes.filter((x) => x.units > 0 && tone(x) === TONES.y1).length;
+  const clearance = sizes.filter((x) => x.units > 0 && x.clearance).length;
   const self = encodeURIComponent(`/analytics/slow-sizes/${encodeURIComponent(groupid)}${sp.toString() ? `?${sp}` : ''}`);
 
   return (
@@ -125,8 +125,8 @@ function Body() {
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
             <span><span className="font-semibold text-slate-900">{n(inStock)}</span> in stock</span>
             <span><span className="font-semibold text-slate-900">{n(sold12m)}</span> sold in 12 months</span>
-            {overYear > 0 && (
-              <span><span className="font-semibold text-rose-700">{n(overYear)}</span> {overYear === 1 ? 'size' : 'sizes'} not sold for over a year</span>
+            {clearance > 0 && (
+              <span><span className="font-semibold text-rose-700">{n(clearance)}</span> {clearance === 1 ? 'size' : 'sizes'} not sold for 9 months</span>
             )}
           </div>
 
