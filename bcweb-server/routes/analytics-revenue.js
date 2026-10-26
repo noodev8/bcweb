@@ -5,18 +5,23 @@ API Route: analytics_revenue
 Method: GET
 Purpose: Reports -> Revenue, opened from the "12m revenue" box on Repricing's Status tab (owner, 2026-10-14: "On the WINNERS screen we
          have our revenue. I want to click on the card and go to the breakdown ... enough information to know how we are
-         progressing"). The rolling 12 months split by channel (Shopify / Amazon / CM3), each figure beside the same figure for the 12
-         months before (the year before, owner 2026-10-14). The page is a card per channel, which the owner will extend with each
+         progressing"). The last 12 COMPLETE months split by channel (Shopify / Amazon / CM3), each figure beside the same figure for
+         the 12 months before (the year before, owner 2026-10-14). The page is a card per channel, which the owner will extend with each
          channel's expenses to see what is left.
+
+         WINDOWS (owner, 2026-10-26: "remove the current month where we dont have enough data. Always from last month"): this year =
+         the 12 whole months ending last month — or the last month the QuickFile P&L covers, if that isn't imported yet; the year
+         before = the 12 months before that. utils/revenueFigures.js (END_SQL) has the rule and why; its month-by-month table
+         (routes/analytics-revenue-months.js) covers the same 12 months, so the Profit tile and the table's total agree.
 
          REVENUE = SUM(soldprice * qty), the same sum the Winners figure stamps (utils/portfolioStatus.js), so it is NET OF RETURNS
          (returns are qty < 0 rows) and VAT-INCLUSIVE — the number that reconciles with Shopify, Seller Central and the bank. `sold` and
-         `returns` are the two halves of it (returns negative). Windows are the stamp's too: this year = solddate >= CURRENT_DATE - 12
-         months (today included); last year = the 12 months before that. sales starts Aug 2024, so last year is complete.
+         `returns` are the two halves of it (returns negative). sales starts Aug 2024, so the year before is complete.
 
-         THE "12m revenue" BOX on Repricing (pricing-status-overview.js share_totals) is this same live sum since 2026-10-15, so the
-         two agree. `off_file` is the part from styles deleted since and shop items with no style (~£19k on 14 Oct 2026) — the
-         winners' stamped revenue can't include it.
+         THE "12m revenue" BOX on Repricing (pricing-status-overview.js share_totals) is the same sum but ROLLING TO TODAY (the winner
+         shares need today's figure), so since 2026-10-26 it no longer equals this page's revenue — its label says "to today".
+         `off_file` is the part from styles deleted since and shop items with no style (~£19k on 14 Oct 2026) — the winners' stamped
+         revenue can't include it.
 
          COST OF GOODS (2026-10-14, owner: "start with VAT and cost of goods"). Sales rows carry no cost, so it is skusummary.cost
          (read via safeNumeric) x qty — TODAY's cost, so the year before reads a little high wherever a supplier has put prices up
@@ -100,28 +105,28 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { safeNumeric } = require('../utils/sql');
-const { costFromProfitSql } = require('../utils/shopifyProfit');
 const { stockValue } = require('../utils/financeStock');
+// The expense / cost reads, shared with the month-by-month table (routes/analytics-revenue-months.js) so the two can't drift.
+const {
+  WINDOWS_SQL, COGS_SQL, fillCogs, shopifyExpenses, overheadLines, plLines, amazonExpenses,
+} = require('../utils/revenueFigures');
 
 router.use(verifyToken);
 
 router.get('/', async (req, res) => {
   try {
-    // One pass over 24 months; FILTER splits the two windows. `cur` mirrors the Winners stamp's window exactly.
+    // One pass over the two windows (the 12 complete P&L months and the 12 before — utils/revenueFigures.js); FILTER splits them.
     const r = await query(`
-      WITH w AS (
+      WITH win AS (${WINDOWS_SQL}),
+      w AS (
         SELECT s.channel, s.qty, s.soldprice * s.qty AS v,
-               s.solddate >= CURRENT_DATE - INTERVAL '12 months' AS cur,
+               win.w = 'cur' AS cur,
                ss.groupid IS NULL AS off_file,
-               -- Cost of goods at TODAY's cost (sales rows carry none): a return's negative qty puts its pair back. A Shopify SALE of a
-               -- style deleted since has no skusummary row, so its cost is recovered from its stored profit (see the header).
-               CASE WHEN ss.groupid IS NOT NULL THEN ${safeNumeric('ss.cost')} * s.qty
-                    WHEN s.channel = 'SHP' AND s.qty > 0 THEN ${costFromProfitSql('s.soldprice', 's.profit')} * s.qty
-               END AS cogs
-        FROM sales s
+               -- Cost of goods at TODAY's cost; deleted Shopify styles' from their stored profit (see the header, utils/revenueFigures.js).
+               ${COGS_SQL} AS cogs
+        FROM win
+        JOIN sales s ON s.solddate BETWEEN win.f AND win.t
         LEFT JOIN skusummary ss ON ss.groupid = s.groupid
-        WHERE s.solddate >= CURRENT_DATE - INTERVAL '24 months'
       )
       SELECT COALESCE(NULLIF(channel, ''), '?')                              AS channel,
              COALESCE(SUM(v) FILTER (WHERE cur), 0)::float8                   AS revenue,
@@ -142,19 +147,16 @@ router.get('/', async (req, res) => {
       ORDER BY 2 DESC
     `);
     const d = await query(`
-      SELECT (CURRENT_DATE - INTERVAL '12 months')::date::text AS from,
-             CURRENT_DATE::text                                 AS to,
-             (CURRENT_DATE - INTERVAL '24 months')::date::text AS prev_from,
-             (CURRENT_DATE - INTERVAL '12 months' - INTERVAL '1 day')::date::text AS prev_to
+      WITH win AS (${WINDOWS_SQL})
+      SELECT MAX(f::text) FILTER (WHERE w = 'cur') AS from, MAX(t::text) FILTER (WHERE w = 'cur') AS to,
+             MAX(f::text) FILTER (WHERE w = 'prev') AS prev_from, MAX(t::text) FILTER (WHERE w = 'prev') AS prev_to
+      FROM win
     `);
     const r2 = (x) => Math.round(x * 100) / 100;
-    // AMAZON / CM3 UNCOSTED REVENUE (2026-10-14): a deleted style's sales have no cost, and Amazon's stored profit can't give it back
-    // (its formula carries the FBA fee, which moves — inverting it matched today's cost on only 67% of live rows). So that revenue is
-    // costed at the channel's OWN cost ratio on the revenue that has a cost. `cogs_filled` is the part added, for the footnote.
-    // Shopify keeps its recovery from stored profit (above); its only leftover is refunds on deleted styles, left as they are.
-    const fill = (c, cogs, rev, noCost) => (c.channel === 'SHP' || rev - noCost === 0 ? 0 : noCost * (cogs / (rev - noCost)));
+    // Amazon / CM3 deleted styles' cost at the channel's own cost ratio (utils/revenueFigures.js → fillCogs). `cogs_filled` is the
+    // part added, for the footnote.
     const channels = r.rows.map((c) => {
-      const f = fill(c, c.cogs, c.revenue, c.no_cost), pf = fill(c, c.prev_cogs, c.prev_revenue, c.prev_no_cost);
+      const f = fillCogs(c.channel, c.cogs, c.revenue, c.no_cost), pf = fillCogs(c.channel, c.prev_cogs, c.prev_revenue, c.prev_no_cost);
       return {
         channel: c.channel, revenue: r2(c.revenue), sold: r2(c.sold), returns: r2(c.returns), units: c.units,
         prev_revenue: r2(c.prev_revenue), prev_sold: r2(c.prev_sold), prev_returns: r2(c.prev_returns), prev_units: c.prev_units,
@@ -168,13 +170,15 @@ router.get('/', async (req, res) => {
       plLines({ query }, 'AMZ', 'Shipping'),
       stockValue(),
       // STOCK HISTORY (stock_daily, nightly, backfilled from 14 Oct 2025): the average over this window, for the turn, and the
-      // reading a year ago. No history before that, so the year before has no turn.
+      // reading a year ago (cash in stock is NOW against then — a point in time, not a window). No history before that, so the year
+      // before has no turn.
       query(`
+        WITH win AS (${WINDOWS_SQL})
         SELECT AVG(value)::float8 AS avg_value, COUNT(*)::int AS days,
                (SELECT value::float8 FROM stock_daily
                 WHERE snapshot_date <= CURRENT_DATE - INTERVAL '12 months' ORDER BY snapshot_date DESC LIMIT 1) AS year_ago,
                (SELECT value::float8 FROM stock_daily ORDER BY snapshot_date LIMIT 1) AS first_value
-        FROM stock_daily WHERE snapshot_date >= CURRENT_DATE - INTERVAL '12 months'
+        FROM stock_daily, win WHERE win.w = 'cur' AND snapshot_date BETWEEN win.f AND win.t
       `),
     ]);
     const h = hist.rows[0] || {};
@@ -188,15 +192,8 @@ router.get('/', async (req, res) => {
       avg_value: h.avg_value ? r2(h.avg_value) : null,
       turn: h.avg_value ? Math.round((cogsAll / h.avg_value) * 10) / 10 : null,
     };
-    // AMAZON FEES (owner, 2026-10-14) = the QuickFile P&L's 6003 Seller Fees, which holds EVERY channel's fees (Month End posts
-    // Amazon's, Shopify's and PayPal's there — utils/financeQuickFile.js), less the Shopify Payments and PayPal fees this screen
-    // already holds. What remains is Amazon's (referral, FBA, storage, subscription; SumUp's few pounds too). Ex VAT, as the P&L.
-    const sf = sellerFees[0] || { cur: null, prev: null };
-    const amzFees = (w) => (sf[w] === null ? null
-      : r2(sf[w] - (shopify_expenses.shopify_payments[w].amount || 0) - (shopify_expenses.paypal[w].amount || 0)));
-    const amzShip = amzShipping[0] || { cur: null, prev: null };
-    const amazon_expenses = { fees: { cur: amzFees('cur'), prev: amzFees('prev') }, seller_fees: sf,
-      shipping: { cur: amzShip.cur, prev: amzShip.prev } };
+    // AMAZON FEES = the P&L's seller fees less Shopify's and PayPal's; shipping = DPD to Amazon (utils/revenueFigures.js).
+    const amazon_expenses = amazonExpenses(sellerFees, amzShipping, shopify_expenses);
     const accounts_turnover = turnover[0] ? { cur: turnover[0].cur, prev: turnover[0].prev } : null;
     return res.json({ return_code: 'SUCCESS', ...d.rows[0], channels, shopify_expenses, amazon_expenses, overheads, accounts_turnover, stock });
   } catch (err) {
@@ -205,100 +202,4 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// SHOPIFY EXPENSES (see the header). Four reads, each giving { cur, prev } for the same two windows as the channels above.
-// ---------------------------------------------------------------------------------------------------------------------------------
-
-const WINDOWS_SQL = `
-  SELECT 'cur' AS w, (CURRENT_DATE - INTERVAL '12 months')::date AS f, CURRENT_DATE AS t
-  UNION ALL
-  SELECT 'prev', (CURRENT_DATE - INTERVAL '24 months')::date, (CURRENT_DATE - INTERVAL '12 months' - INTERVAL '1 day')::date`;
-
-async function shopifyExpenses(db = { query }) {   // db: a transaction client in the rollback test, else the pool
-  const [fees, delivery, advertising, shipping] = await Promise.all([
-    // FEES: real where fee_daily covers the day; outside a source's covered range, its own real rate (fees / Shopify revenue over
-    // the covered range) x that day's Shopify revenue. rate NULL = nothing stored for the source yet, so no estimate either.
-    db.query(`
-      WITH win AS (${WINDOWS_SQL}),
-      src AS (SELECT unnest(ARRAY['SHOPIFY_PAYMENTS', 'PAYPAL']) AS source),
-      shp AS (SELECT solddate AS day, SUM(soldprice * qty) AS rev FROM sales WHERE channel = 'SHP' GROUP BY solddate),
-      cov AS (SELECT source, MIN(day) AS f, MAX(day) AS t, SUM(fees) AS fees FROM fee_daily GROUP BY source),
-      rate AS (SELECT c.source, c.f, c.t, c.fees / NULLIF((SELECT SUM(rev) FROM shp WHERE shp.day BETWEEN c.f AND c.t), 0) AS rate
-               FROM cov c)
-      SELECT s.source, w.w,
-             COALESCE((SELECT SUM(fd.fees) FROM fee_daily fd
-                       WHERE fd.source = s.source AND fd.day BETWEEN w.f AND w.t), 0)::float8 AS real,
-             (SELECT SUM(shp.rev) FROM shp
-              WHERE shp.day BETWEEN w.f AND w.t AND (r.f IS NULL OR shp.day NOT BETWEEN r.f AND r.t))::float8 AS uncovered_rev,
-             r.rate::float8 AS rate,
-             GREATEST(w.f, r.f)::text AS real_from, LEAST(w.t, r.t)::text AS real_to
-      FROM src s CROSS JOIN win w LEFT JOIN rate r ON r.source = s.source
-    `),
-    // DELIVERY CHARGED to the customer (shopify_delivery, per order, net of delivery refunds, inc. VAT), by the order's day. INCOME,
-    // not an expense — it sits under Revenue on the page. Free postage from 2026-10-14, so it runs to £0 from there on purpose.
-    db.query(`
-      WITH win AS (${WINDOWS_SQL})
-      SELECT w.w, COALESCE(SUM(d.charged - d.refunded), 0)::float8 AS amount
-      FROM win w LEFT JOIN shopify_delivery d ON d.order_day BETWEEN w.f AND w.t
-      GROUP BY w.w
-    `),
-    // ADVERTISING (owner, 2026-10-14: "take advertising from the P&L and charge it to shopify. It will be the most accurate") — the P&L's
-    // 6201, all of it Shopify's (no Amazon ads). Replaced the google_product_daily sum, which missed ~£17k of other channels the
-    // year before. SHIPPING — the P&L's 7501 Postage and Carriage + 5003 Packaging.
-    plLines(db, 'SHP', 'Advertising'),
-    plLines(db, 'SHP', 'Shipping'),
-  ]);
-
-  const r2 = (x) => (x === null || x === undefined ? null : Math.round(x * 100) / 100);
-  const feeLine = (source) => {
-    const at = (w) => {
-      const x = fees.rows.find((f) => f.source === source && f.w === w);
-      const est = x.rate === null ? null : (x.uncovered_rev || 0) * x.rate;
-      const real_days = x.real_from && x.real_to && x.real_from <= x.real_to ? { from: x.real_from, to: x.real_to } : null;
-      return { amount: r2(x.real + (est || 0)), real: r2(x.real), est: r2(est), rate: x.rate, real_days };
-    };
-    return { cur: at('cur'), prev: at('prev') };
-  };
-  return {
-    shopify_payments: feeLine('SHOPIFY_PAYMENTS'),
-    paypal: feeLine('PAYPAL'),
-    advertising: advertising[0] || { name: 'Advertising', cur: null, prev: null },
-    shipping: shipping[0] || { name: 'Shipping', cur: null, prev: null },
-    delivery: Object.fromEntries(delivery.rows.map((d) => [d.w, r2(d.amount)])),
-  };
-}
-
-// OVERHEADS (owner, 2026-10-14: wages, rent "and then group others into general expenses") — the whole business's costs, not a
-// channel's, so expense_figure channel 'ALL'.
-function overheadLines(db = { query }) {
-  return plLines(db, 'ALL', null);
-}
-
-// A P&L line per window (see P&L LINES in the header): the monthly rows inside the window, part months pro rata by days, then scaled
-// up for any days no month covers (amount x window days / covered days). Months never overlap — pl-import.js replaces a month
-// rather than adding a second row. name null = every name on the channel. null where nothing covers the window at all.
-async function plLines(db, channel, only) {
-  const r = await db.query(`
-    WITH win AS (${WINDOWS_SQL}),
-    fig AS (SELECT name, amount, period_from AS f, period_to AS t FROM expense_figure
-            WHERE channel = $1 AND ($2::text IS NULL OR name = $2)),
-    o AS (SELECT fig.name, w.w, (w.t - w.f + 1) AS days, fig.amount, (fig.t - fig.f + 1) AS len,
-                 GREATEST(0, LEAST(fig.t, w.t) - GREATEST(fig.f, w.f) + 1) AS overlap
-          FROM fig CROSS JOIN win w)
-    SELECT name, w, SUM(amount * overlap / len)::float8 AS amount, SUM(overlap)::int AS covered, MAX(days)::int AS days
-    FROM o GROUP BY name, w
-  `, [channel, only]);
-  const r2 = (x) => Math.round(x * 100) / 100;
-  const at = (name, w) => {
-    const x = r.rows.find((y) => y.name === name && y.w === w);
-    return x && x.covered > 0 ? r2(x.amount * x.days / x.covered) : null;
-  };
-  return [...new Set(r.rows.map((x) => x.name))]
-    .map((name) => ({ name, cur: at(name, 'cur'), prev: at(name, 'prev') }))
-    .sort((a, b) => (b.cur || 0) - (a.cur || 0));
-}
-
 module.exports = router;
-module.exports.shopifyExpenses = shopifyExpenses;   // for the rollback test only
-module.exports.overheadLines = overheadLines;
-module.exports.plLines = plLines;

@@ -257,9 +257,10 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
           ))}
           {totals && totals.revenue > 0 && winners && (
             <>
-              {/* The way into the revenue breakdown, by channel (owner, 2026-10-14: "click on the card and go to the breakdown"). */}
+              {/* The way into the revenue breakdown, by channel (owner, 2026-10-14: "click on the card and go to the breakdown"). This
+                  box rolls to TODAY; the breakdown stops at the last complete P&L month (2026-10-26), so the label says which. */}
               <Link href="/analytics/revenue" className="block rounded-lg transition hover:opacity-80">
-                <TotalBox value={gbp(totals.revenue)} label="12m revenue" />
+                <TotalBox value={gbp(totals.revenue)} label="12m revenue to today" />
               </Link>
               {/* Winners' column only (stretching it under Slow too was tried and reverted, owner 2026-10-13: it is only for winners). */}
               <FigureGroup pct={pct(winners.revenue, totals.revenue)} color={STATUS_COLOR.WINNERS}>

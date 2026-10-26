@@ -4,13 +4,18 @@
 Page: /analytics/revenue  (opened from the "12m revenue" box on Repricing's Status tab, 2026-10-14)
 =======================================================================================================================================
 Purpose: The breakdown behind the Winners screen's revenue figure. Owner, 2026-10-14: "I want to click on the card and go to the
-         breakdown ... enough information to know how we are progressing." The rolling 12 months, every figure beside the year before.
+         breakdown ... enough information to know how we are progressing." The last 12 complete months (to the last imported P&L month — owner, 2026-10-26: "Always from last month"; the
+         range sits beside the title), every figure beside the year before.
 
          LAYOUT (owner, 2026-10-14: "think in the way of the WINNERS screen ... important headline figures at the top, then break it
          down downwards ... colour, cards and big numbers"):
            1. HEADLINES — four tiles that read as one sum: Revenue → what the channels leave → less the overheads they share = PROFIT,
               each with the year before under it. Revenue's growth is the ACCOUNTS' (see turnoverCheck) — ours overstates it while
               `sales` is short a year back.
+           1a. MONTH BY MONTH (owner, 2026-10-26: "a drill down from the profit card") — clicking Profit opens a small table of the last
+              12 complete months under the tiles: revenue, channels leave, overheads, profit. Same sums as the tiles (channelList()
+              below), fetched only when opened. A month whose P&L isn't imported shows its revenue and no profit. The first row is
+              the month a year before the latest (greyed, "not in total" — owner: "So I can compare Sep 26 with Sep 25").
            1b. KEY STATS (owner, 2026-10-15: "Revenue divided by wages. And anything else perhaps? Just stats") — a row of small
               ratios, each with the year before. See keyStats() for each one's basis.
            2. A CARD PER CHANNEL — big revenue + big Left, a "where every £ goes" bar, then the running list This year | Year before.
@@ -39,12 +44,12 @@ Guarded by AppShell. Consumes GET /analytics-revenue.
 =======================================================================================================================================
 */
 
-import { Fragment, type ReactNode } from 'react';
-import { BuildingStorefrontIcon } from '@heroicons/react/20/solid';
+import { Fragment, useState, type ReactNode } from 'react';
+import { BuildingStorefrontIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
 import AppShell from '@/components/AppShell';
 import { ChannelLogo } from '@/components/ChannelBadge';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getRevenue, RevenueChannel, RevenueData, RevenueOverhead, ShopifyExpenses } from '@/lib/api';
+import { getRevenue, getRevenueMonths, RevenueChannel, RevenueData, RevenueMonth, RevenueOverhead, ShopifyExpenses } from '@/lib/api';
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.round(Math.abs(v)).toLocaleString('en-GB')}`;
 // £427,551 → £428k for the big tiles; under £10k stays exact.
@@ -103,13 +108,17 @@ function Revenue({ data }: { data: RevenueData }) {
   const leftSum = lists.reduce((a, l) => a + l.left, 0), pLeftSum = lists.reduce((a, l) => a + l.pLeft, 0);
   const oh = data.overheads.reduce((a, l) => a + (l.cur ?? 0), 0), pOh = data.overheads.reduce((a, l) => a + (l.prev ?? 0), 0);
   const profit = leftSum - oh, pProfit = pLeftSum - pOh;
+  const [monthsOpen, setMonthsOpen] = useState(false);
   const t = data.accounts_turnover;
   // Growth by the ACCOUNTS where we have them: `sales` is short in the year before (recording started Aug 2024), so ours reads high.
   const growth = t && t.cur !== null && t.prev !== null ? change(t.cur, t.prev) : change(all.revenue, all.prev_revenue);
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold text-slate-900">Revenue &amp; profit</h1>
+      <h1 className="text-2xl font-semibold text-slate-900">
+        Revenue &amp; profit
+        <span className="ml-3 text-base font-normal text-slate-500">{monthLabel(data.from)} – {monthLabel(data.to)}</span>
+      </h1>
 
       {/* HEADLINES — one sum, left to right: revenue → channels leave → less overheads = profit. The year before under each. */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -117,8 +126,11 @@ function Revenue({ data }: { data: RevenueData }) {
         <Headline label="Channels leave" value={gbpK(leftSum)} sub={<YearBefore v={pLeftSum} />} />
         <Headline label="Overheads" value={gbpK(oh)} sub={<YearBefore v={pOh} />} />
         <Headline label="Profit" value={gbpK(profit)} tone={profit >= 0 ? 'good' : 'bad'}
-          sub={<>{pctOf(profit, all.revenue)} of revenue<br /><YearBefore v={pProfit} /></>} />
+          sub={<>{pctOf(profit, all.revenue)} of revenue<br /><YearBefore v={pProfit} /></>}
+          open={monthsOpen} onClick={() => setMonthsOpen((o) => !o)} />
       </section>
+
+      {monthsOpen && <Months />}
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {keyStats(data, all, leftSum, pLeftSum, oh, pOh, profit, pProfit).map((k) => <Stat key={k.label} {...k} />)}
@@ -165,17 +177,114 @@ function Needs() {
   );
 }
 
-function Headline({ label, value, sub, tone }: { label: string; value: string; sub: ReactNode; tone?: 'good' | 'bad' }) {
+// A headline tile. With onClick it is a button that opens a drill-down (Profit → month by month), its chevron saying so.
+function Headline({ label, value, sub, tone, open, onClick }: {
+  label: string; value: string; sub: ReactNode; tone?: 'good' | 'bad'; open?: boolean; onClick?: () => void;
+}) {
   const box = tone === 'good' ? 'border-emerald-200 bg-emerald-50' : tone === 'bad' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white';
   const num = tone === 'good' ? 'text-emerald-700' : tone === 'bad' ? 'text-red-700' : 'text-slate-900';
-  return (
-    <div className={`rounded-xl border p-5 shadow-sm ${box}`}>
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+  const body = (
+    <>
+      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+        {onClick && (
+          <span className="flex items-center gap-0.5 font-medium normal-case tracking-normal">
+            By month<ChevronDownIcon className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+          </span>
+        )}
+      </div>
       <div className={`mt-2 text-4xl font-bold leading-none tabular-nums sm:text-5xl ${num}`}>{value}</div>
       <div className="mt-3 text-xs text-slate-500">{sub}</div>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className={`rounded-xl border p-5 shadow-sm ${box}`}>{body}</div>;
+  return (
+    <button type="button" onClick={onClick} aria-expanded={open}
+      className={`rounded-xl border p-5 text-left shadow-sm transition hover:shadow-md ${box}`}>
+      {body}
+    </button>
   );
 }
+
+// MONTH BY MONTH (owner, 2026-10-26) — opened from the Profit tile. Each complete month added up exactly as the tiles are: every
+// channel's channelList() Left, less that month's overheads. Oldest first, so the season reads down the page.
+function Months() {
+  const q = useApiQuery('analytics-revenue-months', () => getRevenueMonths());
+  if (q.isLoading) return <p className="text-sm text-slate-400">Loading months…</p>;
+  if (q.error) return <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>;
+  if (!q.data) return null;
+  const rows = q.data.map((m) => monthSum(m));
+  // The total is the 12 months only — the comparison month (a year before the latest) is shown, not counted.
+  const done = rows.filter((r) => r.profit !== null && !r.yearBefore);
+  const total = (k: 'revenue' | 'left' | 'oh') => done.reduce((a, r) => a + (r[k] ?? 0), 0);
+  const tProfit = total('left') - total('oh');
+  const cell = (v: number | null) => (v === null ? '–' : gbp(v));
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-semibold text-slate-900">Profit by month</h2>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full max-w-3xl text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+              <th className="py-2 pr-4 text-left font-medium">Month</th>
+              <th className="px-3 py-2 text-right font-medium">Revenue</th>
+              <th className="px-3 py-2 text-right font-medium">Channels leave</th>
+              <th className="px-3 py-2 text-right font-medium">Overheads</th>
+              <th className="py-2 pl-3 text-right font-medium">Profit</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {rows.map((r) => (
+              <tr key={r.month} className={`border-b border-slate-100 ${r.yearBefore ? 'bg-slate-50 text-slate-400' : 'text-slate-700'}`}>
+                <td className="py-2 pr-4">
+                  {monthLabel(r.month)}
+                  {r.yearBefore && <span className="ml-2 text-xs">not in total</span>}
+                </td>
+                <td className="px-3 py-2 text-right">{gbp(r.revenue)}</td>
+                <td className="px-3 py-2 text-right">{cell(r.left)}</td>
+                <td className="px-3 py-2 text-right">{r.oh === null ? '–' : gbp(-r.oh)}</td>
+                <td className="py-2 pl-3 text-right"><ProfitCell v={r.profit} revenue={r.revenue} /></td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-slate-300 font-semibold text-slate-900">
+              <td className="py-2 pr-4">{done.length} months</td>
+              <td className="px-3 py-2 text-right">{gbp(total('revenue'))}</td>
+              <td className="px-3 py-2 text-right">{gbp(total('left'))}</td>
+              <td className="px-3 py-2 text-right">{gbp(-total('oh'))}</td>
+              <td className="py-2 pl-3 text-right"><ProfitCell v={tProfit} revenue={total('revenue')} /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {rows.some((r) => r.profit === null) && (
+        <p className="mt-3 text-xs text-slate-400">A month shows no profit until its QuickFile P&amp;L is imported.</p>
+      )}
+    </section>
+  );
+}
+
+function ProfitCell({ v, revenue }: { v: number | null; revenue: number }) {
+  if (v === null) return <span className="text-slate-400">–</span>;
+  return (
+    <span className={v < 0 ? 'text-red-700' : 'text-emerald-700'}>
+      {gbp(v)}<span className="ml-2 text-xs font-normal text-slate-400">{pctOf(v, revenue)}</span>
+    </span>
+  );
+}
+
+// One month's sum, the tiles' way: what every channel leaves (channelList) less the overheads. No P&L yet = no left / overheads /
+// profit — advertising, Amazon fees and shipping come from the P&L too, so what the channels leave would read high.
+function monthSum(m: RevenueMonth) {
+  const revenue = m.channels.reduce((a, c) => a + c.revenue, 0);
+  const base = { month: m.month, yearBefore: m.year_before, revenue };
+  if (!m.has_pl) return { ...base, left: null, oh: null, profit: null };
+  const left = m.channels.reduce((a, c) => a + channelList(c, m).left, 0);
+  const oh = m.overheads.reduce((a, l) => a + (l.cur ?? 0), 0);
+  return { ...base, left, oh, profit: left - oh };
+}
+
+// 'YYYY-MM' -> 'Oct 25'
+const monthLabel = (s: string) => `${MONTHS[Number(s.slice(5, 7)) - 1]} ${s.slice(2, 4)}`;
 
 type KeyStat = { label: string; value: string; prev: string; note: string };
 
@@ -398,7 +507,7 @@ function channelFoot(c: RevenueChannel, data: RevenueData): string | undefined {
 }
 
 // A channel's running list: revenue, what comes off it, what is left. A missing expense (null) counts as nothing and shows "–".
-function channelList(f: RevenueChannel, data: RevenueData): Omit<ChannelSum, 'c'> {
+function channelList(f: RevenueChannel, data: Pick<RevenueData, 'shopify_expenses' | 'amazon_expenses'>): Omit<ChannelSum, 'c'> {
   const x: ShopifyExpenses | null = f.channel === 'SHP' ? data.shopify_expenses : null;
   // Delivery customers paid sits under Revenue as income (it isn't in sales). VAT and the Left % are both on revenue + delivery.
   const del = x?.delivery?.cur ?? 0, pDel = x?.delivery?.prev ?? 0;

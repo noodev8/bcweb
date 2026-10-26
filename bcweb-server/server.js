@@ -346,6 +346,7 @@ app.use('/analytics-sell-through', require('./routes/analytics-sell-through')); 
 app.use('/analytics-stock-position', require('./routes/analytics-stock-position')); // GET: READ ONLY
 // Revenue: 12 months by channel against the 12 before — the breakdown behind Repricing's "12m revenue" box.
 app.use('/analytics-revenue', require('./routes/analytics-revenue'));                 // GET: READ ONLY
+app.use('/analytics-revenue-months', require('./routes/analytics-revenue-months'));   // GET: READ ONLY — its Profit tile, month by month
 app.use('/pricing-sitting-list', require('./routes/pricing-sitting-list'));         // GET: READ ONLY — Repricing list of the sitting styles
 app.use('/shopify-clearance-list', require('./routes/shopify-clearance-list'));       // GET: what is in the clearance collection now (collection_member)
 app.use('/shopify-clearance-set', require('./routes/shopify-clearance-set'));         // POST: WRITES SHOPIFY TAGS — put chosen styles in / take them out of the clearance collection

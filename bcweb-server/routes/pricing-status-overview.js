@@ -176,8 +176,10 @@ router.get('/', async (req, res) => {
         ),
         tot AS (
           SELECT (SELECT COALESCE(SUM(qty), 0) FROM stock)::int AS units,
-                 -- The live 12m total, the SAME sum and window as Reports -> Revenue (analytics-revenue.js), which this box opens —
-                 -- owner 2026-10-15: the two must agree. Not the stamped per-style sum, which misses deleted styles / shop items.
+                 -- The live 12m total, the SAME sum as Reports -> Revenue (analytics-revenue.js), which this box opens. The two agreed
+                 -- until 2026-10-26, when that page moved to the last 12 COMPLETE P&L months (owner: "Always from last month"); this
+                 -- one still rolls to today for the winner shares, and its label says "to today". Not the stamped per-style sum,
+                 -- which misses deleted styles / shop items.
                  (SELECT COALESCE(SUM(soldprice * qty), 0) FROM sales
                   WHERE solddate >= CURRENT_DATE - INTERVAL '12 months')::float8 AS revenue,
                  (SELECT COUNT(*) FROM skusummary WHERE portfolio_status IS NOT NULL)::int AS styles,

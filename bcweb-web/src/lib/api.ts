@@ -1429,6 +1429,19 @@ export function getRevenue() {
   );
 }
 
+// Revenue month by month — the last 12 complete calendar months (server routes/analytics-revenue-months.js). Each month is shaped
+// like RevenueData's figures with the month in `cur` and nothing in `prev`, so the page adds it up with the same channelList().
+export interface RevenueMonth extends Pick<RevenueData, 'channels' | 'shopify_expenses' | 'amazon_expenses' | 'overheads'> {
+  month: string;      // 'YYYY-MM'
+  from: string; to: string;
+  year_before: boolean;   // the comparison month a year before the latest (first in the list) — shown, NOT in the total
+  has_pl: boolean;    // false = the month's QuickFile P&L isn't imported yet, so no profit can be given
+}
+
+export function getRevenueMonths() {
+  return request<RevenueMonth[]>({ url: '/analytics-revenue-months', method: 'GET' }, (b) => b.months || []);
+}
+
 // Sitting stock — styles held with no sale on any channel for `days` (or never sold). Live, per style.
 export interface SittingStyle {
   groupid: string;
