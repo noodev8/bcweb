@@ -21,7 +21,7 @@ duplicates"). The page reads top to bottom in order of importance:
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
                   key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
      It replaced the /daily screen (that route now redirects here) and the Daily card that opened it — one home for the four.
-  2. SEARCH — the product lookup (components/ProductSearchBox), still one keystroke from the top.
+  2. SEARCH — the product lookup (components/ProductSearchBox). It sits ABOVE Daily, first on the page (owner, 2026-10-26).
   3. EVERYTHING ELSE — the menu, EVERY SCREEN ONCE (Sales is in Daily, so not here). Until 2026-10-26 screens were deliberately repeated across "mindset" groups
      and a second find-by-part row; the owner asked for no duplicates, so the two rows were merged into one set of groups, each
      screen filed where it is used, and anything in Daily taken out of the menu. Repricing's Status tab is the old "Winners" tile
@@ -177,13 +177,14 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <Daily />
-
-      <div className="mb-8 mt-8">
+      {/* Search first, then Daily (owner, 2026-10-26: "put the search bar above daily"). */}
+      <div className="mb-6">
         <ProductSearchBox />
       </div>
 
-      <h2 className="mb-3 text-sm font-semibold text-slate-500">Everything else</h2>
+      <Daily />
+
+      <h2 className="mb-3 mt-8 text-sm font-semibold text-slate-500">Everything else</h2>
       {/* Two rows of four; each row's panel opens directly under it. */}
       {[0, 4].map((i) => (
         <div key={i} className={i === 0 ? '' : 'mt-3'}>

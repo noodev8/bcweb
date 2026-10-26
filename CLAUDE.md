@@ -19,7 +19,7 @@ docs/           API-RULES.md (authoritative conventions), deploy.txt (deployment
 
 The web app **never** connects to Postgres — only the server does. Web → HTTP (axios) → server → PostgreSQL (`brookfield_prod`, the same DB the owner's Python scripts use).
 
-**The dashboard (2026-10-26, owner: "daily to be the main thing so its clear what to work on ... i dont want duplicates"):** a **Daily** hero first — Sales (today's profit), Pricing (Shopify due · Amazon due, from the in-stock lists), Ordering (Amazon Order), New stuff (new sizes not sold yet → New Additions), Prospects, **AMZ loaded** (styles due a look) — then the product search, then **"Everything else": every screen ONCE** (Today, Operations, Pricing, Products & stock, Birkenstock, Google, Admin). Don't add a screen to two groups or repeat a Daily screen in the menu. `/daily` redirects to the dashboard.
+**The dashboard (2026-10-26, owner: "daily to be the main thing so its clear what to work on ... i dont want duplicates"):** a **Daily** hero first — Sales (today's profit), Pricing (Shopify due · Amazon due, from the in-stock lists), Ordering (Amazon Order), New stuff (new sizes not sold yet → New Additions), Prospects, **AMZ loaded** (styles due a look) (the product search sits above it), then **"Everything else": every screen ONCE** (Today, Operations, Pricing, Products & stock, Birkenstock, Google, Admin). Don't add a screen to two groups or repeat a Daily screen in the menu. `/daily` redirects to the dashboard.
 
 ## Run locally (Windows)
 
