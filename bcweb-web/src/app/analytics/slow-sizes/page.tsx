@@ -55,7 +55,7 @@ LOOK (owner, 2026-10-15: "the design of your size screen has improved so much ..
          The boxes carry their band's colour — the same rose / orange / yellow as the style screen's tiles (one TONES set each side, keep
          them in step) — and are short: label, then the qty in stock and styles on one line. The open box is tinted in its own colour,
          not ringed in black (a dark ring on the style screen distracted). The list is tighter: style, size and brand share one cell
-         (XM620A · 12 · Grafters), so it reads as six columns, not eight, with less space between small numbers; size and brand lost
+         (XM620A · 12 · Grafters — since 2026-10-26 the plain code with room to itself and Brand its own sortable column, no size pill; owner), so it reads as six columns, not eight, with less space between small numbers; size and brand lost
          their own sort (within a band the order that matters is Last sold, and Style still sorts).
 
 BACK LANDS ON THE ROW (owner, same day: "when returning to it from sizes, can we scroll to the style we clicked?"). Each row has an id
@@ -69,7 +69,7 @@ Guarded by AppShell. Consumes GET /analytics-slow-sizes.
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { SortableTh, useTableSort } from '@/components/SortableTh';
+import { SortableTh, STICKY_TH, useTableSort } from '@/components/SortableTh';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getSlowSizes, SlowSize } from '@/lib/api';
@@ -137,13 +137,24 @@ function SlowSizesBody() {
   });
   const openBand = summary.find((b) => b.key === open);
 
+  // THE BOXES AND THE LIST'S HEADERS STAY ON SCREEN, WITH ONE SCROLLBAR (owner, 2026-10-26 — the trick on Today, /process): the boxes
+  // stick to the top of the page, the header row just under them, so it needs their height — measured, since the boxes stack on a
+  // phone. The table has no scroll box of its own: an overflow container would capture the sticky header and add a second scrollbar.
+  const [boxesHeight, setBoxesHeight] = useState(0);
+  const boxesRef = (el: HTMLElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBoxesHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  };
+
   return (
     <AppShell backHref={from ?? '/dashboard?g=reports'} backLabel={back ?? 'Back Office'}>
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.data && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div ref={boxesRef} className="sticky top-0 z-20 -mx-4 grid grid-cols-1 gap-3 bg-slate-100 px-4 py-3 sm:grid-cols-3">
             {summary.map((b) => (
               <button key={b.key} type="button" onClick={() => toggle(b.key)} aria-pressed={open === b.key}
                 className={
@@ -162,7 +173,7 @@ function SlowSizesBody() {
             ))}
           </div>
           {openBand && (
-            <SizeTable key={openBand.key} title={openBand.label} sub={openBand.sub} sizes={openBand.rows}
+            <SizeTable key={openBand.key} stickyTop={boxesHeight} title={openBand.label} sub={openBand.sub} sizes={openBand.rows}
               hidden={hidden} onCut={(code) => setHidden((h) => new Set([...h, code]))} onReset={() => setHidden(new Set())} />
           )}
         </>
@@ -172,17 +183,18 @@ function SlowSizesBody() {
 }
 
 // Opens in the server's order (longest idle first); headers sort, the sort sits in the URL so ← Back from the drill keeps it.
-function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
-  title: string; sub: string; sizes: SlowSize[];
+function SizeTable({ stickyTop, title, sub, sizes, hidden, onCut, onReset }: {
+  stickyTop: number; title: string; sub: string; sizes: SlowSize[];
   hidden: Set<string>; onCut: (code: string) => void; onReset: () => void;
 }) {
   const { sorted, sort, onSort } = useTableSort(sizes, {
-    groupid: (s) => s.groupid,
+    code: (s) => s.code,
+    brand: (s) => (s.brand || '').toLowerCase(),
     units: (s) => s.units,
     days: (s) => s.idle_days,
     style_12m: (s) => s.style_sold_12m,
   });
-  const th = { sort, onSort };
+  const th = { sort, onSort, stickyTop };
   const rows = sorted.filter((s) => !hidden.has(s.code));
   const cutHere = sizes.length - rows.length;
   // This page's own URL as it stands (band, sort, origin), so ← Back from the drill lands on the same view.
@@ -192,7 +204,10 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
   const backTo = (code: string) => encodeURIComponent(`${selfPath}#size-${code}`);
 
   return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+    // THE WHOLE WIDTH, NUMBERS TOGETHER (owner, 2026-10-26: "move the other columns closer to each other", then "Use the whole
+    // width"). The table spans the page; the number columns (and #, ×) shrink to their content (w-px + nowrap), so all the spare
+    // width goes to Code and Brand and In stock / Last sold / Qty sold stay a tight block at the right.
+    <div className="mt-1 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
         <div className="text-sm font-medium text-slate-700">
           {title}{' '}
@@ -207,51 +222,49 @@ function SizeTable({ title, sub, sizes, hidden, onCut, onReset }: {
       {rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-slate-500">{cutHere > 0 ? 'Every row is cut — Reset to bring them back.' : 'No sizes here.'}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                <th className="w-10 px-4 py-2 text-right font-normal">#</th>
-                <SortableTh {...th} sortKey="groupid" label="Style · size" firstDir="asc" />
-                <SortableTh {...th} sortKey="units" label="In stock" align="right" />
-                <SortableTh {...th} sortKey="days" label="Last sold" align="right" title="Days since it last sold, and the month" />
-                <SortableTh {...th} sortKey="style_12m" label="Qty sold (12m)" align="right"
-                  title="Items of this style sold in the last 12 months, all sizes" />
-                <th className="w-8 py-2 pl-0 pr-4" />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+              <th className={`w-px px-4 py-2 text-right font-normal ${STICKY_TH}`} style={{ top: stickyTop }}>#</th>
+              <SortableTh {...th} sortKey="code" label="Code" firstDir="asc" />
+              <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
+              <SortableTh {...th} compact sortKey="units" label="In stock" align="right" />
+              <SortableTh {...th} compact sortKey="days" label="Last sold" align="right" title="Days since it last sold, and the month" />
+              <SortableTh {...th} compact sortKey="style_12m" label="Qty sold (12m)" align="right"
+                title="Items of this style sold in the last 12 months, all sizes" />
+              <th className={`w-px py-2 pl-2 pr-4 ${STICKY_TH}`} style={{ top: stickyTop }} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s, i) => (
+              // Back from the style screen scrolls to this row: clear of the sticky boxes and header row (~2.5rem).
+              <tr key={s.code} id={`size-${s.code}`} style={{ scrollMarginTop: stickyTop + 40 }}
+                className="border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50">
+                <td className="w-px px-4 py-1.5 text-right tabular-nums text-xs text-slate-400">{i + 1}</td>
+                {/* The code gets room of its own (owner, 2026-10-26) — the longest (JLY219-BRONWYN-BK-06) fit with space to spare. */}
+                <td className="w-[60%] whitespace-nowrap px-4 py-1.5">
+                  <Link href={`/analytics/slow-sizes/${encodeURIComponent(s.groupid)}?from=${backTo(s.code)}`} title={s.title ?? undefined}
+                    className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                    {s.code}
+                  </Link>
+                </td>
+                <td className="w-[40%] whitespace-nowrap px-4 py-1.5 text-slate-500">{s.brand ?? <span className="text-slate-300">—</span>}</td>
+                <td className="w-px whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
+                <td className="w-px whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                  <LastSold days={s.idle_days} date={s.last_sale} from={s.idle_from} />
+                </td>
+                <td className="w-px whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                  {s.style_sold_12m ? n(s.style_sold_12m) : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="w-px py-1.5 pl-2 pr-4 text-right">
+                  <button type="button" aria-label={`Cut ${s.code}`} title="Cut this row (Reset brings it back)"
+                    onClick={() => onCut(s.code)}
+                    className="px-1 text-base leading-none text-slate-300 hover:text-slate-700">&times;</button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((s, i) => (
-                <tr key={s.code} id={`size-${s.code}`}
-                  className="scroll-mt-24 border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-1.5 text-right tabular-nums text-xs text-slate-400">{i + 1}</td>
-                  <td className="whitespace-nowrap px-4 py-1.5">
-                    <Link href={`/analytics/slow-sizes/${encodeURIComponent(s.groupid)}?from=${backTo(s.code)}`} title={s.title ?? undefined}
-                      className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
-                      {s.groupid}
-                    </Link>
-                    <span className="ml-2 inline-block min-w-[2.25rem] rounded border border-slate-200 px-1.5 text-center text-xs font-semibold tabular-nums text-slate-700">
-                      {s.size}
-                    </span>
-                    {s.brand && <span className="ml-2 text-xs text-slate-400">{s.brand}</span>}
-                  </td>
-                  <td className="px-4 py-1.5 text-right tabular-nums font-semibold text-slate-900">{n(s.units)}</td>
-                  <td className="whitespace-nowrap px-4 py-1.5 text-right tabular-nums">
-                    <LastSold days={s.idle_days} date={s.last_sale} from={s.idle_from} />
-                  </td>
-                  <td className="px-4 py-1.5 text-right tabular-nums">
-                    {s.style_sold_12m ? n(s.style_sold_12m) : <span className="text-slate-300">—</span>}
-                  </td>
-                  <td className="w-8 py-1.5 pl-0 pr-4 text-right">
-                    <button type="button" aria-label={`Cut ${s.code}`} title="Cut this row (Reset brings it back)"
-                      onClick={() => onCut(s.code)}
-                      className="px-1 text-base leading-none text-slate-300 hover:text-slate-700">&times;</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

@@ -376,7 +376,7 @@ function SegmentContent() {
   const ready = !loading && !error && !!data;
 
   return (
-    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isProcess ? (PROCESS_LISTS[segment] || segment) : segment} channel="amazon" note={isProcess ? 'process' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
+    <AppShell backHref={backHref} backLabel={backLabel} crumb={<PricingCrumb name={isProcess ? (PROCESS_LISTS[segment] || segment) : segment} channel="amazon" note={isProcess ? 'today' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />} headerRight={<AmzUploadButton />}>
       <AmzBasketBar />
 
       <ListViewControls

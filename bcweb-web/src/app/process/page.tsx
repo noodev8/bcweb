@@ -1,7 +1,8 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /process — Process (owner's work in progress, 2026-10-25)
+Page: /process — TODAY on screen (owner, 2026-10-26: renamed from Process, "the first screen I go to then take action"; the route
+      kept its first name, and code identifiers keep "process"). The dashboard's second card, in Winners' old place. Built 2026-10-25.
 =======================================================================================================================================
 Purpose: A READ-ONLY map of the business, read LEFT TO RIGHT as one row of big numbers:
 
@@ -118,7 +119,7 @@ export default function ProcessPage() {
   };
 
   return (
-    <AppShell title="Process">
+    <AppShell title="Today">
       {q.isLoading && <div className="py-10 text-center text-sm text-slate-400">Loading…</div>}
       {q.error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{q.error.message}</div>}
 
@@ -150,7 +151,7 @@ export default function ProcessPage() {
                 unsold (net) on every channel for 9 months and here that long — sold anywhere is good. A count only: it opens Slow Sizes
                 on its Clearance box, which is the same rows (server: utils/slowSizes.js) — one list, not two (owner, 2026-10-26). */}
             <Link
-              href={`/analytics/slow-sizes?band=cl&from=${encodeURIComponent(SELF)}&back=Process`}
+              href={`/analytics/slow-sizes?band=cl&from=${encodeURIComponent(SELF)}&back=Today`}
               className={boxCls + ' border-slate-200 hover:border-brand-500 hover:shadow-md'}
             >
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clearance</span>

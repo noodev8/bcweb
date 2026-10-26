@@ -2218,7 +2218,7 @@ function AmazonOrderContent() {
                 didn't type it. × lifts it (the BOTH view stays — it's just a view). */}
             {processScope && (
               <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1 text-xs text-slate-600">
-                Process: unsold, local only
+                Today: unsold, local only
                 <button
                   type="button" onClick={() => setProcessScope(null)} aria-label="Show every SKU" title="Show every SKU"
                   className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"

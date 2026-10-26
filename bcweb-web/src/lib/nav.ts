@@ -10,8 +10,9 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
 // Screens whose on-screen name no longer matches their route. /segments is Repricing in the nav, but reached from the dashboard's
 // Winners card too — one screen, two names — so a link back to it just says Back (owner, 2026-09-26).
 // /analytics/stock-sales is Slow on screen (2026-10-12; was Selling vs Sitting, before that Stock vs Sales); the route kept its old name.
+// /process is Today on screen (owner, 2026-10-26); the route kept its first name.
 const RENAMED: Record<string, string> = {
-  '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow',
+  '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow', '/process': 'Today',
 };
 
 export function prettyPathLabel(p: string): string {

@@ -109,7 +109,7 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   campaign: 'Google campaign',
   status: 'status',
   sitting: 'no sale in 90 days',
-  process: 'process',
+  process: 'today',   // the /process screen is Today on screen (2026-10-26)
 };
 const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list', process: 'list' };
 // The Process lists' on-screen names (the path param is the API's list key).

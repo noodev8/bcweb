@@ -29,11 +29,3 @@ export const AMZ_MATCH_UI = false;
  * and the nightly stock_daily job are all kept. Set true to bring both back, below the sitting list.
  */
 export const STOCK_SALES_FLOW = false;
-
-/*
- * Process — the owner's work-in-progress map of the business (2026-10-25). ON = one quiet "Work in progress → Process" line at the
- * BOTTOM of the dashboard, under the menu, so the team's menu doesn't move while the owner settles the page (the same way the
- * 2026-09-24 menu was built under the old one). OFF = the line goes; /process itself still opens by its URL.
- * Promoting it into the menu, once settled, is a tile in dashboard/page.tsx — then delete this switch.
- */
-export const PROCESS_STRIP = true;

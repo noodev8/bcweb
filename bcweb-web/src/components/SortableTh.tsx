@@ -52,7 +52,12 @@ export function useTableSort<T, K extends string>(rows: T[], getters: Record<K, 
 // `compact` (Shopify vs Amazon, 2026-10-07): px-3 to match px-3 cells, one-line label, and on a right-aligned column the sort arrow
 // goes BEFORE the label — its slot is reserved even when hidden, so on the right it pushed the label in off the numbers' edge.
 // Off by default, so the other lists look exactly as before.
-export function SortableTh<K extends string>({ label, sortKey, sort, onSort, firstDir = 'desc', align = 'left', title, compact = false }: {
+// A sticky header cell: white so rows slide under it, and its bottom rule drawn as an inset shadow (a border scrolls away with the row).
+export const STICKY_TH = 'sticky z-10 bg-white shadow-[inset_0_-1px_0_rgb(226_232_240)]';
+
+// stickyTop: pin the header cell that many px from the top of the PAGE scroll (Slow Sizes, 2026-10-26 — headers that stay while you
+// scroll, with no scroll box of its own: the table must not sit inside an overflow container, or that container captures the sticky).
+export function SortableTh<K extends string>({ label, sortKey, sort, onSort, firstDir = 'desc', align = 'left', title, compact = false, stickyTop }: {
   label: string;
   sortKey: K;
   sort: { key: K; dir: SortDir } | null;
@@ -61,12 +66,14 @@ export function SortableTh<K extends string>({ label, sortKey, sort, onSort, fir
   align?: 'left' | 'right';
   title?: string;
   compact?: boolean;
+  stickyTop?: number;
 }) {
   const active = sort?.key === sortKey;
   const arrow = <span className={'text-[10px] ' + (active ? '' : 'invisible')}>{active && sort!.dir === 'asc' ? '▲' : '▼'}</span>;
   const arrowFirst = compact && align === 'right';
   return (
-    <th className={(compact ? 'px-3' : 'px-4') + ' py-2 font-medium ' + (align === 'right' ? 'text-right' : '')} title={title} aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+    <th className={(compact ? 'px-3' : 'px-4') + ' py-2 font-medium ' + (align === 'right' ? 'text-right' : '') + (stickyTop !== undefined ? ` ${STICKY_TH}` : '')}
+      style={stickyTop !== undefined ? { top: stickyTop } : undefined} title={title} aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
       <button
         type="button"
         onClick={() => onSort(sortKey, firstDir)}

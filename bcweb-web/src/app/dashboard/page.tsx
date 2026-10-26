@@ -65,7 +65,6 @@ import { useUrlParam } from '@/lib/useUrlParam';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
-import { PROCESS_STRIP } from '@/lib/features';
 import {
   ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
@@ -127,11 +126,14 @@ const GROUPS: Group[] = [
     tiles: [],
   },
   {
-    id: 'winners',
-    title: 'Winners',
-    blurb: 'Products pulling their weight',
-    icon: TrophyIcon,
-    link: '/segments',
+    // TODAY (owner, 2026-10-26) took Winners' place: "It will be the first screen I go to then take action". The screen is /process
+    // (the route kept its first name — on screen it is Today); Winners moved into Back Office. It replaced the quiet "Work in
+    // progress → Process" line under the menu (the PROCESS_STRIP switch, now gone).
+    id: 'today',
+    title: 'Today',
+    blurb: 'Prospects, new lines, clearance — what to act on',
+    icon: SunIcon,
+    link: '/process',
     tiles: [],
   },
   {
@@ -235,6 +237,14 @@ const GROUPS: Group[] = [
     // from Reports to Back Office when Facebook (the /social screen) joined Finance here (owner, 2026-09-24) — a holding pen: if
     // Email arrives, Facebook + Email become their own Marketing card. The id stays 'reports' so ?from=/?g= links keep working.
     tiles: [
+      {
+        // Winners moved here from its own dashboard card (owner, 2026-10-26), when Today took that place. Still opens Repricing's Status tab.
+        title: 'Winners',
+        subtitle: 'Products pulling their weight',
+        description: 'Winners, steady, new and losers per channel — with winners by brand.',
+        href: '/segments',
+        icon: TrophyIcon,
+      },
       {
         // Location and Inventory moved here from Operations (owner, 2026-09-26), beside what was Selling vs Sitting (now Slow, reached from Winners only).
         title: 'Location',
@@ -695,14 +705,6 @@ export default function DashboardPage() {
         </div>
       ))}
 
-      {/* The owner's work-in-progress strip (lib/features.ts → PROCESS_STRIP): one quiet line under the menu, so nothing in the
-          team's menu moves while the page is being settled. */}
-      {PROCESS_STRIP && (
-        <div className="mt-10 border-t border-slate-200 pt-3 text-xs text-slate-400">
-          Work in progress →{' '}
-          <Link href="/process" className="font-medium text-slate-500 hover:text-brand-700 hover:underline">Process</Link>
-        </div>
-      )}
 
     </AppShell>
   );
