@@ -440,6 +440,23 @@ export function getAllList() {
   );
 }
 
+// How many styles / SKUs are DUE on the Shopify / Amazon Pricing home lists — the dashboard's Daily pricing tile. Asks for one row
+// without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view).
+export function getPricingDueCounts() {
+  return Promise.all([
+    request<number>({ url: '/pricing-all-list', method: 'GET', params: { limit: 1 } }, (b) => Number(b.total) || 0),
+    request<number>({ url: '/amz-all-list', method: 'GET', params: { limit: 1 } }, (b) => Number(b.total) || 0),
+  ]).then(([shp, amz]) => {
+    if (shp.return_code === 'UNAUTHORIZED' || amz.return_code === 'UNAUTHORIZED') {
+      return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' } as ApiResult<{ shopify: number; amazon: number }>;
+    }
+    if (!(shp.success && amz.success)) {
+      return { success: false, return_code: shp.return_code || amz.return_code, error: shp.error || amz.error || 'Failed to load counts' } as ApiResult<{ shopify: number; amazon: number }>;
+    }
+    return { success: true, return_code: 'SUCCESS', data: { shopify: shp.data ?? 0, amazon: amz.data ?? 0 } } as ApiResult<{ shopify: number; amazon: number }>;
+  });
+}
+
 // Amazon Pricing's home list (2026-10-26) — every in-stock FBA SKU, parked included.
 export function getAmzAllList() {
   return request<{ total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(

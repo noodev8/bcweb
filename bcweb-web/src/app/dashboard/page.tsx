@@ -3,805 +3,380 @@
 =======================================================================================================================================
 Page: /dashboard
 =======================================================================================================================================
-Purpose: The platform module menu (CLAUDE.md). Guarded by AppShell.
+Purpose: The platform's front page. Guarded by AppShell.
 
-REBUILT 2026-09-22 (owner) into SEARCH + FIVE INTENT GROUPS THAT EXPAND IN PLACE, replacing four always-open bands of tiles.
+DAILY IS THE MAIN THING (owner, 2026-10-26: "i want daily to be the main thing so its clear what to work on ... i dont want
+duplicates"). The page reads top to bottom in order of importance:
 
-WHAT WAS WRONG WITH THE BANDS. Not the tile count — the HEADINGS. "Daily" was a when, "Stock & products" a what, "Pricing" a
-function, "Reports & marketing" two unrelated things bolted together. Four different kinds of label means you cannot predict which
-band a screen is filed under, so you re-read all seventeen tiles every visit and pick the one you recognise. The owner's words for
-it: "it feels like a bunch of cards and I'm still sifting through them to get what I need."
+  1. DAILY — the day's jobs, the one bold block on the page (a deep brand band). SIZED BY WEIGHT (owner, 2026-10-26: "sales can be
+     smaller"): the four jobs are equal tiles in one row; Sales is a compact figure in the band's header bar; AMZ loaded a narrow
+     slot. Each says how much is waiting, so it is clear where to start:
+       Sales      today's profit and units, all channels (GET /analytics-sales?window=today — the Sales screen's own headline).
+                  Moved here from the menu (owner, 2026-10-26: "add sales to daily").
+       Pricing    Shopify due · Amazon due — the counts of the in-stock lists' Due view (GET /pricing-all-list, /amz-all-list),
+                  each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
+       Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
+       New stuff  new SIZES not sold anywhere yet, of the styles added in 90 days — the Today screen's Unsold, from the same data
+                  (GET /process-overview, shared SWR key). Opens New Additions.
+       Prospects  finds on the list (same request). Opens Prospects.
+       AMZ loaded a PLACEHOLDER (owner, 2026-10-26: "add a placeholder called amz loaded") — no screen behind it yet, shown as
+                  "Coming soon" and not a link.
+     It replaced the /daily screen (that route now redirects here) and the Daily card that opened it — one home for the four.
+  2. SEARCH — the product lookup (components/ProductSearchBox), still one keystroke from the top.
+  3. EVERYTHING ELSE — the menu, EVERY SCREEN ONCE (Sales is in Daily, so not here). Until 2026-10-26 screens were deliberately repeated across "mindset" groups
+     and a second find-by-part row; the owner asked for no duplicates, so the two rows were merged into one set of groups, each
+     screen filed where it is used, and anything in Daily taken out of the menu. Repricing's Status tab is the old "Winners" tile
+     (both opened /segments), so that tile went. A card that is a single screen (Today) links straight there; the rest open
+     in place, one at a time, with their contents named on the closed card.
 
-THE AXIS IS NOW THE MINDSET YOU ARRIVED IN (owner: "it will depend where my mindset is when coming to the app"), not the part of the
-system a screen belongs to. Every heading below finishes the sentence "I came here to...". That one change is what makes the rest of
-the page work, and it is the thing not to undo: if a new screen doesn't obviously finish that sentence under some heading, the answer
-is a new heading, not a "Misc" group or a sixth kind of label.
-
-  A SCREEN MAY APPEAR UNDER MORE THAN ONE HEADING, deliberately (owner). Under the old bands a tile had one home and duplication was
-  a bug; with intent headings it is the entire point, because two mindsets genuinely look in two places for the same screen. Repricing
-  is a daily operations job AND a pricing one; Google Ads heads the Google card AND sits with the reports. So DON'T "de-duplicate" this page — a repeat
-  here is load-bearing. (It is cheap, too: a repeat is one line in one array.)
-
-EXPANDED IN PLACE, ONE AT A TIME, rather than each heading being its own sub-page. The whole problem is not knowing where a screen
-lives, so a WRONG GUESS HAS TO BE FREE: opening the wrong group and opening another costs two clicks and no navigation, where
-sub-pages would put a back-press on every wrong guess and punish exactly the uncertainty this page exists to absorb. One at a time
-because all five open is the seventeen-tile wall again with extra headings.
-Nothing is remembered between visits: arriving at a bare /dashboard opens it closed every time. A remembered group would be right for
-one mindset and quietly wrong for the other four, and re-opening is one click.
-
-  THE ONE EXCEPTION IS COMING BACK (owner, 2026-09-22 — "I went to Winners and then went back to the full reports; I'd prefer to go
-  back where I came from"). Every tile here links with `?from=<group id>`, and the page reads `?g=<group id>` on arrival and opens
-  that group. AppShell turns the first into the second: on a page opened from this menu the header LOGO points at /dashboard?g=…
-  (since 2026-09-24 there is no "← Dashboard" back link — the logo is the way home), and no back link to its own parent is shown,
-  so home retraces the step you took rather than climbing the route tree. Winners is the case that exposed it — you
-  reach it from this group in one hop, and its own parent is the reports index you never visited.
-  THIS IS NOT THE REMEMBERING THE PARAGRAPH ABOVE RULES OUT. It's explicit and it's in the URL: it lasts exactly one journey, is
-  visible, and is bookmarkable. Nothing is inferred about what you'd want NEXT time.
-
-SEARCH STAYS THE FRONT DOOR and is NOT one of the five. The day starts by looking a product up, Inventory answers it (with the
-hand-off menu to every other screen for that product — 2026-10-06, when the /product list was folded into it), and that path is
-already solved — so it sits above the groups, unboxed and hero-sized, and gets no heading of its own. THERE IS STILL NO
-INVENTORY TILE at top level for the reason the 2026-08-27 note gave: the search box IS that tile on this screen. (Inventory does
-appear inside Operations, where it is the browse-with-no-term case rather than the search.)
-
-SUBTITLES ON EVERY TILE (owner, 2026-09-22, with wording reserved — "I might push back on wording as we know what we mean with
-internal names at the moment"). The old compact tile was title-only with the description on hover, which is right for a menu you
-cross by heart; a tile you reach by OPENING A GROUP is one you were less sure about, and half these names are internal shorthand
-(Bclog; Birkenstock vs Birk Tracker; Location; Segments). The subtitle is four or five words, the full description stays on the
-tooltip. THE STRINGS ARE THE OWNER'S TO EDIT — they are all in the array below, one line each, and changing them is not a design
-decision.
-
-THE HEADER BAR DELIBERATELY DOES NOT MIRROR THESE FIVE (owner, 2026-09-22 — it was the obvious "consistent" answer and it is the
-wrong one). It is a fixed four (lib/headerNav.ts), because the two answer different
-questions. This page answers "where do I start?" and is allowed to make you think for a second; the bar
-answers "get me there, I'm mid-task", where the destination is already known and a mindset-pick would only add a click.
+COMING BACK. Every menu tile links with `?from=<group id>`; AppShell points the header logo at /dashboard?g=<group id>, and this page
+re-opens that group on arrival (read from the URL, nothing remembered between visits).
 =======================================================================================================================================
 */
 
-import { useState, ComponentType, SVGProps } from 'react';
+import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
+import { useApiQuery } from '@/lib/useApiQuery';
+import { getPricingDueCounts, getProcessOverview, getSalesReport } from '@/lib/api';
+import { isSold } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
-  ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
+  ShoppingCartIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
-  CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
-  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
+  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon,
+  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface Tile {
   title: string;
-  subtitle: string;      // the four-or-five-word line under the title; owner's wording to edit
-  description: string;   // the full sentence — not shown on the dashboard since the tooltip went (owner, 2026-09-24); kept as the
-                         // tile's reference wording
+  subtitle: string;      // the short line under the title; owner's wording to edit
+  description: string;   // the full sentence — the tile's reference wording (not shown on the dashboard)
   href: string;          // ignored when `action` is set
   icon: Icon;
-  // A card that DOES something instead of opening a screen. Only one so far — the provisional menu's Update Shopify (owner,
-  // 2026-09-24); see components/UpdateShopifyTile.tsx.
+  // A card that DOES something instead of opening a screen — Update Shopify (components/UpdateShopifyTile.tsx).
   action?: 'update-shopify';
 }
 
 interface Group {
-  id: string;
-  title: string;         // finishes "I came here to..."
-  blurb: string;         // one line under the heading, shown on the closed tile
+  id: string;            // also the ?from= / ?g= id — keep stable ('ops', 'reports' are linked from other screens)
+  title: string;
+  blurb: string;         // one line under the heading
   icon: Icon;
-  // 'main' = a double-width card that also lists what's inside it (owner, 2026-09-24: Operations and Back Office are the two most
-  // used). The extra width is spent on the contents, not on white space — naming what's in a group is the whole cure for the
-  // "where does that screen live?" problem this page exists to solve.
-  size?: 'main';
-  // A card that IS a screen rather than a group of them (owner, 2026-09-26: Sales and Winners promoted to cards of their own).
-  // Clicking goes straight there; `tiles` stays empty.
-  link?: string;
+  link?: string;         // a card that IS a screen: clicking goes straight there; `tiles` stays empty
   tiles: Tile[];
 }
 
 /* =====================================================================================================================================
-   THE MENU. All four groups and every tile, as data — a screen moves group, or gains a second home, by moving or copying one entry.
-   RE-ALIGNED 2026-09-24 (owner). Built first as a "provisional new menu" rendered UNDER the old one so the team's menu didn't move
-   while the shape was worked out, then promoted to be the only menu. The old five (Do today's work / See how we're doing / Set
-   prices / Feed the channels / Look after the catalogue) are in git history. What changed, on purpose:
-     - Shopify Pricing and Amazon Pricing have NO tile. Their homes (/pricing, /amz) are only a segment picker + a Find link, both
-       covered by Repricing and the product search; the lists and drills under them are still reached from Repricing.
-     - Birkenstock and Google each get a card of their own, pulled out of the reports.
-     - Back Office is a deliberate holding pen (reports + Finance + Facebook). If Email arrives, Facebook + Email become a Marketing
-       card.
-     - Update Shopify is the one tile that RUNS something rather than opening a screen (UpdateShopifyTile).
-   ORDER IS THE OWNER'S. Don't sort these alphabetically or by build order.
+   THE MENU — every screen ONCE (owner, 2026-10-26). Daily's screens (Shopify / Amazon Pricing, Amazon Order, New Additions,
+   Prospects) are not in it. ORDER IS THE OWNER'S; don't sort.
 ===================================================================================================================================== */
 const GROUPS: Group[] = [
   {
-    id: 'sales',
-    title: 'Sales',
-    blurb: 'Recent sales and profit',
-    icon: BanknotesIcon,
-    link: '/analytics/sales',
-    tiles: [],
-  },
-  {
-    // TODAY (owner, 2026-10-26) took Winners' place: "It will be the first screen I go to then take action". The screen is /process
-    // (the route kept its first name — on screen it is Today); Winners moved into Back Office. It replaced the quiet "Work in
-    // progress → Process" line under the menu (the PROCESS_STRIP switch, now gone).
-    id: 'today',
-    title: 'Today',
-    blurb: 'Prospects, new lines, clearance — what to act on',
-    icon: SunIcon,
-    link: '/process',
-    tiles: [],
+    // TODAY (owner, 2026-10-26): the map of the business in blocks — /process (the route kept its first name).
+    id: 'today', title: 'Today', blurb: 'New lines, unsold, winners and losers', icon: SunIcon, link: '/process', tiles: [],
   },
   {
     id: 'ops',
     title: 'Operations',
-    blurb: 'Stock in, orders out, supplier orders',
+    blurb: 'Stock in, orders out, buying',
     icon: TruckIcon,
-    size: 'main',
     tiles: [
-      {
-        title: 'Goods In',
-        subtitle: 'Book in a delivery',
-        description: "Book in what's arrived from a supplier and put it on the shelf.",
-        href: '/goods-in',
-        icon: InboxArrowDownIcon,
-      },
-      {
-        title: 'Customer Orders',
-        subtitle: 'Fulfil what customers bought',
-        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
-        href: '/customer-orders',
-        icon: UserGroupIcon,
-      },
-      {
-        title: 'Pick',
-        subtitle: 'What to take off the shelf',
-        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
-        href: '/pick',
-        icon: HandRaisedIcon,
-      },
-      {
-        title: 'Shop Sale',
-        subtitle: 'Record a sale in the shop',
-        description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.',
-        href: '/shop-sale',
-        icon: BuildingStorefrontIcon,
-      },
-      {
-        title: 'Amazon Order',
-        subtitle: 'What to buy in, what to send',
-        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
-        href: '/amazon-order',
-        icon: ClipboardDocumentListIcon,
-      },
-      {
-        // The local-shelf counterpart of Amazon Order, beside it (owner, 2026-09-26).
-        title: 'Shopify Order',
-        subtitle: 'What to buy in for the shelf',
-        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
-        href: '/shopify-order',
-        icon: ShoppingBagIcon,
-      },
-      {
-        // Renamed from "Order Status" here only (owner, 2026-09-24) — beside Customer Orders and Amazon Order, "Order Status" no
-        // longer said WHOSE order. Same screen; the live menu and the screen's own title still say Order Status.
-        title: 'Supplier Orders',
-        subtitle: 'What’s placed, what’s coming',
-        description: "Place supplier orders and chase what's on its way.",
-        href: '/order-status',
-        icon: ShoppingCartIcon,
-      },
-      {
-        title: 'Repricing',
-        subtitle: 'Selling and stuck lists',
-        description: 'See which segment needs attention next, and track who worked what.',
-        href: '/segments',
-        icon: Squares2X2Icon,
-      },
-      {
-        // Beside Repricing (owner, 2026-10-14): pick a group of styles and put it in a Shopify collection to get it selling.
-        title: 'Collections',
-        subtitle: 'Shopify collection tags',
-        description: 'Pick styles with the usual filters and put them in Shopify collections, or take them out — up to 3 per style.',
-        href: '/collections',
-        icon: RectangleStackIcon,
-      },
-      {
-        title: 'Update Shopify',
-        subtitle: 'Pull in new orders now',
-        description: 'Run the Shopify order update now rather than waiting for the scheduled run — the same as the Update orders button on Sales and Customer Orders.',
-        href: '/customer-orders',
-        icon: CloudArrowDownIcon,
-        action: 'update-shopify',
-      },
-      {
-        title: 'Update Amazon',
-        subtitle: 'Load Seller Central reports',
-        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
-        href: '/update-amazon',
-        icon: ArrowUpTrayIcon,
-      },
-    ],
-  },
-  {
-    id: 'reports',
-    title: 'Back Office',
-    blurb: 'The numbers, month end, the daily post',
-    icon: ChartBarIcon,
-    size: 'main',
-    // Started as a copy of the live menu's "See how we're doing" tiles (so it stands on its own when GROUPS is retired); renamed
-    // from Reports to Back Office when Facebook (the /social screen) joined Finance here (owner, 2026-09-24) — a holding pen: if
-    // Email arrives, Facebook + Email become their own Marketing card. The id stays 'reports' so ?from=/?g= links keep working.
-    tiles: [
-      {
-        // Winners moved here from its own dashboard card (owner, 2026-10-26), when Today took that place. Still opens Repricing's Status tab.
-        title: 'Winners',
-        subtitle: 'Products pulling their weight',
-        description: 'Winners, steady, new and losers per channel — with winners by brand.',
-        href: '/segments',
-        icon: TrophyIcon,
-      },
-      {
-        // Location and Inventory moved here from Operations (owner, 2026-09-26), beside what was Selling vs Sitting (now Slow, reached from Winners only).
-        title: 'Location',
-        subtitle: "What's on a rack",
-        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
-        href: '/locations',
-        icon: MapPinIcon,
-      },
-      {
-        title: 'Inventory',
-        subtitle: 'Browse without searching',
-        description: 'Browse and filter the whole catalogue when you have no term to search for.',
-        href: '/inventory',
-        icon: ArchiveBoxIcon,
-      },
-      {
-        // Moved here from the retired Business Flow strip (owner, 2026-09-26) — its only door for creating a product; beside New
-        // Products because adding one is when the owner checks it. Titled Add / Modify, the module's own name (owner, 2026-09-26).
-        title: 'Add / Modify',
-        subtitle: 'Edit or create a product',
-        description: 'Find an existing product to edit, or create a new one.',
-        href: '/products',
-        icon: TagIcon,
-      },
-      {
-        // The re-imaging work list (owner, 2026-10-13): price pushes wiped Shopify galleries from 2026-07-09 to 2026-10-13, so staff
-        // add pictures again on Add / Modify — beside it. docs/product-images-plan.md.
-        title: 'Missing Images',
-        subtitle: 'Products with one image',
-        description: 'Every Shopify product with a single image, Winners and in-stock first — open one to add its pictures.',
-        href: '/images-missing',
-        icon: PhotoIcon,
-      },
-      {
-        // Mining for NEW products on Amazon (owner, 2026-10-21) — the team's shared list of finds, beside New Products. Research only:
-        // no links from it to pricing or ordering.
-        title: 'Prospects',
-        subtitle: 'New products to look into',
-        description: 'Log finds from Amazon — rank, price, sellers — check them again later, share notes, then order or delete.',
-        href: '/prospects',
-        icon: LightBulbIcon,
-      },
-      {
-        title: 'New Products',
-        subtitle: 'Added in the last 30 days',
-        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
-        href: '/analytics/new-additions',
-        icon: SparklesIcon,
-      },
-      {
-        title: 'Price Changes',
-        subtitle: 'Recent moves, and what shifted',
-        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
-        href: '/analytics/price-changes',
-        icon: ArrowsRightLeftIcon,
-      },
-      {
-        // THE stock screen (owner, 2026-10-15: "current position, progress and something to act on"). Sell-through merged into it the
-        // same day — its tile is gone; its data tables open from the "in stock now" card.
-        title: 'Stock Position',
-        subtitle: 'Are we selling what we buy?',
-        description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold, and what to act on.',
-        href: '/analytics/stock-position',
-        icon: ScaleIcon,
-      },
-      {
-        // Its own door (owner, 2026-10-15: "access it easier without too many navigation clicks ... its own from back office").
-        // Also reached from the Sizes link on Slow.
-        title: 'Slow Sizes',
-        subtitle: "Sizes that haven't sold",
-        description: 'Every size held, by how long since it last sold — a summary by age, then click in for the sizes, oldest first.',
-        href: '/analytics/slow-sizes',
-        icon: ClockIcon,
-      },
-      {
-        title: 'Log',
-        subtitle: 'Who did what, and when',
-        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
-        href: '/analytics/activity-log',
-        icon: DocumentMagnifyingGlassIcon,
-      },
-      {
-        // Its own Back Office job (owner, 2026-09-25), done in a review mindset: which styles really sell all year, and every style
-        // marked "Can't get it". Season no longer affects any status (2026-09-26).
-        title: 'Seasons',
-        subtitle: 'Summer, winter or all year',
-        description: 'Each style’s year of sales month by month, against its season — spot the all-year sellers and re-season them in bulk.',
-        href: '/seasons',
-        icon: CalendarIcon,
-      },
-      {
-        // Price stickers for the shop floor (CM3) on an Avery L7160 sheet (owner, 2026-10-10). Back Office only — its
-        // second tile in the Orders card was removed (owner, 2026-10-12: "Back office is enough for it").
-        title: 'Shop Labels',
-        subtitle: 'Print shop price labels',
-        description: 'Pick styles and print their price labels for the shop — RRP, or RRP struck through with the website price.',
-        href: '/shop-labels',
-        icon: PrinterIcon,
-      },
-      {
-        title: 'Brands',
-        subtitle: 'What each brand earned',
-        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
-        href: '/brands',
-        icon: ChartPieIcon,
-      },
-      {
-        title: 'Finance',
-        subtitle: 'Close the month',
-        description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.',
-        href: '/finance',
-        icon: CalculatorIcon,
-      },
-      {
-        title: 'Facebook',
-        subtitle: 'Social post',
-        description: 'Queue and publish the daily Facebook post — graphic, caption, link, scheduled.',
-        href: '/social',
-        icon: MegaphoneIcon,
-      },
-    ],
-  },
-];
-
-/* =====================================================================================================================================
-   FIND-BY-PART CARDS (owner, 2026-09-26). A second row BELOW the main menu, left exactly as it was. Each card gathers every screen for
-   one part of the business so it can be found by what it is rather than by mindset. Every tile here ALSO lives in the main menu (or
-   was deliberately left off it) — the repeats are the point, don't de-duplicate.
-===================================================================================================================================== */
-const PART_GROUPS: Group[] = [
-  {
-    id: 'packing',
-    title: 'Packing',
-    blurb: 'Book it in, pick it, send it',
-    icon: ArchiveBoxIcon,
-    tiles: [
-      {
-        title: 'Goods In',
-        subtitle: 'Book in a delivery',
-        description: "Book in what's arrived from a supplier and put it on the shelf.",
-        href: '/goods-in',
-        icon: InboxArrowDownIcon,
-      },
-      {
-        title: 'Pick',
-        subtitle: 'What to take off the shelf',
-        description: "What has to come off a shelf — customer picks, and stock to gather for Amazon.",
-        href: '/pick',
-        icon: HandRaisedIcon,
-      },
-      {
-        title: 'Customer Orders',
-        subtitle: 'Fulfil what customers bought',
-        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
-        href: '/customer-orders',
-        icon: UserGroupIcon,
-      },
-      {
-        title: 'AMZ Shipment',
-        subtitle: 'Pack the Amazon boxes',
-        description: 'Pack what has been gathered on C3-Amazon into boxes for the next FBA shipment.',
-        href: '/amz-shipment',
-        icon: CubeIcon,
-      },
-    ],
-  },
-  {
-    id: 'orders',
-    title: 'Orders',
-    blurb: 'What to buy in, and what’s coming',
-    icon: ShoppingCartIcon,
-    tiles: [
-      {
-        title: 'Customer Orders',
-        subtitle: 'Fulfil what customers bought',
-        description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.",
-        href: '/customer-orders',
-        icon: UserGroupIcon,
-      },
-      {
-        // Second home (owner, 2026-10-09) — also in Operations.
-        title: 'Shop Sale',
-        subtitle: 'Record a sale in the shop',
-        description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.',
-        href: '/shop-sale',
-        icon: BuildingStorefrontIcon,
-      },
-      {
-        title: 'Amazon Order',
-        subtitle: 'What to buy in, what to send',
-        description: 'Work out what Amazon needs — what to buy in, and what to send from the local shelf.',
-        href: '/amazon-order',
-        icon: ClipboardDocumentListIcon,
-      },
-      {
-        title: 'Shopify Order',
-        subtitle: 'What to buy in for the shelf',
-        description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.',
-        href: '/shopify-order',
-        icon: ShoppingBagIcon,
-      },
-      {
-        title: 'Supplier Orders',
-        subtitle: 'What’s placed, what’s coming',
-        description: "Place supplier orders and chase what's on its way.",
-        href: '/order-status',
-        icon: ShoppingCartIcon,
-      },
+      { title: 'Goods In', subtitle: 'Book in a delivery', description: "Book in what's arrived from a supplier and put it on the shelf.", href: '/goods-in', icon: InboxArrowDownIcon },
+      { title: 'Customer Orders', subtitle: 'Fulfil what customers bought', description: "Fulfil what customers have bought — what's picked, what's short, what's waiting.", href: '/customer-orders', icon: UserGroupIcon },
+      { title: 'Pick', subtitle: 'What to take off the shelf', description: 'What has to come off a shelf — customer picks, and stock to gather for Amazon.', href: '/pick', icon: HandRaisedIcon },
+      { title: 'AMZ Shipment', subtitle: 'Pack the Amazon boxes', description: 'Pack what has been gathered on C3-Amazon into boxes for the next FBA shipment.', href: '/amz-shipment', icon: CubeIcon },
+      { title: 'Shop Sale', subtitle: 'Record a sale in the shop', description: 'Record anything sold in the shop (CM3) — a product, in stock or not, or a misc item.', href: '/shop-sale', icon: BuildingStorefrontIcon },
+      { title: 'Shopify Order', subtitle: 'What to buy in for the shelf', description: 'Read each style’s size curve — shelf stock, on order, Shopify sales — and order the sizes the shelf needs.', href: '/shopify-order', icon: ShoppingBagIcon },
+      // Renamed from "Order Status" on the menu (owner, 2026-09-24) — beside Customer Orders, it has to say WHOSE order.
+      { title: 'Supplier Orders', subtitle: 'What’s placed, what’s coming', description: "Place supplier orders and chase what's on its way.", href: '/order-status', icon: ShoppingCartIcon },
     ],
   },
   {
     id: 'pricing',
     title: 'Pricing',
-    blurb: 'Every pricing screen in one place',
+    blurb: 'Groups, rules and price checks',
     icon: TagIcon,
     tiles: [
-      {
-        title: 'Repricing',
-        subtitle: 'Selling and stuck lists',
-        description: 'See which segment needs attention next, and track who worked what.',
-        href: '/segments',
-        icon: Squares2X2Icon,
-      },
-      {
-        // Here only (owner, 2026-10-17). It was a top-level card for a day — a 7th card broke the main row's 6 columns.
-        title: 'Pricing Slider',
-        subtitle: 'Step prices down',
-        description: 'Groups whose price steps down by a % of RRP every few days until each product sells, then holds.',
-        href: '/slider',
-        icon: AdjustmentsHorizontalIcon,
-      },
-      {
-        title: 'Shopify Price',
-        subtitle: 'Shopify pricing home',
-        description: 'Shopify pricing — pick a segment or find a style.',
-        href: '/pricing',
-        icon: ShoppingBagIcon,
-      },
-      {
-        title: 'Amazon Price',
-        subtitle: 'Amazon pricing home',
-        description: 'Amazon pricing — pick a segment or find a SKU.',
-        href: '/amz',
-        icon: ShoppingCartIcon,
-      },
-      {
-        title: 'Shopify vs Amazon',
-        subtitle: 'Shopify never under Amazon',
-        description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread. Lift Shopify to Amazon’s highest price, one style or ticked in bulk.',
-        href: '/pricing/vs-amazon',
-        icon: ScaleIcon,
-      },
-      {
-        // Here, not on the Amazon Pricing home (owner, 2026-10-22: "under pricing for now - not through Amazon").
-        title: 'Fast sellers',
-        subtitle: 'Amazon sizes selling fast',
-        description: 'Every Amazon size sold in 30 days, fastest after being priced or shipped first — room to push the price up.',
-        href: '/amz/fast',
-        icon: BoltIcon,
-      },
-      {
-        title: 'Price Changes',
-        subtitle: 'Recent moves, and what shifted',
-        description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user.',
-        href: '/analytics/price-changes',
-        icon: ArrowsRightLeftIcon,
-      },
-    ],
-  },
-  {
-    id: 'data',
-    title: 'Data',
-    blurb: 'Pull in orders and reports',
-    icon: CloudArrowDownIcon,
-    tiles: [
-      {
-        title: 'Update Shopify',
-        subtitle: 'Pull in new orders now',
-        description: 'Run the Shopify order update now rather than waiting for the scheduled run — the same as the Update orders button on Sales and Customer Orders.',
-        href: '/customer-orders',
-        icon: CloudArrowDownIcon,
-        action: 'update-shopify',
-      },
-      {
-        title: 'Update Amazon',
-        subtitle: 'Load Seller Central reports',
-        description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.',
-        href: '/update-amazon',
-        icon: ArrowUpTrayIcon,
-      },
-      {
-        title: 'Log',
-        subtitle: 'Who did what, and when',
-        description: 'Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person.',
-        href: '/analytics/activity-log',
-        icon: DocumentMagnifyingGlassIcon,
-      },
+      { title: 'Repricing', subtitle: 'Status, segment and campaign lists', description: 'Winners, steady, new and losers per channel, and the segment and campaign lists.', href: '/segments', icon: Squares2X2Icon },
+      { title: 'Pricing Slider', subtitle: 'Step prices down', description: 'Groups whose price steps down by a % of RRP every few days until each product sells, then holds.', href: '/slider', icon: AdjustmentsHorizontalIcon },
+      { title: 'Shopify vs Amazon', subtitle: 'Shopify never under Amazon', description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread.', href: '/pricing/vs-amazon', icon: ScaleIcon },
+      { title: 'Fast sellers', subtitle: 'Amazon sizes selling fast', description: 'Every Amazon size sold in 30 days, fastest first — room to push the price up.', href: '/amz/fast', icon: BoltIcon },
+      { title: 'Collections', subtitle: 'Shopify collection tags', description: 'Put styles in Shopify collections, or take them out — up to 3 per style.', href: '/collections', icon: RectangleStackIcon },
+      { title: 'Price Changes', subtitle: 'Recent moves, and what shifted', description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since.', href: '/analytics/price-changes', icon: ArrowsRightLeftIcon },
     ],
   },
   {
     id: 'products',
-    title: 'Products',
-    blurb: 'The range — what’s in it, how it’s doing',
-    icon: CubeIcon,
+    title: 'Products & stock',
+    blurb: 'The range, where it sits, how it moves',
+    icon: ArchiveBoxIcon,
     tiles: [
-      {
-        title: 'Winners',
-        subtitle: 'Products pulling their weight',
-        description: 'Winners, steady, new and losers per channel — with winners by brand.',
-        href: '/segments',
-        icon: TrophyIcon,
-      },
-      {
-        title: 'Add / Modify',
-        subtitle: 'Edit or create a product',
-        description: 'Find an existing product to edit, or create a new one.',
-        href: '/products',
-        icon: TagIcon,
-      },
-      {
-        title: 'New Products',
-        subtitle: 'Added in the last 30 days',
-        description: 'Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit).',
-        href: '/analytics/new-additions',
-        icon: SparklesIcon,
-      },
-      {
-        title: 'Brands',
-        subtitle: 'What each brand earned',
-        description: 'What each brand earned — revenue, profit and margin over the last year or six months, against the window before it.',
-        href: '/brands',
-        icon: ChartPieIcon,
-      },
-      {
-        title: 'Seasons',
-        subtitle: 'Summer, winter or all year',
-        description: 'Each style’s year of sales month by month, against its season — spot the all-year sellers and re-season them in bulk.',
-        href: '/seasons',
-        icon: CalendarIcon,
-      },
-      // Selling vs Sitting was here and in Back Office — removed 2026-10-12 (owner: "Remove the menu option for Selling v Sitting
-      // completely"); renamed Slow, reached only from the Slow card on Winners.
-    ],
-  },
-  {
-    id: 'location',
-    title: 'Location',
-    blurb: 'Where stock sits, and what’s held',
-    icon: MapPinIcon,
-    tiles: [
-      {
-        title: 'Inventory',
-        subtitle: 'Browse without searching',
-        description: 'Browse and filter the whole catalogue when you have no term to search for.',
-        href: '/inventory',
-        icon: ArchiveBoxIcon,
-      },
-      {
-        title: 'Location',
-        subtitle: "What's on a rack",
-        description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.",
-        href: '/locations',
-        icon: MapPinIcon,
-      },
+      { title: 'Inventory', subtitle: 'Browse without searching', description: 'Browse and filter the whole catalogue when you have no term to search for.', href: '/inventory', icon: ArchiveBoxIcon },
+      { title: 'Location', subtitle: "What's on a rack", description: "Work from the shelf, not the product — what's on a rack, and moving stock on and off it.", href: '/locations', icon: MapPinIcon },
+      { title: 'Add / Modify', subtitle: 'Edit or create a product', description: 'Find an existing product to edit, or create a new one.', href: '/products', icon: TagIcon },
+      { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
+      { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
+      { title: 'Slow Sizes', subtitle: "Sizes that haven't sold", description: 'Every size held, by how long since it last sold.', href: '/analytics/slow-sizes', icon: ClockIcon },
+      { title: 'Seasons', subtitle: 'Summer, winter or all year', description: 'Each style’s year of sales against its season — re-season in bulk.', href: '/seasons', icon: CalendarIcon },
+      { title: 'Brands', subtitle: 'What each brand earned', description: 'Revenue, profit and margin per brand over the last year or six months.', href: '/brands', icon: ChartPieIcon },
+      { title: 'Shop Labels', subtitle: 'Print shop price labels', description: 'Pick styles and print their price labels for the shop.', href: '/shop-labels', icon: PrinterIcon },
     ],
   },
   {
     id: 'birk',
     title: 'Birkenstock',
-    blurb: 'Order it, track it, keep sizes on the shelf',
+    blurb: 'Order it, track it, keep sizes in',
     icon: CalendarDaysIcon,
-    // Moved out of Reports (owner, 2026-09-24): the Birk screens are one job — next season's order, where it's got to, and
-    // whether the core sizes are in — so they sit together rather than scattered across reports and catalogue.
     tiles: [
-      {
-        title: 'Birk Order Book',
-        subtitle: 'Next season’s order sheet',
-        description: 'Sold in 365 days against what we hold, size by size — what to put on the next order.',
-        href: '/birkenstock',
-        icon: CalendarDaysIcon,
-      },
-      {
-        title: 'Birk Tracker',
-        subtitle: 'Placed to delivered',
-        description: 'Track the Birkenstock order from placed to landed — requested, invoiced, arrived.',
-        href: '/birk-tracker',
-        icon: TruckIcon,
-      },
-      {
-        title: 'Birk Availability',
-        subtitle: 'Size range',
-        description: 'How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge.',
-        href: '/analytics/birk-availability',
-        icon: PresentationChartLineIcon,
-      },
+      { title: 'Birk Order Book', subtitle: 'Next season’s order sheet', description: 'Sold in 365 days against what we hold, size by size.', href: '/birkenstock', icon: CalendarDaysIcon },
+      { title: 'Birk Tracker', subtitle: 'Placed to delivered', description: 'Track the Birkenstock order from placed to landed.', href: '/birk-tracker', icon: TruckIcon },
+      { title: 'Birk Availability', subtitle: 'Size range', description: 'How many Birkenstock styles are core-size complete in stock right now.', href: '/analytics/birk-availability', icon: PresentationChartLineIcon },
     ],
   },
   {
     id: 'google',
     title: 'Google',
-    blurb: 'Campaigns, and what the spend is earning',
+    blurb: 'Campaigns, and what the spend earns',
     icon: CursorArrowRaysIcon,
-    // Google Ads plus the two ad reports moved out of Reports (owner, 2026-09-24) — the campaigns and the read on whether the
-    // spend is paying sit together.
     tiles: [
-      {
-        title: 'Google Ads',
-        subtitle: 'Shopping campaigns and spend',
-        description: 'Sort products into Shopping campaigns — spend, profit after ad spend, and what each campaign is doing.',
-        href: '/google-ads',
-        icon: CursorArrowRaysIcon,
-      },
-      {
-        title: 'Ad Efficiency',
-        subtitle: 'What survives Google spend',
-        description: "How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept.",
-        href: '/analytics/ad-efficiency',
-        icon: ScaleIcon,
-      },
-      {
-        title: 'Ad Daily',
-        subtitle: 'Spend vs sales, day by day',
-        description: 'Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner’s read on whether a budget change is working.',
-        href: '/analytics/ad-daily',
-        icon: SunIcon,
-      },
+      { title: 'Google Ads', subtitle: 'Shopping campaigns and spend', description: 'Sort products into Shopping campaigns — spend, profit after ad spend.', href: '/google-ads', icon: CursorArrowRaysIcon },
+      { title: 'Ad Efficiency', subtitle: 'What survives Google spend', description: "How much of each month's Shopify profit survived Google ad spend.", href: '/analytics/ad-efficiency', icon: ScaleIcon },
+      { title: 'Ad Daily', subtitle: 'Spend vs sales, day by day', description: 'Google spend against Shopify sales, day by day over a fortnight.', href: '/analytics/ad-daily', icon: SunIcon },
+    ],
+  },
+  {
+    // id stays 'reports' (it was Back Office's id) so existing ?from=reports / ?g=reports links still open a group.
+    id: 'reports',
+    title: 'Admin',
+    blurb: 'Data updates, month end, the daily post',
+    icon: Cog6ToothIcon,
+    tiles: [
+      { title: 'Update Shopify', subtitle: 'Pull in new orders now', description: 'Run the Shopify order update now rather than waiting for the scheduled run.', href: '/customer-orders', icon: CloudArrowDownIcon, action: 'update-shopify' },
+      { title: 'Update Amazon', subtitle: 'Load Seller Central reports', description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.', href: '/update-amazon', icon: ArrowUpTrayIcon },
+      { title: 'Finance', subtitle: 'Close the month', description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.', href: '/finance', icon: CalculatorIcon },
+      { title: 'Facebook', subtitle: 'Social post', description: 'Queue and publish the daily Facebook post.', href: '/social', icon: MegaphoneIcon },
+      { title: 'Log', subtitle: 'Who did what, and when', description: 'Every Goods In, stock adjustment, order sync and import. Search and filter by section or person.', href: '/analytics/activity-log', icon: DocumentMagnifyingGlassIcon },
     ],
   },
 ];
 
 export default function DashboardPage() {
-  // Re-open the group you left from, when you came back through a back link carrying ?g=. Read from window.location rather than
-  // useSearchParams on purpose: this is a static page, and useSearchParams would force the whole menu behind a Suspense boundary to
-  // build — a real cost for something only the return journey uses. An unknown id just leaves the page closed.
+  // Re-open the group you left from (?g=, see the header). An unknown id just leaves the menu closed.
   const g = useUrlParam('g');
-  const urlGroup = g && [...GROUPS, ...PART_GROUPS].some((x) => x.id === g && !x.link) ? g : null;
-
-  // The group the operator clicked open or shut. undefined = no click yet, so the ?g= group (or nothing) shows; null = every group
-  // closed, which is how a bare /dashboard opens (see the header note on not remembering).
+  const urlGroup = g && GROUPS.some((x) => x.id === g && !x.link) ? g : null;
+  // undefined = no click yet, so the ?g= group (or nothing) shows; null = every group closed.
   const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const openId = chosenId === undefined ? urlGroup : chosenId;
 
   return (
     <AppShell>
-      {/* The opener. No heading above it — a search box explains itself, and a "Modules" title here would push the one thing the
-          operator came to use below the fold on a laptop. */}
-      <div className="mb-7">
+      <Daily />
+
+      <div className="mb-8 mt-8">
         <ProductSearchBox />
       </div>
 
-      {/* DAILY — its own full-width row, the top one (owner, 2026-10-26). The four screens of the daily round live on /daily
-          (app/daily/page.tsx); this card names them so you know what's behind it. */}
-      <Link
-        href="/daily"
-        className="mb-3 flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-500 hover:shadow-md"
-      >
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-          <CalendarDaysIcon className="h-5 w-5" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-base font-semibold leading-snug text-slate-900">Daily</span>
-          <span className="block text-xs leading-snug text-slate-500">Pricing · Ordering · New Stuff · Prospects</span>
-        </span>
-        <ChevronRightIcon className="ml-auto h-5 w-5 shrink-0 text-slate-300" />
-      </Link>
-
-      {/* Six columns at lg so the menu is ONE row: Sales and Today take one each, Operations and Back Office two each. */}
-      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
-
-      {/* Find-by-part row, below the main menu. Shares the one open-group state, so opening a card here closes one above. */}
-      {/* Rendered four cards per GroupRow so each row's panel opens directly under that row, not below all of them. */}
+      <h2 className="mb-3 text-sm font-semibold text-slate-500">Everything else</h2>
+      {/* Two rows of four; each row's panel opens directly under it. */}
       {[0, 4].map((i) => (
-        <div key={i} className={i === 0 ? 'mt-6' : 'mt-3'}>
-          <GroupRow groups={PART_GROUPS.slice(i, i + 4)} openId={openId} onToggle={setOpenId} cols="lg:grid-cols-4" />
+        <div key={i} className={i === 0 ? '' : 'mt-3'}>
+          <GroupRow groups={GROUPS.slice(i, i + 4)} openId={openId} onToggle={setOpenId} />
         </div>
       ))}
-
-
     </AppShell>
   );
 }
 
-// The row of group headings with its expand-in-place panel below. (A separate component because the menu was briefly rendered twice
-// — old and provisional — during the 2026-09-24 re-alignment; kept, it's a clean split of state from layout.)
-function GroupRow({ groups, openId, onToggle, cols = 'lg:grid-cols-6' }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void; cols?: string }) {
+/* =====================================================================================================================================
+   DAILY — the hero. A deep brand band: Sales as a compact figure in its header bar, then the four jobs as equal white tiles and a
+   narrow AMZ loaded placeholder, each with how much is waiting. Counts load on their own
+   (the menu never waits for them); a count that fails shows a dash, never an error over the page.
+===================================================================================================================================== */
+function Daily() {
+  const due = useApiQuery('dashboard-pricing-due', () => getPricingDueCounts());
+  // Shared with the Today screen (same key), so whichever opens first fills the other's cache.
+  const overview = useApiQuery('process-overview', () => getProcessOverview());
+  const unsold = overview.data ? overview.data.rows.filter((r) => !isSold(r)).length : null;
+  const newStyles = overview.data ? overview.data.styles : null;
+  const prospects = overview.data ? overview.data.prospects : null;
+  // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
+  const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
+  const today = sales.data?.summary ?? null;
+
+  return (
+    <section aria-labelledby="daily-heading" className="rounded-2xl bg-brand-700 p-5 shadow-lg sm:p-6">
+      {/* Header bar: the title, and SALES as a compact figure — a glance, not a job (owner, 2026-10-26: "sales can be smaller"). */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <div className="flex items-baseline gap-4">
+          <h1 id="daily-heading" className="text-2xl font-semibold tracking-tight text-white">Daily</h1>
+          <p className="text-sm text-brand-100">The numbers are what&apos;s waiting.</p>
+        </div>
+        <Link
+          href="/analytics/sales"
+          className="inline-flex items-baseline gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-brand-100 outline-none ring-1 ring-white/20 transition hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <span className="font-medium text-white">Sales today</span>
+          <span className="text-lg font-semibold tabular-nums text-white">{today ? gbp(today.profit) : '–'}</span>
+          <span>profit{today ? ` · ${today.unitsNet} units` : ''}</span>
+          <ChevronRightIcon className="h-4 w-4 self-center text-white/60" />
+        </Link>
+      </div>
+
+      {/* THE JOBS — four equal tiles, then a narrow slot for the AMZ loaded placeholder. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,0.55fr)]">
+        {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
+        <div className="flex flex-col rounded-xl bg-white p-4">
+          <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices due a review" />
+          <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+            <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="styles due" />
+            <CountLink href="/amz" label="Amazon" n={due.data?.amazon ?? null} unit="sizes due" />
+          </div>
+        </div>
+
+        <DailyLink href="/amazon-order" icon={ClipboardDocumentListIcon} title="Ordering" sub="What Amazon needs — buy in or send">
+          <span className="text-sm font-medium text-brand-700">Open Amazon Order</span>
+        </DailyLink>
+
+        <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newStyles === null ? 'Styles added in 90 days' : `${newStyles} styles added in 90 days`}>
+          <Big n={unsold} unit="new sizes not sold yet" />
+        </DailyLink>
+
+        <DailyLink href="/prospects" icon={LightBulbIcon} title="Prospects" sub="New products to look into">
+          <Big n={prospects} unit="on the list" />
+        </DailyLink>
+
+        {/* AMZ LOADED — a placeholder (owner, 2026-10-26). Not a link until there is a screen behind it. */}
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/30 p-4 text-center" aria-disabled="true">
+          <InboxStackIcon className="mb-1 h-5 w-5 text-white/70" />
+          <span className="text-sm font-semibold text-white">AMZ loaded</span>
+          <span className="mt-0.5 text-xs text-brand-100">Coming soon</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TileHead({ icon: I, title, sub }: { icon: Icon; title: string; sub: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+        <I className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold leading-snug text-slate-900">{title}</h2>
+        <p className="text-xs leading-snug text-slate-500">{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+// A whole-tile link (Ordering, New stuff, Prospects).
+function DailyLink({ href, icon, title, sub, children }: { href: string; icon: Icon; title: string; sub: string; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="flex flex-col rounded-xl bg-white p-4 outline-none ring-brand-100 transition hover:ring-4 focus-visible:ring-4"
+    >
+      <TileHead icon={icon} title={title} sub={sub} />
+      <div className="mt-auto pt-4">{children}</div>
+    </Link>
+  );
+}
+
+function gbp(v: number) {
+  return `${v < 0 ? '-' : ''}£${Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// The big figure on a tile. null = still loading or failed — a dash, never a 0 that isn't true.
+function Big({ n, unit }: { n: number | string | null; unit: string }) {
+  return (
+    <div>
+      <span className="text-4xl font-semibold tabular-nums leading-none text-slate-900">{n === null ? '–' : n}</span>
+      <span className="ml-2 text-sm text-slate-500">{unit}</span>
+    </div>
+  );
+}
+
+// One channel's count inside the Pricing tile — its own link.
+function CountLink({ href, label, n, unit }: { href: string; label: string; n: number | null; unit: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-lg border border-slate-200 px-3 py-2 outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+    >
+      <span className="block text-xs font-medium text-slate-500">{label}</span>
+      <span className="block text-3xl font-semibold tabular-nums leading-tight text-slate-900">{n === null ? '–' : n}</span>
+      <span className="block text-xs text-slate-500">{unit}</span>
+    </Link>
+  );
+}
+
+// A row of menu cards with its expand-in-place panel below. Group cards name their contents, so you can see where a screen lives
+// without opening anything.
+function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void }) {
   const open = groups.find((g) => g.id === openId) ?? null;
+  const card = 'flex h-full flex-col rounded-xl border bg-white p-4 text-left transition ';
   return (
     <>
-      {/* THE HEADINGS. Six columns at lg: the two 'main' cards take two each, the rest one — so Operations and Back Office read
-          first and biggest, Birkenstock and Google trail. Below lg, main cards go full width and the small ones pair up. */}
-      <div className={'grid grid-cols-1 gap-3 sm:grid-cols-2 ' + cols}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {groups.map((g) => {
-          const isOpen = g.id === openId;
           if (g.link) {
             return (
-              <Link
-                key={g.id}
-                // ?from= hides the screen's own back link to its parent (Reports) — home via the logo lands on the dashboard.
-                href={g.link + '?from=' + g.id}
-                className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-500 hover:shadow-md"
-              >
-                <span className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-                  <g.icon className="h-5 w-5" />
-                </span>
-                <h2 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h2>
-                <p className="mt-1 text-xs leading-snug text-slate-500">{g.blurb}</p>
+              <Link key={g.id} href={g.link + '?from=' + g.id} className={card + 'border-slate-200 shadow-sm hover:border-brand-500 hover:shadow-md'}>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                    <g.icon className="h-4 w-4" />
+                  </span>
+                  <h3 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h3>
+                  <ChevronRightIcon className="ml-auto h-4 w-4 text-slate-400" />
+                </div>
+                <p className="mt-2 text-xs leading-snug text-slate-500">{g.blurb}</p>
               </Link>
             );
           }
+          const isOpen = g.id === openId;
           return (
             <button
               key={g.id}
               type="button"
-              // Clicking the open group closes it — so the same click that opened it puts the page back, with no close affordance
-              // to hunt for.
+              // Clicking the open group closes it — the same click puts the page back.
               onClick={() => onToggle(isOpen ? null : g.id)}
               aria-expanded={isOpen}
               aria-controls={'group-panel-' + g.id}
-              className={
-                'flex h-full flex-col rounded-xl border p-4 text-left transition ' +
-                (g.size === 'main' ? 'sm:col-span-2 ' : '') +
-                (isOpen
-                  ? 'border-brand-500 bg-white shadow-md ring-1 ring-brand-500'
-                  : 'border-slate-200 bg-white shadow-sm hover:border-brand-500 hover:shadow-md')
-              }
+              className={card + (isOpen ? 'border-brand-500 shadow-md ring-1 ring-brand-500' : 'border-slate-200 shadow-sm hover:border-brand-500 hover:shadow-md')}
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className={'inline-flex h-9 w-9 items-center justify-center rounded-lg ' + (isOpen ? 'bg-brand-500 text-white' : 'bg-brand-50 text-brand-600')}>
-                  <g.icon className="h-5 w-5" />
+              <div className="flex items-center gap-3">
+                <span className={'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ' + (isOpen ? 'bg-brand-500 text-white' : 'bg-brand-50 text-brand-600')}>
+                  <g.icon className="h-4 w-4" />
                 </span>
-                <ChevronDownIcon className={'h-4 w-4 text-slate-400 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
+                <h3 className="text-sm font-semibold leading-snug text-slate-900">{g.title}</h3>
+                <ChevronDownIcon className={'ml-auto h-4 w-4 text-slate-400 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
               </div>
-              <h2 className={'font-semibold leading-snug text-slate-900 ' + (g.size === 'main' ? 'text-base' : 'text-sm')}>{g.title}</h2>
-              <p className="mt-1 text-xs leading-snug text-slate-500">{g.blurb}</p>
-              {g.size === 'main' && (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">{g.tiles.map((t) => t.title).join(' · ')}</p>
-              )}
+              <p className="mt-2 text-xs leading-snug text-slate-500">{g.blurb}</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">{g.tiles.map((t) => t.title).join(', ')}</p>
             </button>
           );
         })}
       </div>
 
-      {/* THE PANEL — one, below the whole row rather than under the column that was clicked. Under the column it would be a narrow
-          strip that moves left and right as you change your mind; full width it is the same shape every time, and the tiles get the
-          four-wide grid the old bands used. The darker slate-200 fill is the old band panel, kept for the same reason: it encloses
-          the tiles so nothing has to be inferred about what belongs to what. */}
+      {/* THE PANEL — one, full width below the row. */}
       {open && (
         <section id={'group-panel-' + open.id} className="mt-3 rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {open.tiles.map((t) => t.action === 'update-shopify' ? (
               <UpdateShopifyTile key={open.id + t.title} title={t.title} subtitle={t.subtitle} />
             ) : (
-              // key includes the group id because a tile can appear in two groups — title alone is not unique across the menu.
-              // `?from=` is the return ticket AppShell reads to build the back link (see the header note). Appended rather than
-              // built into the data so the hrefs stay plain, and with a `?`/`&` check in case a tile ever carries its own query.
+              // `?from=` is the return ticket AppShell reads (see the header).
               <ModuleTile
-                key={open.id + t.href + t.title}
+                key={open.id + t.href}
                 title={t.title}
                 subtitle={t.subtitle}
                 description={t.description}
