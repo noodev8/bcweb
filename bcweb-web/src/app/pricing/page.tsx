@@ -1,79 +1,16 @@
-'use client';
 /*
 =======================================================================================================================================
 Page: /pricing  (Shopify Pricing module home)
 =======================================================================================================================================
-Purpose: Stage 0 — the segment picker (CLAUDE.md). Lists segments from GET /pricing-segments with a style count each; clicking one
-         goes to its triage list. Also a "Find a product" entry for the direct-search path (CLAUDE.md -> /pricing/find).
+Since 2026-10-26 the home is ONE LIST of every in-stock Shopify style with the Due switch, not a segment picker (owner: "shouldn't go
+off segments — just be a list of all, with a due and not due toggle"). This route only redirects to it: /pricing/all?by=all, the
+usual list page (app/pricing/[segment]) reading GET /pricing-all-list. The old home's Find and Shopify vs Amazon entries sit top right
+on that list. The segment picker is in git history; segments are still reached from Repricing.
 =======================================================================================================================================
 */
 
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { MagnifyingGlassIcon, ChevronRightIcon, ScaleIcon } from '@heroicons/react/24/outline';
-import AppShell from '@/components/AppShell';
-import { getSegments, Segment } from '@/lib/api';
-import { useApiQuery } from '@/lib/useApiQuery';
-
-// Stable "nothing loaded yet" identity, so derived memos aren't invalidated on every render.
-const NO_ROWS: Segment[] = [];
+import { redirect } from 'next/navigation';
 
 export default function PricingHome() {
-  const router = useRouter();
-
-  // Single on-mount fetch. UNAUTHORIZED -> logout is handled inside useApiQuery, so it isn't repeated here (API-RULES:
-  // the caller decides, and for this whole module the decision is the same one).
-  const { data, error: loadError, isLoading: loading } = useApiQuery(
-    ['shp-segments'],
-    () => getSegments(),
-  );
-  const segments: Segment[] = data ?? NO_ROWS;
-  const error = loadError?.message ?? null;
-
-  return (
-    <AppShell>
-      {/* Direct product search entry. */}
-      <Link
-        href="/pricing/find"
-        className="mb-6 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:border-brand-500"
-      >
-        <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
-        <span className="font-medium text-slate-700">Find a product</span>
-        <span className="text-slate-400">— search by product name or code</span>
-      </Link>
-
-      {/* Shopify vs Amazon (owner, 2026-10-07) — styles live on Amazon, Shopify price against Amazon's per-size spread. */}
-      <Link
-        href="/pricing/vs-amazon"
-        className="-mt-4 mb-6 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:border-brand-500"
-      >
-        <ScaleIcon className="h-5 w-5 text-slate-400" />
-        <span className="font-medium text-slate-700">Shopify vs Amazon</span>
-        <span className="text-slate-400">— keep Shopify at or above Amazon&apos;s highest price</span>
-      </Link>
-
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Segments</h2>
-
-      {loading && <p className="text-sm text-slate-400">Loading segments…</p>}
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-
-      {!loading && !error && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {segments.map((s) => (
-            <button
-              key={s.segment}
-              onClick={() => router.push(`/pricing/${encodeURIComponent(s.segment)}`)}
-              className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-brand-500"
-            >
-              <span>
-                <span className="block text-sm font-medium text-slate-800">{s.segment}</span>
-                <span className="block text-xs text-slate-400">{s.styles} styles</span>
-              </span>
-              <ChevronRightIcon className="h-4 w-4 text-slate-300" />
-            </button>
-          ))}
-        </div>
-      )}
-    </AppShell>
-  );
+  redirect('/pricing/all?by=all');
 }

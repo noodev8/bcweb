@@ -379,6 +379,8 @@ app.use('/process-overview', require('./routes/process-overview'));             
 app.use('/process-allowance-measure', require('./routes/process-allowance-measure')); // GET: what a re-measure would give — READ ONLY
 app.use('/amz-process-list', require('./routes/amz-process-list'));                     // GET ?list=unsold-fba: the Amazon repricer list behind a Process card — READ ONLY
 app.use('/pricing-process-list', require('./routes/pricing-process-list'));             // GET ?list=unsold-local: the Shopify repricer list behind a Process card — READ ONLY
+app.use('/pricing-all-list', require('./routes/pricing-all-list'));                     // GET: Shopify Pricing home — every in-stock Shopify style — READ ONLY
+app.use('/amz-all-list', require('./routes/amz-all-list'));                             // GET: Amazon Pricing home — every in-stock FBA SKU — READ ONLY
 app.use('/process-allowance-accept', require('./routes/process-allowance-accept'));   // POST: make the shown figure the one in force — WRITES google_allowance
 
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales

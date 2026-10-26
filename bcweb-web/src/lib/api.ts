@@ -311,12 +311,14 @@ export function getSegments() {
 // list (getSittingList). Reached ONLY from the Slow link — no tab or tile on Repricing (owner: don't disturb navigation).
 // 'process' (2026-10-25, SHOPIFY grouping; Amazon reads ?by=process on its own) = a list behind a Process card (path name = the list
 // key, e.g. 'unsold-local'), one unsplit list (getProcessList). Reached only from the Process screens.
-export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting' | 'process';
+// 'all' (2026-10-26) = every in-stock style, not one segment (path name 'all') — Shopify Pricing's home (/pricing redirects there),
+// one unsplit list (getAllList). Amazon reads ?by=all on its own, like process (getAmzAllList).
+export type PricingGroupBy = 'segment' | 'campaign' | 'status' | 'sitting' | 'process' | 'all';
 export interface PricingGroup { by: PricingGroupBy; name: string }
 
 // Read a list page's grouping from its ?by= param. Unknown / absent = segment.
 export function parseGroupBy(v: string | null): PricingGroupBy {
-  return v === 'campaign' || v === 'status' || v === 'sitting' || v === 'process' ? v : 'segment';
+  return v === 'campaign' || v === 'status' || v === 'sitting' || v === 'process' || v === 'all' ? v : 'segment';
 }
 
 // Repricing STATUS tab — per status, per channel. The counts follow the status lists' rules exactly, so `due` IS the length of the
@@ -427,6 +429,22 @@ export function getProcessList(list: string) {
       outOfStock: Number(b.out_of_stock) || 0,
       rows: b.rows || [],
     })
+  );
+}
+
+// Shopify Pricing's home list (2026-10-26) — every in-stock Shopify style, parked included (the Due switch filters client-side).
+export function getAllList() {
+  return request<{ total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
+    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, outOfStock: Number(b.out_of_stock) || 0, rows: b.rows || [] })
+  );
+}
+
+// Amazon Pricing's home list (2026-10-26) — every in-stock FBA SKU, parked included.
+export function getAmzAllList() {
+  return request<{ total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, outOfStock: Number(b.out_of_stock) || 0, rows: b.rows || [] })
   );
 }
 
