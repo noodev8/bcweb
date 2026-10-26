@@ -15,23 +15,36 @@ THE BACK LINK NAMES WHERE YOU CAME FROM. This screen is reachable from the Repor
          convention the Winners screen itself uses). A hard-coded "Reports" arrow would strand anyone who arrived from Winners —
          they would have to navigate back down two levels to return to the screen they were reading.
 
-Guarded by AppShell. Consumes GET /analytics-new-additions (the list) and, via AdditionsTrend, GET /analytics-new-additions-trend
-         (the production pace — a different question off a different table, see that component).
+BY SIZE, GROUPED BY STYLE, NO CHART (owner, 2026-10-26: "simplify the table and do it by size not just style. get rid of the chart
+         at the top", then "sort out the ui"). The rows are SIZES from the SAME data as the Today screen's New card (GET
+         /process-overview — utils/processMap.js → NEW_SIZES_SQL: every size of every style created in the last 90 days, never-stocked
+         sizes left out), so the two screens count alike. They are shown UNDER THEIR STYLE: a style heading row (group id, brand, added
+         date, title, and the style's totals) and one compact line per size (just the size — the code is in its tooltip). Printing the
+         code and title on every size repeated one style six times over, which is what made it unreadable.
+         Columns (owner, 2026-10-26): Sold AMZ · Sold SHP (net of returns — no Shop column, "rare so dont care", and no Total) ·
+         Stock local · Stock AMZ (Amazon-bound local units count as AMZ, as on Today) · Profit (£ on its sales, every channel). Zeros
+         are a faint dot. The table is FULL WIDTH (owner, 2026-10-26, after trying it narrow) — the style column takes the spare room, the number columns
+         are fixed — with a sticky header; a strip of totals sits above it.
+         Sorting orders the STYLES (by their totals); sizes stay in size order under each. Opens newest added first; the 20+ days
+         filter stays. The production-pace chart (AdditionsTrend) is HIDDEN, not deleted — flip SHOW_TREND. GET
+         /analytics-new-additions (the old by-style list) is no longer read by this screen.
+
+Guarded by AppShell. Consumes GET /process-overview (the list, as on Today) and GET /analytics-new-additions-trend (the pace
+         figures in the hero; the chart, when shown, reads the same request).
 =======================================================================================================================================
 */
 
 import { Suspense, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AdditionsTrend from '@/components/AdditionsTrend';
 import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
-import {
-  getNewAdditions,
-  getNewAdditionsTrend,
-  NewAdditionRow,
-} from '@/lib/api';
+import { getProcessOverview, getNewAdditionsTrend, type ProcessSizeRow } from '@/lib/api';
+import { CHANNELS, unitsSold } from '@/lib/process';
+
+// The production-pace chart below the hero — hidden 2026-10-26 (owner: "get rid of the chart at the top"). true brings it back.
+const SHOW_TREND = false;
 
 // Fixed 90-day window, no lens toggle (owner, 2026-09-26 — was 30 since 2026-07-27). 90 days is the owner's rule for a new line:
 // "that's when I want each to sell at least once", so the list has to hold a line for its whole trial, not drop it at day 30 while
@@ -44,10 +57,33 @@ const MATURE_DAYS = 20;
 
 // Stable identities for "nothing loaded yet". A fresh [] each render would change the identity of everything derived from it
 // (the sortedRows useMemo below), defeating the memo.
-type SortKey = 'added' | 'sold' | 'profit' | 'stock';
+type SortKey = 'added' | 'code' | 'AMZ' | 'SHP' | 'local' | 'fba' | 'profit';
 
-const NO_ROWS: NewAdditionRow[] = [];
+const NO_ROWS: ProcessSizeRow[] = [];
+// The Sold columns, one per channel (net of returns), each sortable. No Shop (CM3) column — rare, owner 2026-10-26: "dont care" —
+// and no Total (owner: "just have shp or amz").
+const SOLD_COLS = [
+  { id: 'AMZ', label: 'AMZ' },
+  { id: 'SHP', label: 'SHP' },
+] as const;
+// £ earned on the size's sales, every channel added together (the positive rows — returns are not netted off, as on Today).
+const profitOf = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + (r.channels[c.id].profit || 0), 0);
 
+// Table cell classes: number columns are a fixed width so the columns line up down the grouped rows. The COUNTS (sold, stock) are
+// CENTRED under their heading — right-aligned, a one-digit count sat at the far edge with a gap in front of it (owner, 2026-10-26);
+// Profit, a £ amount, stays right-aligned so the pence line up.
+const TH = 'w-24 whitespace-nowrap px-3 py-2.5 text-center font-medium';
+const TD = 'px-3 py-2 text-center tabular-nums';
+const TD_SIZE = 'px-3 py-1 text-center tabular-nums';
+const TH_GBP = 'w-28 whitespace-nowrap py-2.5 pl-3 pr-4 text-right font-medium';
+const TD_GBP = 'py-2 pl-3 pr-4 text-right tabular-nums';
+const TD_GBP_SIZE = 'py-1 pl-3 pr-4 text-right tabular-nums';
+
+// A style and its sizes, with the style's totals (what its heading row shows and what sorting orders by).
+interface StyleGroup {
+  groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[];
+  amz: number; shp: number; local: number; fba: number; profit: number; sold: number;
+}
 export default function NewAdditionsPage() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
@@ -70,7 +106,7 @@ function NewAdditionsPageInner() {
   // cards' "← Back" land on the list exactly as it was left, highlight included. Read ONCE into initial state.
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const v = searchParams.get('sort');
-    return v === 'sold' || v === 'profit' || v === 'stock' ? v : 'added';
+    return v === 'AMZ' || v === 'SHP' || v === 'code' || v === 'local' || v === 'fba' || v === 'profit' ? v : 'added';
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'asc' ? 'asc' : 'desc'));
   const [matureOnly, setMatureOnly] = useState(() => searchParams.get('mature') === '1');
@@ -97,17 +133,17 @@ function NewAdditionsPageInner() {
     setSortBy(next.sort); setSortDir(next.dir); setMatureOnly(next.mature); setSelected(next.sel);
     router.replace(viewUrl(next), { scroll: false });
   };
-  const [showAbout, setShowAbout] = useState(false);                         // the "what is this screen" blurb — off by default
 
   // "Now" is captured HERE, inside the fetcher, not during render. Date.now() is impure, so reading it while rendering makes the
   // output depend on when React happens to re-render (react-hooks/purity). Capturing it alongside the rows also reads better: the
   // ages shown are "as at the time we loaded the list", which is what the numbers next to each row actually mean.
+  // The Today screen's data (GET /process-overview), under this screen's own key because loadedAt rides with it.
   const { data, error: loadError, busy: loading } = useApiQuery(
-    ['new-additions', DAYS],
+    ['new-additions-sizes'],
     async () => {
-      const res = await getNewAdditions(DAYS);
+      const res = await getProcessOverview();
       if (res.success && res.data) {
-        return { success: true, data: { rows: res.data.rows, loadedAt: Date.now() }, return_code: 'SUCCESS' };
+        return { success: true, data: { rows: res.data.rows, styles: res.data.styles, loadedAt: Date.now() }, return_code: 'SUCCESS' };
       }
       return { success: false, error: res.error || 'Failed to load New Additions', return_code: res.return_code };
     },
@@ -118,17 +154,9 @@ function NewAdditionsPageInner() {
   const { data: trend } = useApiQuery(['new-additions-trend'], () => getNewAdditionsTrend());
   const pace = trend?.pace ?? null;
 
-  const rows: NewAdditionRow[] = data?.rows ?? NO_ROWS;
+  const rows: ProcessSizeRow[] = data?.rows ?? NO_ROWS;
   const loadedAt = data?.loadedAt ?? null;
   const error = loadError?.message ?? null;
-
-  // Whole days between the creation date and when the list was loaded — how long the line has been live. Uses the `loadedAt`
-  // snapshot rather than Date.now() so this stays a pure function of state (see the note on loadedAt above).
-  const daysLive = (d: string | null) => {
-    if (!d || loadedAt === null) return null;
-    const ms = loadedAt - new Date(d).getTime();
-    return Math.max(0, Math.floor(ms / 86400000));
-  };
 
   // The maturity lens (owner): a style added three days ago selling nothing tells you nothing — it hasn't had a chance yet. With the
   // toggle on, only lines live MATURE_DAYS+ survive.
@@ -145,42 +173,79 @@ function NewAdditionsPageInner() {
   }, [rows, matureOnly, loadedAt]);
   const hiddenCount = rows.length - visibleRows.length;
 
-  // All sorting is client-side on the already-loaded rows (no re-fetch). Compare on the active column, then flip for direction; ties
-  // fall back to newest-added so the order is stable.
-  const sortedRows = useMemo(() => {
-    const cmp = (a: NewAdditionRow, b: NewAdditionRow) => {
-      let c: number;
-      if (sortBy === 'sold') c = a.units - b.units;
-      // Never-sold rows have no latest profit; they sort to the bottom in the default (desc) view rather than pretending to be £0.
-      else if (sortBy === 'profit') c = (a.lastProfit ?? -Infinity) - (b.lastProfit ?? -Infinity);
-      else if (sortBy === 'stock') c = a.stock - b.stock;
-      else c = (a.created || '').localeCompare(b.created || '');
+  // GROUP the (filtered) sizes under their style, keeping the server's order — newest created first, sizes in size order — then sort
+  // the STYLES by the active column's style total. Client-side on the already-loaded rows; ties fall back to newest-added.
+  const sortedGroups = useMemo(() => {
+    const groups: StyleGroup[] = [];
+    const byId = new Map<string, StyleGroup>();
+    for (const r of visibleRows) {
+      let g = byId.get(r.groupid);
+      if (!g) {
+        g = { groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [], amz: 0, shp: 0, local: 0, fba: 0, profit: 0, sold: 0 };
+        byId.set(r.groupid, g);
+        groups.push(g);
+      }
+      g.sizes.push(r);
+      g.amz += Math.max(r.channels.AMZ.net, 0);
+      g.shp += Math.max(r.channels.SHP.net, 0);
+      g.local += r.localStock;
+      g.fba += r.fbaStock;
+      g.profit += profitOf(r);
+      g.sold += unitsSold(r);
+    }
+    const val: Record<SortKey, (g: StyleGroup) => number | string> = {
+      added: (g) => g.created || '', code: (g) => g.groupid, AMZ: (g) => g.amz, SHP: (g) => g.shp,
+      local: (g) => g.local, fba: (g) => g.fba, profit: (g) => g.profit,
+    };
+    const cmp = (a: StyleGroup, b: StyleGroup) => {
+      const x = val[sortBy](a), y = val[sortBy](b);
+      let c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
       if (c === 0 && sortBy !== 'added') c = (a.created || '').localeCompare(b.created || '');
       return sortDir === 'asc' ? c : -c;
     };
-    return [...visibleRows].sort(cmp);
+    return groups.sort(cmp);
   }, [visibleRows, sortBy, sortDir]);
 
-  // ROW SELECTION (owner, 2026-09-26): click a row to highlight it, click it again to clear it. Mouse only, no keyboard cursor,
-  // and no reprice/copy chooser — it just marks your place while you read down the list. Keyed by groupid, so a re-sort keeps the
-  // highlight on the same style. It also enables the hand-off cards above the table (state: `selected`, above).
+  // ROW SELECTION (owner, 2026-09-26): click a style (its heading or any of its sizes) to highlight it, click again to clear it. It
+  // just marks your place while you read down the list, keyed by groupid so a re-sort keeps it, and it enables the hand-off cards
+  // above the table for that style (state: `selected`, above).
+  const selectedGroupid = selected;
 
-  // Click a sortable header: same column flips direction; a new column switches to it, defaulting to descending (most / newest first).
+  // Click a sortable header: same column flips direction; a new column switches to it, defaulting to descending (most / newest first)
+  // — Code starts A→Z.
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setView({ dir: sortDir === 'asc' ? 'desc' : 'asc' });
-    else setView({ sort: key, dir: 'desc' });
+    else setView({ sort: key, dir: key === 'code' ? 'asc' : 'desc' });
   };
   const caret = (key: SortKey) =>
     sortBy === key ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null;
+  const sortBtn = (key: SortKey, label: string, title: string, align: 'left' | 'right' = 'right') => (
+    <button
+      type="button"
+      onClick={() => toggleSort(key)}
+      title={title}
+      className={'inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-800 ' +
+        (align === 'right' ? 'flex-row-reverse ' : '') + (sortBy === key ? 'text-slate-900' : '')}
+    >
+      {label} {caret(key)}
+    </button>
+  );
 
-  const money = (v: number | null) => (v === null ? '—' : `£${v.toFixed(2)}`);
-  // Discounted = current live price sits below RRP (both must be readable numbers). Drives the amber highlight on the Price cell.
-  const isDiscounted = (r: NewAdditionRow) => r.price !== null && r.rrp !== null && r.price < r.rrp;
-  const fmtDate = (d: string | null) => {
-    if (!d) return '—';
-    const dt = new Date(d);
-    return `${dt.getDate()} ${dt.toLocaleString('en-GB', { month: 'short' })}`;
-  };
+  // The totals strip — the whole window (not the filtered view), so it stays a fixed picture.
+  const totals = useMemo(() => {
+    const t = { sizes: rows.length, soldSizes: 0, units: 0, profit: 0, local: 0, fba: 0, byChannel: { AMZ: 0, SHP: 0 } };
+    for (const r of rows) {
+      const u = unitsSold(r);
+      if (u > 0) t.soldSizes += 1;
+      t.units += u;
+      t.profit += profitOf(r);
+      t.local += r.localStock;
+      t.fba += r.fbaStock;
+      for (const c of SOLD_COLS) t.byChannel[c.id] += Math.max(r.channels[c.id].net, 0);
+    }
+    return t;
+  }, [rows]);
+
   return (
     <AppShell
       /* No page title — the card is called "New" and the back link already names the module; the screen keeps the vertical space. */
@@ -192,221 +257,124 @@ function NewAdditionsPageInner() {
 
       {!loading && !error && (
         <>
-          {/* HERO — how many new styles this window. Supporting sales totals demoted beside it. */}
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
-              <div>
-                {/* The window is spelled out under the number, not just in the (now hidden) blurb — the money beside it is easy to read
-                    as "this month" out of habit, so the 60 has to be impossible to miss. */}
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-400">New styles</div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-6xl font-bold leading-none tabular-nums text-brand-600">{rows.length}</span>
-                </div>
-                <div className="mt-1.5 text-sm text-slate-500">
-                  added in the last <strong className="font-semibold text-slate-700">{DAYS} days</strong>
-                </div>
-              </div>
-              {/* PACE, NOT EARNINGS (owner, 2026-09-22): "My intention for new styles is to push/prompt to find new ones and check
-                  progress. Shouldnt be a reflection of revenue contribution."
-
-                  WHAT WAS HERE AND WHY IT HAD TO GO: units sold, revenue and profit for the 30-day cohort — which read 0 / £0.00 /
-                  £0.00 on the day this changed, and that was CORRECT, not a bug. Median time from creating a style to its first sale
-                  is 20 days (mean 32), so a 30-day window is mostly styles that have not had time to sell yet. Those tiles were
-                  guaranteed to read about zero however well the adding was going: a progress panel rigged to look like failure. The
-                  earnings question is real but it belongs to the Winners screen, which measures it over twelve months.
-
-                  SINCE LAST ONE is the push. It is the only figure here that gets WORSE on its own, every quiet day, which is what
-                  makes it a prompt rather than a report. */}
-              <div className="flex gap-8 border-l border-slate-200 pl-8 text-sm">
-                <Stat
-                  label="This month"
-                  value={pace ? String(pace.thisMonth) : '—'}
-                  sub={pace ? `vs ${pace.monthlyAvg12} in an average month` : undefined}
-                />
-                <Stat
-                  label="Last 12 months"
-                  value={pace ? pace.rolling12.toLocaleString('en-GB') : '—'}
-                  sub={pace ? `${signed(pace.rolling12 - pace.rollingPrior12)} vs the 12 months before` : undefined}
-                />
-                <Stat
-                  label="Since last one"
-                  value={pace?.daysSinceLast === null || pace === null ? '—' : dayGap(pace.daysSinceLast)}
-                  sub={pace?.lastAdded ? `added ${shortDate(pace.lastAdded)}` : 'nothing added yet'}
-                />
-              </div>
-              {/* The blurb explains the screen once; after that it is just text in the way (owner 2026-07-27), so it lives behind this
-                  toggle. The toggle sits in the hero's own corner rather than the page header: with no page title, a header-row button
-                  was left holding an otherwise empty band of its own. Icon-only at rest — it costs no row here. */}
-              <button
-                type="button"
-                onClick={() => setShowAbout((v) => !v)}
-                aria-expanded={showAbout}
-                aria-label="What does this screen show?"
-                title={showAbout ? 'Hide what this screen shows' : 'What does this screen show?'}
-                className={
-                  'ml-auto self-start rounded-md p-1 transition ' +
-                  (showAbout ? 'bg-slate-100 text-slate-600' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500')
-                }
-              >
-                <InformationCircleIcon className="h-5 w-5" />
-              </button>
-            </div>
-            {showAbout && (
-              <p className="mt-4 max-w-3xl border-t border-slate-100 pt-3 text-sm text-slate-500">
-                Styles <strong>added in the last {DAYS} days</strong>, newest first — and how each new line has sold so far (all channels). A
-                quick read on whether the last quarter brought a lot of new product or a little. Tick <strong>{MATURE_DAYS}+ days live only</strong>
-                to drop the lines from the list that are still too new to judge — the totals above always cover the full {DAYS} days.
-              </p>
-            )}
+          {/* TOTALS STRIP — what the table below adds up to (always the full window, whatever the filter), then the adding pace. */}
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <Tile label="New styles" value={String(data?.styles ?? 0)} sub={`last ${DAYS} days`} accent />
+            <Tile label="Sizes" value={String(totals.sizes)} sub={`${totals.soldSizes} sold`} />
+            <Tile label="Units sold" value={String(totals.units)} sub={`AMZ ${totals.byChannel.AMZ} · SHP ${totals.byChannel.SHP}`} />
+            <Tile label="Profit" value={gbp(totals.profit)} sub="on those sales" />
+            <Tile label="Stock" value={String(totals.local + totals.fba)} sub={`Local ${totals.local} · AMZ ${totals.fba}`} />
+            <Tile
+              label="This month"
+              value={pace ? String(pace.thisMonth) : '—'}
+              sub={pace ? `styles added · avg ${pace.monthlyAvg12}` : undefined}
+            />
+            {/* SINCE LAST ONE is the push — the only figure here that gets worse on its own, every quiet day (owner, 2026-09-22). */}
+            <Tile
+              label="Since last one"
+              value={pace?.daysSinceLast === null || pace === null ? '—' : dayGap(pace.daysSinceLast)}
+              sub={pace?.lastAdded ? `added ${shortDate(pace.lastAdded)}` : 'nothing added yet'}
+            />
           </div>
 
-          {/* PRODUCTION — the pace of making new product, this year against last. Sits between the hero (what the last 90 days
-              brought) and the list (what those additions are), because it is the same subject at a longer focal length. Loads its
-              own data, so it can't hold the list up. */}
-          <AdditionsTrend />
+          {SHOW_TREND && <AdditionsTrend />}
 
-          {/* Hand-off row — the same product menu as Inventory, greyed until a row is selected, plus Product (the style's own page)
-              first. Above the table so it is in view when you pick a row. Every card carries this exact view as ?from=. */}
+          {/* Hand-off row — the same product menu as Inventory, greyed until a row is selected, plus Product (the style's own page).
+              Every card carries this exact view as ?from=. */}
           {rows.length > 0 && (
             <div className="mb-3">
-              <ProductNavCards groupid={selected} from={selfUrl} showProduct />
-            </div>
-          )}
-
-          {/* Table controls. The filter sits HERE, not in the hero — it changes the list below it and nothing above it, and being next
-              to the row count makes that obvious at a glance. */}
-          {rows.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
-              <span className="text-slate-500">
-                {matureOnly
-                  ? <>Showing <strong className="font-semibold text-slate-700">{visibleRows.length}</strong> of {rows.length}</>
-                  : <>All <strong className="font-semibold text-slate-700">{rows.length}</strong>, newest first</>}
-              </span>
-              <label className="flex cursor-pointer select-none items-center gap-2 text-slate-600"
-                     title={`Hide styles added less than ${MATURE_DAYS} days ago — too new to judge. The totals above stay the full ${DAYS} days.`}>
-                <input
-                  type="checkbox"
-                  checked={matureOnly}
-                  // Changing the lens CLEARS the cursor, both ways round (owner, 2026-07-28). The list you get back is a different
-                  // list, so a highlight carried over from the old one is meaningless — worse than meaningless when the row it was on
-                  // has just been filtered away, because the hook would otherwise re-seat it on whatever now sits at that position and
-                  // that looks like a selection you made. Start clean and let the operator place it again.
-                  onChange={(e) => setView({ sel: null, mature: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
-                />
-                <span>
-                  {MATURE_DAYS}+ days live only
-                  {matureOnly && hiddenCount > 0 && (
-                    <span className="ml-1.5 text-xs text-slate-400">({hiddenCount} too new)</span>
-                  )}
-                </span>
-              </label>
+              <ProductNavCards groupid={selectedGroupid} from={selfUrl} showProduct />
             </div>
           )}
 
           {visibleRows.length === 0 ? (
             <p className="text-sm text-slate-400">
               {matureOnly && rows.length > 0
-                ? `Every style added in the last ${DAYS} days is under ${MATURE_DAYS} days live — untick the filter to see them.`
+                ? `Every size added in the last ${DAYS} days is under ${MATURE_DAYS} days live — untick the filter to see them.`
                 : `No styles were added in the last ${DAYS} days.`}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            // overflow-clip, not overflow-auto/hidden: it keeps the rounded corners without making a scroll box, which would trap the
+            // sticky header inside it (owner, 2026-10-26: "make the header sticky"). Full width (owner, 2026-10-26).
+            <div className="overflow-clip rounded-xl border border-slate-200 bg-white shadow-sm">
+              {/* Table bar: the count on the left, the filter on the right — it changes the list and nothing above it. */}
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-200 px-4 py-2.5 text-sm">
+                <span className="text-slate-500">
+                  {matureOnly
+                    ? <><strong className="font-semibold text-slate-800">{sortedGroups.length}</strong> styles · {visibleRows.length} of {rows.length} sizes</>
+                    : <><strong className="font-semibold text-slate-800">{sortedGroups.length}</strong> styles · {rows.length} sizes</>}
+                </span>
+                <label className="flex cursor-pointer select-none items-center gap-2 text-slate-600"
+                       title={`Hide sizes of styles added less than ${MATURE_DAYS} days ago — too new to judge.`}>
+                  <input
+                    type="checkbox"
+                    checked={matureOnly}
+                    // Changing the lens CLEARS the cursor (owner, 2026-07-28): the list you get back is a different list.
+                    onChange={(e) => setView({ sel: null, mature: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+                  />
+                  {MATURE_DAYS}+ days live only
+                  {matureOnly && hiddenCount > 0 && <span className="text-xs text-slate-400">({hiddenCount} too new)</span>}
+                </label>
+              </div>
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_theme(colors.slate.200)]">
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-2.5 font-medium">
-                      <button
-                        onClick={() => toggleSort('added')}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ${sortBy === 'added' ? 'text-slate-800' : ''}`}
-                        title="Sort by date added"
-                      >
-                        Added {caret('added')}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-medium" title="Days since the style was created">Days</th>
-                    <th className="px-4 py-2.5 font-medium">Product</th>
-                    <th className="px-3 py-2.5 font-medium">Brand</th>
-                    <th className="px-3 py-2.5 text-right font-medium">RRP</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Price</th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button
-                        onClick={() => toggleSort('sold')}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ${sortBy === 'sold' ? 'text-slate-800' : ''}`}
-                        title="Sort by units sold — units since the style was added, not a fixed window"
-                      >
-                        {caret('sold')} Sold
-                      </button>
-                    </th>
-                    {/* Latest sale's profit — deliberately NOT the lifetime total (which blends the launch price with later
-                        discounting). This is what the style made last time it sold, i.e. at the price it is on now. */}
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button
-                        onClick={() => toggleSort('profit')}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ${sortBy === 'profit' ? 'text-slate-800' : ''}`}
-                        title="Sort by profit on the most recent sale"
-                      >
-                        {caret('profit')} Profit
-                      </button>
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button
-                        onClick={() => toggleSort('stock')}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-slate-700 ${sortBy === 'stock' ? 'text-slate-800' : ''}`}
-                        title="Sort by stock"
-                      >
-                        {caret('stock')} Stock
-                      </button>
-                    </th>
+                {/* STICKY HEADER — stays at the top of the window while the list scrolls. The shadow is the bottom rule (a
+                    collapsed-table border doesn't travel with a sticky row). */}
+                <thead className="sticky top-0 z-10 bg-white text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">{sortBtn('code', 'Style · size', 'Sort styles by group id', 'left')}</th>
+                    <th className={TH + ' border-l border-slate-200'}>{sortBtn('AMZ', 'Sold AMZ', 'Sort by units sold on Amazon since the style was added, net of returns', 'left')}</th>
+                    <th className={TH}>{sortBtn('SHP', 'Sold SHP', 'Sort by units sold on Shopify since the style was added, net of returns', 'left')}</th>
+                    <th className={TH + ' border-l border-slate-200'}>{sortBtn('local', 'Stock local', 'Sort by local stock — on our shelves, not bound for Amazon', 'left')}</th>
+                    <th className={TH}>{sortBtn('fba', 'Stock AMZ', 'Sort by Amazon stock — live at FBA, plus local units already on their way (due for Pick / on C3-Amazon)', 'left')}</th>
+                    <th className={TH_GBP + ' border-l border-slate-200'}>{sortBtn('profit', 'Profit', "Sort by profit — £ earned on the sales, every channel")}</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {sortedRows.map((r) => (
-                    <tr
-                      key={r.groupid}
-                      onClick={() => setView({ sel: selected === r.groupid ? null : r.groupid })}
-                      className={
-                        'cursor-pointer border-b border-slate-100 last:border-0 ' +
-                        (selected === r.groupid
-                          // Tint only, no left bar (owner, 2026-09-26).
-                          ? 'bg-brand-50'
-                          : 'hover:bg-slate-50/60')
-                      }
-                    >
-                      <td className="px-4 py-2 whitespace-nowrap text-slate-500">
-                        {fmtDate(r.created)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                        {daysLive(r.created) !== null ? daysLive(r.created) : '—'}
-                      </td>
-                      {/* Title lives in the tooltip (owner, 2026-09-26) — one line per row, the groupid is what gets read. */}
-                      <td className="px-4 py-2 font-mono text-sm tracking-tight text-slate-900" title={r.title || 'Untitled'}>
-                        {r.groupid}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-600">{r.brand || '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
-                      <td
-                        className={`px-3 py-2 text-right tabular-nums ${
-                          isDiscounted(r) ? 'font-medium text-amber-600' : 'text-slate-700'
-                        }`}
-                        title={isDiscounted(r) ? 'Below RRP — discounted' : undefined}
-                      >
-                        {money(r.price)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">{r.units}</td>
-                      <td
-                        className={
-                          'px-3 py-2 text-right tabular-nums ' +
-                          (r.lastProfit === null ? 'text-slate-300' : r.lastProfit < 0 ? 'font-medium text-rose-600' : 'font-medium text-slate-800')
-                        }
-                        title={r.lastSold ? `Profit on the latest sale — ${fmtDate(r.lastSold)}` : 'Not sold yet'}
-                      >
-                        {money(r.lastProfit)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">{r.stock}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                {sortedGroups.map((g, gi) => {
+                  const isSel = selected === g.groupid;
+                  const pick = () => setView({ sel: isSel ? null : g.groupid });
+                  return (
+                    // One <tbody> per style, so the style and its sizes highlight together.
+                    <tbody key={g.groupid} className={(gi ? 'border-t-8 border-slate-100 ' : '') + (isSel ? 'bg-brand-50' : '')}>
+                      {/* The STYLE heading — group id, brand, added date, title, and the style's totals. */}
+                      <tr onClick={pick} className={'cursor-pointer ' + (isSel ? '' : 'bg-slate-50/80 hover:bg-slate-100/70')}>
+                        <td className="max-w-0 py-2 pl-4 pr-3">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-mono text-[13px] font-semibold tracking-tight text-slate-900">{g.groupid}</span>
+                            <span className="whitespace-nowrap text-xs text-slate-400">{g.brand ? `${g.brand} · ` : ''}added {shortDate(g.created)}</span>
+                          </div>
+                          <div className="truncate text-xs text-slate-500" title={g.title || undefined}>{g.title || 'Untitled'}</div>
+                        </td>
+                        <td className={TD + ' border-l border-slate-200'}><Num n={g.amz} strong /></td>
+                        <td className={TD}><Num n={g.shp} strong /></td>
+                        <td className={TD + ' border-l border-slate-200'}><Num n={g.local} strong /></td>
+                        <td className={TD}><Num n={g.fba} strong /></td>
+                        <td className={TD_GBP + ' border-l border-slate-200 ' + (g.sold === 0 ? 'text-slate-300' : g.profit < 0 ? 'font-semibold text-rose-600' : 'font-semibold text-slate-900')}>
+                          {g.sold === 0 ? '·' : gbp(g.profit)}
+                        </td>
+                      </tr>
+                      {/* One compact line per SIZE — the size only; the full code is in its tooltip. */}
+                      {g.sizes.map((r) => {
+                        const sold = unitsSold(r);
+                        const profit = profitOf(r);
+                        return (
+                          <tr key={r.code} onClick={pick} className={'cursor-pointer border-t border-slate-100 ' + (isSel ? '' : 'hover:bg-slate-50')}>
+                            <td className="py-1 pl-4 pr-3" title={r.code}>
+                              <span className="inline-block min-w-[2.75rem] rounded bg-slate-100 px-2 py-0.5 text-center font-mono text-xs font-medium text-slate-700">{r.size}</span>
+                            </td>
+                            <td className={TD_SIZE + ' border-l border-slate-200'}><Num n={Math.max(r.channels.AMZ.net, 0)} /></td>
+                            <td className={TD_SIZE}><Num n={Math.max(r.channels.SHP.net, 0)} /></td>
+                            <td className={TD_SIZE + ' border-l border-slate-200'}><Num n={r.localStock} /></td>
+                            <td className={TD_SIZE}><Num n={r.fbaStock} /></td>
+                            <td className={TD_GBP_SIZE + ' border-l border-slate-200 text-xs ' + (sold === 0 ? 'text-slate-300' : profit < 0 ? 'text-rose-600' : 'text-slate-700')}>
+                              {sold === 0 ? '·' : gbp(profit)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  );
+                })}
               </table>
             </div>
           )}
@@ -415,12 +383,6 @@ function NewAdditionsPageInner() {
 
     </AppShell>
   );
-}
-
-// +87 / -3 / 0 — the sign is carried explicitly because a bare number next to "vs the 12 months before" reads as the comparison
-// figure itself rather than the movement.
-function signed(n: number) {
-  return `${n > 0 ? '+' : ''}${n.toLocaleString('en-GB')}`;
 }
 
 // The gap since the last product was made, in the words someone would actually say. "0 days" is the wrong answer for something
@@ -441,12 +403,22 @@ function shortDate(iso: string) {
   return `${Number(d)} ${MONTHS[mi]}`;
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-700">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-slate-400">{sub}</div>}
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={'mt-0.5 text-2xl font-semibold tabular-nums ' + (accent ? 'text-brand-600' : 'text-slate-900')}>{value}</div>
+      {sub && <div className="mt-0.5 truncate text-xs text-slate-400" title={sub}>{sub}</div>}
     </div>
   );
+}
+
+// A count cell: zero is a faint dot, so the numbers that matter stand out down a long column.
+function Num({ n, strong }: { n: number; strong?: boolean }) {
+  if (!n) return <span className="text-slate-300">·</span>;
+  return <span className={'tabular-nums ' + (strong ? 'font-semibold text-slate-900' : 'text-slate-700')}>{n}</span>;
+}
+
+function gbp(v: number) {
+  return `${v < 0 ? '-' : ''}£${Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

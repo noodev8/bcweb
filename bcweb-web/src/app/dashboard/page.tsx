@@ -69,7 +69,7 @@ import {
   ShoppingCartIcon, ChartBarIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, BanknotesIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
-  ChevronDownIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
+  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, TrophyIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
   RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
@@ -134,16 +134,6 @@ const GROUPS: Group[] = [
     blurb: 'Prospects, new lines, clearance — what to act on',
     icon: SunIcon,
     link: '/process',
-    tiles: [],
-  },
-  {
-    // DAILY (owner, 2026-10-26): the four screens of the daily round on a screen of their own (app/daily/page.tsx) — first built
-    // as a drop-down here, then "make it its own screen". All four also live in their usual groups.
-    id: 'daily',
-    title: 'Daily',
-    blurb: 'Pricing, ordering, new stuff, prospects',
-    icon: CalendarDaysIcon,
-    link: '/daily',
     tiles: [],
   },
   {
@@ -705,9 +695,24 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      {/* Seven columns at lg so the whole menu is ONE row (owner, 2026-10-26): Sales · Today · Daily take one each, Operations and
-          Back Office two each. A card added here needs the count raised to match. */}
-      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} cols="lg:grid-cols-7" />
+      {/* DAILY — its own full-width row, the top one (owner, 2026-10-26). The four screens of the daily round live on /daily
+          (app/daily/page.tsx); this card names them so you know what's behind it. */}
+      <Link
+        href="/daily"
+        className="mb-3 flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-500 hover:shadow-md"
+      >
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          <CalendarDaysIcon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-base font-semibold leading-snug text-slate-900">Daily</span>
+          <span className="block text-xs leading-snug text-slate-500">Pricing · Ordering · New Stuff · Prospects</span>
+        </span>
+        <ChevronRightIcon className="ml-auto h-5 w-5 shrink-0 text-slate-300" />
+      </Link>
+
+      {/* Six columns at lg so the menu is ONE row: Sales and Today take one each, Operations and Back Office two each. */}
+      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
 
       {/* Find-by-part row, below the main menu. Shares the one open-group state, so opening a card here closes one above. */}
       {/* Rendered four cards per GroupRow so each row's panel opens directly under that row, not below all of them. */}

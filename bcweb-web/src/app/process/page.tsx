@@ -45,7 +45,7 @@ import {
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { PROCESS_CLEARANCE_CARD } from '@/lib/features';
-import { boxCls, CHANNELS, isSold, isWinner, shortDate } from '@/lib/process';
+import { boxCls, CHANNELS, isSold, isWinner, shortDate, unitsSold } from '@/lib/process';
 
 
 type Pick = 'new' | 'sold' | 'unsold' | 'winner' | 'loser';
@@ -301,8 +301,6 @@ type ListRow = { groupid: string; title: string | null; brand: string | null; cr
 
 const LIST_SHOWS_STOCK = false;
 
-// Units sold on every channel together, net of returns (a channel that netted below 0 counts 0).
-const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Math.max(r.channels[c.id].net, 0), 0);
 // The best £ a unit across the channels it sold on; null = sold nowhere.
 const bestPerUnit = (r: ProcessSizeRow): number | null => {
   const v = CHANNELS.map((c) => r.channels[c.id]).filter((c) => c.net > 0 && c.perUnit !== null).map((c) => c.perUnit as number);

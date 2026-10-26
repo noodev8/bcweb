@@ -1,4 +1,4 @@
-// Shared by the Process page and the screens its cards open (/process/unsold, and Amazon Order's ?process= arrival). The rules themselves are server-side in
+// Shared by the Process page, Reports → New Additions (2026-10-26) and the screens its cards open (/process/unsold, and Amazon Order's ?process= arrival). The rules themselves are server-side in
 // bcweb-server/utils/processMap.js — these only read the per-channel blocks it returns.
 import type { ProcessChannel, ProcessSizeRow } from '@/lib/api';
 
@@ -9,6 +9,8 @@ export const CHANNELS: { id: ProcessChannel; label: string }[] = [
 ];
 
 export const isSold = (r: ProcessSizeRow) => CHANNELS.some((c) => r.channels[c.id].block !== 'not_sold');
+// Units sold on every channel together, net of returns (a channel that netted below 0 counts 0). Today's lists and New Additions.
+export const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Math.max(r.channels[c.id].net, 0), 0);
 export const isWinner = (r: ProcessSizeRow) => CHANNELS.some((c) => ['once_good', 'multi_good'].includes(r.channels[c.id].block));
 
 // 'YYYY-MM-DD' -> '25 Oct'. Parsed as parts, never through Date (a bare date string is read as UTC/local and can shift a day).
