@@ -284,8 +284,8 @@ never ran as designed. Full detail is in git history if it is ever wanted again.
   `—` means it loses money before any ad spend at all — reprice or drop, no ad setting helps.
 - **Sizes** — buyable sizes / listed sizes, **today**, not the window's.
 
-Conv % and Kept / sale are hidden (`SHOW_CONV` / `SHOW_KEPT_PER_SALE` in `google-ads/page.tsx`). They
-explain *why* a row is bad once you know it is — drill work, not list work.
+Conv % and Kept / sale were hidden 2026-09-07 and removed from the grid 2026-10-26 (git history has them). They
+explained *why* a row is bad once you know it is — drill work, not list work.
 
 ---
 

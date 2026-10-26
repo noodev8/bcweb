@@ -359,11 +359,9 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
                 key={open.id + t.href}
                 title={t.title}
                 subtitle={t.subtitle}
-                description={t.description}
                 href={t.href + (t.href.includes('?') ? '&' : '?') + 'from=' + open.id}
                 icon={t.icon}
                 live
-                compact
               />
             ))}
           </div>

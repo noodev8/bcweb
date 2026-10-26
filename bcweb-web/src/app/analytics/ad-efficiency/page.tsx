@@ -59,10 +59,10 @@ function AdEfficiencyPageInner() {
   const searchParams = useSearchParams();
 
 // WHERE "← BACK" GOES, threaded via ?from=/&back= — the same convention the pricing and segment screens use, and for the same
-// reason. Google Ads links out to this report; without the thread the back arrow returned the operator to Reports, which is a
-// LIST OF REPORTS and not where they were. Arriving from Reports (no params) is unchanged.
-const backHref = searchParams.get('from') || '/analytics';
-const backLabel = searchParams.get('back') || 'Reports';
+// reason: Google Ads links out to this report, and the back arrow returns there. With no ?from= there is no back link (the Reports
+// index it used to fall back to was removed 2026-10-26 — the dashboard lists every screen); the header's home icon is the way back.
+const backHref = searchParams.get('from') || undefined;
+const backLabel = searchParams.get('back') || 'Back';
 
   const q = useApiQuery('analytics-ad-efficiency', () => getAdEfficiency());
   // Newest first (owner). The API returns oldest-first; nothing here compares a row to its neighbour, so a plain reverse is safe.

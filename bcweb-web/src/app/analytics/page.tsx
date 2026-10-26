@@ -1,153 +1,16 @@
-'use client';
 /*
 =======================================================================================================================================
-Page: /analytics  (Reports module — index)
+Page: /analytics — the Reports index, retired 2026-10-26
 =======================================================================================================================================
-Purpose: The reporting front door — a tile grid matching the dashboard pattern. Presented as REPORTS (owner, 2026-08-27); the route
-         stays /analytics so every existing link, bookmark and deep link keeps working.
-
-         ABSORBED BRANDS (owner, 2026-08-27). It was a top-level dashboard tile, which made two separate doors onto the same act —
-         going somewhere to read a number — and put it on the dashboard as a peer of screens worked every day. It keeps its own
-         route (/brands) and is unchanged; only the way in moved. Guarded by AppShell.
-
-         AMAZON ORDER CAME BACK OUT (owner, 2026-09-03). It was absorbed here in 2026-08 as the profit report it was then, and it
-         has since grown into a working screen: a rate fill, an Order and a Pick basket, and two DB writes on the button. That is
-         no longer "go and read a number", so it is a dashboard tile again under STOCK & PRODUCTS, beside the other procurement
-         screens. Route unchanged — only the way in moved back.
+It was a second grid of tiles (Sales, Birk Availability, Stock Position, New, Price Changes, Ad Efficiency, Ad Daily, Bclog, Winners,
+Brands) — every one of them also on the dashboard, which now lists every screen ONCE (owner, 2026-10-26: "get rid of ... the repeat
+dashboard from reports"; "i dont want duplicates"). The header's Reports tab went with it. The report screens keep their
+/analytics/... routes; this one only redirects so an old link or bookmark still lands somewhere sensible.
 =======================================================================================================================================
 */
 
-import AppShell from '@/components/AppShell';
-import ModuleTile from '@/components/ModuleTile';
-import {
-  PresentationChartLineIcon, SparklesIcon, ArrowsRightLeftIcon, BanknotesIcon, ChartPieIcon,
-  ScaleIcon, SunIcon, DocumentMagnifyingGlassIcon, TrophyIcon,
-} from '@heroicons/react/24/outline';
+import { redirect } from 'next/navigation';
 
 export default function AnalyticsPage() {
-  return (
-    <AppShell>
-      <div className="mb-6">
-        <p className="text-sm text-slate-500">Sales, stock, margin and brand reporting. More views will appear here over time.</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Sales ledger — the first thing to check: recent sales + net profit, windowed & searchable, CSV export. */}
-        <ModuleTile
-          title="Sales"
-          description="Recent sales with profit on every line (returns netted in) — net profit for Today / 7 / 30 / 90 days, filter by channel, search a product, export to Excel."
-          href="/analytics/sales"
-          icon={BanknotesIcon}
-          live
-        />
-
-        {/* The one live analytics view in v1. */}
-        <ModuleTile
-          title="Birk Availability"
-          description="How many Birkenstock styles are core-size complete (38/39/40) in stock right now — the ad-push gauge."
-          href="/analytics/birk-availability"
-          icon={PresentationChartLineIcon}
-          live
-        />
-
-        {/* Selling vs Sitting (/analytics/stock-sales) is no longer a Reports tile: renamed Slow and reached only from the Slow card on
-            Winners (owner, 2026-10-12: "Remove the menu option for Selling v Sitting completely"). */}
-
-        {/* Stock Position (2026-10-15) — THE stock screen; Sell-through merged into it (its data opens from "pairs held now"). */}
-        <ModuleTile
-          title="Stock Position"
-          description="Pairs in and out, 90-day stock against a year ago, stock held against stock sold, and what to act on."
-          href="/analytics/stock-position"
-          icon={ScaleIcon}
-          live
-        />
-
-        {/* Catalogue-growth pulse — what's been added lately and how the new lines are selling. */}
-        <ModuleTile
-          title="New"
-          description="Shopify styles added in the last 30 days — how many, and how each new line has sold (units, revenue, profit)."
-          href="/analytics/new-additions"
-          icon={SparklesIcon}
-          live
-        />
-
-        {/* Repricing-impact ledger — recent price moves (both channels) and whether they're shifting stock. */}
-        <ModuleTile
-          title="Price Changes"
-          description="The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since. Filter by channel or user."
-          href="/analytics/price-changes"
-          icon={ArrowsRightLeftIcon}
-          live
-        />
-
-        {/* Ad Efficiency — the monthly counterweight to the Sales report. Sales says profit is up, which through 2026 was true every
-            month while the share of it surviving Google ad spend fell from 57% to 8%. Nothing else on the platform is shaped to show
-            that: the Google Ads screen works a 30-day window, far too short for a slide this slow. Sits next to Price Changes as the
-            other "is the thing we are doing actually working?" read. */}
-        <ModuleTile
-          title="Ad Efficiency"
-          description="How much of each month's Shopify profit survived Google ad spend — 13 months of units, profit, spend, kept per unit and the share kept."
-          href="/analytics/ad-efficiency"
-          icon={ScaleIcon}
-          live
-        />
-
-        {/* Ad Daily — the DAILY half of the question Ad Efficiency asks monthly, which is why the two sit together: "is Google
-            paying for itself?" over 13 months, then day by day over a fortnight. It exists because a month is too slow to show a
-            decision working — August 2026 is one row at 8% kept, and it could not show that the change of course on 31 Aug worked
-            until October — while the Google Ads grid is per style and never totals the book.
-
-            REPLACED "Ad Payback" (owner, 2026-09-10), which listed the styles that sold on one day with a trailing 30-day verdict
-            beside each. It was presented to staff and could not be explained: every other list here has a membership rule that IS
-            the job, and "styles that happened to sell yesterday" is not one. Note the description says WHOSE question this is —
-            staff act on styles from the Google Ads screen; this is the owner's budget-level read, and handing it to staff is what
-            went wrong the first time. */}
-        <ModuleTile
-          title="Ad Daily"
-          description="Google spend against Shopify sales, day by day over a fortnight, with one total that says what the book kept. The owner's read on whether a budget change is working."
-          href="/analytics/ad-daily"
-          icon={SunIcon}
-          live
-        />
-
-        {/* Activity Log — a read of `bclog`, the "who did what, when" ledger both bcweb and PowerBuilder write. Not a number to read
-            like the rest of this grid, but it is still "go somewhere to look something up", which is what Reports is the door for. */}
-        <ModuleTile
-          title="Bclog"
-          description="Who did what, and when — every Goods In, stock adjustment, order sync and import, from here and PowerBuilder. Search and filter by section or person."
-          href="/analytics/activity-log"
-          icon={DocumentMagnifyingGlassIcon}
-          live
-        />
-
-        {/* Winners — the portfolio view. One tracked number: how many products clear £200 in the rolling 12 months, what share of
-            the range that is, and whether it is growing. It sits with Brands as an owner-level read of the shape of the business
-            rather than a daily operational gauge.
-
-            THE DESCRIPTION DELIBERATELY PROMISES NO ACTION. An earlier version advertised the contenders list ("which young ones
-            are about to join them"), which the screen no longer shows — that job belongs on the per-brand working screens (owner,
-            2026-09-22). A tile that promises a to-do list is how the to-do list gets asked for back. */}
-        {/* Retired as its own screen 2026-09-25: opens Repricing's Status tab, which now carries the tags, brands and trend. */}
-        <ModuleTile
-          title="Winners"
-          description="Winners, steady, new, harvest and losers per channel — with winners by brand and how the mix is moving."
-          href="/segments"
-          icon={TrophyIcon}
-          live
-        />
-
-        {/* Brands — moved in from the dashboard (owner, 2026-08-27). The once-a-season "what is the shape of the business?" read, and
-            the screen a buying decision starts from. It sits last of the recurring reports rather than first: it's the least often
-            opened of them, and it answers a different question (which brands to back) than the daily operational gauges above. */}
-        <ModuleTile
-          title="Brands"
-          description="What each brand earned — revenue, profit and margin over the last year or six months, against the window before it."
-          href="/brands"
-          icon={ChartPieIcon}
-          live
-        />
-
-      </div>
-    </AppShell>
-  );
+  redirect('/dashboard');
 }

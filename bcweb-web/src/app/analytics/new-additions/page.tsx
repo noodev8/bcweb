@@ -92,10 +92,10 @@ export default function NewAdditionsPage() {
 }
 
 function NewAdditionsPageInner() {
-  // Where the back arrow goes. Defaults to the Reports index, which is how this screen is reached from the module grid.
+  // Where the back arrow goes — only when a screen sent you with ?from= (the Reports index it fell back to was removed 2026-10-26).
   const searchParams = useSearchParams();
-  const backHref = searchParams.get('from') || '/analytics';
-  const backLabel = searchParams.get('back') || 'Reports';
+  const backHref = searchParams.get('from') || undefined;
+  const backLabel = searchParams.get('back') || 'Back';
 
   const router = useRouter();
   const pathname = usePathname();

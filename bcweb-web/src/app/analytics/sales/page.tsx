@@ -159,8 +159,9 @@ function SalesPageContent() {
     };
   });
   const fromParam = searchParams.get('from');
-  const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : '/analytics';
-  const backLabel = backHref === '/analytics' ? 'Reports' : searchParams.get('back') || 'Back';
+  // A back link only when a screen sent you with a path ?from= (the Reports index it fell back to was removed 2026-10-26).
+  const backHref = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//') ? fromParam : undefined;
+  const backLabel = searchParams.get('back') || 'Back';
 
   const [channel, setChannelState] = useState<ChannelFilter>(initial.channel);
   const [win, setWinState] = useState<SalesWindow>(initial.win);

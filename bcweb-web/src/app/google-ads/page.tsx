@@ -202,12 +202,12 @@ function isUnranked(r: GoogleAdsStyleRow, key: SortKey): boolean {
 }
 
 // ---- Sorting --------------------------------------------------------------------------------------------------------------------
-type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'conv' | 'spend' | 'kept' | 'keptper' | 'price' | 'floor';
+type SortKey = 'groupid' | 'campaign' | 'sizes' | 'sold' | 'spend' | 'kept' | 'price' | 'floor';
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   // Floor sorts ASCENDING first: the deepest shortfall leads, because that is the biggest single repricing win on the screen.
   // It still ranks on the GAP even though the cell now prints the floor — see the note on `case 'floor'`.
   // (Styles with no floor are parked at the bottom by isUnranked() and never head the list either way.)
-  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', conv: 'asc', spend: 'desc', kept: 'asc', keptper: 'asc',
+  groupid: 'asc', campaign: 'asc', sizes: 'asc', sold: 'desc', spend: 'desc', kept: 'asc',
   price: 'asc', floor: 'asc',
 };
 function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): number | string {
@@ -222,13 +222,10 @@ function sortValue(r: GoogleAdsStyleRow, key: SortKey, w: GoogleAdsWindowKey): n
     // Tie-broken by the share, so equal counts put the thinner run first.
     case 'sizes': return r.sizesInStock + (r.sizesListed > 0 ? r.sizesInStock / r.sizesListed / 1000 : 0);
     case 'sold': return win.units;
-    case 'conv': return convPct(r, w);
     case 'spend': return win.spend;
     // KEPT is profit after ad spend — the grid shows no other kind of profit (owner, 2026-09-06: the column was called Profit, and
     // renaming it matches Reports > Ad Efficiency, where the same figure has always been Kept).
     case 'kept': return win.profitAfterSpend;
-    // A style with nothing sold has no per-sale figure. Sent to the far end so it never sits among real ones.
-    case 'keptper': return keptPerSale(win);
     case 'price': return r.price ?? 0;
     // STILL THE GAP, even though the column now PRINTS the floor. £5 under on a £40 shoe and £5 under on a £90 shoe are the same
     // size of problem to fix, so ranking on the gap puts the worst repricing jobs together; ranking on the printed floor would
@@ -245,39 +242,6 @@ function money(v: number): string {
   return `${r < 0 ? '-' : ''}£${Math.abs(r).toLocaleString('en-GB')}`;
 }
 
-// WHAT ONE SALE OF THIS STYLE ACTUALLY LEFT YOU, after paying Google to make it. THE TARGET FIGURE (owner, 2026-09-06): "get kept
-// per product as high as possible".
-//
-// It replaced a Kept % column, which replaced ROAS. Each swap moved the same way — towards the money and away from a ratio. ROAS was
-// Google's revenue over Google's spend and flattered every row (61x on a 64p profit, because the revenue counted was the whole
-// basket the click led to). Kept % was honest but answered a different question — efficiency of spend — when the decision being made
-// is which styles earn their place. This is the same measure Reports > Ad Efficiency ranks months on, so a style and a month are
-// finally read in the same units.
-//
-// ZERO, NOT NULL, WHEN NOTHING SOLD (owner, 2026-09-06 — "helps the sort"). Strictly there is no per-sale figure for no sales, and
-// this column used to say so with a dash and push those rows to the end of the sort. That put a real group of styles somewhere the
-// operator never looked. At 0 they sort where they belong: below every earner, above every loser.
-//
-// The trade, stated so nobody reads 0 as harmless: a style that spent £58 and sold nothing also reads £0.00 here. Its KEPT column
-// is -£58 and sits immediately to the left, which is the figure that damns it. Sorting on Kept, not Kept / sale, is what finds
-// those rows — this column ranks earners.
-// Clicks that turned into a sale. THE column that says WHY a row is expensive, and it costs nothing — `clicks` was already in the
-// payload and simply was not drawn.
-//
-// It separates two faults that look identical on money alone. Measured on the same day (2026-09-06), five styles with the biggest
-// ad spend all drew 117-212 clicks at 42-71p each — Google treated them identically — and converted at 9.0%, 4.8%, 3.9%, 1.4% and
-// 0.9%. The 10x spread in conversion, not the bidding, is the whole difference between a style that keeps 46% of its profit and one
-// that loses four times it. Sorted ascending by default: the worst converter is the row to look at.
-//
-// NO NULLS (owner, 2026-09-06 — "Conv % sort is using NULLs, makes it awkward"). This returned null below a click floor and the
-// sort banished those rows past the end, which is exactly where an operator never looks.
-//
-// A rate below the floor is still a real ratio, just a thin one: one sale on three clicks IS 33%, it simply should not be believed.
-// So the number is computed for everyone and the DISPLAY carries the warning instead — rows under the floor are greyed. Ranking and
-// trustworthiness are two different jobs and the sort should not be doing both.
-//
-// No clicks at all reads 0%, which is honest: nothing was offered, nothing converted.
-const CONV_MIN_CLICKS = 20;
 
 // THE SHELF-DEPTH LINE, AND WHY IT IS A COUNT AND NOT A SHARE (2026-09-06)
 // This cell was amber under HALF the run. That rule was a guess and the data disagrees with it. Over the 30 days to 5 Sep 2026,
@@ -334,17 +298,6 @@ function isThinShelf(r: GoogleAdsStyleRow): boolean {
   if (r.sizesListed <= 0) return false;
   return r.sizesInStock < THIN_SIZES && r.sizesInStock / r.sizesListed < THIN_SHARE;
 }
-function convPct(r: GoogleAdsStyleRow, w: GoogleAdsWindowKey): number {
-  const win = r[w];
-  if (win.clicks <= 0) return 0;
-  return Math.round((win.units / win.clicks) * 1000) / 10;
-}
-
-function keptPerSale(w: GoogleAdsWindow): number {
-  if (w.units <= 0) return 0;
-  return Math.round((w.profitAfterSpend / w.units) * 100) / 100;
-}
-
 // B/E ROAS — RETIRED FROM THE GRID 2026-09-10 (owner: "how does B/E ROAS help?"). The constants, the amber line and the margin
 // tooltip went with it. `breakEvenRoas` is STILL COMPUTED PER WINDOW BY THE ROUTE and still ships on every row, so bringing the
 // figure back anywhere is a render change and nothing else.
@@ -369,30 +322,10 @@ function keptPerSale(w: GoogleAdsWindow): number {
 // spend decile managed 6.3, and no margin band anywhere in the book came back above 7.6. A bucket needing more than 10x is asking
 // for something this account has never once achieved on any cohort — not a bidding problem, and no target fixes it.
 
-// ---- COLUMNS CURRENTLY HIDDEN (owner, 2026-09-07) -------------------------------------------------------------------------------
-// Hidden, not deleted, and flipping either back to `true` is the whole restore — the cell, the heading, the <col> and the sort all
-// stay wired up behind the flag, and nothing else needs touching.
-//
-// WHY THESE TWO. The screen settled on a two-rule monthly pass: Kept decides which styles come OUT of the campaign, and B/E ROAS
-// plus Sizes decide which come BACK. Conv % and Kept / sale are both good numbers that answer neither question — they explain WHY a
-// row is bad once you already know it is, and that is drill-down work, not list work. Eight columns of evidence for a decision that
-// reads three of them is how a screen stops getting used.
-//
-// Conv % survives in the code because it is still the sharpest single explanation of a bad row (a 10x spread in conversion, not
-// bidding, separates the styles that keep money from the ones that burn it — see CONV_MIN_CLICKS). Kept / sale survives because it
-// is the owner's own target figure ("get kept per product as high as possible"). Both are one flag away when the pass is habit.
-//
-// The column widths were NOT rebalanced for their absence. Style simply absorbs the freed 160px, which reads better anyway, and it
-// means turning either column back on restores the previous layout exactly rather than needing the widths re-tuned again.
-const SHOW_CONV = false;
-const SHOW_KEPT_PER_SALE = false;
-
-// Kept in step with the flags above so the loading and empty-state rows span the full table. TEN columns are permanent: #, Style,
-// Campaign, Sizes, Sold, Ad spend, Kept, Price, Floor and the cut button. It said NINE until 2026-09-10 and had done since the
-// floor column was added — an off-by-one nothing could show, because colSpan only paints the "Loading…" and "No styles left" rows
-// and a short span just leaves the last column blank. Count it against the <col> list below whenever either changes.
-const COLUMN_COUNT = 10 + (SHOW_CONV ? 1 : 0) + (SHOW_KEPT_PER_SALE ? 1 : 0);
-
+// The table's columns: #, Style, Campaign, Sizes, Sold, Ad spend, Kept, Price, Floor and the cut button — so the loading and empty
+// rows span the full width. Count it against the <col> list whenever a column changes. (Conv. % and Kept / sale were hidden
+// 2026-09-07 and removed 2026-10-26 — owner; git history has them.)
+const COLUMN_COUNT = 10;
 
 // Most titles on this screen start "Birkenstock " or "Womens " — a dozen characters of nothing, repeated down the whole list, that
 // push the part which actually distinguishes one row from another (model, colour, fit) out past the truncation. Stripped for DISPLAY
@@ -1310,10 +1243,8 @@ function GoogleAdsScreen() {
               <col className="w-24" />
               <col className="w-16" />
               <col className="w-14" />
-              {SHOW_CONV && <col className="w-16" />}
               <col className="w-20" />
               <col className="w-20" />
-              {SHOW_KEPT_PER_SALE && <col className="w-24" />}
               <col className="w-20" />
               <col className="w-20" />
               <col className="w-8" />
@@ -1337,11 +1268,9 @@ function GoogleAdsScreen() {
                     The name matches Reports > Ad Efficiency, where the same figure has always been Kept — one word, one meaning,
                     both screens (owner, 2026-09-06). */}
                 <Th label="Sold" col="sold" {...{ sortKey, sortDir, onSort }} />
-                {SHOW_CONV && <Th label="Conv." col="conv" {...{ sortKey, sortDir, onSort }} />}
                 <Th label="Ad spend" col="spend" {...{ sortKey, sortDir, onSort }} seam />
                 <Th label="Kept" col="kept" {...{ sortKey, sortDir, onSort }} />
-                {SHOW_KEPT_PER_SALE && <Th label="Kept / sale" col="keptper" {...{ sortKey, sortDir, onSort }} />}
-                {/* Sits OUTSIDE the money block on purpose. Sold -> Conv. -> Ad spend -> Kept -> Kept / sale is a settled reading
+                {/* Sits OUTSIDE the money block on purpose. Sold -> Ad spend -> Kept is a settled reading
                     order the owner has already tuned twice, and it runs from what happened to what was left. This column is a
                     different kind of thing — a property of the product's economics, and a setting rather than an outcome — so it
                     goes after that run instead of interrupting it. */}
@@ -1355,7 +1284,7 @@ function GoogleAdsScreen() {
                 {/* Sits beside B/E ROAS because it is the same kind of thing — a property of the product's economics rather than an
                     outcome of the window — and because the two answer the same question in the two units the operator thinks in: a
                     ROAS target to give Google, and a price to type into Shopify. Paid for out of the Style column's slack, which had
-                    ~386px at the table's minimum width once Conv. and Kept/sale were switched off; the 992px cap is unmoved. */}
+                    ~386px at the table's minimum width once Conv. and Kept/sale were taken off; the 992px cap is unmoved. */}
                 {/* THE FLOOR ITSELF, NOT THE SIGNED GAP (owner, 2026-09-10 — "shall we just show ad floor without calculating
                     it"). "−£17.67" asked the reader to reconstruct two numbers neither of which was on the screen. Printed as a
                     price beside the price, the comparison is two cells and no arithmetic, in the unit that gets typed into Shopify.
@@ -1382,8 +1311,6 @@ function GoogleAdsScreen() {
               {painted.map((r, i) => {
                 const w = r[win];
                 const isSel = selected.has(r.groupid);
-                const perSale = keptPerSale(w);
-                const conv = convPct(r, win);
                 // Not windowed — the floor is a 90-day property of the style, so this is the same number whichever window is showing.
                 const gap = floorGap(r);
                 // NO "Google says …" LINE HERE (owner, 2026-09-06). The row used to flag any style whose last Google-reported label
@@ -1462,20 +1389,6 @@ function GoogleAdsScreen() {
                       {r.sizesListed === 0 ? '—' : `${r.sizesInStock}/${r.sizesListed}`}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{w.units}</td>
-                    {/* Greyed below the click floor: the rate is real but too thin to act on, and that is a display caveat rather
-                        than a reason to drop the row out of the sort. */}
-                    {SHOW_CONV && (
-                    <td
-                      className={`border-b border-slate-100 px-2 py-1.5 text-right tabular-nums ${
-                        w.clicks < CONV_MIN_CLICKS ? 'text-slate-400' : conv < 2 ? 'font-medium text-amber-700' : 'text-slate-600'
-                      }`}
-                      title={w.clicks < CONV_MIN_CLICKS
-                        ? `${w.units} from ${w.clicks} clicks — under ${CONV_MIN_CLICKS}, too few to read much into`
-                        : `${w.units} sales from ${w.clicks} clicks`}
-                    >
-                      {conv}%
-                    </td>
-                    )}
                     <td className="border-b border-l border-slate-200 border-b-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-600">{money(w.spend)}</td>
                     {/* NO RED ON A NEGATIVE KEPT (owner, 2026-09-10), and the reason is the Price column two cells along. Red on
                         this screen now means ONE thing — priced under the floor — and a row carrying two reds that answer different
@@ -1487,13 +1400,6 @@ function GoogleAdsScreen() {
                       title={`£${Math.round(w.profit).toLocaleString('en-GB')} product profit, less £${Math.round(w.spend).toLocaleString('en-GB')} paid to Google`}>
                       {money(w.profitAfterSpend)}
                     </td>
-                    {SHOW_KEPT_PER_SALE && (
-                    <td className={`border-b border-slate-100 px-3 py-1.5 text-right tabular-nums ${
-                      w.units === 0 ? 'text-slate-400' : 'text-slate-600'
-                    }`} title={w.units === 0 ? 'Nothing sold in this window — see Kept for what it still cost' : `${w.units} sold`}>
-                      £{perSale.toFixed(2)}
-                    </td>
-                    )}
                     {/* PRICE CARRIES THE MARK, NOT THE FLOOR (owner, 2026-09-10). It was the other way round for a day: the floor
                         went amber when the price sat under it. Colouring the price is better and the reason is worth keeping — the
                         price is the LEVER and the floor is the REFERENCE. Marking the reference asks the reader to work out which
