@@ -137,6 +137,16 @@ const GROUPS: Group[] = [
     tiles: [],
   },
   {
+    // DAILY (owner, 2026-10-26): the four screens of the daily round on a screen of their own (app/daily/page.tsx) — first built
+    // as a drop-down here, then "make it its own screen". All four also live in their usual groups.
+    id: 'daily',
+    title: 'Daily',
+    blurb: 'Pricing, ordering, new stuff, prospects',
+    icon: CalendarDaysIcon,
+    link: '/daily',
+    tiles: [],
+  },
+  {
     id: 'ops',
     title: 'Operations',
     blurb: 'Stock in, orders out, supplier orders',
@@ -695,7 +705,9 @@ export default function DashboardPage() {
         <ProductSearchBox />
       </div>
 
-      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} />
+      {/* Seven columns at lg so the whole menu is ONE row (owner, 2026-10-26): Sales · Today · Daily take one each, Operations and
+          Back Office two each. A card added here needs the count raised to match. */}
+      <GroupRow groups={GROUPS} openId={openId} onToggle={setOpenId} cols="lg:grid-cols-7" />
 
       {/* Find-by-part row, below the main menu. Shares the one open-group state, so opening a card here closes one above. */}
       {/* Rendered four cards per GroupRow so each row's panel opens directly under that row, not below all of them. */}
