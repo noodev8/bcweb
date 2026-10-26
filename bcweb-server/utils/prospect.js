@@ -3,7 +3,7 @@
 Util: prospect
 =======================================================================================================================================
 Purpose: Small shared helpers for the Prospects screen (migrations/20261021_prospects.sql) — the shared notepad of possible NEW products
-         found on Amazon. Pure functions, no DB.
+         found on Amazon. Pure functions, except purgeOldArchive (one DELETE on the caller's transaction).
 =======================================================================================================================================
 Exports:
   RATINGS             the gut-call ratings a line can carry (NULL = not rated)
@@ -11,10 +11,24 @@ Exports:
   textOrNull(v, max)  -> trimmed text, or null when blank
   parseCheck(body)    -> { size, asin, rank, price, sellers } | { error, message } — one check, all free text as typed (prospect-check-add
                          and the first check on prospect-save share it)
+  OUTCOMES            what an archived line was decided as (migrations/20261026_prospect_archive.sql)
+  ARCHIVE_MONTHS      how long an archived line is kept
+  purgeOldArchive(c)  removes lines archived more than ARCHIVE_MONTHS ago — called on every add and every archive (no cron)
 =======================================================================================================================================
 */
 
 const RATINGS = ['diamond', 'good', 'sketchy'];
+
+// ARCHIVE (owner, 2026-10-26): a decided line is kept so colleagues can see it was tested, but not for ever — "Maybe keep for 3-6
+// months". 6 months covers a season. No cron: the purge rides on the writes that grow the list (add, archive), which the team does
+// most days; a quiet week just means old lines linger a few days longer, which is harmless.
+const OUTCOMES = ['ordered', 'dropped'];
+const ARCHIVE_MONTHS = 6;
+
+async function purgeOldArchive(client) {
+  // The CASCADE takes the line's checks and comments with it — gone for good, like Delete.
+  await client.query(`DELETE FROM prospect WHERE archived_at < now() - make_interval(months => $1)`, [ARCHIVE_MONTHS]);
+}
 
 const BAD_ASIN_MESSAGE = "Couldn't find an ASIN in that — paste the Amazon product link or the 10-character ASIN";
 
@@ -53,4 +67,4 @@ function parseAsin(input) {
   return m ? m[1].toUpperCase() : null;
 }
 
-module.exports = { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull };
+module.exports = { RATINGS, OUTCOMES, ARCHIVE_MONTHS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull, purgeOldArchive };

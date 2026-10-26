@@ -7,7 +7,9 @@ Purpose: Add a line to Prospects, or edit one (name, Amazon link/ASIN, rating). 
          change on an edit. The ASIN is pulled out of whatever was pasted — a bare ASIN or any Amazon product URL (utils/prospect.js).
          Refuses an ASIN that is already on another line, naming it and who added it, so two people don't research the same listing.
          A NEW line can carry its first check (what you see on Amazon right now) — saved in the same transaction, so a refused check
-         never leaves a half-added line. WRITES prospect (+ prospect_check / prospect_note on add). Requires auth.
+         never leaves a half-added line. An ASIN on an ARCHIVED line is refused too, pointing at Reopen (2026-10-26: one line per
+         style). An add also purges lines archived more than 6 months ago (utils/prospect.js → purgeOldArchive — no cron).
+         WRITES prospect (+ prospect_check / prospect_note on add). Requires auth.
 =======================================================================================================================================
 Request Payload:
 { "id": 4,                                   // omit to add a new line
@@ -25,7 +27,7 @@ Return Codes:
 "SUCCESS"
 "MISSING_FIELDS"
 "BAD_ASIN"          // something was pasted but no ASIN could be found in it
-"ALREADY_LISTED"    // that ASIN is on another line
+"ALREADY_LISTED"    // that ASIN is on another line (active or archived)
 "NOT_FOUND"
 "UNAUTHORIZED"
 "SERVER_ERROR"
@@ -36,7 +38,7 @@ const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
-const { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull } = require('../utils/prospect');
+const { RATINGS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull, purgeOldArchive } = require('../utils/prospect');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -68,11 +70,17 @@ router.post('/', async (req, res) => {
     const out = await withTransaction(async (client) => {
       if (asin) {
         const dup = await client.query(
-          `SELECT name, owner FROM prospect WHERE asin = $1 AND ($2::int IS NULL OR id <> $2) LIMIT 1`, [asin, id]
+          `SELECT name, owner, archived_at FROM prospect WHERE asin = $1 AND ($2::int IS NULL OR id <> $2)
+            ORDER BY archived_at IS NOT NULL LIMIT 1`, [asin, id]
         );
         if (dup.rows.length) {
           const d = dup.rows[0];
-          return { error: 'ALREADY_LISTED', message: `Already on the list: "${d.name}" (added by ${d.owner})` };
+          return {
+            error: 'ALREADY_LISTED',
+            message: d.archived_at
+              ? `Tested before: "${d.name}" is in the Archive — Reopen it instead`
+              : `Already on the list: "${d.name}" (added by ${d.owner})`,
+          };
         }
       }
       if (id === null) {
@@ -92,6 +100,7 @@ router.post('/', async (req, res) => {
             `INSERT INTO prospect_note (prospect_id, body, created_by) VALUES ($1, $2, $3)`, [newId, comment, req.user.display_name]
           );
         }
+        await purgeOldArchive(client);
         return { id: newId };
       }
       const upd = await client.query(

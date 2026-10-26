@@ -5,7 +5,7 @@ Page: /prospects — Prospects
 =======================================================================================================================================
 Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 2026-10-21). Research used to live on a notepad and in
          emails ("Rieker boots for women" → rank, price, sellers → write it down), so every day started from nothing. Here each find is
-         one line that anyone logged in can add, rate, check again and talk about, then order (manually, outside BCWEB) or delete.
+         one line that anyone logged in can add, rate, check again and talk about, then order (manually, outside BCWEB) or drop.
 
          Deliberately loose — "an extended Google Docs specific for us":
            - one line = one style: a name, an optional Amazon link/ASIN, an owner (who added it), a gut rating (Diamond / Good / Sketchy)
@@ -13,7 +13,12 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
              because rank differs by size on the same listing; the line shows the latest check per size, History shows them all (rank
              changes are read by eye — owner)
            - NOTES: a thread with names, about any size or anything
-           - DELETE IS FOR GOOD — a line, a check or a note. Nothing hangs around.
+           - ARCHIVE (2026-10-26) — DELETE ASKS WHY: Ordered / Dropped (+ an optional reason, written as its last comment) moves the
+             line to the Archive with its checks and comments, so colleagues can see a style was tested; "Delete for good" really
+             deletes. One button on purpose — the team will press Delete (owner: "Archive might need training"). Kept 6 months, then removed for good by
+             the server on the next add / archive (no cron). Pasting an archived ASIN again says "Tested before" and offers REOPEN —
+             one line per style. The Active | Archive switch shows them; an archived line is read-only (Reopen or Delete).
+           - A check or a note's delete is for good, as is Delete on an archived line.
          Two tools: "WE HAVE IT" on a line when one of its ASINs is one of our Amazon listings, and "Do we have it?" — a search of our own
          catalogue. Both are yes/no on purpose: there are NO links to the pricing or order screens (owner: this is mining for new; managing
          existing stock is another process, and the research must not drift into repricing).
@@ -22,15 +27,17 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
 */
 
 import { useMemo, useState } from 'react';
-import { ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon,
+} from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  addProspectCheck, addProspectNote, checkProspectAsin, deleteProspectItem, getProspects, saveProspect,
-  Prospect, ProspectRating,
+  addProspectCheck, addProspectNote, archiveProspect, checkProspectAsin, deleteProspectItem, getProspects, reopenProspect, saveProspect,
+  Prospect, ProspectOutcome, ProspectRating,
 } from '@/lib/api';
 
 const NO_ROWS: Prospect[] = [];
@@ -42,6 +49,11 @@ const RATINGS: { key: ProspectRating; label: string; on: string }[] = [
   { key: 'sketchy', label: 'Sketchy', on: 'border-amber-300 bg-amber-100 text-amber-800' },
 ];
 const RATING_ORDER: Record<string, number> = { diamond: 0, good: 1, sketchy: 2 };
+
+const OUTCOMES: { key: ProspectOutcome; label: string; on: string }[] = [
+  { key: 'ordered', label: 'Ordered', on: 'border-emerald-300 bg-emerald-100 text-emerald-800' },
+  { key: 'dropped', label: 'Dropped', on: 'border-slate-300 bg-slate-200 text-slate-700' },
+];
 
 type Sort = 'newest' | 'rating' | 'stale';
 
@@ -114,6 +126,7 @@ export default function ProspectsPage() {
   // The one find open for editing; the rest are narrow rows (owner, 2026-10-21: "Only edit one at a time").
   const [openId, setOpenId] = useState<number | null>(null);
   const [mine, setMine] = useState(false);
+  const [archive, setArchive] = useState(false);   // the Active | Archive switch
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState('');
   // CUT (owner, 2026-10-22) — × takes a line off the screen for this visit only: nothing saved, no undo, no count. Refresh (or
@@ -127,21 +140,34 @@ export default function ProspectsPage() {
     setRefreshing(false);
   }
 
+  const activeCount = rows.filter((p) => !p.archived_at).length;
+  const inView = useMemo(() => rows.filter((p) => !!p.archived_at === archive), [rows, archive]);
+
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    const list = rows.filter((p) =>
+    const list = inView.filter((p) =>
       !cut.has(p.id)
       && (!mine || p.owner === displayName)
       && (!f || p.name.toLowerCase().includes(f) || (p.asin || '').toLowerCase().includes(f)
           || p.notes.some((n) => n.body.toLowerCase().includes(f)))
     );
-    if (sort === 'rating') {
+    if (archive) {
+      list.sort((a, b) => b.archived_at!.localeCompare(a.archived_at!));   // most recently decided first; the sort menu is hidden
+    } else if (sort === 'rating') {
       list.sort((a, b) => (RATING_ORDER[a.rating ?? ''] ?? 3) - (RATING_ORDER[b.rating ?? ''] ?? 3) || b.created_at.localeCompare(a.created_at));
     } else if (sort === 'stale') {
       list.sort((a, b) => lastActivity(a).localeCompare(lastActivity(b)));   // longest since anyone looked, first
     }
     return list;   // 'newest' is the server's order
-  }, [rows, mine, displayName, filter, sort, cut]);
+  }, [inView, archive, mine, displayName, filter, sort, cut]);
+
+  // Reopen from the add form's "Tested before" warning: the line is back on the list, open, ready for a new check.
+  function onReopened(id: number) {
+    setAdding(null);
+    setArchive(false);
+    setOpenId(id);
+    q.refresh();
+  }
 
   const tabBtn = (on: boolean) =>
     'rounded-md px-3 py-1.5 text-sm font-medium transition ' + (on ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100');
@@ -179,21 +205,32 @@ export default function ProspectsPage() {
 
         {adding && (
           <ProspectForm key={adding.key} seed={adding.seed}
-            onDone={() => { setAdding(null); q.refresh(); }} onCancel={() => setAdding(null)} />
+            onDone={() => { setAdding(null); q.refresh(); }} onCancel={() => setAdding(null)} onReopened={onReopened} />
         )}
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {rows.length}</button>
-            <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
-              Mine · {rows.filter((p) => p.owner === displayName).length}
+            <button type="button" onClick={() => { setArchive(false); setOpenId(null); }} className={tabBtn(!archive)}>
+              Active · {activeCount}
+            </button>
+            <button type="button" onClick={() => { setArchive(true); setOpenId(null); }} className={tabBtn(archive)}
+              title="Decided lines (Ordered / Dropped), kept 6 months">
+              Archive · {rows.length - activeCount}
             </button>
           </div>
-          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={`${inputCls} bg-white`} aria-label="Sort">
-            <option value="newest">Newest first</option>
-            <option value="rating">Diamonds first</option>
-            <option value="stale">Longest since checked</option>
-          </select>
+          <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {inView.length}</button>
+            <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
+              Mine · {inView.filter((p) => p.owner === displayName).length}
+            </button>
+          </div>
+          {!archive && (
+            <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={`${inputCls} bg-white`} aria-label="Sort">
+              <option value="newest">Newest first</option>
+              <option value="rating">Diamonds first</option>
+              <option value="stale">Longest since checked</option>
+            </select>
+          )}
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter the list…"
             className={`${inputCls} w-52`} />
           <button type="button" onClick={onRefresh} disabled={refreshing} title="Bring back every line cut with ×"
@@ -208,7 +245,9 @@ export default function ProspectsPage() {
           <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-400">Loading…</p>
         ) : shown.length === 0 ? (
           <p className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500">
-            {rows.length === 0 ? 'Nothing logged yet — "Add a find" to start.' : 'Nothing matches.'}
+            {inView.length > 0 ? 'Nothing matches.'
+              : archive ? 'Nothing archived in the last 6 months.'
+              : 'Nothing logged yet — "Add a find" to start.'}
           </p>
         ) : (
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -224,7 +263,9 @@ export default function ProspectsPage() {
 
 // ---- Add / edit a line ------------------------------------------------------------------------------------------------------------
 // Adding can carry the first check too (rank / price / sellers seen right now), so logging a find is one form, not two.
-function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?: string; onDone: () => void; onCancel: () => void }) {
+function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
+  edit?: Prospect; seed?: string; onDone: () => void; onCancel: () => void; onReopened?: (id: number) => void;
+}) {
   // seed = a link pasted in the toolbar: the form opens with its name and ASIN already in.
   const [name, setName] = useState(edit?.name ?? (seed ? nameFromAmazonUrl(seed) : ''));
   const [amazon, setAmazon] = useState(edit?.asin ?? (seed ? asinFromAmazonUrl(seed) ?? seed.toUpperCase() : ''));
@@ -244,6 +285,17 @@ function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?
   // Duplicate? Asked as soon as the box holds an ASIN, so you know before saving: already on this list, or one of our Amazon listings.
   const asinNow = /^[A-Za-z0-9]{10}$/.test(amazon.trim()) ? amazon.trim().toUpperCase() : null;
   const dup = useApiQuery(asinNow ? ['prospect-asin-check', asinNow, edit?.id ?? 0] : null, () => checkProspectAsin(asinNow!, edit?.id));
+
+  const tested = asinNow && dup.data?.listed?.archived_at ? dup.data.listed : null;   // in the Archive: tested before
+
+  async function reopen(id: number) {
+    setBusy(true);
+    setError(null);
+    const res = await reopenProspect(id);
+    setBusy(false);
+    if (!res.success) { setError(res.error || 'Failed to reopen'); return; }
+    onReopened?.(id);
+  }
 
   async function save() {
     setBusy(true);
@@ -272,10 +324,23 @@ function ProspectForm({ edit, seed, onDone, onCancel }: { edit?: Prospect; seed?
             placeholder="e.g. Rieker Y3453 ankle boot, black" className={`${inputCls} mt-1 block w-full`} />
         </label>
       </div>
-      {asinNow && dup.data && (dup.data.listed || dup.data.have) && (
+      {/* Tested before (2026-10-26): the ASIN is on an archived line — its outcome and archive comment, and Reopen instead of a
+          second line for the same style. */}
+      {tested && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <span className="min-w-0 flex-1">
+            <span className="font-semibold">TESTED BEFORE</span> — &ldquo;{tested.name}&rdquo;, archived by {tested.archived_by}{' '}
+            {fmtWhen(tested.archived_at!)}: <span className="font-medium">{tested.last_note || OUTCOMES.find((o) => o.key === tested.outcome)?.label}</span>
+          </span>
+          {onReopened && (
+            <button type="button" disabled={busy} onClick={() => reopen(tested.id)} className={smallBtn}>Reopen it</button>
+          )}
+        </div>
+      )}
+      {asinNow && dup.data && ((dup.data.listed && !tested) || dup.data.have) && (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <span className="font-semibold">DUPLICATE</span>
-          {dup.data.listed && <> — already on this list: &ldquo;{dup.data.listed.name}&rdquo;, added by {dup.data.listed.owner}</>}
+          {dup.data.listed && !tested && <> — already on this list: &ldquo;{dup.data.listed.name}&rdquo;, added by {dup.data.listed.owner}</>}
           {dup.data.have && <> — we already have it on Amazon as <span className="font-mono">{dup.data.have.groupid}</span></>}
         </div>
       )}
@@ -358,6 +423,7 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
   const rating = RATINGS.find((r) => r.key === p.rating);
   const sinceLook = daysAgo(lastActivity(p));
+  const outcome = OUTCOMES.find((o) => o.key === p.outcome);   // archived lines only
   // The row is a button (opens the card), so × sits beside it rather than inside — a button can't hold another button.
   return (
     <div className="flex items-center hover:bg-slate-50">
@@ -373,10 +439,20 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
       <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
       <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">{p.rrp ? `RRP ${fmtMoney(p.rrp)}` : ''}</span>
       <span className="hidden w-8 shrink-0 text-right text-xs text-slate-400 md:block" title="Comments">{p.notes.length ? `💬${p.notes.length}` : ''}</span>
-      <span className={`w-28 shrink-0 text-right text-xs ${sinceLook >= STALE_DAYS ? 'text-amber-700' : 'text-slate-400'}`}
-        title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : undefined}>
-        {p.owner} · {fmtWhen(lastActivity(p))}
-      </span>
+      {p.archived_at ? (
+        // Archived: the decision, who made it and when — not "since checked", which no longer matters.
+        <>
+          {outcome && <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${outcome.on}`}>{outcome.label}</span>}
+          <span className="w-28 shrink-0 text-right text-xs text-slate-400" title={`Archived by ${p.archived_by}`}>
+            {p.archived_by} · {fmtWhen(p.archived_at)}
+          </span>
+        </>
+      ) : (
+        <span className={`w-28 shrink-0 text-right text-xs ${sinceLook >= STALE_DAYS ? 'text-amber-700' : 'text-slate-400'}`}
+          title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : undefined}>
+          {p.owner} · {fmtWhen(lastActivity(p))}
+        </span>
+      )}
     </button>
     <button type="button" onClick={onCut} title="Cut from the list — Refresh brings it back" aria-label={`Cut ${p.name}`}
       className="mx-2 shrink-0 rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-700">
@@ -386,12 +462,17 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
   );
 }
 
-// ---- One find, open: everything, editable. -----------------------------------------------------------------------------------------
+// ---- One find, open: everything, editable. An ARCHIVED find opens read-only — its checks and comments, Reopen or Delete. ------------
 function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () => void; onClose: () => void }) {
   const [editing, setEditing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [history, setHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Delete on an active line asks why: Ordered / Dropped archive it (the optional reason is written as its last comment by the
+  // server), 'delete' deletes it for good.
+  const [deciding, setDeciding] = useState(false);
+  const [outcome, setOutcome] = useState<ProspectOutcome | 'delete' | null>(null);
+  const [reason, setReason] = useState('');
   const [check, setCheck] = useState<CheckInput & { amazon: string }>({ size: '', rank: '', price: '', sellers: '', amazon: '' });
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -399,6 +480,8 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
 
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;   // checks arrive oldest first
   const sinceLook = daysAgo(lastActivity(p));
+  const archived = !!p.archived_at;
+  const archivedAs = OUTCOMES.find((o) => o.key === p.outcome);
 
   // Every write on a line goes through here: one at a time, show the error, refresh the list on success.
   async function run(fn: () => Promise<{ success: boolean; error?: string }>, after?: () => void) {
@@ -427,7 +510,12 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
             {p.asin && <span className="font-mono">{p.asin}</span>}
             {p.rrp && <span className="font-medium text-slate-700">RRP {fmtMoney(p.rrp)}</span>}
             <span>{p.owner} · added {fmtWhen(p.created_at)}</span>
-            {sinceLook >= STALE_DAYS && <span className="text-amber-700">not checked for {sinceLook} days</span>}
+            {archived ? (
+              <span className="inline-flex items-center gap-1.5">
+                {archivedAs && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${archivedAs.on}`}>{archivedAs.label}</span>}
+                archived by {p.archived_by} {fmtWhen(p.archived_at!)}
+              </span>
+            ) : sinceLook >= STALE_DAYS && <span className="text-amber-700">not checked for {sinceLook} days</span>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -437,7 +525,7 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
       </div>
 
       <div className="mt-2">
-        <RatingChips value={p.rating} disabled={busy}
+        <RatingChips value={p.rating} disabled={busy || archived}
           onChange={(r) => run(() => saveProspect({ id: p.id, name: p.name, amazon: p.asin ?? '', rating: r }))} />
       </div>
 
@@ -457,16 +545,18 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
             <li key={n.id} className="group text-sm text-slate-700">
               <span className="whitespace-pre-wrap">{n.body}</span>
               <span className="ml-2 text-xs text-slate-400">{n.created_by}, {fmtWhen(n.created_at)}</span>
-              <button type="button" title="Delete this comment" disabled={busy}
-                onClick={() => run(() => deleteProspectItem('note', n.id))}
-                className="ml-1 align-middle text-slate-300 opacity-0 hover:text-red-600 group-hover:opacity-100">
-                <TrashIcon className="inline h-3.5 w-3.5" />
-              </button>
+              {!archived && (
+                <button type="button" title="Delete this comment" disabled={busy}
+                  onClick={() => run(() => deleteProspectItem('note', n.id))}
+                  className="ml-1 align-middle text-slate-300 opacity-0 hover:text-red-600 group-hover:opacity-100">
+                  <TrashIcon className="inline h-3.5 w-3.5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <form
+      {!archived && <form
         className="mt-3 flex gap-2"
         onSubmit={(e) => { e.preventDefault(); if (note.trim()) run(() => addProspectNote(p.id, note), () => setNote('')); }}
       >
@@ -475,7 +565,7 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
           rows={Math.min(10, Math.max(2, note.split('\n').length))}
           placeholder="Add a comment — sizes, price thoughts, anything" className={`${inputCls} min-w-0 flex-1`} />
         <button type="submit" disabled={busy || !note.trim()} className={`${smallBtn} self-end`}>Comment</button>
-      </form>
+      </form>}
 
       {checking && (
         <div className="mt-3 rounded-md bg-slate-50 p-3">
@@ -515,10 +605,12 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
                 <td className="py-1 pr-3 text-right tabular-nums">{c.price !== null ? fmtMoney(c.price) : ''}</td>
                 <td className="py-1 pr-3">{c.checked_by}</td>
                 <td className="py-1 text-right">
-                  <button type="button" title="Delete this check" disabled={busy}
-                    onClick={() => run(() => deleteProspectItem('check', c.id))} className="text-slate-300 hover:text-red-600">
-                    <TrashIcon className="h-3.5 w-3.5" />
-                  </button>
+                  {!archived && (
+                    <button type="button" title="Delete this check" disabled={busy}
+                      onClick={() => run(() => deleteProspectItem('check', c.id))} className="text-slate-300 hover:text-red-600">
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -526,18 +618,79 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
         </table>
       )}
 
+      {/* DELETE ASKS WHY (owner, 2026-10-26: "Archive might need training. They will press delete") — the team's one button off the
+          list. Ordered / Dropped ARCHIVE the line (kept 6 months, so a colleague who finds the style again knows it was tested); only
+          "Delete for good" really deletes. There is no separate Archive button on purpose. */}
+      {deciding && (
+        <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-slate-600">Why is it going?</span>
+            {OUTCOMES.map((o) => (
+              <button key={o.key} type="button" onClick={() => setOutcome(o.key)}
+                className={'rounded-full border px-2.5 py-0.5 text-xs font-medium transition '
+                  + (outcome === o.key ? o.on : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
+                {o.label}
+              </button>
+            ))}
+            <button type="button" onClick={() => setOutcome('delete')}
+              className={'rounded-full border px-2.5 py-0.5 text-xs font-medium transition '
+                + (outcome === 'delete' ? 'border-red-300 bg-red-100 text-red-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
+              Delete for good
+            </button>
+          </div>
+          {outcome && outcome !== 'delete' && (
+            <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000}
+              placeholder="Why? (optional) — e.g. rank too low, too many sellers"
+              className={`${inputCls} mt-2 block w-full max-w-2xl`} />
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {outcome === 'delete' ? (
+              <button type="button" disabled={busy} onClick={() => run(() => deleteProspectItem('prospect', p.id))}
+                className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                Delete for good
+              </button>
+            ) : (
+              <button type="button" disabled={busy || !outcome} className={smallBtn}
+                onClick={() => run(() => archiveProspect(p.id, outcome as ProspectOutcome, reason), onClose)}>
+                Move to Archive
+              </button>
+            )}
+            <button type="button" onClick={() => { setDeciding(false); setOutcome(null); }}
+              className="px-2 text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+            <span className="text-xs text-slate-400">
+              {outcome === 'delete' ? 'Gone with its checks and comments — nothing kept.'
+                : 'Kept in the Archive for 6 months with its checks and comments, then removed.'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-        {!checking && <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check rank again</button>}
+        {!archived && !checking && <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check rank again</button>}
         {p.checks.length > 1 && (
           <button type="button" onClick={() => setHistory(!history)} className={smallBtn}>
             {history ? 'Hide history' : `History · ${p.checks.length}`}
           </button>
         )}
-        <button type="button" onClick={() => setEditing(true)} className={smallBtn}>Edit</button>
+        {!archived && <button type="button" onClick={() => setEditing(true)} className={smallBtn}>Edit</button>}
+        {archived && (
+          // Reopen: back on the list with everything it had; archiving it again starts a new 6 months.
+          <button type="button" disabled={busy} onClick={() => run(() => reopenProspect(p.id), onClose)} className={smallBtn}>
+            Reopen
+          </button>
+        )}
         <span className="ml-auto">
-          {confirmDelete ? (
+          {!archived ? (
+            // An active line: Delete opens "Why is it going?" above.
+            !deciding && (
+              <button type="button" onClick={() => setDeciding(true)}
+                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600">
+                <TrashIcon className="h-4 w-4" /> Delete
+              </button>
+            )
+          ) : confirmDelete ? (
             <span className="inline-flex items-center gap-2 text-xs">
               <span className="text-slate-600">Delete for good?</span>
               <button type="button" disabled={busy} onClick={() => run(() => deleteProspectItem('prospect', p.id))}

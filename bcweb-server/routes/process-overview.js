@@ -6,7 +6,7 @@ Method: GET
 Purpose: The new sizes and the prospects total, for the dashboard's Daily (New stuff = new sizes not sold yet; Prospects) and
          Reports → New Additions (the list). Built 2026-10-25 for the Today screen (/process), which was removed 2026-10-26 — the
          route kept its name; its blocks, allowance, summary and clearance went with the screen.
-           - prospects: one plain total of lines on the Prospects list.
+           - prospects: one plain total of lines on the Prospects list (the Archive left out).
            - NEW SIZES: every size of every style created in the last 90 days, with its sales on EACH channel (Amazon, Shopify, shop
              counter) and its stock. The rules live in utils/processMap.js — read its header.
          Every size comes back (a quarter's new styles is a few hundred sizes), so the screens group and count them without a second
@@ -50,7 +50,7 @@ const round2 = (v) => Math.round(Number(v) * 100) / 100;
 router.get('/', async (req, res) => {
   try {
     const [prospects, sizes] = await Promise.all([
-      query(`SELECT COUNT(*)::int AS n FROM prospect`),
+      query(`SELECT COUNT(*)::int AS n FROM prospect WHERE archived_at IS NULL`),
       query(NEW_SIZES_SQL, [NEW_DAYS]),
     ]);
 

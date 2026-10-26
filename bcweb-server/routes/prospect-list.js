@@ -8,7 +8,8 @@ Purpose: Every line on the Prospects screen (the shared notepad of possible NEW 
          amzfeed, i.e. one of our Amazon listings. That is the only link to our own stock, and it is a yes/no on purpose (owner: "Just
          if we already have it. Managing our existing stock is for another process").
          The list is small (lines get deleted), so it all comes back in one go — three queries, no N+1 — and the screen does the
-         sorting, filtering and "rank was X, now Y" in the browser. READ ONLY. Requires auth.
+         sorting, filtering and "rank was X, now Y" in the browser. ARCHIVED lines come back too (archived_at set; 2026-10-26) — the
+         screen's Active | Archive switch splits them; the archive holds 6 months at most, so the list stays small. READ ONLY. Requires auth.
 =======================================================================================================================================
 Success Response:
 {
@@ -16,6 +17,7 @@ Success Response:
   "rows": [
     { "id": 4, "name": "Rieker Y3453 ankle boot black", "asin": "B0C1234567", "rating": "diamond", "rrp": "89.95" | null,
       "owner": "Andreas",
+      "archived_at": null | "...", "archived_by": null | "Summer", "outcome": null | "ordered" | "dropped",
       "created_at": "2026-10-21T09:12:00Z", "updated_at": null,
       "have": { "groupid": "RIE-Y3453-BLACK" } | null,
       "checks": [ { "id": 9, "size": "38", "asin": null, "rank": "58k", "price": "64.99", "sellers": "3", "checked_by": "Summer",
@@ -44,7 +46,7 @@ router.get('/', async (req, res) => {
     const [lines, checks, notes] = await Promise.all([
       // have: the first of our Amazon listings matching any ASIN on the line. amzfeed.asin is stored as-is, so compare upper-cased.
       query(`
-        SELECT p.id, p.name, p.asin, p.rating, p.rrp, p.owner, p.created_at, p.updated_at,
+        SELECT p.id, p.name, p.asin, p.rating, p.rrp, p.owner, p.created_at, p.updated_at, p.archived_at, p.archived_by, p.outcome,
                (SELECT f.groupid FROM amzfeed f
                  WHERE UPPER(TRIM(f.asin)) IN (SELECT p.asin UNION SELECT c.asin FROM prospect_check c WHERE c.prospect_id = p.id)
                  ORDER BY f.groupid LIMIT 1) AS have_groupid
@@ -63,6 +65,7 @@ router.get('/', async (req, res) => {
       const row = {
         id: p.id, name: p.name, asin: p.asin, rating: p.rating, rrp: p.rrp, owner: p.owner,
         created_at: p.created_at, updated_at: p.updated_at,
+        archived_at: p.archived_at, archived_by: p.archived_by, outcome: p.outcome,
         have: p.have_groupid ? { groupid: p.have_groupid } : null,
         checks: [], notes: [],
       };

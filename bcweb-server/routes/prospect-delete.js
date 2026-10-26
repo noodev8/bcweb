@@ -6,7 +6,8 @@ Method: POST
 Purpose: Delete from Prospects — a whole line, or one check / note typed by mistake. A REAL delete (owner, 2026-10-21: "when I delete
          items, I want them deleted rather than hanging around — like deleting a line from google docs"): the row is gone, and a line's
          checks and notes go with it (ON DELETE CASCADE). Nothing is kept or logged. Anyone logged in can delete anything — the list
-         is shared, like a shared doc. Requires auth.
+         is shared, like a shared doc. Since the Archive (2026-10-26) the screen's Delete asks why: Ordered / Dropped go to
+         prospect-archive, and only "Delete for good" (or Delete on an archived line) comes here. Requires auth.
 =======================================================================================================================================
 Request Payload:
 { "kind": "prospect", "id": 4 }     // kind: 'prospect' | 'check' | 'note'

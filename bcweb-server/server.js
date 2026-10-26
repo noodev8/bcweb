@@ -376,6 +376,8 @@ app.use('/prospect-save', require('./routes/prospect-save'));               // P
 app.use('/prospect-check-add', require('./routes/prospect-check-add'));     // POST: rank / price / sellers seen — WRITES prospect_check
 app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // POST: a note on a line — WRITES prospect_note
 app.use('/prospect-delete', require('./routes/prospect-delete'));           // POST: delete a line / check / note for good — WRITES
+app.use('/prospect-archive', require('./routes/prospect-archive'));         // POST: archive a line as Ordered / Dropped (+ purge > 6 months) — WRITES
+app.use('/prospect-reopen', require('./routes/prospect-reopen'));           // POST: an archived line back onto the list — WRITES prospect
 
 // --- New sizes (2026-10-25; built for the Today screen, removed 2026-10-26): Daily's New stuff / Prospects counts and New Additions'
 // list (utils/processMap.js has the rules).
