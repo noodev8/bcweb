@@ -381,6 +381,9 @@ app.use('/amz-process-list', require('./routes/amz-process-list'));             
 app.use('/pricing-process-list', require('./routes/pricing-process-list'));             // GET ?list=unsold-local: the Shopify repricer list behind a Process card — READ ONLY
 app.use('/pricing-all-list', require('./routes/pricing-all-list'));                     // GET: Shopify Pricing home — every in-stock Shopify style — READ ONLY
 app.use('/amz-all-list', require('./routes/amz-all-list'));                             // GET: Amazon Pricing home — every in-stock FBA SKU — READ ONLY
+// --- AMZ loaded (2026-10-26): styles held locally with no size on Amazon, Birkenstock left out, with a "looked at" review date.
+app.use('/amz-loaded-list', require('./routes/amz-loaded-list'));                       // GET: styles not on Amazon yet — READ ONLY
+app.use('/amz-loaded-review', require('./routes/amz-loaded-review'));                   // POST: mark looked at — WRITES skusummary.next_amz_load_review
 app.use('/process-allowance-accept', require('./routes/process-allowance-accept'));   // POST: make the shown figure the one in force — WRITES google_allowance
 
 app.use('/analytics-new-additions', require('./routes/analytics-new-additions')); // GET: styles created in the last N days + their lifetime sales

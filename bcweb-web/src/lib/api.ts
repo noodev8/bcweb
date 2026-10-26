@@ -440,6 +440,30 @@ export function getAllList() {
   );
 }
 
+// AMZ LOADED (2026-10-26) — styles held locally with no size on Amazon (no amzfeed row), Birkenstock left out, each with a "looked
+// at" review date (skusummary.next_amz_load_review). Server: routes/amz-loaded-list.js / amz-loaded-review.js.
+export interface AmzLoadedRow {
+  groupid: string; title: string | null; brand: string | null;
+  units: number; sizes: number;            // local stock held: pairs, and sizes with stock
+  price: number | null; rrp: number | null; // Shopify price / RRP
+  u90: number;                              // Shopify units sold in 90 days
+  next_review: string | null;               // 'YYYY-MM-DD' or null
+  parked: boolean;                          // review date in the future (hidden from the Due view)
+  // Every live size (skumap), size order: its barcode (trailing B stripped) and local stock — the drop-down's rows.
+  sizes_list: { code: string; size: string; ean: string | null; local: number }[];
+}
+// Parked included — the Due switch filters client-side, so the count and the list come from one fetch.
+export function getAmzLoadedList() {
+  return request<AmzLoadedRow[]>({ url: '/amz-loaded-list', method: 'GET', params: { parked: 'include' } }, (b) => b.rows || []);
+}
+// Mark styles looked at for `reviewDays` days (0 = clear the date, due again).
+export function markAmzLoadedReview(groupids: string[], reviewDays: number) {
+  return request<{ updated: number; nextReview: string | null }>(
+    { url: '/amz-loaded-review', method: 'POST', data: { groupids, reviewDays } },
+    (b) => ({ updated: Number(b.updated) || 0, nextReview: b.next_review ?? null })
+  );
+}
+
 // How many styles / SKUs are DUE on the Shopify / Amazon Pricing home lists — the dashboard's Daily pricing tile. Asks for one row
 // without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view).
 export function getPricingDueCounts() {

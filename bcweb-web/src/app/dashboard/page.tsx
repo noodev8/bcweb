@@ -9,8 +9,7 @@ DAILY IS THE MAIN THING (owner, 2026-10-26: "i want daily to be the main thing s
 duplicates"). The page reads top to bottom in order of importance:
 
   1. DAILY — the day's jobs, the one bold block on the page (a deep brand band). SIZED BY WEIGHT (owner, 2026-10-26: "sales can be
-     smaller"): the four jobs are equal tiles in one row; Sales is a compact figure in the band's header bar; AMZ loaded a narrow
-     slot. Each says how much is waiting, so it is clear where to start:
+     smaller"): the five jobs are equal tiles in one row; Sales is a compact figure in the band's header bar. Each says how much is waiting, so it is clear where to start:
        Sales      today's profit and units, all channels (GET /analytics-sales?window=today — the Sales screen's own headline).
                   Moved here from the menu (owner, 2026-10-26: "add sales to daily").
        Pricing    Shopify due · Amazon due — the counts of the in-stock lists' Due view (GET /pricing-all-list, /amz-all-list),
@@ -19,8 +18,8 @@ duplicates"). The page reads top to bottom in order of importance:
        New stuff  new SIZES not sold anywhere yet, of the styles added in 90 days — the Today screen's Unsold, from the same data
                   (GET /process-overview, shared SWR key). Opens New Additions.
        Prospects  finds on the list (same request). Opens Prospects.
-       AMZ loaded a PLACEHOLDER (owner, 2026-10-26: "add a placeholder called amz loaded") — no screen behind it yet, shown as
-                  "Coming soon" and not a link.
+       AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
+                  key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
      It replaced the /daily screen (that route now redirects here) and the Daily card that opened it — one home for the four.
   2. SEARCH — the product lookup (components/ProductSearchBox), still one keystroke from the top.
   3. EVERYTHING ELSE — the menu, EVERY SCREEN ONCE (Sales is in Daily, so not here). Until 2026-10-26 screens were deliberately repeated across "mindset" groups
@@ -39,7 +38,7 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getPricingDueCounts, getProcessOverview, getSalesReport } from '@/lib/api';
+import { getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport } from '@/lib/api';
 import { isSold } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
@@ -196,8 +195,7 @@ export default function DashboardPage() {
 }
 
 /* =====================================================================================================================================
-   DAILY — the hero. A deep brand band: Sales as a compact figure in its header bar, then the four jobs as equal white tiles and a
-   narrow AMZ loaded placeholder, each with how much is waiting. Counts load on their own
+   DAILY — the hero. A deep brand band: Sales as a compact figure in its header bar, then the five jobs as equal white tiles, each with how much is waiting. Counts load on their own
    (the menu never waits for them); a count that fails shows a dash, never an error over the page.
 ===================================================================================================================================== */
 function Daily() {
@@ -210,6 +208,9 @@ function Daily() {
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
   const today = sales.data?.summary ?? null;
+  // Shared with the AMZ loaded screen (same key) — its due count is the styles not looked at yet (or whose date has come round).
+  const amzLoaded = useApiQuery('amz-loaded-list', () => getAmzLoadedList());
+  const amzLoadedDue = amzLoaded.data ? amzLoaded.data.filter((r) => !r.parked).length : null;
 
   return (
     <section aria-labelledby="daily-heading" className="rounded-2xl bg-brand-700 p-5 shadow-lg sm:p-6">
@@ -230,8 +231,8 @@ function Daily() {
         </Link>
       </div>
 
-      {/* THE JOBS — four equal tiles, then a narrow slot for the AMZ loaded placeholder. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,0.55fr)]">
+      {/* THE JOBS — five equal tiles. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
         <div className="flex flex-col rounded-xl bg-white p-4">
           <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices due a review" />
@@ -253,12 +254,9 @@ function Daily() {
           <Big n={prospects} unit="on the list" />
         </DailyLink>
 
-        {/* AMZ LOADED — a placeholder (owner, 2026-10-26). Not a link until there is a screen behind it. */}
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/30 p-4 text-center" aria-disabled="true">
-          <InboxStackIcon className="mb-1 h-5 w-5 text-white/70" />
-          <span className="text-sm font-semibold text-white">AMZ loaded</span>
-          <span className="mt-0.5 text-xs text-brand-100">Coming soon</span>
-        </div>
+        <DailyLink href="/amz-loaded" icon={InboxStackIcon} title="AMZ loaded" sub="In stock, not on Amazon yet">
+          <Big n={amzLoadedDue} unit="styles to look at" />
+        </DailyLink>
       </div>
     </section>
   );
