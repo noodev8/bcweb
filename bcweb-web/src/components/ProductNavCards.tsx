@@ -137,6 +137,9 @@ interface Props {
   shopifyOnly?: boolean;
   /** Small link pills, groups side by side — for a drop-down panel (New Additions, 2026-10-27) where full cards swamp the row. */
   compact?: boolean;
+  /** Grey out the Amazon group, with this as the hover reason — Inventory passes it for Birkenstock (owner, 2026-10-27), which is
+   *  not sold on Amazon. Faded rather than left off, so the row keeps its shape as the selection moves between brands. */
+  amazonOff?: string;
   // NO BARCODE CARD. It had one, toggling a column on the drill; the owner cut it (2026-09-22 — "no point having barcode button, may
   // as well just show the barcode"), and the drill now prints the column unconditionally. Nothing to reinstate here if it ever comes
   // back — a barcode belongs beside its size, not behind a button on this row.
@@ -154,7 +157,7 @@ const BASE_COMPACT = 'inline-flex items-center gap-1 rounded px-1 py-0.5 text-[1
 const ENABLED_COMPACT = 'text-slate-700 hover:text-brand-700 hover:underline';
 const DISABLED_COMPACT = 'cursor-not-allowed text-slate-400';
 
-export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave, compact }: Props) {
+export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave, compact, amazonOff }: Props) {
   const encodedFrom = encodeURIComponent(from);
   // The destination's back-link label names where you actually came from ("Inventory", "New Additions"), not a fixed label.
   const encodedBack = encodeURIComponent(prettyPathLabel(from));
@@ -169,9 +172,10 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
     const key = `${t.group}-${t.label}`;
     // No groupid = a span, not a link. See the header: disabled cards must not be navigable by any route, including middle-click
     // and keyboard, not just unclickable by mouse.
-    if (!groupid) {
+    const off = t.group === 'Amazon' && !!amazonOff;
+    if (!groupid || off) {
       return (
-        <span key={key} aria-disabled className={compact ? `${BASE_COMPACT} ${DISABLED_COMPACT}` : `${BASE} ${DISABLED}`}>
+        <span key={key} aria-disabled title={off ? amazonOff : undefined} className={compact ? `${BASE_COMPACT} ${DISABLED_COMPACT}` : `${BASE} ${DISABLED}`}>
           <Icon className="h-4 w-4 text-slate-300" />
           {t.label}
         </span>

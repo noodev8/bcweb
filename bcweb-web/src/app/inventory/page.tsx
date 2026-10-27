@@ -1014,6 +1014,9 @@ function InventoryPageContent() {
             groupid={selectedRow ? selectedRow.groupid : null}
             from={selfUrl}
             exclude={['Inventory']}
+            // Birkenstock isn't sold on Amazon, so its Amazon Order / Price fade out (owner, 2026-10-27). Same test as Amazon Order's
+            // isBirkenstock.
+            amazonOff={(selectedRow?.supplier || '').toUpperCase() === 'BIRKENSTOCK' ? 'Birkenstock — not sold on Amazon' : undefined}
             onLeave={() => { if (selectedRow) saveReturn(selectedRow.groupid); }}
           />
         </div>
