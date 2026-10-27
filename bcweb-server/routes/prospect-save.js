@@ -17,6 +17,7 @@ Request Payload:
   "amazon": "https://www.amazon.co.uk/dp/B0C1234567/...",   // optional — ASIN or URL; "" clears it
   "rating": "diamond",                       // optional — 'diamond' | 'good' | 'sketchy' | null
   "rrp": "89.95",                            // optional — free text, to guess the profit; OMIT to leave it as it is
+  "cost": "55",                              // optional — free text, what it would cost us (return on cost, 2026-10-27); OMIT = leave it
   "comment": "free text…",                   // optional, add only — the line's first comment (prospect_note), same transaction
   "check": { "rank": "2,140", "price": "64.99", "sellers": "3", "size": "" } }   // optional, add only — as prospect-check-add
 
@@ -56,6 +57,8 @@ router.post('/', async (req, res) => {
     const comment = id === null ? textOrNull(body.comment, 10000) : null;
     const hasRrp = typeof body.rrp === 'string';
     const rrp = hasRrp ? textOrNull(body.rrp, 30) : null;
+    const hasCost = typeof body.cost === 'string';
+    const cost = hasCost ? textOrNull(body.cost, 30) : null;
     const amazon = typeof body.amazon === 'string' ? body.amazon.trim() : '';
     const asin = amazon ? parseAsin(amazon) : null;
     if (amazon && !asin) {
@@ -85,8 +88,8 @@ router.post('/', async (req, res) => {
       }
       if (id === null) {
         const ins = await client.query(
-          `INSERT INTO prospect (name, asin, rating, owner, rrp) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [name, asin, rating, req.user.display_name, rrp]
+          `INSERT INTO prospect (name, asin, rating, owner, rrp, cost) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [name, asin, rating, req.user.display_name, rrp, cost]
         );
         const newId = ins.rows[0].id;
         if (check) {
@@ -105,8 +108,9 @@ router.post('/', async (req, res) => {
       }
       const upd = await client.query(
         `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now(),
-                rrp = CASE WHEN $5::boolean THEN $6 ELSE rrp END
-          WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp]
+                rrp = CASE WHEN $5::boolean THEN $6 ELSE rrp END,
+                cost = CASE WHEN $7::boolean THEN $8 ELSE cost END
+          WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp, hasCost, cost]
       );
       if (upd.rowCount === 0) return { error: 'NOT_FOUND', message: 'That line has been deleted' };
       return { id };

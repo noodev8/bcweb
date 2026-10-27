@@ -14,8 +14,12 @@ Exports:
   OUTCOMES            what an archived line was decided as (migrations/20261026_prospect_archive.sql)
   ARCHIVE_MONTHS      how long an archived line is kept
   purgeOldArchive(c)  removes lines archived more than ARCHIVE_MONTHS ago — called on every add and every archive (no cron)
+  moneyNum(text)      -> the number in a free-text price/cost ("£98" -> 98) | null
+  returnOnCost(p, c)  -> { price, cost, profit, on_cost_pct } | null — a find's keep a pair on Amazon and its return on cost
 =======================================================================================================================================
 */
+
+const { amzProfit } = require('./amzProfit');
 
 const RATINGS = ['diamond', 'good', 'sketchy'];
 
@@ -67,4 +71,28 @@ function parseAsin(input) {
   return m ? m[1].toUpperCase() : null;
 }
 
-module.exports = { RATINGS, OUTCOMES, ARCHIVE_MONTHS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull, purgeOldArchive };
+// A price or cost typed as free text ("£98", "98.00", "1,099") read as a number — the first number in it, commas dropped. null when
+// there is none or it isn't above 0 (a blank or "?" must never become a £0 cost).
+function moneyNum(text) {
+  if (text === undefined || text === null) return null;
+  const m = String(text).replace(/,/g, '').match(/\d+(\.\d+)?/);
+  const n = m ? Number(m[0]) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// RETURN ON COST for a find (owner, 2026-10-27 — the one figure for "is this a good use of cash?"): what a pair keeps on Amazon at the
+// price seen there, with THE Amazon formula (utils/amzProfit.js — VAT, 15% referral, FBA, digital, courier, wages, ÷1.2 for returns),
+// over the cost. VAT is assumed (every find would be sold VAT-registered) and the FBA fee is the formula's own fallback (a find has no
+// real one yet) — both on the cautious side, like the formula. null unless both a price and a cost can be read.
+function returnOnCost(priceText, costText) {
+  const price = moneyNum(priceText);
+  const cost = moneyNum(costText);
+  if (price === null || cost === null) return null;
+  const { profit } = amzProfit({ price, cost, fbafee: null, tax: 1 });
+  if (profit === null) return null;
+  return { price, cost, profit, on_cost_pct: Math.round((profit / cost) * 1000) / 10 };
+}
+
+module.exports = {
+  RATINGS, OUTCOMES, ARCHIVE_MONTHS, BAD_ASIN_MESSAGE, parseAsin, parseCheck, textOrNull, purgeOldArchive, moneyNum, returnOnCost,
+};

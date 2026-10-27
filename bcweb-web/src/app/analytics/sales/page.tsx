@@ -7,8 +7,14 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
          under a headline strip whose hero is NET PROFIT (with revenue, margin and net units sold supporting; there is no Orders tile —
          on this catalogue an order is nearly always one pair, so it just restated units). The reframed successor to the legacy
          PowerBuilder "Sales" screen: windowed (Today / Yesterday / 7·30·90d / custom), channel-filtered (All / Shopify / Amazon), and
-         searchable to a single product. Returns are shown (as red negative-profit lines) and netted into the totals — a sales/profit view
-         has to tell the truth about refunds, unlike the velocity-only pricing module.
+         searchable to a single product. Returns are netted into the totals — a sales/profit view has to tell the truth about refunds,
+         unlike the velocity-only pricing module — and the Units tile carries the total returned and the % returned.
+
+         RETURN LINES ARE HIDDEN FROM THE LIST BY DEFAULT (owner, 2026-10-27). The tiles stay net; the list shows sales only, with a chip
+         over it ("7 returns · −£64.00 hidden") that shows them, as red negative-profit lines, on a click. With them hidden the visible
+         lines add up to more than the Profit tile — the chip names the difference. A browser-side cut of the LOADED rows (the server
+         still sends them, so the totals and the cap are untouched); Export CSV writes what's on screen. Not in the URL — every visit
+         starts hidden.
 
          SEARCH is the Inventory screen's proven filter, ported here (owner, 2026-07-25): two boxes — Contains / Does not contain — and a
          Find that COMMITS the term as a step, each one narrowing the last ("ARIZONA" -> not "EVA" -> "BLACK"). The old single box
@@ -297,6 +303,12 @@ function SalesPageContent() {
 
   const rows: SalesReportRow[] = data?.rows ?? NO_ROWS;
 
+  // RETURNS — hidden from the list by default (see the header). The chip counts and sums the loaded return lines.
+  const [showReturns, setShowReturns] = useState(false);
+  const returnRows = useMemo(() => rows.filter((r) => r.qty < 0), [rows]);
+  const returnProfit = useMemo(() => returnRows.reduce((t, r) => t + (r.profit ?? 0), 0), [returnRows]);
+  const shownRows = useMemo(() => (showReturns ? rows : rows.filter((r) => r.qty >= 0)), [rows, showReturns]);
+
   const summary: SalesReportSummary | null = data?.summary ?? null;
   // Memoised because a fresh object each render would re-run the CSV-export callback and the summary memo below.
   const range = useMemo(() => ({ from: data?.from ?? null, to: data?.to ?? null }), [data?.from, data?.to]);
@@ -399,19 +411,19 @@ function SalesPageContent() {
 
   // --- CSV export (current filtered view) --------------------------------------------------------------------------------------
   const exportCsv = useCallback(() => {
-    if (rows.length === 0) return;
-    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'RRP', 'Sold price (inc VAT)', 'Profit', 'Margin % (ex VAT)'];
+    if (shownRows.length === 0) return;
+    const header = ['Date', 'Time', 'Channel', 'Code', 'Size', 'Style', 'Brand', 'Product', 'Order', 'Qty', 'RRP', 'Sold price (inc VAT)', 'Profit', 'Return on cost %'];
     const esc = (v: string | number | null) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = rows.map((r) => [
+    const lines = shownRows.map((r) => [
       r.solddate, r.ordertime, CHANNEL_CHIP[r.channel]?.label ?? r.channel, r.code, r.size, r.groupid,
       r.brand, r.productname, r.ordernum, r.qty,
       r.rrp === null ? '' : r.rrp.toFixed(2),
       r.soldprice === null ? '' : r.soldprice.toFixed(2),
       r.profit === null ? '' : r.profit.toFixed(2),
-      r.marginPct === null ? '' : r.marginPct.toFixed(1),
+      r.onCostPct === null ? '' : r.onCostPct.toFixed(1),
     ].map(esc).join(','));
     const csv = [header.join(','), ...lines].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -424,7 +436,7 @@ function SalesPageContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [rows, channel, range]);
+  }, [shownRows, channel, range]);
 
   const rangeLabel = useMemo(() => {
     if (!range.from || !range.to) return '';
@@ -541,14 +553,17 @@ function SalesPageContent() {
           <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:col-span-1 lg:col-span-2">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue <span className="font-normal normal-case text-slate-400">inc VAT</span>{rangeLabel && <span className="ml-1 font-normal normal-case text-slate-400">· {rangeLabel}</span>}</div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-slate-800">{money(summary.revenue)}</div>
-            {/* The ex-VAT figure sits under the gross one because it is the denominator of the margin on the tile beside this: without
-                it on screen the two tiles look like they disagree (profit is net of VAT, revenue is not). Demoted, not hidden — gross
-                is still the hero because it is what reconciles with Shopify, Seller Central and the bank. */}
+            {/* The ex-VAT figure sits under the gross one so the two tiles don't look like they disagree (profit is net of VAT,
+                revenue is not). Demoted, not hidden — gross is still the hero because it is what reconciles with Shopify, Seller
+                Central and the bank. */}
             <div className="mt-0.5 text-xs text-slate-400">{money(summary.netRevenue)} ex VAT</div>
           </div>
           <Stat label="Net profit" value={money(summary.profit)}
             valueClassName={summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}
-            sub={`${pct(summary.marginPct)} margin`} subTitle="Profit over ex-VAT revenue — profit already has the VAT taken out, so the denominator does too" />
+            // RETURN ON COST replaced margin here (owner, 2026-10-27): pence kept per £1 spent on stock — the figure Prospects shows
+            // for a find, so the two can be compared. Margin flattered dear shoes.
+            sub={`${pct(summary.onCostPct)} on cost`}
+            subTitle="Return on cost: pence kept per £1 spent on stock" />
           {/* Units lead with NET (owner, 2026-07-30) — the gross figure was the headline until the returns badge went on, and with a
               45%-returned style the big number was then the one that hadn't happened. Net is what the money tiles beside it are already
               netted to, so the row now reads on one basis throughout. The gross is spelled out underneath as the equation it came from,
@@ -642,6 +657,21 @@ function SalesPageContent() {
                     {truncLead} {int(rows.length)} of {int(summary.lines)} — CSV exports these {int(rows.length)}
                   </span>
                 )}
+                {/* RETURNS chip — see the header. Only when the loaded lines hold any. */}
+                {returnRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowReturns((v) => !v)}
+                    aria-pressed={showReturns}
+                    title={showReturns ? 'Hide the return lines (the totals above stay net of them)' : 'Show the return lines — the totals above already include them'}
+                    className={
+                      'rounded px-1.5 py-0.5 font-medium ring-1 '
+                      + (showReturns ? 'bg-rose-100 text-rose-700 ring-rose-200' : 'bg-rose-50 text-rose-600 ring-rose-200 hover:bg-rose-100')
+                    }
+                  >
+                    {int(returnRows.length)} return{returnRows.length === 1 ? '' : 's'} · {money(returnProfit)}{showReturns ? ' · hide' : ' hidden'}
+                  </button>
+                )}
                 {searchActive && summary && summary.products > 1 && (
                   <span className="text-amber-600">Spans {int(summary.products)} products — refine to isolate one</span>
                 )}
@@ -671,12 +701,19 @@ function SalesPageContent() {
                     <th className="px-3 py-2.5 text-right font-medium" title="RRP when the sale was booked. Lines from before RRP was recorded show the RRP as it stood when it was backfilled">RRP</th>
                     <th className="px-3 py-2.5 text-right font-medium" title="Sold price per unit, VAT-inclusive as the customer paid">Price</th>
                     <th className="px-3 py-2.5 text-right font-medium">Profit</th>
-                    <th className="px-3 py-2.5 text-right font-medium" title="Profit over the line's ex-VAT revenue — profit already has the VAT taken out, so the denominator does too">Margin</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Return on cost: pence kept per £1 spent on stock. Blank on returns.">On cost</th>
                     <th className="px-4 py-2.5 font-medium">Order</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => {
+                  {shownRows.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-400">
+                        Only returns here — <button type="button" onClick={() => setShowReturns(true)} className="text-brand-600 underline">show them</button>.
+                      </td>
+                    </tr>
+                  )}
+                  {shownRows.map((r, i) => {
                     // No index in the selection key, so the highlight stays on the same sale when the list re-sorts.
                     const rowKey = `${r.channel}-${r.code}-${r.ordernum}-${r.ordertime}`;
                     return (
@@ -870,7 +907,7 @@ function SaleRow({ r, selected, onSelect, money, pct, fmtDate }: {
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.soldprice)}</td>
       <td className={'px-3 py-2.5 text-right font-medium tabular-nums ' + profitCls}>{money(r.profit)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.marginPct)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.onCostPct)}</td>
       <td className="px-4 py-2.5 whitespace-nowrap text-xs text-slate-400">{r.ordernum || '—'}</td>
     </tr>
   );

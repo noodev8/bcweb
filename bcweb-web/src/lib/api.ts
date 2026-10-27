@@ -2158,6 +2158,7 @@ export interface SalesReportRow {
   soldprice: number | null;  // per unit, GROSS (VAT-inclusive, as the customer paid)
   profit: number | null;     // net, downstream-computed; negative on a return
   marginPct: number | null;
+  onCostPct: number | null; // RETURN ON COST: profit / (style's current cost × qty) — pence kept per £1 spent; null on returns / no cost
 }
 // Headline totals over the WHOLE window (never bounded by the row cap). Units split sold / returned / net (mirrors the legacy footer).
 export interface SalesReportSummary {
@@ -2171,6 +2172,7 @@ export interface SalesReportSummary {
   netRevenue: number;        // the same trade ex-VAT (revenue / 1.2) — the denominator of marginPct
   profit: number;            // the hero number
   marginPct: number | null;  // profit / netRevenue: profit is already ex-VAT, so the denominator has to be too
+  onCostPct: number | null;  // RETURN ON COST over the lines with a cost (net of returns) — what the screen shows in margin's place
   products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
 }
 // Short windows carry the line list; long windows (7/30/90d) are summary-only (totals, no rows).
@@ -2242,7 +2244,7 @@ export function getSalesReport(params: {
       search: b.search ?? null,
       sort: (b.sort as SalesSort) || 'date',
       dir: (b.dir as SalesSortDir) || 'desc',
-      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, unitsSoldSinceReturned: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, products: 0 },
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, unitsSoldSinceReturned: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, onCostPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,
       count: b.count ?? 0,
@@ -4838,6 +4840,10 @@ export interface ProspectNote { id: number; body: string; created_by: string; cr
 export interface Prospect {
   id: number; name: string; asin: string | null; rating: ProspectRating | null; owner: string;
   rrp: string | null;                 // typed by hand, free text — to guess the profit
+  cost: string | null;                // typed by hand, free text — what it would cost us
+  // RETURN ON COST (2026-10-27): a pair's keep on Amazon at the latest check's price (THE Amazon formula), over the cost. null unless
+  // both a price and a cost read as numbers.
+  return_on_cost: { price: number; cost: number; profit: number; on_cost_pct: number } | null;
   created_at: string; updated_at: string | null;
   archived_at: string | null;         // set = in the Archive
   archived_by: string | null;
@@ -4870,6 +4876,7 @@ export function saveProspect(args: {
   id?: number; name: string; amazon: string; rating: ProspectRating | null;
   comment?: string;   // the first comment, add only
   rrp?: string;       // omit = leave it as it is
+  cost?: string;      // omit = leave it as it is
   check?: { size: string; rank: string; price: string; sellers: string };
 }) {
   return request<{ id: number }>({ url: '/prospect-save', method: 'POST', data: args }, (b) => ({ id: b.id }));

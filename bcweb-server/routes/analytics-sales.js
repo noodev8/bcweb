@@ -60,7 +60,13 @@ revenue / 1.2, at BOTH grains (summary and per line). REVENUE ITSELF IS STILL RE
 Shopify, Seller Central and the bank — with `netRevenue` alongside it so the margin can be checked by hand. Same rule, same constant and
 same reasoning as routes/brand-overview.js (rule 3 in its header); the two screens are read side by side and must not disagree.
 `sales.collectedvat` exists but is populated on CM3 rows only (and is exactly 1/6 there), so the /6 convention the two profit utils
-already use is the one source of truth — do not switch to the column until it is backfilled on SHP and AMZ. Size = the code's suffix after the last '-'. Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
+already use is the one source of truth — do not switch to the column until it is backfilled on SHP and AMZ.
+
+RETURN ON COST (owner, 2026-10-27) — what the Sales screen SHOWS in margin's place: profit ÷ what the units cost, "pence kept per £1
+spent buying stock", the same figure Prospects shows for a find (utils/prospect.js → returnOnCost), so a find can be compared with what
+sells. Cost is the style's CURRENT skusummary.cost (sales carry no cost stamp) — a cost changed since the sale shifts it; accepted.
+`onCostPct` per line (sales only, null on returns) and in the summary (lines with a cost only, net of returns). marginPct stays in
+the response for any other reader. Size = the code's suffix after the last '-'. Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
 Requires auth.
 =======================================================================================================================================
 Request Query Params:
@@ -272,7 +278,8 @@ router.get('/', async (req, res) => {
         -- skusummary has since dropped rather than disappearing from the search entirely.
         -- RRP is sales.rrp — stamped at booking (migrations/20260926b_sales_rrp.sql) — falling back to the style's CURRENT rrp only
         -- where the stamp is NULL (a writer that missed it, or junk at the time). s.* is listed first so this rrp replaces it.
-        SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown
+        -- cost_now = the style's CURRENT cost (skusummary.cost — sales lines carry no cost stamp), for RETURN ON COST (see the header).
+        SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown, ${safeNumeric('sk.cost')} AS cost_now
         FROM sales s
         LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
         WHERE (
@@ -308,6 +315,10 @@ router.get('/', async (req, res) => {
          COUNT(DISTINCT ordernum) FILTER (WHERE qty > 0 AND ordernum IS NOT NULL AND ordernum <> '') AS orders,
          COALESCE(SUM(soldprice * qty), 0)::numeric                     AS revenue,
          COALESCE(SUM(profit), 0)::numeric                             AS profit,
+         -- RETURN ON COST: profit over what the units cost, both over the lines whose style HAS a cost (a line without one would
+         -- add profit with nothing to divide it by). Net of returns on both sides, like the profit.
+         SUM(profit) FILTER (WHERE cost_now > 0)                        AS costed_profit,
+         SUM(cost_now * qty) FILTER (WHERE cost_now > 0)                AS costed_cost,
          -- RETURN RATE BY SALE DATE (owner, 2026-09-25). units_returned above counts return rows BOOKED in the window — right for the
          -- money, wrong for a rate: a return is dated the day it's processed (sync_returns.py / the Amazon import), so a batch of old
          -- refunds landing in a 3-day window was divided by 3 days of sales and read as 26.7% "returned". This instead takes the units
@@ -337,7 +348,7 @@ router.get('/', async (req, res) => {
       : await query(
           `${filterCte}
            SELECT solddate, ordertime, channel, code, SUBSTRING(code FROM '[^-]*$') AS size, groupid, productname, brand, ordernum,
-                  qty, soldprice, profit, rrp_shown AS rrp
+                  qty, soldprice, profit, rrp_shown AS rrp, cost_now
            FROM f
            ORDER BY ${orderBy}
            LIMIT $${filterParams.length + 1}::int`,
@@ -356,6 +367,12 @@ router.get('/', async (req, res) => {
       const marginPct = revenue && revenue !== 0 && profit !== null
         ? Math.round((profit / (revenue / VAT_MULTIPLIER)) * 1000) / 10
         : null;
+      // Per-line RETURN ON COST: what the line kept over what its units cost (the style's current cost). Sales only — on a return
+      // line both are negative and the ratio means nothing, so it's null there, as it is when the cost is unknown.
+      const cost = num(r.cost_now);
+      const onCostPct = qty > 0 && cost !== null && cost > 0 && profit !== null
+        ? Math.round((profit / (cost * qty)) * 1000) / 10
+        : null;
       return {
         solddate: toIsoDate(r.solddate),
         ordertime: r.ordertime || null,
@@ -373,6 +390,7 @@ router.get('/', async (req, res) => {
         rrp: num(r.rrp),                    // stamped sales.rrp, else the style's current RRP; null if neither is known
         profit,
         marginPct,
+        onCostPct,
       };
     });
 
@@ -396,6 +414,8 @@ router.get('/', async (req, res) => {
       netRevenue: Math.round((revenueTotal / VAT_MULTIPLIER) * 100) / 100,
       profit: profitTotal,
       marginPct: revenueTotal !== 0 ? Math.round((profitTotal / (revenueTotal / VAT_MULTIPLIER)) * 1000) / 10 : null,
+      // Return on cost — see the header and the SQL. null when nothing matched has a cost (or the costed units net to 0).
+      onCostPct: num(s.costed_cost) > 0 ? Math.round((num(s.costed_profit) / num(s.costed_cost)) * 1000) / 10 : null,
       products,                       // distinct styles matched (product mode: >1 = the total spans multiple products)
     };
 

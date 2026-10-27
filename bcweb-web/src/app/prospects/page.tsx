@@ -272,6 +272,7 @@ function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
   const [rating, setRating] = useState<ProspectRating | null>(edit?.rating ?? null);
   const [comment, setComment] = useState('');
   const [rrp, setRrp] = useState(edit?.rrp ?? '');
+  const [cost, setCost] = useState(edit?.cost ?? '');
   const [check, setCheck] = useState({ size: '', rank: '', price: '', sellers: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,7 +301,7 @@ function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
   async function save() {
     setBusy(true);
     setError(null);
-    const res = await saveProspect({ id: edit?.id, name, amazon, rating, rrp, ...(edit ? {} : { check, comment }) });
+    const res = await saveProspect({ id: edit?.id, name, amazon, rating, rrp, cost, ...(edit ? {} : { check, comment }) });
     setBusy(false);
     if (!res.success) { setError(res.error || 'Failed to save'); return; }
     onDone();
@@ -352,13 +353,18 @@ function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
           an edit — where there are no check fields — it is on its own. */}
       <div className="mt-3">
         <div className="text-xs font-medium text-slate-600">
-          {edit ? 'RRP' : <>What you see now <span className="font-normal text-slate-400">(optional)</span></>}
+          {edit ? 'RRP and cost' : <>What you see now <span className="font-normal text-slate-400">(optional)</span></>}
         </div>
         <div className="mt-1 flex flex-wrap items-end gap-2">
           {!edit && <CheckFields value={check} onChange={setCheck} />}
           <label className="text-xs text-slate-500">
             RRP £
             <input value={rrp} onChange={(e) => setRrp(e.target.value)} maxLength={30} className={`${inputCls} mt-1 block w-24`} />
+          </label>
+          {/* COST (2026-10-27) — what a pair would cost us; with the Amazon price it gives the line's return on cost. */}
+          <label className="text-xs text-slate-500" title="What one pair would cost us — with the Amazon price it gives the return on cost">
+            Cost £
+            <input value={cost} onChange={(e) => setCost(e.target.value)} maxLength={30} className={`${inputCls} mt-1 block w-24`} />
           </label>
         </div>
       </div>
@@ -438,6 +444,11 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
       <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{latest?.rank ? `Rank ${latest.rank}` : ''}</span>
       <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
       <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">{p.rrp ? `RRP ${fmtMoney(p.rrp)}` : ''}</span>
+      {/* RETURN ON COST (2026-10-27) — the one figure for "is this a good use of cash?". Blank until a cost and a price are typed. */}
+      <span className="hidden w-24 shrink-0 text-right tabular-nums font-medium text-slate-800 sm:block"
+        title={p.return_on_cost ? `Keeps £${p.return_on_cost.profit.toFixed(2)} a pair on Amazon at £${p.return_on_cost.price.toFixed(2)}, cost £${p.return_on_cost.cost.toFixed(2)}` : 'Type a cost and a price to see the return on cost'}>
+        {p.return_on_cost ? `${p.return_on_cost.on_cost_pct.toFixed(0)}% on cost` : ''}
+      </span>
       <span className="hidden w-8 shrink-0 text-right text-xs text-slate-400 md:block" title="Comments">{p.notes.length ? `💬${p.notes.length}` : ''}</span>
       {p.archived_at ? (
         // Archived: the decision, who made it and when — not "since checked", which no longer matters.
@@ -509,6 +520,13 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
             {p.asin && <span className="font-mono">{p.asin}</span>}
             {p.rrp && <span className="font-medium text-slate-700">RRP {fmtMoney(p.rrp)}</span>}
+            {p.cost && <span className="font-medium text-slate-700">Cost {fmtMoney(p.cost)}</span>}
+            {p.return_on_cost && (
+              <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-800 ring-1 ring-slate-200"
+                title="What a pair keeps on Amazon at the latest price — after VAT, 15% referral, FBA, courier and wages, ÷1.2 for returns — over the cost">
+                Keeps £{p.return_on_cost.profit.toFixed(2)} a pair · {p.return_on_cost.on_cost_pct.toFixed(0)}% on cost
+              </span>
+            )}
             <span>{p.owner} · added {fmtWhen(p.created_at)}</span>
             {archived ? (
               <span className="inline-flex items-center gap-1.5">
