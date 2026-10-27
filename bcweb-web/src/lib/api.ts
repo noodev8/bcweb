@@ -4910,6 +4910,10 @@ export interface ProcessSizeChannel {
 export interface ProcessSizeRow {
   code: string; groupid: string; title: string | null; brand: string | null; size: string; created: string;
   localStock: number; fbaStock: number;
+  onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
+  // The STYLE's review (repeated on each of its sizes): the date set (null = never reviewed), the date it is due — that, or created
+  // + 20 days — and whether that has come round (server date). Set by markNewAdditionsReview.
+  reviewOn: string | null; dueOn: string; due: boolean;
   channels: Record<ProcessChannel, ProcessSizeChannel>;
 }
 export interface ProcessOverview {
@@ -4922,6 +4926,13 @@ export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
     newDays: b.newDays, prospects: b.prospects, styles: b.styles, rows: b.rows || [],
   }));
+}
+// Review new styles for `reviewDays` days (0 = clear — back to due at created + 20 days). Writes skusummary.next_new_review.
+export function markNewAdditionsReview(groupids: string[], reviewDays: number) {
+  return request<{ updated: number; nextReview: string | null }>(
+    { url: '/new-additions-review', method: 'POST', data: { groupids, reviewDays } },
+    (b) => ({ updated: Number(b.updated) || 0, nextReview: b.next_review ?? null })
+  );
 }
 // ---- The Google allowance (google_allowance) — Google spend per Shopify unit over 90 days, fixed, re-measured quarterly by button.
 // Shown on the Google Ads screen (components/GoogleAllowanceBar) since 2026-10-26. Rules in bcweb-server/utils/googleAllowance.js.

@@ -16,12 +16,23 @@ Purpose: The NEW SIZES — every size of every style created in the last NEW_DAY
 WHY "CREATED IN 90 DAYS" AND NOT THE NEW PORTFOLIO STATUS: utils/portfolioStatus.js uses the same 90 days (NEW_DAYS is imported, so
 the two windows can't drift), but there WINNERS and STEADY are tested first — and STEADY is "sold a unit in 3 months", so every new
 style that sells anything leaves NEW. Read through that status the list could only ever show not sold.
+
+REVIEW / DUE (owner, 2026-10-27: "add a review and due date to them as well ... these are products that need actions and easily
+inspected"). Each new STYLE carries skusummary.next_new_review (set by POST /new-additions-review, the pricing screens' "Review in N
+days"). A style never reviewed falls due FIRST_REVIEW_DAYS after it was created — 20, the owner's "that's when I'd expect something to
+happen and act on it if not" (it was New Additions' "20+ days live" filter, which the Due switch replaced). So:
+  due_on = COALESCE(next_new_review, created_on + FIRST_REVIEW_DAYS);  due = due_on <= today.
+Clearing a review puts the style back on that default. Computed here (server date, London) so Daily and the screen agree.
+ON AMAZON: a size is listed when it has an amzfeed row (every FBA listing, 0-stock ones too — the AMZ loaded rule, per size).
 =======================================================================================================================================
 */
 
 const { NEW_DAYS } = require('./portfolioStatus');
 
 const CHANNELS = ['AMZ', 'SHP', 'CM3'];
+
+// A never-reviewed new style is due this many days after it was created (see REVIEW / DUE above).
+const FIRST_REVIEW_DAYS = 20;
 
 // Every size of every NEW style, with its sales per channel since the style was created and its stock. One query, no N+1.
 //   created_on is the London date of skusummary.created_at, so a sale booked on the creation day counts.
@@ -42,12 +53,12 @@ const AMZ_BOUND_SQL = `COALESCE(l.deleted, 0) = 0 AND l.qty > 0
 
 const NEW_SIZES_SQL = `
   WITH nw AS (
-    SELECT ss.groupid, ss.brand, (ss.created_at AT TIME ZONE 'Europe/London')::date AS created_on
+    SELECT ss.groupid, ss.brand, (ss.created_at AT TIME ZONE 'Europe/London')::date AS created_on, ss.next_new_review
       FROM skusummary ss
      WHERE ss.created_at >= now() - make_interval(days => $1::int)
   ),
   sz AS (
-    SELECT m.code, nw.groupid, nw.brand, nw.created_on, SUBSTRING(m.code FROM '[^-]*$') AS size
+    SELECT m.code, nw.groupid, nw.brand, nw.created_on, nw.next_new_review, SUBSTRING(m.code FROM '[^-]*$') AS size
       FROM nw JOIN skumap m ON m.groupid = nw.groupid
   ),
   sl AS (
@@ -75,6 +86,11 @@ const NEW_SIZES_SQL = `
   )
   SELECT sz.code, sz.groupid, sz.brand, sz.size, sz.created_on::text AS created_on,
          t.shopifytitle AS title,
+         -- Dates as text, never a pg DATE (CLAUDE.md: BST day-shift).
+         sz.next_new_review::text                                                         AS review_on,
+         COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS})::text           AS due_on,
+         COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS}) <= (now() AT TIME ZONE 'Europe/London')::date AS due,
+         EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = sz.code)                            AS on_amz,
          COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock,
          COALESCE(json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units, 'profit', sl.profit))
                     FILTER (WHERE sl.channel IS NOT NULL), '{}') AS sales
@@ -83,7 +99,7 @@ const NEW_SIZES_SQL = `
     LEFT JOIN loc   ON loc.code = sz.code
     LEFT JOIN fba   ON fba.code = sz.code
     LEFT JOIN title t ON t.groupid = sz.groupid
-   GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, t.shopifytitle, loc.qty, fba.qty
+   GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, sz.next_new_review, t.shopifytitle, loc.qty, fba.qty
   HAVING COALESCE(loc.qty, 0) > 0 OR COALESCE(fba.qty, 0) > 0 OR COUNT(sl.channel) > 0   -- never stocked = left out (see above)
    ORDER BY sz.created_on DESC, sz.groupid,
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
@@ -91,6 +107,7 @@ const NEW_SIZES_SQL = `
 
 module.exports = {
   NEW_DAYS,
+  FIRST_REVIEW_DAYS,
   CHANNELS,
   NEW_SIZES_SQL,
 };

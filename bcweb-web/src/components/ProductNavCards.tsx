@@ -135,6 +135,8 @@ interface Props {
   /** Leave off the Amazon group — for a Shopify-only screen (Collections, owner 2026-10-14: "standard routes … apart from Amazon").
    *  Its own flag because `exclude` can't name a channel group: 'Order' and 'Price' are on both sides. */
   shopifyOnly?: boolean;
+  /** Small link pills, groups side by side — for a drop-down panel (New Additions, 2026-10-27) where full cards swamp the row. */
+  compact?: boolean;
   // NO BARCODE CARD. It had one, toggling a column on the drill; the owner cut it (2026-09-22 — "no point having barcode button, may
   // as well just show the barcode"), and the drill now prints the column unconditionally. Nothing to reinstate here if it ever comes
   // back — a barcode belongs beside its size, not behind a button on this row.
@@ -147,7 +149,10 @@ const BASE =
 const ENABLED = 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900';
 const DISABLED = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400';
 
-export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave }: Props) {
+// Compact: the same links as small pills, no fixed width.
+const BASE_COMPACT = 'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px] font-medium transition';
+
+export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave, compact }: Props) {
   const encodedFrom = encodeURIComponent(from);
   // The destination's back-link label names where you actually came from ("Inventory", "New Additions"), not a fixed label.
   const encodedBack = encodeURIComponent(prettyPathLabel(from));
@@ -164,14 +169,14 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
     // and keyboard, not just unclickable by mouse.
     if (!groupid) {
       return (
-        <span key={key} aria-disabled className={`${BASE} ${DISABLED}`}>
+        <span key={key} aria-disabled className={`${compact ? BASE_COMPACT : BASE} ${DISABLED}`}>
           <Icon className="h-4 w-4 text-slate-300" />
           {t.label}
         </span>
       );
     }
     return (
-      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} onClick={onLeave} className={`${BASE} ${ENABLED}`}>
+      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} onClick={onLeave} className={`${compact ? BASE_COMPACT : BASE} ${ENABLED}`}>
         <Icon className="h-4 w-4 text-brand-600" />
         {t.label}
       </Link>
@@ -179,15 +184,16 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+    <div className={'flex flex-wrap items-end ' + (compact ? 'gap-x-5 gap-y-2' : 'gap-x-6 gap-y-3')}>
       {GROUPS.map((g) => {
         const items = visible.filter((t) => t.group === g);
         if (!items.length) return null;
         return (
-          <div key={g} className="flex flex-col gap-1">
+          // Compact: the caption sits inline before its pills, in sentence case — one line per group, not a caps label above.
+          <div key={g} className={compact ? 'flex flex-wrap items-center gap-1.5' : 'flex flex-col gap-1'}>
             {/* Every group is captioned (owner, 2026-09-26) — the general cards are all about the product itself. */}
-            <span className="h-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g === 'general' ? 'Product' : g}</span>
-            <div className="flex flex-wrap gap-2">{items.map(card)}</div>
+            <span className={compact ? 'mr-1 text-xs text-slate-500' : 'h-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400'}>{g === 'general' ? 'Product' : g}</span>
+            <div className={'flex flex-wrap ' + (compact ? 'gap-1.5' : 'gap-2')}>{items.map(card)}</div>
           </div>
         );
       })}

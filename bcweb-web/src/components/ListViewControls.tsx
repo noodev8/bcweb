@@ -89,7 +89,7 @@ function ViewTabs({ view, onChange, counts }: {
 }
 
 // "Due" — on (the default) lists only items due for review now; off adds the ones still waiting on a future review date.
-function DueSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function DueSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       type="button"
