@@ -12,14 +12,19 @@ THE LAYOUT (owner, 2026-10-27: "way to much going on", then "layout is a bit off
     counts) and the Due switch. The tiles, pace figures and production chart (components/AdditionsTrend) were taken off — git history.
   - ONE ROW PER STYLE that tells its story without opening: title, then group id · brand · added date · "Not on Amazon" (no size
     listed — Birkenstock never, it can't go on Amazon), and the SIZE RUN — one tile per size: solid green = sold out, light green =
-    has sold and still has stock, white = not sold yet (legend in the control row; numbers in each tile's tooltip). Then Stock here ·
-    At Amazon (Amazon-bound local units count as Amazon) · Profit (£ on its sales, every channel) · Review. NO SOLD COLUMNS (owner,
-    2026-10-27: the green sizes say it — "you can get rid of the sold colums now"); sold per channel is in the open style. Zeros are a
-    faint dot. Sortable headers order the styles.
-  - CLICK A STYLE TO ACT ON IT (one open at a time, in the URL as ?sel= so a link's "← Back" returns with it open): one block under
-    the product name with ONE label column down the left — the sizes sideways (Sold on Amazon / Sold on Shopify / Stock here / At
-    Amazon / Listed, sizes across under their tiles), then Review, then Go to (components/ProductNavCards compact). Full cards, a
-    card-in-a-row and side-by-side halves were tried and dropped.
+    has sold and still has stock, white = not sold yet (legend in the control row; numbers in each tile's tooltip). Then Profit (£ on
+    its sales, every channel) and Review — that's all. NO SOLD OR STOCK COLUMNS (owner, 2026-10-27: the green sizes say what sold,
+    "you can get rid of the sold colums now"; the Not on Amazon pill says where it is, "dont think we need Stock here / At Amazon");
+    sold per channel and stock per size are in the open style. Sortable headers (Style, Profit) order the styles.
+  - CLICK A STYLE TO ACT ON IT (one open at a time, in the URL as ?sel= so a link's "← Back" returns with it open). The SIZE RUN
+    ITSELF OPENS: numbers under the tiles already there (sold on Amazon / sold on Shopify / in stock here / at Amazon / not listed),
+    a short label at the end of each line. Under it, two light lines: the review, then the Amazon upload file when sizes aren't listed
+    (components/AmazonExport, as on AMZ loaded) and the product links as plain text (components/ProductNavCards compact). A second
+    row of tiles with a label column, bordered cards, a card-in-a-row and side-by-side halves were all tried and dropped as clunky.
+  - The row says the AGE ("added 15 days ago", date in the tooltip) — age is how a new line is judged.
+  - REVIEW IS ONE CLICK here: "Look again in 7 · 14 · 30 · 90 days" saves at once (the pricing screens' pick-then-Set was the busiest
+    thing in the drop-down). The confirmation names the style and shows in the control row, because with Due on the reviewed style
+    leaves the list.
 
 REVIEW AND DUE, LIKE PRICES (owner, 2026-10-27). Per STYLE, skusummary.next_new_review (POST /new-additions-review). A never-reviewed
          style falls due 20 days after it was added (the old "20+ days live" filter); otherwise its review date decides — `due` is
@@ -35,8 +40,8 @@ import { Fragment, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon } from '@heroicons/react/20/solid';
 import AppShell from '@/components/AppShell';
+import AmazonExport from '@/components/AmazonExport';
 import ProductNavCards from '@/components/ProductNavCards';
-import ReviewPicker from '@/components/ReviewPicker';
 import { DueSwitch, fmtReviewDate } from '@/components/ListViewControls';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, markNewAdditionsReview, type ProcessSizeRow } from '@/lib/api';
@@ -45,7 +50,7 @@ import { CHANNELS, unitsSold } from '@/lib/process';
 // Fixed 90-day window (owner, 2026-09-26: "that's when I want each to sell at least once") — server-side, NEW_DAYS.
 const DAYS = 90;
 
-type SortKey = 'added' | 'code' | 'local' | 'fba' | 'profit';
+type SortKey = 'added' | 'code' | 'profit';
 // The quick filters: what kind of new line to look at.
 type Show = 'all' | 'unsold' | 'selling' | 'noamz';
 const SHOWS: { id: Show; label: string; hint: string }[] = [
@@ -61,15 +66,15 @@ const NO_ROWS: ProcessSizeRow[] = [];
 // £ earned on the size's sales, every channel added together (the positive rows — returns are not netted off).
 const profitOf = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + (r.channels[c.id].profit || 0), 0);
 
-// Number columns: fixed width, counts centred (owner, 2026-10-26), £ right-aligned so the pence line up.
-const TD = 'px-2 py-3 text-center align-top tabular-nums';
+// Profit is right-aligned so the pence line up.
 const TD_GBP = 'py-3 pl-3 pr-4 text-right align-top tabular-nums';
 
 // A style and its sizes, with the style's totals (what its row shows and what sorting orders by).
 interface StyleGroup {
   groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[];
-  local: number; fba: number; profit: number; sold: number;
+  profit: number; sold: number;
   reviewOn: string | null; dueOn: string; due: boolean;   // the style's review (the same on each of its sizes)
+  ageDays: number;                                        // days since it was added
   listed: number;                                         // sizes with an Amazon listing
 }
 // Which styles each quick filter keeps.
@@ -107,7 +112,7 @@ function NewAdditionsPageInner() {
 
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const v = searchParams.get('sort');
-    return v === 'code' || v === 'local' || v === 'fba' || v === 'profit' ? v : 'added';
+    return v === 'code' || v === 'profit' ? v : 'added';
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'asc' ? 'asc' : 'desc'));
   // Due on by default (as on the pricing lists) — ?due=0 is the switch off.
@@ -140,7 +145,6 @@ function NewAdditionsPageInner() {
   const setView = (patch: Partial<typeof current>) => {
     const next = { ...current, ...patch };
     setSortBy(next.sort); setSortDir(next.dir); setDueOnly(next.due); setShow(next.show); setSelected(next.sel);
-    if (patch.sel !== undefined) setMsg(null);
     router.replace(viewUrl(next), { scroll: false });
   };
 
@@ -158,15 +162,13 @@ function NewAdditionsPageInner() {
       let g = byId.get(r.groupid);
       if (!g) {
         g = {
-          groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [], local: 0, fba: 0, profit: 0, sold: 0,
-          reviewOn: r.reviewOn, dueOn: r.dueOn, due: r.due, listed: 0,
+          groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [], profit: 0, sold: 0,
+          reviewOn: r.reviewOn, dueOn: r.dueOn, due: r.due, ageDays: r.ageDays, listed: 0,
         };
         byId.set(r.groupid, g);
         groups.push(g);
       }
       g.sizes.push(r);
-      g.local += r.localStock;
-      g.fba += r.fbaStock;
       g.profit += profitOf(r);
       g.sold += unitsSold(r);
       if (r.onAmz) g.listed += 1;
@@ -193,8 +195,7 @@ function NewAdditionsPageInner() {
   const sortedGroups = useMemo(() => {
     const groups = dueGroups.filter(SHOW_TEST[show]);
     const val: Record<SortKey, (g: StyleGroup) => number | string> = {
-      added: (g) => g.created || '', code: (g) => g.groupid,
-      local: (g) => g.local, fba: (g) => g.fba, profit: (g) => g.profit,
+      added: (g) => g.created || '', code: (g) => g.groupid, profit: (g) => g.profit,
     };
     const cmp = (a: StyleGroup, b: StyleGroup) => {
       const x = val[sortBy](a), y = val[sortBy](b);
@@ -211,11 +212,12 @@ function NewAdditionsPageInner() {
     const res = await markNewAdditionsReview([groupid], days);
     setBusy(false);
     if (res.success && res.data) {
+      // Named, and shown in the control row — with Due on, the reviewed style leaves the list, so a message inside it would vanish too.
       setMsg({
         ok: true,
         text: days === 0
-          ? 'Review cleared — due 20 days after it was added.'
-          : `Review set for ${res.data.nextReview ? fmtReviewDate(res.data.nextReview) : `${days} days`}.`,
+          ? `${groupid}: review cleared — due 20 days after it was added.`
+          : `${groupid}: next look ${res.data.nextReview ? fmtReviewDate(res.data.nextReview) : `in ${days} days`}.`,
       });
       refresh();
       return true;
@@ -280,6 +282,10 @@ function NewAdditionsPageInner() {
                   ))}
                 </div>
                 <DueSwitch on={dueOnly} onChange={(v) => setView({ sel: null, due: v })} />
+                {/* The last review saved — stays put while the reviewed style leaves the Due list. */}
+                <p role="status" aria-live="polite" className={'text-sm font-medium ' + (msg?.ok ? 'text-emerald-700' : 'text-red-600')}>
+                  {msg?.text}
+                </p>
                 <div className="ml-auto flex items-center gap-4 text-xs text-slate-500" aria-label="Size tiles">
                   <Legend state="soldout" label="Sold out" />
                   <Legend state="selling" label="Selling" />
@@ -299,8 +305,6 @@ function NewAdditionsPageInner() {
                     <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]">
                       <tr>
                         <th className="py-2.5 pl-4 pr-3 text-left font-medium">{sortBtn('code', 'Style', 'Sort by group id')}</th>
-                        <th className="w-24 whitespace-nowrap border-l border-slate-200 px-2 py-2.5 text-center font-medium">{sortBtn('local', 'Stock here', 'Sort by local stock — on our shelves, not bound for Amazon')}</th>
-                        <th className="w-28 whitespace-nowrap px-2 py-2.5 text-center font-medium">{sortBtn('fba', 'At Amazon', 'Sort by Amazon stock — at FBA, plus local units on their way')}</th>
                         <th className="w-28 border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium">{sortBtn('profit', 'Profit', '£ earned on the sales, every channel')}</th>
                         <th className="w-24 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                             title="Due · a reviewed style's next review (amber) · a style not reviewed yet falls due 20 days after it was added (grey)">Review</th>
@@ -333,17 +337,15 @@ function NewAdditionsPageInner() {
                                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                                       <span className="font-mono text-slate-600">{g.groupid}</span>
                                       {g.brand && <span>{g.brand}</span>}
-                                      <span>added {shortDate(g.created)}</span>
+                                      <span title={`Added ${shortDate(g.created)}`}>added {ago(g.ageDays)}</span>
                                       {g.listed === 0 && !isBirk(g.brand) && (
                                         <span className="rounded bg-amber-100 px-1.5 py-px font-medium text-amber-800">Not on Amazon</span>
                                       )}
                                     </div>
-                                    <SizeRun sizes={g.sizes} />
+                                    <SizeRun g={g} open={isOpen} />
                                   </div>
                                 </div>
                               </td>
-                              <td className={TD + ' border-l border-slate-100'}><Num n={g.local} /></td>
-                              <td className={TD}><Num n={g.fba} /></td>
                               <td className={TD_GBP + ' border-l border-slate-100 ' + (g.sold === 0 ? 'text-slate-300' : g.profit < 0 ? 'font-medium text-rose-600' : 'font-medium text-slate-900')}>
                                 {g.sold === 0 ? '·' : gbp(g.profit)}
                               </td>
@@ -353,8 +355,8 @@ function NewAdditionsPageInner() {
                             </tr>
                             {isOpen && (
                               <tr className="bg-brand-50/60">
-                                <td colSpan={5} className="pb-5 pl-10 pr-4 pt-1">
-                                  <StylePanel g={g} from={selfUrl} busy={busy} msg={msg} onSetReview={(d) => setReview(g.groupid, d)} />
+                                <td colSpan={3} className="pb-4 pl-10 pr-4 pt-0">
+                                  <StyleActions g={g} from={selfUrl} busy={busy} onSetReview={(d) => setReview(g.groupid, d)} />
                                 </td>
                               </tr>
                             )}
@@ -373,20 +375,43 @@ function NewAdditionsPageInner() {
   );
 }
 
-// THE SIZE RUN — one tile per size, coloured by how it's doing; the numbers are in the tooltip (and in the open style's table).
-function SizeRun({ sizes }: { sizes: ProcessSizeRow[] }) {
+// THE SIZE RUN — one tile per size, coloured by how it's doing. OPENING A STYLE OPENS THE RUN ITSELF (owner, 2026-10-27: the drop-down
+// "feels clunky"): the numbers appear under the tiles already on screen, a short label at the end of each line — no second row of
+// tiles, no wide label column pushing it right. A table either way, so the tiles don't move when it opens.
+function SizeRun({ g, open }: { g: StyleGroup; open: boolean }) {
+  const showListed = open && !isBirk(g.brand) && g.listed < g.sizes.length;
+  const line = (label: string, cell: (r: ProcessSizeRow) => ReactNode, title?: string) => (
+    <tr>
+      {g.sizes.map((r) => <td key={r.code} className="h-5 text-center text-xs tabular-nums">{cell(r)}</td>)}
+      <th scope="row" title={title} className="whitespace-nowrap pl-2 text-left text-[11px] font-normal text-slate-500">{label}</th>
+    </tr>
+  );
   return (
-    <div className="mt-2 flex flex-wrap gap-1">
-      {sizes.map((r) => {
-        const sold = unitsSold(r);
-        const tip = `${r.size}: sold ${sold} · ${r.localStock} here · ${r.fbaStock} at Amazon`;
-        return (
-          <span key={r.code} title={tip}
-                className={'inline-flex h-6 min-w-[2rem] items-center justify-center rounded px-1.5 text-[11px] font-medium tabular-nums ' + SIZE_TILE[sizeState(r)]}>
-            {r.size}
-          </span>
-        );
-      })}
+    <div className="mt-2 overflow-x-auto">
+      <table className="-mx-1 border-separate border-spacing-x-1 border-spacing-y-0">
+        <thead>
+          <tr>
+            {g.sizes.map((r) => (
+              <th key={r.code} scope="col" className="p-0 font-medium"
+                  title={`${r.code}: sold ${unitsSold(r)} · ${r.localStock} here · ${r.fbaStock} at Amazon`}>
+                <span className={'flex h-6 w-9 items-center justify-center rounded text-[11px] tabular-nums ' + SIZE_TILE[sizeState(r)]}>{r.size}</span>
+              </th>
+            ))}
+            <th />
+          </tr>
+        </thead>
+        {open && (
+          <tbody>
+            <tr><td className="h-1.5" /></tr>
+            {line('sold on Amazon', (r) => <Num n={Math.max(r.channels.AMZ.net, 0)} />, 'Net of returns')}
+            {line('sold on Shopify', (r) => <Num n={Math.max(r.channels.SHP.net, 0)} />, 'Net of returns')}
+            {line('in stock here', (r) => <Num n={r.localStock} />)}
+            {line('at Amazon', (r) => <Num n={r.fbaStock} />, 'At FBA, plus local units on their way')}
+            {showListed && line('not listed', (r) => (r.onAmz ? null : <span className="font-semibold text-amber-700">✕</span>),
+              'Sizes with no Amazon listing')}
+          </tbody>
+        )}
+      </table>
     </div>
   );
 }
@@ -407,67 +432,61 @@ function ReviewChip({ g }: { g: StyleGroup }) {
   return <span className="text-xs text-slate-400" title="Not reviewed yet — due 20 days after it was added">{fmtReviewDate(g.dueOn)}</span>;
 }
 
-// THE OPEN STYLE — one block under the product name (indented to its text), ONE label column down the left so everything lines up:
-// the sizes sideways (sizes across under their tiles — the per-channel sold figures live here since the Sold columns went), then the
-// review, then where to act. No card-in-a-row and no side-by-side halves (owner, 2026-10-27: "the dropdown still needs work").
-const LABEL = 'w-32 shrink-0 whitespace-nowrap pr-4 text-left text-xs font-normal text-slate-500';
-function StylePanel({ g, from, busy, msg, onSetReview }: {
-  g: StyleGroup; from: string; busy: boolean; msg: { ok: boolean; text: string } | null; onSetReview: (days: number) => Promise<boolean>;
+// THE OPEN STYLE'S ACTIONS — under the opened size run, two light lines: the review (one click), then the Amazon file when sizes
+// aren't listed (the one thing this screen can do itself — the same file as AMZ loaded and Add / Modify; it skips sizes already
+// listed) and the product links as plain text. No label column, no bordered cards.
+function StyleActions({ g, from, busy, onSetReview }: {
+  g: StyleGroup; from: string; busy: boolean; onSetReview: (days: number) => Promise<boolean>;
 }) {
-  const birk = isBirk(g.brand);
-  const line = (label: string, cell: (r: ProcessSizeRow) => ReactNode, title?: string) => (
-    <tr>
-      <th scope="row" className={LABEL + ' py-1'} title={title}>{label}</th>
-      {g.sizes.map((r) => <td key={r.code} className="w-10 px-0.5 py-1 text-center tabular-nums">{cell(r)}</td>)}
-    </tr>
-  );
+  const unlisted = isBirk(g.brand) ? 0 : g.sizes.length - g.listed;
   return (
-    <div className="space-y-4 border-t border-brand-100 pt-4">
-      <div className="overflow-x-auto">
-        <table className="text-sm">
-          <thead>
-            <tr>
-              <th className={LABEL + ' pb-1.5'}>Size</th>
-              {g.sizes.map((r) => (
-                <th key={r.code} scope="col" title={r.code} className="px-0.5 pb-1.5">
-                  <span className={'inline-flex h-6 w-9 items-center justify-center rounded text-[11px] font-medium tabular-nums ' + SIZE_TILE[sizeState(r)]}>{r.size}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {line('Sold on Amazon', (r) => <Num n={Math.max(r.channels.AMZ.net, 0)} />, 'Net of returns')}
-            {line('Sold on Shopify', (r) => <Num n={Math.max(r.channels.SHP.net, 0)} />, 'Net of returns')}
-            {line('Stock here', (r) => <Num n={r.localStock} />)}
-            {line('At Amazon', (r) => <Num n={r.fbaStock} />, 'At FBA, plus local units on their way')}
-            {!birk && line('Listed on Amazon', (r) => (r.onAmz
-              ? <span className="text-xs text-slate-400">Yes</span>
-              : <span className="text-xs font-semibold text-amber-700">No</span>))}
-          </tbody>
-        </table>
+    <div className="space-y-3 border-t border-brand-100 pt-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-sm font-medium text-slate-800">
+          {g.due ? 'Due a look.' : g.reviewOn ? <>Next look {fmtReviewDate(g.reviewOn)}.</> : <>First look {fmtReviewDate(g.dueOn)}.</>}
+        </span>
+        <QuickReview busy={busy} canClear={!!g.reviewOn} onSet={onSetReview} />
       </div>
-
-      <div className="flex items-start">
-        <span className={LABEL + ' pt-1.5'}>Review</span>
-        <div className="min-w-0 space-y-2">
-          <p className="text-sm text-slate-700">
-            {g.due
-              ? 'Due now.'
-              : g.reviewOn
-                ? <>Next review {fmtReviewDate(g.reviewOn)}.</>
-                : <>First review {fmtReviewDate(g.dueOn)}, 20 days after it was added.</>}
-            {msg && <span className={'ml-2 font-medium ' + (msg.ok ? 'text-emerald-700' : 'text-red-600')}>{msg.text}</span>}
-          </p>
-          <ReviewPicker key={g.groupid} busy={busy} disabled={false} canClear={!!g.reviewOn} onSet={onSetReview} />
-        </div>
-      </div>
-
-      <div className="flex items-start">
-        <span className={LABEL + ' pt-1.5'}>Go to</span>
-        <div className="min-w-0"><ProductNavCards groupid={g.groupid} from={from} showProduct compact /></div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {unlisted > 0 && (
+          <div className="flex items-center gap-2">
+            <AmazonExport key={g.groupid} groupid={g.groupid} sizesCount={g.sizes.length} quiet />
+            <span className="text-xs text-amber-800">{g.listed === 0 ? 'not on Amazon yet' : `${unlisted} size${unlisted === 1 ? '' : 's'} not listed`}</span>
+          </div>
+        )}
+        <ProductNavCards groupid={g.groupid} from={from} showProduct compact />
       </div>
     </div>
   );
+}
+
+// "Look again in 7 · 14 · 30 · 90 days" — each button saves at once (the periods that make sense for a new line; the pricing screens'
+// pick-then-Set control was two clicks and nine chips, the busiest thing in the drop-down).
+const QUICK_REVIEW = [7, 14, 30, 90];
+function QuickReview({ busy, canClear, onSet }: { busy: boolean; canClear: boolean; onSet: (days: number) => Promise<boolean> }) {
+  const btn = 'rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-[13px] text-slate-700 transition hover:border-brand-500 hover:bg-brand-50 ' +
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-50';
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[13px] text-slate-500">Look again in</span>
+      {QUICK_REVIEW.map((d) => (
+        <button key={d} type="button" disabled={busy} onClick={() => onSet(d)} className={btn}>{d} days</button>
+      ))}
+      {canClear && (
+        <button type="button" disabled={busy} onClick={() => onSet(0)} title="Clear the review date — due 20 days after it was added"
+                className="px-2 py-1 text-[13px] text-slate-500 hover:text-slate-800 disabled:opacity-50">
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+// 0 -> 'today', 1 -> 'yesterday', n -> 'n days ago'. Age is how a new line is judged, so the row says it rather than a date to work out.
+function ago(days: number) {
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
 }
 
 // '2026-09-19' -> '19 Sep'. Split on the hyphens rather than via Date (a 'YYYY-MM-DD' handed to Date shifts a day under BST).

@@ -91,6 +91,7 @@ const NEW_SIZES_SQL = `
          COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS})::text           AS due_on,
          COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS}) <= (now() AT TIME ZONE 'Europe/London')::date AS due,
          EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = sz.code)                            AS on_amz,
+         (now() AT TIME ZONE 'Europe/London')::date - sz.created_on                        AS age_days,
          COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock,
          COALESCE(json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units, 'profit', sl.profit))
                     FILTER (WHERE sl.channel IS NOT NULL), '{}') AS sales

@@ -4914,6 +4914,7 @@ export interface ProcessSizeRow {
   // The STYLE's review (repeated on each of its sizes): the date set (null = never reviewed), the date it is due — that, or created
   // + 20 days — and whether that has come round (server date). Set by markNewAdditionsReview.
   reviewOn: string | null; dueOn: string; due: boolean;
+  ageDays: number;               // days since the style was created (London date)
   channels: Record<ProcessChannel, ProcessSizeChannel>;
 }
 export interface ProcessOverview {

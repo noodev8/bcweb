@@ -23,7 +23,7 @@ Success Response:
   "rows": [
     { "code": "0051793-38", "groupid": "0051793", "title": "Arizona Black", "brand": "Birkenstock", "size": "38",
       "created": "2026-10-02", "localStock": 2, "fbaStock": 0, "onAmz": false,
-      "reviewOn": null, "dueOn": "2026-10-22", "due": true,
+      "reviewOn": null, "dueOn": "2026-10-22", "due": true, "ageDays": 25,        // days since created (London)
       "channels": {
         "AMZ": { "net": 0, "sold": 0, "profit": 0, "perUnit": null },
         "SHP": { "net": 1, "sold": 1, "profit": 12.40, "perUnit": 12.40 },
@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
       return {
         code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, size: r.size, created: r.created_on,
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), onAmz: r.on_amz === true,
-        reviewOn: r.review_on || null, dueOn: r.due_on, due: r.due === true, channels,
+        reviewOn: r.review_on || null, dueOn: r.due_on, due: r.due === true, ageDays: Number(r.age_days), channels,
       };
     });
 

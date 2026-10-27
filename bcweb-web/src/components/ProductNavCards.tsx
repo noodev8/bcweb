@@ -149,8 +149,10 @@ const BASE =
 const ENABLED = 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900';
 const DISABLED = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400';
 
-// Compact: the same links as small pills, no fixed width.
-const BASE_COMPACT = 'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px] font-medium transition';
+// Compact: the same links as plain text with their icon — no border, no fixed width — for a drop-down where cards are too heavy.
+const BASE_COMPACT = 'inline-flex items-center gap-1 rounded px-1 py-0.5 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
+const ENABLED_COMPACT = 'text-slate-700 hover:text-brand-700 hover:underline';
+const DISABLED_COMPACT = 'cursor-not-allowed text-slate-400';
 
 export default function ProductNavCards({ groupid, from, showProduct, exclude, shopifyOnly, onLeave, compact }: Props) {
   const encodedFrom = encodeURIComponent(from);
@@ -169,14 +171,14 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
     // and keyboard, not just unclickable by mouse.
     if (!groupid) {
       return (
-        <span key={key} aria-disabled className={`${compact ? BASE_COMPACT : BASE} ${DISABLED}`}>
+        <span key={key} aria-disabled className={compact ? `${BASE_COMPACT} ${DISABLED_COMPACT}` : `${BASE} ${DISABLED}`}>
           <Icon className="h-4 w-4 text-slate-300" />
           {t.label}
         </span>
       );
     }
     return (
-      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} onClick={onLeave} className={`${compact ? BASE_COMPACT : BASE} ${ENABLED}`}>
+      <Link key={key} href={t.build(groupid, encodedFrom, encodedBack)} onClick={onLeave} className={compact ? `${BASE_COMPACT} ${ENABLED_COMPACT}` : `${BASE} ${ENABLED}`}>
         <Icon className="h-4 w-4 text-brand-600" />
         {t.label}
       </Link>
@@ -190,10 +192,10 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
         if (!items.length) return null;
         return (
           // Compact: the caption sits inline before its pills, in sentence case — one line per group, not a caps label above.
-          <div key={g} className={compact ? 'flex flex-wrap items-center gap-1.5' : 'flex flex-col gap-1'}>
+          <div key={g} className={compact ? 'flex flex-wrap items-center gap-1' : 'flex flex-col gap-1'}>
             {/* Every group is captioned (owner, 2026-09-26) — the general cards are all about the product itself. */}
-            <span className={compact ? 'mr-1 text-xs text-slate-500' : 'h-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400'}>{g === 'general' ? 'Product' : g}</span>
-            <div className={'flex flex-wrap ' + (compact ? 'gap-1.5' : 'gap-2')}>{items.map(card)}</div>
+            <span className={compact ? 'text-xs text-slate-400' : 'h-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400'}>{g === 'general' ? 'Product' : g}</span>
+            <div className={'flex flex-wrap ' + (compact ? 'gap-x-1' : 'gap-2')}>{items.map(card)}</div>
           </div>
         );
       })}
