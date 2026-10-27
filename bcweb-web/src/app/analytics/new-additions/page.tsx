@@ -21,7 +21,10 @@ THE LAYOUT (owner, 2026-10-27: "way to much going on", then "layout is a bit off
     a short label at the end of each line. Under it, two light lines: the review, then the Amazon upload file when sizes aren't listed
     (components/AmazonExport, as on AMZ loaded) and the product links as plain text (components/ProductNavCards compact). A second
     row of tiles with a label column, bordered cards, a card-in-a-row and side-by-side halves were all tried and dropped as clunky.
-  - The row says the AGE ("added 15 days ago", date in the tooltip) — age is how a new line is judged.
+  - The row says the AGE ("added 15 days ago", date in the tooltip) — age is how a new line is judged — and "Bought 10 · Sold 8" for the
+    style (2026-10-27: how deep it was bought, at a glance; Held was tried and taken off — owner: "dont need held"; a size tile's
+    tooltip gives sold and held for that size). "Bought", not "Added", so it can't be read with "added n days ago". Bought = pairs
+    booked in on Goods In since the style was added (a test listing on placeholder stock shows Bought 0).
   - REVIEW IS ONE CLICK here: "Look again in 5 · 7 · 14 · 30 · 90 days" saves at once (the pricing screens' pick-then-Set was the busiest
     thing in the drop-down). The confirmation names the style and shows in the control row, because with Due on the reviewed style
     leaves the list.
@@ -73,6 +76,7 @@ const TD_GBP = 'py-3 pl-3 pr-4 text-right align-top tabular-nums';
 interface StyleGroup {
   groupid: string; title: string | null; brand: string | null; created: string; sizes: ProcessSizeRow[];
   profit: number; sold: number;
+  bought: number;                                         // pairs booked in on Goods In since it was added (the strip's Pairs bought)
   reviewOn: string | null; dueOn: string; due: boolean;   // the style's review (the same on each of its sizes)
   ageDays: number;                                        // days since it was added
   listed: number;                                         // sizes with an Amazon listing
@@ -162,7 +166,7 @@ function NewAdditionsPageInner() {
       let g = byId.get(r.groupid);
       if (!g) {
         g = {
-          groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [], profit: 0, sold: 0,
+          groupid: r.groupid, title: r.title, brand: r.brand, created: r.created, sizes: [], profit: 0, sold: 0, bought: 0,
           reviewOn: r.reviewOn, dueOn: r.dueOn, due: r.due, ageDays: r.ageDays, listed: 0,
         };
         byId.set(r.groupid, g);
@@ -171,6 +175,7 @@ function NewAdditionsPageInner() {
       g.sizes.push(r);
       g.profit += profitOf(r);
       g.sold += unitsSold(r);
+      g.bought += r.bought;
       if (r.onAmz) g.listed += 1;
     }
     return groups;
@@ -348,6 +353,8 @@ function NewAdditionsPageInner() {
                                       <span className="font-mono text-slate-600">{g.groupid}</span>
                                       {g.brand && <span>{g.brand}</span>}
                                       <span title={`Added ${shortDate(g.created)}`}>added {ago(g.ageDays)}</span>
+                                      {/* How deep it was bought, at a glance (owner, 2026-10-27: "I've bought too deep"). */}
+                                      <span className="tabular-nums">Bought {g.bought} · Sold {g.sold}</span>
                                       {g.listed === 0 && !isBirk(g.brand) && (
                                         <span className="rounded bg-amber-100 px-1.5 py-px font-medium text-amber-800">Not on Amazon</span>
                                       )}
@@ -403,7 +410,7 @@ function SizeRun({ g, open }: { g: StyleGroup; open: boolean }) {
           <tr>
             {g.sizes.map((r) => (
               <th key={r.code} scope="col" className="p-0 font-medium"
-                  title={`${r.code}: sold ${unitsSold(r)} · ${r.localStock} here · ${r.fbaStock} at Amazon`}>
+                  title={`Sold ${unitsSold(r)} · Held ${r.localStock + r.fbaStock}`}>
                 <span className={'flex h-6 w-9 items-center justify-center rounded text-[11px] tabular-nums ' + SIZE_TILE[sizeState(r)]}>{r.size}</span>
               </th>
             ))}
