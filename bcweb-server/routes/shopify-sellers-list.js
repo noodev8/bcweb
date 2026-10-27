@@ -35,7 +35,8 @@ MISSED (owner, 2026-10-27 — decision A): sold on Shopify in 30 days, NO local 
 FBA, and not marked "Can't get it" or "Don't order". Nothing anywhere — act now. A size with FBA stock is NOT missed (it still shows under Low / All
 with its FBA figure): counting it would keep the Daily number high on sizes Amazon is selling perfectly well. Decided HERE, once, and
 shipped as `missed` per row and `missed_count` — the page's preset and the Daily tile both read it, so they can't disagree.
-LOW = local_stock + on_order < units_30 (less than 30 days' cover locally) — a page preset, computed in the browser.
+LOW = local_stock + on_order <= units_30 (no more than 30 days' cover locally — "no more than" so a size down to its last unit after
+selling one counts, owner 2026-10-27, the Strive COPENHAGEN case) — a page preset, computed in the browser.
 
 Rows: units_30 desc, then profit, then code. No limit — ~30 rows.
 =======================================================================================================================================

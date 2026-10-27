@@ -242,7 +242,7 @@ function Daily() {
         </div>
 
         {/* ORDERING — two screens, two links, like Pricing (owner, 2026-10-27: "will have to choose which one they want"). Amazon has
-            no count; Shopify's is the Sellers view's Missed — sold in 30 days with nothing local, on order or at FBA. */}
+            no count; Shopify's is the Sellers view's Sold out (missed in code) — sold in 30 days with nothing local, on order or at FBA. */}
         <div className="flex flex-col rounded-xl bg-white p-4">
           <TileHead icon={ClipboardDocumentListIcon} title="Ordering" sub="What needs buying in or sending" />
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
@@ -253,7 +253,7 @@ function Daily() {
               <span className="block text-xs font-medium text-slate-500">Amazon</span>
               <span className="mt-auto block pt-1 text-sm font-medium text-brand-700">Open Amazon Order</span>
             </Link>
-            <CountLink href="/shopify-order" label="Shopify" n={shopifyMissed} unit="sizes missed" />
+            <CountLink href="/shopify-order" label="Shopify" n={shopifyMissed} unit="sizes sold out" />
           </div>
         </div>
 

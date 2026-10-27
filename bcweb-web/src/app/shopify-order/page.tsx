@@ -66,9 +66,9 @@ NO SUPPLY — "CAN'T GET IT" / "RELEASE" (owner, 2026-09-26). The supplier has n
 TWO VIEWS — SELLERS | SIZES (owner, 2026-10-27). SELLERS, the default, is Amazon Order's flat layout for Shopify: one row per size that
       sold on Shopify in 30 days (no Birkenstock — see above), with sold 30d / 90d, £ a unit, local,
       on order and FBA (routes/shopify-sellers-list.js). Its job is the Daily check "is anything selling on Shopify that we'd miss?".
-      Presets Missed | Low | All: MISSED is the server's rule (nothing local, nothing on local order, none at FBA, not Can't get) and is
+      Presets Sold out | Low | All (on screen "Sold out", in code and API "missed" — owner renamed it 2026-10-27): MISSED is the server's rule (nothing local, nothing on local order, none at FBA, not Can't get) and is
       the number on the Daily Ordering tile, which links here; FBA counts as cover because the team can pull stock back from it. LOW =
-      local + on order under 30 days' sales. SIZES is the style-block screen above, unchanged (?view=sizes). ONE basket serves both:
+      local + on order no more than 30 days' sales (so the last unit left counts). SIZES is the style-block screen above, unchanged (?view=sizes). ONE basket serves both:
       the same qty record, draft and Confirm Basket, so a number typed in either view is the same order line. Load basket switches to
       Sizes, which is where every basket line can be shown.
       DON'T ORDER (owner, 2026-10-27) — a dud size: one click on its Sellers row takes it out of Missed and the Daily count, dimmed with
@@ -94,17 +94,18 @@ import { useAuth } from '@/contexts/AuthContext';
 const NO_STYLES: ShopifyOrderStyle[] = [];
 const NO_SELLERS: ShopifySellerRow[] = [];
 
-// SELLERS view presets — see TWO VIEWS in the header. Missed is the server's flag (the Daily count); Low is local cover under 30 days.
+// SELLERS view presets — see TWO VIEWS in the header. Missed is the server's flag (the Daily count); Low is local cover of 30 days or less.
 type View = 'sellers' | 'sizes';
 type Preset = 'missed' | 'low' | 'all';
 const PRESETS: { key: Preset; label: string; title: string }[] = [
-  { key: 'missed', label: 'Missed', title: 'Sold on Shopify in 30 days with nothing anywhere — no local stock, nothing on local order, none at FBA' },
-  { key: 'low', label: 'Low', title: 'Local stock + on order is less than the last 30 days’ Shopify sales' },
+  { key: 'missed', label: 'Sold out', title: 'Sold on Shopify in 30 days with nothing anywhere — no local stock, nothing on local order, none at FBA' },
+  { key: 'low', label: 'Low', title: 'Local stock + on order is no more than the last 30 days’ Shopify sales' },
   { key: 'all', label: 'All', title: 'Every size that sold on Shopify in the last 30 days (Birkenstock left out)' },
 ];
 function presetMatch(r: ShopifySellerRow, p: Preset): boolean {
   if (p === 'missed') return r.missed;
-  if (p === 'low') return r.local_stock + r.on_order < r.units_30;
+  // "No more than" (owner, 2026-10-27): a size that sold one and has its last one left is a re-order question too.
+  if (p === 'low') return r.local_stock + r.on_order <= r.units_30;
   return true;
 }
 function sellerHaystack(r: ShopifySellerRow): string {
@@ -378,15 +379,16 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
   }
   const th = 'px-3 py-2 font-medium';
   const dim = (n: number) => (n === 0 ? 'text-slate-300' : 'text-slate-800');
-  const COLS = 10;
+  const COLS = 11;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="min-w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className={th}>Product</th>
-            <th className={th + ' text-center'}>Order</th>
+            <th className={th}>Brand</th>
             <th className={th}>Size</th>
+            <th className={th + ' text-center'}>Order</th>
             <th className={th + ' text-right'} title="Shopify units sold in the last 30 days, net of returns">Sold 30d</th>
             <th className={th + ' text-right'} title="Shopify units sold in the last 90 days, net of returns">90d</th>
             <th className={th + ' text-right'} title="Average realised Shopify profit per unit sold, last 90 days">£/unit</th>
@@ -425,7 +427,6 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                         </div>
                         <div className="text-xs text-slate-600">
                           {r.title || r.groupid}
-                          {r.brand && <><span className="text-slate-300"> · </span>{r.brand}</>}
                           {r.price !== null && <><span className="text-slate-300"> · </span>{money(r.price)}</>}
                         </div>
                         {style && (
@@ -436,7 +437,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                           </div>
                         )}
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
-                          {r.missed && <span className="rounded border border-red-200 bg-red-50 px-1.5 text-red-700">Missed</span>}
+                          {r.missed && <span className="rounded border border-red-200 bg-red-50 px-1.5 text-red-700">Sold out</span>}
                           {r.no_supply && (
                             <span className="rounded border border-amber-200 bg-amber-50 px-1.5 text-amber-800">
                               Can&rsquo;t get it until {shortDate(r.no_supply_until)}
@@ -449,7 +450,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                                 type="button"
                                 disabled={busyCode === r.code}
                                 onClick={() => onDontOrder(r, false)}
-                                title="Count this size towards Missed again"
+                                title="Put this size back in Sold out (and the Daily count)"
                                 className="font-medium text-brand-700 underline-offset-2 hover:underline disabled:opacity-50"
                               >
                                 Undo
@@ -460,7 +461,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                               type="button"
                               disabled={busyCode === r.code}
                               onClick={() => onDontOrder(r, true)}
-                              title="A dud — take this size out of Missed and the Daily count. It comes back by itself if it sells again on Shopify."
+                              title="A dud — take this size off Sold out and the Daily count. It comes back by itself if it sells again on Shopify."
                               className="text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
                             >
                               Don&rsquo;t order
@@ -470,10 +471,11 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                       </div>
                     </div>
                   </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">{r.brand || '—'}</td>
+                  <td className="px-3 py-2 font-medium text-slate-700">{r.size}</td>
                   <td className="px-3 py-2 text-center">
                     <OrderBox code={r.code} supplier={r.supplier} label={r.code} value={qty[r.code] || ''} onQty={onQty} />
                   </td>
-                  <td className="px-3 py-2 font-medium text-slate-700">{r.size}</td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{r.units_30}</td>
                   <td className={'px-3 py-2 text-right tabular-nums ' + dim(r.units_90)}>{r.units_90}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">{money(r.unit_profit)}</td>
@@ -482,7 +484,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                     {r.on_amazon || r.fba_total > 0
                       ? <span className={dim(r.fba_total)}>{r.fba_live}<span className="text-slate-400"> / {r.fba_total}</span></span>
-                      : <span className="text-xs text-slate-400">Not on Amazon</span>}
+                      : <span className="text-slate-400" title="Not on Amazon">N/A</span>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{shortDate(r.last_sold)}</td>
                 </tr>
@@ -1216,7 +1218,7 @@ function ShopifyOrderContent() {
             : (
               <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">
                 {preset === 'missed' && includes.length === 0 && excludes.length === 0
-                  ? 'Nothing missed — every size that sold on Shopify in 30 days has stock somewhere.'
+                  ? 'Nothing sold out — every size that sold on Shopify in 30 days has stock somewhere.'
                   : 'Nothing found.'}
               </div>
             ))}
