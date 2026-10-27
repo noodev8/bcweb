@@ -38,7 +38,7 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport } from '@/lib/api';
+import { getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList } from '@/lib/api';
 import { isSold } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
@@ -207,6 +207,9 @@ function Daily() {
   // Shared with the AMZ loaded screen (same key) — its due count is the styles not looked at yet (or whose date has come round).
   const amzLoaded = useApiQuery('amz-loaded-list', () => getAmzLoadedList());
   const amzLoadedDue = amzLoaded.data ? amzLoaded.data.filter((r) => !r.parked).length : null;
+  // Shared with Shopify Order's Sellers view (same key) — Missed is the server's rule, so the tile and the list can't disagree.
+  const sellers = useApiQuery('shopify-sellers-list', () => getShopifySellersList());
+  const shopifyMissed = sellers.data ? sellers.data.missed_count : null;
 
   return (
     <section aria-labelledby="daily-heading" className="rounded-2xl bg-brand-700 p-5 shadow-lg sm:p-6">
@@ -238,9 +241,21 @@ function Daily() {
           </div>
         </div>
 
-        <DailyLink href="/amazon-order" icon={ClipboardDocumentListIcon} title="Ordering" sub="What Amazon needs — buy in or send">
-          <span className="text-sm font-medium text-brand-700">Open Amazon Order</span>
-        </DailyLink>
+        {/* ORDERING — two screens, two links, like Pricing (owner, 2026-10-27: "will have to choose which one they want"). Amazon has
+            no count; Shopify's is the Sellers view's Missed — sold in 30 days with nothing local, on order or at FBA. */}
+        <div className="flex flex-col rounded-xl bg-white p-4">
+          <TileHead icon={ClipboardDocumentListIcon} title="Ordering" sub="What needs buying in or sending" />
+          <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+            <Link
+              href="/amazon-order"
+              className="flex flex-col rounded-lg border border-slate-200 px-3 py-2 outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+            >
+              <span className="block text-xs font-medium text-slate-500">Amazon</span>
+              <span className="mt-auto block pt-1 text-sm font-medium text-brand-700">Open Amazon Order</span>
+            </Link>
+            <CountLink href="/shopify-order" label="Shopify" n={shopifyMissed} unit="sizes missed" />
+          </div>
+        </div>
 
         <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newStyles === null ? 'Styles added in 90 days' : `${newStyles} styles added in 90 days`}>
           <Big n={unsold} unit="new sizes not sold yet" />
@@ -272,7 +287,7 @@ function TileHead({ icon: I, title, sub }: { icon: Icon; title: string; sub: str
   );
 }
 
-// A whole-tile link (Ordering, New stuff, Prospects).
+// A whole-tile link (New stuff, Prospects, AMZ loaded).
 function DailyLink({ href, icon, title, sub, children }: { href: string; icon: Icon; title: string; sub: string; children: ReactNode }) {
   return (
     <Link

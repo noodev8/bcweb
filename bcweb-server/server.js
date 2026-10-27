@@ -165,6 +165,12 @@ app.use('/amz-pick-allocate', require('./routes/amz-pick-allocate')); // the Pic
 // Shopify Order — the local-shelf counterpart: every Shopify style with its size curve (shelf / on order / Shopify sold). Read only;
 // its basket writes through /order-status-add with ordertype 2 (local), the same route Amazon Order and Order Status use.
 app.use('/shopify-order-list', require('./routes/shopify-order-list'));
+// Shopify Order's Sellers view: every non-Birkenstock size that sold on Shopify in 30 days, with local / on order / FBA, and the
+// Missed rule (nothing anywhere) the Daily tile counts. Read only.
+app.use('/shopify-sellers-list', require('./routes/shopify-sellers-list'));
+// "Don't order" one size on that view (a dud) — out of Missed until it sells again on Shopify. Writes shopify_dont_order only.
+app.use('/shopify-dont-order-set', require('./routes/shopify-dont-order-set'));
+app.use('/shopify-dont-order-clear', require('./routes/shopify-dont-order-clear'));
 // "Can't get it" — the supplier has none of a style: park it off the order screens for three months, and clear it again. A style
 // fact, not a channel one (utils/noSupply.js) — Shopify Order reads it now, Amazon Order will.
 app.use('/no-supply-set', require('./routes/no-supply-set'));

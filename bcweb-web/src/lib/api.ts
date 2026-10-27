@@ -648,6 +648,40 @@ export function getShopifyOrderList() {
   );
 }
 
+// Shopify Order's SELLERS view (routes/shopify-sellers-list.js): one row per non-Birkenstock size that sold on Shopify in 30 days (net).
+// fba_total = live + inbound + Amazon-bound, as Amazon Order counts it. missed = nothing anywhere (no local, nothing on local order, none at
+// FBA, not Can't get) — the server's rule, read by the page's Missed preset and the Daily tile alike.
+export interface ShopifySellerRow {
+  code: string; groupid: string; size: string; title: string | null; brand: string | null; supplier: string | null;
+  price: number | null; cost: number | null;
+  units_30: number; units_90: number; unit_profit: number | null;
+  local_stock: number; on_order: number; on_amazon: boolean; fba_live: number; fba_total: number;
+  last_sold: string | null;
+  no_supply: boolean; no_supply_since: string | null; no_supply_until: string | null; no_supply_by: string | null;
+  // "Don't order" — a dud size, out of Missed until it sells again on Shopify (the server lapses it; false once lapsed).
+  dont_order: boolean; dont_order_at: string | null; dont_order_by: string | null;
+  missed: boolean;
+}
+export function getShopifySellersList() {
+  return request<{ count: number; missed_count: number; rows: ShopifySellerRow[] }>(
+    { url: '/shopify-sellers-list', method: 'GET' },
+    (b) => ({
+      count: b.count ?? (b.rows || []).length,
+      missed_count: Number(b.missed_count) || 0,
+      rows: ((b.rows || []) as ShopifySellerRow[]).map((r) => ({
+        ...r, no_supply: r.no_supply === true, dont_order: r.dont_order === true, missed: r.missed === true,
+      })),
+    })
+  );
+}
+// Mark / undo "Don't order" on one size (routes/shopify-dont-order-set.js / -clear.js). Who and when are stamped server-side.
+export function setShopifyDontOrder(code: string) {
+  return request<{ code: string }>({ url: '/shopify-dont-order-set', method: 'POST', data: { code } }, (b) => ({ code: b.code }));
+}
+export function clearShopifyDontOrder(code: string) {
+  return request<{ cleared: boolean }>({ url: '/shopify-dont-order-clear', method: 'POST', data: { code } }, (b) => ({ cleared: b.cleared === true }));
+}
+
 // "Can't get it" — park style(s) off the order screens for three months (utils/noSupply.js). A fact about the style, whichever channel
 // it sells on. One style from an order screen's button, a ticked batch from Back Office → Seasons. The server stamps the dates and who
 // did it; nothing else about the style changes (season, status, pricing). `updated` = the styles actually marked.

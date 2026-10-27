@@ -24,9 +24,8 @@ STYLE BLOCKS, NOT A TABLE (owner picked the "size strip per style" layout, 2026-
       / Sold 30d / Order (30d replaced 12m in the strip, and became the default sort, owner 2026-10-12 — what is selling NOW). The
       per-size 90-day and 12-month figures are on the cells' tooltip; the style's 30d / 90d / 12m totals are in its header.
 
-BIRKENSTOCK IS AN ORDINARY ROW HERE (owner, 2026-09-26 — "some may be ordered from stock but show them all as standard, no special case
-      yet"). Unlike Amazon Order, which disables it (Birkenstock never goes to Amazon). The seasonal ~6-months-ahead buy still lives on
-      the Birkenstock sheet; this is just the ordinary "add a line" path, open to every supplier.
+NO BIRKENSTOCK, IN EITHER VIEW (owner, 2026-10-27). It was an ordinary row here from 2026-09-26 ("some may be ordered from stock");
+      it's bought ~6 months ahead on the Birkenstock sheet, so both routes now leave it out (brand ILIKE 'birk%').
 
 SEARCH: identical rules to /amazon-order and /inventory — Enter commits a STEP, steps stack (all Includes must match, no Exclude may),
       plain substring on both sides, and a new Include that would stack to nothing restarts the search on that term alone. No chips;
@@ -63,24 +62,54 @@ NO SUPPLY — "CAN'T GET IT" / "RELEASE" (owner, 2026-09-26). The supplier has n
       can't get a style, we can't get it, regardless of where we're trying to sell it" (owner) — so Amazon Order honours the
       same mark (since 2026-09-27; a style marked on either screen is off both), and none of this screen's wording for it names a channel. Every marked style, and the lapsed ones still carrying
       their note, is listed and managed in bulk on Back Office → Seasons (the Can't get view).
+
+TWO VIEWS — SELLERS | SIZES (owner, 2026-10-27). SELLERS, the default, is Amazon Order's flat layout for Shopify: one row per size that
+      sold on Shopify in 30 days (no Birkenstock — see above), with sold 30d / 90d, £ a unit, local,
+      on order and FBA (routes/shopify-sellers-list.js). Its job is the Daily check "is anything selling on Shopify that we'd miss?".
+      Presets Missed | Low | All: MISSED is the server's rule (nothing local, nothing on local order, none at FBA, not Can't get) and is
+      the number on the Daily Ordering tile, which links here; FBA counts as cover because the team can pull stock back from it. LOW =
+      local + on order under 30 days' sales. SIZES is the style-block screen above, unchanged (?view=sizes). ONE basket serves both:
+      the same qty record, draft and Confirm Basket, so a number typed in either view is the same order line. Load basket switches to
+      Sizes, which is where every basket line can be shown.
+      DON'T ORDER (owner, 2026-10-27) — a dud size: one click on its Sellers row takes it out of Missed and the Daily count, dimmed with
+      an Undo under Low / All. Lapses by itself when the size sells again on Shopify (routes/shopify-sellers-list.js). Not Can't get,
+      which is a style-wide supplier fact.
 =======================================================================================================================================
 */
 
-import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, ShoppingCartIcon, FunnelIcon, TrashIcon, ClockIcon,
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, ChevronRightIcon, ShoppingCartIcon, FunnelIcon, TrashIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import {
-  getShopifyOrderList, addOrderLine, setNoSupply, clearNoSupply,
-  ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder,
+  getShopifyOrderList, getShopifySellersList, setShopifyDontOrder, clearShopifyDontOrder, addOrderLine, setNoSupply, clearNoSupply,
+  ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder, ShopifySellerRow,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 
 const NO_STYLES: ShopifyOrderStyle[] = [];
+const NO_SELLERS: ShopifySellerRow[] = [];
+
+// SELLERS view presets — see TWO VIEWS in the header. Missed is the server's flag (the Daily count); Low is local cover under 30 days.
+type View = 'sellers' | 'sizes';
+type Preset = 'missed' | 'low' | 'all';
+const PRESETS: { key: Preset; label: string; title: string }[] = [
+  { key: 'missed', label: 'Missed', title: 'Sold on Shopify in 30 days with nothing anywhere — no local stock, nothing on local order, none at FBA' },
+  { key: 'low', label: 'Low', title: 'Local stock + on order is less than the last 30 days’ Shopify sales' },
+  { key: 'all', label: 'All', title: 'Every size that sold on Shopify in the last 30 days (Birkenstock left out)' },
+];
+function presetMatch(r: ShopifySellerRow, p: Preset): boolean {
+  if (p === 'missed') return r.missed;
+  if (p === 'low') return r.local_stock + r.on_order < r.units_30;
+  return true;
+}
+function sellerHaystack(r: ShopifySellerRow): string {
+  return `${r.title || ''} ${r.code} ${r.supplier || ''} ${r.brand || ''}`.toLowerCase();
+}
 
 function money(v: number | null): string {
   return v !== null ? `£${v.toFixed(2)}` : '—';
@@ -323,6 +352,236 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
   && a.onPark === b.onPark && a.onClearSupply === b.onClearSupply
   && a.style.sizes.every((z) => a.qty[z.code] === b.qty[z.code]));
 
+/*
+ * SELLERS TABLE — one row per size, Amazon Order's flat layout (see TWO VIEWS in the header). Only the columns the decision needs:
+ * what it sold, what it makes, and where any cover is — local, on order, FBA. The Order box writes into the same basket as Sizes.
+ * CODE leads (owner, 2026-10-27), the title under it; Order sits right beside the product rather than at the far end of the row.
+ *
+ * THE STYLE AROUND THE SIZE (owner, 2026-10-27 — "not enough to see that the size has sold if all other sizes are rubbish"). Each row
+ * carries a style line (Shopify units in 12 months, how many of its sizes sold, stock), and the caret opens the style's size strip —
+ * the Sizes view's own figures, with the row's size picked out and an Order box per size. SHOPIFY ONLY, on purpose (owner: "Amazon
+ * takes care of itself on its own screen"). Read from the Sizes list the page already loads (routes/shopify-order-list.js) — no
+ * extra call; until that list arrives the line and caret simply aren't there.
+ */
+function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
+  rows: ShopifySellerRow[];
+  stylesById: Map<string, ShopifyOrderStyle>;
+  qty: Record<string, string>;
+  onQty: (code: string, value: string) => void;
+  // DON'T ORDER — a dud size: out of Missed (and the Daily count) until it sells again on Shopify. Undo takes it back off.
+  busyCode: string | null;
+  onDontOrder: (row: ShopifySellerRow, on: boolean) => void;
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  function toggle(code: string) {
+    setOpen((prev) => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
+  }
+  const th = 'px-3 py-2 font-medium';
+  const dim = (n: number) => (n === 0 ? 'text-slate-300' : 'text-slate-800');
+  const COLS = 10;
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <table className="min-w-full text-sm">
+        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className={th}>Product</th>
+            <th className={th + ' text-center'}>Order</th>
+            <th className={th}>Size</th>
+            <th className={th + ' text-right'} title="Shopify units sold in the last 30 days, net of returns">Sold 30d</th>
+            <th className={th + ' text-right'} title="Shopify units sold in the last 90 days, net of returns">90d</th>
+            <th className={th + ' text-right'} title="Average realised Shopify profit per unit sold, last 90 days">£/unit</th>
+            <th className={th + ' text-right'} title="Sellable units on the local shelf (Amazon-bound units left out)">Local</th>
+            <th className={th + ' text-right'} title="Local supplier lines not yet arrived — to place and on order">On order</th>
+            <th className={th + ' text-right'} title="FBA: live / total (total = live + inbound + on its way to Amazon). Stock can be pulled back from FBA.">FBA</th>
+            <th className={th}>Last sold</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r) => {
+            const style = stylesById.get(r.groupid) ?? null;
+            const isOpen = open.has(r.code) && !!style;
+            const sizesSold = style ? style.sizes.filter((z) => z.sold_365 > 0).length : 0;
+            return (
+              <Fragment key={r.code}>
+                <tr className={r.no_supply || r.dont_order ? 'bg-slate-50 opacity-60' : ''}>
+                  <td className="px-3 py-2">
+                    <div className="flex items-start gap-1.5">
+                      {style ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(r.code)}
+                          aria-expanded={isOpen}
+                          aria-label={isOpen ? 'Hide the style’s sizes' : 'Show the style’s sizes'}
+                          title="How the style's other sizes sell on Shopify"
+                          className="mt-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        >
+                          {isOpen ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
+                        </button>
+                      ) : <span className="w-5 shrink-0" />}
+                      <div className="min-w-0">
+                        <div className="inline-flex items-center font-mono font-semibold text-slate-800">
+                          {r.code}
+                          <CopyButton value={r.code} label="SKU" />
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          {r.title || r.groupid}
+                          {r.brand && <><span className="text-slate-300"> · </span>{r.brand}</>}
+                          {r.price !== null && <><span className="text-slate-300"> · </span>{money(r.price)}</>}
+                        </div>
+                        {style && (
+                          <div className="text-xs text-slate-500" title="The whole style on Shopify — click the arrow for each size">
+                            Style: <span className="font-semibold text-slate-700">{style.sold_365}</span> sold in 12m
+                            {' · '}<span className="font-semibold text-slate-700">{sizesSold}</span> of {style.sizes.length} sizes sold
+                            {' · '}<span className="font-semibold text-slate-700">{style.stock}</span> in stock
+                          </div>
+                        )}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+                          {r.missed && <span className="rounded border border-red-200 bg-red-50 px-1.5 text-red-700">Missed</span>}
+                          {r.no_supply && (
+                            <span className="rounded border border-amber-200 bg-amber-50 px-1.5 text-amber-800">
+                              Can&rsquo;t get it until {shortDate(r.no_supply_until)}
+                            </span>
+                          )}
+                          {r.dont_order ? (
+                            <span className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-1.5 text-slate-600">
+                              Don&rsquo;t order · {shortDate(r.dont_order_at)}{r.dont_order_by && ` · ${r.dont_order_by}`}
+                              <button
+                                type="button"
+                                disabled={busyCode === r.code}
+                                onClick={() => onDontOrder(r, false)}
+                                title="Count this size towards Missed again"
+                                className="font-medium text-brand-700 underline-offset-2 hover:underline disabled:opacity-50"
+                              >
+                                Undo
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busyCode === r.code}
+                              onClick={() => onDontOrder(r, true)}
+                              title="A dud — take this size out of Missed and the Daily count. It comes back by itself if it sells again on Shopify."
+                              className="text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
+                            >
+                              Don&rsquo;t order
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <OrderBox code={r.code} supplier={r.supplier} label={r.code} value={qty[r.code] || ''} onQty={onQty} />
+                  </td>
+                  <td className="px-3 py-2 font-medium text-slate-700">{r.size}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{r.units_30}</td>
+                  <td className={'px-3 py-2 text-right tabular-nums ' + dim(r.units_90)}>{r.units_90}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{money(r.unit_profit)}</td>
+                  <td className={'px-3 py-2 text-right tabular-nums ' + dim(r.local_stock)}>{r.local_stock}</td>
+                  <td className={'px-3 py-2 text-right tabular-nums ' + dim(r.on_order)}>{r.on_order}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                    {r.on_amazon || r.fba_total > 0
+                      ? <span className={dim(r.fba_total)}>{r.fba_live}<span className="text-slate-400"> / {r.fba_total}</span></span>
+                      : <span className="text-xs text-slate-400">Not on Amazon</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{shortDate(r.last_sold)}</td>
+                </tr>
+                {isOpen && style && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={COLS} className="px-3 pb-3 pt-1">
+                      <StyleStrip style={style} highlight={r.code} qty={qty} onQty={onQty} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// One Order box — the Sellers row's and each size in the strip. Digits only (the page's onQty strips the rest); a size with no supplier
+// can't be written by /order-status-add, so its box is shut rather than accepting a number the send would skip.
+function OrderBox({ code, supplier, label, value, onQty }: {
+  code: string; supplier: string | null; label: string; value: string; onQty: (code: string, value: string) => void;
+}) {
+  const n = Number(value) || 0;
+  return (
+    <input
+      value={value}
+      onChange={(e) => onQty(code, e.target.value)}
+      inputMode="numeric"
+      placeholder="—"
+      disabled={!supplier}
+      title={supplier ? `Units of ${code} to order from ${supplier}` : 'No supplier on this SKU — it can’t be ordered'}
+      aria-label={`Order quantity, ${label}`}
+      className={
+        'w-12 rounded border px-1 py-0.5 text-center text-sm tabular-nums focus:outline-none focus:ring-1 '
+        + (!supplier
+          ? 'cursor-not-allowed border-slate-200 bg-slate-100'
+          : n > 0
+            ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700 focus:border-brand-500 focus:ring-brand-500'
+            : 'border-slate-200 bg-white focus:border-brand-500 focus:ring-brand-500')
+      }
+    />
+  );
+}
+
+// The style's size strip, opened from a Sellers row: Shopify only — stock (+ on order), sold 30d, sold 12m, and an Order box per size.
+// 12m sits beside 30d here because outside Birkenstock most 30-day figures are 0, and "do the other sizes sell at all" is a year question.
+function StyleStrip({ style, highlight, qty, onQty }: {
+  style: ShopifyOrderStyle; highlight: string; qty: Record<string, string>; onQty: (code: string, value: string) => void;
+}) {
+  const cell = (z: ShopifyOrderSize) => 'px-1 text-center ' + (z.code === highlight ? 'bg-brand-50' : '');
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-separate border-spacing-0 text-xs">
+        <tbody>
+          <tr>
+            <th scope="row" className="w-16 pr-2 text-left font-normal text-slate-400">Size</th>
+            {style.sizes.map((z) => (
+              <td key={z.code} className={cell(z) + ' w-12 rounded-t border-b border-slate-200 pb-0.5 font-medium ' + (z.code === highlight ? 'text-brand-700' : 'text-slate-600')}>
+                {z.size}
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <th scope="row" className="pr-2 pt-1 text-left font-normal text-slate-400">Stock</th>
+            {style.sizes.map((z) => (
+              <td key={z.code} className={cell(z) + ' pt-1 tabular-nums'}>
+                <span className={z.stock === 0 ? 'text-slate-300' : 'text-slate-800'}>{z.stock}</span>
+                {z.on_order > 0 && <span className="text-slate-500">+{z.on_order}</span>}
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <th scope="row" className="pr-2 text-left font-normal text-slate-400">Sold 30d</th>
+            {style.sizes.map((z) => (
+              <td key={z.code} className={cell(z) + ' tabular-nums ' + (z.sold_30 === 0 ? 'text-slate-300' : 'text-slate-700')}>{z.sold_30}</td>
+            ))}
+          </tr>
+          <tr>
+            <th scope="row" className="pr-2 text-left font-normal text-slate-400">Sold 12m</th>
+            {style.sizes.map((z) => (
+              <td key={z.code} className={cell(z) + ' tabular-nums ' + (z.sold_365 === 0 ? 'text-slate-300' : 'font-semibold text-slate-800')}>{z.sold_365}</td>
+            ))}
+          </tr>
+          <tr>
+            <th scope="row" className="pr-2 pt-1 text-left font-normal text-slate-400">Order</th>
+            {style.sizes.map((z) => (
+              <td key={z.code} className={cell(z) + ' rounded-b px-0.5 pb-1 pt-1'}>
+                <OrderBox code={z.code} supplier={z.supplier} label={`size ${z.size}`} value={qty[z.code] || ''} onQty={onQty} />
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // useSearchParams needs a Suspense boundary for Next's build — same thin-wrapper split /amazon-order and the pricing lists use.
 export default function ShopifyOrderHome() {
   return (
@@ -346,6 +605,36 @@ function ShopifyOrderContent() {
     () => getShopifyOrderList(),
   );
   const styles: ShopifyOrderStyle[] = data?.styles ?? NO_STYLES;
+
+  // VIEW — Sellers by default; ?view=sizes opens the style blocks. Read once into state; the switch keeps the URL in step so a reload
+  // or a back link lands on the same view.
+  const [view, setViewState] = useState<View>(() => (searchParams.get('view') === 'sizes' ? 'sizes' : 'sellers'));
+  function setView(v: View) {
+    setViewState(v);
+    try {
+      const u = new URL(window.location.href);
+      if (v === 'sizes') u.searchParams.set('view', 'sizes'); else u.searchParams.delete('view');
+      window.history.replaceState(window.history.state, '', u.toString());
+    } catch { /* the view still switches; only the URL isn't updated */ }
+  }
+  // Same key as the Daily tile, so the count there and the list here are one cached read.
+  const sellersQ = useApiQuery('shopify-sellers-list', () => getShopifySellersList());
+  const sellers: ShopifySellerRow[] = sellersQ.data?.rows ?? NO_SELLERS;
+  const [preset, setPreset] = useState<Preset>('missed');
+
+  // DON'T ORDER — mark / undo one size, then reload the list (and with it the Daily count, the same SWR key). Marking also empties the
+  // size's Order box: a quantity against a size you've just called a dud would otherwise still go out with Confirm Basket.
+  const [dontOrderBusy, setDontOrderBusy] = useState<string | null>(null);
+  const [dontOrderError, setDontOrderError] = useState<string | null>(null);
+  async function onDontOrder(row: ShopifySellerRow, on: boolean) {
+    setDontOrderBusy(row.code); setDontOrderError(null);
+    const res = on ? await setShopifyDontOrder(row.code) : await clearShopifyDontOrder(row.code);
+    if (res.return_code === 'UNAUTHORIZED') { setDontOrderBusy(null); logout(); return; }
+    if (!res.success) { setDontOrderBusy(null); setDontOrderError(`${row.code}: ${res.error || 'Couldn’t save'}`); return; }
+    if (on) setQty((prev) => { if (!(row.code in prev)) return prev; const next = { ...prev }; delete next[row.code]; return next; });
+    await sellersQ.refresh();
+    setDontOrderBusy(null);
+  }
 
   // NO SUPPLY — styles marked "Can't get it" are off the screen until their re-check day (see the header). The ONLY thing that hides
   // a style from ordering besides the search (the season filter is gone — see the header).
@@ -446,6 +735,9 @@ function ShopifyOrderContent() {
   const [basketSnapshot, setBasketSnapshot] = useState<Set<string> | null>(null);
   const loadBasketOn = basketSnapshot !== null;
 
+  // groupid -> style, for the Sellers rows' style line and size strip.
+  const stylesById = useMemo(() => new Map(styles.map((s) => [s.groupid, s])), [styles]);
+
   // code -> the style and size it belongs to, for the send and the cost line.
   const byCode = useMemo(() => {
     const m = new Map<string, { style: ShopifyOrderStyle; size: ShopifyOrderSize }>();
@@ -461,6 +753,8 @@ function ShopifyOrderContent() {
     return out;
   }
   function toggleLoadBasket() {
+    // The basket can hold sizes the Sellers list doesn't carry, so it is always shown on Sizes (see TWO VIEWS in the header).
+    if (!loadBasketOn) setView('sizes');
     setBasketSnapshot(loadBasketOn ? null : basketStyleIds());
   }
 
@@ -488,6 +782,14 @@ function ShopifyOrderContent() {
       return (d * dir) || a.groupid.localeCompare(b.groupid);
     });
   }, [filtered, sortKey, sortDir]);
+
+  // SELLERS — the preset, the Can't get cut (Missed already leaves those out on the server) and the same search steps as Sizes.
+  const sellerBase = useMemo(() => (supplyOn ? sellers.filter((r) => !r.no_supply) : sellers), [sellers, supplyOn]);
+  const visibleSellers = useMemo(() => {
+    const incTerms = includes.map((t) => t.toLowerCase());
+    const excTerms = excludes.map((t) => t.toLowerCase());
+    return sellerBase.filter((r) => presetMatch(r, preset) && matchesSearch(sellerHaystack(r), incTerms, excTerms));
+  }, [sellerBase, preset, includes, excludes]);
 
   const filtering = includes.length > 0 || excludes.length > 0 || sold30On || loadBasketOn;
 
@@ -586,8 +888,8 @@ function ShopifyOrderContent() {
     if (orderedFlagged.size > 0) await clearNoSupply([...orderedFlagged]);
     if (units > 0) {
       setSentNote(`Sent ${units} unit${units === 1 ? '' : 's'} to Order Status`);
-      // Picks up the new lines in every "+n on order" and in the backlog figures.
-      await refresh();
+      // Picks up the new lines in every "+n on order" and in the backlog figures — and in Sellers' On order / Missed.
+      await Promise.all([refresh(), sellersQ.refresh()]);
     }
   }
 
@@ -607,11 +909,12 @@ function ShopifyOrderContent() {
     setBasketSnapshot(null);
     setSupplyOn(true);
     setSold30On(false);
+    setPreset('missed');
     setSortKey(DEFAULT_SORT); setSortDir(DEFAULT_DIR[DEFAULT_SORT]);
     setConfirmingSend(false); setConfirmingClear(false); setSendError(null); setSentNote(null);
     includeInputRef.current?.focus();
   }
-  const sorted = sortKey !== DEFAULT_SORT || sortDir !== DEFAULT_DIR[DEFAULT_SORT];
+  const sorted = sortKey !== DEFAULT_SORT || sortDir !== DEFAULT_DIR[DEFAULT_SORT] || preset !== 'missed';
   // Reset has something to do if the Can't get cut was switched off, too — it's how you get back to it.
   const leftSupply = !supplyOn;
   // What the count reads "of": the styles in view, or the whole list (Load basket reaches past the Can't get cut, so it counts against all).
@@ -655,6 +958,22 @@ function ShopifyOrderContent() {
       {/* CONTROL PANEL — sticky, two bands like Amazon Order's: row 1 narrows and orders the list, row 2 is the basket. */}
       <div className="sticky top-0 z-30 mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
+          {/* VIEW — see TWO VIEWS in the header. */}
+          <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+            {([['sellers', 'Sellers', 'One row per size that sold on Shopify in 30 days — Birkenstock left out'],
+               ['sizes', 'Sizes', 'Every Shopify style with its full size curve — Birkenstock left out']] as const).map(([v, label, title]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => { setView(v); setBasketSnapshot(null); }}
+                aria-pressed={view === v}
+                title={title}
+                className={'rounded px-2.5 py-1 text-sm font-medium ' + (view === v ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -680,6 +999,25 @@ function ShopifyOrderContent() {
             />
           </div>
 
+          {view === 'sellers' && (
+            <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white p-1">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPreset(p.key)}
+                  aria-pressed={preset === p.key}
+                  title={p.title}
+                  className={'rounded px-2.5 py-1 text-sm font-medium ' + (preset === p.key ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100')}
+                >
+                  {p.label}
+                  {p.key === 'missed' && sellersQ.data && <span className="ml-1 tabular-nums opacity-80">{sellersQ.data.missed_count}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {view === 'sizes' && <>
           <button
             type="button"
             onClick={() => { setSold30On((v) => !v); setBasketSnapshot(null); }}
@@ -713,6 +1051,7 @@ function ShopifyOrderContent() {
               </button>
             ))}
           </div>
+          </>}
 
           <button
             type="button"
@@ -755,7 +1094,9 @@ function ShopifyOrderContent() {
             </button>
           ))}
           <span className="whitespace-nowrap text-sm text-slate-500">
-            {filtering ? (
+            {view === 'sellers' ? (
+              <>Sizes: <span className="font-semibold text-slate-800">{visibleSellers.length}</span><span className="text-slate-400"> of {sellerBase.length} selling</span></>
+            ) : filtering ? (
               <>Styles: <span className="font-semibold text-slate-800">{visible.length}</span><span className="text-slate-400"> of {countOf}</span></>
             ) : (
               <><span className="font-semibold text-slate-800">{countOf}</span><span className="text-slate-400"> styles</span></>
@@ -863,9 +1204,26 @@ function ShopifyOrderContent() {
         )}
       </div>
 
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {!loading && !error && (
+      {view === 'sellers' && (sellersQ.isLoading
+        ? <p className="text-sm text-slate-400">Loading…</p>
+        : sellersQ.error
+          ? <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sellersQ.error.message}</div>
+          : visibleSellers.length > 0
+            ? <>
+                {dontOrderError && <div className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{dontOrderError}</div>}
+                <SellersTable rows={visibleSellers} stylesById={stylesById} qty={qty} onQty={onQty} busyCode={dontOrderBusy} onDontOrder={onDontOrder} />
+              </>
+            : (
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400 shadow-sm">
+                {preset === 'missed' && includes.length === 0 && excludes.length === 0
+                  ? 'Nothing missed — every size that sold on Shopify in 30 days has stock somewhere.'
+                  : 'Nothing found.'}
+              </div>
+            ))}
+
+      {view === 'sizes' && loading && <p className="text-sm text-slate-400">Loading…</p>}
+      {view === 'sizes' && error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {view === 'sizes' && !loading && !error && (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           {visible.map((s) => (
             <StyleBlock

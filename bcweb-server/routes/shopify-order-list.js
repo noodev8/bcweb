@@ -14,9 +14,10 @@ the decision is "which sizes of this style are running thin", which needs the wh
 columns across styles the way the Birkenstock sheet's do: non-Birk stock runs in two unrelated size families (UK 03-14, where Skechers
 writes 8 / 7.5 rather than 08, and EU 36-46 with halves), so every style ships its own `sizes` array and the page draws its own strip.
 
-SCOPE: skusummary.shopify = 1 (298 of 305 styles on 2026-09-26), every live skumap variant (deleted = 0). BIRKENSTOCK IS INCLUDED,
-as an ordinary orderable style (owner, 2026-09-26 — "some may be ordered from stock ... no special case yet"). That is deliberately
-unlike Amazon Order, which disables Birkenstock because it never goes to Amazon.
+SCOPE: skusummary.shopify = 1, every live skumap variant (deleted = 0), BIRKENSTOCK LEFT OUT (brand ILIKE 'birk%' — owner, 2026-10-27,
+the same day the Sellers view, routes/shopify-sellers-list.js, left it out). It was included from 2026-09-26 as an ordinary orderable
+style ("some may be ordered from stock"); it is ordered ~6 months ahead on the Birkenstock sheet, so neither view of Shopify Order
+carries it now.
 
 PER SIZE:
   - stock    = sellable shelf stock: localstock WHERE ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0 (CLAUDE.md), SUM(qty) — the
@@ -154,7 +155,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN loc ON loc.code = m.code
       LEFT JOIN ord ON ord.code = m.code
       LEFT JOIN sold ON sold.code = m.code
-      WHERE s.shopify = 1
+      WHERE s.shopify = 1 AND COALESCE(s.brand,'') NOT ILIKE 'birk%'
       ORDER BY s.groupid,
                CASE WHEN SUBSTRING(m.code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$'
                     THEN SUBSTRING(m.code FROM '[^-]*$')::numeric END NULLS LAST,
