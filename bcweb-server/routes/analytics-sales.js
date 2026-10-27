@@ -12,7 +12,7 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — the
                  NO line list (the point is the headline; a 30-90d list would be thousands of rows). The rows query is skipped entirely in
                  this mode (nothing fetched), and the response carries `summaryOnly:true` so the UI hides the table and explains why.
              (A product SEARCH overrides the window either way — see below.)
-           - channel-filtered (All / Shopify / Amazon — "All" also folds in the minor CM3 channel so the totals reconcile),
+           - channel-filtered (All / Shopify / Amazon / CM3 — the shop, recorded on Shop Sale; "All" folds it in so the totals reconcile),
            - NARROWED BY SEARCH STEPS (`has` / `not`), the Inventory-style filter ported here (owner, 2026-07-25). Instead of one debounced
              box, the operator commits terms one at a time and each ANDs onto the last ("ARIZONA" -> not "EVA" -> "BLACK"). Every step is
              applied HERE, in SQL, not in the browser — the browser only ever holds the capped page of lines, so a client-side narrowing
@@ -70,7 +70,7 @@ the response for any other reader. Size = the code's suffix after the last '-'. 
 Requires auth.
 =======================================================================================================================================
 Request Query Params:
-  channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz'. Case-insensitive.
+  channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz' | 'cm3' (the shop). Case-insensitive.
   window  (string, optional)  - 'today' (default) | 'yesterday' | '3d' (these carry the line list) | '7d' | '30d' | '90d' (SUMMARY-ONLY —
                                 totals with no rows). No custom range by design. IGNORED when a `has` step is active (product mode = last 12 months).
   has     (string[], optional)- repeatable. Each term ANDs a substring match over product name / groupid / SKU code (case-insensitive).
@@ -185,11 +185,12 @@ function toTerms(raw, rawBracket) {
 
 router.get('/', async (req, res) => {
   try {
-    // Channel: 'all' (no filter, so CM3 is included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ'. Anything else falls back to 'all'.
+    // Channel: 'all' (no filter, so CM3 is included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ' | 'cm3' -> 'CM3' (the shop, 2026-10-27).
+    // Anything else falls back to 'all'.
     const rawChannel = String(req.query.channel || 'all').toLowerCase();
-    const channel = rawChannel === 'shp' || rawChannel === 'amz' ? rawChannel : 'all';
+    const channel = rawChannel === 'shp' || rawChannel === 'amz' || rawChannel === 'cm3' ? rawChannel : 'all';
     const channelAll = channel === 'all';
-    const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : null;
+    const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : channel === 'cm3' ? 'CM3' : null;
 
     // Window: one of the presets. Default 'today' (the freshest pulse; one click to yesterday / 3 days / the longer totals).
     let window = String(req.query.window || 'today').toLowerCase();

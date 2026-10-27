@@ -6,7 +6,7 @@ Page: /analytics/sales  (Analytics module — Sales)
 Purpose: The sales ledger an analyst opens to answer "how are we doing?" — recent sale lines with the PROFIT already computed downstream,
          under a headline strip whose hero is NET PROFIT (with revenue, margin and net units sold supporting; there is no Orders tile —
          on this catalogue an order is nearly always one pair, so it just restated units). The reframed successor to the legacy
-         PowerBuilder "Sales" screen: windowed (Today / Yesterday / 7·30·90d / custom), channel-filtered (All / Shopify / Amazon), and
+         PowerBuilder "Sales" screen: windowed (Today / Yesterday / 7·30·90d / custom), channel-filtered (All / Shopify / Amazon / CM3 — the shop), and
          searchable to a single product. Returns are netted into the totals — a sales/profit view has to tell the truth about refunds,
          unlike the velocity-only pricing module — and the Units tile carries the total returned and the % returned.
 
@@ -78,12 +78,13 @@ import {
 // state, so the screen can never describe itself with a filter that isn't the one on display.
 type SalesView = SalesReportData & { usedSteps: SalesFilterStep[] };
 
-type ChannelFilter = 'all' | 'shp' | 'amz';
+type ChannelFilter = 'all' | 'shp' | 'amz' | 'cm3';
 
 const CHANNEL_TABS: { key: ChannelFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'shp', label: 'Shopify' },
   { key: 'amz', label: 'Amazon' },
+  { key: 'cm3', label: 'CM3' },   // the shop (Shop Sale), 2026-10-27 — "good to see what the shop is doing"
 ];
 
 // Two tiers of window. SHORT windows carry the line list (the daily-trade pulse). LONG windows are summary-only — totals over a longer
@@ -156,7 +157,7 @@ function SalesPageContent() {
     return {
       steps,
       lastFind,
-      channel: (ch === 'shp' || ch === 'amz' ? ch : 'all') as ChannelFilter,
+      channel: (ch === 'shp' || ch === 'amz' || ch === 'cm3' ? ch : 'all') as ChannelFilter,
       win: (w && winKeys.includes(w) ? w : 'today') as SalesWindow,
       sort: (searchParams.get('sort') === 'product' ? 'product' : 'date') as SalesSort,
       dir: (searchParams.get('dir') === 'asc' ? 'asc' : 'desc') as SalesSortDir,

@@ -195,9 +195,9 @@ export default function ShopSalePage() {
   return (
     <AppShell
       title="Shop Sale"
-      // A plain way through to the sales list, to check what's been booked (back link returns here).
+      // A plain way through to the sales list, opened on CM3 (the shop) — what's been booked (back link returns here).
       headerRight={
-        <Link href="/analytics/sales?from=/shop-sale&back=Shop%20Sale" className="text-sm text-brand-700 hover:underline">
+        <Link href="/analytics/sales?ch=cm3&from=/shop-sale&back=Shop%20Sale" className="text-sm text-brand-700 hover:underline">
           Sales →
         </Link>
       }
