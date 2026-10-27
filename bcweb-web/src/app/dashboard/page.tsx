@@ -15,7 +15,8 @@ duplicates"). The page reads top to bottom in order of importance:
        Pricing    Shopify due · Amazon due — the counts of the in-stock lists' Due view (GET /pricing-all-list, /amz-all-list),
                   each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
-       New stuff  new SIZES not sold anywhere yet, of the styles added in 90 days that are DUE a review (2026-10-27) (GET /process-overview, the same data as New
+       New stuff  the % of new PAIRS (styles added in 90 days) bought on Goods In and not sold — a score for the buying, kept LOW by
+                  better prospects (owner, 2026-10-27; was a count of unsold sizes due a review) (GET /process-overview, the same data as New
                   Additions' list). Opens New Additions.
        Prospects  finds on the list (same request). Opens Prospects.
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
@@ -39,7 +40,7 @@ import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList } from '@/lib/api';
-import { isSold } from '@/lib/process';
+import { pairsSummary } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -198,9 +199,10 @@ function Daily() {
   const due = useApiQuery('dashboard-pricing-due', () => getPricingDueCounts());
   // The new-sizes data New Additions lists (GET /process-overview).
   const overview = useApiQuery('process-overview', () => getProcessOverview());
-  // Only sizes of styles DUE a look (never reviewed and 20+ days live, or their review date has come round — utils/processMap.js):
-  // a style reviewed on New Additions stops counting until its date (owner, 2026-10-27: reviews like prices).
-  const unsold = overview.data ? overview.data.rows.filter((r) => r.due && !isSold(r)).length : null;
+  // The % of new PAIRS (styles added in 90 days) bought and not sold — a score for the buying, to keep LOW (owner, 2026-10-27: "get
+  // better prospects that sell and keep this figure low"; "switch to pairs"). Every new style, due a review or not: the review date is
+  // New Additions' work list and doesn't enter it. lib/process.ts → pairsSummary, the same figure New Additions shows.
+  const unsoldPct = overview.data ? `${pairsSummary(overview.data.rows).unsoldPct}%` : null;
   const newStyles = overview.data ? overview.data.styles : null;
   const prospects = overview.data ? overview.data.prospects : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
@@ -260,7 +262,7 @@ function Daily() {
         </div>
 
         <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newStyles === null ? 'Styles added in 90 days' : `${newStyles} styles added in 90 days`}>
-          <Big n={unsold} unit="unsold new sizes due a look" />
+          <Big n={unsoldPct} unit="of new pairs unsold" />
         </DailyLink>
 
         <DailyLink href="/prospects" icon={LightBulbIcon} title="Prospects" sub="New products to look into">

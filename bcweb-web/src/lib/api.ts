@@ -4910,7 +4910,8 @@ export interface ProcessSizeChannel {
 export interface ProcessSizeRow {
   code: string; groupid: string; title: string | null; brand: string | null; size: string; created: string;
   localStock: number; fbaStock: number;
-  onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
+  bought: number;                // pairs booked in on Goods In (incoming_stock) — exact, not stock + sold
+  onAmz: boolean;               // the size has an amzfeed listing (FBA, 0-stock ones too)
   // The STYLE's review (repeated on each of its sizes): the date set (null = never reviewed), the date it is due — that, or created
   // + 20 days — and whether that has come round (server date). Set by markNewAdditionsReview.
   reviewOn: string | null; dueOn: string; due: boolean;

@@ -45,7 +45,7 @@ import ProductNavCards from '@/components/ProductNavCards';
 import { DueSwitch, fmtReviewDate } from '@/components/ListViewControls';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, markNewAdditionsReview, type ProcessSizeRow } from '@/lib/api';
-import { CHANNELS, unitsSold } from '@/lib/process';
+import { CHANNELS, pairsSummary, unitsSold } from '@/lib/process';
 
 // Fixed 90-day window (owner, 2026-09-26: "that's when I want each to sell at least once") — server-side, NEW_DAYS.
 const DAYS = 90;
@@ -178,9 +178,7 @@ function NewAdditionsPageInner() {
 
   // The summary line — the whole window, whatever the filters (owner 2026-07-27: a number that moves when you flip a switch isn't a stat).
   const totals = useMemo(() => {
-    const t = { units: 0, profit: 0 };
-    for (const r of rows) { t.units += unitsSold(r); t.profit += profitOf(r); }
-    return t;
+    return pairsSummary(rows);
   }, [rows]);
 
   // Due first, then the quick filter. The filter counts are of the Due view, so each says what its click will show.
@@ -251,12 +249,24 @@ function NewAdditionsPageInner() {
 
       {!loading && !error && (
         <>
-          {/* THE SUMMARY — one sentence, the whole 90 days (no page title — owner, 2026-10-26: the back link names the module). */}
-          <p className="mb-4 text-sm text-slate-500">
-            <strong className="font-semibold text-slate-900">{data?.styles ?? 0} styles</strong> added in the last {DAYS} days have sold{' '}
-            <strong className="font-semibold text-slate-900">{totals.units} units</strong> for{' '}
-            <strong className="font-semibold text-slate-900">{gbp(totals.profit)}</strong> profit.
-          </p>
+          {/* THE SUMMARY — labelled figures, the whole 90 days, like a spreadsheet row (owner, 2026-10-27: numbers, not a sentence).
+              No profit (owner, same day: "this is about shifting rather than margins"). In PAIRS (owner, same day): bought = booked
+              in on Goods In, sold = net of returns; Unsold % is the dashboard's New stuff figure (lib/process.ts → pairsSummary).
+              No page title — owner, 2026-10-26: the back link names the module. */}
+          <dl className="mb-4 flex flex-wrap divide-x divide-slate-200 rounded-lg border border-slate-200 bg-white text-sm">
+            {[
+              ['Styles', String(data?.styles ?? 0)],
+              ['Pairs bought', String(totals.bought)],
+              ['Pairs sold', String(totals.sold)],
+              ['Unsold %', `${totals.unsoldPct}%`],
+            ].map(([label, value]) => (
+              <div key={label} className="px-4 py-2">
+                <dt className="text-xs text-slate-500">{label}</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">{value}</dd>
+              </div>
+            ))}
+            <div className="flex items-end px-4 py-2 text-xs text-slate-400">added in the last {DAYS} days</div>
+          </dl>
 
           {rows.length === 0 ? (
             <p className="text-sm text-slate-400">No styles were added in the last {DAYS} days.</p>

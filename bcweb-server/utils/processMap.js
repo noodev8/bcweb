@@ -24,6 +24,15 @@ happen and act on it if not" (it was New Additions' "20+ days live" filter, whic
   due_on = COALESCE(next_new_review, created_on + FIRST_REVIEW_DAYS);  due = due_on <= today.
 Clearing a review puts the style back on that default. Computed here (server date, London) so Daily and the screen agree.
 ON AMAZON: a size is listed when it has an amzfeed row (every FBA listing, 0-stock ones too — the AMZ loaded rule, per size).
+
+BOUGHT (owner, 2026-10-27: New stuff measured in PAIRS — "switch to pairs, make units bought exact"): the pairs booked in on Goods In,
+SUM(GREATEST(quantity_added, 1)) from incoming_stock — one row per scanned pair, legacy rows can carry more; a cancelled scan deletes its
+row — the same count Stock Position calls bought. It is NOT stock + sold: units shipped to FBA but not yet live, sent back or written
+off are in bought and in neither of those, and stock that never came through Goods In (a manual add, e.g. the UKD-Tests placeholder
+pairs for a test listing) is in them but not in bought. Counted from the style's created_on, as sales are: a CODE CAN BE REUSED — the
+UKD test M163BT (created 2026-09-01) carried six Goods In rows from Dec 2024–Mar 2025, an earlier product under the same code.
+Daily's figure is unsold pairs = bought − sold, as a % of bought, with a size's sold capped at its bought (a sale off placeholder test
+stock counts once the real pair is booked in) — computed client-side, bcweb-web/src/lib/process.ts → pairsSummary.
 =======================================================================================================================================
 */
 
@@ -83,6 +92,11 @@ const NEW_SIZES_SQL = `
       SELECT l.code, l.qty FROM localstock l JOIN sz ON sz.code = l.code WHERE ${AMZ_BOUND_SQL}
     ) x
      GROUP BY x.code
+  ),
+  inc AS (
+    SELECT i.code, SUM(GREATEST(i.quantity_added, 1)) AS qty   -- BOUGHT, see the header
+      FROM incoming_stock i JOIN sz ON sz.code = i.code AND i.arrival_date >= sz.created_on
+     GROUP BY i.code
   )
   SELECT sz.code, sz.groupid, sz.brand, sz.size, sz.created_on::text AS created_on,
          t.shopifytitle AS title,
@@ -92,16 +106,19 @@ const NEW_SIZES_SQL = `
          COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS}) <= (now() AT TIME ZONE 'Europe/London')::date AS due,
          EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = sz.code)                            AS on_amz,
          (now() AT TIME ZONE 'Europe/London')::date - sz.created_on                        AS age_days,
-         COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock,
+         COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock, COALESCE(inc.qty, 0) AS bought,
          COALESCE(json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units, 'profit', sl.profit))
                     FILTER (WHERE sl.channel IS NOT NULL), '{}') AS sales
     FROM sz
     LEFT JOIN sl    ON sl.code = sz.code
     LEFT JOIN loc   ON loc.code = sz.code
     LEFT JOIN fba   ON fba.code = sz.code
+    LEFT JOIN inc   ON inc.code = sz.code
     LEFT JOIN title t ON t.groupid = sz.groupid
-   GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, sz.next_new_review, t.shopifytitle, loc.qty, fba.qty
-  HAVING COALESCE(loc.qty, 0) > 0 OR COALESCE(fba.qty, 0) > 0 OR COUNT(sl.channel) > 0   -- never stocked = left out (see above)
+   GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, sz.next_new_review, t.shopifytitle, loc.qty, fba.qty, inc.qty
+  -- Never stocked = left out (see above). A size booked in counts as stocked even with nothing held or sold now (e.g. all of it on
+  -- its way into FBA), so every bought pair is in the total.
+  HAVING COALESCE(loc.qty, 0) > 0 OR COALESCE(fba.qty, 0) > 0 OR COUNT(sl.channel) > 0 OR COALESCE(inc.qty, 0) > 0
    ORDER BY sz.created_on DESC, sz.groupid,
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
