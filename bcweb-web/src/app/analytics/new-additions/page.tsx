@@ -22,7 +22,7 @@ THE LAYOUT (owner, 2026-10-27: "way to much going on", then "layout is a bit off
     (components/AmazonExport, as on AMZ loaded) and the product links as plain text (components/ProductNavCards compact). A second
     row of tiles with a label column, bordered cards, a card-in-a-row and side-by-side halves were all tried and dropped as clunky.
   - The row says the AGE ("added 15 days ago", date in the tooltip) — age is how a new line is judged.
-  - REVIEW IS ONE CLICK here: "Look again in 7 · 14 · 30 · 90 days" saves at once (the pricing screens' pick-then-Set was the busiest
+  - REVIEW IS ONE CLICK here: "Look again in 5 · 7 · 14 · 30 · 90 days" saves at once (the pricing screens' pick-then-Set was the busiest
     thing in the drop-down). The confirmation names the style and shows in the control row, because with Due on the reviewed style
     leaves the list.
 
@@ -460,9 +460,9 @@ function StyleActions({ g, from, busy, onSetReview }: {
   );
 }
 
-// "Look again in 7 · 14 · 30 · 90 days" — each button saves at once (the periods that make sense for a new line; the pricing screens'
+// "Look again in 5 · 7 · 14 · 30 · 90 days" — each button saves at once (the periods that make sense for a new line; the pricing screens'
 // pick-then-Set control was two clicks and nine chips, the busiest thing in the drop-down).
-const QUICK_REVIEW = [7, 14, 30, 90];
+const QUICK_REVIEW = [5, 7, 14, 30, 90];   // 5 added 2026-10-27 (owner: "7 feels to long for some")
 function QuickReview({ busy, canClear, onSet }: { busy: boolean; canClear: boolean; onSet: (days: number) => Promise<boolean> }) {
   const btn = 'rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-[13px] text-slate-700 transition hover:border-brand-500 hover:bg-brand-50 ' +
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-50';
