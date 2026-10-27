@@ -33,6 +33,7 @@ Data is SWR via useApiQuery (no fetching in effects); the list is one call and t
 
 import { useMemo, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { MagnifyingGlassIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -192,7 +193,15 @@ export default function ShopSalePage() {
   );
 
   return (
-    <AppShell title="Shop Sale">
+    <AppShell
+      title="Shop Sale"
+      // A plain way through to the sales list, to check what's been booked (back link returns here).
+      headerRight={
+        <Link href="/analytics/sales?from=/shop-sale&back=Shop%20Sale" className="text-sm text-brand-700 hover:underline">
+          Sales →
+        </Link>
+      }
+    >
       <div className="max-w-3xl space-y-5">
         {done && (
           <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
