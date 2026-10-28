@@ -18,11 +18,13 @@ type BoxDims = ActiveDims;
 // Amazon's standard-carton limits (UK/EU): no side over 63.5 cm, no box over 23 kg. Advisory — see MEASUREMENTS in AMZ Shipment's header.
 const MAX_SIDE_CM = 63.5;
 const MAX_WEIGHT_KG = 23;
+// Weight first (owner, 2026-10-28) — the sides are usually filled by Birk box / Set, the weight is the one typed every time. The order
+// is also the Enter order (next empty field).
 const FIELDS: { key: keyof BoxDims; label: string; unit: string }[] = [
+  { key: 'weight', label: 'Weight', unit: 'kg' },
   { key: 'length', label: 'Length', unit: 'cm' },
   { key: 'width', label: 'Width', unit: 'cm' },
   { key: 'height', label: 'Height', unit: 'cm' },
-  { key: 'weight', label: 'Weight', unit: 'kg' },
 ];
 
 // The Birkenstock carton (owner, 2026-10-01). Nothing in the DB names it; 46 × 46 × 33 is the most common carton in amzshipment +
