@@ -163,7 +163,7 @@ HOT / WARM / SIMMER — the three presets' ON-SCREEN names. Hot and Warm since 2
       the handlers and the code identifiers (winnersOnly, 'potential', …) keep the old words, the same labels-only rule as
       Repricing's Selling | Stuck. Simmer is new (2026-10-21), so its identifiers say simmer.
       THE TESTS (owner, 2026-10-12 — isHot / isWarm / isSimmer; bars from the server, utils/portfolio.js): HOT = the top 20% of sizes
-      that sold in 30 days, ranked by 30-day profit (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit
+      that sold in 30 days, ranked by 30-day profit, AND unit profit £3+ (2026-10-28) (was a fixed > £30, which left Hot near-empty every winter). WARM = not Hot, unit
       profit over £3, sold in 6 months. SIMMER = not Hot, unit profit over £0 and up to £3, sold in 30 days (net), FBA TOTAL 0.
 
 SIMMER (owner, 2026-10-21) took the place of COLD (sold before, not in 6 months — "I don't use it"; git history has it). The sizes
@@ -505,18 +505,21 @@ function isRecentlySold(r: AmazonOrderRow, cutoffMs: number): boolean {
 // server (utils/portfolio.js, owner 2026-10-12): hotBar is the 30-day profit at the top-20% line of sizes that sold in 30 days,
 // ranked over EVERY row, so Hot is the same set whatever search or cut is on screen. units_30d > 0 matches the server's ranking
 // pool — without it a quiet month with a line at £0 would turn every unsold size Hot.
-function isHot(r: AmazonOrderRow, hotBar: number | null): boolean {
-  return hotBar !== null && r.units_30d > 0 && r.profit_30d !== null && r.profit_30d >= hotBar;
+// AND a last-sale unit profit of £3 or more (owner, 2026-10-28 — warmMin, the same £3 line): a big month on a thin margin is not
+// Hot; such a size falls to Simmer if Amazon has none. The 20% line is still ranked over every seller, thin ones included.
+function isHot(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
+  return hotBar !== null && r.units_30d > 0 && r.profit_30d !== null && r.profit_30d >= hotBar
+    && r.unit_profit !== null && r.unit_profit >= warmMin;
 }
 // Warm = not Hot, last-sale unit profit over the floor (£3), and an Amazon sale in 6 months (the sticky-figure guard above).
 function isWarm(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
-  return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
+  return !isHot(r, hotBar, warmMin) && r.unit_profit !== null && r.unit_profit > warmMin && isRecentlySold(r, RECENT_SALE_CUTOFF_MS);
 }
 // Simmer = not Hot, a last-sale unit profit over £0 (not isLoss) and up to Warm's floor, sold in the last 30 days net of returns
 // (units_30d > 0), and FBA TOTAL 0 (live + inbound + on order + picked). See SIMMER in the header. Not Warm by construction — the
 // two meet at the floor. A 30-day sale also keeps unit_profit fresh, so the six-month sticky guard Warm needs isn't needed here.
 function isSimmer(r: AmazonOrderRow, hotBar: number | null, warmMin: number): boolean {
-  return !isHot(r, hotBar) && r.unit_profit !== null && r.unit_profit > 0 && r.unit_profit <= warmMin
+  return !isHot(r, hotBar, warmMin) && r.unit_profit !== null && r.unit_profit > 0 && r.unit_profit <= warmMin
     && r.units_30d > 0 && r.fba_total === 0;
 }
 
@@ -1255,7 +1258,7 @@ function AmazonOrderContent() {
     // Amazon sales these rows don't have.
     let out = listing === 'off' ? [] : narrow(baseRows);
     const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !simmerOnly ? narrow(offBaseRows) : [];
-    if (winnersOnly) out = out.filter((r) => isHot(r, hotBar));
+    if (winnersOnly) out = out.filter((r) => isHot(r, hotBar, warmMin));
     // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
     if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
     // Simmer reads FBA Total live from the server, so a size leaves the list once the refresh after Confirm Basket counts its unit.
@@ -1572,6 +1575,7 @@ function AmazonOrderContent() {
   // just-filled rows ranked biggest-need-first, so the table sorts to show what was just added without the operator having to
   // click the Order column (which isn't even a sortable header) — see the `sorted` memo above.
   function applyCoverage(months: number) {
+    clearSelection();
     // Listed rows only — an unlisted row's boxes are typed by hand, so a rate re-tap must not wipe them (see fillCoverage).
     const visibleCodes = new Set(visible.filter((r) => r.on_amazon).map((r) => r.code));
     if (coverageMonths === months) {
@@ -1662,6 +1666,7 @@ function AmazonOrderContent() {
   // now, and silently rewriting it from here would change numbers the operator can't see.
   function onPickKeep(next: number) {
     setPickKeep(next);
+    clearSelection();
     if (coverageMonths !== null) fillCoverage(coverageMonths, next);
   }
 
@@ -1760,6 +1765,7 @@ function AmazonOrderContent() {
   }), [visible, qtyByHalf]);
   function clearHalfOnScreen(half: BasketHalf) {
     const other: BasketHalf = half === 'order' ? 'pick' : 'order';
+    clearSelection();
     setQtyByHalf((prev) => {
       const next = { ...prev[half] };
       for (const code of visibleCodeSet) delete next[code];
@@ -1824,6 +1830,7 @@ function AmazonOrderContent() {
     writeBoost(plan.lines);
     setBoostSettings(settings);
     setBoostOpen(false);
+    clearSelection();
   }
   const closeBoost = useCallback(() => setBoostOpen(false), []);
 
@@ -1833,6 +1840,7 @@ function AmazonOrderContent() {
   // `visible` is already Simmer only, listed only; Birkenstock and losses can't be in it, but the guards are the fill's own and stay.
   const oneEachReady = simmerOnly && !ordering;
   function fillOneEach() {
+    clearSelection();
     const rowsOnScreen = visible.filter((r) => r.on_amazon && !isBirkenstock(r) && !isLoss(r));
     const codes = new Set(rowsOnScreen.map((r) => r.code));
     const pick: string[] = [];
@@ -1906,6 +1914,13 @@ function AmazonOrderContent() {
   function deselectAll() {
     setSelected(new Set());
     anchorRef.current = null;
+  }
+  // AFTER A BULK BUTTON (owner, 2026-10-28 — "my mindset is elsewhere"): Boost, 1 each, the rates, Pick keep and the half clears
+  // finish with nothing selected and no keyboard position, so a row clicked earlier can't sit blue waiting for the next Cut or
+  // Enter. Buttons that ACT ON the selection (Cut, Can't get) don't call this.
+  function clearSelection() {
+    deselectAll();
+    cursor.setCursor(null);
   }
   // THE WINDOWS RULES (owner, 2026-09-27 — see CLICK, SELECT, EXPAND in the header). Plain click = this row alone; Ctrl/Cmd =
   // add or remove it; Shift = the range from the anchor, replacing the selection; a plain click on a row already selected unselects
