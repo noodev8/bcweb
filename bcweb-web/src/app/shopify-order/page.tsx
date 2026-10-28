@@ -71,8 +71,8 @@ TWO VIEWS — SELLERS | SIZES (owner, 2026-10-27). SELLERS, the default, is Amaz
       local + on order no more than 30 days' sales (so the last unit left counts). SIZES is the style-block screen above, unchanged (?view=sizes). ONE basket serves both:
       the same qty record, draft and Confirm Basket, so a number typed in either view is the same order line. Load basket switches to
       Sizes, which is where every basket line can be shown.
-      DON'T ORDER (owner, 2026-10-27) — a dud size: one click on its Sellers row takes it out of Missed and the Daily count, dimmed with
-      an Undo under Low / All. Lapses by itself when the size sells again on Shopify (routes/shopify-sellers-list.js). Not Can't get,
+      DON'T ORDER (owner, 2026-10-27) — a dud size: one click on its Sellers row takes it out of Missed and the Daily count, and out of Low;
+      shown dimmed with an Undo under All only. Lapses by itself when the size sells again on Shopify (routes/shopify-sellers-list.js). Not Can't get,
       which is a style-wide supplier fact.
 =======================================================================================================================================
 */
@@ -105,7 +105,8 @@ const PRESETS: { key: Preset; label: string; title: string }[] = [
 function presetMatch(r: ShopifySellerRow, p: Preset): boolean {
   if (p === 'missed') return r.missed;
   // "No more than" (owner, 2026-10-27): a size that sold one and has its last one left is a re-order question too.
-  if (p === 'low') return r.local_stock + r.on_order <= r.units_30;
+  // A Don't order size is left out of Low too (owner, 2026-10-28) — only All shows it, with its Undo.
+  if (p === 'low') return !r.dont_order && r.local_stock + r.on_order <= r.units_30;
   return true;
 }
 function sellerHaystack(r: ShopifySellerRow): string {
@@ -394,7 +395,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
             <th className={th + ' text-right'} title="Average realised Shopify profit per unit sold, last 90 days">£/unit</th>
             <th className={th + ' text-right'} title="Sellable units on the local shelf (Amazon-bound units left out)">Local</th>
             <th className={th + ' text-right'} title="Local supplier lines not yet arrived — to place and on order">On order</th>
-            <th className={th + ' text-right'} title="FBA: live / total (total = live + inbound + on its way to Amazon). Stock can be pulled back from FBA.">FBA</th>
+            <th className={th + ' text-right'} title="FBA total: live + inbound + on its way to Amazon. Stock can be pulled back from FBA.">FBA</th>
             <th className={th}>Last sold</th>
           </tr>
         </thead>
@@ -483,7 +484,7 @@ function SellersTable({ rows, stylesById, qty, onQty, busyCode, onDontOrder }: {
                   <td className={'px-3 py-2 text-right tabular-nums ' + dim(r.on_order)}>{r.on_order}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                     {r.on_amazon || r.fba_total > 0
-                      ? <span className={dim(r.fba_total)}>{r.fba_live}<span className="text-slate-400"> / {r.fba_total}</span></span>
+                      ? <span className={dim(r.fba_total)}>{r.fba_total}</span>
                       : <span className="text-slate-400" title="Not on Amazon">N/A</span>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{shortDate(r.last_sold)}</td>
