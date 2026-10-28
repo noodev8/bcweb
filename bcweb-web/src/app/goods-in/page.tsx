@@ -20,16 +20,26 @@ this browser until it's packed on AMZ Shipment (src/lib/amzActiveBox.ts). A stri
 with a link to go and pack it. Closable (owner, 2026-10-16: "they might not care rn"): × hides it for this tab until that box is packed.
 After a Pack that came straight back here (AMZ Shipment's tick-box), a green strip says the number the box was given — the packer
 writes it on the carton — until closed or the next shoe is scanned.
+
+PACK FROM HERE (owner, 2026-10-28: "let the user pack an amz shipment box from goods in so dont need to swap screen"). The strip's
+Pack box opens the same Box size pop-up as AMZ Shipment (components/AmzBoxSizeDialog) and makes the same POST /amz-shipment-pack with
+the same box from src/lib/amzActiveBox.ts — a refill (an unpacked box) packs back under its own number, a stale refill is dropped with
+the shoes kept, exactly as there. Then the green "that's Box n" strip. Looking at, editing, deleting and shipping boxes stay on AMZ
+Shipment.
 =======================================================================================================================================
 */
 
 import Link from 'next/link';
 import { useState } from 'react';
+import SizeDialog from '@/components/AmzBoxSizeDialog';
+import { packAmzShipmentBox } from '@/lib/api';
 import { CheckCircleIcon, CubeIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import GoodsInStation from '@/components/GoodsInStation';
 import { useAuth } from '@/contexts/AuthContext';
-import { activeUnits, dismissPacked, useActiveBox } from '@/lib/amzActiveBox';
+import {
+  activeUnits, dismissPacked, useActiveBox, readActiveBox, setActiveDims, packedActiveBox, setRefill, type ActiveDims,
+} from '@/lib/amzActiveBox';
 
 export default function GoodsInPage() {
   return (
@@ -67,6 +77,36 @@ function YourAmzBox() {
     setHidden(true);
     try { sessionStorage.setItem(HIDE_KEY, '1'); } catch { /* not remembered */ }
   }
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const [packing, setPacking] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+  // Focus back to the scan box (GoodsInStation's only input) so the gun keeps working after the pop-up.
+  const refocus = () => setTimeout(() => document.querySelector<HTMLInputElement>('input[aria-label="Scan a barcode"]')?.focus(), 0);
+
+  // PACK (see the header) — AMZ Shipment's pack(), minus that screen's own state. Read fresh from the store: a shoe scanned while the
+  // pop-up was open is in the box too.
+  async function pack(d: ActiveDims) {
+    const now = readActiveBox(user);
+    if (packing || activeUnits(now) === 0) return;
+    setActiveDims(user, d);
+    setSizeOpen(false);
+    setPacking(true);
+    setPackError(null);
+    const res = await packAmzShipmentBox(now.lines.map((l) => ({ code: l.code, qty: l.qty })), d, now.refill);
+    setPacking(false);
+    if (!res.success || !res.data) {
+      if (res.return_code === 'STALE' && now.refill) {
+        setRefill(user, null);
+        setPackError(`Box ${now.refill.box} has changed on another screen, so it wasn’t replaced. Press Pack box again to pack this as a new box.`);
+      } else {
+        setPackError(`Not packed: ${res.error || 'error'}`);
+      }
+      refocus();
+      return;
+    }
+    packedActiveBox(user, res.data.box);
+    refocus();
+  }
   return (
     <>
       {box.lastPacked !== null && (
@@ -83,15 +123,25 @@ function YourAmzBox() {
         <div role="status" className="mb-3 flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-base text-slate-700">
           <CubeIcon className="h-5 w-5 shrink-0 text-slate-500" />
           <span className="flex-1"><span className="font-semibold">Your AMZ box: {units} {units === 1 ? 'shoe' : 'shoes'}</span>, not packed yet.</span>
-          <Link href="/amz-shipment"
-            className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Pack it on AMZ Shipment
-          </Link>
+          {packError && <span className="text-sm font-medium text-red-700">{packError}</span>}
+          <button type="button" onClick={() => { setPackError(null); setSizeOpen(true); }} disabled={packing}
+            className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
+            <CheckCircleIcon className="h-4 w-4" />{packing ? 'Packing…' : box.refill ? `Pack as Box ${box.refill.box}` : 'Pack box'}
+          </button>
           <button type="button" onClick={hide} aria-label="Close" title="Hide this until the box is packed"
             className="shrink-0 rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800">
             <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
+      )}
+      {sizeOpen && units > 0 && (
+        <SizeDialog
+          initial={box.dims}
+          packLabel={box.refill ? `Pack as Box ${box.refill.box}` : 'Pack box'}
+          canPack={!packing}
+          onPack={(d) => void pack(d)}
+          onClose={() => { setSizeOpen(false); refocus(); }}
+        />
       )}
     </>
   );
