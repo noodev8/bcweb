@@ -11,13 +11,15 @@ in the other. They are not reading. They glance up between scans, take one word 
 the design spends everything on that one word:
 
   - THE VERDICT IS THE PAGE. The destination shelf is set enormous and is the ONLY coloured thing on the screen — amber for the Amazon
-    staging bay, indigo for a local shelf, red for a scan that resolved to nothing. Everything else, the delivery note and the run list
-    included, is grey on white at 12-13px. Colour here is information, so it is spent once; the moment the tables get row colours too,
+    staging bay, indigo for a local shelf, red for a scan that resolved to nothing. Everything else, the run list included, is grey on white at 12-13px. Colour here is information, so it is spent once; the moment the tables get row colours too,
     the destination stops being the loud thing and the screen needs reading again.
   - IT SITS ABOVE THE INPUT, AND BOTH ARE PINNED. The legacy screen split this across two places — a small blue AMZ box bottom-left
     and a red error bar top-right — so "where does it go" and "did it work" were different eye movements. One panel, one position,
     never moves.
   - NO STAT TILES, NO ROW STRIPES, NO ICONS IN THE LISTS. Each was tried and each competed with the verdict.
+  - THE CODE IS BIG, THE TITLE IS GONE (owner, 2026-10-28: "scanned from further away so make the code bigger and get rid of the
+    unneeded text"). The screen is read from arm's length or more, so the code sits beside the shelf in the verdict and leads every
+    list row; product titles are left off everywhere — the code is what's on the box.
 
 AN ERROR STOPS THE LINE, and that is load-bearing, not defensive UI. It is the legacy behaviour (of_scan2 refuses to proceed while an
 error row exists) and the reason is physical: a scan that resolves to nothing means a shoe in your hand that the system cannot account
@@ -33,9 +35,10 @@ re-focuses after every action, so none of this costs a click.
 
 EVERY SCAN IS A REAL WRITE. One POST /goods-in-book marks the order line arrived, puts the unit on a shelf, records the arrival and
 logs it, in one transaction. The SERVER decides which line was claimed and therefore where the shoe goes — this component does not
-guess and then hope the write agrees, it renders what came back. That is why the delivery note is refetched after every scan rather
-than decremented locally: the server is the only thing that knows, and two operators working the same delivery see each other's units
-disappear.
+guess and then hope the write agrees, it renders what came back.
+
+NO "STILL TO ARRIVE" LIST (owner, 2026-10-28: "get rid of the still to arrive list"). The ON ORDER delivery note used to sit under the
+run; the screen is read from a distance and it was noise. /goods-in-expected still exists on the server — git history has the table.
 
 BIRK TRACKER, ON EVERY SCAN (owner, 2026-09-21). A Birkenstock pair booked in here is always counted arrived on the Birk Tracker too
 (oldest invoice first — the server decides, utils/birkTracker.js), so a delivery is scanned once instead of once per screen. This used
@@ -62,8 +65,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
 import {
-  getGoodsInShelves, getGoodsInExpected, goodsInBook, goodsInCancel,
-  type GoodsInShelvesData, type GoodsInExpectedData, type GoodsInBirk,
+  getGoodsInShelves, goodsInBook, goodsInCancel,
+  type GoodsInShelvesData, type GoodsInBirk,
 } from '@/lib/api';
 import { AMAZON_SHELF, normaliseScan } from '@/lib/goodsIn';
 import { printFnskuLabel } from '@/lib/fnskuLabel';
@@ -97,10 +100,6 @@ const VERDICT = {
   // to be able to tell "here is where this one goes" from "here is where the next ones go" without reading. Slate says neither.
   'shelf-set': { bar: 'bg-slate-700', wash: 'bg-slate-800 ring-slate-900', head: 'text-white', sub: 'text-slate-300' },
 } as const;
-
-// A delivery-note line is identified by SKU *and* ordertype: the same code can be on order twice, once for Amazon and once for the
-// local shelf, and they are different destinations.
-const lineKey = (code: string, ordertype: number) => `${code}|${ordertype}`;
 
 interface Row {
   key: string;
@@ -146,8 +145,6 @@ export default function GoodsInStation() {
   // what happens to be holding stock, which is the difference between offering C1's 22 racks and offering the 5 with shoes on them.
   // The route has already dropped the Amazon staging bay and ordered everything by the warehouse's own walking sequence.
   const { data: shelfData } = useApiQuery<GoodsInShelvesData>(['goods-in-shelves'], getGoodsInShelves);
-  const { data: expected, isLoading, error, refresh: refreshNote } =
-    useApiQuery<GoodsInExpectedData>(['goods-in-expected'], getGoodsInExpected);
 
   const shelfAreas = useMemo(() => {
     const areas = shelfData?.areas?.length ? shelfData.areas : FALLBACK_SHELVES;
@@ -174,11 +171,6 @@ export default function GoodsInStation() {
     setShelf(location);
     window.localStorage.setItem(SHELF_KEY, location);
   }, []);
-
-  // The delivery note, straight from the server — a booked unit leaves it because the server marked the line arrived, not because
-  // this component subtracted one. Refetched after every scan, which is also how two operators on one delivery stay in step.
-  const note = expected?.rows || [];
-  const stillExpected = note.reduce((n, r) => n + r.units, 0);
 
   // A not-found verdict blocks the line until it is cleared. See the header.
   const blocked = verdict?.kind === 'not-found';
@@ -237,9 +229,8 @@ export default function GoodsInStation() {
         expected: false, supplier: null, ordernum: null, incomingId: null, localstockId: null, birk: null, amzBox: false, cancelled: false,
       });
     }
-    await refreshNote();
     focusInput();
-  }, [refreshNote, user]);
+  }, [user]);
 
   const submit = useCallback(async (raw: string) => {
     const typed = raw.trim();
@@ -339,9 +330,7 @@ export default function GoodsInStation() {
       printFnskuLabel(b.amzBox.fnsku, b.code, focusInput);
     }
     focusInput();
-    // Not awaited: the delivery note catching up a moment later is fine, and the operator is already reaching for the next shoe.
-    void refreshNote();
-  }, [blocked, rows, shelf, racks, chooseShelf, beep, reset, undo, refreshNote, user]);
+  }, [blocked, rows, shelf, racks, chooseShelf, beep, reset, undo, user]);
 
   const booked = rows.filter((r) => !r.cancelled);
   // `rows` is newest-first, so the first un-cancelled row IS the last scan — what both "Undo last" and the typed UNDO act on.
@@ -380,7 +369,7 @@ export default function GoodsInStation() {
               </optgroup>
             ))}
           </select>
-          <span className="text-slate-400">Scan a rack label to change it. Amazon lines override it and go to {AMAZON_SHELF}.</span>
+          <span className="text-slate-400">Amazon → {AMAZON_SHELF}</span>
         </div>
 
         {/* --- THE VERDICT --- */}
@@ -397,7 +386,6 @@ export default function GoodsInStation() {
           {!verdict ? (
             <div className="flex flex-1 flex-col justify-center px-5 py-4">
               <p className="text-[clamp(1.25rem,3vw,1.75rem)] font-semibold tracking-tight text-slate-300">Ready</p>
-              <p className="mt-1 text-sm text-slate-500">Scan a shoe. The shelf it belongs on appears here.</p>
             </div>
           ) : verdict.kind === 'shelf-set' ? (
             <div className="flex flex-1 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-4">
@@ -438,22 +426,21 @@ export default function GoodsInStation() {
             </div>
           ) : (
             <div className="flex flex-1 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-4">
-              <div className="min-w-0">
+              <p className={'shrink-0 font-mono text-[clamp(1.75rem,5vw,3.25rem)] font-bold leading-none tabular-nums tracking-tight ' + VERDICT[verdict.kind].head}>{verdict.code}</p>
+              <div className="min-w-0 text-right">
                 <p className={'text-[clamp(1.75rem,5vw,3.25rem)] font-bold uppercase leading-none tracking-tight ' + VERDICT[verdict.kind].head}>
                   {verdict.destination}
                 </p>
-                <p className={'mt-2 text-sm ' + VERDICT[verdict.kind].sub}>
-                  {verdict.title || verdict.code}
+                <p className={'mt-2 text-base ' + VERDICT[verdict.kind].sub}>
                   {/* A ticked Birk WAS on order — on the Birk Tracker rather than Order Status — so it must not read "nothing on order". */}
                   {verdict.birk?.marked
-                    ? <> · arrived on Birk Tracker order {verdict.birk.ordernum} ({verdict.birk.arrived} of {verdict.birk.requested})</>
+                    ? <>Birk order {verdict.birk.ordernum} ({verdict.birk.arrived} of {verdict.birk.requested})</>
                     : verdict.expected
-                      ? <> · on order from {verdict.supplier}</>
-                      : <> · <span className="font-semibold">nothing on order</span> — putting it away as free stock</>}
-                  {verdict.amzBox && <> · <span className="font-semibold">into your AMZ box</span>, label printed</>}
+                      ? <>{verdict.supplier}</>
+                      : <span className="font-semibold">Not on order</span>}
+                  {verdict.amzBox && <> · <span className="font-semibold">AMZ box</span></>}
                 </p>
               </div>
-              <p className={'shrink-0 font-mono text-sm tabular-nums tracking-tight ' + VERDICT[verdict.kind].sub}>{verdict.code}</p>
             </div>
           )}
         </div>
@@ -561,15 +548,14 @@ export default function GoodsInStation() {
       </div>
 
       {rows.length > 0 && (
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full border-collapse text-base">
           <caption className="sr-only">Units scanned during this run, newest first</caption>
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className={'border-b border-slate-100 ' + (r.cancelled ? 'text-slate-300' : 'text-slate-600')}>
-                <td className={'py-1.5 pr-3 font-mono tabular-nums ' + (r.cancelled ? 'line-through' : 'text-slate-800')}>
+                <td className={'py-1.5 pr-3 font-mono text-2xl font-semibold tabular-nums ' + (r.cancelled ? 'line-through' : 'text-slate-800')}>
                   {r.code || r.input}
                 </td>
-                <td className="hidden py-1.5 pr-3 sm:table-cell">{r.title}</td>
                 <td className="py-1.5 pr-3 text-right sm:text-left">
                   {r.destination}
                   {r.amzBox && !r.cancelled && <span className="ml-2 text-xs text-slate-400">AMZ box</span>}
@@ -598,57 +584,6 @@ export default function GoodsInStation() {
           </tbody>
         </table>
       )}
-
-      {/* --- THE DELIVERY NOTE: what is on order with every supplier and hasn't arrived. It shrinks as the box is worked, which makes
-          it the run's progress bar as well as its crib sheet. Kept below the run so the thing you are doing stays above the thing you
-          are checking against. --- */}
-      <section className="mt-8">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-2">
-          <h2 className="text-xs font-semibold text-slate-700">Still to arrive</h2>
-          <p className="text-xs text-slate-500">
-            {isLoading ? 'Loading…' : `${stillExpected} units on ${note.length} lines`}
-          </p>
-        </div>
-
-        {error ? (
-          <p className="mt-3 text-sm text-red-700">{error.message}</p>
-        ) : isLoading ? (
-          <p className="mt-3 text-sm text-slate-500">Loading the delivery note…</p>
-        ) : note.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">
-            {(expected?.rows.length ?? 0) === 0
-              ? 'Nothing is on order. Anything that turns up will go away as free stock.'
-              : 'Every unit on order has been scanned. Nothing left in the box.'}
-          </p>
-        ) : (
-          <table className="w-full border-collapse text-xs">
-            <thead className="text-left text-slate-500">
-              <tr className="border-b border-slate-200">
-                <th className="w-10 py-1.5 pr-3 text-right font-medium">Qty</th>
-                <th className="py-1.5 pr-3 font-medium">Code</th>
-                <th className="hidden py-1.5 pr-3 font-medium sm:table-cell">Product</th>
-                <th className="py-1.5 pr-3 font-medium">Supplier</th>
-                <th className="py-1.5 text-right font-medium">Waiting</th>
-              </tr>
-            </thead>
-            <tbody>
-              {note.map((r) => (
-                <tr key={lineKey(r.code, r.ordertype)} className="border-b border-slate-100 text-slate-600">
-                  <td className="py-1.5 pr-3 text-right font-semibold tabular-nums text-slate-800">{r.units}</td>
-                  <td className="py-1.5 pr-3 font-mono tabular-nums">
-                    {r.code}
-                    {/* The only place a delivery-note line needs a mark: an Amazon line will not go on the chosen shelf. */}
-                    {r.ordertype === 3 && <span className="ml-2 font-sans text-amber-700">Amazon</span>}
-                  </td>
-                  <td className="hidden py-1.5 pr-3 sm:table-cell">{r.title || '—'}</td>
-                  <td className="py-1.5 pr-3">{r.supplier || '—'}</td>
-                  <td className="py-1.5 text-right tabular-nums text-slate-500">{r.days === null ? '—' : `${r.days}d`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
     </div>
   );
 }
