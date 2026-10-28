@@ -107,10 +107,10 @@ router.post('/', async (req, res) => {
         return { id: newId };
       }
       const upd = await client.query(
-        `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now(),
+        `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now(), updated_by = $9,
                 rrp = CASE WHEN $5::boolean THEN $6 ELSE rrp END,
                 cost = CASE WHEN $7::boolean THEN $8 ELSE cost END
-          WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp, hasCost, cost]
+          WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp, hasCost, cost, req.user.display_name]
       );
       if (upd.rowCount === 0) return { error: 'NOT_FOUND', message: 'That line has been deleted' };
       return { id };

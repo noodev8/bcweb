@@ -4845,6 +4845,7 @@ export interface Prospect {
   // both a price and a cost read as numbers.
   return_on_cost: { price: number; cost: number; profit: number; on_cost_pct: number } | null;
   created_at: string; updated_at: string | null;
+  updated_by: string | null;          // who last edited the line (2026-10-28); NULL = never edited
   archived_at: string | null;         // set = in the Archive
   archived_by: string | null;
   outcome: ProspectOutcome | null;

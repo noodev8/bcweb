@@ -22,7 +22,7 @@ Success Response:
           // that reads as a number), over the cost — utils/prospect.js → returnOnCost, THE Amazon formula. null without both.
       "owner": "Andreas",
       "archived_at": null | "...", "archived_by": null | "Summer", "outcome": null | "ordered" | "dropped",
-      "created_at": "2026-10-21T09:12:00Z", "updated_at": null,
+      "created_at": "2026-10-21T09:12:00Z", "updated_at": null, "updated_by": null,
       "have": { "groupid": "RIE-Y3453-BLACK" } | null,
       "checks": [ { "id": 9, "size": "38", "asin": null, "rank": "58k", "price": "64.99", "sellers": "3", "checked_by": "Summer",
                     "checked_at": "..." } ],                      // oldest first
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
     const [lines, checks, notes] = await Promise.all([
       // have: the first of our Amazon listings matching any ASIN on the line. amzfeed.asin is stored as-is, so compare upper-cased.
       query(`
-        SELECT p.id, p.name, p.asin, p.rating, p.rrp, p.cost, p.owner, p.created_at, p.updated_at, p.archived_at, p.archived_by, p.outcome,
+        SELECT p.id, p.name, p.asin, p.rating, p.rrp, p.cost, p.owner, p.created_at, p.updated_at, p.updated_by, p.archived_at, p.archived_by, p.outcome,
                (SELECT f.groupid FROM amzfeed f
                  WHERE UPPER(TRIM(f.asin)) IN (SELECT p.asin UNION SELECT c.asin FROM prospect_check c WHERE c.prospect_id = p.id)
                  ORDER BY f.groupid LIMIT 1) AS have_groupid
@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
       const row = {
         id: p.id, name: p.name, asin: p.asin, rating: p.rating, rrp: p.rrp, cost: p.cost, owner: p.owner,
         return_on_cost: null,
-        created_at: p.created_at, updated_at: p.updated_at,
+        created_at: p.created_at, updated_at: p.updated_at, updated_by: p.updated_by,
         archived_at: p.archived_at, archived_by: p.archived_by, outcome: p.outcome,
         have: p.have_groupid ? { groupid: p.have_groupid } : null,
         checks: [], notes: [],

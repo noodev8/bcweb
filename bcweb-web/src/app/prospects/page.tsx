@@ -26,7 +26,7 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
 =======================================================================================================================================
 */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -55,7 +55,7 @@ const OUTCOMES: { key: ProspectOutcome; label: string; on: string }[] = [
   { key: 'dropped', label: 'Dropped', on: 'border-slate-300 bg-slate-200 text-slate-700' },
 ];
 
-type Sort = 'newest' | 'rating' | 'stale';
+type Sort = 'latest' | 'newest' | 'rating' | 'stale';
 
 const inputCls = 'rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
 const smallBtn = 'rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
@@ -107,6 +107,28 @@ function AmazonLink({ asin, label }: { asin: string; label: string }) {
   );
 }
 
+// LATEST CHANGE (owner, 2026-10-28: "Any change to it means it has been addressed. The bottom ones have been left") — the newest
+// of the line's add/edit, its last check and its last comment, and who made it. Sorts the list; the row shows who · day, the open
+// card adds the time. An edit from before updated_by existed has no name — falls back to the owner.
+function lastChangeBy(p: Prospect): { at: string; by: string } {
+  const lc = p.checks[p.checks.length - 1];
+  const ln = p.notes[p.notes.length - 1];
+  const stamps = [
+    { at: p.created_at, by: p.owner },
+    { at: p.updated_at, by: p.updated_by || p.owner },
+    { at: lc?.checked_at, by: lc?.checked_by },
+    { at: ln?.created_at, by: ln?.created_by },
+  ];
+  return stamps.reduce<{ at: string; by: string }>((m, s) => (s.at && s.at > m.at ? { at: s.at, by: s.by || '' } : m), { at: '', by: '' });
+}
+function lastChange(p: Prospect): string {
+  return lastChangeBy(p).at;
+}
+function fmtWhenTime(iso: string): string {
+  const t = new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  return `${fmtWhen(iso)} ${t}`;
+}
+
 function lastActivity(p: Prospect): string {
   const last = p.checks.length ? p.checks[p.checks.length - 1].checked_at : null;
   return last || p.created_at;
@@ -124,10 +146,11 @@ export default function ProspectsPage() {
   const [adding, setAdding] = useState<{ seed: string; key: number } | null>(null);
   const [paste, setPaste] = useState('');
   // The one find open for editing; the rest are narrow rows (owner, 2026-10-21: "Only edit one at a time").
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenIdRaw] = useState<number | null>(null);
+  const [frozen, setFrozen] = useState<Map<number, number> | null>(null);   // the list order when the open card was opened
   const [mine, setMine] = useState(false);
   const [archive, setArchive] = useState(false);   // the Active | Archive switch
-  const [sort, setSort] = useState<Sort>('newest');
+  const [sort, setSort] = useState<Sort>('latest');
   const [filter, setFilter] = useState('');
   // CUT (owner, 2026-10-22) — × takes a line off the screen for this visit only: nothing saved, no undo, no count. Refresh (or
   // reopening the page) brings the WHOLE list back. Not a delete — that is the open card's Delete, and it is for good.
@@ -143,6 +166,14 @@ export default function ProspectsPage() {
   const activeCount = rows.filter((p) => !p.archived_at).length;
   const inView = useMemo(() => rows.filter((p) => !!p.archived_at === archive), [rows, archive]);
 
+  // The find just closed — once the list re-sorts, scroll to where it landed (the top, if it was changed).
+  const [justClosed, setJustClosed] = useState<number | null>(null);
+  function setOpenId(id: number | null) {
+    if (id == null && openId != null) setJustClosed(openId);
+    setOpenIdRaw(id);
+    setFrozen(id == null ? null : new Map(shown.map((p, i) => [p.id, i])));
+  }
+
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const list = inView.filter((p) =>
@@ -153,13 +184,24 @@ export default function ProspectsPage() {
     );
     if (archive) {
       list.sort((a, b) => b.archived_at!.localeCompare(a.archived_at!));   // most recently decided first; the sort menu is hidden
+    } else if (sort === 'latest') {
+      list.sort((a, b) => lastChange(b).localeCompare(lastChange(a)));
     } else if (sort === 'rating') {
       list.sort((a, b) => (RATING_ORDER[a.rating ?? ''] ?? 3) - (RATING_ORDER[b.rating ?? ''] ?? 3) || b.created_at.localeCompare(a.created_at));
     } else if (sort === 'stale') {
       list.sort((a, b) => lastActivity(a).localeCompare(lastActivity(b)));   // longest since anyone looked, first
     }
+    // While a find is open the order holds (a check or comment would otherwise jump it to the top under your cursor); it
+    // re-sorts when the card closes, so the line you just worked on lands at the top.
+    if (frozen) list.sort((a, b) => (frozen.get(a.id) ?? -1) - (frozen.get(b.id) ?? -1));
     return list;   // 'newest' is the server's order
-  }, [inView, archive, mine, displayName, filter, sort, cut]);
+  }, [inView, archive, mine, displayName, filter, sort, cut, frozen]);
+
+  useEffect(() => {
+    if (justClosed == null) return;
+    document.getElementById(`prospect-row-${justClosed}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setJustClosed(null);
+  }, [justClosed]);
 
   // Reopen from the add form's "Tested before" warning: the line is back on the list, open, ready for a new check.
   function onReopened(id: number) {
@@ -226,6 +268,7 @@ export default function ProspectsPage() {
           </div>
           {!archive && (
             <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={`${inputCls} bg-white`} aria-label="Sort">
+              <option value="latest">Latest change first</option>
               <option value="newest">Newest first</option>
               <option value="rating">Diamonds first</option>
               <option value="stale">Longest since checked</option>
@@ -253,7 +296,7 @@ export default function ProspectsPage() {
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {shown.map((p) => (p.id === openId
               ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
-              : <ProspectRow key={p.id} p={p} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
+              : <ProspectRow key={p.id} p={p} dim={openId != null} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
           </div>
         )}
       </div>
@@ -425,14 +468,14 @@ function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: Che
 
 // ---- One line --------------------------------------------------------------------------------------------------------------------
 // ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
-function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; onCut: () => void }) {
+function ProspectRow({ p, dim, onOpen, onCut }: { p: Prospect; dim: boolean; onOpen: () => void; onCut: () => void }) {
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
   const rating = RATINGS.find((r) => r.key === p.rating);
   const sinceLook = daysAgo(lastActivity(p));
   const outcome = OUTCOMES.find((o) => o.key === p.outcome);   // archived lines only
   // The row is a button (opens the card), so × sits beside it rather than inside — a button can't hold another button.
   return (
-    <div className="flex items-center hover:bg-slate-50">
+    <div id={`prospect-row-${p.id}`} className={'scroll-mt-4 flex items-center transition-opacity hover:bg-slate-50 ' + (dim ? 'opacity-40 hover:opacity-100' : '')}>
     <button type="button" onClick={onOpen}
       className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left text-sm">
       <ChevronRightIcon className="h-4 w-4 shrink-0 text-slate-400" />
@@ -443,7 +486,11 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
       {p.have && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">DUPLICATE</span>}
       <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{latest?.rank ? `Rank ${latest.rank}` : ''}</span>
       <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
-      <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">{p.rrp ? `RRP ${fmtMoney(p.rrp)}` : ''}</span>
+      <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">
+        {/* Profit a pair once there is one (cost + price typed), else RRP (owner, 2026-10-28). */}
+        {p.return_on_cost ? <span className="font-medium text-slate-800">£{p.return_on_cost.profit.toFixed(2)}</span>
+          : p.rrp ? `RRP ${fmtMoney(p.rrp)}` : ''}
+      </span>
       {/* RETURN ON COST (2026-10-27) — the one figure for "is this a good use of cash?". Blank until a cost and a price are typed. */}
       <span className="hidden w-24 shrink-0 text-right tabular-nums font-medium text-slate-800 sm:block"
         title={p.return_on_cost ? `Keeps £${p.return_on_cost.profit.toFixed(2)} a pair on Amazon at £${p.return_on_cost.price.toFixed(2)}, cost £${p.return_on_cost.cost.toFixed(2)}` : 'Type a cost and a price to see the return on cost'}>
@@ -460,8 +507,8 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
         </>
       ) : (
         <span className={`w-28 shrink-0 text-right text-xs ${sinceLook >= STALE_DAYS ? 'text-amber-700' : 'text-slate-400'}`}
-          title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : undefined}>
-          {p.owner} · {fmtWhen(lastActivity(p))}
+          title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : `Added by ${p.owner}`}>
+          {lastChangeBy(p).by} · {fmtWhen(lastChange(p))}
         </span>
       )}
     </button>
@@ -475,6 +522,9 @@ function ProspectRow({ p, onOpen, onCut }: { p: Prospect; onOpen: () => void; on
 
 // ---- One find, open: everything, editable. An ARCHIVED find opens read-only — its checks and comments, Reopen or Delete. ------------
 function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () => void; onClose: () => void }) {
+  // Opening a find brings it to the top of the screen, so the form isn't half off the bottom (owner, 2026-10-28).
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => { ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, []);
   const [editing, setEditing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [history, setHistory] = useState(false);
@@ -510,7 +560,7 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
   }
 
   return (
-    <article className="bg-slate-50/70 p-4 ring-1 ring-inset ring-slate-300">
+    <article ref={ref} className="scroll-mt-4 bg-sky-50/60 p-4 ring-2 ring-inset ring-sky-500">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <button type="button" onClick={onClose} title="Close" className="flex items-center gap-1.5 text-left font-semibold text-slate-900 hover:text-slate-600">
@@ -527,7 +577,8 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
                 Keeps £{p.return_on_cost.profit.toFixed(2)} a pair · {p.return_on_cost.on_cost_pct.toFixed(0)}% on cost
               </span>
             )}
-            <span>{p.owner} · added {fmtWhen(p.created_at)}</span>
+            <span>Added by {p.owner} · {fmtWhen(p.created_at)}</span>
+            {lastChange(p) > p.created_at && <span>Changed by {lastChangeBy(p).by} · {fmtWhenTime(lastChange(p))}</span>}
             {archived ? (
               <span className="inline-flex items-center gap-1.5">
                 {archivedAs && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${archivedAs.on}`}>{archivedAs.label}</span>}
