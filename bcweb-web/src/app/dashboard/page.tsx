@@ -12,7 +12,8 @@ duplicates"). The page reads top to bottom in order of importance:
      smaller"): the five jobs are equal tiles in one row; Sales is a compact figure in the band's header bar. Each says how much is waiting, so it is clear where to start:
        Sales      today's profit and units, all channels (GET /analytics-sales?window=today — the Sales screen's own headline).
                   Moved here from the menu (owner, 2026-10-26: "add sales to daily").
-       Pricing    Shopify due · Amazon due — the counts of the in-stock lists' Due view (GET /pricing-all-list, /amz-all-list),
+       Pricing    Shopify due · Amazon due — the counts of the home lists' Due view (GET /pricing-all-list, /amz-all-list — in stock
+                  OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
                   each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
        New stuff  the % of new PAIRS (styles added in 90 days) bought on Goods In and not sold — a score for the buying, kept LOW by

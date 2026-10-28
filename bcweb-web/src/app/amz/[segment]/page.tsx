@@ -18,7 +18,7 @@ Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb
 campaign grouping on Amazon (campaigns are Shopify only).
 
 ALL (?by=all, 2026-10-26): AMAZON PRICING'S HOME (/amz redirects to /amz/all?by=all; owner: "shouldn't go off segments — just be a list
-of all, with a due and not due toggle") — every in-stock FBA SKU, one unsplit list from GET /amz-all-list, handled like a status list.
+of all, with a due and not due toggle") — every in-stock FBA SKU PLUS every SKU on a Repricing status list (0-stock too, 2026-10-28), one unsplit list from GET /amz-all-list, handled like a status list.
 No back link (it IS the home); Find sits top right beside Upload.
 
 NO STOCK & ORDER LINK (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 a status list
@@ -379,7 +379,7 @@ function SegmentContent() {
       // The ALL list IS Amazon Pricing's home, so no back link unless something sent you here with ?from=.
       backHref={isAll && !searchParams.get('from') ? undefined : backHref}
       backLabel={backLabel}
-      crumb={<PricingCrumb name={isAll ? 'All' : segment} channel="amazon" note={isAll ? 'in stock' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
+      crumb={<PricingCrumb name={isAll ? 'All' : segment} channel="amazon" note={isAll ? 'in stock + status' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
       headerRight={isAll ? (
         // The old home's Find entry, now on the home list itself, beside Upload.
         <div className="flex items-center gap-2">

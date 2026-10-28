@@ -38,7 +38,7 @@ there) — deliberately no tab or tile on Repricing (owner: don't disturb naviga
 ?by=excess list removed the same day (git e4f91fd), same plumbing.
 
 ?by=all (2026-10-26) — SHOPIFY PRICING'S HOME (/pricing redirects to /pricing/all?by=all; owner: "shouldn't go off segments — just be
-a list of all, with a due and not due toggle"): every in-stock Shopify style, one unsplit list from GET /pricing-all-list, same table,
+a list of all, with a due and not due toggle"): every in-stock Shopify style PLUS every style on a Repricing status list (0-stock too, 2026-10-28), one unsplit list from GET /pricing-all-list, same table,
 Due switch, drill and bulk bar. No back link (it IS the home); Find and Shopify vs Amazon sit top right.
 
 List size: these are the WHOLE qualifying lists, not a top-10 shortlist — the count IS the work in front of you, and it goes down as you
@@ -111,7 +111,7 @@ const GROUP_SUBTITLE: Record<PricingGroupBy, string | undefined> = {
   campaign: 'Google campaign',
   status: 'status',
   sitting: 'no sale in 90 days',
-  all: 'in stock',
+  all: 'in stock + status',
 };
 const GROUP_NOUN: Record<PricingGroupBy, string> = { segment: 'segment', campaign: 'campaign', status: 'status', sitting: 'list', all: 'list' };
 // The sitting list's path name is 'sitting'; the crumb shows the word on Slow's sitting box.

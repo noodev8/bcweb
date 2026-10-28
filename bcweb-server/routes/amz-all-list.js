@@ -7,6 +7,10 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
          just be a list of all, with a due and not due toggle"). Membership = an amzfeed listing with live FBA stock (amzlive > 0).
          One unsplit list: no Selling / Stuck bars.
 
+         PLUS every SKU on a Repricing STATUS list, FBA stock or not (owner, 2026-10-28: "dashboard should cover everything" — Daily's
+         Amazon due count is read from here and missed 0-stock SKUs Repricing called Due). So membership = amzlive > 0 OR its style
+         carries a portfolio status with an Amazon lead channel — exactly amz-status-list's rows, same channelFilterSql. 0-stock last.
+
          Same row shape as amz-status-list, so /amz/all?by=all renders it with the same table, drill, Due switch,
          bulk bar and upload basket. Apply is unchanged: amz_price_log + the Seller Central upload; amzfeed stays READ ONLY.
 
@@ -21,7 +25,7 @@ Request: GET /amz-all-list[?parked=include][&limit=N]
 Success Response:
 {
   "return_code": "SUCCESS",
-  "total": 233, "truncated": false, "out_of_stock": 0,
+  "total": 233, "truncated": false, "out_of_stock": 20,     // rows listed for their status with no FBA stock
   "rows": [ { "rank": 1, "code": "…-38", "amz_sku": "…", "groupid": "…", "size": "38", "title": "…", "brand": "…", "price": 42.5,
               "rrp": 60, "fba": 4, "units": 3, "u7": 1, "last_sold": "2026-10-20", "next_review": null, "parked": false }, ... ]
 }
@@ -39,6 +43,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
+const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -50,7 +55,7 @@ router.get('/', async (req, res) => {
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
 
-    // $1 limit, $2 includeParked. Units / last sold are Amazon's, as on the other Amazon lists.
+    // $1 limit, $2 includeParked, $3 statuses. Units / last sold are Amazon's, as on the other Amazon lists.
     const result = await query(`
       WITH u AS (
         SELECT code,
@@ -70,24 +75,28 @@ router.get('/', async (req, res) => {
              NULLIF(TRIM(sk.brand), '') AS brand,
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.rrp')} AS rrp,
-             a.amzlive             AS fba,
+             COALESCE(a.amzlive,0) AS fba,
              COALESCE(u.u30,0)     AS units,
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
-             COUNT(*) OVER () AS total_rows
+             COUNT(*) OVER () AS total_rows,
+             COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0) OVER () AS oos_rows
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m      ON m.code     = a.code
       LEFT JOIN u        ON u.code     = a.code
       LEFT JOIN ls       ON ls.code    = a.code
       LEFT JOIN title t  ON t.groupid  = a.groupid
-      WHERE COALESCE(a.amzlive,0) > 0
+      WHERE (COALESCE(a.amzlive,0) > 0
+             OR (sk.portfolio_status = ANY($3::text[]) AND ${channelFilterSql('sk', 'AMZ')}))
         AND ($2::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)
-      ORDER BY a.amzlive DESC, a.code
+      -- Due before parked, so the safety cap can only ever trim parked rows: with the status rows the list passed 500 (2026-10-28)
+      -- and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them.
+      ORDER BY COALESCE(m.next_amz_price_review > CURRENT_DATE, false), COALESCE(a.amzlive,0) DESC, a.code
       LIMIT $1::int
-    `, [limit, includeParked]);
+    `, [limit, includeParked, STATUSES]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -108,8 +117,8 @@ router.get('/', async (req, res) => {
     }));
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
-    // out_of_stock is always 0 (membership needs FBA stock) — kept so the shape matches the other one-list routes.
-    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: 0, rows });
+    const outOfStock = result.rows.length > 0 ? Number(result.rows[0].oos_rows) : 0;
+    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock, rows });
   } catch (err) {
     logger.error('[amz-all-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the Amazon list' });
