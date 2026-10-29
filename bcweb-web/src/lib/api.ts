@@ -106,7 +106,7 @@ export interface LoserRow {
 // harvest). Same bar as Shopify's TriageRow — the owner's instruction is that both channels share one definition of a winner.
 export interface AmzWinnerRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null; brand: string | null;
-  price: number | null; fba: number; u7: number; units: number; last_sold: string | null;
+  price: number | null; fba: number; fba_inbound: number; u7: number; units: number; last_sold: string | null;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
@@ -116,7 +116,7 @@ export interface AmzWinnerRow {
 // days_since_sale are the useful signal here (every row is quiet — these say for how long).
 export interface AmzLoserRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null; brand: string | null;
-  price: number | null; fba: number; u7: number; u30: number;
+  price: number | null; fba: number; fba_inbound: number; u7: number; u30: number;
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   last_sold: string | null; days_since_sale: number | null;
   next_review: string | null;   // YYYY-MM-DD or null

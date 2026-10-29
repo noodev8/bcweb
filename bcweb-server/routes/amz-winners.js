@@ -51,7 +51,7 @@ Success Response:
   "truncated": false,   // true when the cap trimmed the set (rows.length < total)
   "rows": [
     { "rank": 1, "code": "FLE030-IVES-WHITE-38", "amz_sku": "AD-0XF8D-48L", "groupid": "FLE030-IVES-WHITE",
-      "size": "38", "title": "...", "price": 37.99, "fba": 96, "u7": 4, "units": 19, "last_sold": "2026-07-08",
+      "size": "38", "title": "...", "price": 37.99, "fba": 96, "fba_inbound": 0, "u7": 4, "units": 19, "last_sold": "2026-07-08",
       "next_review": null, "parked": false },   // next_review YYYY-MM-DD or null; parked = next_review is in the future
     ...   // ordered by units (in window) desc; rank is the 1-based row number
   ]
@@ -122,6 +122,7 @@ router.get('/', async (req, res) => {
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP" (skusummary, same as amz-apply's bound)
              COALESCE(a.amzlive,0) AS fba,
+             GREATEST(COALESCE(a.amztotal,0) - COALESCE(a.amzlive,0), 0) AS fba_inbound,   -- on its way in (amz-drill's inbound)
              w.units,
              COALESCE(s7.u7,0) AS u7,
              to_char(w.last_sold,'YYYY-MM-DD') AS last_sold,
@@ -153,6 +154,7 @@ router.get('/', async (req, res) => {
       price: num(r.price),
       rrp: num(r.rrp),
       fba: Number(r.fba),
+      fba_inbound: Number(r.fba_inbound),
       u7: Number(r.u7),
       units: Number(r.units),
       last_sold: r.last_sold || null,

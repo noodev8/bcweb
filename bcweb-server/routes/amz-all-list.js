@@ -11,6 +11,9 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
          Amazon due count is read from here and missed 0-stock SKUs Repricing called Due). So membership = amzlive > 0 OR its style
          carries a portfolio status with an Amazon lead channel — exactly amz-status-list's rows, same channelFilterSql. 0-stock last.
 
+         PLUS every SKU with stock ON ITS WAY IN and none live (owner, 2026-10-29: "yes include them" — so it can be priced before it
+         lands; 75 such sizes that day). Inbound = amztotal − amzlive, shown on screen as "0 +6" (fba_inbound).
+
          Same row shape as amz-status-list, so /amz/all?by=all renders it with the same table, drill, Due switch,
          bulk bar and upload basket. Apply is unchanged: amz_price_log + the Seller Central upload; amzfeed stays READ ONLY.
 
@@ -27,7 +30,7 @@ Success Response:
   "return_code": "SUCCESS",
   "total": 233, "truncated": false, "out_of_stock": 20,     // rows listed for their status with no FBA stock
   "rows": [ { "rank": 1, "code": "…-38", "amz_sku": "…", "groupid": "…", "size": "38", "title": "…", "brand": "…", "price": 42.5,
-              "rrp": 60, "fba": 4, "units": 3, "u7": 1, "last_sold": "2026-10-20", "next_review": null, "parked": false }, ... ]
+              "rrp": 60, "fba": 4, "fba_inbound": 0, "units": 3, "u7": 1, "last_sold": "2026-10-20", "next_review": null, "parked": false }, ... ]
 }
 =======================================================================================================================================
 Return Codes:
@@ -76,20 +79,21 @@ router.get('/', async (req, res) => {
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.rrp')} AS rrp,
              COALESCE(a.amzlive,0) AS fba,
+             GREATEST(COALESCE(a.amztotal,0) - COALESCE(a.amzlive,0), 0) AS fba_inbound,   -- on its way in (amz-drill's inbound)
              COALESCE(u.u30,0)     AS units,
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
              COUNT(*) OVER () AS total_rows,
-             COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0) OVER () AS oos_rows
+             COUNT(*) FILTER (WHERE COALESCE(a.amztotal,0) = 0) OVER () AS oos_rows   -- nothing live or on its way
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m      ON m.code     = a.code
       LEFT JOIN u        ON u.code     = a.code
       LEFT JOIN ls       ON ls.code    = a.code
       LEFT JOIN title t  ON t.groupid  = a.groupid
-      WHERE (COALESCE(a.amzlive,0) > 0
+      WHERE (COALESCE(a.amzlive,0) > 0 OR COALESCE(a.amztotal,0) > 0
              OR (sk.portfolio_status = ANY($3::text[]) AND ${channelFilterSql('sk', 'AMZ')}))
         AND ($2::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)
       -- Due before parked, so the safety cap can only ever trim parked rows: with the status rows the list passed 500 (2026-10-28)
@@ -109,6 +113,7 @@ router.get('/', async (req, res) => {
       price: num(r.price),
       rrp: num(r.rrp),
       fba: Number(r.fba),
+      fba_inbound: Number(r.fba_inbound),
       units: Number(r.units),
       u7: Number(r.u7),
       last_sold: r.last_sold || null,

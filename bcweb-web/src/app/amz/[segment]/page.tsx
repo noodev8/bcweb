@@ -87,6 +87,7 @@ interface ListRow {
   units: number | null;
   u7: number | null;
   fba: number;
+  fba_inbound: number;     // on its way into FBA (amztotal − amzlive) — shown as "4 +6", not in the sort
   price: number | null;
   rrp: number | null;       // the "Reset to RRP" target (skusummary.rrp; null = junk/blank -> skipped)
   next_review: string | null;
@@ -150,7 +151,7 @@ function SegmentContent() {
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
-          fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+          fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
         }));
         return {
           success: true,
@@ -166,7 +167,7 @@ function SegmentContent() {
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
-          fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+          fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
         }));
         return {
           success: true,
@@ -186,11 +187,11 @@ function SegmentContent() {
       if (!(l.success && l.data)) err = err || l.error || 'Failed to load losers';
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
         kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
-        fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+        fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
         kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
-        fba: r.fba, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+        fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
       })) : [];
       return {
         success: true,
@@ -512,7 +513,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
             <SortableTh {...th} sortKey="code" label="Code" firstDir="asc" title="Our code (skumap.code), not the Amazon SKU — size is the last two digits" />
             <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
             <SortableTh {...th} sortKey="price" label="Price" align="right" />
-            <SortableTh {...th} sortKey="fba" label="FBA" align="right" title="FBA sellable stock" />
+            <SortableTh {...th} sortKey="fba" label="FBA" align="right" title="FBA sellable stock (+ on its way in)" />
             <SortableTh {...th} sortKey="review" label="Review" firstDir="asc" />
           </tr>
         </thead>
@@ -545,7 +546,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 </td>
                 <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
-                <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}</td>
+                <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}{r.fba_inbound > 0 && <span className="ml-1 text-xs font-normal text-sky-600" title="On its way into FBA">+{r.fba_inbound}</span>}</td>
                 <td className="whitespace-nowrap px-4 py-2">
                   {r.parked
                     ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>

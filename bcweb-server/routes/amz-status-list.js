@@ -35,7 +35,7 @@ Success Response:
   "status": "WINNERS",
   "total": 131, "truncated": false,
   "out_of_stock": 54,              // rows with 0 FBA stock (listed)
-  "rows": [ { "rank": 1, "code": "…-38", "amz_sku": "…", "groupid": "…", "size": "38", "title": "…", "price": 42.5, "fba": 12,
+  "rows": [ { "rank": 1, "code": "…-38", "amz_sku": "…", "groupid": "…", "size": "38", "title": "…", "price": 42.5, "fba": 12, "fba_inbound": 0,
               "units": 6, "u7": 2, "last_sold": "2026-09-20", "next_review": null, "parked": false }, ... ]
 }
 =======================================================================================================================================
@@ -104,6 +104,7 @@ router.get('/', async (req, res) => {
              ${safeNumeric('a.amzprice')} AS price,
              ${safeNumeric('sk.rrp')} AS rrp,              -- for the bulk bar's "Reset to RRP" (skusummary, same as amz-apply's bound)
              COALESCE(a.amzlive,0) AS fba,
+             GREATEST(COALESCE(a.amztotal,0) - COALESCE(a.amzlive,0), 0) AS fba_inbound,   -- on its way in (amz-drill's inbound)
              COALESCE(u.u30,0)     AS units,
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
@@ -136,6 +137,7 @@ router.get('/', async (req, res) => {
       price: num(r.price),
       rrp: num(r.rrp),
       fba: Number(r.fba),
+      fba_inbound: Number(r.fba_inbound),
       units: Number(r.units),
       u7: Number(r.u7),
       last_sold: r.last_sold || null,
