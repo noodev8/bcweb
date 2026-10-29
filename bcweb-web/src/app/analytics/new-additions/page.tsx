@@ -289,7 +289,7 @@ function NewAdditionsPageInner() {
               ['Styles', String(data?.styles ?? 0)],
               ['Pairs bought', String(totals.bought)],
               ['Pairs sold', String(totals.sold)],
-              // Sold %, not Unsold % (owner, 2026-10-29) — the same way round as the intakes below; Daily keeps its unsold figure.
+              // Sold %, not Unsold % (owner, 2026-10-29) — the same way round as the intakes below; Daily shows the same Sold %.
               ['Sold %', totals.bought > 0 ? `${100 - totals.unsoldPct}%` : '–'],
             ].map(([label, value]) => (
               // Centred, one width each, so every number sits under its label (owner, 2026-10-29).

@@ -72,6 +72,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -112,7 +113,7 @@ router.get('/', async (req, res) => {
         WHERE ${group.column} = $1 AND s.channel='SHP'
           AND s.qty > 0 AND s.soldprice > 0
           AND s.solddate >= CURRENT_DATE - $2::int
-          AND ($6::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
+          AND ($6::boolean OR ((ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')}))
         GROUP BY s.groupid
         HAVING SUM(s.qty) >= $4::int AND AVG(s.profit) >= $5::numeric
       ),
@@ -127,7 +128,7 @@ router.get('/', async (req, res) => {
              ${safeNumeric('sp.rrp')} AS rrp,             -- for the bulk bar's "Reset to RRP" (NULL on junk/blank -> row skipped)
              sp.match_amazon_price AS match_amazon,       -- so the list can badge auto-matched styles (kept IN the list for review)
              sp.next_shopify_price_review::text AS next_review,               -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(sp.next_shopify_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(sp.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'sp.groupid')}) AS parked,
              COUNT(*) OVER () AS total_rows               -- full qualifying count: window functions run BEFORE the LIMIT, so this is
                                                           -- the pre-cap total (free — no second round-trip to count)
       FROM win w

@@ -52,6 +52,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -83,7 +84,7 @@ router.get('/', async (req, res) => {
              COALESCE(w.u30, 0) AS u30,
              ss.match_amazon_price AS match_amazon,
              ss.next_shopify_price_review::text AS next_review,                 -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked
+             (COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'ss.groupid')}) AS parked
       FROM skusummary ss
       LEFT JOIN win w ON w.groupid = ss.groupid
       WHERE ss.groupid = ANY($1::text[])

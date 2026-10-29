@@ -66,6 +66,15 @@ const CHANNELS = ['SHP', 'AMZ'];
 // Still "in a slider" — must match the partial unique index slider_member_live_uq in the migration. Queries take it as a bound $n array.
 const LIVE_STATES = ['sliding', 'found', 'floor'];
 
+// A product in a LIVE slider reads as PARKED on the pricing lists (owner, 2026-10-29: "hide them from due"): the slider has its own
+// timetable, and pricing it by hand from a Due list quietly takes it out of the slider. Review dates are still not touched — once it
+// leaves the slider its own review date decides again. Paused groups count too (still in the slider, still badged). An SQL fragment, not a
+// bound parameter, so every list route can drop it into its parked / due tests; channel and states are constants, keyExpr a column.
+function inSliderSql(channel, keyExpr) {
+  const states = LIVE_STATES.map((s) => `'${s}'`).join(', ');
+  return `EXISTS (SELECT 1 FROM slider_member sl WHERE sl.channel = '${channel}' AND sl.item_key = ${keyExpr} AND sl.state IN (${states}))`;
+}
+
 // Same as routes/amz-basket.js WINDOW_HOURS: a pending (not uploaded) Amazon change older than this has dropped out of the upload basket,
 // so it never went live and must not be read as the SKU's current price.
 const AMZ_PENDING_HOURS = 72;
@@ -284,6 +293,6 @@ const AMZ_NOW_CTES = `
   )`;
 
 module.exports = {
-  CHANNELS, LIVE_STATES, DUE_ACTIONS, WAITS, AMZ_NOW_CTES, AMZ_PENDING_HOURS,
+  CHANNELS, LIVE_STATES, inSliderSql, DUE_ACTIONS, WAITS, AMZ_NOW_CTES, AMZ_PENDING_HOURS,
   validateRules, breakevenFor, floorFor, stepAmount, plan, offTrack, decide, soldAtSql, londonDate, addDays, round2,
 };

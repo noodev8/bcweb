@@ -30,6 +30,7 @@ too — otherwise the gap silently reopens.
 */
 
 const { query } = require('../database');
+const { inSliderSql } = require('./slider');   // a live slider product reads as parked (owner, 2026-10-29)
 
 // The Amazon WINNERS bar, mirrored from routes/amz-winners.js (MIN_UNITS / MIN_PROFIT) — see the LANDMINE above.
 const AMZ_MIN_UNITS = 2;    // AMZ units sold in 30d before a SKU counts as moving
@@ -54,6 +55,7 @@ async function amazonActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              m.next_amz_price_review AS review,
+             ${inSliderSql('AMZ', 'm.code')} AS in_slider,   -- a live slider product reads as parked (owner, 2026-10-29)
              ( COALESCE(w30.u30, 0) >= $1::int
                AND w30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in amz-winners
              COALESCE(w30.u30, 0) = 0 AS loser
@@ -64,9 +66,9 @@ async function amazonActionableByGroup(groupExpr) {
       WHERE COALESCE(a.amzlive, 0) > 0             -- in FBA stock now (nothing to price on an out-of-stock SKU)
     ),
     act AS (
-      SELECT name, review, COALESCE(winner, false) AS winner, loser,
+      SELECT name, review, in_slider, COALESCE(winner, false) AS winner, loser,
              (COALESCE(winner, false) OR loser) AS actionable,
-             (review IS NULL OR review <= CURRENT_DATE) AS due
+             (review IS NULL OR review <= CURRENT_DATE) AND NOT in_slider AS due
       FROM cand
     )
     SELECT name,

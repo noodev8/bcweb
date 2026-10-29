@@ -50,6 +50,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -109,7 +110,7 @@ router.get('/', async (req, res) => {
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(m.next_amz_price_review > CURRENT_DATE, false) OR ${inSliderSql('AMZ', 'm.code')}) AS parked,
              COUNT(*) OVER () AS total_rows,
              COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0) OVER () AS oos_rows
       FROM amzfeed a
@@ -121,7 +122,7 @@ router.get('/', async (req, res) => {
       WHERE ${group.column} = $1
         AND ($4::numeric IS NULL OR sk.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue
         AND ${channelFilterSql('sk', 'AMZ')}                                   -- Amazon-led or BOTH (see header)
-        AND ($3::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)
+        AND ($3::boolean OR ((m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')}))
       ORDER BY COALESCE(u.u30,0) DESC, COALESCE(a.amzlive,0) DESC, a.code
       LIMIT $2::int
     `, [group.name, limit, includeParked, bar]);

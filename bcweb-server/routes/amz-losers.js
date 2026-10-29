@@ -73,6 +73,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -131,7 +132,7 @@ router.get('/', async (req, res) => {
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              (CURRENT_DATE - ls.last_sold)::int AS days_since_sale,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(m.next_amz_price_review > CURRENT_DATE, false) OR ${inSliderSql('AMZ', 'm.code')}) AS parked,
              COUNT(*) OVER () AS total_rows                 -- full qualifying count: window functions run BEFORE the LIMIT, so this is
                                                             -- the pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -143,7 +144,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t  ON t.groupid = a.groupid
       WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
-        AND ($4::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) -- un-parked only unless ?parked=include (§10.4)
+        AND ($4::boolean OR ((m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})) -- un-parked only unless ?parked=include (§10.4)
         AND COALESCE(w.u_win,0) = 0                                                      -- sold NOTHING in the window — the whole test
       ORDER BY fba DESC,       -- most stock at risk first
                a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests

@@ -590,7 +590,9 @@ function ListTable({ rows: listRows, onOpen, selected, onToggle, onToggleAll }: 
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.stock}</td>
                 <td className="whitespace-nowrap px-4 py-2">
                   {r.parked
-                    ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
+                    ? (marks.shp(r.groupid)   // a live slider product is parked by its slider, not a review date (owner, 2026-10-29)
+                      ? <span className="rounded bg-orange-50 px-1.5 py-0.5 text-xs font-medium text-orange-700" title="In a Pricing Slider — priced from its slider, not here">Slider</span>
+                      : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>)
                     : <span className="text-xs text-slate-400">Due</span>}
                 </td>
               </tr>

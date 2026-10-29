@@ -74,6 +74,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const { WINNER_BAR_LADDER } = require('../utils/portfolio');
@@ -95,13 +96,13 @@ router.get('/', async (req, res) => {
         )
         SELECT ss.portfolio_status AS status,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS due,
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE)::int AS parked,
+               COUNT(*) FILTER (WHERE (ss.next_shopify_price_review IS NULL
+                                   OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')})::int AS due,
+               COUNT(*) FILTER (WHERE ss.next_shopify_price_review > CURRENT_DATE OR ${inSliderSql('SHP', 'ss.groupid')})::int AS parked,
                COUNT(*) FILTER (WHERE st.groupid IS NULL)::int AS out_of_stock,
                COUNT(*)::int AS styles,                                -- a Shopify row IS a style
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS due_styles,
+               COUNT(*) FILTER (WHERE (ss.next_shopify_price_review IS NULL
+                                   OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')})::int AS due_styles,
                to_char(MAX(ss.portfolio_status_at) AT TIME ZONE 'Europe/London', 'YYYY-MM-DD HH24:MI') AS last_at
         FROM skusummary ss
         LEFT JOIN stk st ON st.groupid = ss.groupid
@@ -112,13 +113,13 @@ router.get('/', async (req, res) => {
       query(`
         SELECT sk.portfolio_status AS status,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE)::int AS due,
-               COUNT(*) FILTER (WHERE m.next_amz_price_review > CURRENT_DATE)::int AS parked,
+               COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
+                                   OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})::int AS due,
+               COUNT(*) FILTER (WHERE m.next_amz_price_review > CURRENT_DATE OR ${inSliderSql('AMZ', 'm.code')})::int AS parked,
                COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0)::int AS out_of_stock,
                COUNT(DISTINCT a.groupid)::int AS styles,               -- rows are sizes; this is how many styles they belong to
-               COUNT(DISTINCT a.groupid) FILTER (WHERE m.next_amz_price_review IS NULL
-                                                    OR m.next_amz_price_review <= CURRENT_DATE)::int AS due_styles
+               COUNT(DISTINCT a.groupid) FILTER (WHERE (m.next_amz_price_review IS NULL
+                                                    OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})::int AS due_styles
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code
@@ -131,11 +132,11 @@ router.get('/', async (req, res) => {
       query(`
         SELECT b.bar::int AS bar,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS due,
+               COUNT(*) FILTER (WHERE (ss.next_shopify_price_review IS NULL
+                                   OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')})::int AS due,
                COUNT(*)::int AS styles,
-               COUNT(*) FILTER (WHERE ss.next_shopify_price_review IS NULL
-                                   OR ss.next_shopify_price_review <= CURRENT_DATE)::int AS due_styles
+               COUNT(*) FILTER (WHERE (ss.next_shopify_price_review IS NULL
+                                   OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')})::int AS due_styles
         FROM skusummary ss
         JOIN unnest($1::numeric[]) AS b(bar) ON ss.portfolio_revenue_12m > b.bar
         WHERE ss.portfolio_status = 'WINNERS'
@@ -145,11 +146,11 @@ router.get('/', async (req, res) => {
       query(`
         SELECT b.bar::int AS bar,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE)::int AS due,
+               COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
+                                   OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})::int AS due,
                COUNT(DISTINCT a.groupid)::int AS styles,
-               COUNT(DISTINCT a.groupid) FILTER (WHERE m.next_amz_price_review IS NULL
-                                                    OR m.next_amz_price_review <= CURRENT_DATE)::int AS due_styles
+               COUNT(DISTINCT a.groupid) FILTER (WHERE (m.next_amz_price_review IS NULL
+                                                    OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})::int AS due_styles
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code

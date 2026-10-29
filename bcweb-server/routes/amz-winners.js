@@ -68,6 +68,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -127,7 +128,7 @@ router.get('/', async (req, res) => {
              COALESCE(s7.u7,0) AS u7,
              to_char(w.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(m.next_amz_price_review > CURRENT_DATE, false) OR ${inSliderSql('AMZ', 'm.code')}) AS parked,
              COUNT(*) OVER () AS total_rows              -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
                                                          -- pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -138,7 +139,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid = a.groupid
       WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                     -- in FBA stock now
-        AND ($6::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)  -- un-parked only unless ?parked=include (§10.4)
+        AND ($6::boolean OR ((m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')}))  -- un-parked only unless ?parked=include (§10.4)
       ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
     `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);

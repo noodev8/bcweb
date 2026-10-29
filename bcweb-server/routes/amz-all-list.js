@@ -43,6 +43,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -84,7 +85,7 @@ router.get('/', async (req, res) => {
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(m.next_amz_price_review > CURRENT_DATE, false) OR ${inSliderSql('AMZ', 'm.code')}) AS parked,
              COUNT(*) OVER () AS total_rows,
              COUNT(*) FILTER (WHERE COALESCE(a.amztotal,0) = 0) OVER () AS oos_rows   -- nothing live or on its way
       FROM amzfeed a
@@ -95,10 +96,10 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t  ON t.groupid  = a.groupid
       WHERE (COALESCE(a.amzlive,0) > 0 OR COALESCE(a.amztotal,0) > 0
              OR (sk.portfolio_status = ANY($3::text[]) AND ${channelFilterSql('sk', 'AMZ')}))
-        AND ($2::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)
+        AND ($2::boolean OR ((m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')}))
       -- Due before parked, so the safety cap can only ever trim parked rows: with the status rows the list passed 500 (2026-10-28)
       -- and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them.
-      ORDER BY COALESCE(m.next_amz_price_review > CURRENT_DATE, false), COALESCE(a.amzlive,0) DESC, a.code
+      ORDER BY (COALESCE(m.next_amz_price_review > CURRENT_DATE, false) OR ${inSliderSql('AMZ', 'm.code')}), COALESCE(a.amzlive,0) DESC, a.code
       LIMIT $1::int
     `, [limit, includeParked, STATUSES]);
 

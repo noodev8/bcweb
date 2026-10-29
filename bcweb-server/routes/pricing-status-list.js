@@ -58,6 +58,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -108,7 +109,7 @@ router.get('/', async (req, res) => {
              t.shopifytitle,
              NULLIF(TRIM(ss.brand), '') AS brand,                                -- the list's Brand column (owner, 2026-09-25)
              ss.next_shopify_price_review::text AS next_review,                 -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'ss.groupid')}) AS parked,
              COUNT(*) OVER () AS total_rows,
              COUNT(*) FILTER (WHERE st.stock IS NULL) OVER () AS oos_rows
       FROM skusummary ss
@@ -118,7 +119,7 @@ router.get('/', async (req, res) => {
       WHERE ${group.column} = $1
         AND ($4::numeric IS NULL OR ss.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue (see header)
         AND ${channelFilterSql('ss', 'SHP')}                                   -- Shopify-led or BOTH (see header)
-        AND ($3::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
+        AND ($3::boolean OR ((ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')}))
       ORDER BY COALESCE(w.u30, 0) DESC, COALESCE(st.stock, 0) DESC, ss.groupid
       LIMIT $2::int
     `, [group.name, limit, includeParked, bar]);

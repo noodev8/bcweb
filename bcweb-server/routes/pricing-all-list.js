@@ -41,6 +41,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -75,7 +76,7 @@ router.get('/', async (req, res) => {
              t.shopifytitle,
              NULLIF(TRIM(ss.brand), '') AS brand,
              ss.next_shopify_price_review::text AS next_review,                 -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'ss.groupid')}) AS parked,
              COUNT(*) OVER () AS total_rows,
              COUNT(*) FILTER (WHERE st.stock IS NULL) OVER () AS oos_rows
       FROM skusummary ss
@@ -84,9 +85,9 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid  = ss.groupid
       WHERE ((ss.shopify = 1 AND st.groupid IS NOT NULL)
              OR (ss.portfolio_status = ANY($3::text[]) AND ${channelFilterSql('ss', 'SHP')}))
-        AND ($2::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)
+        AND ($2::boolean OR ((ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')}))
       -- Due before parked, so the safety cap can only ever trim parked rows (see amz-all-list.js — it bit there first).
-      ORDER BY COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false), COALESCE(st.stock, 0) DESC, ss.groupid
+      ORDER BY (COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'ss.groupid')}), COALESCE(st.stock, 0) DESC, ss.groupid
       LIMIT $1::int
     `, [limit, includeParked, STATUSES]);
 

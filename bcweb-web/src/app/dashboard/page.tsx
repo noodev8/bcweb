@@ -203,7 +203,7 @@ function Daily() {
   // The % of new PAIRS (styles added in 90 days) bought and not sold — a score for the buying, to keep LOW (owner, 2026-10-27: "get
   // better prospects that sell and keep this figure low"; "switch to pairs"). Every new style, due a review or not: the review date is
   // New Additions' work list and doesn't enter it. lib/process.ts → pairsSummary, the same figure New Additions shows.
-  const unsoldPct = overview.data ? `${pairsSummary(overview.data.rows).unsoldPct}%` : null;
+  const soldPct = overview.data ? `${100 - pairsSummary(overview.data.rows).unsoldPct}%` : null;
   const newStyles = overview.data ? overview.data.styles : null;
   const prospects = overview.data ? overview.data.prospects : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
@@ -263,7 +263,7 @@ function Daily() {
         </div>
 
         <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newStyles === null ? 'Styles added in 90 days' : `${newStyles} styles added in 90 days`}>
-          <Big n={unsoldPct} unit="of new pairs unsold" />
+          <Big n={soldPct} unit="of new pairs sold" />
         </DailyLink>
 
         <DailyLink href="/prospects" icon={LightBulbIcon} title="Prospects" sub="New products to look into">

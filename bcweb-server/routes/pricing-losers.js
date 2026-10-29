@@ -78,6 +78,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
+const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
@@ -124,7 +125,7 @@ router.get('/', async (req, res) => {
              t.shopifytitle,
              NULLIF(TRIM(ss.brand), '') AS brand,     -- the list's Brand column (owner, 2026-09-25)
              ss.next_shopify_price_review::text AS next_review,               -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) AS parked,
+             (COALESCE(ss.next_shopify_price_review > CURRENT_DATE, false) OR ${inSliderSql('SHP', 'ss.groupid')}) AS parked,
              COUNT(*) OVER () AS total_rows            -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
                                                        -- pre-cap total (free — no second round-trip to count)
       FROM skusummary ss
@@ -132,7 +133,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN win w    ON w.groupid  = ss.groupid
       LEFT JOIN title t  ON t.groupid  = ss.groupid
       WHERE ${group.column} = $1
-        AND ($4::boolean OR ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE)  -- drop parked unless ?parked=include
+        AND ($4::boolean OR ((ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('SHP', 'ss.groupid')}))  -- drop parked unless ?parked=include
         AND COALESCE(w.u_win,0) = 0                            -- sold NOTHING in the window — the whole membership test
       ORDER BY st.stock DESC,     -- most stock at risk first
                ss.groupid         -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
