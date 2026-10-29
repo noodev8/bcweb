@@ -19,8 +19,8 @@ the areaOf/AREA_ORDER it grew are lifted here so a fix there is a one-line switc
 
 AREAS are the location string's prefix, which is how the warehouse is spoken about and how the legacy screen's C1/C3 buttons carve it
 up. Case-insensitive because nothing constrains the column (a stray 'C3-SHOP' exists alongside 'C3-Shop'). 'OTHER' catches whatever
-doesn't match so nothing is silently dropped — from the `location` table that is real-but-odd racks (C3-Office, C3-Socks, UKD-Tests),
-from localstock it also catches non-racks like the stray 'Ordered' row, which is a marker, not a place.
+doesn't match so nothing is silently dropped — from the `location` table that is real-but-odd racks (C3-Office, C3-Socks),
+from localstock it would also catch non-racks like the old 'Ordered' marker row (removed 2026-10-29).
 =======================================================================================================================================
 */
 

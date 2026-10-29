@@ -54,7 +54,7 @@ router.use(verifyToken);
 // Racks that exist in `location` but are never somewhere a DELIVERY is put, so they are not offered as a destination:
 //   C3-Office   } not shelving a box gets unpacked onto (owner). Both hold stock that got there some other way, and both being in the
 //   C3-Socks    } picker only made the list longer to walk past.
-// Named individually rather than by zone: everything else in this table is a real rack, including UKD-Tests, and a prefix rule would
+// Named individually rather than by zone: everything else in this table is a real rack, and a prefix rule would
 // eventually take out something the owner does want. Compared lower-cased — nothing constrains the column's casing.
 //
 // C3-AMAZON WAS THE THIRD, AND IS NOT ANY MORE (owner, 2026-09-11). The argument for excluding it was that a unit reaches the FBA
@@ -92,8 +92,8 @@ router.get('/', async (req, res) => {
       if (!byArea.has(a)) byArea.set(a, []);
       byArea.get(a).push(r);
     }
-    // ...with one hand-placed exception: OTHER is the catch-all, so it goes last whatever its racks' pickorder says. Today it holds
-    // only UKD-Tests, which sorts last anyway; the rule is here so the next odd rack can't land the group mid-shelving.
+    // ...with one hand-placed exception: OTHER is the catch-all, so it goes last whatever its racks' pickorder says. It held only UKD-Tests
+    // (deleted 2026-10-29), which sorted last anyway; the rule is here so the next odd rack can't land the group mid-shelving.
     const areas = [...byArea.entries()]
       .map(([area, locations]) => ({ area, locations }))
       .sort((a, b) => Number(a.area === 'OTHER') - Number(b.area === 'OTHER'));

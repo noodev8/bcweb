@@ -28,7 +28,7 @@ ON AMAZON: a size is listed when it has an amzfeed row (every FBA listing, 0-sto
 BOUGHT (owner, 2026-10-27: New stuff measured in PAIRS — "switch to pairs, make units bought exact"): the pairs booked in on Goods In,
 SUM(GREATEST(quantity_added, 1)) from incoming_stock — one row per scanned pair, legacy rows can carry more; a cancelled scan deletes its
 row — the same count Stock Position calls bought. It is NOT stock + sold: units shipped to FBA but not yet live, sent back or written
-off are in bought and in neither of those, and stock that never came through Goods In (a manual add, e.g. the UKD-Tests placeholder
+off are in bought and in neither of those, and stock that never came through Goods In (a manual add, e.g. the old UKD-Tests rack's placeholder
 pairs for a test listing) is in them but not in bought. Counted from the style's created_on, as sales are: a CODE CAN BE REUSED — the
 UKD test M163BT (created 2026-09-01) carried six Goods In rows from Dec 2024–Mar 2025, an earlier product under the same code.
 Daily's figure is unsold pairs = bought − sold, as a % of bought, with a size's sold capped at its bought (a sale off placeholder test

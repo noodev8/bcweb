@@ -15,7 +15,7 @@ export const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Ma
 
 // New stuff's figure, in PAIRS (owner, 2026-10-27): pairs bought (Goods In) and sold, and unsold = bought − sold as a % of bought —
 // kept LOW by better prospects. Shared so Daily and New Additions show the same number. Nothing bought = 0%.
-// A size's sales count only UP TO the pairs bought (owner, 2026-10-27): a test listing on placeholder stock (UKD-Tests, added on
+// A size's sales count only UP TO the pairs bought (owner, 2026-10-27): a test listing on placeholder stock (e.g. the old UKD-Tests rack, added on
 // Inventory, never through Goods In) that sells counts nothing until the real pair is ordered and booked in on Goods In — then it is
 // 1 bought, 1 sold. Without the cap the sale would count against 0 bought and flatter the figure.
 export function pairsSummary(rows: ProcessSizeRow[]) {

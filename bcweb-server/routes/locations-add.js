@@ -13,8 +13,8 @@ THE OPERATOR TYPES THE NAME; THE SERVER CHOOSES EVERYTHING ELSE (owner, 2026-09-
              are many — LC-59..66, LC-70..76) are NOT reused: a retired rack's label may still be stuck to something.
   pickorder  Copied from the racks the new name sits beside. The walking order is per AREA, not per rack — every C3 rack is 30, every
              C1 rack 40 — so "C3-Front-28" takes whatever the other "C3-Front-" racks carry, and "C3-Mezz" whatever the other "C3-"
-             racks do. A name with no neighbours ('Brand New Bay', or a prefix nothing else has) gets 100, the value UKD-Tests was
-             given, which sorts it after every established area rather than into one.
+             racks do. A name with no neighbours ('Brand New Bay', or a prefix nothing else has) gets 100 (the value the old UKD-Tests rack had),
+             which sorts it after every established area rather than into one.
 
 NAMES ARE UNIQUE CASE-INSENSITIVELY, though nothing in the table enforces it. Every screen joins racks to localstock with
 lower(btrim(location)) (see locations-racks.js), so 'c3-front-28' beside 'C3-Front-28' would be one rack in the list with two labels
