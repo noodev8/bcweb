@@ -12,7 +12,8 @@ THE LAYOUT (owner, 2026-10-27: "way to much going on", then "layout is a bit off
     counts) and the Due switch. The tiles, pace figures and production chart (components/AdditionsTrend) were taken off — git history.
   - ONE ROW PER STYLE that tells its story without opening: title, then group id · brand · added date · "Not on Amazon" (no size
     listed — Birkenstock never, it can't go on Amazon), and the SIZE RUN — one tile per size: solid green = sold out, light green =
-    has sold and still has stock, white = not sold yet (legend in the control row; numbers in each tile's tooltip). Then Profit (£ on
+    has sold and still has stock, white = not sold yet (legend in the control row; numbers in each tile's tooltip).
+  - Under the summary, THE INTAKES: Sold % of pairs for styles added 60–90 / 30–60 / 0–30 days ago (2026-10-29, see BANDS; click one to list it). Then Profit (£ on
     its sales, every channel) and Review — that's all. NO SOLD OR STOCK COLUMNS (owner, 2026-10-27: the green sizes say what sold,
     "you can get rid of the sold colums now"; the Not on Amazon pill says where it is, "dont think we need Stock here / At Amazon");
     sold per channel and stock per size are in the open style. Sortable headers (Style, Profit) order the styles.
@@ -34,7 +35,7 @@ REVIEW AND DUE, LIKE PRICES (owner, 2026-10-27). Per STYLE, skusummary.next_new_
          computed server-side (utils/processMap.js) and Daily reads the same flag. The Due switch (on by default) shows only styles due.
          Review column: Due, a reviewed style's date (amber), or a too-new style's first due date (grey).
 
-VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?sort= ?dir= ?due= ?show= ?sel=, read once into state and written back with
+VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?sort= ?dir= ?due= ?show= ?sel= ?band=, read once into state and written back with
          router.replace from the handlers (never an effect). The back arrow reads ?from= / ?back=.
 =======================================================================================================================================
 */
@@ -90,6 +91,8 @@ const SHOW_TEST: Record<Show, (g: StyleGroup) => boolean> = {
 };
 
 // The size run's three states — the one visual device on the screen, so it carries the most-asked question: which sizes move.
+// (2026-10-29: blank tiles outlined by a next step — list / send to Amazon / price look / give it time — were tried and taken off;
+// owner: there are reasons a size can't go to Amazon, "no point confusing things".)
 type SizeState = 'soldout' | 'selling' | 'unsold';
 const sizeState = (r: ProcessSizeRow): SizeState =>
   unitsSold(r) === 0 ? 'unsold' : r.localStock + r.fbaStock === 0 ? 'soldout' : 'selling';
@@ -98,6 +101,20 @@ const SIZE_TILE: Record<SizeState, string> = {
   selling: 'bg-emerald-100 text-emerald-900',
   unsold: 'bg-white text-slate-600 ring-1 ring-inset ring-slate-300',
 };
+
+// THE INTAKES — the 90 days in three 30-day bands by when the style was added, newest first (owner, 2026-10-29: read left to right), each with its own Sold % of pairs
+// (owner, 2026-10-29: one figure mixes stock that landed yesterday with stock that's had 80 days). Bands, not calendar months: the
+// window starts mid-month, so a month view opens on a one-day sliver. The whole window, whatever the filters, like the summary.
+// CLICK A CARD to list just that intake (?band=; Due goes off — a whole intake is the question, not what's due); click it again to
+// clear. (A same-age line — "x% sold by day 30", red/green against the intake before — was tried 2026-10-29 and taken off, owner:
+// "too much to look at and its confusing"; git history.)
+type BandId = 'new' | 'mid' | 'old';
+const BANDS: { id: BandId; label: string; from: number; to: number }[] = [
+  { id: 'new', label: 'Last 30 days', from: 0, to: 30 },
+  { id: 'mid', label: '30–60 days ago', from: 30, to: 60 },
+  { id: 'old', label: '60–90 days ago', from: 60, to: Infinity },
+];
+const inBand = (b: { from: number; to: number }, ageDays: number) => ageDays >= b.from && ageDays < b.to;
 
 export default function NewAdditionsPage() {
   return (
@@ -126,11 +143,12 @@ function NewAdditionsPageInner() {
     return v === 'unsold' || v === 'selling' || v === 'noamz' ? v : 'all';
   });
   const [selected, setSelected] = useState<string | null>(() => searchParams.get('sel'));   // the open style
+  const [band, setBand] = useState<BandId | null>(() => BANDS.find((b) => b.id === searchParams.get('band'))?.id ?? null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
-  const viewUrl = (v: { sort: SortKey; dir: 'asc' | 'desc'; due: boolean; show: Show; sel: string | null }) => {
+  const viewUrl = (v: { sort: SortKey; dir: 'asc' | 'desc'; due: boolean; show: Show; sel: string | null; band: BandId | null }) => {
     const q = new URLSearchParams();
     const from = searchParams.get('from');
     const back = searchParams.get('back');
@@ -141,14 +159,15 @@ function NewAdditionsPageInner() {
     if (!v.due) q.set('due', '0');
     if (v.show !== 'all') q.set('show', v.show);
     if (v.sel) q.set('sel', v.sel);
+    if (v.band) q.set('band', v.band);
     const qs = q.toString();
     return qs ? `${pathname}?${qs}` : pathname;
   };
-  const current = { sort: sortBy, dir: sortDir, due: dueOnly, show, sel: selected };
+  const current = { sort: sortBy, dir: sortDir, due: dueOnly, show, sel: selected, band };
   const selfUrl = viewUrl(current);
   const setView = (patch: Partial<typeof current>) => {
     const next = { ...current, ...patch };
-    setSortBy(next.sort); setSortDir(next.dir); setDueOnly(next.due); setShow(next.show); setSelected(next.sel);
+    setSortBy(next.sort); setSortDir(next.dir); setDueOnly(next.due); setShow(next.show); setSelected(next.sel); setBand(next.band);
     router.replace(viewUrl(next), { scroll: false });
   };
 
@@ -185,9 +204,16 @@ function NewAdditionsPageInner() {
   const totals = useMemo(() => {
     return pairsSummary(rows);
   }, [rows]);
+  const intakes = useMemo(() => BANDS.map((b) => {
+    const mine = rows.filter((r) => inBand(b, r.ageDays));
+    return { ...b, ...pairsSummary(mine), styles: new Set(mine.map((r) => r.groupid)).size };
+  }), [rows]);
 
-  // Due first, then the quick filter. The filter counts are of the Due view, so each says what its click will show.
-  const dueGroups = useMemo(() => (dueOnly ? allGroups.filter((g) => g.due) : allGroups), [allGroups, dueOnly]);
+  // The intake picked on a card, then Due, then the quick filter. The filter counts are of that view, so each says what its click will show.
+  const dueGroups = useMemo(() => {
+    const b = BANDS.find((x) => x.id === band);
+    return allGroups.filter((g) => (!b || inBand(b, g.ageDays)) && (!dueOnly || g.due));
+  }, [allGroups, dueOnly, band]);
   const showCounts = useMemo(() => {
     const c: Record<Show, number> = { all: 0, unsold: 0, selling: 0, noamz: 0 };
     for (const g of dueGroups) for (const s of SHOWS) if (SHOW_TEST[s.id](g)) c[s.id] += 1;
@@ -263,15 +289,50 @@ function NewAdditionsPageInner() {
               ['Styles', String(data?.styles ?? 0)],
               ['Pairs bought', String(totals.bought)],
               ['Pairs sold', String(totals.sold)],
-              ['Unsold %', `${totals.unsoldPct}%`],
+              // Sold %, not Unsold % (owner, 2026-10-29) — the same way round as the intakes below; Daily keeps its unsold figure.
+              ['Sold %', totals.bought > 0 ? `${100 - totals.unsoldPct}%` : '–'],
             ].map(([label, value]) => (
-              <div key={label} className="px-4 py-2">
+              // Centred, one width each, so every number sits under its label (owner, 2026-10-29).
+              <div key={label} className="min-w-[7rem] px-4 py-2 text-center">
                 <dt className="text-xs text-slate-500">{label}</dt>
                 <dd className="font-semibold tabular-nums text-slate-900">{value}</dd>
               </div>
             ))}
             <div className="flex items-end px-4 py-2 text-xs text-slate-400">added in the last {DAYS} days</div>
           </dl>
+
+          {/* THE INTAKES — Sold % per 30-day band, newest first: the older bands are the real test and each one climbs as
+              its sizes go green (see BANDS). */}
+          {rows.length > 0 && (
+            <div className="mb-4 grid gap-3 sm:grid-cols-3">
+              {intakes.map((b) => {
+                const soldPct = b.bought > 0 ? 100 - b.unsoldPct : null;
+                const picked = band === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setView({ band: picked ? null : b.id, due: false, sel: null })}
+                    aria-pressed={picked}
+                    title={picked ? 'Show every intake again' : `List the styles added ${b.label.toLowerCase()}`}
+                    className={'rounded-lg border bg-white px-4 py-3 text-left transition hover:border-brand-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ' +
+                      (picked ? 'border-brand-500 ring-1 ring-brand-500' : 'border-slate-200')}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs text-slate-500">Added {b.label.toLowerCase()}</span>
+                      <span className="text-lg font-semibold tabular-nums text-emerald-700">{soldPct === null ? '–' : `${soldPct}%`}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${soldPct ?? 0}%` }} />
+                    </div>
+                    <div className="mt-1.5 text-xs tabular-nums text-slate-500">
+                      {b.sold} of {b.bought} pairs sold · {b.styles} style{b.styles === 1 ? '' : 's'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {rows.length === 0 ? (
             <p className="text-sm text-slate-400">No styles were added in the last {DAYS} days.</p>
