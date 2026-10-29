@@ -939,15 +939,13 @@ function Packing({ initial, autoBack, onShipped }: {
             </div>
           </div>
 
-          {/* PACKED — the number the box was just given (owner, 2026-10-16: "then tell them their box num"). Big, so it gets written on
-              the carton. Stays until closed or the next shoe goes in. */}
+          {/* PACKED — the number the box was just given (owner, 2026-10-16: "then tell them their box num"). JUST THE NUMBER, huge, so
+              it gets written on the carton (owner, 2026-10-29: "get rid of the unneeded text"). Stays until closed or the next shoe goes in. */}
           {onMine && mine.lastPacked !== null && (
-            <div role="status" className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-emerald-50 px-4 py-3">
-              <CheckCircleIcon className="h-7 w-7 text-emerald-600" />
-              <span className="flex-1 text-emerald-900">
-                <span className="block text-xl font-bold">Packed — that’s Box {mine.lastPacked}</span>
-                <span className="text-sm">Write {mine.lastPacked} on the carton. Scan the next shoe to start the next box.</span>
-              </span>
+            <div role="status" aria-label={`Packed as Box ${mine.lastPacked}`}
+              className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-emerald-50 px-4 py-3">
+              <CheckCircleIcon className="h-14 w-14 text-emerald-600" />
+              <span className="flex-1 text-9xl font-bold leading-none tabular-nums text-emerald-900">{mine.lastPacked}</span>
               <button type="button" onClick={() => router.push('/goods-in')}
                 className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 <InboxArrowDownIcon className="h-4 w-4" />Back to Goods In
