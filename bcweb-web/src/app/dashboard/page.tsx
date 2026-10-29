@@ -120,7 +120,7 @@ const GROUPS: Group[] = [
       { title: 'Add / Modify', subtitle: 'Edit or create a product', description: 'Find an existing product to edit, or create a new one.', href: '/products', icon: TagIcon },
       { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
       { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
-      { title: 'Slow Sizes', subtitle: "Sizes that haven't sold", description: 'Every size held, by how long since it last sold.', href: '/analytics/slow-sizes', icon: ClockIcon },
+      { title: 'Slow movers', subtitle: "Sizes that haven't sold", description: 'Every size held, by how long since it last sold.', href: '/analytics/slow-sizes', icon: ClockIcon },
       { title: 'Seasons', subtitle: 'Summer, winter or all year', description: 'Each style’s year of sales against its season — re-season in bulk.', href: '/seasons', icon: CalendarIcon },
       { title: 'Brands', subtitle: 'What each brand earned', description: 'Revenue, profit and margin per brand over the last year or six months.', href: '/brands', icon: ChartPieIcon },
       { title: 'Shop Labels', subtitle: 'Print shop price labels', description: 'Pick styles and print their price labels for the shop.', href: '/shop-labels', icon: PrinterIcon },

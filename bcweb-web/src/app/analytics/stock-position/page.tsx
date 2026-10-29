@@ -109,10 +109,10 @@ function Position({ data }: { data: StockPositionData }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Link href="/analytics/stock-sales"
             className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Slow</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Slow movers</div>
             <div className="mt-2 text-4xl font-bold leading-none tabular-nums text-slate-900 sm:text-5xl">{n(act.slow_styles)}</div>
             <div className="mt-3 text-xs text-slate-500">styles · {n(act.slow_units)} in stock · no sale in 90 days</div>
-            <div className="mt-3 text-sm font-medium text-slate-700">Open Slow →</div>
+            <div className="mt-3 text-sm font-medium text-slate-700">Open Slow movers →</div>
           </Link>
           <BehindList top={act.top} />
         </div>
@@ -156,7 +156,7 @@ function Moves({ data }: { data: StockPositionData }) {
 }
 
 // A question card: the question, the answer word (green = good, red = bad, slate = neither), then the number it rests on.
-// With `href` the whole card is a link, its `linkText` at the foot (as the Slow card's "Open Slow →").
+// With `href` the whole card is a link, its `linkText` at the foot (as the Slow movers card's "Open Slow movers →").
 function Question({ q, v, value, unit, href, linkText, children }: {
   q: string; v: Verdict; value: string; unit: string; href?: string; linkText?: string; children?: ReactNode;
 }) {

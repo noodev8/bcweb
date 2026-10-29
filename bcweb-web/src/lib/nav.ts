@@ -11,7 +11,7 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
 // Winners card too — one screen, two names — so a link back to it just says Back (owner, 2026-09-26).
 // /analytics/stock-sales is Slow on screen (2026-10-12; was Selling vs Sitting, before that Stock vs Sales); the route kept its old name.
 const RENAMED: Record<string, string> = {
-  '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow', '/amz-loaded': 'AMZ loaded',
+  '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow movers', '/amz-loaded': 'AMZ loaded',
 };
 
 export function prettyPathLabel(p: string): string {

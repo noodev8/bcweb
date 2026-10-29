@@ -409,7 +409,7 @@ function PeriodList({ months, weeks }: { months: StockSalesPeriod[]; weeks: Stoc
 // wanted". Nothing is selected or moved there; see SITTING ARRIVAL in google-ads/page.tsx.
 // -------------------------------------------------------------------------------------------------------------------------------------
 const repriceHref = (self: string) =>
-  `/pricing/sitting?by=sitting&pending=1&from=${self}&back=${encodeURIComponent('Slow')}`;
+  `/pricing/sitting?by=sitting&pending=1&from=${self}&back=${encodeURIComponent('Slow movers')}`;
 
 // Sortable headers (components/SortableTh — the Repricing lists' own): opens in the server's order (most pairs first); a click sorts,
 // a second reverses. The sort sits in the URL (?sort=), so ← Back from Repricing returns to it. Never-sold styles count as the longest
@@ -581,10 +581,10 @@ function SittingListBody({ data, collection, collectionError, onCollectionChange
           {hidden.size > 0 && <button type="button" onClick={reset} className={link}>Reset</button>}
           {/* Sizes (2026-10-15): every held SIZE, longest without a sale first — the dead size in a selling style, which this
               per-style list can't show (owner's example: Milano). See app/analytics/slow-sizes. */}
-          <Link href={`/analytics/slow-sizes?from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Sizes &rarr;</Link>
+          <Link href={`/analytics/slow-sizes?from=${self}&back=${encodeURIComponent('Slow movers')}`} className={link}>Sizes &rarr;</Link>
           {data.styles.length > 0 && (
             <>
-              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow')}`} className={link}>Google Ads &rarr;</Link>
+              <Link href={`/google-ads?sitting=1&from=${self}&back=${encodeURIComponent('Slow movers')}`} className={link}>Google Ads &rarr;</Link>
               <Link href={repriceHref(self)} className={link}>Reprice &rarr;</Link>
             </>
           )}

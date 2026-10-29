@@ -62,6 +62,11 @@ BACK LANDS ON THE ROW (owner, same day: "when returning to it from sizes, can we
          (size-<code>) and its Style link hands the style screen a ?from= that ends in #size-<code>; that screen's ← Slow Sizes is a Link to
          it, and Next scrolls to the hash. The data is in SWR's cache by then, so the row is there to scroll to.
 
+FILTERS (owner, 2026-10-29: "Can we start with filtering by brand or a filter box generic"). A Brand dropdown and a search box under
+         the boxes, in the sticky strip. Both narrow the BOXES as well as the list, so the counts answer "how much Grafters is in
+         Clearance". Search matches code, title and brand; every word typed must match (any order). Both sit in the URL (?brand=, ?q=)
+         so ← Back from the style screen keeps them. Brand options = brands with a size in some box (the 91-day sellers left out).
+
 Guarded by AppShell. Consumes GET /analytics-slow-sizes.
 =======================================================================================================================================
 */
@@ -116,7 +121,34 @@ function SlowSizesBody() {
   const q = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
   // CUT — display only (see header). Held here, not in the table, so cuts survive switching boxes.
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const sizes = q.data?.sizes ?? [];
+  const all = q.data?.sizes ?? [];
+
+  // FILTERS (see header). The search box keeps its own state so typing isn't held up by the URL round trip; each change is copied
+  // to the URL too, so ← Back restores it.
+  const brand = sp.get('brand') ?? '';
+  const [search, setSearch] = useState(sp.get('q') ?? '');
+  const setParam = (key: string, value: string) => {
+    const nq = new URLSearchParams(sp.toString());
+    if (value) nq.set(key, value); else nq.delete(key);
+    router.replace(`${pathname}${nq.toString() ? `?${nq}` : ''}`, { scroll: false });
+  };
+  const inABox = all.filter((s) => BANDS.some((b) => b.test(s)));
+  const brands = [...new Set(inABox.map((s) => s.brand).filter((b): b is string => !!b))].sort((a, b) => a.localeCompare(b));
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  const sizes = all.filter((s) => {
+    if (brand && s.brand !== brand) return false;
+    if (!words.length) return true;
+    const hay = `${s.code} ${s.title ?? ''} ${s.brand ?? ''}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+  const filtering = !!brand || words.length > 0;
+  function clearFilters() {
+    setSearch('');
+    const nq = new URLSearchParams(sp.toString());
+    nq.delete('brand');
+    nq.delete('q');
+    router.replace(`${pathname}${nq.toString() ? `?${nq}` : ''}`, { scroll: false });
+  }
 
   // Click handler, not an effect (docs/maintenance-notes.md). A new band drops the sort — each band opens longest first.
   function toggle(key: BandKey) {
@@ -154,7 +186,8 @@ function SlowSizesBody() {
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.data && (
         <>
-          <div ref={boxesRef} className="sticky top-0 z-20 -mx-4 grid grid-cols-1 gap-3 bg-slate-100 px-4 py-3 sm:grid-cols-3">
+          <div ref={boxesRef} className="sticky top-0 z-20 -mx-4 bg-slate-100 px-4 py-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {summary.map((b) => (
               <button key={b.key} type="button" onClick={() => toggle(b.key)} aria-pressed={open === b.key}
                 className={
@@ -171,6 +204,23 @@ function SlowSizesBody() {
                 </div>
               </button>
             ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <select value={brand} onChange={(e) => setParam('brand', e.target.value)} aria-label="Brand"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700">
+              <option value="">All brands</option>
+              {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <input type="search" value={search} placeholder="Search code, title or brand"
+              onChange={(e) => { setSearch(e.target.value); setParam('q', e.target.value.trim()); }}
+              className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 placeholder:text-slate-400" />
+            {filtering && (
+              <button type="button" onClick={clearFilters}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+                Clear
+              </button>
+            )}
+          </div>
           </div>
           {openBand && (
             <SizeTable key={openBand.key} stickyTop={boxesHeight} title={openBand.label} sub={openBand.sub} sizes={openBand.rows}

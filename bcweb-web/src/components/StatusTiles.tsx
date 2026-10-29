@@ -194,7 +194,7 @@ function StockNowCard({ winners, winnersRule, slow, totals }: {
   const cols = [
     { key: 'winners', name: 'Winners', rule: winnersRule, color: STATUS_COLOR.WINNERS, styles: winners?.styles, units: winners?.units,
       href: null as string | null },
-    { key: 'slow', name: 'Slow', rule: `no sale on any channel in ${slow?.days ?? 90} days`, color: SLOW_COLOR,
+    { key: 'slow', name: 'Slow movers', rule: `no sale on any channel in ${slow?.days ?? 90} days`, color: SLOW_COLOR,
       styles: slow?.styles.length, units: slow?.sitting_units, href: SLOW_HREF as string | null },
   ];
   const lines = [

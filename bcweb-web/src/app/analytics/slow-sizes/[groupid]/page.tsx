@@ -100,7 +100,7 @@ function Body() {
   const self = encodeURIComponent(`/analytics/slow-sizes/${encodeURIComponent(groupid)}${sp.toString() ? `?${sp}` : ''}`);
 
   return (
-    <AppShell backHref={from ?? '/analytics/slow-sizes'} backLabel="Slow Sizes">
+    <AppShell backHref={from ?? '/analytics/slow-sizes'} backLabel="Slow movers">
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {d && (
@@ -158,7 +158,7 @@ function SizeTile({ x, groupid, self }: { x: StyleSizeRow; groupid: string; self
   const empty = x.units === 0;
   const q = /^\d/.test(x.code) ? x.code : groupid;
   return (
-    <Link href={`/inventory?q=${encodeURIComponent(q)}&from=${self}&back=${encodeURIComponent('Slow Sizes')}`}
+    <Link href={`/inventory?q=${encodeURIComponent(q)}&from=${self}&back=${encodeURIComponent('Slow movers')}`}
       title={`${x.code} in Inventory`}
       className={
         'block rounded-md border px-1 py-1.5 text-center hover:border-slate-400 hover:shadow-sm ' +
