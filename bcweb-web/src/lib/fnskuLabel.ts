@@ -25,8 +25,9 @@ shown with image-rendering: pixelated for the same reason. The image plus the co
 images all have the bars at the top and the FNSKU caption underneath. The scale is chosen on width; height is what gets cropped. Note there is no thermal bar-width reduction any more (the file's bars are
 full width); at 4 dots a module the spread matters less than it did at 3, but if scans fail, that's where to look.
 
-HOW IT PRINTS (docs/label-printing-notes.md). A web page can't talk to the printer directly, so the label is an image on a page exactly
-the label's size, in a hidden iframe, and that iframe is printed. On the packing PC Chrome runs from a shortcut with --kiosk-printing,
+HOW IT PRINTS. Through QZ Tray first (labelPrinter.ts, 2026-10-29): the PNG goes straight to the PC's chosen FNSKU printer, silently.
+If QZ Tray isn't running or no printer is picked, the old way (docs/label-printing-notes.md): a web page can't talk to the printer
+directly, so the label is an image on a page exactly the label's size, in a hidden iframe, and that iframe is printed. On the packing PC Chrome runs from a shortcut with --kiosk-printing,
 which skips the dialog and sends it straight to the default printer. Anywhere else the normal print dialog appears.
 
 PORTRAIT PAGE, ROTATED DRAWING. The Dymo driver's pages are PORTRAIT — the label's height across the head, its length along the feed.
@@ -37,6 +38,7 @@ driver to rotate. If labels ever come out upside down, flip ROTATE_CLOCKWISE.
 
 import { fnskuBarcodeBmp } from './barcode128';
 import { ensureFolderPermission, savedBarcodeFolder } from './barcodeFolder';
+import { printLabel } from './labelPrinter';
 
 export const LABEL_MM = { width: 54, height: 25 } as const;
 // The Dymo LabelWriter head is 300 dpi; the page canvas is the label in its dots.
@@ -155,6 +157,8 @@ export function printFnskuLabel(fnsku: string, code: string, onDone?: () => void
     try {
       const image = (await folderImage(fnsku)) ?? fnskuBarcodeBmp(fnsku);
       const canvas = await labelCanvas(image, code);
+      // QZ Tray takes the canvas as base64 PNG; if it prints, that's the label done.
+      if (await printLabel('fnsku', canvas.toDataURL('image/png').split(',')[1])) { onDone?.(); return; }
       const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!png) return;
       url = URL.createObjectURL(png);

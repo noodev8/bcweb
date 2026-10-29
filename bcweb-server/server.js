@@ -296,6 +296,9 @@ app.use('/order-status-customer-delete', require('./routes/order-status-customer
 app.use('/order-status-customer-scan', require('./routes/order-status-customer-scan'));       // barcode -> our code (read only)
 app.use('/order-status-customer-label', require('./routes/order-status-customer-label'));     // WRITES: first print (packs) / reprint
 app.use('/order-status-customer-label-cancel', require('./routes/order-status-customer-label-cancel')); // WRITES: void + un-pack
+// QZ Tray silent label printing (docs/qz-tray-plan.md): the public certificate, and signing each print request with the .env key.
+app.use('/qz-cert', require('./routes/qz-cert'));
+app.use('/qz-sign', require('./routes/qz-sign'));
 app.use('/order-status-customer-manifest', require('./routes/order-status-customer-manifest')); // WRITES (Click & Drop only): manifest
 app.use('/order-status-customer-fulfil', require('./routes/order-status-customer-fulfil')); // WRITES (Shopify only): fulfil packed orders
 

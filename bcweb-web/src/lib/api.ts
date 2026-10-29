@@ -4959,4 +4959,16 @@ export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
   );
 }
 
+// =============================================================================================================================
+// QZ Tray label printing (src/lib/labelPrinter.ts, docs/qz-tray-plan.md)
+// =============================================================================================================================
+// The public certificate QZ Tray checks against each PC's override.crt.
+export function getQzCertificate() {
+  return request<string>({ url: '/qz-cert', method: 'GET' }, (b) => String(b.certificate || ''));
+}
+// Sign one QZ Tray request with the server's key (the key never leaves the server).
+export function signQzRequest(toSign: string) {
+  return request<string>({ url: '/qz-sign', method: 'POST', data: { request: toSign } }, (b) => String(b.signature || ''));
+}
+
 export default api;

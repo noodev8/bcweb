@@ -2,6 +2,9 @@
 =======================================================================================================================================
 printPdf — print a PDF (the Royal Mail label from Click & Drop) from the browser, no download, no new tab.
 =======================================================================================================================================
+Through QZ Tray first (labelPrinter.ts, 2026-10-29): the PDF goes straight to the PC's chosen Royal Mail printer, silently. If QZ Tray
+isn't running or no printer is picked, the old way below.
+
 The PDF goes into a hidden iframe and that iframe is printed. On the packing PC Chrome runs with --kiosk-printing
 (docs/label-printer-shortcut.txt), which skips the dialog and sends it to the Windows default printer — the Zebra. Anywhere else the
 normal print dialog opens. The label's size is the PDF's own page size, set by Click & Drop's label format setting, so the Zebra's
@@ -12,11 +15,20 @@ too soon cancels the job. Each print replaces the previous frame.
 =======================================================================================================================================
 */
 
+import { printLabel } from './labelPrinter';
+
 const FRAME_ID = 'pdf-print-frame';
 
 // `onPrinted` runs once print() has been called. Printing moves keyboard focus into the frame (it has to — the frame is focused so
 // its document is what prints), so a caller with a scan box hands focus back here; see CustomerOrderList's refocusScan.
 export function printPdfBase64(base64: string, onPrinted?: () => void) {
+  void printLabel('royalMail', base64).then((printed) => {
+    if (printed) onPrinted?.();
+    else printInFrame(base64, onPrinted);
+  });
+}
+
+function printInFrame(base64: string, onPrinted?: () => void) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
 
