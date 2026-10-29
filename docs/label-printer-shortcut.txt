@@ -1,3 +1,6 @@
+== BEING REPLACED BY QZ TRAY (2026-10-29) — see docs/qz-tray-plan.md. With QZ Tray running, ordinary Chrome prints both labels
+== silently and these shortcuts aren't needed. Keep them only until QZ Tray is confirmed on each PC.
+
 == BCWEB label-printing Chrome shortcuts: FNSKU labels (Dymo — Goods In, AMZ Shipment) and Royal Mail labels (Zebra — Customer Orders, at the bottom)
 
 Without this shortcut every label pops up Chrome's print dialog. With it, labels go straight to the default printer.
