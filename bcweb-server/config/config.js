@@ -118,5 +118,19 @@ module.exports = {
   sheets: {
     carSheetId: process.env.GOOGLE_CAR_SHEET_ID || '',
     carTab: process.env.GOOGLE_CAR_SHEET_TAB || 'Car Expense'
+  },
+
+  // eBay (developer.ebay.com, production keyset "BCWEB"). Optional like shopify above: not validated at boot; utils/ebayAuth.js checks
+  // before it calls eBay. clientId / clientSecret are the keyset's App ID / Cert ID. ruName and refreshToken are for the order import
+  // (the user token, ~18 months — see docs/ebay-orders.md when it lands). verificationToken + deletionEndpoint are for
+  // routes/ebay-account-deletion.js: the token is one WE make up (32–80 chars) and type into eBay's Alerts & Notifications page, and the
+  // endpoint must be the EXACT public URL typed there — eBay hashes it into the challenge, so it can't be rebuilt from the request.
+  ebay: {
+    clientId: process.env.EBAY_CLIENT_ID || '',
+    clientSecret: process.env.EBAY_CLIENT_SECRET || '',
+    ruName: process.env.EBAY_RUNAME || '',
+    refreshToken: process.env.EBAY_REFRESH_TOKEN || '',
+    verificationToken: process.env.EBAY_VERIFICATION_TOKEN || '',
+    deletionEndpoint: process.env.EBAY_DELETION_ENDPOINT || ''
   }
 };

@@ -90,6 +90,9 @@ app.use('/login', loginLimiter, require('./routes/login'));
 // shell-level routes rather than under a module, because it belongs to no module: every screen in the app calls it.
 app.use('/screen-view', require('./routes/screen-view'));
 
+// eBay's Marketplace Account Deletion endpoint — PUBLIC (eBay calls it, no login); a POST only acts if eBay's signature verifies.
+app.use('/ebay-account-deletion', require('./routes/ebay-account-deletion'));
+
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));
 app.use('/segment', require('./routes/segment'));   // detail read: header stats + per-area clocks + recent work-log (lazy)
