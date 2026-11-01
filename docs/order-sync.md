@@ -58,6 +58,11 @@ list would archive live orders. Shopify archives by absence; eBay asks eBay abou
 
 Pick allocation, housekeeping, the headline, the lock, the button and the cron all pick it up with no further change.
 
+**Fulfil** (the Fulfil buttons on Customer Orders, `routes/order-status-customer-fulfil.js`) uses the same list: the route works out
+each packed order's tracking (Click & Drop number, or FBA), then calls its channel's `fulfil.run` to tell the marketplace. Shopify:
+fulfilled with tracking (FBA → 'AMZCourier'). eBay: marked shipped with `RoyalMail` + the number (`utils/ebayFulfil.js`); eBay FBA
+orders are skipped and marked by hand. A new channel without a fulfil step is reported "mark it shipped by hand".
+
 ## 3. Shopify's write (phases A–D)
 
 - **A, sync.** Only orders with `financial_status ∈ {paid, partially_refunded}`, unfulfilled and not cancelled are

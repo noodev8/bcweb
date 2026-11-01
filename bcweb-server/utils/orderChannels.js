@@ -20,6 +20,13 @@ A CHANNEL is one file exporting `channel`:
                       log: 'short text',            // this channel's part of the bclog audit row
                       detail: {}                    // anything else worth returning (counts)
                     }
+      code:         'SHOPIFY'                       // the orderstatus.channel value its rows carry
+      fulfil: {                                     // the Fulfil buttons (routes/order-status-customer-fulfil.js): mark a PACKED order
+        isConfigured: () => boolean,                // shipped on the marketplace. The route has already worked out the tracking
+        setupHint:    '…',                          // (Click & Drop number, or fba=true); the channel only tells its marketplace.
+        run: async ({ ordernum, fba, tracking, codes }) => ({ outcome: 'fulfilled'|'already'|'skipped'|'failed', reason })
+                                                    // read the order first: already shipped -> 'already', send nothing (re-press safe)
+      }
     }
 
 WHAT write() OWNS — its own channel's rows and nothing else:
@@ -31,8 +38,8 @@ WHAT write() OWNS — its own channel's rows and nothing else:
 WHAT IT DOES NOT DO — pick allocation and housekeeping. runOrderSync runs those ONCE, after every channel has written, so a new
 order from any channel is picked in the same run and two channels can never allocate the same shelf row.
 
-ADDING A CHANNEL (e.g. TikTok): write utils/<name>Orders.js (the API read) and utils/<name>OrderSync.js (write + `channel`), add one
-line below, add its sales.channel code to the Sales screen. The order of the list is only the order channels write in — phase E
+ADDING A CHANNEL (e.g. TikTok): write utils/<name>Orders.js (the API read) and utils/<name>OrderSync.js (write + `channel`, with its
+fulfil step), add one line below, add its sales.channel code to the Sales screen. The order of the list is only the order channels write in — phase E
 allocates over orderstatus as a whole once they all have.
 =======================================================================================================================================
 */

@@ -1,5 +1,12 @@
 # Manifest and fulfil — Customer Orders — PLAN
 
+> **eBay too (2026-11-01).** The Fulfil buttons mark a packed **eBay** order shipped on eBay with its Click & Drop Royal Mail
+> tracking (`utils/ebayFulfil.js`, carrier code `RoyalMail` read from eBay's own carrier list), and eBay emails the buyer. The
+> tracking is worked out once in the route; each channel's `fulfil` step (`utils/orderChannels.js`) tells its own marketplace.
+> **eBay FBA orders are skipped — the owner marks those by hand with Amazon's tracking** (we don't hold it; eBay counts uploaded
+> tracking towards seller standards). Guards: eBay is read first — cancelled → skipped, already shipped / any existing shipment →
+> `already`, an eBay line we don't hold → skipped. The next Update orders sees it shipped and archives it.
+
 Status: **manifest BUILT and live; Shopify fulfil BUILT 2026-10-20; ONE button again 2026-10-22** (owner: "put manifest and fulfill
 as one button now") — `ManifestButton.tsx` ("Fulfill" on screen, Customer Orders header bar) runs the flow below in one press. Each
 packed order's box keeps its own Fulfil (`routes/order-status-customer-fulfil.js` with `{ ordernum }`). Tracking copied from what

@@ -2970,13 +2970,15 @@ export function manifestCustomerOrders(manifestIds?: string[]) {
 
 export interface CustomerFulfilResult {
   ordernum: string;
+  channel: string | null;   // 'Shopify' | 'eBay' — where it was marked shipped
   outcome: 'fulfilled' | 'already' | 'skipped' | 'failed';
   reason: string | null;
   kind: 'royalmail' | 'fba' | null;
   tracking: string | null;
 }
 
-// Fulfil on Shopify with tracking + the customer's shipping email (irreversible). With `ordernum`, just that order (its own button);
+// Mark shipped on the order's own marketplace (Shopify fulfilled / eBay shipped) with tracking — the marketplace emails the customer
+// (irreversible). With `ordernum`, just that order (its own button);
 // without, every packed order on the list. Already-fulfilled orders come back `already`, so a second press is safe.
 export function fulfilCustomerOrders(ordernum?: string) {
   return request<CustomerFulfilResult[]>(

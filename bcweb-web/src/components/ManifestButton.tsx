@@ -5,9 +5,9 @@ Component: ManifestButton  ("Fulfill" on screen, Customer Orders header bar)
 =======================================================================================================================================
 Purpose: The end-of-day step, ONE press (owner, 2026-10-22 — "put manifest and fulfill as one button now"; docs/fulfil-plan.md):
          1. manifest everything Click & Drop has waiting and save the manifest PDF to Downloads;
-         2. mark every PACKED order fulfilled on Shopify — Royal Mail with its Click & Drop tracking, FBA with the Amazon courier — and
-            Shopify emails each customer;
-         3. run Update orders, which sees those orders fulfilled on Shopify and archives them off the list.
+         2. mark every PACKED order shipped on its own marketplace — Shopify and eBay, Royal Mail with its Click & Drop tracking; Shopify FBA
+            with the Amazon courier (eBay FBA orders are left for a person, with Amazon's tracking) — and the marketplace emails each customer;
+         3. run Update orders, which sees those orders shipped and archives them off the list.
          Acts on the LIST, not on one order (owner, 2026-10-14). Each order box keeps its own Fulfil (CustomerOrderList → OrderBox).
 
 TWO REQUESTS, ONE PRESS. Manifest and fulfil are separate routes so a slow manifest can't push the whole job past the browser's 120s
@@ -37,7 +37,13 @@ export function fulfilSummary(results: CustomerFulfilResult[]): ManifestResult {
   const already = by('already');
   const notDone = [...by('skipped'), ...by('failed')];
   const parts: string[] = [];
-  if (done.length) parts.push(`Fulfilled ${done.length === 1 ? done[0].ordernum : `${done.length} orders`} on Shopify — customer${done.length === 1 ? '' : 's'} emailed`);
+  // One order names its marketplace and tracking number, so it can be checked there (e.g. eBay Seller Hub); a batch stays one line.
+  if (done.length === 1) {
+    const d = done[0];
+    parts.push(`Fulfilled ${d.ordernum} on ${d.channel || 'its marketplace'}${d.tracking ? ` with tracking ${d.tracking}` : ''} — customer emailed`);
+  } else if (done.length) {
+    parts.push(`Fulfilled ${done.length} orders — customers emailed`);
+  }
   if (already.length) parts.push(`${already.length === 1 ? already[0].ordernum : `${already.length} orders`} already fulfilled`);
   for (const r of notDone) parts.push(`${r.ordernum} not fulfilled: ${r.reason || r.outcome}`);
   // Red if any order didn't go, skipped or failed — "not fulfilled" must never read as green.
@@ -125,7 +131,7 @@ export default function ManifestButton({ onResult, onUpdated, onUpdateError }: {
   if (confirm) {
     return (
       <span className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">
-        <span className="text-slate-700">Manifest everything on Click &amp; Drop, then fulfill every packed order on Shopify? Customers are emailed. This can’t be undone.</span>
+        <span className="text-slate-700">Manifest everything on Click &amp; Drop, then fulfill every packed order on Shopify and eBay? Customers are emailed. This can’t be undone.</span>
         <button type="button" onClick={() => { setConfirm(false); run(); }}
           className="rounded bg-slate-800 px-2 py-0.5 font-medium text-white">Fulfill</button>
         <button type="button" onClick={() => setConfirm(false)}
@@ -141,7 +147,7 @@ export default function ManifestButton({ onResult, onUpdated, onUpdateError }: {
       onClick={() => (pending.length ? run() : setConfirm(true))}
       title={pending.length
         ? 'Collect the manifest Click & Drop is still making'
-        : 'Manifest everything waiting on Click & Drop, then mark every packed order fulfilled on Shopify and email the customers'}
+        : 'Manifest everything waiting on Click & Drop, then mark every packed order shipped on Shopify and eBay and email the customers'}
       className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {running ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <CheckBadgeIcon className="h-3.5 w-3.5" />}

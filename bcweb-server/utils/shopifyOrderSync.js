@@ -19,6 +19,7 @@ the truncated-fetch archive guard) are commented where they live.
 */
 
 const { isConfigured, fetchUnfulfilledOrders } = require('./shopifyOrders');
+const shopifyFulfil = require('./shopifyFulfil');
 const { shopifyProfit } = require('./shopifyProfit');
 const { safe, ARCHIVE_COLS } = require('./orderRows');
 const { safeNumeric } = require('./sql');
@@ -351,6 +352,7 @@ async function archiveMissing(client, currentKeys) {
 // ---------------------------------------------------------------------------------------------------------------------------------
 const channel = {
   name: 'Shopify',
+  code: 'SHOPIFY',          // orderstatus.channel
   isConfigured,
   setupHint: 'SHOPIFY_SHOP and SHOPIFY_ORDERS_ACCESS_TOKEN in bcweb-server/.env',
 
@@ -383,6 +385,25 @@ const channel = {
         archive
       }
     };
+  },
+
+  // FULFIL — mark a packed order fulfilled on Shopify (routes/order-status-customer-fulfil.js works out the tracking first).
+  // Royal Mail: the Click & Drop number. FBA: the 'AMZCourier' literal, no number (owner, 2026-10-19). Shopify emails the customer.
+  fulfil: {
+    isConfigured: shopifyFulfil.isConfigured,
+    setupHint: 'SHOPIFY_FULFIL_CLIENT_ID and SHOPIFY_FULFIL_CLIENT_SECRET in bcweb-server/.env (the "bcweb fulfil" Dev Dashboard app)',
+    async run({ ordernum, fba, tracking }) {
+      const order = await shopifyFulfil.findOrder(ordernum);
+      if (!order) return { outcome: 'failed', reason: 'Not found on Shopify' };
+      if (order.cancelled) return { outcome: 'skipped', reason: 'Cancelled on Shopify' };
+      if (!order.openFulfillmentOrderIds.length) {
+        return order.fulfillmentStatus === 'FULFILLED'
+          ? { outcome: 'already', reason: 'Already fulfilled on Shopify' }
+          : { outcome: 'skipped', reason: `Nothing open to fulfill on Shopify (${order.fulfillmentStatus})` };
+      }
+      await shopifyFulfil.fulfil(order.openFulfillmentOrderIds, fba ? shopifyFulfil.FBA_TRACKING : shopifyFulfil.royalMailTracking(tracking));
+      return { outcome: 'fulfilled', reason: null };
+    }
   }
 };
 

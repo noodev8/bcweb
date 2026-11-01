@@ -368,7 +368,7 @@ export default function CustomerOrderList() {
     setWorking(false);
   }
 
-  // One order's Fulfil (owner, 2026-10-20: one at a time while it's tested). Writes nothing here — Shopify only — so no refresh: the
+  // One order's Fulfil (owner, 2026-10-20: one at a time while it's tested). Writes nothing here — the marketplace only — so no refresh: the
   // order stays on the list as Packed until Update orders sees it fulfilled and archives it. A second press reads "already fulfilled".
   async function fulfilOne(ordernum: string) {
     setWorking(true);
@@ -1178,8 +1178,9 @@ function OrderBox({
         </div>
       )}
 
-      {/* --- Fulfil on Shopify: a packed order, Royal Mail or FBA (file made). Its own button while the fulfil is tested (owner,
-          2026-10-20); the server says why if this one can't go (no tracking yet, pack only, already fulfilled). ----------------- */}
+      {/* --- Fulfil on the order's own marketplace: a packed order, Royal Mail or FBA (file made). Its own button while the fulfil is
+          tested (owner, 2026-10-20); the server says why if this one can't go (no tracking yet, pack only, already fulfilled, an eBay
+          FBA order — those are marked by hand). eBay orders are 'EB' + eBay's number (utils/ebayOrderSync.js). ------------------ */}
       {order.state === 'packed' && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {fulfilNote && (
@@ -1187,7 +1188,7 @@ function OrderBox({
           )}
           {confirm === 'fulfil' ? (
             <ConfirmBox
-              message="Fulfill on Shopify? The customer is emailed."
+              message={`Fulfill on ${order.ordernum.startsWith('EB') ? 'eBay' : 'Shopify'}? The customer is emailed.`}
               onYes={() => { setConfirm(null); onFulfil(); }}
               onNo={() => setConfirm(null)}
             />
@@ -1196,9 +1197,13 @@ function OrderBox({
               type="button"
               disabled={working}
               onClick={() => setConfirm('fulfil')}
-              title={hasFba
-                ? 'Mark fulfilled on Shopify with the Amazon courier and email the customer'
-                : 'Mark fulfilled on Shopify with the Royal Mail tracking number and email the customer'}
+              title={order.ordernum.startsWith('EB')
+                ? (hasFba
+                  ? 'Sent by Amazon — mark it shipped on eBay by hand with Amazon’s tracking'
+                  : 'Mark shipped on eBay with the Royal Mail tracking number — eBay emails the buyer')
+                : hasFba
+                  ? 'Mark fulfilled on Shopify with the Amazon courier and email the customer'
+                  : 'Mark fulfilled on Shopify with the Royal Mail tracking number and email the customer'}
               className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
             >
               <CheckBadgeIcon className="h-4 w-4" /> Fulfill

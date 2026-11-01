@@ -40,6 +40,7 @@ const { ebayProfit } = require('./ebayProfit');
 const { safeNumeric } = require('./sql');
 const { query } = require('../database');
 const ebayOrders = require('./ebayOrders');
+const ebayFulfil = require('./ebayFulfil');
 
 // '22-15343-31982' -> 'EB22-15343-31982'
 const ordernumOf = (orderId) => `EB${orderId}`;
@@ -295,6 +296,7 @@ async function syncEbayOrders(client, fetched) {
 // ---------------------------------------------------------------------------------------------------------------------------------
 const channel = {
   name: 'eBay',
+  code: 'EBAY',             // orderstatus.channel
   isConfigured: ebayOrders.isConfigured,
   setupHint: 'EBAY_CLIENT_ID / EBAY_CLIENT_SECRET / EBAY_REFRESH_TOKEN in bcweb-server/.env',
 
@@ -313,6 +315,18 @@ const channel = {
       log: `${out.newOrders} new, ${out.salesBooked} sales, ${out.posted} posted, ${out.cancelled} cancelled${out.attention ? ' · see notes' : ''}`,
       detail: out
     };
+  },
+
+  // FULFIL — mark a packed order shipped on eBay with its Royal Mail tracking (utils/ebayFulfil.js has the guards). eBay emails the
+  // buyer. FBA (MCF) orders are NOT sent: we don't hold Amazon's tracking, and eBay counts uploaded tracking towards seller standards —
+  // the owner marks those by hand (2026-11-01).
+  fulfil: {
+    isConfigured: ebayFulfil.isConfigured,
+    setupHint: 'EBAY_CLIENT_ID / EBAY_CLIENT_SECRET / EBAY_REFRESH_TOKEN in bcweb-server/.env',
+    async run({ ordernum, fba, tracking, codes }) {
+      if (fba) return { outcome: 'skipped', reason: 'Sent by Amazon — mark it shipped on eBay by hand with Amazon’s tracking' };
+      return ebayFulfil.markShipped(ordernum, tracking, codes);
+    }
   }
 };
 
