@@ -4,10 +4,12 @@ API Route: product_update
 =======================================================================================================================================
 Method: POST
 Purpose: Save the product's header ATTRIBUTE fields. These span three tables, so the write is atomic (withTransaction):
-           - skusummary: brand, colour, segment, season   (+ `updated` audit stamp)
+           - skusummary: brand, colour, segment, season, material   (+ `updated` audit stamp)
            - attributes: gender, producttype              (+ `updated`); INSERTs a row if the product has none yet
            - title:      shopifytitle                      (+ `updated`); INSERTs a row if the product has none yet
-         Deliberately NOT in scope here (own stages, different rules): price/cost/rrp/tax, width/material, sizes. So this route is a
+         Deliberately NOT in scope here (own stages, different rules): price/cost/rrp/tax, width, sizes. MATERIAL joined the header fields
+         2026-11-01 (owner) — eBay requires "Upper Material" and BCWEB had nowhere else to set it; a free-text box on the screen that
+         suggests eBay's standard words (Leather, Suede, Synthetic, Faux Leather …). So this route is a
          plain catalogue-attribute edit — it does not touch price or write a price log.
 
          Values are stored as trimmed strings as-is (the legacy data is free-form and lookup tables can be incomplete, e.g. brand
@@ -21,6 +23,7 @@ Request Payload:
   "colour":      "White",          // string, optional
   "segment":     "EVA-SEG",        // string, optional
   "season":      "Summer",         // string, optional
+  "material":    "Suede",          // string, optional — skusummary.material (eBay's Upper Material)
   "gender":      "Unisex",         // string, optional -> attributes
   "producttype": "Sandals",        // string, optional -> attributes
   "title":       "Birkenstock ..." // string, optional -> title.shopifytitle
@@ -68,6 +71,7 @@ router.post('/', async (req, res) => {
     const colour = (body.colour || '').trim();
     const segment = (body.segment || '').trim();
     const season = (body.season || '').trim();
+    const material = (body.material || '').trim().slice(0, 65);   // eBay's limit for an item specific
     const gender = (body.gender || '').trim();
     const producttype = (body.producttype || '').trim();
     const title = (body.title || '').trim();
@@ -82,10 +86,10 @@ router.post('/', async (req, res) => {
       // 1) skusummary header fields. RETURNING confirms the product exists; 0 rows -> abort the whole unit (rollback) as NOT_FOUND.
       const ss = await client.query(`
         UPDATE skusummary
-           SET brand = $2, colour = $3, segment = $4, season = $5, updated = ${UPDATED_EXPR}, updated_date = now()
+           SET brand = $2, colour = $3, segment = $4, season = $5, material = $6, updated = ${UPDATED_EXPR}, updated_date = now()
          WHERE groupid = $1
          RETURNING groupid
-      `, [groupid, brand, colour, segment, season]);
+      `, [groupid, brand, colour, segment, season, material]);
 
       if (ss.rows.length === 0) {
         const e = new Error('NOT_FOUND');
@@ -128,7 +132,7 @@ router.post('/', async (req, res) => {
     return res.json({
       return_code: 'SUCCESS',
       groupid,
-      saved: { brand, colour, segment, season, gender, producttype, title },
+      saved: { brand, colour, segment, season, material, gender, producttype, title },
       shopify: shopifyResult,
     });
   } catch (err) {

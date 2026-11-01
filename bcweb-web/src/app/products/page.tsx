@@ -10,7 +10,8 @@ Purpose: Entry screen for the Add / Modify Product module. Master-detail:
          finds nothing, that empty state is the cue to create a new product (creation arrives in a later stage).
 
          Edit Stage 1: the attribute/enum fields are editable dropdowns with a SAVE (POST /product-update): brand, colour, product type,
-         gender, segment, season. Title and sizes are editable too (own save endpoints); price stays read-only for now (its own later stage).
+         gender, segment, season — and MATERIAL (2026-11-01, a free-text box suggesting eBay's standard words; eBay requires it as
+         "Upper Material"). Title and sizes are editable too (own save endpoints); price stays read-only for now (its own later stage).
 
          Create: when a search finds nothing, the empty state becomes a "create new product" form (same header fields) that writes the
          basics for a brand-new groupid via POST /product-create, then loads it into the normal edit panel to carry on (sizes, price, …).
@@ -59,11 +60,36 @@ function EditSelect({
   );
 }
 
+// MATERIAL (owner, 2026-11-01) — free text, saved to skusummary.material; eBay requires it as "Upper Material". The list suggests eBay's
+// standard words (buyers filter on them); anything else is still accepted.
+const MATERIAL_SUGGESTIONS = ['Leather', 'Suede', 'Nubuck', 'Patent Leather', 'Synthetic', 'Faux Leather', 'Faux Suede', 'Textile', 'Canvas', 'Mesh', 'Rubber', 'Cork'];
+
+function MaterialInput({ value, onChange, id }: { value: string; onChange: (v: string) => void; id: string }) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Material</label>
+      <input
+        id={id}
+        list={`${id}-list`}
+        value={value}
+        maxLength={65}
+        placeholder="e.g. Leather"
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+      />
+      <datalist id={`${id}-list`}>
+        {MATERIAL_SUGGESTIONS.map((m) => <option key={m} value={m} />)}
+      </datalist>
+    </div>
+  );
+}
+
 // Pull the editable header fields out of a loaded product (null -> '' so they bind to inputs cleanly).
 function fieldsFromDetail(d: ProductDetail): ProductEditFields {
   return {
     brand: d.brand ?? '', colour: d.colour ?? '', segment: d.segment ?? '',
     season: d.season ?? '', gender: d.gender ?? '', producttype: d.producttype ?? '', title: d.title ?? '',
+    material: d.material ?? '',
   };
 }
 
@@ -154,7 +180,7 @@ function GroupIdHeading({ groupid }: { groupid: string }) {
 
 // A blank set of editable header fields — the starting point for a brand-new product.
 const emptyFields: ProductEditFields = {
-  brand: '', colour: '', segment: '', season: '', gender: '', producttype: '', title: '',
+  brand: '', colour: '', segment: '', season: '', gender: '', producttype: '', title: '', material: '',
 };
 
 // Sensible gender/season defaults per product type, applied when the user picks a Product Type on a NEW product (the common case is
@@ -256,6 +282,7 @@ function NewProductForm({
         <EditSelect label="Gender" value={fields.gender} options={lookups?.genders || []} onChange={(v) => set('gender', v)} />
         <EditSelect label="Segment" value={fields.segment} options={lookups?.segments || []} onChange={(v) => set('segment', v)} mono />
         <EditSelect label="Season" value={fields.season} options={lookups?.seasons || []} onChange={(v) => set('season', v)} />
+        <MaterialInput id="new-material" value={fields.material} onChange={(v) => set('material', v)} />
       </div>
 
       {/* Title + Generate — comes AFTER the fields, since Generate builds the title from them. Capped so it doesn't stretch. */}
@@ -707,6 +734,7 @@ function ProductsContent() {
                           <EditSelect label="Gender" value={edit.gender} options={lookups?.genders || []} onChange={(v) => setField('gender', v)} />
                           <EditSelect label="Segment" value={edit.segment} options={lookups?.segments || []} onChange={(v) => setField('segment', v)} mono />
                           <EditSelect label="Season" value={edit.season} options={lookups?.seasons || []} onChange={(v) => setField('season', v)} />
+                          <MaterialInput id="edit-material" value={edit.material} onChange={(v) => setField('material', v)} />
                         </div>
 
                         {/* Shopify Title — comes AFTER the fields, since Generate builds the title from them. */}

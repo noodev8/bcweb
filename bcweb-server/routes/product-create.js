@@ -30,6 +30,7 @@ Request Payload:
   "colour":      "White",            // string, optional (also seeds colourmap)
   "segment":     "EVA-SEG",          // string, optional
   "season":      "Summer",           // string, optional
+  "material":    "Suede",            // string, optional — skusummary.material (eBay's Upper Material)
   "gender":      "Unisex",           // string, optional -> attributes
   "producttype": "Sandals",          // string, optional -> attributes
   "title":       "Birkenstock ..."   // string, optional -> title.shopifytitle (and drives the handle)
@@ -90,6 +91,7 @@ router.post('/', async (req, res) => {
     const colour = (body.colour || '').trim();
     const segment = (body.segment || '').trim();
     const season = (body.season || '').trim();
+    const material = (body.material || '').trim().slice(0, 65);   // eBay's limit for an item specific
     const gender = (body.gender || '').trim();
     const producttype = (body.producttype || '').trim();
     const title = (body.title || '').trim();
@@ -130,17 +132,17 @@ router.post('/', async (req, res) => {
       // reason. portfolio_status_at stays NULL on purpose: no Update has assessed it yet (utils/portfolioStatus.js).
       await client.query(`
         INSERT INTO skusummary (
-          groupid, brand, colour, colourmap, segment, season, supplier, imagename, handle,
+          groupid, brand, colour, colourmap, segment, season, material, supplier, imagename, handle,
           rrp, shopifyprice, minshopifyprice, maxshopifyprice, cost,
           tax, shopify, googlestatus, googlecampaign, created, updated, created_at, updated_date,
           portfolio_status
         ) VALUES (
-          $1, $2, $3, $3, $4, $5, $6, '', $7,
+          $1, $2, $3, $3, $4, $5, $8, $6, '', $7,
           '0.00', '0.00', '0.00', 'RRP', '0.00',
           1, 0, 1, 'standard', ${UPDATED_EXPR}, ${UPDATED_EXPR}, now(), now(),
           'NEW'
         )
-      `, [groupid, brand, colour, segment, season, supplier, handle]);
+      `, [groupid, brand, colour, segment, season, supplier, handle, material]);
 
       // 5) title — shopifytitle (+ googletitle mirror, googletitleb '-'), matching the legacy new-title seed.
       await client.query(`

@@ -262,6 +262,7 @@ export interface ProductLookups {
 // Editable header fields. Mirrors the POST /product-update payload (minus groupid).
 export interface ProductEditFields {
   brand: string; colour: string; segment: string; season: string; gender: string; producttype: string; title: string;
+  material: string;   // skusummary.material — eBay's "Upper Material" (2026-11-01)
 }
 // Suggested price prefill from the birktracker order book — present only for an UNPRICED Birkenstock style with a match.
 export interface BirkPriceHint { rrp: number | null; cost: number | null; }
