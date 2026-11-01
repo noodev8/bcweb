@@ -96,6 +96,10 @@ app.use('/ebay-account-deletion', require('./routes/ebay-account-deletion'));
 app.use('/ebay-listings', require('./routes/ebay-listings'));
 // eBay Add, step 1 (2026-11-01): styles in stock not on eBay yet, with a readiness check against utils/ebayListingRules.js — READ ONLY
 app.use('/ebay-candidates', require('./routes/ebay-candidates'));
+// eBay Add, step 2: list one style (WRITES TO EBAY + ebay_listing / ebay_listing_size, material back to skusummary, bclog) and the
+// profit beside the form's price box (READ ONLY)
+app.use('/ebay-list', require('./routes/ebay-list'));
+app.use('/ebay-profit-preview', require('./routes/ebay-profit-preview'));
 
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));

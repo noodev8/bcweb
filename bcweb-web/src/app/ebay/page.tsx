@@ -21,7 +21,8 @@ THE CHECKS — the server's codes, worded here (FLAG below). NO CHECKS COLUMN (o
 time"): a listing that needs a look gets a warning icon after its code (hover = what's wrong) and a tinted row; a clean row shows nothing.
   red    Not in BCWEB · Birkenstock · more on eBay than our stock (stock isn't kept in step yet — a Shopify sale leaves eBay's count;
          the On eBay number turns red too)
-  amber  paid postage — the rule (docs/ebay-clearance.md) is free postage, built into the price
+  amber  postage isn't £4.50 — the rule is £4.50 Tracked 48 on every listing, like Shopify (owner, 2026-11-01; was free postage, so
+         the trial's fixed-price listings show it until they are re-listed through Add)
   info   sold out / we can sell more — NOT shown: the On eBay and Stock numbers already say it
 "Needs a look" = any red or amber; those listings sort first, and the Needs a look filter shows only them.
 
@@ -48,7 +49,7 @@ const FLAG: Record<EbayFlag, { label: string; level: Level; title: string }> = {
   unknown: { label: 'Not in BCWEB', level: 'problem', title: 'The listing’s SKU (Custom label) is blank or not one of our codes — a sale of it would never reach our orders.' },
   birkenstock: { label: 'Birkenstock', level: 'problem', title: 'Birkenstock must never be on eBay (distribution rules and VeRO).' },
   oversell: { label: 'More on eBay than in stock', level: 'problem', title: 'eBay could sell a pair we haven’t got. Stock isn’t kept in step with eBay yet — end the listing or lower its quantity in Seller Hub.' },
-  postage_paid: { label: 'Paid postage', level: 'check', title: 'The rule is free postage, built into the price.' },
+  postage_rule: { label: 'Postage isn’t £4.50', level: 'check', title: 'The rule is £4.50 Tracked 48 on every listing, like Shopify — the trial’s fixed-price listings are free postage until they are re-listed through Add.' },
   sold_out: { label: 'Sold out — hidden', level: 'info', title: 'eBay shows 0 available. The listing stays live but hidden until stock is added.' },
   more_held: { label: 'More in stock', level: 'info', title: 'We have more in stock than this listing offers — fine if on purpose.' },
 };

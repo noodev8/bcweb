@@ -141,6 +141,9 @@ router.get('/', async (req, res) => {
         line.flags = checkLine(line, l.postage, l.title);
         return line;
       });
+      // A variation listing's sizes in size order — eBay returns them in its own order. Numeric sizes first, then the rest.
+      const sizeKey = (x) => { const n = Number(x.size); return Number.isFinite(n) ? n : Infinity; };
+      lines.sort((a, b) => sizeKey(a) - sizeKey(b) || String(a.sku || '').localeCompare(String(b.sku || '')));
       const flags = [...new Set(lines.flatMap((x) => x.flags))];
 
       summary.listings += 1;

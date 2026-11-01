@@ -29,7 +29,7 @@ THE CHECKS (checkLine) — codes, so the screen owns the wording:
     oversell       eBay's available quantity is MORE than we hold (local #FREE + FBA live) — a second sale of a pair we haven't got.
                    The stock is NOT kept in step yet (that is the Add build), so a Shopify sale leaves eBay's count where it was.
   CHECKS (against the postage rules in docs/ebay-clearance.md)
-    postage_paid   the listing charges postage — the rule is free postage built into the price
+    postage_rule   postage isn't the rule — £4.50 Tracked 48 on every listing, like Shopify (owner, 2026-11-01; was free postage)
   INFO
     sold_out       eBay shows 0 available — the account is in eBay's out-of-stock control, so the listing stays alive but hidden
     more_held      we hold more than eBay shows (fine if on purpose)
@@ -39,6 +39,7 @@ THE CHECKS (checkLine) — codes, so the screen owns the wording:
 
 const { tradingCall, xmlBlock, xmlBlocks, xmlTag, xmlNum } = require('./ebayTrading');
 const { isUserConfigured } = require('./ebayAuth');
+const { POSTAGE } = require('./ebayListingRules');
 
 const PAGE_SIZE = 200;
 const MAX_PAGES = 10;           // 2,000 listings — far past the ~111 planned; a cap, not a limit we expect to meet
@@ -169,13 +170,13 @@ function checkLine(line, postage, listingTitle) {
   if (!line.known) flags.push('unknown');
   if (/^birk/i.test(line.brand || '') || /birkenstock/i.test(listingTitle || '')) flags.push('birkenstock');
   if (line.known && line.ebay_available > held) flags.push('oversell');
-  if (postage.cost !== null && postage.cost > 0) flags.push('postage_paid');
+  if (postage.free || postage.cost === null || Math.abs(postage.cost - POSTAGE) > 0.005) flags.push('postage_rule');
   if (line.ebay_available === 0) flags.push('sold_out');
   if (line.known && held > line.ebay_available) flags.push('more_held');
   return flags;
 }
 
 const PROBLEM_FLAGS = new Set(['unknown', 'birkenstock', 'oversell']);
-const CHECK_FLAGS = new Set(['postage_paid']);
+const CHECK_FLAGS = new Set(['postage_rule']);
 
 module.exports = { fetchActiveListings, checkLine, PROBLEM_FLAGS, CHECK_FLAGS };

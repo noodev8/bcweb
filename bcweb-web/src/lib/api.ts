@@ -4961,7 +4961,7 @@ export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
 // =============================================================================================================================
 export type EbayFlag =
   | 'unknown' | 'birkenstock' | 'oversell'             // problems
-  | 'postage_paid'                                     // check against the postage rule (free postage)
+  | 'postage_rule'                                     // check against the postage rule (£4.50 on every listing)
   | 'sold_out' | 'more_held';                          // info
 export interface EbayListingLine {
   sku: string | null; size: string | null; ebay_size: string | null;
@@ -4986,7 +4986,7 @@ export interface EbayListingsSummary {
 }
 // The "Not on eBay" view (server routes/ebay-candidates.js, rules utils/ebayListingRules.js) — styles in stock not on eBay yet, each
 // with a readiness check. READ ONLY. missing = blocks listing; todo = the listing form will ask (material).
-export type EbayMissing = 'category' | 'photos' | 'description' | 'price' | 'uk_size' | 'barcode' | 'title' | 'title_long';
+export type EbayMissing = 'category' | 'photos' | 'description' | 'price' | 'uk_size' | 'uk_size_dup' | 'barcode' | 'title' | 'title_long';
 export interface EbayCandidateSize { code: string; uk_size: string | null; ean: string | null; local: number; fba: number }
 export interface EbayCandidate {
   groupid: string; title: string | null; brand: string | null; gender: string | null; producttype: string | null;
@@ -5005,6 +5005,23 @@ export function getEbayCandidates() {
   return request<{ read_at: string; on_ebay_styles: number; summary: { styles: number; ready: number; todo: number; missing: number }; rows: EbayCandidate[] }>(
     { url: '/ebay-candidates', method: 'GET', timeout: 120000 },
     (b) => ({ read_at: b.read_at, on_ebay_styles: b.on_ebay_styles ?? 0, summary: b.summary, rows: (b.rows || []) as EbayCandidate[] })
+  );
+}
+
+// List one style on eBay (server routes/ebay-list.js — WRITES TO EBAY, then records it). Failure codes: ALREADY_ON_EBAY, NOT_READY,
+// NOT_A_CANDIDATE, EBAY_SETUP_MISSING, EBAY_ERROR (eBay's own words in `error`), RECORD_FAILED (live on eBay but not recorded).
+export interface EbayListResult { item_id: string; url: string; sizes: number; pairs: number; warnings: string[] }
+export function listOnEbay(groupid: string, price: number, style: string, material: string) {
+  return request<EbayListResult>(
+    { url: '/ebay-list', method: 'POST', data: { groupid, price, style, material }, timeout: 180000 },
+    (b) => ({ item_id: b.item_id, url: b.url, sizes: b.sizes, pairs: b.pairs, warnings: b.warnings || [] })
+  );
+}
+// The eBay profit at a typed price, with the buyer's £4.50 postage (server routes/ebay-profit-preview.js — THE EBY formula).
+export function getEbayProfitPreview(groupid: string, price: number) {
+  return request<number | null>(
+    { url: '/ebay-profit-preview', method: 'GET', params: { groupid, price } },
+    (b) => (b.profit === null || b.profit === undefined ? null : Number(b.profit))
   );
 }
 
