@@ -130,6 +130,7 @@ module.exports = {
     clientSecret: process.env.EBAY_CLIENT_SECRET || '',
     ruName: process.env.EBAY_RUNAME || '',
     refreshToken: process.env.EBAY_REFRESH_TOKEN || '',
+    refreshTokenExpires: process.env.EBAY_REFRESH_TOKEN_EXPIRES || '',   // YYYY-MM-DD, written by scripts/ebay-token.js — for an "expires soon" warning
     verificationToken: process.env.EBAY_VERIFICATION_TOKEN || '',
     deletionEndpoint: process.env.EBAY_DELETION_ENDPOINT || ''
   }

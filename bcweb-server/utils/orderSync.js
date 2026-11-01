@@ -24,6 +24,9 @@ Module: utils/orderSync.js
         ##                                                                                                                 ##
         ##   Reasoning, the full behaviour inventory, and every deliberate divergence: C:\bcweb\docs\order-sync-port.md     ##
         ##                                                                                                                 ##
+        ##   NOT DUPLICATED: the EBAY step (utils/ebayOrderSync.js, run by the same press just before this file). It only   ##
+        ##   writes channel='EBAY' rows, which nothing here or in the Python creates or archives — it has no Python twin.   ##
+        ##                                                                                                                 ##
         #####################################################################################################################
 
 Purpose: The Shopify order pipeline, ported from update_orders.py. Six phases, all inside ONE transaction (the Python commits once at
@@ -700,4 +703,5 @@ async function runFullSync(client, orders, { truncated = false } = {}) {
   };
 }
 
-module.exports = { runFullSync, syncOrders, archiveMissing, allocatePicks, cleanup, safe, wallClock, lineItemsBySku };
+// ARCHIVE_COLS is exported for utils/ebayOrderSync.js, which archives EB orders into the same table with the same column list.
+module.exports = { runFullSync, syncOrders, archiveMissing, allocatePicks, cleanup, safe, wallClock, lineItemsBySku, ARCHIVE_COLS };
