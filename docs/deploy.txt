@@ -3,7 +3,7 @@ cd /apps/bcweb/
 git pull
 rsync -av --delete --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='tests' --exclude='docs' --exclude='.github' --exclude='venv' /apps/bcweb/bcweb-server/ /apps/production/bcweb-server/
 cd /apps/production/bcweb-server
-npm install
+npm install --omit=dev
 pm2 restart server.js --name bcweb-prod
 
 -- Check if needed
