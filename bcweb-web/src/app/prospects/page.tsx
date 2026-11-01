@@ -166,14 +166,6 @@ export default function ProspectsPage() {
   const activeCount = rows.filter((p) => !p.archived_at).length;
   const inView = useMemo(() => rows.filter((p) => !!p.archived_at === archive), [rows, archive]);
 
-  // The find just closed — once the list re-sorts, scroll to where it landed (the top, if it was changed).
-  const [justClosed, setJustClosed] = useState<number | null>(null);
-  function setOpenId(id: number | null) {
-    if (id == null && openId != null) setJustClosed(openId);
-    setOpenIdRaw(id);
-    setFrozen(id == null ? null : new Map(shown.map((p, i) => [p.id, i])));
-  }
-
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const list = inView.filter((p) =>
@@ -197,11 +189,23 @@ export default function ProspectsPage() {
     return list;   // 'newest' is the server's order
   }, [inView, archive, mine, displayName, filter, sort, cut, frozen]);
 
+  // The find just closed — once the list re-sorts, scroll to where it landed (the top, if it was changed). A ref, not state: the
+  // close render (openId → null, frozen → null) is the re-sort, so the effect on openId runs after exactly that commit. State
+  // here meant a setState inside the effect to clear it (react-hooks/set-state-in-effect) and a wasted extra render.
+  // setOpenId sits BELOW `shown` on purpose — declared above it, the closure read `shown` before its declaration and the React
+  // Compiler gave up on memoizing the list (react-hooks/preserve-manual-memoization).
+  const justClosedRef = useRef<number | null>(null);
+  function setOpenId(id: number | null) {
+    if (id == null && openId != null) justClosedRef.current = openId;
+    setOpenIdRaw(id);
+    setFrozen(id == null ? null : new Map(shown.map((p, i) => [p.id, i])));
+  }
   useEffect(() => {
-    if (justClosed == null) return;
-    document.getElementById(`prospect-row-${justClosed}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setJustClosed(null);
-  }, [justClosed]);
+    const id = justClosedRef.current;
+    if (id == null) return;
+    justClosedRef.current = null;
+    document.getElementById(`prospect-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [openId]);
 
   // Reopen from the add form's "Tested before" warning: the line is back on the list, open, ready for a new check.
   function onReopened(id: number) {

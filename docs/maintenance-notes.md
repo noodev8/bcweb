@@ -8,11 +8,13 @@ a glance.
 
 ## 1. Load-bearing decisions — DO NOT "fix" these
 
-### `sharp: ^0.35.0` override in `bcweb-web/package.json` — keep it
+### `sharp: ^0.35.0` override in `bcweb-web/package.json` — now redundant, harmless to keep
 
-`next@16.2.12` still declares optional `sharp: ^0.34.5`. The advisory (GHSA-f88m-g3jw-g9cj, CVE-2026-33327 / 33328 / 35590 /
-35591) is `sharp <0.35.0` — **the whole 0.34.x line**, so next's own range is still vulnerable. Removing the override
-reintroduces a high. Re-test only when a next 16.x ships a `sharp ^0.35` range.
+`next@16.2.12` declared optional `sharp: ^0.34.5`. The advisory (GHSA-f88m-g3jw-g9cj, CVE-2026-33327 / 33328 / 35590 / 35591)
+is `sharp <0.35.0` — **the whole 0.34.x line**, so next's own range was vulnerable and the override was load-bearing.
+**2026-11-01:** `next@16.4.3` declares `sharp: ^0.35.5` itself (installed: 0.35.5), so the override no longer changes anything.
+It was left in deliberately — it costs nothing and guards against a downgrade of next. Safe to drop whenever `package.json` is
+next touched, as long as `next` stays `>=16.4.3`.
 
 ### `brace-expansion` override — REMOVED, and must not come back
 
@@ -29,11 +31,18 @@ braces — so it detonated on the first file match and `npm run lint` died outri
 There is no API-compatible patched version: the latest of every major below 5 is 1.1.16 / 2.1.2 / 3.0.2 / 4.0.1, and the advisory
 (GHSA-mh99-v99m-4gvg) covers everything `<=5.0.7`. **The patch IS the breaking major.**
 
-**Current state (2026-10-06):** `bcweb-web` reports 7 high + 2 moderate, all **dev/build-only**; `npm audit --omit=dev` is 0. The
-highs are `braces` (GHSA-vfj7-8cjw-p6xm — **no patched release exists**, `3.0.3` is the latest) through `micromatch` /
-`fast-glob` in the lint and Tailwind build tooling; the moderates are `postcss-selector-parser <7.1.6` under Tailwind 3's
-`postcss-nested`, whose only fix is the breaking Tailwind 4 upgrade. Neither reaches the browser. The paragraph below is the
-earlier `brace-expansion` chain, kept for why the override must not return.
+**Current state (2026-11-01):** `bcweb-web` reports **16 moderate, all dev-only**; `npm audit --omit=dev` is 0. They are ONE
+advisory — `minimatch <11.0.1` (GHSA-g3hv-75wg-m249, globparts DoS) — counted once per package in the eslint chain (`eslint`,
+`@eslint/config-array`, `@eslint/eslintrc`, `typescript-eslint` / `@typescript-eslint/*`, `eslint-config-next`,
+`eslint-plugin-import` / `-jsx-a11y` / `-react`). **Do not run `npm audit fix --force`:** its "fix" installs `eslint@4.0.0`
+(2017), which breaks lint. Same upstream root as below — wait for the eslint plugins to move off old minimatch.
+
+That day's plain `npm audit fix` (21 → 16) cleared 2 critical, 2 high and 1 moderate, all non-breaking: `next` 16.3.8 → 16.4.3
+(critical: image-optimiser SVG RCE, `use cache` RCE, server-action DoS), `dompurify` 3.4.16 → 3.4.17 under `jspdf` (critical:
+sanitiser bypasses), `follow-redirects` 1.16.0 → 1.16.2 under `axios` (high: credential headers kept across redirects), `zod`
+4.4.3 → 4.6.7 under the react-hooks lint plugin (high: memory exhaustion), `postcss-selector-parser` 6.1.4 → 6.1.5 under Tailwind
+(moderate). The earlier `braces` highs (GHSA-vfj7-8cjw-p6xm) and Tailwind's `postcss-selector-parser <7.1.6` moderates no longer
+appear. The paragraph below is the earlier `brace-expansion` chain, kept for why the override must not return.
 
 **Consequence, accepted deliberately:** `bcweb-web` reported 9 high **dev-only** advisories. `npm audit --omit=dev` is 0 — the
 shipped bundle is clean. The whole chain is lint tooling (`eslint-plugin-import` / `-jsx-a11y` / `-react` → `minimatch` →
