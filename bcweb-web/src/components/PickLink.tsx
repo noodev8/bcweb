@@ -33,7 +33,7 @@ export default function PickLink() {
       // Return ticket: /pick shows "← Customer Orders" when it was opened from here (see the back note in app/pick/page.tsx).
       href={`/pick?from=${encodeURIComponent('/customer-orders')}&back=${encodeURIComponent('Customer Orders')}`}
       // Shaped like the board's StageTile (CustomerOrderList) so it reads as one more number on it — but it's a link out, not a filter.
-      className="flex min-w-[96px] flex-1 flex-col justify-center rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-left transition hover:border-slate-300"
+      className="flex w-32 flex-none flex-col justify-center rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-left transition hover:border-slate-300"
     >
       {/* Undefined while the count is still loading — the tile is useful before the number arrives, so it shows a dash. */}
       <span className={'text-2xl font-bold tabular-nums leading-tight ' + (n ? 'text-slate-900' : 'text-slate-400')}>{n ?? '–'}</span>

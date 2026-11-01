@@ -10,8 +10,8 @@ TWO JOBS, ONE SCREEN, SO TWO REGIONS (owner, 2026-10-15). The screen is used by 
 what's waiting, what needs FBA) and by the packer at the bench, scanning from a distance. The old layout served both from one pinned
 stack of small controls above a per-unit grid — it gave the packer 14px text and took a third of the admin's screen. Now:
 
-  THE BOARD   across the top: the day as stages — To pack (with the packed bar), Packed, FBA, Waiting, No stock, All — each a big
-              number in ORDERS and each a filter. Replaces the old headline strip and the filter chips. No stock is a stage of its own
+  THE BOARD   across the top: the day as stages — To pack (with the packed bar), Packed, FBA, Waiting, No stock — each a big
+              number in ORDERS and each a filter; no tile lit = every order (the All tile went 2026-11-01). Replaces the old headline strip and the filter chips. No stock is a stage of its own
               now: it was the red state with no way to find it except by spotting a stripe.
   THE LIST    on the left, full height, one row PER ORDER with its shoes stacked in the row. Every action is per order (as the server
               routes are, and as the operator thinks — "chase BC18665"), so the order is the row. The old per-unit grid printed the
@@ -50,7 +50,7 @@ import {
   ArrowPathIcon, ArrowUturnLeftIcon, CheckBadgeIcon, ChevronDownIcon, ExclamationTriangleIcon,
   MagnifyingGlassIcon, PrinterIcon, QrCodeIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+import { BoltIcon, ChatBubbleLeftEllipsisIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 import {
   CustomerOrderLine, CustomerOrderState, cancelCustomerLabel, deleteCustomerOrder, resetCustomerOrder, fulfilCustomerOrders, getCustomerOrderFbaFile, getCustomerOrders,
   printCustomerLabel, resolveCustomerScan, setCustomerOrderCourier, setCustomerOrderFba, setCustomerOrderNote,
@@ -76,6 +76,13 @@ const NO_LINES: CustomerOrderLine[] = [];
 // box, so it's split out of the dropdown's options here. COURIERS stays the full list: the list's Courier column still has to render
 // 'Pack', and the server still validates '0' like any other code.
 const PACK_ONLY = '0';
+
+// 24H EXPRESS (owner, 2026-11-01: "really obvious it's a 24hr Express"). Courier '4' = Royal Mail 24 — set at insert from the next-day
+// postage price (Shopify) or a 24h / NextDay service (eBay), and the label goes as Tracked 24. Nothing on this screen used to show it
+// beyond "RM24" in the same grey as "RM48". Now the box turns red with a 24H EXPRESS band when an express order is in hand. NOT in the
+// list (owner, same day: a red tag there "stands out too much and not much we can do with it there") — the list keeps plain RM24.
+const EXPRESS = '4';
+const isExpress = (courier: string | null) => courier === EXPRESS;
 const SHIPPING = COURIERS.filter((c) => c.code !== PACK_ONLY);
 
 // Scanned units per order: ordernum -> code -> units scanned. Counts, not line keys, because one order can hold two identical pairs
@@ -264,12 +271,18 @@ export default function CustomerOrderList() {
     return c;
   }, [orders]);
 
+  // NO "ALL ORDERS" TILE (owner, 2026-11-01): its number was only ever To pack + Packed (+ the FBA / Waiting tiles), so everything is
+  // simply what shows with no tile lit — clicking the lit tile again turns it off. The catch is a tile that shows only while it has
+  // orders (No stock, FBA, Waiting): if its count drops to 0 while it's the filter, the tile vanishes and nothing would be lit to
+  // click off — so a filter whose tile is gone reads as everything.
+  const view: Stage = (stage === 'nostock' || stage === 'fba' || stage === 'waiting') && counts[stage] === 0 ? 'all' : stage;
+
   // Search spans everything you'd have in your hand when looking an order up: the order number off a picking note, the customer's
   // name off an email, a postcode off a label, or the SKU / name of any shoe in it. Case-insensitive substring, no term parsing.
   const shown = useMemo(() => {
     const q = term.trim().toLowerCase();
     return [...orders.values()].filter((o) => {
-      if (!inStage(o, stage)) return false;
+      if (!inStage(o, view)) return false;
       if (!q) return true;
       return (
         o.ordernum.toLowerCase().includes(q) ||
@@ -278,7 +291,7 @@ export default function CustomerOrderList() {
         o.lines.some((l) => l.code.toLowerCase().includes(q) || (l.title || '').toLowerCase().includes(q))
       );
     });
-  }, [orders, stage, term]);
+  }, [orders, view, term]);
 
   const active = selected ? orders.get(selected) ?? null : null;
   const orderPackedNum = (ordernum: string) => { const o = orders.get(ordernum); return !!o && orderPacked(o); };
@@ -587,7 +600,10 @@ export default function CustomerOrderList() {
   const lastAvailable = !!lastPacked && orders.has(lastPacked);
 
   // The box's border says what just happened, before a word is read: red for a refused scan, green for a label off the printer.
-  const boxTone = scanError ? 'border-red-500' : justPrinted ? 'border-emerald-500' : active ? 'border-brand-500/50' : 'border-slate-200';
+  // An express order in hand turns the whole box red (its border and background) — the refused-scan red is still told apart by its
+  // solid banner with the warning icon, and the beep.
+  const express = !!active && isExpress(active.courier);
+  const boxTone = scanError ? 'border-red-500' : justPrinted ? 'border-emerald-500' : express ? 'border-red-600' : active ? 'border-brand-500/50' : 'border-slate-200';
 
   return (
     <div style={{ '--board-h': `${boardH}px` } as CSSProperties}>
@@ -600,9 +616,11 @@ export default function CustomerOrderList() {
       <div ref={boardRef} className="sticky top-0 z-30 flex flex-wrap items-stretch gap-2 bg-slate-100 pb-4 pt-3">
         <button
           type="button"
-          onClick={() => setStage(stage === 'topack' ? 'all' : 'topack')}
+          // mousedown's default would move the cursor onto the tile (and the scan strip would flick grey); kept in the scan box.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => { setStage(stage === 'topack' ? 'all' : 'topack'); scanRef.current?.focus(); }}
           aria-pressed={stage === 'topack'}
-          className={'flex min-w-[280px] flex-[2] items-center gap-4 rounded-xl border-2 px-4 py-3 text-left transition ' +
+          className={'flex min-w-[280px] flex-1 items-center gap-4 rounded-xl border-2 px-4 py-3 text-left transition ' +
             (finished ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300') +
             (stage === 'topack' ? ' ring-2 ring-slate-800 ring-offset-1' : '')}
         >
@@ -630,9 +648,8 @@ export default function CustomerOrderList() {
                 style={{ width: `${packedPct}%` }}
               />
             </span>
-            <span className="text-xs font-medium tabular-nums text-slate-500">
-              {counts.packed} of {counts.topack + counts.packed} packed
-            </span>
+            {/* No "n of m packed" caption under the bar (owner, 2026-11-01): the Packed tile beside it already shows that number. The
+                bar's aria-label still reads it out. */}
           </span>
         </button>
 
@@ -650,7 +667,6 @@ export default function CustomerOrderList() {
           <StageTile label="Waiting" count={counts.waiting} tone="amber" active={stage === 'waiting'}
             onClick={() => setStage(stage === 'waiting' ? 'all' : 'waiting')} />
         )}
-        <StageTile label="All orders" count={counts.all} tone="slate" active={stage === 'all'} onClick={() => setStage('all')} />
         {/* Shelf picks still to do — a link to /pick, not a filter (owner, 2026-10-15: same vibe as the board's numbers). */}
         <PickLink />
       </div>
@@ -660,7 +676,7 @@ export default function CustomerOrderList() {
             First in the DOM so it stacks ABOVE the list on a narrow screen (the bench needs it more than the list); placed right
             from lg up. Sticky so it stays beside whatever row you've scrolled to. */}
         <aside className="lg:sticky lg:top-[var(--board-h)] lg:order-2 lg:max-h-[calc(100vh-var(--board-h)-0.75rem)] lg:self-start lg:overflow-y-auto">
-          <div className={'overflow-hidden rounded-xl border-2 bg-white transition-colors ' + boxTone}>
+          <div className={'overflow-hidden rounded-xl border-2 transition-colors ' + (express ? 'bg-red-50 ' : 'bg-white ') + boxTone}>
             {/* --- scan strip: readiness first ----------------------------------------------------------------------------------
                 A <label>, so a click anywhere on the strip puts the cursor in the box. */}
             <label
@@ -687,9 +703,20 @@ export default function CustomerOrderList() {
                 onChange={(e) => setScan(e.target.value.toUpperCase())}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onScan(); } }}
                 onFocus={() => setScanFocused(true)}
-                onBlur={() => setScanFocused(false)}
-                placeholder={scanFocused ? 'Scan a shoe' : 'Click here to scan'}
-                aria-label="Scan a shoe"
+                onBlur={(e) => {
+                  // Moving to another field (find box, note, courier, weight) is a real choice: not ready, at once.
+                  if (e.relatedTarget) { setScanFocused(false); return; }
+                  // Losing the cursor to NOTHING (a click on a row, the page, a disabled button) takes it straight back: the box
+                  // should be ready, not ask to be clicked (owner, 2026-11-01). The strip is NOT turned grey first — that was a
+                  // grey-green flicker on every row click (owner, same day) — it only goes grey if the cursor really has gone:
+                  // to another window (the box stays the active element; onFocus turns it green again on return) or a print frame.
+                  setTimeout(() => {
+                    if (document.activeElement === document.body) scanRef.current?.focus();
+                    else if (document.activeElement !== scanRef.current || !document.hasFocus()) setScanFocused(false);
+                  }, 0);
+                }}
+                placeholder={scanFocused ? 'Scan' : 'Click here to scan'}
+                aria-label="Scan"
                 aria-invalid={!!scanError}
                 autoComplete="off"
                 className={'min-w-0 flex-1 bg-transparent font-semibold uppercase tracking-wide text-slate-900 placeholder:font-medium placeholder:normal-case placeholder:tracking-normal focus:outline-none ' +
@@ -761,37 +788,40 @@ export default function CustomerOrderList() {
                   onFulfil={() => fulfilOne(active.ordernum)}
                 />
               ) : (
-                // Nothing in hand. Says what to do next, in the box's own size, and offers the way back to the last box — the
-                // click off it that wasn't meant (owner, 2026-10-13).
+                // Nothing in hand. No "scan a shoe to start a box" prompt (owner, 2026-11-01: not always shoes, "box" read like an
+                // Amazon carton, and the scan strip above already says Scan) — only "Nothing left to pack" at the end of the day, and
+                // the way back to the last order, for the click off it that wasn't meant (owner, 2026-10-13).
                 <div className={'flex flex-col items-center text-center gap-3 py-8'}>
-                  <p className={'font-semibold text-slate-400 text-lg'}>
-                    {finished ? 'Nothing left to pack' : 'Scan a shoe to start a box'}
-                  </p>
-                  <p className="text-sm text-slate-400">or click an order in the list</p>
+                  {finished && <p className={'font-semibold text-slate-400 text-lg'}>Nothing left to pack</p>}
                   {actionError && <p className="text-sm text-red-700">{actionError}</p>}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!lastPacked) return;
-                      reveal(lastPacked);
-                      setActionError(null);
-                      scanRef.current?.focus();
-                    }}
-                    disabled={!lastAvailable}
-                    title={lastPacked ? `Select ${lastPacked}, the last order you printed a label for` : 'No label printed yet'}
-                    className={'inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 ' +
-                      'px-3 py-1.5 text-sm'}
-                  >
-                    <ArrowUturnLeftIcon className="h-4 w-4" />
-                    {lastAvailable ? `Back to ${lastPacked}` : 'Last order'}
-                  </button>
+                  {/* Only when there IS a last order still on the list (owner, 2026-11-01: a greyed-out "Last order" was pressed,
+                      did nothing, and took the cursor out of the scan box). */}
+                  {lastAvailable && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        reveal(lastPacked!);
+                        setActionError(null);
+                        scanRef.current?.focus();
+                      }}
+                      title={`Select ${lastPacked}, the last order you printed a label for`}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <ArrowUturnLeftIcon className="h-4 w-4" />
+                      Back to {lastPacked}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </aside>
 
-        {/* --- the list --------------------------------------------------------------------------------------------------------- */}
+        {/* --- the list ---------------------------------------------------------------------------------------------------------
+            What's COMING, so a size under the box (owner, 2026-11-01: "doesn't have to be so big but the panel is good") — still
+            readable from the bench, bolder than the old 14px grid. No item names on screen: each item's name and supplier are its
+            tooltip, and the find box still searches them. */}
           <section className="min-w-0 lg:order-1">
             <div className="mb-3 flex gap-2">
               <div className="relative min-w-0 flex-1">
@@ -818,6 +848,7 @@ export default function CustomerOrderList() {
                   Update orders in the title row (or the cron run). */}
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={async () => { await refresh(); scanRef.current?.focus(); }}
                 disabled={busy}
                 title="Re-read the list (doesn't contact Shopify)"
@@ -837,12 +868,11 @@ export default function CustomerOrderList() {
             {/* `overflow-x-auto` makes this a scroll container, which would pin the sticky heading to a box that never scrolls; from lg
                 up the table fits, so the scroller is dropped and the heading sticks to the window. */}
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white lg:overflow-visible">
-              <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="sticky top-[var(--board-h)] z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
+              <table className="w-full min-w-[720px] border-collapse text-base">
+                <thead className="sticky top-[var(--board-h)] z-10 bg-slate-50 text-left text-sm font-medium text-slate-500">
                   <tr className="border-b border-slate-200">
                     <th className="w-1.5 p-0" aria-label="Status" />
-                    <th className="px-3 py-2 font-medium">Order</th>
-                    <th className="px-2 py-2 font-medium">Shoes</th>
+                    <th className="px-3 py-2 font-medium">Item</th>
                     <th className="px-2 py-2 font-medium">Customer</th>
                     <th className="px-2 py-2 text-right font-medium">Age</th>
                     <th className="px-2 py-2 font-medium">Courier</th>
@@ -874,37 +904,23 @@ export default function CustomerOrderList() {
                         }
                       >
                         <td className={'w-1.5 p-0 ' + s.stripe} />
-                        <td className="whitespace-nowrap px-3 py-2">
-                          <span className="flex items-center gap-1.5 font-semibold tabular-nums text-slate-900">
-                            {o.ordernum}
-                            {o.note && (
-                              // `title` makes heroicons render a real <svg><title>, which is what gives the hover; aria-hidden={false}
-                              // so the note is announced — this icon carries information.
-                              <ChatBubbleLeftEllipsisIcon
-                                className="h-3.5 w-3.5 shrink-0 text-amber-500"
-                                title={`Note: ${o.note}`}
-                                titleId={`note-${o.ordernum}`}
-                                aria-hidden={false}
-                              />
-                            )}
-                          </span>
-                          {o.note && <span className="block max-w-[160px] truncate text-xs text-amber-700" title={o.note}>{o.note}</span>}
-                        </td>
-                        <td className="px-2 py-2">
-                          <ul className="flex flex-col gap-0.5">
+                        {/* ITEM FIRST (owner, 2026-11-01: "we are looking at what we are scanning ... the reading is in the office"): the
+                            codes lead the row, big; the order number is a smaller line under them — still there for the office to
+                            find an order by, and the find box still searches it. The note sits with the order number. */}
+                        <td className="px-3 py-2.5">
+                          <ul className="flex flex-col gap-1">
                             {o.lines.map((l, i) => {
                               const ticked = scanState.ticked.has(l);
                               return (
                                 <li key={`${l.code}|${i}`} className="flex min-w-0 items-center gap-1.5" title={[l.title, l.supplier].filter(Boolean).join(' · ') || l.code}>
-                                  {ticked && <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="Scanned" />}
-                                  <span className={'whitespace-nowrap tabular-nums ' + (ticked ? 'font-semibold text-emerald-700' : 'font-medium text-slate-700')}>
+                                  {ticked && <CheckCircleIcon className="h-5 w-5 shrink-0 text-emerald-600" aria-label="Scanned" />}
+                                  <span className={'whitespace-nowrap text-lg tabular-nums ' + (ticked ? 'font-bold text-emerald-700' : 'font-semibold text-slate-800')}>
                                     {l.code}{l.qty > 1 && <span className="text-slate-400"> ×{l.qty}</span>}
                                   </span>
-                                  <span className="min-w-0 truncate text-xs text-slate-400">{l.title}</span>
                                   {/* A line whose state differs from the order's says so — "one pair packed, one on the shelf" is
                                       the thing the order-level roll-up hides. */}
                                   {l.state !== o.state && l.state !== 'pending' && (
-                                    <span className={'shrink-0 rounded px-1 text-[11px] font-medium ring-1 ring-inset ' + CUSTOMER_STATES[l.state].pill}>
+                                    <span className={'shrink-0 rounded px-1.5 text-xs font-semibold ring-1 ring-inset ' + CUSTOMER_STATES[l.state].pill}>
                                       {CUSTOMER_STATES[l.state].label}
                                     </span>
                                   )}
@@ -912,23 +928,37 @@ export default function CustomerOrderList() {
                               );
                             })}
                           </ul>
+                          <span className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-medium tabular-nums text-slate-500">
+                            {o.ordernum}
+                            {o.note && (
+                              // `title` makes heroicons render a real <svg><title>, which is what gives the hover; aria-hidden={false}
+                              // so the note is announced — this icon carries information.
+                              <ChatBubbleLeftEllipsisIcon
+                                className="h-4 w-4 shrink-0 text-amber-500"
+                                title={`Note: ${o.note}`}
+                                titleId={`note-${o.ordernum}`}
+                                aria-hidden={false}
+                              />
+                            )}
+                          </span>
+                          {o.note && <span className="block max-w-[260px] truncate text-sm font-medium text-amber-700" title={o.note}>{o.note}</span>}
                         </td>
-                        <td className="max-w-[180px] px-2 py-2">
-                          <span className="block truncate text-slate-700">{o.customer || '—'}</span>
-                          <span className="block text-xs text-slate-400">{o.postcode || '—'}</span>
+                        <td className="max-w-[240px] px-2 py-2.5">
+                          <span className="block truncate text-base font-medium text-slate-800">{o.customer || '—'}</span>
+                          <span className="block text-sm text-slate-500">{o.postcode || '—'}</span>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums" title={`Ordered ${orderedAt(o.created)}`}>
-                          <span className={stale ? 'rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800' : 'text-slate-500'}>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-right text-base tabular-nums" title={`Ordered ${orderedAt(o.created)}`}>
+                          <span className={stale ? 'rounded bg-amber-100 px-2 py-0.5 font-bold text-amber-800' : 'font-medium text-slate-600'}>
                             {age === null ? '—' : age === 0 ? 'Today' : `${age}d`}
                           </span>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2 text-slate-500">{courierShort(o.courier)}</td>
-                        <td className="whitespace-nowrap px-3 py-2">
-                          <span className={'rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ' + s.pill}>{s.label}</span>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-base font-medium text-slate-600">{courierShort(o.courier)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          <span className={'rounded px-2 py-0.5 text-sm font-semibold ring-1 ring-inset ' + s.pill}>{s.label}</span>
                           {/* A label printed this session, until the server's Packed catches up. */}
                           {labels.has(o.ordernum) && o.state !== 'packed' && (
-                            <span className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-300">
-                              <PrinterIcon className="h-3 w-3" />Label
+                            <span className="ml-1 inline-flex items-center gap-1 rounded px-2 py-0.5 text-sm font-semibold text-sky-700 ring-1 ring-inset ring-sky-300">
+                              <PrinterIcon className="h-4 w-4" />Label
                             </span>
                           )}
                         </td>
@@ -940,17 +970,13 @@ export default function CustomerOrderList() {
 
               {shown.length === 0 && (
                 <p className="px-3 py-10 text-center text-sm text-slate-400">
-                  {orders.size === 0 ? 'No customer orders to fulfill.' : 'No orders match. Clear the search or pick All orders.'}
+                  {orders.size === 0 ? 'No customer orders to fulfill.' : 'No orders match. Clear the search, or click the lit tile to show every order.'}
                 </p>
               )}
             </div>
 
-            <p className="mt-2 text-xs text-slate-400">
-              {shown.length === orders.size
-                ? `${orders.size} order${orders.size === 1 ? '' : 's'}, ${lines.length} pair${lines.length === 1 ? '' : 's'}`
-                : `${shown.length} of ${orders.size} orders`}
-              {busy && ' · refreshing…'}
-            </p>
+            {/* No "n orders, n pairs" footer (owner, 2026-11-01: not needed — the board already counts orders; the Refresh button's
+                spin says when it's re-reading). */}
           </section>
       </div>
     </div>
@@ -962,9 +988,9 @@ export default function CustomerOrderList() {
 /*
  * StageTile — one stage on the board: a big number and its name, and a filter. `tone` is spelled out per stage rather than passed as
  * classes, so the next stage that wants a colour has to justify it here; each matches its row wash / stripe.
+ * A fixed narrow width (as PickLink's): the room goes to To pack's bar (owner, 2026-11-01).
  */
 const TILE_TONES = {
-  slate:   { idle: 'border-slate-200 bg-white',      num: 'text-slate-900',   label: 'text-slate-500' },
   emerald: { idle: 'border-emerald-200 bg-white',    num: 'text-emerald-700', label: 'text-emerald-700/80' },
   red:     { idle: 'border-red-300 bg-red-50',       num: 'text-red-700',     label: 'text-red-700' },
   sky:     { idle: 'border-sky-200 bg-sky-50',       num: 'text-sky-700',     label: 'text-sky-700' },
@@ -978,9 +1004,12 @@ function StageTile({ label, count, tone, active, onClick }: {
   return (
     <button
       type="button"
-      onClick={onClick}
+      // The cursor goes back to the scan box after a filter click (owner, 2026-11-01: the box should be ready, not ask to be
+      // clicked) — left on the tile, the scanner's Enter would press it again.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => { onClick(); focusCustomerScan(); }}
       aria-pressed={active}
-      className={'flex min-w-[96px] flex-1 flex-col justify-center rounded-xl border-2 px-4 py-2 text-left transition hover:brightness-[0.98] ' +
+      className={'flex w-32 flex-none flex-col justify-center rounded-xl border-2 px-4 py-2 text-left transition hover:brightness-[0.98] ' +
         t.idle + (active ? ' ring-2 ring-slate-800 ring-offset-1' : '')}
     >
       <span className={'text-2xl font-bold tabular-nums leading-tight ' + t.num}>{count}</span>
@@ -1049,15 +1078,35 @@ function OrderBox({
 
   return (
     <div>
+      {/* --- 24H EXPRESS: a solid red band across the top of the box, before anything else is read -------------------------------- */}
+      {isExpress(order.courier) && (
+        <div className="-mx-4 -mt-4 mb-4 flex items-center justify-center gap-2 bg-red-600 px-4 py-3 text-white" role="status">
+          <BoltIcon className="h-8 w-8 shrink-0" />
+          <span className="text-3xl font-black tracking-wide">24H EXPRESS</span>
+        </div>
+      )}
+
       {/* --- who and where ------------------------------------------------------------------------------------------------------ */}
+      {/* READ FROM ACROSS THE ROOM (owner, 2026-11-01: "standing from a distance and scanning ... just the details nice and big").
+          WHO IT'S GOING TO LEADS (owner, same day: "the customer name and post code is more important than the order number so that
+          we know the label that is printed, goes to them"): the name is the biggest thing in the box, the postcode next — the two
+          to match against the label as it comes off the printer — and the order number is a smaller line under them. A long name
+          wraps rather than truncating: half a name can't be checked against a label. */}
       <div className="flex items-start gap-3">
+        <p className="min-w-0 flex-1 break-words text-3xl font-bold leading-tight text-slate-900">
+          {order.customer || '—'}
+        </p>
+        <button type="button" onClick={onClose} aria-label="Close" className="-mr-1 -mt-1 shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <XMarkIcon className="h-6 w-6" />
+        </button>
+      </div>
+      <div className="mt-2 flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className={'font-bold tabular-nums leading-none tracking-tight text-slate-900 text-3xl'}>
-            {order.ordernum}
+          <p className={'whitespace-nowrap text-2xl font-bold uppercase tracking-wide ' + (order.postcode?.trim() ? 'text-slate-800' : 'text-red-600')}>
+            {order.postcode?.trim() || 'No postcode'}
           </p>
-          <p className={'mt-2 truncate text-slate-600 text-base'}>
-            {order.customer || '—'}
-            <span className="text-slate-400"> · {order.postcode || 'no postcode'} · {courierShort(order.courier)}</span>
+          <p className="mt-1 truncate text-lg font-medium tabular-nums text-slate-500">
+            {order.ordernum}<span className="text-slate-400"> · {courierShort(order.courier)}</span>
           </p>
         </div>
         {/* n of m — the number the bench reads from across the room. */}
@@ -1066,14 +1115,11 @@ function OrderBox({
             <p className={'font-bold tabular-nums leading-none text-4xl'}>
               {progress!.scanned}<span className="text-slate-300">/</span>{progress!.total}
             </p>
-            <p className={'mt-1 font-medium text-xs'}>scanned</p>
+            <p className={'mt-1 font-semibold text-sm'}>scanned</p>
           </div>
         ) : (
-          <span className={'shrink-0 rounded px-2 py-0.5 text-sm font-medium ring-1 ring-inset ' + s.pill}>{s.label}</span>
+          <span className={'shrink-0 rounded px-2 py-0.5 text-base font-semibold ring-1 ring-inset ' + s.pill}>{s.label}</span>
         )}
-        <button type="button" onClick={onClose} aria-label="Close" className="-mr-1 -mt-1 shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-          <XMarkIcon className="h-5 w-5" />
-        </button>
       </div>
 
       {order.note && (
@@ -1344,8 +1390,8 @@ function OrderBox({
 }
 
 /*
- * ShoeRow — one unit of the order in the box: an empty ring to fill, the code (bold — it's what's on the box), the name to check it
- * against, and a state for the ones not going in this box.
+ * ShoeRow — one unit of the order in the box: an empty ring to fill, the code (big and bold — it's what's on the box; the name is a
+ * tooltip only), and a state for the ones not going in this box.
  *   scanned     green, filled tick
  *   to scan     white, empty ring — what's still to find
  *   packed/FBA  done or Amazon's; labelled as such, no ring
@@ -1362,7 +1408,7 @@ function ShoeRow({ line, scanned }: { line: CustomerOrderLine; scanned: boolean 
     : isFba(line.state) ? 'FBA'
     : open ? null
     : CUSTOMER_STATES[line.state].label;
-  const icon = 'h-6 w-6';
+  const icon = 'h-7 w-7';
   return (
     <li className={'flex items-center rounded-lg border-2 transition-colors ' + tone + ' gap-3 px-3 py-2.5'}
       title={`${line.code}${line.title ? ' — ' + line.title : ''}${line.supplier ? ' · ' + line.supplier : ''}`}>
@@ -1371,13 +1417,12 @@ function ShoeRow({ line, scanned }: { line: CustomerOrderLine; scanned: boolean 
         : open
           ? <span className={'shrink-0 rounded-full border-[3px] border-slate-300 ' + icon} aria-label="To scan" />
           : <span className={'shrink-0 ' + icon} />}
-      <span className="min-w-0 flex-1">
-        <span className={'block font-bold tabular-nums text-lg'}>
-          {line.code}{line.qty > 1 && <span className="font-medium opacity-60"> ×{line.qty}</span>}
-        </span>
-        {line.title && <span className={'block truncate opacity-75 text-sm'}>{line.title}</span>}
+      {/* The code only, big — it's what's printed on the box in hand. The shoe's name is in the row's tooltip (owner, 2026-11-01:
+          no description to read from the bench; it took a second line per shoe). */}
+      <span className={'min-w-0 flex-1 truncate font-bold tabular-nums text-2xl'}>
+        {line.code}{line.qty > 1 && <span className="font-medium opacity-60"> ×{line.qty}</span>}
       </span>
-      {status && <span className={'shrink-0 font-semibold text-sm'}>{status}</span>}
+      {status && <span className={'shrink-0 font-semibold text-base'}>{status}</span>}
     </li>
   );
 }
