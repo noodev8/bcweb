@@ -32,7 +32,8 @@ async function main() {
   // eBay stock (runOrderSync step 3 — after the orders are saved; never fails the run).
   const e = r.ebayStock;
   if (e && e.error) console.log(`[order-sync] eBay stock sync failed: ${e.error}`);
-  else if (e && (e.updated.length || e.failed.length)) {
+  else if (e && e.added.length) console.log(`[order-sync] eBay sizes added: ${e.added.map((a) => `${a.code} (UK ${a.uk_size}, ${a.qty})`).join(', ')}`);
+  if (e && !e.error && (e.updated.length || e.failed.length)) {
     console.log(`[order-sync] eBay stock: ${e.updated.map((u) => `${u.code} ${u.from}->${u.to}`).join(', ') || 'nothing updated'}${e.failed.length ? ` · failed: ${e.failed.map((f) => f.code).join(', ')}` : ''}`);
   }
 }

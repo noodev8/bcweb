@@ -30,6 +30,8 @@ THE CHECKS (checkLine) — codes, so the screen owns the wording:
                    The stock is NOT kept in step yet (that is the Add build), so a Shopify sale leaves eBay's count where it was.
   CHECKS (against the postage rules in docs/ebay-clearance.md)
     postage_rule   postage isn't the rule — £4.50 Tracked 48 on every listing, like Shopify (owner, 2026-11-01; was free postage)
+    size_not_listed (listing-level, routes/ebay-listings.js) a size of a BCWEB-listed style is in stock but not on the listing — added
+                   at the next Update Orders; one that stays was skipped (no UK size / barcode, or its UK size is taken)
   INFO
     sold_out       eBay shows 0 available — the account is in eBay's out-of-stock control, so the listing stays alive but hidden
     more_held      we hold more than eBay shows (fine if on purpose)
@@ -177,6 +179,7 @@ function checkLine(line, postage, listingTitle) {
 }
 
 const PROBLEM_FLAGS = new Set(['unknown', 'birkenstock', 'oversell']);
-const CHECK_FLAGS = new Set(['postage_rule']);
+// size_not_listed is a LISTING flag, set by routes/ebay-listings.js (utils/ebayStockSync.js → unlistedSizes), not by checkLine.
+const CHECK_FLAGS = new Set(['postage_rule', 'size_not_listed']);
 
 module.exports = { fetchActiveListings, checkLine, PROBLEM_FLAGS, CHECK_FLAGS };

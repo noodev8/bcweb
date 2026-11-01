@@ -53,6 +53,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { fetchActiveListings, checkLine, PROBLEM_FLAGS, CHECK_FLAGS } = require('../utils/ebayListings');
+const { unlistedSizes } = require('../utils/ebayStockSync');
 const { ebayProfit } = require('../utils/ebayProfit');
 const logger = require('../utils/logger');
 
@@ -114,6 +115,10 @@ router.get('/', async (req, res) => {
     `, [codes]);
     const ours = new Map(result.rows.map((r) => [r.code, r]));
 
+    // BCWEB listings with a size of the style in stock that isn't on them (utils/ebayStockSync.js → unlistedSizes) — normally added at
+    // the next Update Orders; one that stays was skipped (no UK size / barcode, or a clashing UK size). Flag 'size_not_listed'.
+    const unlisted = new Map((await unlistedSizes(listings.map((l) => l.item_id))).map((u) => [u.item_id, u.codes]));
+
     const summary = { listings: 0, skipped, problems: 0, checks: 0, watchers: 0 };
     const out = listings.map((l) => {
       const lines = l.lines.map((x) => {
@@ -144,7 +149,8 @@ router.get('/', async (req, res) => {
       // A variation listing's sizes in size order — eBay returns them in its own order. Numeric sizes first, then the rest.
       const sizeKey = (x) => { const n = Number(x.size); return Number.isFinite(n) ? n : Infinity; };
       lines.sort((a, b) => sizeKey(a) - sizeKey(b) || String(a.sku || '').localeCompare(String(b.sku || '')));
-      const flags = [...new Set(lines.flatMap((x) => x.flags))];
+      const notListed = unlisted.get(l.item_id) || [];
+      const flags = [...new Set([...lines.flatMap((x) => x.flags), ...(notListed.length ? ['size_not_listed'] : [])])];
 
       summary.listings += 1;
       if (flags.some((f) => PROBLEM_FLAGS.has(f))) summary.problems += 1;
@@ -153,7 +159,7 @@ router.get('/', async (req, res) => {
 
       const rest = { ...l };
       delete rest.status;   // always 'Active' here
-      return { ...rest, flags, lines };
+      return { ...rest, flags, not_listed: notListed, lines };
     });
 
     // Problems first, then by our code (the screen leads with it).

@@ -20,7 +20,7 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
            E  allocate picks           ONCE, for every channel's orders
            F  housekeeping             six statements
            bclog row                   section 'Order Sync', workstation = user or 'cron'
-3 EBAY STOCK  after the commit: utils/ebayStockSync.js — eBay quantities in step with our stock
+3 EBAY STOCK  after the commit: utils/ebayStockSync.js — new sizes added, then eBay quantities in step with our stock
 ```
 
 - **eBay stock (step 3, 2026-11-01).** After the orders are saved, every size on a live BCWEB eBay listing
@@ -28,8 +28,11 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
   quantity last sent** (`qty_sent`). Comparing with what we sent, not with eBay's count, stops an eBay FBA sale
   being put back before the next Update Amazon import. Inventory API `bulkUpdatePriceQuantity`, 25 a call; a size
   eBay refuses keeps its old `qty_sent` and is retried next run. Its own bclog row (section 'eBay') when anything
-  changed. Outside the transaction and caught, so it **never fails the run**. Sizes not yet on a listing are not
-  added (a later step).
+  changed. Outside the transaction and caught, so it **never fails the run**.
+- **New sizes** (before the quantities): a size of a listed style with stock but not on its listing is added to
+  the same listing (`utils/ebayPublish.js → addSizes`, the listing re-published under the same number). One
+  with no UK size / barcode, or a UK size already on the listing, is skipped and flagged amber on the eBay
+  listings screen. Failures go to the server log only, so a retried failure doesn't flood bclog.
 
 - **The lock** serialises everything: two people pressing, a double-click, a press during the cron. The second
   run waits a few seconds, then finds nothing to do. No timing gaps are needed in the crontab.

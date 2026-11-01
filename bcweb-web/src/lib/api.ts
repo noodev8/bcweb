@@ -4962,6 +4962,7 @@ export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
 export type EbayFlag =
   | 'unknown' | 'birkenstock' | 'oversell'             // problems
   | 'postage_rule'                                     // check against the postage rule (£4.50 on every listing)
+  | 'size_not_listed'                                  // a size in stock isn't on this BCWEB listing (normally added next run)
   | 'sold_out' | 'more_held';                          // info
 export interface EbayListingLine {
   sku: string | null; size: string | null; ebay_size: string | null;
@@ -4979,6 +4980,7 @@ export interface EbayListing {
   postage: { service: string | null; cost: number | null; free: boolean; policy: string | null; dispatch_days: number | null };
   returns: { within: string | null; paid_by: string | null };
   flags: EbayFlag[];
+  not_listed: string[];   // codes of the style in stock but not on this BCWEB listing (flag size_not_listed)
   lines: EbayListingLine[];
 }
 export interface EbayListingsSummary {

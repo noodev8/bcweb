@@ -19,7 +19,8 @@ THE RUN
                    F  CLEANUP   six housekeeping statements over orderstatus + localstock
                    one bclog row (section 'Order Sync', workstation = who pressed, or 'cron') — /order-sync-last reads it
          A run lands completely or not at all; a failure is "nothing written, safe to run again".
-    3  EBAY STOCK  AFTER the commit: eBay's quantities brought in step with our stock (utils/ebayStockSync.js — eBay Add step 3,
+    3  EBAY STOCK  AFTER the commit: new in-stock sizes added to their listings, then eBay's quantities brought in step with our
+                 stock (utils/ebayStockSync.js — eBay Add step 3,
                  2026-11-01). Outside the transaction and never allowed to fail the run: the orders are already saved; a size eBay
                  didn't take is retried next run. Not on the button's line (owner: the total of new orders only) — its own bclog row.
 
@@ -346,8 +347,8 @@ async function runOrderSync({ by }) {
   try {
     result.ebayStock = await syncEbayStock({ by });
     const s = result.ebayStock;
-    if (s.updated.length || s.failed.length) {
-      logger.info(`[orderSync] eBay stock: ${s.updated.length} updated, ${s.failed.length} failed of ${s.checked}`);
+    if (s.added.length || s.updated.length || s.failed.length) {
+      logger.info(`[orderSync] eBay stock: ${s.added.length} sizes added, ${s.updated.length} updated, ${s.failed.length} failed of ${s.checked}`);
     }
     if (s.failed.length) logger.error(`[orderSync] eBay stock failures: ${s.failed.map((f) => `${f.code}: ${f.error}`).join(' | ')}`);
   } catch (err) {
