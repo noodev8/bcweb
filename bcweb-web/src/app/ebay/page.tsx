@@ -17,6 +17,11 @@ FIXED PRICE ONLY (owner, 2026-11-01: "We are going to not use auction ... Fixed 
 them; the screen says how many, to be dealt with by hand in Seller Hub.
 A variation listing (one listing per style, sizes inside — the planned Add) is one row with its sizes underneath on a click.
 
+DUD SIZES (owner, 2026-11-01: "a lower price for that size", "by hand to start", 90 days): a BCWEB listing (made by the List button)
+always opens, even with one size, into the SIZES PANEL — per size: stock, Sold 30d, last net sale, IDLE days (the Slow movers measure,
+server utils/onShelf.js; 90+ tinted amber), its eBay price, a price box with the profit beside it, and Set (POST /ebay-size-price —
+price only, eBay only; Shopify stays per style). The "Slow sizes (90d+)" filter shows the BCWEB listings with such a size.
+
 THE CHECKS — the server's codes, worded here (FLAG below). NO CHECKS COLUMN (owner, 2026-11-01: "save the space for OK 99% of the
 time"): a listing that needs a look gets a warning icon after its code (hover = what's wrong) and a tinted row; a clean row shows nothing.
   red    Not in BCWEB · Birkenstock · more on eBay than our stock (stock isn't kept in step yet — a Shopify sale leaves eBay's count;
@@ -35,13 +40,13 @@ SWR's own refetches are off for this key. The time of the read shows beside the 
 =======================================================================================================================================
 */
 
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowPathIcon, ChevronRightIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import NotOnEbay from './NotOnEbay';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getEbayListings, type EbayFlag, type EbayListing, type EbayListingLine } from '@/lib/api';
+import { getEbayListings, getEbayProfitPreview, setEbaySizePrice, type EbayFlag, type EbayListing, type EbayListingLine } from '@/lib/api';
 
 const NO_LISTINGS: EbayListing[] = [];
 
@@ -68,7 +73,12 @@ const SERVICE: Record<string, string> = {
   UK_CollectInPerson: 'Collection',
 };
 
-type Filter = 'all' | 'look';
+type Filter = 'all' | 'look' | 'slow';
+
+// A size is SLOW (a dud to consider pricing down) at this many idle days — THE Slow movers measure, from the server (owner, 2026-11-01).
+const SLOW_DAYS = 90;
+const isSlow = (x: EbayListingLine) => x.idle_days !== null && x.idle_days >= SLOW_DAYS;
+const slowCount = (l: EbayListing) => (l.bcweb ? l.lines.filter(isSlow).length : 0);
 
 function money(v: number | null | undefined) {
   return v === null || v === undefined ? '—' : `£${v.toFixed(2)}`;
@@ -127,12 +137,14 @@ function OnEbay() {
   const counts = useMemo(() => ({
     all: listings.length,
     look: listings.filter((l) => needsLook(l.flags)).length,
+    slow: listings.filter((l) => slowCount(l) > 0).length,
   }), [listings]);
 
   const visible = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return listings.filter((l) => {
       if (filter === 'look' && !needsLook(l.flags)) return false;
+      if (filter === 'slow' && slowCount(l) === 0) return false;
       if (terms.length === 0) return true;
       const hay = `${l.title} ${l.item_id} ${l.lines.map((x) => `${x.sku || ''} ${x.brand || ''}`).join(' ')}`.toLowerCase();
       return terms.every((t) => hay.includes(t));
@@ -174,7 +186,7 @@ function OnEbay() {
           </div>
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {([['all', 'All'], ['look', 'Needs a look']] as [Filter, string][]).map(([k, label]) => (
+            {([['all', 'All'], ['look', 'Needs a look'], ['slow', `Slow sizes (${SLOW_DAYS}d+)`]] as [Filter, string][]).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -203,7 +215,7 @@ function OnEbay() {
           <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:overflow-x-clip">
             {visible.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
-                {listings.length === 0 ? 'Nothing is live on eBay.' : filter === 'look' ? 'Nothing needs a look.' : 'No listing matches.'}
+                {listings.length === 0 ? 'Nothing is live on eBay.' : filter === 'look' ? 'Nothing needs a look.' : filter === 'slow' ? `No size on a BCWEB listing has sat ${SLOW_DAYS} days or more.` : 'No listing matches.'}
               </p>
             ) : (
               <table className="min-w-full text-sm">
@@ -225,11 +237,18 @@ function OnEbay() {
                 <tbody>
                   {visible.map((l) => {
                     const multi = l.lines.length > 1;
+                    // A BCWEB listing always opens (its sizes can be priced one by one); another listing opens only when it has sizes.
+                    const opens = multi || l.bcweb;
                     const isOpen = open === l.item_id;
                     return (
                       <Fragment key={l.item_id}>
-                        <ListingRow listing={l} multi={multi} isOpen={isOpen} onToggle={() => setOpen(isOpen ? null : l.item_id)} />
-                        {multi && isOpen && l.lines.map((x, i) => <SizeRow key={x.sku || i} line={x} />)}
+                        <ListingRow listing={l} multi={multi} opens={opens} isOpen={isOpen} onToggle={() => setOpen(isOpen ? null : l.item_id)} />
+                        {isOpen && l.bcweb && (
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            <td colSpan={11} className="px-4 pb-4 pt-1"><SizesPanel listing={l} /></td>
+                          </tr>
+                        )}
+                        {isOpen && !l.bcweb && multi && l.lines.map((x, i) => <SizeRow key={x.sku || i} line={x} />)}
                       </Fragment>
                     );
                   })}
@@ -288,7 +307,7 @@ function priceRange(values: (number | null)[]) {
   return lo === hi ? money(lo) : `${money(lo)}–${money(hi)}`;
 }
 
-function ListingRow({ listing: l, multi, isOpen, onToggle }: { listing: EbayListing; multi: boolean; isOpen: boolean; onToggle: () => void }) {
+function ListingRow({ listing: l, multi, opens, isOpen, onToggle }: { listing: EbayListing; multi: boolean; opens: boolean; isOpen: boolean; onToggle: () => void }) {
   const one = l.lines[0] as EbayListingLine | undefined;
   const level = issueLevel(l.flags);
   const oversell = l.flags.includes('oversell');
@@ -302,14 +321,14 @@ function ListingRow({ listing: l, multi, isOpen, onToggle }: { listing: EbayList
 
   return (
     <tr
-      onClick={multi ? onToggle : undefined}
-      aria-expanded={multi ? isOpen : undefined}
-      className={'border-b border-slate-100 align-top ' + (multi ? 'cursor-pointer hover:bg-slate-50 ' : '') + (level === 'problem' ? 'bg-red-50/50' : level === 'check' ? 'bg-amber-50/50' : '')}
+      onClick={opens ? onToggle : undefined}
+      aria-expanded={opens ? isOpen : undefined}
+      className={'border-b border-slate-100 align-top ' + (opens ? 'cursor-pointer hover:bg-slate-50 ' : '') + (level === 'problem' ? 'bg-red-50/50' : level === 'check' ? 'bg-amber-50/50' : '')}
     >
       {/* CODE FIRST, eBay's title as a tooltip (owner, 2026-11-01: "Lead with CODE instead of TITLE", "Use a tooltip for the title"). */}
       <td className="whitespace-nowrap py-2 pl-3 pr-2" title={`${l.title} — click the code to open it on eBay`}>
         <div className="flex items-center gap-1.5">
-          {multi && <ChevronRightIcon className={'h-4 w-4 shrink-0 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />}
+          {opens && <ChevronRightIcon className={'h-4 w-4 shrink-0 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />}
           {/* The CODE is the link (owner, 2026-11-01: "dont have the link sign against the code (we will click the code)") — it opens
               the listing on eBay; the title is its tooltip. */}
           {l.url ? (
@@ -355,6 +374,120 @@ function SizeRow({ line: x }: { line: EbayListingLine }) {
       <td className="px-2 py-1.5 text-center tabular-nums">{x.local + x.fba}</td>
       <td className="px-2 py-1.5 text-center tabular-nums">{x.sold_30d || <span className="text-slate-300">·</span>}</td>
       <td colSpan={3} />
+    </tr>
+  );
+}
+
+// =====================================================================================================================================
+// THE SIZES PANEL of a BCWEB listing — dud sizes priced one by one (owner, 2026-11-01: "a lower price for that size", "by hand to
+// start", highlight 90 days). Each size: stock, our eBay sales in 30 days, last NET sale (any channel), IDLE DAYS (the Slow movers
+// measure — server utils/onShelf.js), its eBay price and the profit at it, and a price box. Sizes idle SLOW_DAYS+ are tinted amber.
+// Set sends that size's price to eBay at once (POST /ebay-size-price — price only, the stock sync's quantity is untouched) and shows
+// it here until the next Refresh reads it back from eBay. Shopify's price is per style and is not touched.
+// =====================================================================================================================================
+function shortDate(d: string) {
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+function SizesPanel({ listing: l }: { listing: EbayListing }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-3">
+      <table className="min-w-full text-sm">
+        <thead className="text-[11px] uppercase tracking-wide text-slate-500">
+          <tr className="border-b border-slate-200">
+            <th className="py-1.5 pr-3 text-left font-medium">Size</th>
+            <th className="py-1.5 pr-3 text-left font-medium">Code</th>
+            <th className="py-1.5 pr-3 text-center font-medium" title="Our stock: local + FBA live">Stock</th>
+            <th className="py-1.5 pr-3 text-center font-medium" title="Our eBay sales in the last 30 days (net)">Sold 30d</th>
+            <th className="py-1.5 pr-3 text-left font-medium" title="Last net sale, any channel">Last sold</th>
+            <th className="py-1.5 pr-3 text-right font-medium" title={`Days since the later of the last sale and the oldest pair held arriving (as Slow movers). ${SLOW_DAYS}+ is highlighted.`}>Idle</th>
+            <th className="py-1.5 pr-3 text-right font-medium">eBay price</th>
+            <th className="py-1.5 text-left font-medium">New price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {l.lines.map((x) => <SizePriceRow key={x.sku || x.size} line={x} />)}
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-slate-400">A size&apos;s price changes on eBay only — Shopify stays per style. Set it back to the listing price to undo.</p>
+    </div>
+  );
+}
+
+function SizePriceRow({ line: x }: { line: EbayListingLine }) {
+  const [now, setNow] = useState<number | null>(x.ebay_price);         // eBay's price, or the one just set here
+  const [text, setText] = useState(x.ebay_price !== null ? x.ebay_price.toFixed(2) : '');
+  const [previewPrice, setPreviewPrice] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const price = Number(text);
+  const valid = text.trim() !== '' && Number.isFinite(price) && price > 0;
+  const changed = valid && (now === null || Math.abs(price - now) >= 0.005);
+  const slow = isSlow(x);
+
+  // Profit at the typed price — the server's formula (with the buyer's £4.50 postage); eBay's figure while nothing is typed.
+  const preview = useApiQuery(
+    previewPrice !== null && x.groupid ? ['ebay-profit', x.groupid, previewPrice] : null,
+    () => getEbayProfitPreview(x.groupid as string, previewPrice as number),
+  );
+  const profit = previewPrice !== null ? (preview.data ?? null) : x.profit;
+
+  function onType(v: string) {
+    setText(v);
+    setMsg(null);
+    if (timer.current) clearTimeout(timer.current);
+    const n = Number(v);
+    timer.current = setTimeout(() => setPreviewPrice(v.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null), 400);
+  }
+
+  async function set() {
+    if (!x.sku || !changed) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await setEbaySizePrice(x.sku, Math.round(price * 100) / 100);
+    setBusy(false);
+    if (res.success && res.data) {
+      setNow(res.data.new_price);
+      setText(res.data.new_price.toFixed(2));
+      setMsg({ ok: true, text: 'Set on eBay' });
+      return;
+    }
+    setMsg({ ok: false, text: res.error || 'Could not set the price' });
+  }
+
+  return (
+    <tr className={'border-b border-slate-100 last:border-0 ' + (slow ? 'bg-amber-50' : '')}>
+      <td className="py-1.5 pr-3">
+        <span className="inline-block min-w-[2.75rem] rounded bg-slate-100 px-2 py-0.5 text-center font-mono text-xs font-medium text-slate-700">{x.size || '—'}</span>
+      </td>
+      <td className="py-1.5 pr-3 font-mono text-xs text-slate-500">{x.sku || 'no SKU'}</td>
+      <td className="py-1.5 pr-3 text-center tabular-nums">{x.local + x.fba}</td>
+      <td className="py-1.5 pr-3 text-center tabular-nums">{x.sold_30d || <span className="text-slate-300">·</span>}</td>
+      <td className="whitespace-nowrap py-1.5 pr-3 text-slate-600">{x.last_sale ? shortDate(x.last_sale) : <span className="text-slate-400">never</span>}</td>
+      <td className={'whitespace-nowrap py-1.5 pr-3 text-right tabular-nums ' + (slow ? 'font-semibold text-amber-700' : 'text-slate-600')}>
+        {x.idle_days === null ? <span className="text-slate-300">·</span> : `${x.idle_days}d`}
+      </td>
+      <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums text-slate-800">
+        {money(now)}
+        {x.own_price !== null && now === x.own_price && <span className="ml-1 text-[10px] font-medium uppercase text-amber-700" title="This size has its own price">own</span>}
+      </td>
+      <td className="whitespace-nowrap py-1.5">
+        <div className="flex items-center gap-2">
+          <input inputMode="decimal" value={text} onChange={(e) => onType(e.target.value)} disabled={!x.sku}
+            className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+          <button type="button" onClick={set} disabled={!changed || busy}
+            className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+            {busy ? 'Setting…' : 'Set'}
+          </button>
+          <span className={'text-xs tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-500')} title="Profit on one sale at this price, with the buyer's £4.50 postage">
+            {valid ? (preview.busy && previewPrice !== null ? '…' : `profit ${signedMoney(profit)}`) : ''}
+          </span>
+          {msg && <span className={'text-xs ' + (msg.ok ? 'text-emerald-700' : 'text-red-700')}>{msg.text}</span>}
+        </div>
+      </td>
     </tr>
   );
 }

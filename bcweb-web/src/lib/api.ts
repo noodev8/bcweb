@@ -4970,6 +4970,9 @@ export interface EbayListingLine {
   known: boolean; groupid: string | null; brand: string | null; shopify_title: string | null; shopify_price: number | null;
   local: number; fba: number;
   sold_30d: number;        // OUR eBay sales (EBY) of this code in the last 30 days, net — not eBay's since-listed count
+  last_sale: string | null;   // last NET sale, any channel (YYYY-MM-DD); null = never
+  idle_days: number | null;   // THE Slow movers measure (server utils/onShelf.js); null when nothing is held
+  own_price: number | null;   // the size's own eBay price on a BCWEB listing (ebay_listing_size.price); null = the listing's price
   profit: number | null;   // one sale at eBay's price (utils/ebayProfit.js)
   flags: EbayFlag[];
 }
@@ -4981,6 +4984,7 @@ export interface EbayListing {
   returns: { within: string | null; paid_by: string | null };
   flags: EbayFlag[];
   not_listed: string[];   // codes of the style in stock but not on this BCWEB listing (flag size_not_listed)
+  bcweb: boolean;         // made by BCWEB's List button — its sizes can be priced one by one
   lines: EbayListingLine[];
 }
 export interface EbayListingsSummary {
@@ -5024,6 +5028,15 @@ export function getEbayProfitPreview(groupid: string, price: number) {
   return request<number | null>(
     { url: '/ebay-profit-preview', method: 'GET', params: { groupid, price } },
     (b) => (b.profit === null || b.profit === undefined ? null : Number(b.profit))
+  );
+}
+
+// The eBay price of ONE size inside a BCWEB listing (server routes/ebay-size-price.js — WRITES TO EBAY, price only). Dud sizes, set by
+// hand (owner, 2026-11-01). Failure codes: NOT_ON_EBAY, EBAY_ERROR (eBay's words), RECORD_FAILED (live on eBay, not recorded).
+export function setEbaySizePrice(code: string, price: number) {
+  return request<{ code: string; old_price: number | null; new_price: number }>(
+    { url: '/ebay-size-price', method: 'POST', data: { code, price } },
+    (b) => ({ code: b.code, old_price: b.old_price ?? null, new_price: Number(b.new_price) })
   );
 }
 

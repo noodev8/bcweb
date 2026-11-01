@@ -14,6 +14,12 @@ Purpose: The eBay listings screen (/ebay, owner 2026-11-01: "Start with read onl
          handled by hand in Seller Hub. Codes are matched
          exactly against live (not deleted) skumap rows.
 
+         DUD SIZES (owner, 2026-11-01 — a lower price for that size, set by hand): every line also carries its last NET sale and its
+         IDLE DAYS — the Slow movers measure (utils/onShelf.js: since the later of the last net sale and the oldest held pair's
+         arrival; null when nothing is held) — and, on a BCWEB listing (bcweb: true — made by the List button), the size's own price
+         if one was set (own_price, ebay_listing_size.price). The screen highlights 90+ idle days and prices a size through
+         POST /ebay-size-price.
+
          Order: listings with a problem first, then by code.
 
 Requires auth.
@@ -34,7 +40,10 @@ Success Response:
       "flags": ["…"],                                     // every line's flags, once each
       "lines": [ { "sku": "M014A-10", "ebay_size": null, "size": "10", "ebay_price": 11.99, "ebay_qty": 1, "ebay_sold": 0, "ebay_available": 1,
                    "known": true, "groupid": "M014A", "brand": "Goor", "shopify_title": "…", "shopify_price": 19.99,
-                   "local": 1, "fba": 0, "sold_30d": 0, "profit": -1.23, "flags": [] } ]
+                   "local": 1, "fba": 0, "sold_30d": 0, "last_sale": "2025-08-02" | null, "idle_days": 214 | null,
+                   "own_price": 29.99 | null, "profit": -1.23, "flags": [] } ],
+      "not_listed": [],                                  // in-stock codes not on this BCWEB listing (flag size_not_listed)
+      "bcweb": true                                      // made by BCWEB's List button — per-size prices allowed
   } ]
 }
 =======================================================================================================================================
@@ -54,6 +63,10 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { fetchActiveListings, checkLine, PROBLEM_FLAGS, CHECK_FLAGS } = require('../utils/ebayListings');
 const { unlistedSizes } = require('../utils/ebayStockSync');
+const { oldestHeldArrival, lastNetSales, idleSince } = require('../utils/onShelf');
+
+// Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day (as utils/slowSizes.js).
+const dayNo = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 const { ebayProfit } = require('../utils/ebayProfit');
 const logger = require('../utils/logger');
 
@@ -119,6 +132,27 @@ router.get('/', async (req, res) => {
     // the next Update Orders; one that stays was skipped (no UK size / barcode, or a clashing UK size). Flag 'size_not_listed'.
     const unlisted = new Map((await unlistedSizes(listings.map((l) => l.item_id))).map((u) => [u.item_id, u.codes]));
 
+    // Which listings are BCWEB's own (made by the List button) — only those get the per-size price control on the screen, and their
+    // sizes' own prices (ebay_listing_size.price, NULL = the listing's price).
+    const own = await query(`
+      SELECT e.item_id, s.code, s.price FROM ebay_listing e
+      JOIN ebay_listing_size s ON s.ebay_listing_id = e.id
+      WHERE e.ended_at IS NULL AND e.item_id = ANY($1::text[])
+    `, [listings.map((l) => l.item_id)]);
+    const bcwebItems = new Set(own.rows.map((r) => r.item_id));
+    const ownPrice = new Map(own.rows.map((r) => [r.code, r.price === null ? null : Number(r.price)]));
+
+    // IDLE DAYS per size — THE Slow movers measure (utils/onShelf.js): days since the LATER of the last NET sale (any channel) and
+    // the oldest held pair's arrival, so a size restocked last week isn't a dud. Held = our Stock (local + FBA live). The screen
+    // highlights 90 days or more (owner, 2026-11-01). A size with no stock has no idle days (nothing to clear).
+    const held = new Map(result.rows.map((r) => [r.code, Number(r.local) + Number(r.fba)]));
+    const [shelf, lastSale, todayQ] = await Promise.all([
+      oldestHeldArrival(held),
+      lastNetSales([...held.keys()]),
+      query(`SELECT to_char((now() AT TIME ZONE 'Europe/London')::date, 'YYYY-MM-DD') AS today`),
+    ]);
+    const today = todayQ.rows[0].today;
+
     const summary = { listings: 0, skipped, problems: 0, checks: 0, watchers: 0 };
     const out = listings.map((l) => {
       const lines = l.lines.map((x) => {
@@ -141,6 +175,12 @@ router.get('/', async (req, res) => {
           local: o ? Number(o.local) : 0,
           fba: o ? Number(o.fba) : 0,
           sold_30d: o ? Number(o.sold_30d) : 0,
+          last_sale: (x.sku && lastSale.get(x.sku)) || null,
+          idle_days: (() => {
+            const idle = x.sku ? idleSince(lastSale.get(x.sku) || null, shelf.get(x.sku)) : null;
+            return idle ? dayNo(today) - dayNo(idle.since) : null;
+          })(),
+          own_price: x.sku && ownPrice.has(x.sku) ? ownPrice.get(x.sku) : null,
           profit: round2(profit),
         };
         line.flags = checkLine(line, l.postage, l.title);
@@ -159,7 +199,7 @@ router.get('/', async (req, res) => {
 
       const rest = { ...l };
       delete rest.status;   // always 'Active' here
-      return { ...rest, flags, not_listed: notListed, lines };
+      return { ...rest, flags, not_listed: notListed, bcweb: bcwebItems.has(l.item_id), lines };
     });
 
     // Problems first, then by our code (the screen leads with it).

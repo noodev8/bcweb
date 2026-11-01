@@ -100,6 +100,8 @@ app.use('/ebay-candidates', require('./routes/ebay-candidates'));
 // profit beside the form's price box (READ ONLY)
 app.use('/ebay-list', require('./routes/ebay-list'));
 app.use('/ebay-profit-preview', require('./routes/ebay-profit-preview'));
+// eBay: a price for one size inside a BCWEB listing (dud sizes, set by hand) — WRITES TO EBAY + ebay_listing_size.price, bclog
+app.use('/ebay-size-price', require('./routes/ebay-size-price'));
 
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));
