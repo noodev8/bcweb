@@ -19,6 +19,9 @@ THE RUN
                    F  CLEANUP   six housekeeping statements over orderstatus + localstock
                    one bclog row (section 'Order Sync', workstation = who pressed, or 'cron') — /order-sync-last reads it
          A run lands completely or not at all; a failure is "nothing written, safe to run again".
+    3  EBAY STOCK  AFTER the commit: eBay's quantities brought in step with our stock (utils/ebayStockSync.js — eBay Add step 3,
+                 2026-11-01). Outside the transaction and never allowed to fail the run: the orders are already saved; a size eBay
+                 didn't take is retried next run. Not on the button's line (owner: the total of new orders only) — its own bclog row.
 
 HISTORY: until 2026-11-01 the Shopify half also ran from cron as C:\scripts\orders\update_orders.py (a Python twin of these rules)
 and eBay had its own cron script, timed 5 minutes apart because the Python took no lock. Both retired: this is the only copy.
@@ -36,6 +39,7 @@ SCOPE NOTE — phases E and F reach outside customer orders:
 
 const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
+const { syncEbayStock } = require('./ebayStockSync');
 const logger = require('./logger');
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -337,6 +341,19 @@ async function runOrderSync({ by }) {
 
   logger.info(`[orderSync] ${by}: ${result.log}`);
   if (result.notes.length) logger.error(`[orderSync] notes: ${result.notes.join(' | ')}`);
+
+  // ---- 3. EBAY STOCK (after the commit — never fails the run) -----------------------------------------------------------------
+  try {
+    result.ebayStock = await syncEbayStock({ by });
+    const s = result.ebayStock;
+    if (s.updated.length || s.failed.length) {
+      logger.info(`[orderSync] eBay stock: ${s.updated.length} updated, ${s.failed.length} failed of ${s.checked}`);
+    }
+    if (s.failed.length) logger.error(`[orderSync] eBay stock failures: ${s.failed.map((f) => `${f.code}: ${f.error}`).join(' | ')}`);
+  } catch (err) {
+    result.ebayStock = { error: err.message };
+    logger.error(`[orderSync] eBay stock sync failed (orders are saved): ${err.message}`);
+  }
   return result;
 }
 

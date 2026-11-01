@@ -20,7 +20,16 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
            E  allocate picks           ONCE, for every channel's orders
            F  housekeeping             six statements
            bclog row                   section 'Order Sync', workstation = user or 'cron'
+3 EBAY STOCK  after the commit: utils/ebayStockSync.js — eBay quantities in step with our stock
 ```
+
+- **eBay stock (step 3, 2026-11-01).** After the orders are saved, every size on a live BCWEB eBay listing
+  (`ebay_listing_size`) gets our Stock (local `#FREE` + FBA live) sent to eBay, **only where it differs from the
+  quantity last sent** (`qty_sent`). Comparing with what we sent, not with eBay's count, stops an eBay FBA sale
+  being put back before the next Update Amazon import. Inventory API `bulkUpdatePriceQuantity`, 25 a call; a size
+  eBay refuses keeps its old `qty_sent` and is retried next run. Its own bclog row (section 'eBay') when anything
+  changed. Outside the transaction and caught, so it **never fails the run**. Sizes not yet on a listing are not
+  added (a later step).
 
 - **The lock** serialises everything: two people pressing, a double-click, a press during the cron. The second
   run waits a few seconds, then finds nothing to do. No timing gaps are needed in the crontab.
