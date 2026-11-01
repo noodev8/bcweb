@@ -51,7 +51,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon,
+  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -121,6 +121,9 @@ const GROUPS: Group[] = [
       { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
       { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
       { title: 'Slow movers', subtitle: "Sizes that haven't sold", description: 'Every size held, by how long since it last sold.', href: '/analytics/slow-sizes', icon: ClockIcon },
+      // eBay listings (2026-11-01) — read only for now: what's live on eBay, checked against our stock. Next to Slow movers: eBay is
+      // where the clearance stock goes.
+      { title: 'eBay listings', subtitle: "What's live on eBay", description: 'Every live eBay listing, read from eBay and checked against our stock and the postage rules.', href: '/ebay', icon: GlobeAltIcon },
       { title: 'Seasons', subtitle: 'Summer, winter or all year', description: 'Each style’s year of sales against its season — re-season in bulk.', href: '/seasons', icon: CalendarIcon },
       { title: 'Brands', subtitle: 'What each brand earned', description: 'Revenue, profit and margin per brand over the last year or six months.', href: '/brands', icon: ChartPieIcon },
       { title: 'Shop Labels', subtitle: 'Print shop price labels', description: 'Pick styles and print their price labels for the shop.', href: '/shop-labels', icon: PrinterIcon },
@@ -181,10 +184,10 @@ export default function DashboardPage() {
 
       <Daily />
 
-      <h2 className="mb-3 mt-8 text-sm font-semibold text-slate-500">Everything else</h2>
-      {/* Two rows of three; each row's panel opens directly under it. */}
+      {/* Two rows of three; each row's panel opens directly under it. No heading (owner, 2026-11-01: remove "Everything else") —
+          the first row keeps the gap below Daily that the heading used to give. */}
       {[0, 3].map((i) => (
-        <div key={i} className={i === 0 ? '' : 'mt-3'}>
+        <div key={i} className={i === 0 ? 'mt-8' : 'mt-3'}>
           <GroupRow groups={GROUPS.slice(i, i + 3)} openId={openId} onToggle={setOpenId} />
         </div>
       ))}

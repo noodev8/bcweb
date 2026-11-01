@@ -4956,6 +4956,42 @@ export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
 }
 
 // =============================================================================================================================
+// eBay listings (/ebay, server routes/ebay-listings.js → utils/ebayListings.js) — what is live on eBay, read from eBay, each line
+// matched to our code and stock and checked. READ ONLY. Flag codes are the server's (checkLine); the screen owns their wording.
+// =============================================================================================================================
+export type EbayFlag =
+  | 'unknown' | 'birkenstock' | 'oversell'             // problems
+  | 'postage_paid'                                     // check against the postage rule (free postage)
+  | 'sold_out' | 'more_held';                          // info
+export interface EbayListingLine {
+  sku: string | null; size: string | null; ebay_size: string | null;
+  ebay_price: number | null; ebay_qty: number; ebay_sold: number; ebay_available: number;
+  known: boolean; groupid: string | null; brand: string | null; shopify_title: string | null; shopify_price: number | null;
+  local: number; fba: number;
+  sold_30d: number;        // OUR eBay sales (EBY) of this code in the last 30 days, net — not eBay's since-listed count
+  profit: number | null;   // one sale at eBay's price (utils/ebayProfit.js)
+  flags: EbayFlag[];
+}
+export interface EbayListing {
+  item_id: string; title: string; url: string | null; format: 'fixed';   // fixed price only — the server leaves auctions out
+  started: string | null; ends: string | null;   // ISO; Good 'Til Cancelled = the next monthly renewal
+  duration: string | null; watchers: number; category: string | null;
+  postage: { service: string | null; cost: number | null; free: boolean; policy: string | null; dispatch_days: number | null };
+  returns: { within: string | null; paid_by: string | null };
+  flags: EbayFlag[];
+  lines: EbayListingLine[];
+}
+export interface EbayListingsSummary {
+  listings: number; skipped: number; problems: number; checks: number; watchers: number;   // skipped = auctions (not shown)
+}
+export function getEbayListings() {
+  return request<{ read_at: string; truncated: boolean; summary: EbayListingsSummary; listings: EbayListing[] }>(
+    { url: '/ebay-listings', method: 'GET', timeout: 120000 },
+    (b) => ({ read_at: b.read_at, truncated: b.truncated === true, summary: b.summary, listings: (b.listings || []) as EbayListing[] })
+  );
+}
+
+// =============================================================================================================================
 // QZ Tray label printing (src/lib/labelPrinter.ts, docs/qz-tray-plan.md)
 // =============================================================================================================================
 // The public certificate QZ Tray checks against each PC's override.crt.

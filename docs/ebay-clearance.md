@@ -79,6 +79,8 @@ Fees seen: insertion **£0.36** per listing (some free), plus eBay's final value
 
 ## Checking listings
 
+- **BCWEB → Products & stock → eBay listings** (`/ebay`, 2026-11-01): every live listing read from eBay, matched to our stock
+  (local + FBA), with the checks (not ours, Birkenstock, eBay shows more than we hold, postage rules, sold out). Read only.
 - **Seller Hub → Listings → Active** (fixed price), **All auctions**, **Unsold and not relisted**.
 - **Orders → Awaiting postage**: what to pick and send. Note the CustomLabel (our code) and the shelf.
 - Results files from each upload give ItemIDs.
