@@ -185,12 +185,13 @@ function toTerms(raw, rawBracket) {
 
 router.get('/', async (req, res) => {
   try {
-    // Channel: 'all' (no filter, so CM3 is included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ' | 'cm3' -> 'CM3' (the shop, 2026-10-27).
-    // Anything else falls back to 'all'.
+    // Channel: 'all' (no filter, so CM3 and eBay are included) | 'shp' -> 'SHP' | 'amz' -> 'AMZ' | 'eby' -> 'EBY' (eBay, booked by the
+    // Update Orders press since 2026-11-01) | 'cm3' -> 'CM3' (the shop, 2026-10-27). Anything else falls back to 'all'.
+    const CODES = { shp: 'SHP', amz: 'AMZ', eby: 'EBY', cm3: 'CM3' };
     const rawChannel = String(req.query.channel || 'all').toLowerCase();
-    const channel = rawChannel === 'shp' || rawChannel === 'amz' || rawChannel === 'cm3' ? rawChannel : 'all';
+    const channel = CODES[rawChannel] ? rawChannel : 'all';
     const channelAll = channel === 'all';
-    const channelCode = channel === 'shp' ? 'SHP' : channel === 'amz' ? 'AMZ' : channel === 'cm3' ? 'CM3' : null;
+    const channelCode = CODES[channel] || null;
 
     // Window: one of the presets. Default 'today' (the freshest pulse; one click to yesterday / 3 days / the longer totals).
     let window = String(req.query.window || 'today').toLowerCase();

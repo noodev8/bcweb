@@ -24,8 +24,9 @@ Status module's local rows — see the SCOPE NOTE in utils/orderSync.js for exac
 
 EBAY (2026-11-01, owner: the same button, not a separate one). eBay orders are fetched beside Shopify's (utils/ebayOrders.js, outside
 the transaction) and written FIRST inside it (utils/ebayOrderSync.js), so phase E allocates them in the same press. eBay is SOFT: not
-configured, or eBay down, and the Shopify run still happens — the headline says eBay wasn't checked. eBay has no Python twin and the
-cron never fetches it, so eBay orders only arrive on a press. `ebay` in the response is null when eBay wasn't run.
+configured, or eBay down, and the Shopify run still happens — the headline says eBay wasn't checked. eBay has no Python twin; the cron
+reaches it through scripts/ebay-order-sync.js instead. eBay SALES (channel EBY) are booked in the eBay step as each new order is
+written (utils/ebayProfit.js). `ebay` in the response is null when eBay wasn't run.
 =======================================================================================================================================
 Request: no body.
 
@@ -33,10 +34,10 @@ Success Response:
 { "return_code": "SUCCESS",
   "fetched": { "orders": 41, "pages": 1, "truncated": false },
   "summary": { "orders": {...}, "sales": {...}, "archive": {...}, "picks": {...}, "housekeeping": {...}, "notes": [...] },
-  "ebay": { "open": 2, "newOrders": 2, "inserted": 2, "updated": 0, "posted": 0, "cancelled": 0, "picksRemoved": 0, "picksFreed": 0,
+  "ebay": { "open": 2, "newOrders": 2, "inserted": 2, "updated": 0, "salesBooked": 2, "salesRemoved": 0, "posted": 0, "cancelled": 0, "picksRemoved": 0, "picksFreed": 0,
             "linesWithoutSku": 0, "unresolved": 0, "truncated": false, "attention": false, "notes": [] } | null,
   "ebayError": "…" | null,
-  "headline": "2 new orders · 2 new eBay" }  // or "No new orders"
+  "headline": "2 new orders" }  // every channel in one count; or "No new orders". Plus "· eBay not checked" / "· eBay: see notes"
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "SHOPIFY_NOT_CONFIGURED" · "SHOPIFY_FETCH_FAILED" · "UNAUTHORIZED" · "SERVER_ERROR"
@@ -60,20 +61,16 @@ router.use(verifyToken);
  * headlineOf(summary, ebay, ebayError) -> 'the one line the button shows'
  * Answers "were there any new orders?" (owner, 2026-09-25) — counted as distinct ORDERS, not orderstatus rows, so a 3-item order
  * reads "1 new order". "New" means new to our database: orders the cron (update_orders.py) already pulled in won't count again.
- * eBay adds its own part, because the button chip is the only place a run's outcome is shown: new eBay orders, and anything a person
- * must act on (a cancelled pair to put back, a missing Custom label) — the detail is in ebay.notes and the server log.
+ * ONE COUNT ACROSS CHANNELS (owner, 2026-11-01: "Just new sales have come in" — the Sales list shows which channel each is from).
+ * The only extras are things a person must act on: eBay couldn't be read, or an eBay note (a cancelled pair to put back, a missing
+ * Custom label) — the detail is in ebay.notes and the server log.
  * Also feeds the bclog audit row (varchar(500)), which is what /order-sync-last reads back for the "last run" stamp.
  */
 function headlineOf(s, ebay, ebayError) {
-  const n = s.orders.newOrders;
+  const n = s.orders.newOrders + (ebay ? ebay.newOrders : 0);
   const parts = [n ? `${n} new order${n === 1 ? '' : 's'}` : 'No new orders'];
   if (ebayError) parts.push('eBay not checked');
-  else if (ebay) {
-    if (ebay.newOrders) parts.push(`${ebay.newOrders} new eBay`);
-    if (ebay.posted) parts.push(`${ebay.posted} eBay posted`);
-    if (ebay.cancelled) parts.push(`${ebay.cancelled} eBay cancelled`);
-    if (ebay.attention) parts.push('eBay: see notes');
-  }
+  else if (ebay && ebay.attention) parts.push('eBay: see notes');
   return parts.join(' · ');
 }
 

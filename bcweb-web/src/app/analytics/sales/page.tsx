@@ -78,12 +78,13 @@ import {
 // state, so the screen can never describe itself with a filter that isn't the one on display.
 type SalesView = SalesReportData & { usedSteps: SalesFilterStep[] };
 
-type ChannelFilter = 'all' | 'shp' | 'amz' | 'cm3';
+type ChannelFilter = 'all' | 'shp' | 'amz' | 'eby' | 'cm3';
 
 const CHANNEL_TABS: { key: ChannelFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'shp', label: 'Shopify' },
   { key: 'amz', label: 'Amazon' },
+  { key: 'eby', label: 'eBay' },  // 2026-11-01 — eBay sales are booked by the Update Orders press (utils/ebayOrderSync.js)
   { key: 'cm3', label: 'CM3' },   // the shop (Shop Sale), 2026-10-27 — "good to see what the shop is doing"
 ];
 
@@ -105,6 +106,7 @@ const LONG_WINDOW_TABS: { key: SalesWindow; label: string }[] = [
 const CHANNEL_CHIP: Record<string, { label: string; cls: string }> = {
   SHP: { label: 'Shopify', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
   AMZ: { label: 'Amazon', cls: 'bg-amber-50 text-amber-800 ring-amber-200' },
+  EBY: { label: 'eBay', cls: 'bg-sky-50 text-sky-700 ring-sky-200' },
   CM3: { label: 'CM3', cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
 };
 
@@ -157,7 +159,7 @@ function SalesPageContent() {
     return {
       steps,
       lastFind,
-      channel: (ch === 'shp' || ch === 'amz' || ch === 'cm3' ? ch : 'all') as ChannelFilter,
+      channel: (ch === 'shp' || ch === 'amz' || ch === 'eby' || ch === 'cm3' ? ch : 'all') as ChannelFilter,
       win: (w && winKeys.includes(w) ? w : 'today') as SalesWindow,
       sort: (searchParams.get('sort') === 'product' ? 'product' : 'date') as SalesSort,
       dir: (searchParams.get('dir') === 'asc' ? 'asc' : 'desc') as SalesSortDir,

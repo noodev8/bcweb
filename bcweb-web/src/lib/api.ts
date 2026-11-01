@@ -2146,7 +2146,7 @@ export function getPriceChanges(
 export interface SalesReportRow {
   solddate: string | null;   // 'YYYY-MM-DD'
   ordertime: string | null;  // 'HH:MM' (may be null on legacy rows)
-  channel: 'SHP' | 'AMZ' | 'CM3';
+  channel: 'SHP' | 'AMZ' | 'EBY' | 'CM3';
   code: string | null;       // full SKU code
   size: string | null;       // EU size (RIGHT(code,2))
   groupid: string | null;    // style key
@@ -2189,7 +2189,7 @@ export interface SalesFilterStep {
 export type SalesSort = 'date' | 'product';
 export type SalesSortDir = 'asc' | 'desc';
 export interface SalesReportData {
-  channel: 'all' | 'shp' | 'amz' | 'cm3';
+  channel: 'all' | 'shp' | 'amz' | 'eby' | 'cm3';
   window: SalesWindow;
   searchActive: boolean;     // true = product mode (window ignored, all-time match capped at 50); false = window pulse mode
   summaryOnly: boolean;      // true = long window: totals only, no rows fetched (UI hides the table and explains)
@@ -2208,7 +2208,7 @@ export interface SalesReportData {
 // Load the Sales report — sale lines for the selected channel + window plus a product search, with the net-profit summary. Returns
 // included. Short windows (today/yesterday/3d) carry the lines; long windows (7/30/90d) come back summary-only (totals, no rows).
 export function getSalesReport(params: {
-  channel?: 'all' | 'shp' | 'amz' | 'cm3';
+  channel?: 'all' | 'shp' | 'amz' | 'eby' | 'cm3';
   window?: SalesWindow;
   steps?: SalesFilterStep[];
   limit?: number;
@@ -2235,7 +2235,7 @@ export function getSalesReport(params: {
       },
     },
     (b) => ({
-      channel: (b.channel as 'all' | 'shp' | 'amz' | 'cm3') || 'all',
+      channel: (b.channel as 'all' | 'shp' | 'amz' | 'eby' | 'cm3') || 'all',
       window: (b.window as SalesWindow) || 'today',
       searchActive: !!b.searchActive,
       summaryOnly: !!b.summaryOnly,

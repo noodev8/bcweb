@@ -59,7 +59,7 @@ const gbpK = (v: number) => (Math.abs(v) < 10000 ? gbp(v) : `${v < 0 ? '−' : '
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dateLabel = (s: string) => `${Number(s.slice(8, 10))} ${MONTHS[Number(s.slice(5, 7)) - 1]} ${s.slice(2, 4)}`;
 
-const NAMES: Record<string, string> = { SHP: 'Shopify', AMZ: 'Amazon', CM3: 'CM3 shop' };
+const NAMES: Record<string, string> = { SHP: 'Shopify', AMZ: 'Amazon', EBY: 'eBay', CM3: 'CM3 shop' };
 const nameOf = (code: string) => NAMES[code] ?? code;
 
 // The "where every £ goes" bar: costs light to mid slate, what's left the darkest — no channel colours (owner, 2026-10-15).

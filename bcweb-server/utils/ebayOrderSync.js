@@ -26,8 +26,12 @@ WHAT IT WRITES
                 already picked (0) or marked re-stock (-2) -> '#FREE' with qty 1, and a NOTE saying to put it back at its location —
                                                               the system counts it on the shelf from now on, so a person must make that true.
                 marked not found (-1)                      -> left as it is (the pair is missing; freeing it would invent stock), NOTE.
-  NO SALES ROWS — booking eBay sales is deferred (owner, 2026-10-31). When it comes it goes AFTER phase E, so profit can use MCF or our
-  own postage depending on where the pair came from.
+  SALE        (2026-11-01, owner: "Do it now") one `sales` row per NEW order line, booked as the row is written — Shopify's phase B
+              rule, so a re-press never double-books — channel 'EBY', soldprice = the per-unit ITEM price (postage is not revenue, as
+              on Shopify), profit from utils/ebayProfit.js (eBay fees ex VAT, always the Royal Mail figure — owner: no MCF split),
+              collectedvat NULL and discount 0 as Shopify writes them, paytype 'EBAY'. A second guard checks `sales` itself for an EBY row
+              on the same order + code, so an order archived and seen again still can't book twice. No groupid -> no sale, with a note.
+              A CANCELLED order's EBY rows are DELETED: the sale never happened (unlike a return, which is a later event).
 
 REFUSED LINES: a line with no SKU (eBay's "Custom label" left blank) can't be matched to a shoe — skipped with a note; fix the label on
 eBay and press again. A SKU we don't know is still written (it has to be posted), with a note — the same as Shopify's sync.
@@ -35,6 +39,8 @@ eBay and press again. A SKU we don't know is still written (it has to be posted)
 */
 
 const { safe, ARCHIVE_COLS } = require('./orderSync');
+const { ebayProfit } = require('./ebayProfit');
+const { safeNumeric } = require('./sql');
 
 // '22-15343-31982' -> 'EB22-15343-31982'
 const ordernumOf = (orderId) => `EB${orderId}`;
@@ -60,7 +66,9 @@ function courierOf(serviceCode) {
   return /24|NextDay/i.test(String(serviceCode || '')) ? '4' : '5';
 }
 
-// Fold an order's lines by SKU (orderstatus is keyed ordernum + SKU) — same reason as orderSync.js → lineItemsBySku.
+// Fold an order's lines by SKU (orderstatus is keyed ordernum + SKU) — same reason as orderSync.js → lineItemsBySku. eBay's
+// lineItemCost and deliveryCost are LINE totals (all units), so they're summed here and divided per unit when the sale is booked.
+const money = (m) => (m && m.value !== undefined ? Number(m.value) || 0 : 0);
 function linesBySku(order) {
   const bySku = new Map();
   let noSku = 0;
@@ -68,11 +76,50 @@ function linesBySku(order) {
     const sku = safe(li.sku);
     if (!sku) { noSku += 1; continue; }
     const qty = Number(li.quantity) || 0;
+    const itemTotal = money(li.lineItemCost);
+    const postageTotal = money(li.deliveryCost && li.deliveryCost.shippingCost);
     const had = bySku.get(sku);
-    if (had) had.qty += qty;
-    else bySku.set(sku, { sku, qty, title: li.title });
+    if (had) { had.qty += qty; had.itemTotal += itemTotal; had.postageTotal += postageTotal; }
+    else bySku.set(sku, { sku, qty, title: li.title, itemTotal, postageTotal });
   }
   return { lines: [...bySku.values()], noSku };
+}
+
+/*
+ * bookSale(client, order, line, ordernum, created) -> 'inserted' | 'no-groupid' | 'duplicate'
+ * The eBay twin of orderSync.js → insertSale (phase B). One row per order line, per-unit price and profit, qty = units.
+ */
+async function bookSale(client, order, line, ordernum, created) {
+  const g = await client.query(
+    `SELECT sm.groupid, ss.brand, ss.cost, ${safeNumeric('ss.rrp')} AS rrp
+       FROM skumap sm LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
+      WHERE sm.code = $1 LIMIT 1`,
+    [line.sku]
+  );
+  const meta = g.rows[0];
+  if (!meta || !meta.groupid) return 'no-groupid';
+
+  const dup = await client.query(
+    `SELECT 1 FROM sales WHERE channel = 'EBY' AND ordernum = $1 AND code = $2 AND qty > 0 LIMIT 1`, [ordernum, line.sku]
+  );
+  if (dup.rows.length) return 'duplicate';
+
+  const units = Math.max(line.qty, 1);
+  const price = Math.round((line.itemTotal / units) * 100) / 100;
+  const orderUnits = (order.lineItems || []).reduce((n, li) => n + (Number(li.quantity) || 0), 0);
+  const profit = ebayProfit({
+    price, postage: line.postageTotal / units, cost: meta.cost,
+    orderTotal: money(order.pricingSummary && order.pricingSummary.total), orderUnits
+  });
+
+  await client.query(
+    `INSERT INTO sales (code, solddate, groupid, ordernum, ordertime, qty, soldprice, channel, paytype,
+                        collectedvat, productname, brand, profit, discount, rrp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'EBY', 'EBAY', NULL, $8, $9, $10, 0, $11)`,
+    [safe(line.sku, 50), created ? created.date : null, safe(meta.groupid, 50), safe(ordernum, 50), created ? created.time : '',
+     line.qty, price, safe(line.title, 200), safe(meta.brand, 50), profit, meta.rrp]
+  );
+  return 'inserted';
 }
 
 async function archiveOrder(client, ordernum) {
@@ -94,7 +141,7 @@ async function syncEbayOrders(client, fetched) {
   // client later in the transaction doesn't block — but a second press can't interleave its eBay writes with ours.
   await client.query(`SELECT pg_advisory_xact_lock(hashtext('bcweb_order_sync'))`);
 
-  const out = { open: fetched.open.length, newOrders: 0, inserted: 0, updated: 0, posted: 0, cancelled: 0,
+  const out = { open: fetched.open.length, newOrders: 0, inserted: 0, updated: 0, salesBooked: 0, salesRemoved: 0, posted: 0, cancelled: 0,
                 picksRemoved: 0, picksFreed: 0, linesWithoutSku: 0, unresolved: fetched.unresolved.length, truncated: fetched.truncated,
                 attention: false, notes: [] };
 
@@ -184,6 +231,12 @@ async function syncEbayOrders(client, fetched) {
       );
       out.inserted += 1;
       isNew = true;
+
+      // The sale rides on a genuinely new row only (Shopify's phase B rule).
+      const sale = await bookSale(client, order, line, ordernum, created);
+      if (sale === 'inserted') out.salesBooked += 1;
+      else if (sale === 'no-groupid') out.notes.push(`${ordernum} / ${line.sku}: no groupid for that code — order written, sale NOT booked`);
+      else out.notes.push(`${ordernum} / ${line.sku}: sale already booked — not booked again`);
     }
     if (isNew) out.newOrders += 1;
 
@@ -211,8 +264,10 @@ async function syncEbayOrders(client, fetched) {
       continue;
     }
 
-    // Cancelled — give the shoe back. See the header for the three cases.
+    // Cancelled — the sale never happened, and the shoe goes back. See the header for the cases.
     out.cancelled += 1;
+    const unbooked = await client.query(`DELETE FROM sales WHERE channel = 'EBY' AND ordernum = $1`, [ordernum]);
+    out.salesRemoved += unbooked.rowCount || 0;
     const picks = await client.query(
       `SELECT id, code, location, qty FROM localstock WHERE ordernum = $1 AND COALESCE(deleted, 0) = 0`, [ordernum]
     );
