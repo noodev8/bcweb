@@ -159,7 +159,13 @@ export default function ImagesMissingPage() {
               {s.added_in_shopify > 0 && (
                 <>
                   <span className="text-slate-300"> · </span>
-                  <button type="button" onClick={() => setInShopify((v) => !v)} className="text-amber-700 hover:underline">
+                  {/* The count covers the WHOLE list, so the click clears the other filters — under the default
+                      Single image + In stock view the product may be hidden (out of stock, or already 2+ images here). */}
+                  <button type="button" onClick={() => {
+                    const on = !inShopify;
+                    setInShopify(on);
+                    if (on) { setShow('all'); setStock('all'); setMarked(false); setLowRes(false); setStatus(''); setBrand(''); setTerm(''); }
+                  }} className="text-amber-700 hover:underline">
                     {s.added_in_shopify} with images added in Shopify
                   </button>
                 </>
