@@ -25,6 +25,9 @@ time"): a listing that needs a look gets a warning icon after its code (hover = 
   info   sold out / we can sell more — NOT shown: the On eBay and Stock numbers already say it
 "Needs a look" = any red or amber; those listings sort first, and the Needs a look filter shows only them.
 
+TWO VIEWS (Add build step 1, 2026-11-01): On eBay (this file — Checking) | Not on eBay (NotOnEbay.tsx — styles that could be listed,
+with a readiness check). ?view=not opens the second; the switch itself doesn't touch the URL. Each view fetches only when shown.
+
 REFRESH, LIKE FAST SELLERS: each load is a live eBay call, so the list changes only when Refresh is pressed (or the page is opened) —
 SWR's own refetches are off for this key. The time of the read shows beside the button.
 =======================================================================================================================================
@@ -33,6 +36,8 @@ SWR's own refetches are off for this key. The time of the read shows beside the 
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ArrowPathIcon, ChevronRightIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import { useUrlParam } from '@/lib/useUrlParam';
+import NotOnEbay from './NotOnEbay';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getEbayListings, type EbayFlag, type EbayListing, type EbayListingLine } from '@/lib/api';
 
@@ -76,7 +81,36 @@ function londonDay(iso: string) {
   return new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' });
 }
 
+type View = 'on' | 'not';
+
 export default function EbayListingsPage() {
+  // ?view=not opens Not on eBay; undefined = no click yet, so the URL decides (as the dashboard's ?g=).
+  const urlView = useUrlParam('view') === 'not' ? 'not' : 'on';
+  const [chosen, setChosen] = useState<View | undefined>(undefined);
+  const view = chosen ?? urlView;
+
+  return (
+    <AppShell title="eBay listings">
+      <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-1" role="tablist">
+        {([['on', 'On eBay'], ['not', 'Not on eBay']] as [View, string][]).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={view === k}
+            onClick={() => setChosen(k)}
+            className={'rounded-md px-4 py-1.5 text-sm font-medium transition ' + (view === k ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'on' ? <OnEbay /> : <NotOnEbay />}
+    </AppShell>
+  );
+}
+
+function OnEbay() {
   // Manual only — see REFRESH in the header.
   const { data, error, isLoading, busy, refresh } = useApiQuery(['ebay-listings'], () => getEbayListings(), {
     revalidateIfStale: false, revalidateOnReconnect: false,
@@ -105,7 +139,7 @@ export default function EbayListingsPage() {
   const s = data?.summary;
 
   return (
-    <AppShell title="eBay listings">
+    <>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -202,7 +236,7 @@ export default function EbayListingsPage() {
           </div>
         </>
       )}
-    </AppShell>
+    </>
   );
 }
 

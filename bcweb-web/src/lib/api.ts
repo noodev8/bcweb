@@ -4984,6 +4984,30 @@ export interface EbayListing {
 export interface EbayListingsSummary {
   listings: number; skipped: number; problems: number; checks: number; watchers: number;   // skipped = auctions (not shown)
 }
+// The "Not on eBay" view (server routes/ebay-candidates.js, rules utils/ebayListingRules.js) — styles in stock not on eBay yet, each
+// with a readiness check. READ ONLY. missing = blocks listing; todo = the listing form will ask (material).
+export type EbayMissing = 'category' | 'photos' | 'description' | 'price' | 'uk_size' | 'barcode' | 'title' | 'title_long';
+export interface EbayCandidateSize { code: string; uk_size: string | null; ean: string | null; local: number; fba: number }
+export interface EbayCandidate {
+  groupid: string; title: string | null; brand: string | null; gender: string | null; producttype: string | null;
+  category: { id: number; name: string } | null; department: string | null;
+  style: { value: string; from: 'title' | 'default' } | null;
+  material: { value: string; from: 'stored' | 'title' } | null;
+  type: string | null; colour: string | null;
+  price: number | null; rrp: number | null;
+  profit: number | null;   // one sale at the Shopify price + the £4.50 postage the buyer pays (EBY formula)
+  photos: number; has_description: boolean; title_length: number;
+  local: number; fba: number; stock: number;
+  sizes: EbayCandidateSize[];
+  missing: EbayMissing[]; todo: 'material'[]; status: 'ready' | 'todo' | 'missing';
+}
+export function getEbayCandidates() {
+  return request<{ read_at: string; on_ebay_styles: number; summary: { styles: number; ready: number; todo: number; missing: number }; rows: EbayCandidate[] }>(
+    { url: '/ebay-candidates', method: 'GET', timeout: 120000 },
+    (b) => ({ read_at: b.read_at, on_ebay_styles: b.on_ebay_styles ?? 0, summary: b.summary, rows: (b.rows || []) as EbayCandidate[] })
+  );
+}
+
 export function getEbayListings() {
   return request<{ read_at: string; truncated: boolean; summary: EbayListingsSummary; listings: EbayListing[] }>(
     { url: '/ebay-listings', method: 'GET', timeout: 120000 },

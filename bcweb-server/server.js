@@ -94,6 +94,8 @@ app.use('/screen-view', require('./routes/screen-view'));
 app.use('/ebay-account-deletion', require('./routes/ebay-account-deletion'));
 // eBay listings (2026-11-01): what is live on eBay, read from eBay on Refresh and checked against our stock — READ ONLY (utils/ebayListings.js)
 app.use('/ebay-listings', require('./routes/ebay-listings'));
+// eBay Add, step 1 (2026-11-01): styles in stock not on eBay yet, with a readiness check against utils/ebayListingRules.js — READ ONLY
+app.use('/ebay-candidates', require('./routes/ebay-candidates'));
 
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));

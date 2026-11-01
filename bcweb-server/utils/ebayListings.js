@@ -123,7 +123,8 @@ function parseItem(itemXml) {
 }
 
 /*
- * fetchActiveListings() -> { listings, skipped, truncated } — listings = fixed price only; skipped = live listings of any other format
+ * fetchActiveListings() -> { listings, skipped, skippedSkus, truncated } — listings = fixed price only; skipped = how many live listings
+ * of any other format (auctions); skippedSkus = the SKUs (our codes) inside those, so "is this style on eBay?" counts them too
  * Throws EBAY_NOT_CONFIGURED / EBAY_ERROR (utils/ebayTrading.js).
  */
 async function fetchActiveListings() {
@@ -136,6 +137,7 @@ async function fetchActiveListings() {
   const to = new Date(from.getTime() + WINDOW_DAYS * 86400000);
   const listings = [];
   let skipped = 0;
+  const skippedSkus = [];
   let truncated = false;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const xml = await tradingCall('GetSellerList',
@@ -145,12 +147,13 @@ async function fetchActiveListings() {
     for (const itemXml of xmlBlocks(xmlBlock(xml, 'ItemArray'), 'Item')) {
       const l = parseItem(itemXml);
       if (l.status !== 'Active') continue;
-      if (l.format === 'fixed') listings.push(l); else skipped += 1;
+      if (l.format === 'fixed') listings.push(l);
+      else { skipped += 1; for (const x of l.lines) if (x.sku) skippedSkus.push(x.sku); }
     }
     if (xmlTag(xml, 'HasMoreItems') !== 'true') break;
     if (page === MAX_PAGES) truncated = true;
   }
-  return { listings, skipped, truncated };
+  return { listings, skipped, skippedSkus, truncated };
 }
 
 /*
