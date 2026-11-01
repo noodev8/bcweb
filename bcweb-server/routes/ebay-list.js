@@ -12,7 +12,9 @@ THE ORDER:
   1. Validate the form (price > 0, Style and material 1–65 characters).
   2. Re-check at the moment of listing, never trusting the screen: eBay is read live (nothing of this style may be on eBay already,
      fixed price or auction) and the style is re-loaded through utils/ebayCandidates.js — the same rules as the view: it must have stock,
-     not be Birkenstock, and not be blocked. A live ebay_listing row for the style also refuses (ALREADY_ON_EBAY).
+     not be Birkenstock, and not be blocked. A live ebay_listing row for the style also refuses (ALREADY_ON_EBAY) — unless eBay no
+     longer has that listing live (ended in Seller Hub, not with the End button): then the row is marked ended ('eBay (ended outside
+     BCWEB)') and the listing goes ahead. Only on a full eBay read; a truncated one can't prove it's gone.
   3. Publish (utils/ebayPublish.js — idempotent, so a failed press can be pressed again).
   4. ONE transaction: the ebay_listing row + an ebay_listing_size row per size (offer, quantity sent), the material saved back to
      skusummary.material when it differs from what was stored, and a bclog row (section 'eBay'). If this fails after eBay published,
@@ -73,11 +75,18 @@ router.post('/', async (req, res) => {
   let cand;
   let setup;
   try {
-    const live = await query('SELECT item_id FROM ebay_listing WHERE groupid = $1 AND ended_at IS NULL', [groupid]);
+    const read = await fetchActiveListings();
+    const live = await query('SELECT id, item_id FROM ebay_listing WHERE groupid = $1 AND ended_at IS NULL', [groupid]);
     if (live.rows.length) {
-      return res.json({ return_code: 'ALREADY_ON_EBAY', message: `${groupid} is already listed (eBay item ${live.rows[0].item_id})` });
+      const stillLive = read.listings.some((l) => l.item_id === live.rows[0].item_id);
+      // Our record says live, but eBay no longer has it (ended in Seller Hub, not with the End button): record it as ended and carry
+      // on — a full read only; a truncated one can't prove it's gone.
+      if (stillLive || read.truncated) {
+        return res.json({ return_code: 'ALREADY_ON_EBAY', message: `${groupid} is already listed (eBay item ${live.rows[0].item_id})` });
+      }
+      await query("UPDATE ebay_listing SET ended_at = now(), ended_by = 'eBay (ended outside BCWEB)' WHERE id = $1", [live.rows[0].id]);
     }
-    const onEbayCodes = codesOnEbay(await fetchActiveListings());
+    const onEbayCodes = codesOnEbay(read);
     const { rows, onEbayStyles } = await loadCandidates({ onEbayCodes, groupid, full: true });
     if (onEbayStyles > 0) return res.json({ return_code: 'ALREADY_ON_EBAY', message: `A size of ${groupid} is on eBay already` });
     cand = rows[0];

@@ -45,8 +45,9 @@ import { ArrowPathIcon, ChevronRightIcon, ExclamationTriangleIcon, MagnifyingGla
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import NotOnEbay from './NotOnEbay';
+import { mutate } from 'swr';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getEbayListings, getEbayProfitPreview, setEbaySizePrice, type EbayFlag, type EbayListing, type EbayListingLine } from '@/lib/api';
+import { endEbayListing, getEbayListings, getEbayProfitPreview, setEbaySizePrice, type EbayFlag, type EbayListing, type EbayListingLine } from '@/lib/api';
 
 const NO_LISTINGS: EbayListing[] = [];
 
@@ -391,6 +392,14 @@ function shortDate(d: string) {
 }
 
 function SizesPanel({ listing: l }: { listing: EbayListing }) {
+  const [ended, setEnded] = useState<string | null>(null);   // the message once ended here
+  if (ended) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+        <span className="font-medium text-emerald-700">{ended}</span> Press Refresh to update the list — the style is back on Not on eBay.
+      </div>
+    );
+  }
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-3">
       <table className="min-w-full text-sm">
@@ -410,7 +419,10 @@ function SizesPanel({ listing: l }: { listing: EbayListing }) {
           {l.lines.map((x) => <SizePriceRow key={x.sku || x.size} line={x} />)}
         </tbody>
       </table>
-      <p className="mt-2 text-xs text-slate-400">A size&apos;s price changes on eBay only — Shopify stays per style. Set it back to the listing price to undo.</p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-400">A size&apos;s price changes on eBay only — Shopify stays per style. Set it back to the listing price to undo.</p>
+        <EndListing listing={l} onEnded={setEnded} />
+      </div>
     </div>
   );
 }
@@ -489,5 +501,54 @@ function SizePriceRow({ line: x }: { line: EbayListingLine }) {
         </div>
       </td>
     </tr>
+  );
+}
+
+// REMOVE (owner, 2026-11-01): end the whole BCWEB listing — POST /ebay-end. One inline confirm (no browser dialog). The style shows on
+// Not on eBay again and can be re-listed (a new eBay listing number). No stock moves; orders already placed are not affected.
+function EndListing({ listing: l, onEnded }: { listing: EbayListing; onEnded: (msg: string) => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const code = l.lines[0]?.groupid || l.item_id;
+
+  async function end() {
+    setBusy(true);
+    setErr(null);
+    const res = await endEbayListing(l.item_id);
+    setBusy(false);
+    if (res.success && res.data) {
+      // Not on eBay reads eBay only on Refresh; drop its cached read so the style shows there when it's next opened.
+      mutate(['ebay-candidates'], undefined, { revalidate: false });
+      onEnded(res.data.already_ended ? `${code} had already ended on eBay — recorded.` : `${code} ended on eBay.`);
+      return;
+    }
+    setConfirming(false);
+    setErr(res.error || 'Could not end the listing');
+  }
+
+  if (!confirming) {
+    return (
+      <div className="flex items-center gap-2">
+        {err && <span className="text-xs text-red-700">{err}</span>}
+        <button type="button" onClick={() => setConfirming(true)}
+          className="h-8 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+          End listing
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-900 ring-1 ring-red-200">
+      <span>End <strong className="font-mono">{code}</strong> on eBay? It comes off eBay now; you can list it again from Not on eBay.</span>
+      <button type="button" disabled={busy} onClick={end}
+        className="h-8 rounded-md bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+        {busy ? 'Ending…' : 'Yes, end it'}
+      </button>
+      <button type="button" disabled={busy} onClick={() => setConfirming(false)}
+        className="h-8 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+        Cancel
+      </button>
+    </div>
   );
 }

@@ -5040,6 +5040,15 @@ export function setEbaySizePrice(code: string, price: number) {
   );
 }
 
+// End a BCWEB eBay listing (server routes/ebay-end.js — WRITES TO EBAY, the whole listing). Failure codes: NOT_BCWEB_LISTING,
+// EBAY_ERROR (eBay's words), RECORD_FAILED (off eBay, not recorded).
+export function endEbayListing(itemId: string) {
+  return request<{ item_id: string; groupid: string; already_ended: boolean }>(
+    { url: '/ebay-end', method: 'POST', data: { item_id: itemId } },
+    (b) => ({ item_id: b.item_id, groupid: b.groupid, already_ended: b.already_ended === true })
+  );
+}
+
 export function getEbayListings() {
   return request<{ read_at: string; truncated: boolean; summary: EbayListingsSummary; listings: EbayListing[] }>(
     { url: '/ebay-listings', method: 'GET', timeout: 120000 },

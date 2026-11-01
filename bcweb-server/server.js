@@ -102,6 +102,8 @@ app.use('/ebay-list', require('./routes/ebay-list'));
 app.use('/ebay-profit-preview', require('./routes/ebay-profit-preview'));
 // eBay: a price for one size inside a BCWEB listing (dud sizes, set by hand) — WRITES TO EBAY + ebay_listing_size.price, bclog
 app.use('/ebay-size-price', require('./routes/ebay-size-price'));
+// eBay Remove: end a BCWEB listing (WRITES TO EBAY + ebay_listing.ended_at, bclog)
+app.use('/ebay-end', require('./routes/ebay-end'));
 
 // Segments module — overview heatmap read (registry-backed; self-heals via reconcile). Requires verifyToken (inside the router).
 app.use('/segments', require('./routes/segments'));
