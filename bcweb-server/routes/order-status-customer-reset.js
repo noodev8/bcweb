@@ -9,7 +9,7 @@ Purpose: The order box's Reset (owner, 2026-10-22: "give me a button to reset or
 
 BACK TO NEW, NOT "NEVER FBA" (owner's choice, 2026-10-22). Every sourcing flag is cleared — amz, localstock, ukd, othersupplier — and
 orderdate is blanked (the FBA "file made" stamp, the shelf-allocated stamp and Do not order all live there). That puts the line back
-in utils/orderSync.js phase E's candidate set (and update_orders.py's, its cron twin), which sorts it shelf → Amazon FBA → supplier.
+in utils/orderSync.js phase E's candidate set, which sorts it shelf → Amazon FBA → supplier.
 So an order with nothing on the shelf and stock at Amazon goes back to FBA at the next Update orders — the owner knows; nothing here
 stops it. A "don't use Amazon" rule would have to go into BOTH syncs.
 

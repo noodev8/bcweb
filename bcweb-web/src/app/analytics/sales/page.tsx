@@ -50,12 +50,9 @@ Purpose: The sales ledger an analyst opens to answer "how are we doing?" — rec
 
          UPDATE ORDERS (2026-07-28) sits at the right-hand end of the filter row — deliberately quiet, and deliberately NOT its own
          row. This screen is where you notice today's sales look thin, so this is where the "is that real, or has the update not run?"
-         button belongs. It runs the whole Shopify order pipeline (orders -> orderstatus, sales booked, shipped orders archived, picks
-         allocated, housekeeping) in one server-side transaction. The same control is on Customer Orders; both render the shared
+         button belongs. It runs the whole order run for every sales channel (orders -> orderstatus, sales booked, shipped orders
+         archived, picks allocated, housekeeping) in one server-side transaction — the same code the cron runs. The same control is on Customer Orders; both render the shared
          components/UpdateOrdersButton.tsx, whose header explains the two call sites and the label-vs-route naming.
-
-         !! THAT PIPELINE ALSO RUNS FROM CRON as C:\scripts\orders\update_orders.py — two implementations of one business process,
-            both live. Before changing what a run does, read the banner at the top of bcweb-server/utils/orderSync.js. !!
 
 Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order-sync-last.
 =======================================================================================================================================

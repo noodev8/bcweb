@@ -2,14 +2,11 @@
 =======================================================================================================================================
 Module: utils/ebayOrderSync.js
 =======================================================================================================================================
-Purpose: The eBay step of the Update Orders press (routes/order-sync.js). Takes what utils/ebayOrders.js read from eBay and writes it,
-         on the press's own transaction client, BEFORE utils/orderSync.js runs — so phase E allocates the new eBay pairs off the shelf
-         in the same press, exactly as it does Shopify's (owner, 2026-10-31: one Update Orders button, no separate eBay button).
-
-         !! NOT PART OF THE TWO-COPY PIPELINE. utils/orderSync.js and C:\scripts\orders\update_orders.py must stay identical; this
-            file has no Python twin ON PURPOSE. It writes only channel = 'EBAY' rows, which the cron never creates, refreshes or archives
-            (its phase C is channel = 'SHOPIFY', its pick clean-up is ordernum LIKE 'BC%'). The cron's phase E does allocate EB rows —
-            correctly, it's the same rule. The one consequence: eBay orders arrive only when someone PRESSES Update Orders. !!
+Purpose: The EBAY channel of Update Orders (utils/orderSync.js → runOrderSync — the button and the cron run the same code). Exports
+         `channel` in the shape every channel has (utils/orderChannels.js): fetch() is utils/ebayOrders.js (network, outside the
+         transaction), write() is syncEbayOrders below, on the run's transaction client. Pick allocation (phase E) runs once after every
+         channel has written, so new eBay pairs come off the shelf in the same run (owner, 2026-10-31: one Update Orders button).
+         It writes only channel = 'EBAY' rows; Shopify's archive (channel = 'SHOPIFY') and pick clean-up ('BC%') never touch them.
 
 WHAT IT WRITES
   NEW ORDER   one orderstatus row per order + SKU (the table's key), qty = units, every column as phase A writes a Shopify row except:
@@ -38,9 +35,11 @@ eBay and press again. A SKU we don't know is still written (it has to be posted)
 =======================================================================================================================================
 */
 
-const { safe, ARCHIVE_COLS } = require('./orderSync');
+const { safe, ARCHIVE_COLS } = require('./orderRows');
 const { ebayProfit } = require('./ebayProfit');
 const { safeNumeric } = require('./sql');
+const { query } = require('../database');
+const ebayOrders = require('./ebayOrders');
 
 // '22-15343-31982' -> 'EB22-15343-31982'
 const ordernumOf = (orderId) => `EB${orderId}`;
@@ -66,7 +65,7 @@ function courierOf(serviceCode) {
   return /24|NextDay/i.test(String(serviceCode || '')) ? '4' : '5';
 }
 
-// Fold an order's lines by SKU (orderstatus is keyed ordernum + SKU) — same reason as orderSync.js → lineItemsBySku. eBay's
+// Fold an order's lines by SKU (orderstatus is keyed ordernum + SKU) — same reason as shopifyOrderSync.js → lineItemsBySku. eBay's
 // lineItemCost and deliveryCost are LINE totals (all units), so they're summed here and divided per unit when the sale is booked.
 const money = (m) => (m && m.value !== undefined ? Number(m.value) || 0 : 0);
 function linesBySku(order) {
@@ -87,7 +86,7 @@ function linesBySku(order) {
 
 /*
  * bookSale(client, order, line, ordernum, created) -> 'inserted' | 'no-groupid' | 'duplicate'
- * The eBay twin of orderSync.js → insertSale (phase B). One row per order line, per-unit price and profit, qty = units.
+ * The eBay counterpart of shopifyOrderSync.js → insertSale (phase B). One row per order line, per-unit price and profit, qty = units.
  */
 async function bookSale(client, order, line, ordernum, created) {
   const g = await client.query(
@@ -134,13 +133,9 @@ async function archiveOrder(client, ordernum) {
 
 /*
  * syncEbayOrders(client, fetched) -> summary
- * fetched = utils/ebayOrders.js → fetchEbayOrders() result. Call inside the press's transaction, before runFullSync().
+ * fetched = utils/ebayOrders.js → fetchEbayOrders() result. Runs inside the order run's transaction, under its lock.
  */
 async function syncEbayOrders(client, fetched) {
-  // The same advisory lock runFullSync takes. Advisory locks are re-entrant within a session, so runFullSync taking it again on this
-  // client later in the transaction doesn't block — but a second press can't interleave its eBay writes with ours.
-  await client.query(`SELECT pg_advisory_xact_lock(hashtext('bcweb_order_sync'))`);
-
   const out = { open: fetched.open.length, newOrders: 0, inserted: 0, updated: 0, salesBooked: 0, salesRemoved: 0, posted: 0, cancelled: 0,
                 picksRemoved: 0, picksFreed: 0, linesWithoutSku: 0, unresolved: fetched.unresolved.length, truncated: fetched.truncated,
                 attention: false, notes: [] };
@@ -203,7 +198,7 @@ async function syncEbayOrders(client, fetched) {
       }
       const supplier = known.rows[0] ? known.rows[0].supplier : '';
 
-      // Every constant is phase A's (see the NEW ROW comment in utils/orderSync.js) except channel 'EBAY'.
+      // Every constant is phase A's (see the NEW ROW comment in utils/shopifyOrderSync.js) except channel 'EBAY'.
       await client.query(
         `INSERT INTO orderstatus (
             ordernum, shopifysku, qty, updated, created, batch, supplier, title, shippingname,
@@ -295,4 +290,30 @@ async function syncEbayOrders(client, fetched) {
   return out;
 }
 
-module.exports = { syncEbayOrders, londonClock, courierOf, linesBySku, ordernumOf };
+// ---------------------------------------------------------------------------------------------------------------------------------
+// THE CHANNEL — what utils/orderSync.js runs. Shape documented in utils/orderChannels.js.
+// ---------------------------------------------------------------------------------------------------------------------------------
+const channel = {
+  name: 'eBay',
+  isConfigured: ebayOrders.isConfigured,
+  setupHint: 'EBAY_CLIENT_ID / EBAY_CLIENT_SECRET / EBAY_REFRESH_TOKEN in bcweb-server/.env',
+
+  // The EB orders we hold now go with the read, so ebayOrders can ask eBay what happened to any that left its open list. A plain read
+  // outside the transaction — at worst an order archived by hand a second ago gets looked up for nothing (archiveOrder then finds 0 rows).
+  async fetch() {
+    const held = await query(`SELECT DISTINCT ordernum FROM orderstatus WHERE channel = 'EBAY'`);
+    return ebayOrders.fetchEbayOrders(held.rows.map((r) => String(r.ordernum).replace(/^EB/, '')));
+  },
+
+  async write(client, fetched) {
+    const out = await syncEbayOrders(client, fetched);
+    return {
+      newOrders: out.newOrders,
+      notes: out.notes,
+      log: `${out.newOrders} new, ${out.salesBooked} sales, ${out.posted} posted, ${out.cancelled} cancelled${out.attention ? ' · see notes' : ''}`,
+      detail: out
+    };
+  }
+};
+
+module.exports = { channel, syncEbayOrders, londonClock, courierOf, linesBySku, ordernumOf };

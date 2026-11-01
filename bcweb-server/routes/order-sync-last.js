@@ -3,12 +3,9 @@
 API Route: order_sync_last
 =======================================================================================================================================
 Method: GET
-Purpose: Tell the Sales screen when orders were last synced, so the button can carry a quiet "· 2h ago" instead of the operator having
-         to guess. Reads the bclog row written by /order-sync (section 'Order Sync').
-
-         This only ever sees BCWEB runs. The cron Python (C:\scripts\orders\update_orders.py) writes no bclog row, so "last run" means
-         "last time somebody pressed the button", not "last time the pipeline ran". That is the honest reading and the front end labels
-         it as such — adding a bclog write to the Python would be the way to make it mean both.
+Purpose: When orders were last updated, so a screen can carry a quiet "· 2h ago". Reads the latest bclog row (section 'Order Sync')
+         written by utils/orderSync.js → runOrderSync — on every run, button OR cron (2026-11-01: the cron is the same Node code now;
+         `by` is 'cron' for those). So this is genuinely "the last time orders were updated".
 
          bclog.created_at is UTC (timestamptz). Both a formatted London stamp and the raw ISO value are returned: the stamp for a
          tooltip, the ISO for the relative "2h ago" the button renders.

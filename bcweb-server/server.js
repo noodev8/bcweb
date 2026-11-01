@@ -439,12 +439,11 @@ app.use('/portfolio-status', require('./routes/portfolio-status'));             
 app.use('/product-seasons', require('./routes/product-seasons'));                     // GET: styles, season, units per month, suggestion
 app.use('/product-season-bulk', require('./routes/product-season-bulk'));             // POST {groupids, season}: set season in bulk
 
-// --- Shopify order sync (the "Sync orders" button on Analytics -> Sales) ---
-// !! THE LOGIC BEHIND /order-sync ALSO LIVES IN C:\scripts\orders\update_orders.py, WHICH IS STILL IN CRON. Both are live and must
-// stay in step — see the banner at the top of utils/orderSync.js before changing either. !!
-// One POST does the whole pipeline (sync -> sales -> archive -> pick allocation -> cleanup) in a single transaction.
-app.use('/order-sync', require('./routes/order-sync'));           // POST: run the pipeline now — WRITES
-app.use('/order-sync-last', require('./routes/order-sync-last')); // GET: when the button was last pressed — READ ONLY
+// --- Order sync (the "Update orders" button) ---
+// One POST runs the whole order run for every sales channel (utils/orderChannels.js) — orders, sales, archive, pick allocation,
+// cleanup — in a single transaction. The cron runs the same code: scripts/order-sync.js -> utils/orderSync.js runOrderSync().
+app.use('/order-sync', require('./routes/order-sync'));           // POST: run it now — WRITES
+app.use('/order-sync-last', require('./routes/order-sync-last')); // GET: when orders were last updated (button or cron) — READ ONLY
 
 // --- Social (Marketing -> Social): compose, queue and publish to the Facebook Page ---
 // Publishing itself is NOT here: it lives in utils/socialPublish.js, called by BOTH the cron sweep

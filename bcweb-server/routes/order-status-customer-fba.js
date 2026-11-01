@@ -14,7 +14,7 @@ alloworder, picknotfound, fbaordered — because PowerBuilder DOES read them and
 trusted. A bcweb-flagged line must be indistinguishable from a PowerBuilder-flagged one, so the writes are reproduced exactly rather
 than trimmed to what bcweb alone would need. Revisit when the legacy screen is retired.
 
-THE ONE COLUMN THAT ACTUALLY DOES SOMETHING is `amz`. utils/orderSync.js phase E (and its twin, update_orders.py) only considers lines
+THE ONE COLUMN THAT ACTUALLY DOES SOMETHING is `amz`. utils/orderSync.js phase E only considers lines
 where all four sourcing flags are zero, so setting amz > 0 permanently removes the line from the sync's candidate set.
 
   THE UNDO IS RESET (routes/order-status-customer-reset.js, owner 2026-10-22): it clears every flag back to a new row, so the next

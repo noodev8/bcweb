@@ -95,7 +95,7 @@ const toDateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${
  * Hence a date + a slot, rather than a datetime: the picker cannot express a time the scheduler will not honour.
  *
  * THESE MUST MATCH THE CRONTAB ON THE SERVER. The cron entries are written in GMT (the box's timezone) and hand-shifted so the LOCAL
- * time stays put across BST — the same convention as the update_orders.py entries. These hours are therefore Europe/London local
+ * time stays put across BST — the same convention as the order-sync entries. These hours are therefore Europe/London local
  * hours, which is also what the operator's browser shows. If the crontab times ever change, change them here in the same commit.
  */
 const SLOT_HOURS = [4, 9, 13, 19] as const;

@@ -3173,39 +3173,32 @@ export function deleteAmzShipmentBox(box: number, expect: AmzBoxExpect) {
 }
 
 // =============================================================================================================================
-// Shopify order sync — the "Update orders" button (Analytics -> Sales and Customer Orders; the LABEL is the legacy term, this
-// route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).
+// Order sync — the "Update orders" button (Analytics -> Sales, Customer Orders, the dashboard tile; the LABEL is the legacy term,
+// this route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).
 //
-// !! The server-side logic behind this ALSO exists as C:\scripts\orders\update_orders.py, which is still in cron. Both are live.
-//    See the banner at the top of bcweb-server/utils/orderSync.js before changing anything about what a run does. !!
-//
-// One POST runs the whole pipeline: pull unfulfilled orders from Shopify -> orderstatus, book the sales, archive what Shopify no
-// longer has, allocate picks against free stock, then housekeeping. All in one transaction.
+// One POST runs the whole order run for EVERY sales channel (Shopify, eBay, …): new orders -> orderstatus, sales booked, posted /
+// cancelled orders archived, picks allocated against free stock, housekeeping — one transaction. The cron runs the same server code
+// (bcweb-server/scripts/order-sync.js); see bcweb-server/utils/orderSync.js.
 // =============================================================================================================================
 
-// Same 120s ceiling the Amazon import uses: a big first run walks every order line and every pick one at a time, and the default
-// axios timeout would give up on a run that is actually succeeding.
+// Same 120s ceiling the Amazon import uses: a big run walks every order line and every pick one at a time, and the default axios
+// timeout would give up on a run that is actually succeeding.
 const ORDER_SYNC_TIMEOUT = 120000;
 
-export interface OrderSyncSummary {
-  orders: { inserted: number; updated: number; linesWithoutSku: number; linesFolded: number };
-  sales: { inserted: number; skippedNoGroupid: number; skippedDuplicate: number };
-  // `skipped` is true when the Shopify fetch came back truncated: archiving is decided by ABSENCE from the fetched list, so a partial
-  // fetch must never be allowed to archive. Everything else in the run still happened.
-  archive: { archived: number; picksRemoved: number; skipped: boolean };
-  picks: {
-    considered: number; fullyAllocated: number; partiallyAllocated: number; alreadyAllocated: number;
-    picksTaken: number; splits: number; amzMarked: number; ukdMarked: number; ukdToOrder: number;
-    otherMarked: number; unfulfillable: number;
-  };
-  housekeeping: Record<string, number>;
-  // Per-line warnings (partial picks, unmatched SKUs, nothing in stock anywhere) — what the cron would have buried in a log file.
-  notes: string[];
+// Per-channel outcome. The button shows none of this (owner, 2026-11-01: the total only) — it's here for anyone debugging a run.
+export interface OrderSyncChannel {
+  name: string;
+  checked: boolean;          // false = couldn't be read this run (error says why); it wrote nothing and the rest still ran
+  error: string | null;
+  newOrders: number;
+  log: string;
+  detail: Record<string, unknown> | null;
 }
 export interface OrderSyncResult {
-  fetched: { orders: number; pages: number; truncated: boolean };
-  summary: OrderSyncSummary;
-  headline: string;   // the one line the button shows: '2 new orders' or 'No new orders'
+  headline: string;          // the one line the button shows: '3 new orders' or 'No new orders' — every channel together
+  newOrders: number;
+  channels: OrderSyncChannel[];
+  notes: string[];           // per-line warnings (unmatched SKUs, partial picks, …), channel-labelled
 }
 
 // Run it now. Writes — but it is safe to press twice: an order already in orderstatus is refreshed rather than re-inserted, and its
@@ -3214,14 +3207,15 @@ export function runOrderSync() {
   return request<OrderSyncResult>(
     { url: '/order-sync', method: 'POST', timeout: ORDER_SYNC_TIMEOUT },
     (b) => ({
-      fetched: b.fetched as OrderSyncResult['fetched'],
-      summary: b.summary as OrderSyncSummary,
       headline: (b.headline as string) || '',
+      newOrders: Number(b.newOrders) || 0,
+      channels: (b.channels as OrderSyncChannel[]) || [],
+      notes: (b.notes as string[]) || [],
     })
   );
 }
 
-// When the button was last pressed. NOT when the pipeline last ran — the cron writes no audit row, so this only ever reflects bcweb.
+// When orders were last updated — a button press or the cron (`by` is 'cron' then); both write the same audit row.
 export interface OrderSyncLast { lastRun: string | null; lastRunIso: string | null; by: string | null; log: string | null }
 export function getOrderSyncLast() {
   return request<OrderSyncLast>({ url: '/order-sync-last', method: 'GET' }, (b) => ({

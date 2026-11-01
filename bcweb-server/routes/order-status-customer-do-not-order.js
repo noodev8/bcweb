@@ -6,7 +6,7 @@ Method: POST
 Purpose: Mark a customer order DO NOT ORDER, or clear it — the legacy 'Do Not Order' text in `orderstatus.orderdate`, which PowerBuilder
          writes and which the screen reads as `parked` (utils/customerOrders.js rowState). Added back to bcweb 2026-10-15 (owner).
 
-WHAT IT MEANS: don't SOURCE the line. Phase E's candidate filter (utils/orderSync.js allocatePicks, and update_orders.py — both live)
+WHAT IT MEANS: don't SOURCE the line. Phase E's candidate filter (utils/orderSync.js allocatePicks)
 skips any line whose orderdate contains 'do not order', so nothing is reserved off a shelf or flagged to Amazon / UKD / another
 supplier for it. It does NOT mean don't pack it (owner, 2026-10-15): a Do Not Order line scans and packs like any other.
 

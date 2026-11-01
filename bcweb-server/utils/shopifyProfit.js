@@ -5,14 +5,9 @@ Module: utils/shopifyProfit.js
 Purpose: The per-unit NET profit of a Shopify sale — the number written to `sales.profit` on every SHP row, and therefore the number
          the Analytics Sales screen adds up and the owner prices against. One function, one formula, so nothing can drift.
 
-         This is the Shopify counterpart of utils/amzProfit.js. Until now the formula existed ONLY inside
-         C:\scripts\orders\update_orders.py -> shopify_profit(). CLAUDE.md and that script's own docstring both pointed at
-         "bcweb-server/utils/profit.js" and "docs/profit-model.md", neither of which had ever been written. This file is that
-         reference, finally made real; docs/order-sync-port.md is the reasoning.
-
-         !! DUAL IMPLEMENTATION !! — this formula also lives in C:\scripts\orders\update_orders.py -> shopify_profit().
-         Both write `sales.profit` on SHP rows. If they disagree, the Analytics totals become a blend of two formulas with nothing
-         recording which row got which. See the full banner at the top of utils/orderSync.js.
+         This is the Shopify counterpart of utils/amzProfit.js. It was ported (2026-07-28) from the Python order sync's
+         shopify_profit(); that script was retired 2026-11-01, so this is now the ONLY copy of the formula — every SHP sales.profit
+         written from here on comes from it (utils/shopifyOrderSync.js, phase B).
 
 THE FORMULA
     VAT      = sold / 6                    UK VAT is 1/6 of a VAT-INCLUSIVE price (20% of the ex-VAT amount)
@@ -45,8 +40,7 @@ STILL SUMMING EVERY ROW, DELIBERATELY: Analytics > Sales, which is the ledger an
 included. It will therefore read lower than the ad screens over the same window, by exactly the returns that landed in it — that is
 the documented disagreement in the analytics-ad-daily header, not a new one.
 
-THE FORMULA IS DELIBERATELY NOT CHANGED HERE. It is duplicated in the Python update_orders.py (see the banner above), sales.profit is
-STORED rather than computed on read, and every threshold on the platform is calibrated against the number as it stands today: the
+THE FORMULA IS DELIBERATELY NOT CHANGED HERE. sales.profit is STORED rather than computed on read, and every threshold on the platform is calibrated against the number as it stands today: the
 pricing WINNERS bar (GBP 2 average net profit), the Birkenstock Kept ladder, and utils/adFloor.js, which inverts this exact formula to
 place a price. Correcting the double-count is a real decision with a backfill behind it, not a tidy-up. Whoever takes it on: decide
 whether returns live in the ROWS or in the HAIRCUT — not both — and recalibrate the thresholds in the same pass.

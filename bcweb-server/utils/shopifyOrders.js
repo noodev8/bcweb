@@ -5,19 +5,16 @@ Module: utils/shopifyOrders.js
 Purpose: The ONE place the bcweb server READS orders from Shopify. Sibling of utils/shopify.js (which owns the product WRITE side via
          GraphQL productSet) — separate file because it is a different token, a different API, and a different direction of travel.
 
-WHY REST, NOT GRAPHQL. utils/shopify.js talks GraphQL because productSet has no REST equivalent. This one deliberately calls the same
-REST endpoint, at the same pinned version (2024-01), that C:\scripts\orders\update_orders.py calls — because the two are parallel
-implementations of one business process and must see byte-identical payloads. A field that GraphQL names differently, or that a newer
-REST version renames, would silently diverge the two systems. See config/config.js -> shopify.ordersApiVersion.
+WHY REST, NOT GRAPHQL. utils/shopify.js talks GraphQL because productSet has no REST equivalent. This one calls the REST orders
+endpoint at a pinned version (2024-01) — the payload the order sync (utils/shopifyOrderSync.js) was ported and tested against, read by
+REST field names. See config/config.js -> shopify.ordersApiVersion before bumping it.
 
 WHY A SEPARATE TOKEN. Reading orders needs `read_orders`; the product push needs `write_products`. Those are two different custom-app
 tokens in Shopify and they are NOT interchangeable — SHOPIFY_ORDERS_ACCESS_TOKEN is required here and nothing else uses it.
 
-PAGINATION — THE ONE PLACE THIS IMPROVES ON THE PYTHON. update_orders.py sends limit=250 and never follows the `Link` header. Below
-250 open unfulfilled orders that is invisible; above it, the run sees a truncated list and then ARCHIVES every order it didn't see
-(phase C), because "not in the fetched set" is how archiving is decided. This module follows `Link: rel="next"` to completion and
-reports `truncated` if it ever hits its own page ceiling, so the caller can refuse to archive rather than mass-archive. The outcome
-below 250 orders is identical to the Python's; above it, it is correct instead of destructive.
+PAGINATION. Follows `Link: rel="next"` to completion (the retired Python read one page of 250 and never paginated) and reports
+`truncated` if it ever hits its own page ceiling — because "not in the fetched set" is how phase C decides to archive, a short list
+must never reach it. utils/shopifyOrderSync.js skips archiving on a truncated read.
 =======================================================================================================================================
 */
 
@@ -111,10 +108,10 @@ async function shopifyRestGet(url) {
 /*
  * fetchUnfulfilledOrders() -> { orders, pages, truncated }
  *
- * The exact query update_orders.py runs: every OPEN order that is still UNFULFILLED. Note what is deliberately NOT filtered here —
- * `financial_status`. The Python fetches all of them and filters in code so it can accept BOTH "paid" and "partially_refunded"
- * (the latter is what a refunded-shipping order becomes, and those still have to be picked and posted). Filtering server-side would
- * force one value and quietly drop the other. Keep the filtering in orderSync.js where it is visible and commented.
+ * Every OPEN order that is still UNFULFILLED. Note what is deliberately NOT filtered here — `financial_status`. All of them are
+ * fetched and filtered in code so BOTH "paid" and "partially_refunded" get through (the latter is what a refunded-shipping order
+ * becomes, and those still have to be picked and posted). Filtering server-side would force one value and quietly drop the other.
+ * Keep the filtering in shopifyOrderSync.js where it is visible and commented.
  *
  * `truncated` true = we stopped at MAX_PAGES with more pages outstanding. The caller MUST NOT archive on a truncated fetch.
  */

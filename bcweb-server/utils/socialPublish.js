@@ -5,10 +5,9 @@ Module: utils/socialPublish.js
 Purpose: The single implementation of "publish one social_post_target". Used by BOTH scripts/social-publish-sweep.js (the cron path)
          and routes/social-post-publish-now.js (the manual escape hatch).
 
-         THIS IS ON PURPOSE AND MATTERS. The Order Sync module carries a standing warning in CLAUDE.md because the same logic lives in
-         two places (utils/orderSync.js and C:\scripts\orders\update_orders.py) and a change to one leaves the DB written under two sets
-         of rules. Publishing has exactly the same shape — a cron path and a manual path doing "the same thing" — so it gets one
-         implementation from the start rather than a copy the first time someone needs a button.
+         THIS IS ON PURPOSE AND MATTERS. Order Sync ran for months as two copies of one logic (utils/orderSync.js and a Python cron
+         script, retired 2026-11-01), and a change to one left the DB written under two sets of rules. Publishing has exactly the same
+         shape — a cron path and a manual path doing "the same thing" — so it gets one implementation from the start.
 
          publishTarget(targetId)  — claim, publish, record. Safe to call concurrently; see the claim below.
          reclaimStale()           — PUBLISHING rows older than STALE_MINUTES -> FAILED.

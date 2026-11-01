@@ -2,8 +2,8 @@
 =======================================================================================================================================
 Module: utils/ebayOrders.js
 =======================================================================================================================================
-Purpose: READ eBay orders for the Update Orders press (routes/order-sync.js). Network only — no database. The writes are
-         utils/ebayOrderSync.js, inside the press's transaction; this runs BEFORE it, outside any transaction, exactly as the Shopify fetch
+Purpose: READ eBay orders for the Update Orders run (utils/orderSync.js, via the eBay channel). Network only — no database. The writes are
+         utils/ebayOrderSync.js, inside the run's transaction; this runs BEFORE it, outside any transaction, exactly as the Shopify fetch
          does (a slow or failed eBay call must never hold a database transaction open).
 
 WHAT IT RETURNS — fetchEbayOrders(heldOrderIds) -> { open, closed, unresolved, truncated, pages }

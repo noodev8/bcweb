@@ -76,9 +76,8 @@ module.exports = {
     //   token:   the product push above needs write_products; reading orders needs read_orders. They are two separate custom-app
     //            tokens in Shopify (verified: SHOPIFY_ACCESS_TOKEN and SHOPIFY_ORDERS_ACCESS_TOKEN in C:\scripts\.env are different
     //            values). Sending the product token at the Orders endpoint returns 401, so they must not be conflated.
-    //   version: pinned to the exact REST version C:\scripts\orders\update_orders.py calls (2024-01). That script and utils/orderSync.js
-    //            are two implementations of one business process (see the banner in utils/orderSync.js) and must see the SAME payload
-    //            shape — a field renamed between API versions would silently diverge the two. Bump this only when the Python bumps too.
+    //   version: pinned to 2024-01, the REST version the order sync was built and tested against (utils/shopifyOrderSync.js reads
+    //            order fields by their REST names). Bump it deliberately, after checking those fields haven't been renamed.
     ordersAccessToken: process.env.SHOPIFY_ORDERS_ACCESS_TOKEN || '',
     ordersApiVersion: process.env.SHOPIFY_ORDERS_API_VERSION || '2024-01',
 

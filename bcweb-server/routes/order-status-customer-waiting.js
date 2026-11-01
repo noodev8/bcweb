@@ -18,7 +18,7 @@ either intended. The client sends the value it wants instead, so the write is id
 GRAIN: per ORDER — every line sharing the ordernum. An order is either held or it isn't; flagging one pair of a two-pair order as
 waiting while the other reads normal would show the order in two states at once.
 
-NOTE ON REACH: nothing downstream consumes `customerwaiting`. Neither utils/orderSync.js nor update_orders.py reads it — phase E will
+NOTE ON REACH: nothing downstream consumes `customerwaiting`. utils/orderSync.js doesn't read it — phase E will
 still try to source a waiting line on the next run, exactly as it did under PowerBuilder. This flag is a signal to the humans reading
 the screen, and changing that would mean changing the sync in both places at once (see the banner in utils/orderSync.js).
 =======================================================================================================================================

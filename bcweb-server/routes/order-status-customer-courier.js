@@ -9,8 +9,7 @@ Purpose: Override the shipping service on a customer order — `orderstatus.cour
 WHY AN OVERRIDE EXISTS: courier is normally DERIVED, not chosen. The order sync sets it at insert time from what the customer paid at
 checkout — the next-day postage price gives '4', anything else '5' — so the default is right almost always. This route is for the
 exceptions: a heavy or bulky order that needs a different service, or one being collected rather than posted. The prices are NOT here:
-they live in NEXT_DAY_POSTAGE in utils/orderSync.js, mirrored in C:\scripts\orders\update_orders.py, and nothing else needs editing
-when postage is repriced.
+they live in NEXT_DAY_POSTAGE in utils/shopifyOrderSync.js, and nothing else needs editing when postage is repriced.
 
 THE THREE CODES, and why not five. Across 3,177 archived customer rows only three values ever appear: '5' Royal Mail 48 (2,811),
 '4' Royal Mail 24 (356), '0' pack only (20). The legacy dropdown also offered '2' DHL and '3' DPD; neither has been used once, and

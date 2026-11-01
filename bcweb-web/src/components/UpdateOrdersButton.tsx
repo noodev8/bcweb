@@ -3,15 +3,18 @@
 =======================================================================================================================================
 Component: UpdateOrdersButton
 =======================================================================================================================================
-Purpose: The "Update orders" control — pull unfulfilled orders from Shopify and run the whole order pipeline now, rather than waiting
-         for cron. Rendered on more than one screen, which is the reason this file exists.
+Purpose: The "Update orders" control — read new orders from every sales channel (Shopify, eBay, …) and run the whole order run now,
+         rather than waiting for cron. Rendered on more than one screen, which is the reason this file exists.
+
+SHOWS ONE LINE (owner, 2026-11-01: "Just the total number of orders without confusing the user"): the server's headline, e.g.
+"3 new orders", every channel together. Which channel was or wasn't read is deliberately NOT shown — it's in the server log and the
+bclog row, and in the response's `channels` for anyone debugging.
 
 IT IS CALLED "UPDATE ORDERS" (owner): the legacy PowerBuilder term the team already uses and understands. It shipped briefly as "Sync
 orders", which was our word, not theirs. The PLUMBING under it keeps the older naming — the route is POST /order-sync, the client fn
 is runOrderSync(), the server module is utils/orderSync.js — and that split is deliberate. Renaming a live route and its server module
 to chase a label is churn with a deployment risk attached, and "sync" is the accurate word for what the code does. The LABEL is the
-part that has to speak the team's language. (Note the cron job that duplicates the pipeline is already called update_orders.py, so the
-legacy term was never actually absent from the codebase — only from the screen.)
+part that has to speak the team's language.
 
 WHERE IT APPEARS, AND WHY IN TWO PLACES:
 
@@ -26,19 +29,13 @@ exactly the kind of "you just have to know" that this platform is replacing.
 
 WHAT IS ACTUALLY SHARED, AND WHAT ISN'T (this is the important part):
 
-  The PIPELINE — orders -> orderstatus, sales, archive, pick allocation, housekeeping — is not in this file and never will be. It is
-  one server-side transaction behind POST /order-sync (bcweb-server/utils/orderSync.js). Every caller, on every screen, runs the same
-  code on the server because there is only one copy of it. Adding a second button did not duplicate a single line of that logic.
+  The RUN — orders -> orderstatus, sales, archive, pick allocation, housekeeping, for every channel — is not in this file and never
+  will be. It is one server-side transaction behind POST /order-sync (bcweb-server/utils/orderSync.js → runOrderSync), which the cron
+  (bcweb-server/scripts/order-sync.js) calls too. There is only one copy of it.
 
   What this component shares is the CLIENT-SIDE HANDLING of a run, which is where a second copy would actually have rotted: expired
-  session -> logout, the archive.skipped outcome (a success that still has to be said out loud), the headline, the in-flight lock,
-  and refreshing whatever the pressing screen was showing. Copy-pasted onto a second page, that's the sort of thing where one site
+  session -> logout, the headline, the in-flight lock, and refreshing whatever the pressing screen was showing. Copy-pasted onto a second page, that's the sort of thing where one site
   gets a new outcome handled and the other quietly doesn't.
-
-  !! THE REAL DUPLICATION IS ELSEWHERE AND IS NOT SOLVED BY THIS FILE. The same pipeline also runs unattended from cron as
-     C:\scripts\orders\update_orders.py, a second implementation of the same rules in a different language. Pressing this button does
-     not replace that job and does not conflict with it — it is a "do it now". Read the banner at the top of
-     bcweb-server/utils/orderSync.js before changing what a run does. !!
 
 ERRORS ARE THE HOST'S TO RENDER. This component reports through `onError` instead of drawing its own banner, because both screens
 already have somewhere errors belong (Sales folds it into the ledger's banner so a failed run can't blank a ledger that loaded fine).
@@ -81,11 +78,6 @@ export function useUpdateOrders({ onDone, onError }: { onDone?: () => void | Pro
 
     if (res.success && res.data) {
       setNote(res.data.headline);
-      // The one outcome that is a success but still needs saying out loud: too many open orders for a single fetch, so the archive
-      // phase stood down rather than archive orders it never read. Everything else in the run happened.
-      if (res.data.summary.archive.skipped) {
-        onError('Shopify had more open orders than one fetch could read — archiving was skipped this run. Everything else ran.');
-      }
       await onDone?.();
     } else if (res.return_code === 'UNAUTHORIZED') {
       logout();
