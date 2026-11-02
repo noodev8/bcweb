@@ -10,6 +10,9 @@ Purpose: Creates the three eBay business policies every BCWEB listing uses (util
            payment  none made — the existing "eBay Payments" (182888761025) is used as it is: eBay refuses a copy with identical
                     settings ("Duplicate Policy", 2026-11-01)
          Copies, not edits: the trial listings (6 auctions until 6 Nov, 4 fixed price until re-listed) keep what they were listed with.
+         FREE POSTAGE (owner, 2026-11-02): the postage policy is now "BCWEB Free Tracked 48 same day" — a copy of the £4.50 one made on
+         2026-11-01 (found by name, PAID_FULFILLMENT) with the buyer's cost set to £0 and freeShipping on. Re-run this script once.
+         Moving the live listings onto it is scripts/ebay-free-postage.js.
          Creates only — nothing is changed or deleted. Prints the new IDs.
 
 Usage (from bcweb-server):  node scripts/ebay-setup.js
@@ -18,7 +21,7 @@ Usage (from bcweb-server):  node scripts/ebay-setup.js
 
 require('dotenv').config();
 const { ebayRest } = require('../utils/ebayRest');
-const { NAMES, MARKET } = require('../utils/ebayPolicies');
+const { NAMES, MARKET, PAID_FULFILLMENT } = require('../utils/ebayPolicies');
 
 const SOURCE = { fulfillment: '259653332025', return: '158744810025', payment: '182888761025' };
 const KIND = {
@@ -38,10 +41,15 @@ function copyOf(kind, src) {
     body.handlingTime = { value: 0, unit: 'DAY' };                         // same day (eBay's 2pm cut-off is set on the account)
     body.shippingOptions = (body.shippingOptions || []).map((o) => ({
       ...o,
-      shippingServices: (o.shippingServices || []).map((s) => ({
-        ...s,
-        additionalShippingCost: { value: '0.00', currency: (s.shippingCost && s.shippingCost.currency) || 'GBP' },   // one £4.50 per order
-      })),
+      shippingServices: (o.shippingServices || []).map((s) => {
+        const currency = (s.shippingCost && s.shippingCost.currency) || 'GBP';
+        return {
+          ...s,
+          shippingCost: { value: '0.00', currency },                       // FREE to the buyer (2026-11-02)
+          additionalShippingCost: { value: '0.00', currency },
+          freeShipping: true,
+        };
+      }),
     }));
   }
   return body;
@@ -54,9 +62,10 @@ function copyOf(kind, src) {
     const list = (await ebayRest('GET', `/sell/account/v1/${k.path}?marketplace_id=${MARKET}`)).body[k.list] || [];
     const existing = list.find((x) => x.name === NAMES[kind]);
     if (existing) { console.log(`${kind}: already there — "${NAMES[kind]}" ${existing[k.id]}`); continue; }
-    const src = list.find((x) => x[k.id] === SOURCE[kind]);
+    // Postage is copied from OUR £4.50 policy (by name) — already same-day with no second-pair charge; the others from the trial's.
+    const src = kind === 'fulfillment' ? list.find((x) => x.name === PAID_FULFILLMENT) : list.find((x) => x[k.id] === SOURCE[kind]);
     if (kind === 'payment') throw new Error(`payment: no policy named "${NAMES.payment}" — set one up in Seller Hub`);
-    if (!src) throw new Error(`${kind}: the source policy ${SOURCE[kind]} is gone — nothing to copy`);
+    if (!src) throw new Error(`${kind}: the source policy ${kind === 'fulfillment' ? `"${PAID_FULFILLMENT}"` : SOURCE[kind]} is gone — nothing to copy`);
     const made = await ebayRest('POST', `/sell/account/v1/${k.path}`, copyOf(kind, src));
     console.log(`${kind}: created "${NAMES[kind]}" ${made.body && made.body[k.id]}`);
   }

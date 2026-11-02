@@ -27,8 +27,8 @@ time"): a listing that needs a look gets a warning icon after its code (hover = 
   red    Not in BCWEB · Birkenstock · more on eBay than our stock (stock isn't kept in step yet — a Shopify sale leaves eBay's count;
          the On eBay number turns red too)
   amber  size in stock not on eBay (a BCWEB listing — added at the next Update Orders; one that stays was skipped: no UK size /
-         barcode, or its UK size is taken) · postage isn't £4.50 — the rule is £4.50 Tracked 48 on every listing, like Shopify (owner, 2026-11-01; was free postage, so
-         the trial's fixed-price listings show it until they are re-listed through Add)
+         barcode, or its UK size is taken) · postage isn't free — the rule is FREE postage (Tracked 48) on every listing, each size at
+         its Amazon price (owner, 2026-11-02; £4.50 for a day before that)
   info   sold out / we can sell more — NOT shown: the On eBay and Stock numbers already say it
 "Needs a look" = any red or amber; those listings sort first, and the Needs a look filter shows only them.
 
@@ -57,7 +57,7 @@ const FLAG: Record<EbayFlag, { label: string; level: Level; title: string }> = {
   birkenstock: { label: 'Birkenstock', level: 'problem', title: 'Birkenstock must never be on eBay (distribution rules and VeRO).' },
   oversell: { label: 'More on eBay than in stock', level: 'problem', title: 'eBay could sell a pair we haven’t got. Stock isn’t kept in step with eBay yet — end the listing or lower its quantity in Seller Hub.' },
   size_not_listed: { label: 'Size in stock not on eBay', level: 'check', title: 'It is added to this listing at the next Update Orders. If this stays, the size was skipped — it has no UK size or barcode in BCWEB, or its UK size is already on the listing.' },
-  postage_rule: { label: 'Postage isn’t £4.50', level: 'check', title: 'The rule is £4.50 Tracked 48 on every listing, like Shopify — the trial’s fixed-price listings are free postage until they are re-listed through Add.' },
+  postage_rule: { label: 'Postage isn’t free', level: 'check', title: 'The rule is free postage (Tracked 48) on every listing, each size at its Amazon price — since 2026-11-02.' },
   sold_out: { label: 'Sold out — hidden', level: 'info', title: 'eBay shows 0 available. The listing stays live but hidden until stock is added.' },
   more_held: { label: 'More in stock', level: 'info', title: 'We have more in stock than this listing offers — fine if on purpose.' },
 };
@@ -440,7 +440,7 @@ function SizePriceRow({ line: x }: { line: EbayListingLine }) {
   const changed = valid && (now === null || Math.abs(price - now) >= 0.005);
   const slow = isSlow(x);
 
-  // Profit at the typed price — the server's formula (with the buyer's £4.50 postage); eBay's figure while nothing is typed.
+  // Profit at the typed price — the server's formula (free postage); eBay's figure while nothing is typed.
   const preview = useApiQuery(
     previewPrice !== null && x.groupid ? ['ebay-profit', x.groupid, previewPrice] : null,
     () => getEbayProfitPreview(x.groupid as string, previewPrice as number),
@@ -494,7 +494,7 @@ function SizePriceRow({ line: x }: { line: EbayListingLine }) {
             className="h-8 rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
             {busy ? 'Setting…' : 'Set'}
           </button>
-          <span className={'text-xs tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-500')} title="Profit on one sale at this price, with the buyer's £4.50 postage">
+          <span className={'text-xs tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-500')} title="Profit on one sale at this price, free postage">
             {valid ? (preview.busy && previewPrice !== null ? '…' : `profit ${signedMoney(profit)}`) : ''}
           </span>
           {msg && <span className={'text-xs ' + (msg.ok ? 'text-emerald-700' : 'text-red-700')}>{msg.text}</span>}

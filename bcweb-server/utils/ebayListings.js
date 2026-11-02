@@ -29,7 +29,7 @@ THE CHECKS (checkLine) — codes, so the screen owns the wording:
     oversell       eBay's available quantity is MORE than we hold (local #FREE + FBA live) — a second sale of a pair we haven't got.
                    The stock is NOT kept in step yet (that is the Add build), so a Shopify sale leaves eBay's count where it was.
   CHECKS (against the postage rules in docs/ebay-clearance.md)
-    postage_rule   postage isn't the rule — £4.50 Tracked 48 on every listing, like Shopify (owner, 2026-11-01; was free postage)
+    postage_rule   postage isn't the rule — FREE postage on every listing (owner, 2026-11-02; £4.50 from 2026-11-01 until then)
     size_not_listed (listing-level, routes/ebay-listings.js) a size of a BCWEB-listed style is in stock but not on the listing — added
                    at the next Update Orders; one that stays was skipped (no UK size / barcode, or its UK size is taken)
   INFO
@@ -172,7 +172,9 @@ function checkLine(line, postage, listingTitle) {
   if (!line.known) flags.push('unknown');
   if (/^birk/i.test(line.brand || '') || /birkenstock/i.test(listingTitle || '')) flags.push('birkenstock');
   if (line.known && line.ebay_available > held) flags.push('oversell');
-  if (postage.free || postage.cost === null || Math.abs(postage.cost - POSTAGE) > 0.005) flags.push('postage_rule');
+  // The rule's postage is POSTAGE (utils/ebayListingRules.js — 0 = free since 2026-11-02).
+  const charged = postage.free ? 0 : postage.cost;
+  if (charged === null || Math.abs(charged - POSTAGE) > 0.005) flags.push('postage_rule');
   if (line.ebay_available === 0) flags.push('sold_out');
   if (line.known && held > line.ebay_available) flags.push('more_held');
   return flags;

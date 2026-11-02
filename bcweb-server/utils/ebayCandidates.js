@@ -14,13 +14,14 @@ MEMBERSHIP: a style (skusummary groupid) that
     (onEbayStyles), not returned
 
 PER STYLE: title (Shopify), brand, the category / department / Style / material / Type the rules give (utils/ebayListingRules.js),
-Shopify price and the eBay profit at it (THE EBY formula, with the £4.50 postage the buyer pays), stock (local + FBA), photos
-(product_images), whether a Shopify description exists, and its IN-STOCK sizes — code, UK size (skumap.uksize, never the code suffix),
-barcode (skumap.ean, trailing B stripped), local, FBA. skumap can hold two rows for one code: the one with a UK size, then a barcode, wins.
+the Shopify price, stock (local + FBA), photos (product_images), whether a Shopify description exists, and its IN-STOCK sizes — code,
+UK size (skumap.uksize, never the code suffix), barcode (skumap.ean, trailing B stripped), local, FBA, and the size's eBay PRICE
+(owner, 2026-11-02 — utils/ebayListingRules.js → sizePriceFor: its Amazon price, amzfeed.amzprice, else the Shopify price + £4.50;
+free postage) with `price_from` and the eBay profit at it (THE EBY formula, no postage). The style carries the low–high of those. skumap can hold two rows for one code: the one with a UK size, then a barcode, wins.
 With { full: true } (the List button) also: the description text, the photo filenames in order, and the cost.
 
 READINESS:
-  missing (blocks listing)  category · photos · description · price · uk_size (an in-stock size has none) · uk_size_dup (two sizes
+  missing (blocks listing)  category · photos · description · price (a size with neither an Amazon nor a Shopify price) · uk_size (an in-stock size has none) · uk_size_dup (two sizes
                             share a UK size — eBay refuses duplicate variations) · barcode · title / title_long (over eBay's 80)
   todo (the form asks)      material — saved back to skusummary.material when the style is listed (owner, option A)
 =======================================================================================================================================
@@ -57,16 +58,21 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     fba AS (
       SELECT code, SUM(amzlive) AS qty FROM amzfeed WHERE COALESCE(amzlive, 0) > 0 AND ($2::text IS NULL OR groupid = $2) GROUP BY code
     ),
+    amz AS (
+      -- The size's Amazon price — one amzfeed row per code (READ ONLY; the price as live on Amazon, not a basket price waiting upload).
+      SELECT code, ${safeNumeric('amzprice')} AS price FROM amzfeed WHERE ($2::text IS NULL OR groupid = $2)
+    ),
     lines AS (
-      SELECT sz.groupid, sz.code, sz.uksize, sz.ean, COALESCE(loc.qty, 0) AS local, COALESCE(fba.qty, 0) AS fba
+      SELECT sz.groupid, sz.code, sz.uksize, sz.ean, COALESCE(loc.qty, 0) AS local, COALESCE(fba.qty, 0) AS fba, amz.price AS amz_price
       FROM sz
       LEFT JOIN loc ON loc.code = sz.code
       LEFT JOIN fba ON fba.code = sz.code
+      LEFT JOIN amz ON amz.code = sz.code
       WHERE COALESCE(loc.qty, 0) + COALESCE(fba.qty, 0) > 0
     ),
     per AS (
       SELECT groupid, SUM(local) AS local, SUM(fba) AS fba,
-             json_agg(json_build_object('code', code, 'uksize', uksize, 'ean', ean, 'local', local, 'fba', fba)
+             json_agg(json_build_object('code', code, 'uksize', uksize, 'ean', ean, 'local', local, 'fba', fba, 'amz_price', amz_price)
                ORDER BY CASE WHEN SUBSTRING(code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$' THEN SUBSTRING(code FROM '[^-]*$')::numeric END NULLS LAST,
                         code) AS sizes
       FROM lines GROUP BY groupid
@@ -100,9 +106,18 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     const title = r.title || '';
     const price = num(r.price);
     const cost = num(r.cost);
-    const sizes = (r.sizes || []).map((z) => ({
-      code: z.code, uk_size: rules.ukSizeFor(z.uksize), ean: z.ean || null, local: Number(z.local) || 0, fba: Number(z.fba) || 0,
-    }));
+    const sizes = (r.sizes || []).map((z) => {
+      const def = rules.sizePriceFor(z.amz_price, price);
+      return {
+        code: z.code, uk_size: rules.ukSizeFor(z.uksize), ean: z.ean || null, local: Number(z.local) || 0, fba: Number(z.fba) || 0,
+        amz_price: num(z.amz_price) !== null && num(z.amz_price) > 0 ? num(z.amz_price) : null,
+        price: def ? def.price : null,
+        price_from: def ? def.from : null,
+        profit: def && cost !== null ? round2(sizeProfit(def.price, cost)) : null,
+      };
+    });
+    const priced = sizes.filter((z) => z.price !== null);
+    const profits = sizes.map((z) => z.profit).filter((v) => v !== null);
     const category = rules.categoryFor(r.gender, r.producttype, title);
     const material = rules.materialFor(r.material, title);
     const ukSizes = sizes.map((z) => z.uk_size).filter(Boolean);
@@ -111,7 +126,7 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     if (!category) missing.push('category');
     if (Number(r.photos) === 0) missing.push('photos');
     if (!r.description) missing.push('description');
-    if (price === null || price <= 0) missing.push('price');
+    if (sizes.length === 0 || priced.length < sizes.length) missing.push('price');
     if (sizes.some((z) => !z.uk_size)) missing.push('uk_size');
     else if (new Set(ukSizes).size !== ukSizes.length) missing.push('uk_size_dup');
     if (sizes.some((z) => !z.ean)) missing.push('barcode');
@@ -131,10 +146,12 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
       material,
       type: rules.typeFor(r.gender, r.producttype, title),
       colour: r.colour,
-      price,
+      price,              // the SHOPIFY price (for reference — the eBay prices are per size)
       rrp: num(r.rrp),
-      profit: price === null || cost === null ? null
-        : round2(ebayProfit({ price, postage: rules.POSTAGE, cost, orderTotal: price + rules.POSTAGE, orderUnits: 1 })),
+      price_low: priced.length ? Math.min(...priced.map((z) => z.price)) : null,
+      price_high: priced.length ? Math.max(...priced.map((z) => z.price)) : null,
+      profit_low: profits.length ? Math.min(...profits) : null,
+      profit_high: profits.length ? Math.max(...profits) : null,
       photos: Number(r.photos),
       has_description: Boolean(r.description),
       title_length: title.length,
@@ -155,9 +172,14 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
   return { rows, onEbayStyles };
 }
 
+// One eBay sale of one pair at `price`, free postage (rules.POSTAGE) — THE EBY formula. Also used by the stock sync's added sizes.
+function sizeProfit(price, cost) {
+  return ebayProfit({ price, postage: rules.POSTAGE, cost, orderTotal: price + rules.POSTAGE, orderUnits: 1 });
+}
+
 // Every SKU live on eBay now — fixed price and auction alike — from a fetchActiveListings() read.
 function codesOnEbay(read) {
   return [...new Set([...read.listings.flatMap((l) => l.lines.map((x) => x.sku)), ...read.skippedSkus].filter(Boolean))];
 }
 
-module.exports = { loadCandidates, codesOnEbay };
+module.exports = { loadCandidates, codesOnEbay, sizeProfit };

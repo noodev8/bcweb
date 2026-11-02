@@ -26,9 +26,11 @@ Success Response:
       "category": { "id": 62107, "name": "Women's Sandals" } | null, "department": "Women",
       "style": { "value": "Walking", "from": "title" } | null, "material": { "value": "Leather", "from": "stored" } | null,
       "type": null, "colour": "Black",
-      "price": 59.95, "rrp": 70, "profit": 12.34, "photos": 4, "has_description": true, "title_length": 52,
-      "local": 3, "fba": 1, "stock": 4,
-      "sizes": [ { "code": "…-37", "uk_size": "4", "ean": "…", "local": 1, "fba": 0 } ],
+      "price": 59.95 (Shopify), "rrp": 70, "price_low": 54.99, "price_high": 59.99, "profit_low": 9.10, "profit_high": 12.34,
+      "photos": 4, "has_description": true, "title_length": 52, "local": 3, "fba": 1, "stock": 4,
+      "sizes": [ { "code": "…-37", "uk_size": "4", "ean": "…", "local": 1, "fba": 0,
+                   "amz_price": 54.99 | null, "price": 54.99, "price_from": "amazon" | "shopify", "profit": 9.10 } ],
+                 price = its Amazon price, else Shopify + £4.50, FREE postage (utils/ebayListingRules.js → sizePriceFor, 2026-11-02)
       "missing": [], "todo": ["material"], "status": "ready" | "todo" | "missing"   (missing codes: utils/ebayCandidates.js)
   } ]
 }

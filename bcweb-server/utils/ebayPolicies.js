@@ -7,8 +7,10 @@ Purpose: The three eBay business policies and the stock location every BCWEB lis
          applying the owner's decisions); this module only reads.
 
 THE POLICIES (owner decisions, 2026-11-01):
-  postage  "BCWEB £4.50 Tracked 48 same day"  Royal Mail Tracked 48, £4.50 per order (no extra charge for a second pair — like Shopify),
-                                               dispatch SAME DAY (handling 0; eBay's 2pm cut-off is already set on the account)
+  postage  "BCWEB Free Tracked 48 same day"   Royal Mail Tracked 48, FREE to the buyer (owner, 2026-11-02 — the price is the Amazon
+                                               price, utils/ebayListingRules.js), dispatch SAME DAY (handling 0; eBay's 2pm cut-off is
+                                               already set on the account). A copy of the £4.50 policy below with the cost set to 0.
+           (was "BCWEB £4.50 Tracked 48 same day", 2026-11-01 — £4.50 per order, no extra for a second pair; kept on eBay, unused)
   returns  "BCWEB Returns 30 days"             30 days, buyer pays return postage — the trial's terms
   payment  "eBay Payments"                     eBay's managed payments — the trial's own policy, used as it is: eBay refuses a second
                                                payment policy with identical settings ("Duplicate Policy"), and there is nothing to change
@@ -23,10 +25,11 @@ Cached in-process for an hour; resolveSetup() throws EBAY_SETUP_MISSING when a p
 const { ebayRest } = require('./ebayRest');
 
 const NAMES = {
-  fulfillment: 'BCWEB £4.50 Tracked 48 same day',
+  fulfillment: 'BCWEB Free Tracked 48 same day',
   return: 'BCWEB Returns 30 days',
   payment: 'eBay Payments',
 };
+const PAID_FULFILLMENT = 'BCWEB £4.50 Tracked 48 same day';   // the 2026-11-01 policy — the free one is copied from it
 const MARKET = 'EBAY_GB';
 const CACHE_MS = 60 * 60 * 1000;
 
@@ -60,4 +63,4 @@ async function resolveSetup() {
   return setup;
 }
 
-module.exports = { resolveSetup, NAMES, MARKET };
+module.exports = { resolveSetup, NAMES, MARKET, PAID_FULFILLMENT };

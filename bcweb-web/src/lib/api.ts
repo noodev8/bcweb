@@ -4986,7 +4986,7 @@ export function acceptGoogleAllowance(perUnit: number, windowTo: string) {
 // =============================================================================================================================
 export type EbayFlag =
   | 'unknown' | 'birkenstock' | 'oversell'             // problems
-  | 'postage_rule'                                     // check against the postage rule (£4.50 on every listing)
+  | 'postage_rule'                                     // check against the postage rule (FREE on every listing since 2026-11-02)
   | 'size_not_listed'                                  // a size in stock isn't on this BCWEB listing (normally added next run)
   | 'sold_out' | 'more_held';                          // info
 export interface EbayListingLine {
@@ -5018,15 +5018,21 @@ export interface EbayListingsSummary {
 // The "Not on eBay" view (server routes/ebay-candidates.js, rules utils/ebayListingRules.js) — styles in stock not on eBay yet, each
 // with a readiness check. READ ONLY. missing = blocks listing; todo = the listing form will ask (material).
 export type EbayMissing = 'category' | 'photos' | 'description' | 'price' | 'uk_size' | 'uk_size_dup' | 'barcode' | 'title' | 'title_long';
-export interface EbayCandidateSize { code: string; uk_size: string | null; ean: string | null; local: number; fba: number }
+// price = THE default eBay price of the size (owner, 2026-11-02): its Amazon price (amz_price), else the Shopify price + £4.50 — FREE
+// postage. profit = one eBay sale at it (EBY formula).
+export interface EbayCandidateSize {
+  code: string; uk_size: string | null; ean: string | null; local: number; fba: number;
+  amz_price: number | null; price: number | null; price_from: 'amazon' | 'shopify' | null; profit: number | null;
+}
 export interface EbayCandidate {
   groupid: string; title: string | null; brand: string | null; gender: string | null; producttype: string | null;
   category: { id: number; name: string } | null; department: string | null;
   style: { value: string; from: 'title' | 'default' } | null;
   material: { value: string; from: 'stored' | 'title' } | null;
   type: string | null; colour: string | null;
-  price: number | null; rrp: number | null;
-  profit: number | null;   // one sale at the Shopify price + the £4.50 postage the buyer pays (EBY formula)
+  price: number | null; rrp: number | null;   // price = the SHOPIFY price, for reference — eBay prices are per size
+  price_low: number | null; price_high: number | null;     // the sizes' eBay prices, low–high
+  profit_low: number | null; profit_high: number | null;   // the sizes' eBay profits, low–high
   photos: number; has_description: boolean; title_length: number;
   local: number; fba: number; stock: number;
   sizes: EbayCandidateSize[];
@@ -5042,13 +5048,14 @@ export function getEbayCandidates() {
 // List one style on eBay (server routes/ebay-list.js — WRITES TO EBAY, then records it). Failure codes: ALREADY_ON_EBAY, NOT_READY,
 // NOT_A_CANDIDATE, EBAY_SETUP_MISSING, EBAY_ERROR (eBay's own words in `error`), RECORD_FAILED (live on eBay but not recorded).
 export interface EbayListResult { item_id: string; url: string; sizes: number; pairs: number; warnings: string[] }
-export function listOnEbay(groupid: string, price: number, style: string, material: string) {
+// prices: code -> £ for each size (the form's figures; a size left out goes on at its default).
+export function listOnEbay(groupid: string, prices: Record<string, number>, style: string, material: string) {
   return request<EbayListResult>(
-    { url: '/ebay-list', method: 'POST', data: { groupid, price, style, material }, timeout: 180000 },
+    { url: '/ebay-list', method: 'POST', data: { groupid, prices, style, material }, timeout: 180000 },
     (b) => ({ item_id: b.item_id, url: b.url, sizes: b.sizes, pairs: b.pairs, warnings: b.warnings || [] })
   );
 }
-// The eBay profit at a typed price, with the buyer's £4.50 postage (server routes/ebay-profit-preview.js — THE EBY formula).
+// The eBay profit at a typed price, free postage (server routes/ebay-profit-preview.js — THE EBY formula).
 export function getEbayProfitPreview(groupid: string, price: number) {
   return request<number | null>(
     { url: '/ebay-profit-preview', method: 'GET', params: { groupid, price } },

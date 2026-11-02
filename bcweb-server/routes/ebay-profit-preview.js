@@ -4,8 +4,8 @@ API Route: ebay_profit_preview
 =======================================================================================================================================
 Method: GET
 Purpose: The eBay profit beside the price box on the listing form (owner, 2026-11-01: "Shopify price editable before listing", with the
-         eBay profit beside it) — recalculated as the price is typed. THE EBY formula (utils/ebayProfit.js), with the £4.50 postage the
-         buyer pays (utils/ebayListingRules.js POSTAGE) — the server's formula, so the screen never carries a second copy. READ ONLY.
+         eBay profit beside it) — recalculated as the price is typed. THE EBY formula (utils/ebayProfit.js), with the postage the
+         buyer pays (utils/ebayListingRules.js POSTAGE — £0, free, since 2026-11-02) — the server's formula, so the screen never carries a second copy. READ ONLY.
 
 Requires auth.
 =======================================================================================================================================

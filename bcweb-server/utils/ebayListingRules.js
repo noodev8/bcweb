@@ -8,8 +8,12 @@ Purpose: THE rules that turn one of our styles into an eBay listing — the owne
 
 THE LISTING (owner decisions, CLAUDE.md "eBay listings"):
   one listing per STYLE (groupid), its sizes as the variations, fixed price only; no Birkenstock, ever
-  price      the Shopify price, editable on the listing form; the eBay profit beside it
-  postage    £4.50 Tracked 48 on every listing — the same as Shopify, so the eBay price IS the Shopify price (POSTAGE below)
+  price      PER SIZE (owner, 2026-11-02): each size at its own AMAZON price (amzfeed.amzprice), FREE postage; a size with no Amazon
+             price takes the Shopify price + £4.50 (what the buyer paid before, postage folded in) — sizePriceFor() below. Editable
+             per size on the listing form, the eBay profit beside each.
+             WHY: eBay's shops sell with free delivery at about the Amazon price (Lunar St Ives White, 2026-11-02: £39.35–£44.99 free,
+             against our old Shopify £42.19 + £4.50 = £46.69, the dearest on the page), and eBay prices each variation, like Amazon.
+  postage    FREE, Tracked 48, on every listing (POSTAGE = 0) — was £4.50 until 2026-11-02
   dispatch   same day for orders before 2pm Mon–Fri, wherever the pair is stored
   footer     FOOTER below, under the Shopify description (owner-approved wording — no postage price, no website, no "contact us")
 
@@ -32,7 +36,25 @@ Boys). Every one is FREE TEXT on eBay, so our own words are accepted.
 =======================================================================================================================================
 */
 
-const POSTAGE = 4.50;          // £, Tracked 48, every listing (same as Shopify)
+const POSTAGE = 0;             // £ the buyer pays: FREE, Tracked 48, every listing (owner, 2026-11-02; was 4.50)
+const SHOPIFY_UPLIFT = 4.50;   // a size with no Amazon price: the Shopify price + this (the old £4.50 postage, folded into the price)
+
+/*
+ * sizePriceFor(amzPrice, shopifyPrice) -> { price, from: 'amazon' | 'shopify' } | null
+ *   THE default eBay price of one size: its Amazon price when it has one (> 0), else the style's Shopify price + £4.50. null = neither
+ *   (the style is blocked: 'price'). Prices are VAT-inclusive, rounded to the penny.
+ */
+function sizePriceFor(amzPrice, shopifyPrice) {
+  const a = Number(amzPrice);
+  if (amzPrice !== null && amzPrice !== undefined && amzPrice !== '' && Number.isFinite(a) && a > 0) {
+    return { price: Math.round(a * 100) / 100, from: 'amazon' };
+  }
+  const s = Number(shopifyPrice);
+  if (shopifyPrice !== null && shopifyPrice !== undefined && shopifyPrice !== '' && Number.isFinite(s) && s > 0) {
+    return { price: Math.round((s + SHOPIFY_UPLIFT) * 100) / 100, from: 'shopify' };
+  }
+  return null;
+}
 const TITLE_MAX = 80;          // eBay's title limit
 
 const FOOTER = 'Genuine, brand new and boxed. Sold by a UK footwear retailer. Orders placed before 2pm Monday to Friday are sent the same '
@@ -152,6 +174,6 @@ function ukSizeFor(uksize) {
 }
 
 module.exports = {
-  POSTAGE, TITLE_MAX, FOOTER, CATEGORY_NAMES,
+  POSTAGE, SHOPIFY_UPLIFT, TITLE_MAX, FOOTER, CATEGORY_NAMES, sizePriceFor,
   categoryFor, departmentFor, typeFor, styleFor, materialFor, ukSizeFor,
 };

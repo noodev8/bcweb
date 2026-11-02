@@ -8,17 +8,20 @@ Purpose: every style that could go on eBay and isn't there yet (GET /ebay-candid
          List button re-checks with). The LISTING FORM in a style's drop-down is the one thing here that writes: POST /ebay-list.
 
 KEPT PLAIN, like the On eBay view (owner: "the screen is too busy"): code first and large (→ the product page), title as a tooltip,
-brand in its own column, the eBay category, Stock (local + FBA live), the Shopify price (= the eBay price — £4.50 postage like
-Shopify) and the eBay profit at it. NO READINESS COLUMN: a style that needs something gets an icon after its code (hover = what),
+brand in its own column, the eBay category, Stock (local + FBA live), the eBay Price (low–high of the sizes) and the eBay profit
+(low–high). PRICES ARE PER SIZE, FREE POSTAGE (owner, 2026-11-02): each size at its Amazon price, else the Shopify price + £4.50 — the
+server's rule (utils/ebayListingRules.js → sizePriceFor), never worked out here. NO READINESS COLUMN: a style that needs something gets an icon after its code (hover = what),
 red when it is blocked, amber when the form will only ask for a material; a ready style shows nothing. Filters: All · Ready ·
 Needs material · Blocked.
 
 A CLICK ON A ROW opens what the listing would carry: category, department, Style (from the title, or the type's default), material
-(stored, from the title, or "the form will ask"), photos, description, and the in-stock sizes with UK size, barcode, local, FBA.
+(stored, from the title, or "the form will ask"), photos, description, the Shopify price, and the in-stock sizes with UK size,
+barcode, local, FBA, the Amazon price, and the eBay price box (pre-filled with the default) with the profit beside it.
 
-THE LISTING FORM (step 2 — owner decisions): Price (the Shopify price, editable; the eBay profit beside it, recalculated as you type
-by GET /ebay-profit-preview — the server's formula), Style (from the title / the type default, editable), Material (required — saved back
-to the style in BCWEB). "List on eBay" asks once inline (no browser dialog): style, sizes, pairs, price + £4.50 postage. On success the
+THE LISTING FORM (step 2 — owner decisions): a price per size in the sizes table (editable; the profit beside each, recalculated as
+you type by GET /ebay-profit-preview — the server's formula), Style (from the title / the type default, editable), Material (required —
+saved back to the style in BCWEB). "List on eBay" asks once inline (no browser dialog): style, sizes, pairs, the price range, free
+postage. On success the
 row is marked Listed with a link to the listing, for this visit; it leaves the list at the next Refresh. The On eBay view's cached read
 is dropped so it reads eBay afresh when next opened. Errors show eBay's own words — fix and press again (the listing build is
 idempotent). A blocked style shows no form.
@@ -27,12 +30,14 @@ REFRESH: each load reads eBay live (to know what's listed already) — fetched o
 =======================================================================================================================================
 */
 
-import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { mutate } from 'swr';
 import { ArrowPathIcon, CheckCircleIcon, ChevronRightIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getEbayCandidates, getEbayProfitPreview, listOnEbay, type EbayCandidate, type EbayListResult, type EbayMissing } from '@/lib/api';
+import {
+  getEbayCandidates, getEbayProfitPreview, listOnEbay, type EbayCandidate, type EbayCandidateSize, type EbayListResult, type EbayMissing,
+} from '@/lib/api';
 
 const NO_ROWS: EbayCandidate[] = [];
 
@@ -40,7 +45,7 @@ const MISSING: Record<EbayMissing, string> = {
   category: 'No eBay category for this gender / type yet',
   photos: 'No photos',
   description: 'No Shopify description',
-  price: 'No Shopify price',
+  price: 'A size has no Amazon price and the style has no Shopify price',
   uk_size: 'A size in stock has no UK size',
   uk_size_dup: 'Two sizes in stock have the same UK size',
   barcode: 'A size in stock has no barcode',
@@ -56,6 +61,16 @@ function money(v: number | null) {
 function signedMoney(v: number | null) {
   if (v === null) return '—';
   return v < 0 ? `−£${Math.abs(v).toFixed(2)}` : `£${v.toFixed(2)}`;
+}
+// "£38.80–£42.19", or one figure when the sizes agree.
+function range(low: number | null, high: number | null, fmt: (v: number | null) => string) {
+  if (low === null || high === null) return '—';
+  return Math.abs(low - high) < 0.005 ? fmt(low) : `${fmt(low)}–${fmt(high)}`;
+}
+// A typed price as pounds, or null when it isn't one.
+function parsePrice(text: string): number | null {
+  const n = Number(text);
+  return text.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 function londonTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
@@ -158,8 +173,8 @@ export default function NotOnEbay() {
                     <Th className="text-left" title="The eBay category the rules give it">eBay category</Th>
                     <Th className="text-center" title="Our stock: local + FBA live">Stock</Th>
                     <Th className="text-center" title="Sizes in stock">Sizes</Th>
-                    <Th className="text-right" title="Shopify price — the eBay price will start here (£4.50 postage, like Shopify)">Price</Th>
-                    <Th className="pr-3 text-right" title="Profit on one eBay sale at this price, with the £4.50 postage the buyer pays (EBY formula)">Profit</Th>
+                    <Th className="text-right" title="eBay price per size, free postage — its Amazon price, else Shopify + £4.50 (lowest–highest size)">Price</Th>
+                    <Th className="pr-3 text-right" title="Profit on one eBay sale of a size at its price, free postage (EBY formula) — lowest–highest size">Profit</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,8 +201,8 @@ export default function NotOnEbay() {
                           <td className="whitespace-nowrap px-2 py-2 text-slate-600">{r.category?.name || <span className="text-red-600">none</span>}</td>
                           <td className="px-2 py-2 text-center font-medium tabular-nums">{r.stock}</td>
                           <td className="px-2 py-2 text-center tabular-nums text-slate-600">{r.sizes.length}</td>
-                          <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-800">{money(r.price)}</td>
-                          <td className={'whitespace-nowrap py-2 pl-2 pr-3 text-right tabular-nums ' + (r.profit !== null && r.profit < 0 ? 'text-red-600' : 'text-slate-700')}>{signedMoney(r.profit)}</td>
+                          <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-800">{range(r.price_low, r.price_high, money)}</td>
+                          <td className={'whitespace-nowrap py-2 pl-2 pr-3 text-right tabular-nums ' + (r.profit_low !== null && r.profit_low < 0 ? 'text-red-600' : 'text-slate-700')}>{range(r.profit_low, r.profit_high, signedMoney)}</td>
                         </tr>
                         {isOpen && (
                           <tr className="border-b border-slate-200 bg-slate-50">
@@ -228,8 +243,13 @@ function Readiness({ row }: { row: EbayCandidate }) {
   );
 }
 
-// What the listing would carry, and the listing form (step 2).
+// What the listing would carry, and the listing form (step 2). The sizes table carries the price boxes, so the prices live here and the
+// form below reads them.
 function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: EbayListResult | null; onListed: (res: EbayListResult) => void }) {
+  const [prices, setPrices] = useState<Record<string, string>>(
+    () => Object.fromEntries(r.sizes.map((z) => [z.code, z.price !== null ? z.price.toFixed(2) : ''])),
+  );
+  const editable = !listed && r.status !== 'missing';
   const facts: [string, ReactNode][] = [
     ['eBay category', r.category ? r.category.name : <span className="text-red-600">none — {r.gender || '?'} / {r.producttype || '?'}</span>],
     ['Department', r.department || '—'],
@@ -240,6 +260,8 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
     ['Photos', r.photos ? r.photos : <span className="text-red-600">none</span>],
     ['Description', r.has_description ? 'Shopify description' : <span className="text-red-600">none</span>],
     ['Title', <span key="t" className="text-slate-600">{r.title || '—'} <span className="text-slate-400">({r.title_length}/80)</span></span>],
+    ['Shopify price', money(r.price)],
+    ['Postage', 'Free, Tracked 48'],
   ];
   return (
     <div className="flex flex-wrap items-start gap-x-10 gap-y-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -258,7 +280,10 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
             <th className="py-1.5 pr-4 text-left font-medium">UK size</th>
             <th className="py-1.5 pr-4 text-left font-medium">Barcode</th>
             <th className="py-1.5 pr-4 text-center font-medium">Local</th>
-            <th className="py-1.5 text-center font-medium">FBA</th>
+            <th className="py-1.5 pr-4 text-center font-medium">FBA</th>
+            <th className="py-1.5 pr-4 text-right font-medium" title="The size's price on Amazon now">Amazon</th>
+            <th className="py-1.5 pr-4 text-left font-medium" title="The eBay price, free postage — its Amazon price, else Shopify + £4.50. Editable.">eBay price</th>
+            <th className="py-1.5 text-right font-medium" title="Profit on one eBay sale at this price, free postage (EBY formula)">Profit</th>
           </tr>
         </thead>
         <tbody>
@@ -268,7 +293,20 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
               <td className="py-1.5 pr-4">{z.uk_size || <span className="text-red-600">none</span>}</td>
               <td className="py-1.5 pr-4 font-mono text-xs tabular-nums text-slate-700">{z.ean || <span className="font-sans text-red-600">none</span>}</td>
               <td className="py-1.5 pr-4 text-center tabular-nums">{z.local || <span className="text-slate-300">·</span>}</td>
-              <td className="py-1.5 text-center tabular-nums">{z.fba || <span className="text-slate-300">·</span>}</td>
+              <td className="py-1.5 pr-4 text-center tabular-nums">{z.fba || <span className="text-slate-300">·</span>}</td>
+              <td className="py-1.5 pr-4 text-right tabular-nums text-slate-600">{z.amz_price !== null ? money(z.amz_price) : <span className="text-slate-300">·</span>}</td>
+              <td className="py-1.5 pr-4">
+                {editable ? (
+                  <span className="flex items-center gap-1.5">
+                    <input inputMode="decimal" value={prices[z.code] ?? ''} onChange={(e) => setPrices((p) => ({ ...p, [z.code]: e.target.value }))}
+                      className={inputClass + ' w-20 py-1 tabular-nums'} />
+                    {z.price_from === 'shopify' && <span className="text-[10px] text-slate-400" title="No Amazon price — the Shopify price + £4.50">Shopify +£4.50</span>}
+                  </span>
+                ) : <span className="tabular-nums">{money(z.price)}</span>}
+              </td>
+              <td className="py-1.5 text-right">
+                <SizeProfit groupid={r.groupid} size={z} text={editable ? (prices[z.code] ?? '') : (z.price !== null ? z.price.toFixed(2) : '')} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -276,9 +314,32 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
       <div className="w-full border-t border-slate-100 pt-4">
         {listed ? <ListedNote result={listed} />
           : r.status === 'missing' ? <p className="text-sm text-red-700">Blocked — {r.missing.map((m) => MISSING[m] || m).join(' · ')}. Fix it in BCWEB, then Refresh.</p>
-          : <ListForm row={r} onListed={onListed} />}
+          : <ListForm row={r} prices={prices} onListed={onListed} />}
       </div>
     </div>
+  );
+}
+
+// The profit beside one size's price box: the server's own figure at the default price; otherwise worked out by the server
+// (GET /ebay-profit-preview), asked 400ms after the typing stops.
+function SizeProfit({ groupid, size, text }: { groupid: string; size: EbayCandidateSize; text: string }) {
+  const typed = parsePrice(text);
+  const [asked, setAsked] = useState<number | null>(typed);
+  useEffect(() => {
+    const t = setTimeout(() => setAsked(parsePrice(text)), 400);
+    return () => clearTimeout(t);
+  }, [text]);
+  const atDefault = typed !== null && size.price !== null && Math.abs(typed - size.price) < 0.005;
+  const preview = useApiQuery(
+    !atDefault && asked !== null ? ['ebay-profit', groupid, asked] : null,
+    () => getEbayProfitPreview(groupid, asked as number),
+  );
+  const profit = atDefault ? size.profit : (preview.data ?? null);
+  const waiting = !atDefault && (asked !== typed || preview.busy);
+  return (
+    <span className={'tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-800')}>
+      {typed === null ? '—' : waiting ? '…' : signedMoney(profit)}
+    </span>
   );
 }
 
@@ -296,41 +357,25 @@ function ListedNote({ result }: { result: EbayListResult }) {
 
 const inputClass = 'rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 
-// THE LISTING FORM — see the header. Price, Style, Material, then List on eBay -> confirm -> POST /ebay-list.
-function ListForm({ row: r, onListed }: { row: EbayCandidate; onListed: (res: EbayListResult) => void }) {
-  const [priceText, setPriceText] = useState(r.price !== null ? r.price.toFixed(2) : '');
+// THE LISTING FORM — see the header. Style, Material, then List on eBay -> confirm -> POST /ebay-list with every size's price.
+function ListForm({ row: r, prices, onListed }: { row: EbayCandidate; prices: Record<string, string>; onListed: (res: EbayListResult) => void }) {
   const [style, setStyle] = useState(r.style?.value || '');
   const [material, setMaterial] = useState(r.material?.value || '');
-  const [previewPrice, setPreviewPrice] = useState<number | null>(r.price);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const price = Number(priceText);
-  const priceOk = priceText.trim() !== '' && Number.isFinite(price) && price > 0;
-  const canList = priceOk && style.trim() !== '' && material.trim() !== '';
-
-  // Profit beside the price: the row's own figure at the Shopify price; otherwise the server works it out (debounced as you type).
-  const atShopify = previewPrice !== null && r.price !== null && Math.abs(previewPrice - r.price) < 0.005;
-  const preview = useApiQuery(
-    previewPrice !== null && !atShopify ? ['ebay-profit', r.groupid, previewPrice] : null,
-    () => getEbayProfitPreview(r.groupid, previewPrice as number),
-  );
-  const profit = atShopify ? r.profit : (preview.data ?? null);
-
-  function onPrice(v: string) {
-    setPriceText(v);
-    setConfirming(false);
-    if (timer.current) clearTimeout(timer.current);
-    const n = Number(v);
-    timer.current = setTimeout(() => setPreviewPrice(v.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null), 400);
-  }
+  const parsed = r.sizes.map((z) => [z.code, parsePrice(prices[z.code] ?? '')] as const);
+  const allPriced = parsed.every(([, p]) => p !== null);
+  const values = parsed.map(([, p]) => p ?? 0);
+  const low = allPriced ? Math.min(...values) : null;
+  const high = allPriced ? Math.max(...values) : null;
+  const canList = allPriced && style.trim() !== '' && material.trim() !== '';
 
   async function list() {
     setBusy(true);
     setErr(null);
-    const res = await listOnEbay(r.groupid, Math.round(price * 100) / 100, style.trim(), material.trim());
+    const res = await listOnEbay(r.groupid, Object.fromEntries(parsed.map(([c, p]) => [c, p ?? 0])), style.trim(), material.trim());
     setBusy(false);
     setConfirming(false);
     if (res.success && res.data) { onListed(res.data); return; }
@@ -340,17 +385,6 @@ function ListForm({ row: r, onListed }: { row: EbayCandidate; onListed: (res: Eb
   const fba = r.sizes.reduce((a, z) => a + z.fba, 0);
   return (
     <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
-      <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-        Price (£)
-        <input inputMode="decimal" value={priceText} onChange={(e) => onPrice(e.target.value)} className={inputClass + ' w-28 tabular-nums'} />
-      </label>
-      <div className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-        eBay profit
-        <span className={'py-1.5 text-sm tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-800')}>
-          {priceOk ? (preview.busy && !atShopify ? '…' : signedMoney(profit)) : '—'}
-          <span className="ml-1 text-xs font-normal text-slate-400">+ £4.50 postage</span>
-        </span>
-      </div>
       <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
         Style
         <input value={style} maxLength={65} onChange={(e) => { setStyle(e.target.value); setConfirming(false); }} className={inputClass + ' w-40'} />
@@ -369,7 +403,7 @@ function ListForm({ row: r, onListed }: { row: EbayCandidate; onListed: (res: Eb
       ) : (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
           <span>
-            List <strong className="font-mono">{r.groupid}</strong> at <strong>£{price.toFixed(2)}</strong> + £4.50 postage —{' '}
+            List <strong className="font-mono">{r.groupid}</strong> at <strong>{range(low, high, money)}</strong>, free postage —{' '}
             {r.sizes.length} size{r.sizes.length === 1 ? '' : 's'}, {r.stock} pair{r.stock === 1 ? '' : 's'}{fba > 0 ? ` (${fba} at FBA)` : ''}?
           </span>
           <button type="button" disabled={busy} onClick={list}
@@ -382,6 +416,7 @@ function ListForm({ row: r, onListed }: { row: EbayCandidate; onListed: (res: Eb
           </button>
         </div>
       )}
+      {!allPriced && <p className="w-full text-xs text-amber-700">Every size needs a price above £0.</p>}
       {err && <p className="w-full text-sm text-red-700">{err}</p>}
     </div>
   );

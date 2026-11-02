@@ -133,9 +133,10 @@ router.get('/', async (req, res) => {
     const unlisted = new Map((await unlistedSizes(listings.map((l) => l.item_id))).map((u) => [u.item_id, u.codes]));
 
     // Which listings are BCWEB's own (made by the List button) — only those get the per-size price control on the screen, and their
-    // sizes' own prices (ebay_listing_size.price, NULL = the listing's price).
+    // sizes' own prices: ebay_listing_size.price SET BY HAND (price_set_at stamped by routes/ebay-size-price.js). Since 2026-11-02 every
+    // size also records the price it was LISTED at (price_set_at NULL) — that's the normal per-size price, not an "own" one.
     const own = await query(`
-      SELECT e.item_id, s.code, s.price FROM ebay_listing e
+      SELECT e.item_id, s.code, CASE WHEN s.price_set_at IS NOT NULL THEN s.price END AS price FROM ebay_listing e
       JOIN ebay_listing_size s ON s.ebay_listing_id = e.id
       WHERE e.ended_at IS NULL AND e.item_id = ANY($1::text[])
     `, [listings.map((l) => l.item_id)]);

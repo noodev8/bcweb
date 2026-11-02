@@ -8,7 +8,8 @@ Purpose: Keep BCWEB's eBay listings in step with our stock — step 3 of the eBa
          have taken their pairs off free stock. WRITES TO EBAY and to ebay_listing_size. Two parts, in this order:
 
 1. NEW SIZES (addNewSizes) — a size of a listed style that has STOCK but isn't on its listing (a delivery brought in a size the style
-   didn't have when it was listed) is added to the SAME listing, at the price / Style / material the listing was made with, through the
+   didn't have when it was listed) is added to the SAME listing, at ITS OWN default price (its Amazon price, else Shopify + £4.50 —
+   since 2026-11-02) and the Style / material the listing was made with, through the
    same build as the List button (utils/ebayPublish.js → addSizes: the size's item and offer, the style's group with ALL its sizes, the
    group re-published — eBay keeps the listing number). Recorded in ebay_listing_size with the quantity it went on with.
    A size eBay would refuse is SKIPPED, not sent: no UK size (skumap.uksize), no barcode, or a UK size the listing already has. It stays
@@ -110,6 +111,8 @@ async function addNewSizes() {
         if (!z.uk_size) { skipped.push({ groupid: t.groupid, code: z.code, reason: 'no UK size' }); continue; }
         if (!z.ean) { skipped.push({ groupid: t.groupid, code: z.code, reason: 'no barcode' }); continue; }
         if (taken.has(z.uk_size)) { skipped.push({ groupid: t.groupid, code: z.code, reason: `UK ${z.uk_size} is on the listing already` }); continue; }
+        // z.price is THE default (its Amazon price, else Shopify + £4.50 — utils/ebayListingRules.js → sizePriceFor); none = can't price.
+        if (z.price === null) { skipped.push({ groupid: t.groupid, code: z.code, reason: 'no Amazon or Shopify price' }); continue; }
         taken.add(z.uk_size);
         newSizes.push(z);
       }
@@ -118,12 +121,12 @@ async function addNewSizes() {
       const res = await addSizes({ cand, listing, listedSizes, newSizes, setup });
       for (const s of res.sizes) {
         await query(
-          `INSERT INTO ebay_listing_size (ebay_listing_id, code, offer_id, qty_sent) VALUES ($1, $2, $3, $4)
+          `INSERT INTO ebay_listing_size (ebay_listing_id, code, offer_id, qty_sent, price) VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (ebay_listing_id, code) DO NOTHING`,
-          [t.listing_id, s.code, s.offerId, s.qty]
+          [t.listing_id, s.code, s.offerId, s.qty, s.price]
         );
         const z = newSizes.find((n) => n.code === s.code);
-        added.push({ groupid: t.groupid, code: s.code, uk_size: z ? z.uk_size : null, qty: s.qty });
+        added.push({ groupid: t.groupid, code: s.code, uk_size: z ? z.uk_size : null, qty: s.qty, price: s.price });
       }
     } catch (err) {
       failed.push({ groupid: t.groupid, error: err.message });
