@@ -617,13 +617,14 @@ export default function FinancePage() {
           onClick={() => runCalculate()}
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {busy ? (pulling ? 'Reading Shopify…' : 'Calculating…') : 'Calculate'}
+          {/* Generic on purpose (owner, 2026-11-02): the press reads every channel, not just Shopify. */}
+          {busy ? 'Calculating…' : 'Calculate'}
         </button>
         <span className="text-xs text-slate-500">
           {busy && pulling
-            ? 'Walking every Shopify order for the month — this takes about half a minute.'
+            ? "Reading the month's sales — this can take about half a minute."
             : shopifyCache?.month === month
-              ? 'Shopify is already read for this month, so this will be quick.'
+              ? 'Already read for this month, so this will be quick.'
               : 'Nothing is saved — the files you download are the record.'}
         </span>
       </div>
@@ -704,10 +705,15 @@ export default function FinancePage() {
               {eb?.present && (eb.zeroRated || 0) !== 0 && (
                 <Figure label="Zero-rated excluded" value={money(eb.zeroRated)} muted hint="Sales of zero-rated children's footwear, which carry no VAT" />
               )}
-              <Figure label="Fees" value={eb?.present ? money(eb.fees) : '—'} hint="Selling fees plus insertion and other charges — includes eBay's VAT, reclaimed" />
-              {eb?.present && (eb.feeBreakdown || []).map((f) => (
-                <Figure key={f.label} label={`· ${f.label}`} value={money(-f.amount)} muted />
-              ))}
+              {/* The summary for the accounts only (owner, 2026-11-02) — no per-transaction list, which grows with the channel. The fee
+                  breakdown rides in the tooltip. */}
+              <Figure
+                label="Fees"
+                value={eb?.present ? money(eb.fees) : '—'}
+                hint={`Includes eBay's VAT, reclaimed${eb?.present && eb.feeBreakdown?.length
+                  ? ` — ${eb.feeBreakdown.map((f) => `${f.label} ${money(f.amount)}`).join(', ')}`
+                  : ''}`}
+              />
               {eb?.present && (
                 <Figure
                   label="Balance moved"
@@ -715,31 +721,6 @@ export default function FinancePage() {
                   muted
                   hint="Sales less fees and refunds — should equal eBay's statement: closing funds less opening funds, before payouts"
                 />
-              )}
-              {eb?.present && (eb.orders?.length ?? 0) > 0 && (
-                <details className="mt-2 text-xs text-slate-500">
-                  <summary className="cursor-pointer select-none hover:text-slate-800">Orders</summary>
-                  <table className="mt-2 w-full">
-                    <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
-                        <th className="pb-1 font-semibold">Order</th>
-                        <th className="pb-1 text-right font-semibold">Gross</th>
-                        <th className="pb-1 text-right font-semibold">Fees</th>
-                        <th className="pb-1 text-right font-semibold">Net</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {eb.orders!.map((o) => (
-                        <tr key={`${o.type}-${o.orderId}-${o.date}`} className="border-t border-slate-100" title={o.codes.join(', ')}>
-                          <td className="py-1">{o.orderId}{o.type === 'REFUND' && <span className="ml-1 text-slate-400">refund</span>}</td>
-                          <td className="py-1 text-right tabular-nums">{money(o.gross)}</td>
-                          <td className="py-1 text-right tabular-nums">{money(-o.fees)}</td>
-                          <td className="py-1 text-right tabular-nums">{money(o.net)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </details>
               )}
             </Block>
 
