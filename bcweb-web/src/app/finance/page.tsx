@@ -650,7 +650,7 @@ export default function FinancePage() {
                 hint="VAT Amazon charged on zero-rated children's footwear. Already removed from the VAT above."
               />
               <Figure label="Fees" value={money(amz?.fees)} />
-              <Figure label="Reimbursements" value={money(amz?.reimbursements)} hint="FBA lost or damaged stock — income, no VAT" />
+              <Figure label="Reimbursements" value={money(amz?.reimbursements)} hint="FBA lost or damaged stock — income, no VAT. A negative month (take-backs over payouts) is netted into Amazon Sales in the QuickFile file" />
             </Block>
 
             <Block

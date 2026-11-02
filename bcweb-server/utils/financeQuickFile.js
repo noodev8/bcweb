@@ -122,14 +122,23 @@ function buildSalesCsv(figures, month) {
   // Gross is what customers paid INCLUDING the VAT charged on zero-rated items; the declared VAT excludes it (financeAmazon's
   // header note explains why those two differ). VAT Rate stays "20" as a label — QuickFile takes the gross and the VAT amount
   // explicitly, so the label drives nothing, and the effective rate is under 20% in any month with zero-rated sales.
-  if (present(amazon.gross)) {
-    add('Amazon UK', 'Amazon Sales', amazon.gross, 20, amazon.vatDeclared || 0, BANK.AMAZON);
-  }
-
+  //
   // FBA reimbursements for lost or damaged stock. NEW — PowerBuilder netted this against fees (spec §5.1). Income, and it carries
-  // no VAT, so it cannot ride on the sales row above.
-  if (present(amazon.reimbursements)) {
-    add('Amazon UK', 'FBA Reimbursements', amazon.reimbursements, 0, 0, BANK.AMAZON);
+  // no VAT, so normally it is its own 0% row.
+  //
+  // A NEGATIVE MONTH is netted into the Amazon Sales row instead (owner, 2026-11-02). The Adjustment total includes Amazon's
+  // "General Adjustment" take-backs of earlier reimbursements (the pair turned up / the customer did return it), and when those
+  // outweigh the month's payouts the net is negative — QuickFile refuses a sales invoice with a negative gross (October 2026:
+  // +181.62 paid, −245.94 taken back = −64.32). A take-back cancels income, it isn't a cost, so it comes off the sales gross; the
+  // VAT is untouched (reimbursements carry none), and the Amazon bank still balances to the penny.
+  const reimb = Number(amazon.reimbursements || 0);
+  const netReimbIntoSales = present(reimb) && reimb < 0;
+  const amazonGross = Number(amazon.gross || 0) + (netReimbIntoSales ? reimb : 0);
+  if (present(amazonGross)) {
+    add('Amazon UK', 'Amazon Sales', amazonGross, 20, amazon.vatDeclared || 0, BANK.AMAZON);
+  }
+  if (present(reimb) && !netReimbIntoSales) {
+    add('Amazon UK', 'FBA Reimbursements', reimb, 0, 0, BANK.AMAZON);
   }
 
   // --- SHOPIFY --------------------------------------------------------------------------------------------------------------
