@@ -13,6 +13,10 @@ THE LISTING (owner decisions, CLAUDE.md "eBay listings"):
              per size on the listing form, the eBay profit beside each.
              WHY: eBay's shops sell with free delivery at about the Amazon price (Lunar St Ives White, 2026-11-02: £39.35–£44.99 free,
              against our old Shopify £42.19 + £4.50 = £46.69, the dearest on the page), and eBay prices each variation, like Amazon.
+             CLEARANCE SIZES (owner, 2026-11-02): a size unsold 9+ months (THE Slow Sizes measure — utils/onShelf.js / slowSizes.js
+             `clearance`) starts at 50% of RRP — the Shopify clearance rule — or its normal price if that is already lower (clearance
+             never RAISES a price). This is what the eBay listings were for in the first place: a dead size of a selling style can
+             be cleared on eBay without cutting the style (Shopify prices per style).
   postage    FREE, Tracked 48, on every listing (POSTAGE = 0) — was £4.50 until 2026-11-02
   dispatch   same day for orders before 2pm Mon–Fri, wherever the pair is stored
   footer     FOOTER below, under the Shopify description (owner-approved wording — no postage price, no website, no "contact us")
@@ -38,13 +42,25 @@ Boys). Every one is FREE TEXT on eBay, so our own words are accepted.
 
 const POSTAGE = 0;             // £ the buyer pays: FREE, Tracked 48, every listing (owner, 2026-11-02; was 4.50)
 const SHOPIFY_UPLIFT = 4.50;   // a size with no Amazon price: the Shopify price + this (the old £4.50 postage, folded into the price)
+const CLEARANCE_SHARE = 0.5;   // a clearance size (unsold 9+ months): this share of RRP — the Shopify clearance rule (50%)
 
 /*
- * sizePriceFor(amzPrice, shopifyPrice) -> { price, from: 'amazon' | 'shopify' } | null
+ * sizePriceFor(amzPrice, shopifyPrice, { clearance, rrp }?) -> { price, from: 'amazon' | 'shopify' | 'clearance' } | null
  *   THE default eBay price of one size: its Amazon price when it has one (> 0), else the style's Shopify price + £4.50. null = neither
- *   (the style is blocked: 'price'). Prices are VAT-inclusive, rounded to the penny.
+ *   (the style is blocked: 'price'). A CLEARANCE size (unsold 9+ months) with an RRP takes 50% of RRP instead — unless the normal
+ *   price is already lower (never raise). Prices are VAT-inclusive, rounded to the penny.
  */
-function sizePriceFor(amzPrice, shopifyPrice) {
+function sizePriceFor(amzPrice, shopifyPrice, { clearance = false, rrp = null } = {}) {
+  const normal = normalPrice(amzPrice, shopifyPrice);
+  const r = Number(rrp);
+  if (clearance && rrp !== null && rrp !== undefined && rrp !== '' && Number.isFinite(r) && r > 0) {
+    const half = Math.round(r * CLEARANCE_SHARE * 100) / 100;
+    if (!normal || half < normal.price) return { price: half, from: 'clearance' };
+  }
+  return normal;
+}
+
+function normalPrice(amzPrice, shopifyPrice) {
   const a = Number(amzPrice);
   if (amzPrice !== null && amzPrice !== undefined && amzPrice !== '' && Number.isFinite(a) && a > 0) {
     return { price: Math.round(a * 100) / 100, from: 'amazon' };
@@ -174,6 +190,6 @@ function ukSizeFor(uksize) {
 }
 
 module.exports = {
-  POSTAGE, SHOPIFY_UPLIFT, TITLE_MAX, FOOTER, CATEGORY_NAMES, sizePriceFor,
+  POSTAGE, SHOPIFY_UPLIFT, CLEARANCE_SHARE, TITLE_MAX, FOOTER, CATEGORY_NAMES, sizePriceFor,
   categoryFor, departmentFor, typeFor, styleFor, materialFor, ukSizeFor,
 };

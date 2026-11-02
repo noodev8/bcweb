@@ -5004,10 +5004,12 @@ export interface EbayListingsSummary {
 // with a readiness check. READ ONLY. missing = blocks listing; todo = the listing form will ask (material).
 export type EbayMissing = 'category' | 'photos' | 'description' | 'price' | 'uk_size' | 'uk_size_dup' | 'barcode' | 'title' | 'title_long';
 // price = THE default eBay price of the size (owner, 2026-11-02): its Amazon price (amz_price), else the Shopify price + £4.50 — FREE
-// postage. profit = one eBay sale at it (EBY formula).
+// postage; a CLEARANCE size (unsold 9+ months — THE Slow Sizes measure) starts at 50% of RRP, never a raise. profit = one eBay sale
+// at it (EBY formula).
 export interface EbayCandidateSize {
   code: string; uk_size: string | null; ean: string | null; local: number; fba: number;
-  amz_price: number | null; price: number | null; price_from: 'amazon' | 'shopify' | null; profit: number | null;
+  idle_days: number | null; clearance: boolean;
+  amz_price: number | null; price: number | null; price_from: 'amazon' | 'shopify' | 'clearance' | null; profit: number | null;
 }
 export interface EbayCandidate {
   groupid: string; title: string | null; brand: string | null; gender: string | null; producttype: string | null;
@@ -5016,6 +5018,7 @@ export interface EbayCandidate {
   material: { value: string; from: 'stored' | 'title' } | null;
   type: string | null; colour: string | null;
   price: number | null; rrp: number | null;   // price = the SHOPIFY price, for reference — eBay prices are per size
+  clearance_sizes: number;                     // sizes unsold 9+ months (priced at 50% of RRP)
   price_low: number | null; price_high: number | null;     // the sizes' eBay prices, low–high
   profit_low: number | null; profit_high: number | null;   // the sizes' eBay profits, low–high
   photos: number; has_description: boolean; title_length: number;

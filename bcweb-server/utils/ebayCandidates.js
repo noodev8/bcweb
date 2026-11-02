@@ -17,7 +17,10 @@ PER STYLE: title (Shopify), brand, the category / department / Style / material 
 the Shopify price, stock (local + FBA), photos (product_images), whether a Shopify description exists, and its IN-STOCK sizes — code,
 UK size (skumap.uksize, never the code suffix), barcode (skumap.ean, trailing B stripped), local, FBA, and the size's eBay PRICE
 (owner, 2026-11-02 — utils/ebayListingRules.js → sizePriceFor: its Amazon price, amzfeed.amzprice, else the Shopify price + £4.50;
-free postage) with `price_from` and the eBay profit at it (THE EBY formula, no postage). The style carries the low–high of those. skumap can hold two rows for one code: the one with a UK size, then a barcode, wins.
+free postage) with `price_from` and the eBay profit at it (THE EBY formula, no postage). The style carries the low–high of those.
+CLEARANCE (owner, 2026-11-02): each size also carries `idle_days` and `clearance` (unsold 9+ months) from THE Slow Sizes read
+(utils/slowSizes.js → readSlowSizes — the same figures as that screen, so the two always agree), and a clearance size's default price
+is 50% of RRP (never a raise — sizePriceFor). The style counts its clearance sizes (`clearance_sizes`). skumap can hold two rows for one code: the one with a UK size, then a barcode, wins.
 With { full: true } (the List button) also: the description text, the photo filenames in order, and the cost.
 
 READINESS:
@@ -31,6 +34,7 @@ const { query } = require('../database');
 const { safeNumeric } = require('./sql');
 const { ebayProfit } = require('./ebayProfit');
 const rules = require('./ebayListingRules');
+const { readSlowSizes } = require('./slowSizes');
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 const round2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
@@ -99,6 +103,9 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     ORDER BY per.local + per.fba DESC, ss.groupid
   `, [onEbayCodes, groupid]);
 
+  // Idle days + the 9-month clearance flag per code — THE Slow Sizes read, once for every size we hold (~0.5s).
+  const slow = new Map((await readSlowSizes()).sizes.map((z) => [z.code, z]));
+
   let onEbayStyles = 0;
   const rows = [];
   for (const r of result.rows) {
@@ -106,10 +113,15 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     const title = r.title || '';
     const price = num(r.price);
     const cost = num(r.cost);
+    const rrp = num(r.rrp);
     const sizes = (r.sizes || []).map((z) => {
-      const def = rules.sizePriceFor(z.amz_price, price);
+      const s = slow.get(z.code);
+      const clearance = Boolean(s && s.clearance);
+      const def = rules.sizePriceFor(z.amz_price, price, { clearance, rrp });
       return {
         code: z.code, uk_size: rules.ukSizeFor(z.uksize), ean: z.ean || null, local: Number(z.local) || 0, fba: Number(z.fba) || 0,
+        idle_days: s ? s.idle_days : null,
+        clearance,
         amz_price: num(z.amz_price) !== null && num(z.amz_price) > 0 ? num(z.amz_price) : null,
         price: def ? def.price : null,
         price_from: def ? def.from : null,
@@ -147,7 +159,8 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
       type: rules.typeFor(r.gender, r.producttype, title),
       colour: r.colour,
       price,              // the SHOPIFY price (for reference — the eBay prices are per size)
-      rrp: num(r.rrp),
+      rrp,
+      clearance_sizes: sizes.filter((z) => z.clearance).length,
       price_low: priced.length ? Math.min(...priced.map((z) => z.price)) : null,
       price_high: priced.length ? Math.max(...priced.map((z) => z.price)) : null,
       profit_low: profits.length ? Math.min(...profits) : null,

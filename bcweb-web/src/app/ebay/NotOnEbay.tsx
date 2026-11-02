@@ -10,9 +10,11 @@ Purpose: every style that could go on eBay and isn't there yet (GET /ebay-candid
 KEPT PLAIN, like the On eBay view (owner: "the screen is too busy"): code first and large (→ the product page), title as a tooltip,
 brand in its own column, the eBay category, Stock (local + FBA live), the eBay Price (low–high of the sizes) and the eBay profit
 (low–high). PRICES ARE PER SIZE, FREE POSTAGE (owner, 2026-11-02): each size at its Amazon price, else the Shopify price + £4.50 — the
-server's rule (utils/ebayListingRules.js → sizePriceFor), never worked out here. NO READINESS COLUMN: a style that needs something gets an icon after its code (hover = what),
+server's rule (utils/ebayListingRules.js → sizePriceFor), never worked out here. CLEARANCE (owner, 2026-11-02): a size unsold 9+
+months (THE Slow Sizes measure) starts at 50% of RRP — the Shopify clearance rule, never a raise — and is tagged in the drop-down with
+its idle days; the "Clearance sizes" filter shows the styles that have one. Clearing dead sizes is what the eBay channel was for. NO READINESS COLUMN: a style that needs something gets an icon after its code (hover = what),
 red when it is blocked, amber when the form will only ask for a material; a ready style shows nothing. Filters: All · Ready ·
-Needs material · Blocked.
+Needs material · Blocked · Clearance sizes.
 
 A CLICK ON A ROW opens what the listing would carry: category, department, Style (from the title, or the type's default), material
 (stored, from the title, or "the form will ask"), photos, description, the Shopify price, and the in-stock sizes with UK size,
@@ -53,7 +55,7 @@ const MISSING: Record<EbayMissing, string> = {
   title_long: 'Title is over eBay’s 80 characters',
 };
 
-type Filter = 'all' | 'ready' | 'todo' | 'missing';
+type Filter = 'all' | 'ready' | 'todo' | 'missing' | 'clearance';
 
 function money(v: number | null) {
   return v === null ? '—' : `£${v.toFixed(2)}`;
@@ -99,12 +101,14 @@ export default function NotOnEbay() {
     ready: rows.filter((r) => r.status === 'ready').length,
     todo: rows.filter((r) => r.status === 'todo').length,
     missing: rows.filter((r) => r.status === 'missing').length,
+    clearance: rows.filter((r) => r.clearance_sizes > 0).length,
   }), [rows]);
 
   const visible = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
-      if (filter !== 'all' && r.status !== filter) return false;
+      if (filter === 'clearance') { if (r.clearance_sizes === 0) return false; }
+      else if (filter !== 'all' && r.status !== filter) return false;
       if (terms.length === 0) return true;
       const hay = `${r.groupid} ${r.title || ''} ${r.brand || ''} ${r.category?.name || ''}`.toLowerCase();
       return terms.every((t) => hay.includes(t));
@@ -135,7 +139,7 @@ export default function NotOnEbay() {
       {data && (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {([['all', 'All'], ['ready', 'Ready'], ['todo', 'Needs material'], ['missing', 'Blocked']] as [Filter, string][]).map(([k, label]) => (
+            {([['all', 'All'], ['ready', 'Ready'], ['todo', 'Needs material'], ['missing', 'Blocked'], ['clearance', 'Clearance sizes']] as [Filter, string][]).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -281,6 +285,7 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
             <th className="py-1.5 pr-4 text-left font-medium">Barcode</th>
             <th className="py-1.5 pr-4 text-center font-medium">Local</th>
             <th className="py-1.5 pr-4 text-center font-medium">FBA</th>
+            <th className="py-1.5 pr-4 text-right font-medium" title="Days the size has sat unsold — THE Slow Sizes measure; 9+ months = clearance">Idle</th>
             <th className="py-1.5 pr-4 text-right font-medium" title="The size's price on Amazon now">Amazon</th>
             <th className="py-1.5 pr-4 text-left font-medium" title="The eBay price, free postage — its Amazon price, else Shopify + £4.50. Editable.">eBay price</th>
             <th className="py-1.5 text-right font-medium" title="Profit on one eBay sale at this price, free postage (EBY formula)">Profit</th>
@@ -294,6 +299,10 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
               <td className="py-1.5 pr-4 font-mono text-xs tabular-nums text-slate-700">{z.ean || <span className="font-sans text-red-600">none</span>}</td>
               <td className="py-1.5 pr-4 text-center tabular-nums">{z.local || <span className="text-slate-300">·</span>}</td>
               <td className="py-1.5 pr-4 text-center tabular-nums">{z.fba || <span className="text-slate-300">·</span>}</td>
+              <td className="whitespace-nowrap py-1.5 pr-4 text-right tabular-nums text-slate-600">
+                {z.clearance && <span className="mr-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800" title="Unsold 9+ months — priced at 50% of RRP">Clearance</span>}
+                {z.idle_days !== null ? `${z.idle_days}d` : <span className="text-slate-300">·</span>}
+              </td>
               <td className="py-1.5 pr-4 text-right tabular-nums text-slate-600">{z.amz_price !== null ? money(z.amz_price) : <span className="text-slate-300">·</span>}</td>
               <td className="py-1.5 pr-4">
                 {editable ? (
@@ -301,6 +310,7 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
                     <input inputMode="decimal" value={prices[z.code] ?? ''} onChange={(e) => setPrices((p) => ({ ...p, [z.code]: e.target.value }))}
                       className={inputClass + ' w-20 py-1 tabular-nums'} />
                     {z.price_from === 'shopify' && <span className="text-[10px] text-slate-400" title="No Amazon price — the Shopify price + £4.50">Shopify +£4.50</span>}
+                    {z.price_from === 'clearance' && <span className="text-[10px] text-amber-700" title="Unsold 9+ months — the Shopify clearance rule">50% RRP</span>}
                   </span>
                 ) : <span className="tabular-nums">{money(z.price)}</span>}
               </td>
