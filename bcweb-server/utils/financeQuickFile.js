@@ -37,6 +37,7 @@ const BANK = {
   PAYPAL: '1254',
   SUMUP: '1258',
   CASH: '1230',
+  EBAY: '1257',   // the eBay balance — set up in QuickFile by the owner, 2026-11-01 (opening balance £0)
 };
 
 // Purchase nominal codes. 6003 is the general fees account; 7400 is travel.
@@ -99,7 +100,8 @@ function toCsv(rows) {
  * The sales invoice file: money coming in.
  *
  * `figures` is the shape /finance-calculate returns plus the typed figures, i.e.
- *   { amazon: { gross, vatDeclared, reimbursements }, shopify: { sales, salesVat, refund, refundVat }, manual: { sumupSales, cashSales } }
+ *   { amazon: { gross, vatDeclared, reimbursements }, shopify: { sales, salesVat, refund, refundVat },
+ *     ebay: { sales, salesVat, refund, refundVat }, manual: { sumupSales, cashSales } }
  * Anything absent is simply skipped, which is how a partial month (no Shopify yet, say) still produces a usable file.
  */
 function buildSalesCsv(figures, month) {
@@ -143,6 +145,16 @@ function buildSalesCsv(figures, month) {
   const shopifyVat = Number(shopify.salesVat || 0) + Number(shopify.refundVat || 0);
   if (present(shopifyGross)) {
     add('Shopify Brookfield Comfort', 'Shopify Sales', shopifyGross, 20, shopifyVat, BANK.SHOPIFY);
+  }
+
+  // --- EBAY -----------------------------------------------------------------------------------------------------------------
+  // GROSS — what buyers paid — not eBay's "Orders (Total minus fees)": the fees go in the purchase file (financeEbay's header).
+  // One row, refunds netted in, same sign convention as Shopify (sales/salesVat positive, refund/refundVat negative).
+  const ebay = figures.ebay || {};
+  const ebayGross = Number(ebay.sales || 0) + Number(ebay.refund || 0);
+  const ebayVat = Number(ebay.salesVat || 0) + Number(ebay.refundVat || 0);
+  if (present(ebayGross)) {
+    add('eBay UK', 'eBay Sales', ebayGross, 20, ebayVat, BANK.EBAY);
   }
 
   // --- SHOP -----------------------------------------------------------------------------------------------------------------
@@ -195,6 +207,14 @@ function buildPurchaseCsv(figures, month) {
   const shopifyFees = -Number(shopify.fees || 0);
   if (shopifyFees > 0) {
     add('Shopify', 'Fees', shopifyFees, 0, 0, NOMINAL.FEES, BANK.SHOPIFY);
+  }
+
+  // --- EBAY FEES ------------------------------------------------------------------------------------------------------------
+  // Selling fees + insertion and other charges. eBay charges VAT on its fees and the owner reclaims it (2026-10-31), so a sixth of
+  // the gross, as Amazon.
+  const ebayFees = -Number((figures.ebay || {}).fees || 0);
+  if (ebayFees > 0) {
+    add('eBay', 'Fees', ebayFees, 20, ebayFees / VAT_DIVISOR, NOMINAL.FEES, BANK.EBAY);
   }
 
   // --- PAYPAL FEES ----------------------------------------------------------------------------------------------------------

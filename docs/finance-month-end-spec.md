@@ -70,6 +70,7 @@ PayPal file, types three numbers, and presses two buttons.
 | Amazon | Seller Central → Payments → Reports Repository → Monthly Transaction CSV, uploaded | no — manual download |
 | Shopify sales/refunds/VAT | Orders API, live | yes |
 | Shopify fees | Balance Transactions API, live | yes |
+| eBay sales, refunds, fees | Finances API (getTransactions), live — added 2026-11-01 (§3.7) | yes |
 | PayPal fees | PayPal *All transactions* CSV, uploaded | no — manual download |
 | SumUp sales + fees | typed | no |
 | Shop cash | typed | no |
@@ -266,6 +267,39 @@ line of text — closing the month by hand must always still work.
 API price push uses, no second credential — must be on the sheet's Share list as Viewer. Env:
 `GOOGLE_CAR_SHEET_ID`, `GOOGLE_CAR_SHEET_TAB`. Unset = the feature is simply off.
 
+### 3.7 eBay — added 2026-11-01 (owner)
+
+Read live from eBay's **Finances API** on every Calculate (`utils/financeEbay.js`), the month in **UTC**, because eBay's statement is
+GMT, so the figures tie to the PDF.
+
+**Gross, not eBay's net.** eBay's monthly statement shows "Orders (Total minus fees)". That's the money left in the eBay balance, which
+is a cash figure. The books take the SALE at what the buyer paid and the FEES as a purchase, the same as Amazon. VAT is owed on the full
+sale (eBay doesn't collect VAT on a UK seller's UK sales), and eBay's VAT on its fees can only be reclaimed if the fees are booked as a
+cost. October 2026 shows the gap: two £11.99 sales = **£23.98** gross; £4.50 order fees + 10 × £0.36 insertion fees = **£8.10**. The
+statement shows £19.48 and −£3.60 instead, closing at £15.88.
+
+| Transaction | Treatment |
+|---|---|
+| SALE | gross = amount + totalFeeAmount; fees = totalFeeAmount |
+| REFUND | the same identity with the signs turned (its fees are fee CREDITS back to the seller) |
+| NON_SALE_CHARGE | fees (insertion, ads, subscription…), broken down by feeType |
+| TRANSFER / WITHDRAWAL / PAYOUT | excluded: money moving to the bank |
+| anything else | not booked; listed in a warning to book by hand |
+
+**Cross-check:** for each SALE / REFUND, totalFeeBasisAmount − eBay-collected tax − fees must equal amount. Any that don't are named in
+a warning. That check is how the first real refund gets verified, because none had been seen when this was built. **Balance moved** (the
+signed sum of everything not excluded) is shown so it can be ticked against the statement: closing − opening funds, before payouts.
+
+**VAT:** from `skusummary.tax`, as Amazon and Shopify do it. Each order is matched to the `sales` rows Update Orders booked for it
+(`ordernum` 'EB' + eBay's number, channel EBY). Standard-rated = gross ÷ 6. A zero-rated line takes its share of the order (by
+soldprice) out of the VAT. An order with no `sales` rows is standard-rated and listed as unmatched.
+
+**Setup (once):** the refresh token needs the `sell.finances` scope (`scripts/ebay-token.js`, which asks for it since 2026-11-01). It is
+swapped for its own finance token (`utils/ebayAuth.js → financeToken`), so an older token breaks only this block, never orders or
+listings. eBay also requires a **digital signature** on every Finances call for a UK seller: an Ed25519 key made once by
+`scripts/ebay-signing-key.js`, which writes `EBAY_SIGNING_*` into .env and lasts 3 years. The signing itself is
+`utils/ebaySignature.js`. Both go to the VPS .env too.
+
 ### 3.6 Stock value
 
 Units and cost value of stock held, shown on the screen. Port the SQL from
@@ -307,6 +341,7 @@ Columns: `Issue Date, Client name, Description, Total gross amount, VAT Rate, VA
 | Amazon UK | Amazon Sales | Amazon income gross | 20 | Amazon VAT (§3.2) | 1251 |
 | Amazon UK | FBA Reimbursements | reimbursements | 0 | 0.00 | 1251 |
 | Shopify Brookfield Comfort | Shopify Sales | Sales + Refund | 20 | Sales VAT + Refund VAT | 1253 |
+| eBay UK | eBay Sales | Sales + Refund, GROSS (§3.7) | 20 | Sales VAT + Refund VAT | 1257 |
 | SumUp | Shop Card Sales | SumUp total | 20 | gross ÷ 6 | 1258 |
 | Shop | Shop Cash Sales | cash total | 20 | gross ÷ 6 | 1230 |
 
@@ -323,12 +358,14 @@ Columns: `Receipt Date, Supplier name, Description, Total gross amount, VAT Rate
 |---|---|---|---|---|---|---|
 | Amazon | Fees | Amazon fees, positive | 20 | gross ÷ 6 | 6003 | 1251 |
 | Shopify | Fees | Shopify fees | 0 | 0.00 | 6003 | 1253 |
+| eBay | Fees | eBay fees, positive | 20 | gross ÷ 6 | 6003 | 1257 |
 | PayPal | Fees | PayPal fees | 0 | 0.00 | 6003 | 1254 |
 | Car | Travel | car total | 0 | 0.00 | 7400 | 1230 |
 | SumUp | Fees | SumUp fees | 0 | 0.00 | 6003 | 1258 |
 
 Amazon charges VAT on its fees and Shopify does not (confirmed, owner 2026-09-11) — hence
-20% on one and 0% on the other.
+20% on one and 0% on the other. eBay charges VAT on its fees too, and the owner reclaims it (2026-10-31) — 20%.
+Bank 1257 is the eBay balance account in QuickFile (owner, 2026-11-01, opening balance £0).
 
 ### 4.3 The year-end pack
 

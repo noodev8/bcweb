@@ -29,7 +29,8 @@ Request: multipart/form-data
   files     optional — the Amazon Monthly Transaction CSV again, ONLY needed for kidsvatcharged.csv
   month     'YYYY-MM', required
   figures   JSON string, required: { amazon:{gross,vatDeclared,fees,reimbursements}, shopify:{sales,salesVat,refund,refundVat,fees},
-                                     paypal:{fees}, manual:{sumupSales,sumupFees,cashSales,car} }
+                                     ebay:{sales,salesVat,refund,refundVat,fees}, paypal:{fees},
+                                     manual:{sumupSales,sumupFees,cashSales,car} }
 
 Success Response:
 {

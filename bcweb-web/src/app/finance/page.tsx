@@ -353,7 +353,7 @@ export default function FinancePage() {
     const res = await buildFinanceQuickFile({
       files,
       month,
-      figures: { amazon: result.amazon, shopify: result.shopify, paypal: result.paypal, manual },
+      figures: { amazon: result.amazon, shopify: result.shopify, ebay: result.ebay, paypal: result.paypal, manual },
     });
     setBusy(false);
     if (!res.success || !res.data) {
@@ -379,6 +379,11 @@ export default function FinancePage() {
   const shop = result?.shopify;
   const shopifyGross = (shop?.sales || 0) + (shop?.refund || 0);
   const shopifyVat = (shop?.salesVat || 0) + (shop?.refundVat || 0);
+  // eBay is GROSS — what buyers paid — with eBay's fees as a cost, not the "Orders (Total minus fees)" net on eBay's own statement
+  // (owner, 2026-11-01; utils/financeEbay.js). The balance movement is shown so it can be ticked against that statement.
+  const eb = result?.ebay;
+  const ebayGross = (eb?.sales || 0) + (eb?.refund || 0);
+  const ebayVat = (eb?.salesVat || 0) + (eb?.refundVat || 0);
 
   return (
     <AppShell>
@@ -686,6 +691,56 @@ export default function FinancePage() {
                 />
               )}
               <Figure label="Fees" value={shop && shop.fees !== null ? money(shop.fees) : '—'} />
+            </Block>
+
+            <Block
+              title="eBay"
+              aside={eb?.present
+                ? <span className="text-[11px] tabular-nums text-slate-400">{eb.counts?.sale ?? 0} sales · {eb.counts?.refund ?? 0} refunds · read live</span>
+                : <span className="text-[11px] text-slate-400">not read</span>}
+            >
+              <Figure label="Sales (net of refunds)" value={eb?.present ? money(ebayGross) : '—'} hint="What buyers paid, including VAT — before eBay's fees" />
+              <Figure label="VAT" value={eb?.present ? money(ebayVat) : '—'} hint="Derived from our own tax flag — a sixth of each standard-rated sale" />
+              {eb?.present && (eb.zeroRated || 0) !== 0 && (
+                <Figure label="Zero-rated excluded" value={money(eb.zeroRated)} muted hint="Sales of zero-rated children's footwear, which carry no VAT" />
+              )}
+              <Figure label="Fees" value={eb?.present ? money(eb.fees) : '—'} hint="Selling fees plus insertion and other charges — includes eBay's VAT, reclaimed" />
+              {eb?.present && (eb.feeBreakdown || []).map((f) => (
+                <Figure key={f.label} label={`· ${f.label}`} value={money(-f.amount)} muted />
+              ))}
+              {eb?.present && (
+                <Figure
+                  label="Balance moved"
+                  value={money(eb.movement)}
+                  muted
+                  hint="Sales less fees and refunds — should equal eBay's statement: closing funds less opening funds, before payouts"
+                />
+              )}
+              {eb?.present && (eb.orders?.length ?? 0) > 0 && (
+                <details className="mt-2 text-xs text-slate-500">
+                  <summary className="cursor-pointer select-none hover:text-slate-800">Orders</summary>
+                  <table className="mt-2 w-full">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
+                        <th className="pb-1 font-semibold">Order</th>
+                        <th className="pb-1 text-right font-semibold">Gross</th>
+                        <th className="pb-1 text-right font-semibold">Fees</th>
+                        <th className="pb-1 text-right font-semibold">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {eb.orders!.map((o) => (
+                        <tr key={`${o.type}-${o.orderId}-${o.date}`} className="border-t border-slate-100" title={o.codes.join(', ')}>
+                          <td className="py-1">{o.orderId}{o.type === 'REFUND' && <span className="ml-1 text-slate-400">refund</span>}</td>
+                          <td className="py-1 text-right tabular-nums">{money(o.gross)}</td>
+                          <td className="py-1 text-right tabular-nums">{money(-o.fees)}</td>
+                          <td className="py-1 text-right tabular-nums">{money(o.net)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              )}
             </Block>
 
             <Block title="Other sales">

@@ -13,6 +13,7 @@ TWO KINDS OF TOKEN:
                      months — EBAY_REFRESH_TOKEN_EXPIRES) for USER_SCOPES: orders (utils/ebayOrders.js), and later listings + stock.
                      Also 2 hours, cached the same way. The scopes asked for here must be ones the refresh token was granted, or eBay
                      refuses — keep USER_SCOPES in step with scripts/ebay-token.js.
+  FINANCE token      the same refresh token swapped for FINANCE_SCOPES (sell.finances) — Month End only, kept apart (see below).
 
 Production endpoint only — there is no sandbox switch: the sandbox can't see real orders, and the reads we make are harmless.
 =======================================================================================================================================
@@ -88,20 +89,31 @@ const USER_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.account'
 ].join(' ');
 
+// The FINANCE token — Month End's eBay block (utils/financeEbay.js). Its own scope set, asked for SEPARATELY on purpose: a refresh
+// token can only be swapped for scopes it was granted, and sell.finances was added to scripts/ebay-token.js on 2026-11-01. Folding it
+// into USER_SCOPES would break the order import, stock sync and listings on any machine still holding the older token; kept apart,
+// only Month End's eBay block fails (with "run scripts/ebay-token.js") until the token is re-minted.
+const FINANCE_SCOPES = [
+  'https://api.ebay.com/oauth/api_scope',
+  'https://api.ebay.com/oauth/api_scope/sell.finances'
+].join(' ');
+
 function isUserConfigured() {
   return isConfigured() && Boolean(config.ebay.refreshToken);
 }
 
-let userCached = null;   // { token, expiresAt }
-let userFetching = null;
+// One cached 2h access token per scope set, one fetch in flight per set.
+const userCache = new Map();      // scopes -> { token, expiresAt }
+const userFetching = new Map();   // scopes -> Promise
 
-async function userToken() {
+async function tokenFor(scopes) {
   if (!isUserConfigured()) {
-    throw coded('EBAY_NOT_CONFIGURED', 'eBay orders need EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and EBAY_REFRESH_TOKEN in bcweb-server/.env');
+    throw coded('EBAY_NOT_CONFIGURED', 'eBay needs EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and EBAY_REFRESH_TOKEN in bcweb-server/.env');
   }
-  if (userCached && Date.now() < userCached.expiresAt) return userCached.token;
-  if (!userFetching) {
-    userFetching = (async () => {
+  const hit = userCache.get(scopes);
+  if (hit && Date.now() < hit.expiresAt) return hit.token;
+  if (!userFetching.has(scopes)) {
+    userFetching.set(scopes, (async () => {
       const { clientId, clientSecret, refreshToken } = config.ebay;
       let res;
       try {
@@ -111,7 +123,7 @@ async function userToken() {
             'Content-Type': 'application/x-www-form-urlencoded',
             Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
           },
-          body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, scope: USER_SCOPES }),
+          body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, scope: scopes }),
           signal: AbortSignal.timeout(TIMEOUT_MS)
         });
       } catch (err) {
@@ -119,19 +131,27 @@ async function userToken() {
       }
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.access_token) {
-        // invalid_grant here = the refresh token expired, was revoked, or got cut short (it must be QUOTED in .env — it contains '#').
+        // invalid_grant = the refresh token expired, was revoked, or got cut short (it must be QUOTED in .env — it contains '#').
+        // invalid_scope = the token predates a scope asked for here (e.g. sell.finances) — re-mint it.
         throw coded('EBAY_ERROR', `eBay refused the refresh token (HTTP ${res.status}${body.error ? `, ${body.error}` : ''}) — run scripts/ebay-token.js again`);
       }
       const life = (Number(body.expires_in) || 7200) * 1000;
-      userCached = { token: body.access_token, expiresAt: Date.now() + life - 5 * 60 * 1000 };
-      return userCached.token;
-    })().finally(() => { userFetching = null; });
+      userCache.set(scopes, { token: body.access_token, expiresAt: Date.now() + life - 5 * 60 * 1000 });
+      return body.access_token;
+    })().finally(() => { userFetching.delete(scopes); }));
   }
-  return userFetching;
+  return userFetching.get(scopes);
 }
+
+const userToken = () => tokenFor(USER_SCOPES);
+const financeToken = () => tokenFor(FINANCE_SCOPES);
 
 function dropUserToken() {
-  userCached = null;
+  userCache.delete(USER_SCOPES);
 }
 
-module.exports = { isConfigured, appToken, dropAppToken, isUserConfigured, userToken, dropUserToken };
+function dropFinanceToken() {
+  userCache.delete(FINANCE_SCOPES);
+}
+
+module.exports = { isConfigured, appToken, dropAppToken, isUserConfigured, userToken, dropUserToken, financeToken, dropFinanceToken };

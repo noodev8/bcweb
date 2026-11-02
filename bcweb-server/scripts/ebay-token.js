@@ -13,15 +13,20 @@ HOW (eBay's authorization-code grant):
   4. The script swaps the code for tokens (POST identity/v1/oauth2/token) and writes the refresh token into .env.
   The code dies after about 5 minutes, so do steps 2–4 in one go. If it says "invalid_grant", just run the script again.
 
-SCOPES — all three asked for in ONE sign-in, so the consent never has to be repeated when a new feature lands:
+SCOPES — all asked for in ONE sign-in, so the consent never has to be repeated when a new feature lands:
   sell.fulfillment   read orders, send tracking back            (order import — Update Orders)
-  sell.inventory     create / revise / end listings, price+qty   (stock sync, the future eBay listings screen)
+  sell.inventory     create / revise / end listings, price+qty   (stock sync, the eBay listings screen)
   sell.account       read the business policies a listing needs  (postage / returns / payment)
+  sell.finances      read the seller's transactions              (Month End's eBay block — added 2026-11-01, so a token minted
+                                                                  before then must be re-minted; see utils/ebayAuth.js FINANCE_SCOPES)
 
 The token is NEVER printed — it goes straight into the file. Copy the two lines to the VPS .env yourself, then pm2 restart.
 
 Usage:
-    node scripts/ebay-token.js
+    node scripts/ebay-token.js                 prints the link, then asks for the address
+    node scripts/ebay-token.js "<address>"     the address eBay landed you on, given straight away (no prompt) — for running it from
+                                               somewhere that can't answer a prompt: run it once bare to get the link (it stops at the
+                                               prompt with nothing typed), sign in, then run it again with the address in quotes
 =======================================================================================================================================
 */
 
@@ -38,7 +43,8 @@ const SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
-  'https://api.ebay.com/oauth/api_scope/sell.account'
+  'https://api.ebay.com/oauth/api_scope/sell.account',
+  'https://api.ebay.com/oauth/api_scope/sell.finances'
 ];
 
 // Replace KEY=… in the .env text, or append it if the key isn't there yet.
@@ -73,13 +79,17 @@ async function main() {
   const link = `${AUTHORIZE_URL}?${new URLSearchParams({
     client_id: clientId, response_type: 'code', redirect_uri: ruName, scope: SCOPES.join(' '), prompt: 'login'
   })}`;
-  console.log('\n1. Open this link, sign in as brookfield.comfort and press Agree:\n');
-  console.log(link);
-  console.log('\n2. Paste the WHOLE address of the page eBay lands you on (you have about 5 minutes):\n');
+  let answer = process.argv[2];
+  if (!answer) {
+    console.log('\n1. Open this link, sign in as brookfield.comfort and press Agree:\n');
+    console.log(link);
+    console.log('\n2. Paste the WHOLE address of the page eBay lands you on (you have about 5 minutes):\n');
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise((resolve) => rl.question('> ', resolve));
-  rl.close();
+    // Resolves '' if stdin closes with nothing typed (run from somewhere with no prompt) — "No code found" below, link already shown.
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    answer = await new Promise((resolve) => { rl.question('> ', resolve); rl.on('close', () => resolve('')); });
+    rl.close();
+  }
 
   const code = codeFrom(answer);
   if (!code) {

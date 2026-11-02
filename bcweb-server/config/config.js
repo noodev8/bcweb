@@ -130,6 +130,9 @@ module.exports = {
     ruName: process.env.EBAY_RUNAME || '',
     refreshToken: process.env.EBAY_REFRESH_TOKEN || '',
     refreshTokenExpires: process.env.EBAY_REFRESH_TOKEN_EXPIRES || '',   // YYYY-MM-DD, written by scripts/ebay-token.js — for an "expires soon" warning
+    // Month End's Finances API calls must be digitally signed (UK seller) — the Ed25519 pair made by scripts/ebay-signing-key.js.
+    signingJwe: process.env.EBAY_SIGNING_JWE || '',
+    signingPrivateKey: process.env.EBAY_SIGNING_PRIVATE_KEY || '',
     verificationToken: process.env.EBAY_VERIFICATION_TOKEN || '',
     deletionEndpoint: process.env.EBAY_DELETION_ENDPOINT || ''
   }

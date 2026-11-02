@@ -4179,6 +4179,28 @@ export interface FinanceShopify {
   window?: { start: string; end: string };
 }
 
+// Read live from eBay's Finances API on every Calculate (utils/financeEbay.js) — GROSS sales (what buyers paid), fees as a cost.
+// Same sign convention as Shopify: sales/salesVat POSITIVE, refund/refundVat NEGATIVE, fees NEGATIVE. `movement` is what the eBay
+// balance moved by — tick it against the statement's closing funds less opening funds, before payouts.
+export interface FinanceEbay {
+  present: boolean;
+  error?: string | null;
+  sales: number;
+  salesVat: number;
+  refund: number;
+  refundVat: number;
+  fees: number;
+  movement?: number;
+  zeroRated?: number;
+  feeBreakdown?: { label: string; amount: number }[];
+  counts?: { sale: number; refund: number; charge: number; excluded: number; other: number };
+  orders?: { orderId: string; type: string; date: string; gross: number; vat: number; fees: number; net: number; codes: string[]; status: string }[];
+  mismatches?: { orderId: string; type: string; amount: number; fees: number; basis: number; collectedTax: number }[];
+  other?: { type: string; date: string; amount: number; orderId: string; memo: string }[];
+  unmatched?: { orderId: string; type: string; value: number; reason: string }[];
+  window?: { start: string; end: string };
+}
+
 export interface FinanceManual {
   sumupSales: number;
   sumupFees: number;
@@ -4204,6 +4226,7 @@ export interface FinanceMonth {
   amazon: FinanceAmazon;
   paypal: FinancePayPal;
   shopify: FinanceShopify;
+  ebay: FinanceEbay;
   manual: FinanceManual;
   stock: { units: number; value: number } | null;
   checks: FinanceCheck[];
@@ -4255,6 +4278,7 @@ export function calculateFinanceMonth(args: {
       amazon: (b.amazon as FinanceAmazon) || { present: false },
       paypal: (b.paypal as FinancePayPal) || { present: false },
       shopify: b.shopify as FinanceShopify,
+      ebay: (b.ebay as FinanceEbay) || { present: false, sales: 0, salesVat: 0, refund: 0, refundVat: 0, fees: 0 },
       manual: b.manual as FinanceManual,
       stock: (b.stock as { units: number; value: number } | null) ?? null,
       checks: (b.checks as FinanceCheck[]) || [],
@@ -4292,7 +4316,7 @@ export function getFinanceCar(month: string) {
 export function buildFinanceQuickFile(args: {
   files: File[];
   month: string;
-  figures: { amazon: FinanceAmazon; shopify: FinanceShopify; paypal: FinancePayPal; manual: FinanceManual };
+  figures: { amazon: FinanceAmazon; shopify: FinanceShopify; ebay: FinanceEbay; paypal: FinancePayPal; manual: FinanceManual };
 }) {
   return request<{ month: string; files: FinanceFile[] }>(
     {

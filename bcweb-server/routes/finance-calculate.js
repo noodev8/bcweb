@@ -37,6 +37,9 @@ Request: multipart/form-data
             file nobody asked about is half a minute of nothing. The skipped block comes back as { present:false, skipped:true } and
             the CLIENT merges its own cached figures over it (they never travel back up: the Shopify CSV alone is 128KB).
 
+eBay is NOT a parameter either: it is read live from eBay's Finances API on every Calculate (utils/financeEbay.js) — one or two calls,
+so unlike Shopify it is never cached or skipped. A failure lands in `ebay.error` plus a check, like Shopify.
+
 Shopify is NOT a parameter. Since Phase 2 it is pulled live from the Shopify API for the month requested (utils/financeShopify.js),
 which is why this route can take a minute: it walks every order created in the month plus 90 days of lookback for refunds.
 
@@ -51,6 +54,8 @@ Success Response:
   "paypal":  { "present": true, "fees": 88.20, "count": 41, "rowCount": 412, "currencies": [...] },
   "shopify": { "present": true, "source": "api", "sales": 32820.41, "salesVat": 5460.85, "refund": -5098.36,
                "refundVat": -849.88, "fees": -646.16, "csv": "<the Shopify Transaction report>", ... },
+  "ebay":    { "present": true, "sales": 23.98, "salesVat": 4.00, "refund": 0, "refundVat": 0, "fees": -8.10, "movement": 15.88,
+               "feeBreakdown": [...], "orders": [...], "mismatches": [], "other": [], "unmatched": [] },
   "manual":  { "sumupSales": 940, "sumupFees": 18.4, "cashSales": 312, "car": 240 },
   "stock":   { "units": 3052, "value": 87770.96 },
   "checks":  [ { "key": "amazon-reconciled", "level": "ok"|"warn", "message": "..." } ]
@@ -78,6 +83,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { computeAmazon, identify: identifyAmazon } = require('../utils/financeAmazon');
 const { computePayPal, identify: identifyPayPal } = require('../utils/financePayPal');
 const { computeShopify } = require('../utils/financeShopify');
+const { computeEbay } = require('../utils/financeEbay');
 const { stockValue } = require('../utils/financeStock');
 const logger = require('../utils/logger');
 
@@ -149,7 +155,7 @@ function readUploads(files) {
  * screen nobody reads. Each is either OK or a warning — none of them blocks generating, because the operator closes the books, not
  * this route.
  */
-function buildChecks({ amazon, paypal, shopify }) {
+function buildChecks({ amazon, paypal, shopify, ebay }) {
   const checks = [];
 
   if (amazon) {
@@ -223,6 +229,49 @@ function buildChecks({ amazon, paypal, shopify }) {
         key: 'shopify-unmatched',
         level: 'warn',
         message: `${shopify.unmatched.length} Shopify SKU${shopify.unmatched.length > 1 ? 's' : ''} could not be matched to a product (£${value.toFixed(2)}) — standard VAT rating was assumed`,
+      });
+    }
+  }
+
+  // eBay, live from the Finances API. The OK line carries the balance movement so it can be ticked against eBay's PDF statement
+  // (its lines between Opening funds and Payouts add up to it).
+  if (!ebay || !ebay.present) {
+    checks.push({
+      key: 'ebay-failed',
+      level: 'warn',
+      message: `eBay could not be read (${(ebay && ebay.error) || 'unknown error'}) — no eBay line will appear in either file`,
+    });
+  } else {
+    const c = ebay.counts;
+    checks.push({
+      key: 'ebay-pulled',
+      level: 'ok',
+      message: `${c.sale} eBay sale${c.sale === 1 ? '' : 's'}, ${c.refund} refund${c.refund === 1 ? '' : 's'}, ${c.charge} fee charge${c.charge === 1 ? '' : 's'} — the eBay balance moved £${ebay.movement.toFixed(2)} (the statement's closing funds less opening funds, before payouts)`,
+    });
+    if (ebay.truncated) {
+      checks.push({ key: 'ebay-truncated', level: 'warn', message: 'The eBay transaction fetch hit its page ceiling — the figures are incomplete, do not file them' });
+    }
+    if (ebay.mismatches.length > 0) {
+      checks.push({
+        key: 'ebay-mismatch',
+        level: 'warn',
+        message: `${ebay.mismatches.length} eBay transaction${ebay.mismatches.length > 1 ? 's' : ''} do not add up (order total − fees ≠ what reached the balance: ${ebay.mismatches.map((m) => m.orderId).join(', ')}) — check them against eBay before filing`,
+      });
+    }
+    if (ebay.other.length > 0) {
+      const value = ebay.other.reduce((s, o) => s + o.amount, 0);
+      checks.push({
+        key: 'ebay-other',
+        level: 'warn',
+        message: `${ebay.other.length} eBay transaction${ebay.other.length > 1 ? 's' : ''} of a kind not booked automatically (${[...new Set(ebay.other.map((o) => o.type))].join(', ')}, £${value.toFixed(2)}) — they are NOT in the files; book them by hand`,
+      });
+    }
+    if (ebay.unmatched.length > 0) {
+      const value = ebay.unmatched.reduce((s, u) => s + u.value, 0);
+      checks.push({
+        key: 'ebay-unmatched',
+        level: 'warn',
+        message: `${ebay.unmatched.length} eBay order${ebay.unmatched.length > 1 ? 's' : ''} could not be matched to a product (£${value.toFixed(2)}) — standard VAT rating was assumed`,
       });
     }
   }
@@ -327,6 +376,17 @@ router.post('/', (req, res) => {
         }
       }
 
+      // eBay, live from the Finances API. Guarded exactly like Shopify: one marketplace being unreachable must not cost the rest of
+      // the month.
+      let ebay = { present: false, error: null };
+      try {
+        const result = await computeEbay(pool, month);
+        ebay = { present: true, ...result, error: null };
+      } catch (err) {
+        logger.error('[finance-calculate] eBay pull failed:', err.message);
+        ebay.error = err.message;
+      }
+
       // Display only — not a QuickFile line. Guarded so a valuation problem never costs the operator the rest of the screen.
       let stock = null;
       try {
@@ -335,9 +395,9 @@ router.post('/', (req, res) => {
         logger.error('[finance-calculate] stock valuation failed:', err.message);
       }
 
-      const checks = buildChecks({ amazon, paypal, shopify });
+      const checks = buildChecks({ amazon, paypal, shopify, ebay });
 
-      logger.info(`[finance-calculate] ${req.user.display_name}: ${month} — ${amazon ? `${amazon.rowCount} Amazon rows, gross ${amazon.gross}` : 'no Amazon file'}${paypal ? `, PayPal ${paypal.fees}` : ''}${shopify.skipped ? ', Shopify skipped' : ''}`);
+      logger.info(`[finance-calculate] ${req.user.display_name}: ${month} — ${amazon ? `${amazon.rowCount} Amazon rows, gross ${amazon.gross}` : 'no Amazon file'}${paypal ? `, PayPal ${paypal.fees}` : ''}${shopify.skipped ? ', Shopify skipped' : ''}${ebay.present ? `, eBay gross ${ebay.sales}` : ', eBay unread'}`);
 
       return res.json({
         return_code: 'SUCCESS',
@@ -346,6 +406,7 @@ router.post('/', (req, res) => {
         amazon: amazon || { present: false },
         paypal: paypal || { present: false },
         shopify,
+        ebay,
         manual,
         stock,
         checks,
