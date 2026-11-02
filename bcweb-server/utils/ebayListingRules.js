@@ -47,6 +47,20 @@ const SHOPIFY_UPLIFT = 4.50;   // a size with no Amazon price: the Shopify price
 const CLEARANCE_SHARE = 0.5;   // a clearance size (unsold 9+ months): this share of RRP — the Shopify clearance rule (50%)
 
 /*
+ * localStockWhere(alias) -> SQL condition on localstock: the LOCAL half of our eBay Stock (the other half is FBA live, amzfeed.amzlive).
+ *   Sellable local stock (#FREE, not deleted, qty > 0 — CLAUDE.md) that is UNALLOCATED and NOT on the C3-Amazon shelf (owner,
+ *   2026-11-02: "We dont want anything from C3-Amazon or any other location that is allocated"). Today the only allocation is 'amz'
+ *   (due for Pick to FBA, or staged on C3-Amazon waiting for DPD), but ANY allocation is left out, so a new one can't leak onto eBay;
+ *   a NULL counts as unallocated. Amazon-bound pairs come back in as FBA live once Amazon receives them. (B710AP-11 nearly went on
+ *   eBay as 4 pairs with one staged for Amazon.) ONE copy — the Not on eBay view / List button, the stock sync and the Checking screen
+ *   all read it, so the Stock figure agrees everywhere.
+ */
+function localStockWhere(a = 'l') {
+  return `${a}.ordernum = '#FREE' AND COALESCE(${a}.deleted, 0) = 0 AND ${a}.qty > 0
+          AND COALESCE(${a}.allocated, 'unallocated') = 'unallocated' AND COALESCE(${a}.location, '') <> 'C3-Amazon'`;
+}
+
+/*
  * sizePriceFor(amzPrice, shopifyPrice, { clearance, rrp }?) -> { price, from: 'amazon' | 'shopify' | 'clearance' } | null
  *   THE default eBay price of one size: its Amazon price when it has one (> 0), else the style's Shopify price + £4.50. null = neither
  *   (the style is blocked: 'price'). A CLEARANCE size (unsold 9+ months) with an RRP takes 50% of RRP instead — unless the normal
@@ -197,6 +211,7 @@ function ukSizeFor(uksize, categoryId = null) {
 }
 
 module.exports = {
+  localStockWhere,
   POSTAGE, SHOPIFY_UPLIFT, CLEARANCE_SHARE, TITLE_MAX, FOOTER, CATEGORY_NAMES, sizePriceFor,
   categoryFor, departmentFor, typeFor, styleFor, materialFor, ukSizeFor,
 };

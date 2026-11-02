@@ -68,6 +68,7 @@ const { oldestHeldArrival, lastNetSales, idleSince } = require('../utils/onShelf
 // Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day (as utils/slowSizes.js).
 const dayNo = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 const { ebayProfit } = require('../utils/ebayProfit');
+const { localStockWhere } = require('../utils/ebayListingRules');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -97,8 +98,8 @@ router.get('/', async (req, res) => {
         ORDER BY code, groupid
       ),
       loc AS (
-        SELECT code, SUM(qty) AS qty FROM localstock
-        WHERE code = ANY($1::text[]) AND ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0
+        SELECT code, SUM(qty) AS qty FROM localstock l
+        WHERE code = ANY($1::text[]) AND ${localStockWhere('l')}
         GROUP BY code
       ),
       fba AS (

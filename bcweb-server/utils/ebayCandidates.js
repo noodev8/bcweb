@@ -7,7 +7,7 @@ Purpose: THE "could this style go on eBay, and is it ready?" read — one copy, 
          calls ready is exactly what the button will list. READ ONLY.
 
 MEMBERSHIP: a style (skusummary groupid) that
-  - has STOCK: a size with sellable local stock (localstock #FREE — CLAUDE.md, never stockvariants) or FBA live (amzfeed.amzlive) —
+  - has STOCK: a size with sellable local stock (localstock #FREE — CLAUDE.md, never stockvariants — unallocated and not on C3-Amazon: rules.localStockWhere) or FBA live (amzfeed.amzlive) —
     the same Stock figure as the On eBay view and the stock sync
   - is not Birkenstock (brand ILIKE 'birk%') — never on eBay
   - has NO size on eBay now (onEbayCodes — read live by the caller, fixed price and auction alike) — a style that has one is counted
@@ -55,8 +55,8 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
       ORDER BY m.code, (NULLIF(TRIM(m.uksize), '') IS NULL), (NULLIF(TRIM(m.ean), '') IS NULL), m.sku
     ),
     loc AS (
-      SELECT code, SUM(qty) AS qty FROM localstock
-      WHERE ordernum = '#FREE' AND COALESCE(deleted, 0) = 0 AND qty > 0 AND ($2::text IS NULL OR groupid = $2)
+      SELECT code, SUM(qty) AS qty FROM localstock l
+      WHERE ${rules.localStockWhere('l')} AND ($2::text IS NULL OR groupid = $2)
       GROUP BY code
     ),
     fba AS (

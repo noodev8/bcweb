@@ -17,7 +17,7 @@ Purpose: Keep BCWEB's eBay listings in step with our stock — step 3 of the eBa
    An eBay error on a style leaves nothing recorded, so the next run tries that style again.
 
 2. QUANTITIES (syncQuantities) — for every size on a LIVE BCWEB listing (ebay_listing.ended_at IS NULL), our Stock — sellable local
-   (localstock #FREE, CLAUDE.md) + FBA live (amzfeed.amzlive), the agreed figure (owner: FBA included as it is) — but ONLY where it
+   (localstock #FREE, CLAUDE.md, unallocated and not on C3-Amazon — ebayListingRules → localStockWhere) + FBA live (amzfeed.amzlive), the agreed figure (owner: FBA included as it is) — but ONLY where it
    differs from the quantity last sent (qty_sent). Why compare with what we last SENT and not with eBay's current count: eBay lowers its
    own count when it sells, before our stock moves for an FBA pair (MCF — the pair stays in amzlive until the next Update Amazon import).
    Re-sending an unchanged Stock would put that sold pair back on eBay. Quantity 0 is sent as 0: the account has eBay's out-of-stock
@@ -42,14 +42,14 @@ const { logActivity } = require('./bclog');
 const { resolveSetup } = require('./ebayPolicies');
 const { loadCandidates } = require('./ebayCandidates');
 const { addSizes } = require('./ebayPublish');
-const { ukSizeFor } = require('./ebayListingRules');
+const { ukSizeFor, localStockWhere } = require('./ebayListingRules');
 
 const BATCH = 25;   // eBay's maximum per bulkUpdatePriceQuantity call
 
 // Our Stock for a code — the one expression both parts (and the Checking flag) use.
 const STOCK_SQL = (codeExpr) => `
   COALESCE((SELECT SUM(qty) FROM localstock l
-            WHERE l.code = ${codeExpr} AND l.ordernum = '#FREE' AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0), 0)
+            WHERE l.code = ${codeExpr} AND ${localStockWhere('l')}), 0)
 + COALESCE((SELECT SUM(amzlive) FROM amzfeed a WHERE a.code = ${codeExpr} AND COALESCE(a.amzlive, 0) > 0), 0)`;
 
 /*
