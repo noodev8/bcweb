@@ -114,12 +114,13 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     const price = num(r.price);
     const cost = num(r.cost);
     const rrp = num(r.rrp);
+    const category = rules.categoryFor(r.gender, r.producttype, title);   // before the sizes: a children's category changes the UK size
     const sizes = (r.sizes || []).map((z) => {
       const s = slow.get(z.code);
       const clearance = Boolean(s && s.clearance);
       const def = rules.sizePriceFor(z.amz_price, price, { clearance, rrp });
       return {
-        code: z.code, uk_size: rules.ukSizeFor(z.uksize), ean: z.ean || null, local: Number(z.local) || 0, fba: Number(z.fba) || 0,
+        code: z.code, uk_size: rules.ukSizeFor(z.uksize, category && category.id), ean: z.ean || null, local: Number(z.local) || 0, fba: Number(z.fba) || 0,
         idle_days: s ? s.idle_days : null,
         clearance,
         amz_price: num(z.amz_price) !== null && num(z.amz_price) > 0 ? num(z.amz_price) : null,
@@ -130,7 +131,6 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     });
     const priced = sizes.filter((z) => z.price !== null);
     const profits = sizes.map((z) => z.profit).filter((v) => v !== null);
-    const category = rules.categoryFor(r.gender, r.producttype, title);
     const material = rules.materialFor(r.material, title);
     const ukSizes = sizes.map((z) => z.uk_size).filter(Boolean);
 

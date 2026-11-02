@@ -98,7 +98,7 @@ async function addNewSizes() {
         SELECT DISTINCT ON (code) code, uksize FROM skumap
         WHERE code = ANY($1::text[]) AND COALESCE(deleted, 0) = 0
         ORDER BY code, (NULLIF(TRIM(uksize), '') IS NULL)`, [listedCodes]);
-      const ukOf = new Map(uk.rows.map((r) => [r.code, ukSizeFor(r.uksize)]));
+      const ukOf = new Map(uk.rows.map((r) => [r.code, ukSizeFor(r.uksize, listing.category_id)]));
       const listedSizes = listedCodes.map((code) => ({ code, uk_size: ukOf.get(code) || null }));
       if (listedSizes.some((z) => !z.uk_size)) {
         for (const code of t.codes) skipped.push({ groupid: t.groupid, code, reason: 'a size already on the listing has no UK size' });

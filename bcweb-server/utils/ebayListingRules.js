@@ -32,7 +32,9 @@ Boys). Every one is FREE TEXT on eBay, so our own words are accepted.
   Department   from gender (Women / Men / Boys)
   Colour       skusummary.colourmap (every style has it; `colour` is an overloaded segment tag — CLAUDE.md)
   UK Shoe Size skumap.uksize ("6 UK" -> "6", "8 UK Child" -> "8 Child") — NEVER the code's suffix: Skechers codes are US sizes and
-               Rieker / Caprice / Strive / Remonte codes are EU
+               Rieker / Caprice / Strive / Remonte codes are EU. In a CHILDREN'S category (KIDS_CATEGORIES — Boys' Shoes) "Child" is
+               dropped ("8 UK Child" -> "8"): eBay stopped taking custom values there and only accepts 1 … 13.5 (2026-11-02, the Boys
+               Goor listing was refused); every size in that category is a child's size anyway, and the dup check still guards a clash
   Material     skusummary.material, else a material word in the title; if neither, the listing form asks for it and saves it back to
                skusummary.material (owner, option A) — so a missing material is a to-do on the form, not a blocker
   Style        the first STYLE_WORDS match in the title, else the type's default (owner: Sandals Strappy · Women's shoes Flat · Boots
@@ -183,9 +185,14 @@ function materialFor(stored, title) {
   return null;
 }
 
-// "6 UK" -> "6", "8 UK Child" -> "8 Child", "" -> null
-function ukSizeFor(uksize) {
-  const s = String(uksize || '').replace(/\bUK\b/i, '').replace(/\s+/g, ' ').trim();
+// Children's categories: eBay only accepts its standard sizes there (1 … 13.5), so "Child" comes off (see the header).
+const KIDS_CATEGORIES = new Set([57929]);
+
+// "6 UK" -> "6", "8 UK Child" -> "8 Child" ("8" in a children's category), "" -> null
+function ukSizeFor(uksize, categoryId = null) {
+  let s = String(uksize || '').replace(/\bUK\b/i, '');
+  if (KIDS_CATEGORIES.has(Number(categoryId))) s = s.replace(/\bChild\b/i, '');
+  s = s.replace(/\s+/g, ' ').trim();
   return s || null;
 }
 
