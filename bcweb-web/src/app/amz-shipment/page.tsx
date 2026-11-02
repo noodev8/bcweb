@@ -103,7 +103,7 @@ import {
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { printFnskuLabel } from '@/lib/fnskuLabel';
+import { printFnskuLabel, printFnskuTestStrip } from '@/lib/fnskuLabel';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
@@ -1000,7 +1000,7 @@ function Packing({ initial, autoBack, onShipped }: {
                       {l.fnsku && (
                         <button
                           type="button"
-                          onClick={() => printLabel(l.fnsku!, l.code)}
+                          onClick={(e) => (e.shiftKey ? printFnskuTestStrip(l.fnsku!, l.code, refocus) : printLabel(l.fnsku!, l.code))}
                           aria-label={`Print a label for ${l.code}`}
                           title={`Print one ${l.fnsku} label`}
                           className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"

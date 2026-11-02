@@ -17,10 +17,11 @@ same bars are DRAWN from the FNSKU (barcode128.ts → code128bModules, the gener
 same pattern) at 3 dots: 145 modules = 36.8 mm, ~8.6 mm blank each side, room for the label to sit a couple of mm off. Every bar
 edge lands on a whole printer dot.
 
-BARS THINNED FOR THE PRINTER'S HEAT. A thermal head spreads each bar wider than drawn, closing the gaps; each bar is drawn
-BAR_REDUCTION_DOTS narrower on its right (its gap that much wider) — the usual thermal bar-width reduction. 2, as the 2026-10-08 label
-had it (1 "still printed merged"); simulated 2026-11-02 against a real decoder, 3-dot modules thinned 2 read with anything from no
-spread to 2 dots of spread a side, the widest safe range. If bars print faint or broken, lower it; if still merged, raise it.
+BARS THINNED FOR THE PRINTER'S HEAT — BY 1 DOT (tested 2026-11-02). A thermal head spreads each bar wider than drawn, closing the
+gaps; each bar is drawn BAR_REDUCTION_DOTS narrower on its right (its gap that much wider). Test strip (see TEST STRIP below) on the
+office Dymo, scanned into Notepad with the warehouse handheld: 0 dots needed 1-2 scans, 1 dot mostly read first time, 2 dots up to
+5-6 scans (2 left the narrowest bar ONE dot wide — a hairline). The PowerBuilder-era folder BMP that scanned well had no thinning.
+If a printer prints bars merged, raise it; faint or broken, lower it — and re-run the test strip on that printer first.
 
 HOW IT PRINTS. Through QZ Tray first (labelPrinter.ts, 2026-10-29), silently, to the Dymo. If QZ Tray isn't running or there's no
 Dymo, the old way (docs/label-printing-notes.md): a web page can't talk to the printer directly, so the label is an image on a page
@@ -46,7 +47,7 @@ const dots = (mm: number) => Math.round((mm * 300) / 25.4);
 const LABEL_DOTS = { width: dots(LABEL_MM.width), height: dots(LABEL_MM.height) } as const;
 // Printer dots per barcode module, and dots trimmed off the right of every bar — see THE BARS and BARS THINNED above.
 const MODULE_DOTS = 3;
-const BAR_REDUCTION_DOTS = 2;
+const BAR_REDUCTION_DOTS = 1;
 // Kept clear of ink at the label's top and bottom edges.
 const MARGIN_DOTS = dots(1);
 // The two text lines under the bars (FNSKU, then code): their size, the gap above each, and the widest before the font shrinks.
@@ -61,7 +62,7 @@ const PAGE_MM = { width: LABEL_MM.height, height: LABEL_MM.width } as const;
 
 /** The label page as a canvas: the FNSKU's bars centred on the label, the FNSKU and `code` under them, all turned onto the portrait
  *  page. Throws if the FNSKU can't be encoded (never, for a real one). */
-function labelCanvas(fnsku: string, code: string): HTMLCanvasElement {
+function labelCanvas(fnsku: string, code: string, reduction = BAR_REDUCTION_DOTS): HTMLCanvasElement {
   const modules = code128bModules(fnsku);
   const lines = [fnsku, code].filter(Boolean);
   const textBand = lines.length * (TEXT_GAP_DOTS + TEXT_SIZE_DOTS);
@@ -87,7 +88,7 @@ function labelCanvas(fnsku: string, code: string): HTMLCanvasElement {
     if (modules[i] !== '1') { i += 1; continue; }
     let j = i;
     while (j < modules.length && modules[j] === '1') j += 1;
-    ctx.fillRect(left + i * MODULE_DOTS, top, Math.max(1, (j - i) * MODULE_DOTS - BAR_REDUCTION_DOTS), barsH);
+    ctx.fillRect(left + i * MODULE_DOTS, top, Math.max(1, (j - i) * MODULE_DOTS - reduction), barsH);
     i = j;
   }
 
@@ -133,10 +134,27 @@ async function pagePdf(page: HTMLCanvasElement): Promise<string> {
  * (otherwise the scanner's next code would be typed into nothing).
  */
 export function printFnskuLabel(fnsku: string, code: string, onDone?: () => void): void {
+  void printOne(fnsku, code, BAR_REDUCTION_DOTS, onDone);
+}
+
+/**
+ * TEST STRIP (2026-11-02, kept for checking any printer): Shift+click a row's printer icon on AMZ Shipment
+ * prints the same label three times, its bars thinned 0, 1 and 2 dots, each marked T0 / T1 / T2 after the code. Scan each ~10 times
+ * on each printer; the one that reads first time everywhere sets BAR_REDUCTION_DOTS (1, office Dymo, 2026-11-02). The folder BMP that scanned well under
+ * PowerBuilder (X002891WM9.bmp) had NO thinning — bars and gaps at their true widths.
+ */
+export function printFnskuTestStrip(fnsku: string, code: string, onDone?: () => void): void {
   void (async () => {
+    for (const reduction of [0, 1, 2]) await printOne(fnsku, `${code}  T${reduction}`, reduction);
+    onDone?.();
+  })();
+}
+
+async function printOne(fnsku: string, code: string, reduction: number, onDone?: () => void): Promise<void> {
+  {
     let url: string;
     try {
-      const canvas = labelCanvas(fnsku, code);
+      const canvas = labelCanvas(fnsku, code, reduction);
       // QZ Tray takes the same page as a one-page PDF; if it prints, that's the label done.
       if (await printLabel('fnsku', await pagePdf(canvas))) { onDone?.(); return; }
       const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
@@ -174,5 +192,5 @@ export function printFnskuLabel(fnsku: string, code: string, onDone?: () => void
       onDone?.();
       setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 1000);
     }
-  })();
+  }
 }

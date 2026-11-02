@@ -11,7 +11,7 @@ A web page cannot silently talk to a USB/LAN printer. The API runs on the VPS, s
 
 ## Proposed approach (current leaning): Chrome kiosk printing
 - Scanner = keyboard. A focused scan field; Enter triggers the print.
-- Label = the FNSKU's barcode drawn at 3 printer dots a module (37 mm — the barcode folder's `<FNSKU>.bmp` bars at ¾ size; at 1:1 they're 49 mm and the start got clipped on the 54 mm label, 2026-11-02), bars thinned 2 dots for thermal spread, the FNSKU and our product code underneath, on a page at exact label size. Printed through QZ Tray as a PDF; fallback CSS `@page { size: <w>mm <h>mm; margin: 0 }`, then `window.print()`. (The folder image printed 1:1 2026-10-08 → 11-02; drawn as HTML/SVG before that.)
+- Label = the FNSKU's barcode drawn at 3 printer dots a module (37 mm — the barcode folder's `<FNSKU>.bmp` bars at ¾ size; at 1:1 they're 49 mm and the start got clipped on the 54 mm label, 2026-11-02), bars thinned 1 dot for thermal spread (test strip 2026-11-02: Shift+click a row's printer icon on AMZ Shipment prints thinning 0/1/2), the FNSKU and our product code underneath, on a page at exact label size. Printed through QZ Tray as a PDF; fallback CSS `@page { size: <w>mm <h>mm; margin: 0 }`, then `window.print()`. (The folder image printed 1:1 2026-10-08 → 11-02; drawn as HTML/SVG before that.)
 - Chrome started with `--kiosk-printing` skips the print dialog and prints to the default printer.
 
 One-time setup on the packing PC:
