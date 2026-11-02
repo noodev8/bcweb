@@ -194,6 +194,9 @@ export default function CustomerOrderList() {
   const [actionError, setActionError] = useState<string | null>(null);
   // The outcome of an order's own Fulfil button, shown in that order's box.
   const [fulfilNote, setFulfilNote] = useState<{ ordernum: string; ok: boolean; text: string } | null>(null);
+  // The order whose Fulfil is in flight — its button reads "Fulfilling on eBay…" with a spinner (owner, 2026-11-02: greyed out alone
+  // didn't say it was working; a press takes a few seconds — Click & Drop, then the marketplace).
+  const [fulfilling, setFulfilling] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
   // --- scan to label (see the header: scans live here, the label lives in Click & Drop) -----------------------------------------
@@ -372,10 +375,10 @@ export default function CustomerOrderList() {
   // order stays on the list as Packed until Update orders sees it fulfilled and archives it. A second press reads "already fulfilled".
   async function fulfilOne(ordernum: string) {
     setWorking(true);
+    setFulfilling(ordernum);
     setActionError(null);
     setFulfilNote(null);
-    const res = await fulfilCustomerOrders(ordernum);
-    setWorking(false);
+    const res = await fulfilCustomerOrders(ordernum).finally(() => { setWorking(false); setFulfilling(null); });
     if (!res.success || !res.data) {
       setActionError(res.error || 'Fulfill didn’t go through');
       return;
@@ -769,6 +772,7 @@ export default function CustomerOrderList() {
                   working={working}
                   error={actionError}
                   fulfilNote={fulfilNote?.ordernum === active.ordernum ? fulfilNote : null}
+                  fulfilling={fulfilling === active.ordernum}
                   onClose={() => { setSelected(null); setActionError(null); setFulfilNote(null); scanRef.current?.focus(); }}
                   onNote={(note) => run(() => setCustomerOrderNote(active.ordernum, note))}
                   onWaiting={(w) => run(() => setCustomerOrderWaiting(active.ordernum, w))}
@@ -1033,7 +1037,7 @@ function StageTile({ label, count, tone, active, onClick }: {
  * (same label, never buys postage twice) and Cancel label (behind a confirm, voids the shipment).
  */
 function OrderBox({
-  order, progress, ticked, label, working, error, fulfilNote,
+  order, progress, ticked, label, working, error, fulfilNote, fulfilling,
   onClose, onNote, onWaiting, onDoNotOrder, onCourier, onFba, onFbaFile, onDelete, onReset, onPrint, onCancelLabel, onFulfil,
 }: {
   order: OrderGroup;
@@ -1043,6 +1047,7 @@ function OrderBox({
   working: boolean;
   error: string | null;
   fulfilNote: { ok: boolean; text: string } | null;
+  fulfilling: boolean;
   onClose: () => void;
   onNote: (note: string) => void;
   onWaiting: (w: boolean) => void;
@@ -1196,6 +1201,7 @@ function OrderBox({
             <button
               type="button"
               disabled={working}
+              aria-busy={fulfilling}
               onClick={() => setConfirm('fulfil')}
               title={order.ordernum.startsWith('EB')
                 ? (hasFba
@@ -1204,9 +1210,13 @@ function OrderBox({
                 : hasFba
                   ? 'Mark fulfilled on Shopify with the Amazon courier and email the customer'
                   : 'Mark fulfilled on Shopify with the Royal Mail tracking number and email the customer'}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 aria-busy:opacity-100"
             >
-              <CheckBadgeIcon className="h-4 w-4" /> Fulfill
+              {fulfilling ? (
+                <><ArrowPathIcon className="h-4 w-4 animate-spin" /> Fulfilling on {order.ordernum.startsWith('EB') ? 'eBay' : 'Shopify'}…</>
+              ) : (
+                <><CheckBadgeIcon className="h-4 w-4" /> Fulfill</>
+              )}
             </button>
           )}
         </div>
