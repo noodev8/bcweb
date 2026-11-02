@@ -42,7 +42,9 @@ No printer picking (owner, 2026-10-29). If QZ Tray isn't running or the PC has n
 - **Goes to the wrong Dymo/Zebra** — a dead duplicate in Printers & scanners; delete it (step 1).
 - **Blank, tiny, cut off or off-centre label** — look at the last job in QZ Tray's log, `%APPDATA%\qz\debug.log` (look for
   `Message: {"call":"print"` and any WARN after it, e.g. "Not using a supported DPI"). The job settings are in
-  `bcweb-web/src/lib/labelPrinter.ts`.
+  `bcweb-web/src/lib/labelPrinter.ts`. The FNSKU label goes as a 25 × 54 mm PDF with no density —
+  the same page Chrome printed (2026-11-02). Don't switch it back to a PNG image job: that needs a density, which forced the
+  Dymo into its grey "Text" quality, and image jobs are drawn ~2 mm in from the printable-area corner; both stopped labels scanning.
 - **Royal Mail label grey/faint** — add `ignoreTransparency: true` to the Royal Mail job options in `labelPrinter.ts`.
 
 ---
@@ -66,9 +68,9 @@ QZ Tray only prints silently when each request is signed with our key and the PC
 - **Web:** `src/lib/labelPrinter.ts` (npm `qz-tray` 2.2.6, loaded on the first print). Connects once; a failed connection isn't
   retried for a minute so a PC without QZ Tray doesn't wait at every scan. `printLabel(kind, base64)` resolves true only if QZ Tray
   took the job.
-  - `fnsku` — the canvas from `fnskuLabel.ts` as a PNG `pixel/image` job: 25 × 54 mm portrait, given **in inches** at density 300
-    (QZ reads density in the size's units — in mm, 300 meant 300 dots/mm and printed a blank label), `scaleContent: false`,
-    nearest-neighbour, black/white, so each image pixel is one Dymo dot.
+  - `fnsku` — the label page from `fnskuLabel.ts` as a `pixel/pdf` job: a 25 × 54 mm portrait PDF with the canvas filling it (the
+    same page the browser path prints), size given **in inches**, **no density** (the driver keeps "Barcodes and Graphics"),
+    `scaleContent: false`, nearest-neighbour, black/white.
   - `royalMail` — the Click & Drop PDF as a `pixel/pdf` job, no size given (the PDF's own 6 × 4 page), `scaleContent: false`.
 - **Callers** are unchanged: `fnskuLabel.ts → printFnskuLabel` (AMZ Shipment, Goods In) and `printPdf.ts → printPdfBase64`
   (Customer Orders) try QZ first and fall back to their iframe + `window.print()` path.

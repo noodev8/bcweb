@@ -10,9 +10,8 @@ GET /qz-cert and each request is signed by POST /qz-sign (the private key stays 
 
 Two kinds of label, each to its own printer, FOUND BY NAME — no picking (owner, 2026-10-29: "you know royal mail orders go to the zebra
 and fnskus go to the dymo"):
-  fnsku      → the Dymo (name has DYMO or LabelWriter). The FNSKU label canvas from fnskuLabel.ts as a PNG, 25 × 54 mm portrait,
-             printed at 300 dpi with no scaling so each image pixel is one printer dot (resampling the bars stopped them scanning once,
-             2026-10-08).
+  fnsku      → the Dymo (name has DYMO or LabelWriter). The FNSKU label from fnskuLabel.ts as a one-page 25 × 54 mm PDF — the same
+             page the browser path prints — no scaling and NO density, so the Dymo prints at its own "Barcodes and Graphics" setting (2026-11-02).
   royalMail  → the Zebra (name has ZDesigner or Zebra). The Click & Drop PDF from Customer Orders. No size given: the PDF's own page
              size is the label's, exactly as the browser path did. If it ever prints grey, add `ignoreTransparency: true` to the job.
 Windows often keeps a duplicate install of a USB printer ("DYMO LabelWriter 450 Turbo (Copy 1)"), so a name WITHOUT "Copy" wins when
@@ -96,14 +95,15 @@ export async function printLabel(kind: LabelKind, base64: string): Promise<boole
     if (!printer) return false;
     // Size in INCHES: QZ reads `density` in the size's units, so with 'mm' 300 meant 300 dots per mm and the label image printed ~1 mm
     // wide — a blank label (first test, 2026-10-29, log: "Not using a supported DPI"). 25 × 54 mm = 0.984 × 2.126 in at the head's 300 dpi.
+    // FNSKU: a PDF with NO density (2026-11-02). A density makes QZ Tray set the Dymo's resolution — 300 put it in 300×300, its "Text"
+    // quality (grey streaky bars, no scan), and 300×600 garbled the label. Without one the driver keeps its own setting.
     const config = kind === 'fnsku'
       ? qz.configs.create(printer, {
-        size: { width: 25 / 25.4, height: 54 / 25.4 }, units: 'in', margins: 0, density: 300,
+        size: { width: 25 / 25.4, height: 54 / 25.4 }, units: 'in', margins: 0,
         scaleContent: false, interpolation: 'nearest-neighbor', colorType: 'blackwhite',
       })
       : qz.configs.create(printer, { margins: 0, scaleContent: false, colorType: 'blackwhite' });
-    const format = kind === 'fnsku' ? 'image' : 'pdf';
-    await qz.print(config, [{ type: 'pixel', format, flavor: 'base64', data: base64 }]);
+    await qz.print(config, [{ type: 'pixel', format: 'pdf', flavor: 'base64', data: base64 }]);
     return true;
   } catch (err) {
     console.warn('[labelPrinter] QZ Tray print failed, printing through the browser:', err);

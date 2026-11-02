@@ -2,117 +2,72 @@
 =======================================================================================================================================
 FNSKU label — print one Amazon label from the browser
 =======================================================================================================================================
-AMZ Shipment and Goods In print one of these per Amazon unit. The label IS THE FNSKU'S IMAGE FROM THE BARCODE FOLDER — `<FNSKU>.bmp`,
-the same file the old system printed (owner, 2026-10-08: "all we want is to print the image from the fnsku folder"). Until then the
-label was drawn here (barcode + FNSKU + Amazon SKU). Under the image goes one line of text: the product CODE (skumap.code — owner,
-2026-10-08: "add the code under it"). Printed on the Dymo LabelWriter's 54 × 25 mm label (11352 / 30336 size). MEASURED, not taken from the paper
-name: a ruler printed on an 89 mm page (2026-10-07) ran across two labels with the gap at ~55 mm. The driver's paper must be a 54 mm
-one too — on a longer paper (e.g. 30252 Address, 89 mm) Chrome centres the 54 mm page on it and the label lands ~17 mm along, cut off.
+AMZ Shipment and Goods In print one of these per Amazon unit: the FNSKU barcode, the FNSKU under it (as the barcode folder's
+`<FNSKU>.bmp` images have it), and the product CODE under that (skumap.code — owner, 2026-10-08: "add the code under it"). Printed on
+the Dymo LabelWriter's 54 × 25 mm label (11352 / 30336 size). MEASURED, not taken from the paper name: a ruler printed on an 89 mm page
+(2026-10-07) ran across two labels with the gap at ~55 mm. The driver's paper must be a 54 mm one too — on a longer paper (e.g. 30252
+Address, 89 mm) Chrome centres the 54 mm page on it and the label lands ~17 mm along, cut off.
 
-WHERE THE IMAGE COMES FROM. The folder is the one Update Amazon's barcode panel keeps (barcodeFolder.ts — a Drive folder synced onto
-the PC, reached through the browser's File System Access handle). Reading it needs the folder's permission for this browser session,
-which Chrome only grants from a click (Update Amazon's panel, or "Allow on every visit"); a scan can't ask for it. So if the folder
-isn't granted, or the file isn't in it yet, the label is the same image built on the spot (barcode128.ts → fnskuBarcodeBmp — the
-generator that writes the folder's files, bars verified bit-for-bit against them). Either way the printed label is the folder image.
+THE BARS ARE THE FOLDER IMAGE'S BARS AT ¾ SIZE — 3 PRINTER DOTS A MODULE, NOT 4 (2026-11-02). From 2026-10-08 the label WAS the folder
+image, printed 1:1: 4-dot modules, so a 10-character FNSKU's 145 modules were 49 mm of bars on a 54 mm label whose printable span is
+~50 mm, with Code 128 wanting ~3.4 mm of blank beyond each end. It didn't fit: the start of the barcode was clipped at the label's
+edge and nothing could read it (photographed 2026-11-02 — off-centre, ~2 mm blank one end, ~6 mm the other; no scanner read it,
+through QZ Tray or Chrome). Shrinking the image would resample the bars unevenly (that stopped the very first label scanning), so the
+same bars are DRAWN from the FNSKU (barcode128.ts → code128bModules, the generator that writes the folder files — bit-for-bit the
+same pattern) at 3 dots: 145 modules = 36.8 mm, ~8.6 mm blank each side, room for the label to sit a couple of mm off. Every bar
+edge lands on a whole printer dot.
 
-PRINTED AT ITS OWN PIXELS. The current folder files are 300 dpi — the Dymo head's resolution — with 4-pixel modules. The image is
-trimmed to its ink (the files have a 129 px blank right margin and no left one, which would put the bars off-centre and too wide for
-54 mm), then placed on a page canvas of exactly the label's size in printer dots at a WHOLE-NUMBER scale (1 for the 300 dpi files; the
-2017-style 96 dpi files with 1 px modules come out at 3–4), centred. So every bar is a whole number of dots and nothing is resampled —
-the first label version stretched bars to 2.6 dots a module and the uneven rounding stopped it scanning (2026-10-08). The page is
-shown with image-rendering: pixelated for the same reason. The image plus the code line don't fit 25 mm at 1:1 (the 2026 files are
-253 px of ink), so the BARS ARE SHORTENED from the top to make room — cropping rows off a barcode changes no bar width, and the folder
-images all have the bars at the top and the FNSKU caption underneath. The scale is chosen on width; height is what gets cropped. Note there is no thermal bar-width reduction any more (the file's bars are
-full width); at 4 dots a module the spread matters less than it did at 3, but if scans fail, that's where to look.
+BARS THINNED FOR THE PRINTER'S HEAT. A thermal head spreads each bar wider than drawn, closing the gaps; each bar is drawn
+BAR_REDUCTION_DOTS narrower on its right (its gap that much wider) — the usual thermal bar-width reduction. 2, as the 2026-10-08 label
+had it (1 "still printed merged"); simulated 2026-11-02 against a real decoder, 3-dot modules thinned 2 read with anything from no
+spread to 2 dots of spread a side, the widest safe range. If bars print faint or broken, lower it; if still merged, raise it.
 
-HOW IT PRINTS. Through QZ Tray first (labelPrinter.ts, 2026-10-29): the PNG goes straight to the PC's chosen FNSKU printer, silently.
-If QZ Tray isn't running or no printer is picked, the old way (docs/label-printing-notes.md): a web page can't talk to the printer
-directly, so the label is an image on a page exactly the label's size, in a hidden iframe, and that iframe is printed. On the packing PC Chrome runs from a shortcut with --kiosk-printing,
-which skips the dialog and sends it straight to the default printer. Anywhere else the normal print dialog appears.
+HOW IT PRINTS. Through QZ Tray first (labelPrinter.ts, 2026-10-29), silently, to the Dymo. If QZ Tray isn't running or there's no
+Dymo, the old way (docs/label-printing-notes.md): a web page can't talk to the printer directly, so the label is an image on a page
+exactly the label's size, in a hidden iframe, and that iframe is printed. On the packing PC Chrome runs from a shortcut with
+--kiosk-printing, which skips the dialog and sends it straight to the default printer. Anywhere else the normal print dialog appears.
+
+QZ TRAY GETS WHAT CHROME GETS. The same 25 × 54 mm page with the canvas filling it, as a PDF with NO density, so the driver prints at
+its own setting. Not a PNG image job: that needs a density, which forced the Dymo to 300 × 300 — its "Text" quality, grey streaky
+bars — (and 300 × 600 garbled the label); and an image job is drawn from the driver's printable-area corner, ~2 mm in.
 
 PORTRAIT PAGE, ROTATED DRAWING. The Dymo driver's pages are PORTRAIT — the label's height across the head, its length along the feed.
-So the page is sent in the driver's own orientation, 25 × 54, and the image is drawn turned 90° on it: nothing for Chrome or the
+So the page is sent in the driver's own orientation, 25 × 54, and the label is drawn turned 90° on it: nothing for Chrome or the
 driver to rotate. If labels ever come out upside down, flip ROTATE_CLOCKWISE.
 =======================================================================================================================================
 */
 
-import { fnskuBarcodeBmp } from './barcode128';
-import { ensureFolderPermission, savedBarcodeFolder } from './barcodeFolder';
+import { code128bModules } from './barcode128';
 import { printLabel } from './labelPrinter';
 
 export const LABEL_MM = { width: 54, height: 25 } as const;
 // The Dymo LabelWriter head is 300 dpi; the page canvas is the label in its dots.
 const dots = (mm: number) => Math.round((mm * 300) / 25.4);
 const LABEL_DOTS = { width: dots(LABEL_MM.width), height: dots(LABEL_MM.height) } as const;
-// Kept clear of ink at each end and edge, so the image never touches the label's edge.
+// Printer dots per barcode module, and dots trimmed off the right of every bar — see THE BARS and BARS THINNED above.
+const MODULE_DOTS = 3;
+const BAR_REDUCTION_DOTS = 2;
+// Kept clear of ink at the label's top and bottom edges.
 const MARGIN_DOTS = dots(1);
-// The code line under the image: its size, the gap above it, and the widest it may run before its font shrinks.
+// The two text lines under the bars (FNSKU, then code): their size, the gap above each, and the widest before the font shrinks.
 const TEXT_SIZE_DOTS = dots(2.6);
 const TEXT_GAP_DOTS = dots(0.5);
 const TEXT_MAX_WIDTH_DOTS = LABEL_DOTS.width - 2 * MARGIN_DOTS;
 const FONT = 'Arial, Helvetica, sans-serif';
-// Which way the label is turned on the portrait page — decides only whether the caption reads upright on the roll.
+// Which way the label is turned on the portrait page — decides only whether the text reads upright on the roll.
 const ROTATE_CLOCKWISE = true;
 // The page as the driver sees it: portrait, the label's height across the head and its width along the feed.
 const PAGE_MM = { width: LABEL_MM.height, height: LABEL_MM.width } as const;
 
-/** `<FNSKU>.bmp` from the barcode folder, or null if the folder isn't set up / granted this session or the file isn't there. Never
- *  prompts — a scan isn't a click, so Chrome wouldn't allow it. */
-async function folderImage(fnsku: string): Promise<Blob | null> {
-  try {
-    const folder = await savedBarcodeFolder();
-    if (!folder || !(await ensureFolderPermission(folder, false))) return null;
-    // Exact name first (the usual case), then a case-insensitive look — Windows treats x000q6arld.bmp as the same file.
-    try { return await (await folder.getFileHandle(`${fnsku}.bmp`)).getFile(); } catch { /* not under that exact name */ }
-    const wanted = `${fnsku}.bmp`.toUpperCase();
-    const entries = (folder as unknown as { values?(): AsyncIterableIterator<FileSystemHandle> }).values?.();
-    if (!entries) return null;
-    for await (const entry of entries) {
-      if (entry.kind === 'file' && entry.name.toUpperCase() === wanted) return await (entry as FileSystemFileHandle).getFile();
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** The image's inked area: the smallest box holding every dark pixel. */
-function inkBox(bitmap: ImageBitmap): { x: number; y: number; w: number; h: number } {
-  const c = document.createElement('canvas');
-  c.width = bitmap.width;
-  c.height = bitmap.height;
-  const ctx = c.getContext('2d');
-  if (!ctx) throw new Error('Canvas is unavailable in this browser');
-  ctx.drawImage(bitmap, 0, 0);
-  const px = ctx.getImageData(0, 0, c.width, c.height).data;
-  let minX = c.width; let minY = c.height; let maxX = -1; let maxY = -1;
-  for (let y = 0; y < c.height; y += 1) {
-    for (let x = 0; x < c.width; x += 1) {
-      const i = (y * c.width + x) * 4;
-      if (px[i] + px[i + 1] + px[i + 2] < 384) {
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX < 0) return { x: 0, y: 0, w: c.width, h: c.height }; // blank image — print it as it is
-  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
-}
-
-/** The label page as a canvas: the barcode image trimmed to its ink at a whole-number scale, bars shortened if need be, with `code`
- *  centred under it, all turned onto the portrait page. */
-async function labelCanvas(image: Blob, code: string): Promise<HTMLCanvasElement> {
-  const bitmap = await createImageBitmap(image);
-  const box = inkBox(bitmap);
-  // Whole-number scale on width, so each image pixel is a whole number of dots. An image too wide at 1:1 is shrunk as a last resort.
-  const fit = (LABEL_DOTS.width - 2 * MARGIN_DOTS) / box.w;
-  const scale = fit >= 1 ? Math.floor(fit) : fit;
-  // Height left for the image once the code line is in: if the image is taller, crop rows off its top (the bars).
-  const textBand = code ? TEXT_SIZE_DOTS + TEXT_GAP_DOTS : 0;
-  const maxH = Math.floor((LABEL_DOTS.height - 2 * MARGIN_DOTS - textBand) / scale);
-  if (box.h > maxH) { box.y += box.h - maxH; box.h = maxH; }
-  const w = Math.round(box.w * scale);
-  const h = Math.round(box.h * scale);
+/** The label page as a canvas: the FNSKU's bars centred on the label, the FNSKU and `code` under them, all turned onto the portrait
+ *  page. Throws if the FNSKU can't be encoded (never, for a real one). */
+function labelCanvas(fnsku: string, code: string): HTMLCanvasElement {
+  const modules = code128bModules(fnsku);
+  const lines = [fnsku, code].filter(Boolean);
+  const textBand = lines.length * (TEXT_GAP_DOTS + TEXT_SIZE_DOTS);
+  const barsH = LABEL_DOTS.height - 2 * MARGIN_DOTS - textBand;
+  const left = Math.round((LABEL_DOTS.width - modules.length * MODULE_DOTS) / 2);
+  const top = MARGIN_DOTS;
 
   const canvas = document.createElement('canvas');
   canvas.width = LABEL_DOTS.height;
@@ -121,27 +76,53 @@ async function labelCanvas(image: Blob, code: string): Promise<HTMLCanvasElement
   if (!ctx) throw new Error('Canvas is unavailable in this browser');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingEnabled = false;
 
   // Label (x along, y down) → portrait page. Clockwise: label top lands on the page's right edge; anticlockwise: on its left.
   if (ROTATE_CLOCKWISE) { ctx.translate(canvas.width, 0); ctx.rotate(Math.PI / 2); }
   else { ctx.translate(0, canvas.height); ctx.rotate(-Math.PI / 2); }
-  // Image and code line as one block, centred top to bottom.
-  const top = Math.round((LABEL_DOTS.height - h - textBand) / 2);
-  ctx.drawImage(bitmap, box.x, box.y, box.w, box.h, Math.round((LABEL_DOTS.width - w) / 2), top, w, h);
-  bitmap.close();
 
-  if (code) {
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
+  // One rectangle per run of bar modules, in whole dots, trimmed on the right by the bar-width reduction (never below one dot).
+  ctx.fillStyle = '#000000';
+  for (let i = 0; i < modules.length;) {
+    if (modules[i] !== '1') { i += 1; continue; }
+    let j = i;
+    while (j < modules.length && modules[j] === '1') j += 1;
+    ctx.fillRect(left + i * MODULE_DOTS, top, Math.max(1, (j - i) * MODULE_DOTS - BAR_REDUCTION_DOTS), barsH);
+    i = j;
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  let lineTop = top + barsH;
+  for (const line of lines) {
     ctx.font = `${TEXT_SIZE_DOTS}px ${FONT}`;
-    const width = ctx.measureText(code).width;
+    const width = ctx.measureText(line).width;
     if (width > TEXT_MAX_WIDTH_DOTS) ctx.font = `${Math.floor((TEXT_SIZE_DOTS * TEXT_MAX_WIDTH_DOTS) / width)}px ${FONT}`;
-    // Baseline at ~0.75 em below the band's top: Arial's caps sit there, and codes are capitals, digits and hyphens.
-    ctx.fillText(code, LABEL_DOTS.width / 2, top + h + TEXT_GAP_DOTS + Math.round(TEXT_SIZE_DOTS * 0.75));
+    // Baseline at ~0.75 em below the line's top: Arial's caps sit there, and FNSKUs and codes are capitals, digits and hyphens.
+    ctx.fillText(line, LABEL_DOTS.width / 2, lineTop + TEXT_GAP_DOTS + Math.round(TEXT_SIZE_DOTS * 0.75));
+    lineTop += TEXT_GAP_DOTS + TEXT_SIZE_DOTS;
   }
   return canvas;
+}
+
+/** The page as a one-page PDF (base64), for QZ Tray: 25 × 54 mm, the whole canvas filling it (see QZ TRAY above).
+ *  The canvas goes in DOUBLED (each pixel 2 × 2, no smoothing) — 600 dpi. In "Barcodes and Graphics" the Dymo prints 600 dpi along
+ *  the feed, the bars' width direction; at 600 every bar edge falls on a printer dot whether the driver prints 300 or 600, so
+ *  nothing is stretched with smoothing (grey bar edges burn black and thicken the bars). Chrome scales it pixelated, the same. */
+async function pagePdf(page: HTMLCanvasElement): Promise<string> {
+  const doubled = document.createElement('canvas');
+  doubled.width = page.width * 2;
+  doubled.height = page.height * 2;
+  const ctx = doubled.getContext('2d');
+  if (!ctx) throw new Error('Canvas is unavailable in this browser');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(page, 0, 0, doubled.width, doubled.height);
+
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({ unit: 'mm', format: [PAGE_MM.width, PAGE_MM.height], orientation: 'portrait' });
+  // FAST = lossless flate, so the PDF stays small at the doubled size.
+  pdf.addImage(doubled, 'PNG', 0, 0, PAGE_MM.width, PAGE_MM.height, undefined, 'FAST');
+  return pdf.output('datauristring').split(',')[1];
 }
 
 /**
@@ -155,10 +136,9 @@ export function printFnskuLabel(fnsku: string, code: string, onDone?: () => void
   void (async () => {
     let url: string;
     try {
-      const image = (await folderImage(fnsku)) ?? fnskuBarcodeBmp(fnsku);
-      const canvas = await labelCanvas(image, code);
-      // QZ Tray takes the canvas as base64 PNG; if it prints, that's the label done.
-      if (await printLabel('fnsku', canvas.toDataURL('image/png').split(',')[1])) { onDone?.(); return; }
+      const canvas = labelCanvas(fnsku, code);
+      // QZ Tray takes the same page as a one-page PDF; if it prints, that's the label done.
+      if (await printLabel('fnsku', await pagePdf(canvas))) { onDone?.(); return; }
       const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!png) return;
       url = URL.createObjectURL(png);
