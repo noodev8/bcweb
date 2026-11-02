@@ -103,7 +103,7 @@ import {
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { printFnskuLabel, printFnskuTestStrip } from '@/lib/fnskuLabel';
+import { printFnskuLabel, printFnskuLabels, printFnskuTestStrip } from '@/lib/fnskuLabel';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
@@ -303,6 +303,9 @@ function Packing({ initial, autoBack, onShipped }: {
   const [sizeOpen, setSizeOpen] = useState(false);
   // A stored box's ⋯ menu: which of Empty / Delete is waiting for its second click.
   const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | null>(null);
+  // TEMP (2026-11-02): "Print all labels" on a stored box — the box id waiting for the confirming click, and whether it's printing.
+  const [confirmPrintAll, setConfirmPrintAll] = useState<number | null>(null);
+  const [printingAll, setPrintingAll] = useState(false);
   // The box's ⋯ menu (print switch, Empty) — the rarely-used actions, out of the packer's way (owner, 2026-10-16).
   const [menuOpen, setMenuOpen] = useState(false);
   // The side panel, opened from the page's ⋯ menu (owner, 2026-10-22 — see THE BOX IS THE SCREEN): the box list, or the shipment steps.
@@ -860,6 +863,33 @@ function Packing({ initial, autoBack, onShipped }: {
                   </>
                 ) : (
                   <>
+                    {/* TEMP (2026-11-02): reprint every label in this box, sorted by code — relabelling the boxes scanned before the
+                        1-dot bar thinning. Asks first (it can be a lot of labels). Remove once those boxes are redone. */}
+                    {(() => {
+                      const labels = unitRows(shown.lines)
+                        .filter((l) => l.fnsku)
+                        .map((l) => ({ fnsku: l.fnsku!, code: l.code }))
+                        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+                      const asking = confirmPrintAll === shown.id;
+                      return (
+                        <button
+                          type="button"
+                          disabled={labels.length === 0 || printingAll}
+                          onClick={() => {
+                            if (!asking) { setConfirmPrintAll(shown.id); return; }
+                            setConfirmPrintAll(null);
+                            setPrintingAll(true);
+                            void printFnskuLabels(labels).finally(() => { setPrintingAll(false); refocus(); });
+                          }}
+                          title={`Print every label in Box ${shown.id}, sorted by code`}
+                          className={'flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40 '
+                            + (asking ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-300 text-slate-700 hover:bg-slate-50')}
+                        >
+                          <PrinterIcon className="h-4 w-4" />
+                          {printingAll ? 'Printing…' : asking ? `Print ${labels.length} labels? Click again` : 'Print all labels'}
+                        </button>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={() => refill(shown, true)}

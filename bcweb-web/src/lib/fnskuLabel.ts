@@ -150,6 +150,14 @@ export function printFnskuTestStrip(fnsku: string, code: string, onDone?: () => 
   })();
 }
 
+/**
+ * TEMP (2026-11-02): every label for a stored box, one after another, sorted by code — to relabel the boxes scanned before the 1-dot
+ * thinning (the "Print all labels" button on a stored box on AMZ Shipment). Remove with the button once those boxes are redone.
+ */
+export async function printFnskuLabels(labels: { fnsku: string; code: string }[]): Promise<void> {
+  for (const l of labels) await printOne(l.fnsku, l.code, BAR_REDUCTION_DOTS);
+}
+
 async function printOne(fnsku: string, code: string, reduction: number, onDone?: () => void): Promise<void> {
   {
     let url: string;
