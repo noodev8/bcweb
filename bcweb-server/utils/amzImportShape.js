@@ -120,10 +120,6 @@ function shapePlan(parsed, plan, opts = {}) {
       matched: plan.stock.matched,
       liveUnits: plan.stock.liveUnits,
       totalUnits: plan.stock.totalUnits,
-      // Products this report introduces (new, or with a re-issued fnsku). The barcode panel shows itself ONLY when this is non-empty,
-      // so it costs the operator nothing on an ordinary import. Capped like the other lists — it is a prompt, not a report.
-      newBarcodes: plan.stock.newBarcodes.slice(0, 50),
-      newBarcodeCount: plan.stock.newBarcodes.length,
       // Prices changed outside BCWEB, logged to amz_price_log as 'Manual' on apply (amzImport.js -> planManualPrices).
       manualPrices: plan.stock.manualPrices,
     },

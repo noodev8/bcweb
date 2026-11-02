@@ -3041,9 +3041,6 @@ export interface AmzImportSummary {
   fees: { updated: number; unchanged: number; firstRealFee: number; unknownSku: string[]; biggestMoves: { sku: string; from: number; to: number; delta: number }[] };
   stock: {
     rowsInReport: number; matched: number; liveUnits: number; totalUnits: number;
-    // Products this import introduces — new to amzfeed, or with an fnsku Amazon has re-issued. The barcode panel keys off this and
-    // stays hidden when it's empty, which is most imports.
-    newBarcodes: { fnsku: string; sku: string; code: string }[]; newBarcodeCount: number;
     // Prices changed outside BCWEB (in Seller Central) — logged to amz_price_log as 'Manual' on apply.
     manualPrices: { code: string; sku: string; from: number; to: number }[];
   };
@@ -3111,18 +3108,6 @@ export function getAmzImportLast() {
   return request<AmzImportLast>({ url: '/amz-import-last', method: 'GET' }, (b) => ({
     lastRun: (b.lastRun as string) || null,
     by: (b.by as string) || null,
-  }));
-}
-
-// Every FNSKU that should have a barcode image in the operator's folder. The server has no idea what is actually in that folder —
-// it sits on a PC, not the VPS — so this is only half the answer; src/lib/barcodeFolder.ts supplies the other half and the panel
-// diffs the two in the browser.
-export interface AmzBarcodeFnsku { fnsku: string; code: string; sku: string; title: string }
-export interface AmzBarcodeCheck { fnskus: AmzBarcodeFnsku[]; total: number }
-export function getAmzBarcodeCheck() {
-  return request<AmzBarcodeCheck>({ url: '/amz-barcode-check', method: 'GET' }, (b) => ({
-    fnskus: (b.fnskus as AmzBarcodeFnsku[]) || [],
-    total: (b.total as number) || 0,
   }));
 }
 

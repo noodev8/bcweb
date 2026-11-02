@@ -13,7 +13,7 @@ image, printed 1:1: 4-dot modules, so a 10-character FNSKU's 145 modules were 49
 ~50 mm, with Code 128 wanting ~3.4 mm of blank beyond each end. It didn't fit: the start of the barcode was clipped at the label's
 edge and nothing could read it (photographed 2026-11-02 — off-centre, ~2 mm blank one end, ~6 mm the other; no scanner read it,
 through QZ Tray or Chrome). Shrinking the image would resample the bars unevenly (that stopped the very first label scanning), so the
-same bars are DRAWN from the FNSKU (barcode128.ts → code128bModules, the generator that writes the folder files — bit-for-bit the
+same bars are DRAWN from the FNSKU (barcode128.ts → code128bModules, the generator that wrote the folder files — bit-for-bit the
 same pattern) at 3 dots: 145 modules = 36.8 mm, ~8.6 mm blank each side, room for the label to sit a couple of mm off. Every bar
 edge lands on a whole printer dot.
 

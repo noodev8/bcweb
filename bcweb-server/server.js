@@ -197,7 +197,6 @@ app.use('/no-supply-clear', require('./routes/no-supply-clear'));
 app.use('/amz-import-preview', require('./routes/amz-import-preview')); // stage 1: what a commit would do — READ ONLY
 app.use('/amz-import-commit', require('./routes/amz-import-commit'));   // stage 2: ingest -> derive -> project, one transaction
 app.use('/amz-import-last', require('./routes/amz-import-last'));       // when was this last run — READ ONLY
-app.use('/amz-barcode-check', require('./routes/amz-barcode-check')); // FNSKUs that need a barcode image; the BROWSER diffs the folder
 app.use('/amz-delete-file', require('./routes/amz-delete-file')); // build the Seller Central .xlsm that de-lists dead SKUs — WRITES NOTHING
 app.use('/amz-shipment-boxes', require('./routes/amz-shipment-boxes')); // AMZ Shipment: boxes packed so far (amzshipment) — READ ONLY
 app.use('/amz-shipment-scan', require('./routes/amz-shipment-scan'));   // AMZ Shipment: resolve a scan (code/EAN/FNSKU) + its FNSKU — READ ONLY
