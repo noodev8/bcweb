@@ -85,7 +85,7 @@ export default function RevenuePage() {
   const q = useApiQuery('analytics-revenue', () => getRevenue());
   const d = q.data;
   return (
-    <AppShell backHref="/segments" backLabel="Winners">
+    <AppShell backHref="/finance" backLabel="Finance">
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {d && <Revenue data={d} />}

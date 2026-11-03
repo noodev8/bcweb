@@ -63,6 +63,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownTrayIcon, ArrowUpTrayIcon, CheckCircleIcon, DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import {
   calculateFinanceMonth, buildFinanceQuickFile, getFinanceCar, getFinanceCarSheet, FinanceMonth, FinanceRejectedFile, FinanceFile, FinanceShopify,
@@ -393,6 +394,11 @@ export default function FinancePage() {
           <p className="mt-1 text-sm text-slate-500">
             Upload, add the shop figures, Calculate.
           </p>
+          {/* The yearly bottom line lives on Reports → Revenue & profit; Finance is where the owner looks for it (owner,
+              2026-11-03: "Repricing doesn't seem to make sense"). Repricing's 12m revenue box still links there too. */}
+          <Link href="/analytics/revenue" className="mt-2 inline-block text-sm font-medium text-slate-700 underline hover:text-slate-900">
+            Revenue &amp; profit — last 12 months →
+          </Link>
         </div>
         {/* Stated, not chosen - see the header note. The select appears only if the operator asks for it. */}
         <div className="text-right">

@@ -20,6 +20,12 @@ const { pool, query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { parsePL } = require('../utils/quickFilePL');
 
+// CN00087 (03/11/2026, -£3,337.52 ex VAT on 6003) reverses QF04086, October 2026's Amazon fees entered twice; October's VAT was already
+// filed, so the credit sits in November. Moved back to October so both months read true (owner, 2026-11-03).
+const CORRECTIONS = [
+  { line: 'AMZ|Seller fees', from: '2026-11-01', to: '2026-10-01', amount: -3337.52, why: 'CN00087 reverses duplicate QF04086' },
+];
+
 const NAMES = ['ACC|Turnover', 'SHP|Shipping', 'SHP|Advertising', 'AMZ|Seller fees', 'AMZ|Shipping', 'ALL|Wages', 'ALL|Rent', 'ALL|General expenses'];
 
 (async () => {
@@ -36,6 +42,14 @@ const NAMES = ['ACC|Turnover', 'SHP|Shipping', 'SHP|Advertising', 'AMZ|Seller fe
     for (const m of r.months) byMonth.set(m.from, m);
   }
   const months = [...byMonth.values()].sort((a, b) => a.from.localeCompare(b.from));
+  // Corrections QuickFile can't make itself (a VAT-filed month is locked, so its error is reversed by a credit in a later month).
+  // Each moves an amount from the month it was booked in to the month it belongs to, on whichever of the two this file holds.
+  for (const k of CORRECTIONS) {
+    for (const m of months) {
+      if (m.from === k.from) m.lines[k.line] = (m.lines[k.line] || 0) - k.amount;
+      if (m.from === k.to) m.lines[k.line] = (m.lines[k.line] || 0) + k.amount;
+    }
+  }
   for (const m of months) {
     console.log(m.from.slice(0, 7), NAMES.map((k) => `${k} ${(m.lines[k] || 0).toFixed(2)}`).join(' · '));
   }
