@@ -99,8 +99,9 @@ android/key.jks
 # Python environment
 venv/
 
-# Claude and Codex Code settings
-.claude/
+# Claude and Codex Code settings — local, except the project skills, which travel with the repo
+.claude/*
+!.claude/skills/
 .codex/
 
 # Project-scoped MCP config — holds the live DB password in its connection string. Never commit.
