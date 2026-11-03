@@ -44,7 +44,7 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSkuHealth } from '@/lib/api';
+import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSkuHealth } from '@/lib/api';
 import { pairsSummary } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
@@ -189,6 +189,8 @@ export default function DashboardPage() {
 
       <Daily />
 
+      <AmzHistoryWarning />
+
       <SkuHealthStrip />
 
       {/* Two rows of three; each row's panel opens directly under it. No heading (owner, 2026-11-01: remove "Everything else") —
@@ -285,6 +287,27 @@ function Daily() {
         </DailyLink>
       </div>
     </section>
+  );
+}
+
+/* =====================================================================================================================================
+   AMAZON SIZE HISTORY WARNING — shown ONLY when the history has gone stale: more than 3 days with no FBA Inventory import (owner,
+   2026-11-03: Update Amazon's status line + a dashboard warning, so it isn't forgotten). When all is well it renders nothing, so Daily
+   doesn't get busier. Same read (and SWR key) as the Update Amazon screen's status line.
+===================================================================================================================================== */
+function AmzHistoryWarning() {
+  const last = useApiQuery('amz-import-last', getAmzImportLast);
+  const h = last.data?.history ?? null;
+  if (!h || !h.stale) return null;
+  return (
+    <Link
+      href="/update-amazon"
+      className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 outline-none transition hover:border-amber-400 focus-visible:ring-2 focus-visible:ring-amber-200"
+    >
+      <span className="font-semibold">No Amazon stock report for {h.daysSince} days</span>
+      <span className="text-amber-800">Last {h.lastDay}. Import the FBA Inventory report on Update Amazon, or these days have no stock or price history.</span>
+      <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-amber-600" />
+    </Link>
   );
 }
 

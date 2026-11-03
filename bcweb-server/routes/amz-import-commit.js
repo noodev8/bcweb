@@ -20,7 +20,8 @@ Purpose: Update Amazon module, stage 2 — THE WRITE. Ingest the uploaded Amazon
 
 THE THREE PHASES (design doc §3.2). Order matters and is enforced here regardless of the order files were dropped:
     PHASE 1  INGEST   orders + returns -> sales | fee report -> skumap.fbafee | inventory -> amzfeed stock columns
-                      (and, first, prices changed by hand in Seller Central -> amz_price_log as 'Manual')
+                      (and, first, prices changed by hand in Seller Central -> amz_price_log as 'Manual';
+                       then the SIZE HISTORY — utils/amzSizeHistory.js, change-only, behind a savepoint so it can't fail the import)
     PHASE 2  DERIVE   two grouped queries over sales — a FIXED 30-day window, plus 7 days
     PHASE 3  PROJECT  write those derived values onto amzfeed, for PowerBuilder
 
@@ -54,6 +55,7 @@ const { buildPlan, readUploads, SOLD_WINDOW_DAYS } = require('../utils/amzImport
 // The three write phases live in a util so they can be rehearsed directly against a BEGIN...ROLLBACK client, without an HTTP layer.
 const { insertSales, retractCancelled, applyFees, logManualPriceChanges, applyStock, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('../utils/amzImportApply');
 const { shapePlan } = require('../utils/amzImportShape');
+const { recordSizeHistory } = require('../utils/amzSizeHistory');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -115,9 +117,31 @@ router.post('/', (req, res) => {
         // amzfeed price the stock upsert is about to overwrite.
         let stockResult = { upserted: 0, zeroed: 0 };
         let manualPrices = 0;
+        let history = null;
         if (parsed.INVENTORY) {
           manualPrices = await logManualPriceChanges(client, plan.stock.manualPrices);
           stockResult = await applyStock(client, parsed.INVENTORY.rows, plan.ref);
+          // Size history (utils/amzSizeHistory.js): today's price + FBA stock per size, change-only, read back from the amzfeed the
+          // stock phase just wrote. Only when that phase actually wrote rows — a report that matched nothing is not a reading.
+          if (stockResult.upserted > 0) {
+            const inbound = new Map();
+            for (const r of parsed.INVENTORY.rows) {
+              if (r.isVirtual) continue;
+              const m = plan.ref.bySku.get(r.sku);
+              if (m) inbound.set(m.code, r.inbound || 0);
+            }
+            // SAVEPOINT: the history must never stop the import itself (sales, stock, fees are the job). A failure is rolled back on
+            // its own, logged, and SAID — in the result line and the response — rather than silently skipped.
+            await client.query('SAVEPOINT size_history');
+            try {
+              history = await recordSizeHistory(client, { inbound, who: req.user.display_name });
+              await client.query('RELEASE SAVEPOINT size_history');
+            } catch (e) {
+              await client.query('ROLLBACK TO SAVEPOINT size_history');
+              logger.error('[amz-import-commit] size history failed:', e.message);
+              history = { failed: true, error: e.message };
+            }
+          }
         }
 
         // --- PHASES 2 + 3: derive from sales, project onto amzfeed (PowerBuilder only) ---------------------------------------
@@ -134,10 +158,11 @@ router.post('/', (req, res) => {
           `INSERT INTO bclog (workstation, section, log, date, time, created_at)
            VALUES ($1, 'Amazon Update', $2,
                    (now() AT TIME ZONE 'Europe/London')::date, to_char(now() AT TIME ZONE 'Europe/London','HH24:MI'), now())`,
-          [req.user.display_name, `Amazon Update: +${salesInserted} sales, +${returnsInserted} returns, ${feesUpdated} fees, ${stockResult.upserted} stock rows, ${manualPrices} manual prices`]
+          [req.user.display_name, `Amazon Update: +${salesInserted} sales, +${returnsInserted} returns, ${feesUpdated} fees, ${stockResult.upserted} stock rows, ${manualPrices} manual prices` +
+            (history ? (history.failed ? ', size history FAILED' : `, size history ${history.changed} sizes changed today`) : '')]
         );
 
-        return { plan, retracted, salesInserted, returnsInserted, feesUpdated, stockResult, manualPrices, skusTouched, skumapTouched };
+        return { plan, retracted, salesInserted, returnsInserted, feesUpdated, stockResult, manualPrices, history, skusTouched, skumapTouched };
       });
 
       const summary = shapePlan(parsed, result.plan, { committed: true });
@@ -160,6 +185,8 @@ router.post('/', (req, res) => {
           stockRowsWritten: result.stockResult.upserted,
           stockRowsZeroed: result.stockResult.zeroed,
           manualPricesLogged: result.manualPrices,
+          // null when no inventory report was written (nothing recorded). changed = the sizes whose price/stock moved today.
+          sizeHistory: result.history,
         },
         derived: { skusTouched: result.skusTouched, skumapTouched: result.skumapTouched, windowDays: SOLD_WINDOW_DAYS },
       });

@@ -67,6 +67,8 @@ const REPORTS = {
     label: 'FBA Inventory',
     identity: ['sku', 'fnsku', 'asin', 'product-name', 'afn-fulfillable-quantity'],
     required: ['sku', 'fnsku', 'asin', 'your-price', 'afn-fulfillable-quantity', 'afn-total-quantity'],
+    // Read when present, 0 when not — never a reason to refuse the file. Inbound feeds the size history (utils/amzSizeHistory.js).
+    optional: ['afn-inbound-working-quantity', 'afn-inbound-shipped-quantity', 'afn-inbound-receiving-quantity'],
     layout: [
       'sku', 'fnsku', 'asin', 'product-name', 'condition', 'your-price', 'mfn-listing-exists', 'mfn-fulfillable-quantity',
       'afn-listing-exists', 'afn-warehouse-quantity', 'afn-fulfillable-quantity', 'afn-unsellable-quantity',
@@ -272,6 +274,11 @@ function parseReport(fileText) {
     if (at === -1) missing.push(col);
     else idx[col] = at;
   }
+  // Optional columns: indexed if the header has them. An absent one reads undefined -> the row parser's 0 default.
+  for (const col of def.optional || []) {
+    const at = header.indexOf(col);
+    if (at !== -1) idx[col] = at;
+  }
 
   // The fee report's fulfilment-fee column has been renamed by Amazon before — accept any known spelling before declaring it missing.
   if (def.type === 'FEES') {
@@ -439,6 +446,11 @@ function parseInventoryRow(parts, cell, skip) {
     price: number(cell(parts, 'your-price')),
     live: integer(cell(parts, 'afn-fulfillable-quantity')) || 0,
     total: integer(cell(parts, 'afn-total-quantity')) || 0,
+    // On its way in to FBA (working + shipped + receiving). Read only by the size history (utils/amzSizeHistory.js), not amzfeed.
+    // Optional columns: a report without them reads 0, the same convention as live/total above.
+    inbound: (integer(cell(parts, 'afn-inbound-working-quantity')) || 0)
+           + (integer(cell(parts, 'afn-inbound-shipped-quantity')) || 0)
+           + (integer(cell(parts, 'afn-inbound-receiving-quantity')) || 0),
     // Amazon's own virtual bundle/group SKUs. They are real rows in the report but will never match skumap, so flag them here and
     // let the reconciliation panel bucket them as "expected" rather than showing them to the operator as ~13 missing products.
     isVirtual: sku.startsWith('amzn.gr.'),

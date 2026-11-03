@@ -31,7 +31,9 @@ import {
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzImportSummary from '@/components/AmzImportSummary';
-import { previewAmzImport, commitAmzImport, getAmzImportLast, AmzImportSummary as Summary, AmzRejectedFile } from '@/lib/api';
+import {
+  previewAmzImport, commitAmzImport, getAmzImportLast, AmzImportSummary as Summary, AmzRejectedFile, AmzImportCommit, AmzSizeHistoryStatus,
+} from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 const MAX_FILES = 4;
@@ -46,6 +48,8 @@ export default function UpdateAmazonPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // What the last Apply did to the size history (null = no inventory report in it), for the Done banner.
+  const [historyResult, setHistoryResult] = useState<AmzImportCommit['applied']['sizeHistory']>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Just a "when did this last run" line — one lightweight read on mount, not a heavy aggregate, so it's fine to fetch here despite
@@ -114,6 +118,7 @@ export default function UpdateAmazonPage() {
     }
     setSummary(res.data.summary);
     setRejected(res.data.rejected);
+    setHistoryResult(res.data.applied?.sizeHistory ?? null);
     setStage('done');
     refreshLastRun();
   }
@@ -134,6 +139,7 @@ export default function UpdateAmazonPage() {
         <p className="mt-1 text-xs text-slate-400">
           Last processed: {lastRun?.lastRun ? `${lastRun.lastRun}${lastRun.by ? ` — ${lastRun.by}` : ''}` : 'unknown'}
         </p>
+        <SizeHistoryLine h={lastRun?.history ?? null} />
       </div>
 
       {/* --- Stage 1: the files -------------------------------------------------------------------------------------------- */}
@@ -265,6 +271,17 @@ export default function UpdateAmazonPage() {
           Done — everything below is what was written.
         </div>
       )}
+      {stage === 'done' && historyResult && (
+        'failed' in historyResult ? (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            The import was saved, but the size history wasn&apos;t — run the FBA Inventory report again. ({historyResult.error})
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">
+            Size history: {historyResult.changed.toLocaleString('en-GB')} of {historyResult.sizes.toLocaleString('en-GB')} sizes changed today.
+          </p>
+        )
+      )}
 
       {/* --- The account -------------------------------------------------------------------------------------------------- */}
       {summary && (
@@ -274,4 +291,24 @@ export default function UpdateAmazonPage() {
       )}
     </AppShell>
   );
+}
+
+/** Size history status (owner, 2026-11-03: "ensure it doesn't get too big and forgotten"): when it last saved, how much is kept, and
+ *  its size on disk — amber once more than `staleAfterDays` days have gone with no FBA Inventory import. Nothing while the table
+ *  isn't there yet (history null). The dashboard shows the same stale warning, from the same read. */
+function SizeHistoryLine({ h }: { h: AmzSizeHistoryStatus | null }) {
+  if (!h) return null;
+  if (!h.lastDay) {
+    return <p className="mt-0.5 text-xs text-slate-400">Size history: starts with the next FBA Inventory import.</p>;
+  }
+  const mb = (h.bytes / (1024 * 1024)).toFixed(1);
+  const kept = `${h.days.toLocaleString('en-GB')} import day${h.days === 1 ? '' : 's'} kept since ${h.firstDay} · ${mb} MB`;
+  if (h.stale) {
+    return (
+      <p className="mt-1 inline-block rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+        Size history: no FBA Inventory report for {h.daysSince} days (last {h.lastDay}) — those days have no stock or price on record. {kept}
+      </p>
+    );
+  }
+  return <p className="mt-0.5 text-xs text-slate-400">Size history: last saved {h.lastDay} · {kept}</p>;
 }

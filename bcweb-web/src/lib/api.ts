@@ -3056,7 +3056,12 @@ export interface AmzImportSummary {
 export interface AmzRejectedFile { filename: string; reason: string }
 export interface AmzImportPreview { rejected: AmzRejectedFile[]; summary: AmzImportSummary }
 export interface AmzImportCommit extends AmzImportPreview {
-  applied: { salesInserted: number; returnsInserted: number; salesRetracted: number; feesUpdated: number; stockRowsWritten: number; stockRowsZeroed: number; manualPricesLogged: number };
+  applied: {
+    salesInserted: number; returnsInserted: number; salesRetracted: number; feesUpdated: number; stockRowsWritten: number; stockRowsZeroed: number; manualPricesLogged: number;
+    // The size history (server utils/amzSizeHistory.js). null = no inventory report written; failed = the history didn't save (the
+    // import itself still did). changed = sizes whose price/stock moved today.
+    sizeHistory: { day: string; sizes: number; changed: number; imports: number } | { failed: true; error: string } | null;
+  };
   derived: { skusTouched: number; skumapTouched: number; windowDays: number };
 }
 
@@ -3102,12 +3107,19 @@ export function commitAmzImport(files: File[]) {
   );
 }
 
-// When this last ran (bclog row written by the commit above) — for the "last processed" line on the page.
-export interface AmzImportLast { lastRun: string | null; by: string | null }
+// When this last ran (bclog row written by the commit above) — for the "last processed" line on the page — plus the SIZE HISTORY
+// status: Update Amazon's status line, and the dashboard's warning (shown only when `stale`: more than staleAfterDays days with no
+// inventory import). history null = the table isn't there yet.
+export interface AmzSizeHistoryStatus {
+  lastDay: string | null; firstDay: string | null; days: number; daysSince: number | null; rows: number; bytes: number;
+  stale: boolean; staleAfterDays: number;
+}
+export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null }
 export function getAmzImportLast() {
   return request<AmzImportLast>({ url: '/amz-import-last', method: 'GET' }, (b) => ({
     lastRun: (b.lastRun as string) || null,
     by: (b.by as string) || null,
+    history: (b.history as AmzSizeHistoryStatus) || null,
   }));
 }
 
