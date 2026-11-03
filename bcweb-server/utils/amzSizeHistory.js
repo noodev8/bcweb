@@ -21,6 +21,9 @@ THE RULES (owner, 2026-11-03):
     it was already superseded when the window starts — so the row in force at the cut-off stays and every day inside the window can
     be read. A size gone from amzfeed loses its last old row too (nothing left to read it for).
   - amz_size_history_run: one line per import DAY, so "nothing changed" and "no import" can be told apart.
+  - Rows written here are source 'import'. Days before the first import can hold rows REBUILT from Amazon's Inventory Ledger
+    (source 'ledger', total only — scripts/amz-ledger-backfill.js). The change test compares with those too, so the first import
+    writes a row for every size (a ledger row has no live / inbound / price).
 
 Exports:
   recordSizeHistory(client, { inbound, who }) -> { day, sizes, changed, imports }
@@ -120,14 +123,20 @@ async function readHistoryStatus(db) {
               COUNT(*)::int                             AS days,
               (${LONDON_TODAY_SQL} - MAX(day))::int     AS days_since,
               (SELECT COUNT(*)::int FROM amz_size_history) AS rows,
+              (SELECT to_char(MIN(day), 'DD Mon YYYY') FROM amz_size_history) AS history_from,
               pg_total_relation_size('amz_size_history') + pg_total_relation_size('amz_size_history_run') AS bytes
        FROM amz_size_history_run`
     );
     const x = r.rows[0];
-    if (!x || x.days === 0) return { lastDay: null, firstDay: null, days: 0, daysSince: null, rows: 0, bytes: Number(x?.bytes || 0), stale: false, staleAfterDays: STALE_AFTER_DAYS };
+    if (!x || x.days === 0) {
+      return { lastDay: null, firstDay: null, historyFrom: x?.history_from || null, days: 0, daysSince: null, rows: x?.rows || 0,
+        bytes: Number(x?.bytes || 0), stale: false, staleAfterDays: STALE_AFTER_DAYS };
+    }
     return {
       lastDay: x.last_day,
       firstDay: x.first_day,
+      // The earliest day held, imports or rebuilt from the Inventory Ledger (source 'ledger', scripts/amz-ledger-backfill.js).
+      historyFrom: x.history_from,
       days: x.days,
       daysSince: x.days_since,
       rows: x.rows,

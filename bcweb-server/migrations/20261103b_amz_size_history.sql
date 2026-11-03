@@ -2,8 +2,8 @@
 -- AMAZON SIZE HISTORY — price and FBA stock for every Amazon size, over time (owner, 2026-11-03).
 -- =====================================================================================================================================
 -- Why: amzfeed only holds TODAY. Without a past, pricing can't tell "didn't sell because it was out of stock" from "didn't sell at
--- that price" (FLE030-IVES-WHITE-06 sold nothing Dec 2025 - Mar 2026: it looked like the season, but nothing was booked to C3-Amazon
--- Nov - Mar, so it was almost certainly out — and nothing could prove it).
+-- that price" (FLE030-IVES-WHITE-06 sold almost nothing Dec 2025 - mid-Mar 2026. It looked like a stock-out; the Inventory Ledger
+-- later showed ~28 pairs at FBA all winter — it sat at £41.29 while its sister sizes sold at £39.99).
 --
 -- Owner decisions (2026-11-03):
 --   - Written INSIDE the Update Amazon import (only when the FBA Inventory report is in the files), not by a cron: amzfeed changes

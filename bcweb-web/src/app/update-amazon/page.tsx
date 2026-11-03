@@ -298,11 +298,13 @@ export default function UpdateAmazonPage() {
  *  isn't there yet (history null). The dashboard shows the same stale warning, from the same read. */
 function SizeHistoryLine({ h }: { h: AmzSizeHistoryStatus | null }) {
   if (!h) return null;
+  // historyFrom can be earlier than the first import: days rebuilt from the Inventory Ledger (scripts/amz-ledger-backfill.js).
+  const from = h.historyFrom ? ` · stock history from ${h.historyFrom}` : '';
   if (!h.lastDay) {
-    return <p className="mt-0.5 text-xs text-slate-400">Size history: starts with the next FBA Inventory import.</p>;
+    return <p className="mt-0.5 text-xs text-slate-400">Size history: recording starts with the next FBA Inventory import{from}.</p>;
   }
   const mb = (h.bytes / (1024 * 1024)).toFixed(1);
-  const kept = `${h.days.toLocaleString('en-GB')} import day${h.days === 1 ? '' : 's'} kept since ${h.firstDay} · ${mb} MB`;
+  const kept = `${h.days.toLocaleString('en-GB')} import day${h.days === 1 ? '' : 's'} since ${h.firstDay}${from} · ${mb} MB`;
   if (h.stale) {
     return (
       <p className="mt-1 inline-block rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">

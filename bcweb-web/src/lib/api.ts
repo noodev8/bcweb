@@ -3111,7 +3111,7 @@ export function commitAmzImport(files: File[]) {
 // status: Update Amazon's status line, and the dashboard's warning (shown only when `stale`: more than staleAfterDays days with no
 // inventory import). history null = the table isn't there yet.
 export interface AmzSizeHistoryStatus {
-  lastDay: string | null; firstDay: string | null; days: number; daysSince: number | null; rows: number; bytes: number;
+  lastDay: string | null; firstDay: string | null; historyFrom: string | null; days: number; daysSince: number | null; rows: number; bytes: number;
   stale: boolean; staleAfterDays: number;
 }
 export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null }
