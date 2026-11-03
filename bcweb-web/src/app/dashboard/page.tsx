@@ -162,6 +162,7 @@ const GROUPS: Group[] = [
       { title: 'Update Amazon', subtitle: 'Load Seller Central reports', description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.', href: '/update-amazon', icon: ArrowUpTrayIcon },
       { title: 'Finance', subtitle: 'Close the month', description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.', href: '/finance', icon: CalculatorIcon },
       { title: 'Facebook', subtitle: 'Social post', description: 'Queue and publish the daily Facebook post.', href: '/social', icon: MegaphoneIcon },
+      { title: 'SKU health', subtitle: 'Sellers, stock and what has not sold', description: 'Three numbers: SKUs that sold in 90 days, SKUs in stock, and SKUs not sold in 12 months.', href: '/sku-health', icon: PresentationChartLineIcon },
       { title: 'Log', subtitle: 'Who did what, and when', description: 'Every Goods In, stock adjustment, order sync and import. Search and filter by section or person.', href: '/analytics/activity-log', icon: DocumentMagnifyingGlassIcon },
     ],
   },

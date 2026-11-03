@@ -406,6 +406,9 @@ app.use('/prospect-reopen', require('./routes/prospect-reopen'));           // P
 // --- New sizes (2026-10-25; built for the Today screen, removed 2026-10-26): Daily's New stuff / Prospects counts and New Additions'
 // list (utils/processMap.js has the rules).
 app.use('/process-overview', require('./routes/process-overview'));                   // GET: prospects total + new sizes per channel — READ ONLY
+app.use('/sku-health-overview', require('./routes/sku-health-overview'));             // GET: sellers (90d), in stock, not sold 12m — Admin screen — READ ONLY
+app.use('/sku-health-save', require('./routes/sku-health-save'));                  // POST: save this week's row (one per week, keyed on Monday) — Admin screen — WRITES sku_health_snapshot
+app.use('/sku-health-history', require('./routes/sku-health-history'));              // GET: last 52 saved weeks — Admin screen — READ ONLY
 app.use('/new-additions-review', require('./routes/new-additions-review'));             // POST: review new styles — WRITES skusummary.next_new_review
 app.use('/pricing-all-list', require('./routes/pricing-all-list'));                     // GET: Shopify Pricing home — every in-stock Shopify style — READ ONLY
 app.use('/amz-all-list', require('./routes/amz-all-list'));                             // GET: Amazon Pricing home — every in-stock FBA SKU — READ ONLY

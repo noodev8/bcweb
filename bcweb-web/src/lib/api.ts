@@ -4940,6 +4940,37 @@ export interface ProcessOverview {
   styles: number;
   rows: ProcessSizeRow[];
 }
+// ---- SKU health (GET /sku-health-overview) — the Admin screen's three numbers. Rules in bcweb-server/routes/sku-health-overview.js.
+export interface SkuHealth {
+  sellers90: number;     // SKUs with a sale on any channel in the last 90 days
+  inStock: number;       // SKUs with stock now (local #FREE or FBA)
+  notSold12m: number;    // SKUs in the size map with no sale in 12 months
+}
+export function getSkuHealth() {
+  return request<SkuHealth>({ url: '/sku-health-overview', method: 'GET' }, (b) => ({
+    sellers90: Number(b.sellers90 || 0), inStock: Number(b.inStock || 0), notSold12m: Number(b.notSold12m || 0),
+  }));
+}
+// Saved weekly rows (GET /sku-health-history, newest first, max 52) and the Save button (POST /sku-health-save, one row per week).
+export interface SkuHealthRow {
+  date: string;              // the week's Monday, YYYY-MM-DD
+  sellers90: number;
+  inStock: number | null;    // null on back-filled weeks
+  notSold12m: number;
+  savedBy: string | null;
+}
+export function getSkuHealthHistory() {
+  return request<SkuHealthRow[]>({ url: '/sku-health-history', method: 'GET' }, (b) => (b.rows || []).map((r: any) => ({
+    date: r.date, sellers90: Number(r.sellers90 || 0), inStock: r.inStock === null ? null : Number(r.inStock),
+    notSold12m: Number(r.notSold12m || 0), savedBy: r.savedBy ?? null,
+  })));
+}
+export function saveSkuHealth() {
+  return request<{ snapshotDate: string; updated: boolean }>({ url: '/sku-health-save', method: 'POST' }, (b) => ({
+    snapshotDate: b.snapshot.snapshotDate, updated: b.snapshot.updated === true,
+  }));
+}
+
 export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
     newDays: b.newDays, prospects: b.prospects, styles: b.styles, rows: b.rows || [],
