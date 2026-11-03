@@ -25,6 +25,9 @@ throw into the users active box - once they save /lock it they start a new activ
   - DELETE (⋯ menu, asks first; POST /amz-shipment-box-delete) is the ONLY thing that changes numbers (owner, 2026-10-16): the box
     goes for good and the ones after it move down one, so the numbers stay 1..n (Amazon's B1..Bn). Delete and a refill's Pack check
     the box still holds what this screen showed — numbers move when another bench deletes — and refuse if not.
+  - MARK ARRIVED (⋯ menu on a stored box, asks first; POST /amz-shipment-box-arrived — owner, 2026-11-03: "if forgot to scan on goods
+    in ... literally just mark as arrived"): the box's shoes are marked arrived in Order Status, picking lines as Goods In does
+    (Amazon before local, oldest first). Order Status only — no stock, no locations. A second press finds nothing left to mark.
   - AUTO BACK (owner, 2026-10-16): the tick-box in the header's Goods In button sends a Pack straight back to Goods In, which then
     shows the box's number. Unticked, the Packed panel here offers Back to Goods In.
 
@@ -32,7 +35,7 @@ MARK SHIPPED (owner, 2026-10-01: "the shipped button should clear the whole ship
 the stored shipment is archived to amzshipment_archive under a new shipment id, the boxed units come off the C3-Amazon shelf
 (soft-deleted), and amzshipment is emptied. It sends the boxes and units it showed, so the server refuses if the stored shipment differs.
 Your box isn't stored, so it doesn't go — the confirm says so when it has shoes in it. Codes boxed with nothing on C3-Amazon to take
-are listed in the notice afterwards. See the route header for the detail.
+are no longer listed in the notice (owner, 2026-11-03). See the route header for the detail.
 
 FRESH ON ARRIVAL. The packed boxes are read under a new cache key every visit, so a box packed on the other bench is seen. Pack and
 Unpack re-read them after they write.
@@ -93,13 +96,13 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MinusIcon, CubeIcon, ArchiveBoxXMarkIcon, ArrowUturnLeftIcon, TruckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, MagnifyingGlassIcon, PrinterIcon,
-  InboxArrowDownIcon, EllipsisHorizontalIcon, CheckCircleIcon, ArrowUturnUpIcon, TrashIcon,
+  InboxArrowDownIcon, EllipsisHorizontalIcon, CheckCircleIcon, ArrowUturnUpIcon, TrashIcon, ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox,
+  getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox, markAmzShipmentBoxArrived,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -249,8 +252,8 @@ export default function AmzShipmentPage() {
   );
 }
 
-// What Mark shipped did. The shortfall list is the one thing to act on: codes that were boxed but weren't (fully) on the C3-Amazon
-// shelf, so the stock figure for them needs a look. Stays until closed — it's the only record on screen of what just went.
+// What Mark shipped did. Stays until closed — it's the only record on screen of what just went. The shortfall (codes boxed with nothing
+// on C3-Amazon to take) is NOT shown (owner, 2026-11-03: "dont need this message"); it's still in the response if ever wanted.
 function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: () => void }) {
   return (
     <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -259,12 +262,6 @@ function ShippedNotice({ result, onClose }: { result: AmzShipResult; onClose: ()
         <div className="flex-1">
           Shipment {result.shipmentId} marked shipped: {result.boxes} {result.boxes === 1 ? 'box' : 'boxes'}, {result.units} units.{' '}
           {result.stockRemoved} taken off C3-Amazon.
-          {result.shortfall.length > 0 && (
-            <div className="mt-1 text-amber-800">
-              Not on the C3-Amazon shelf, so no stock was taken for:{' '}
-              {result.shortfall.map((s) => `${s.code} (${s.boxed - s.removed} of ${s.boxed})`).join(', ')} — worth checking where they came from.
-            </div>
-          )}
         </div>
         <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:text-emerald-900">Close</button>
       </div>
@@ -302,7 +299,7 @@ function Packing({ initial, autoBack, onShipped }: {
   // The Box size pop-up (see MEASUREMENTS) — opened by Pack on an unsized box, or by the size chip.
   const [sizeOpen, setSizeOpen] = useState(false);
   // A stored box's ⋯ menu: which of Empty / Delete is waiting for its second click.
-  const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | null>(null);
+  const [confirmStored, setConfirmStored] = useState<'empty' | 'delete' | 'arrived' | null>(null);
   // TEMP (2026-11-02): "Print all labels" on a stored box — the box id waiting for the confirming click, and whether it's printing.
   const [confirmPrintAll, setConfirmPrintAll] = useState<number | null>(null);
   const [printingAll, setPrintingAll] = useState(false);
@@ -317,6 +314,8 @@ function Packing({ initial, autoBack, onShipped }: {
   // PACK / UNPACK in flight, and what went wrong (shown under the box header).
   const [working, setWorking] = useState(false);
   const [boxError, setBoxError] = useState<string | null>(null);
+  // The result of Mark arrived, shown above the scan box until another box is opened.
+  const [boxNotice, setBoxNotice] = useState<string | null>(null);
   // FIND — which box is a SKU in? Matches code, Amazon SKU, FNSKU or title, case-insensitive, across every box (yours too).
   const [find, setFind] = useState('');
   const scanRef = useRef<HTMLInputElement>(null);
@@ -514,6 +513,31 @@ function Packing({ initial, autoBack, onShipped }: {
     refocus();
   }
 
+  // MARK ARRIVED (owner, 2026-11-03): the shoes in a stored box marked arrived in Order Status — for a delivery boxed without a Goods
+  // In scan. Order Status only (no stock, no locations); see routes/amz-shipment-box-arrived.js. Second click confirms.
+  async function markArrived(b: Box) {
+    if (working) return;
+    if (confirmStored !== 'arrived') { setConfirmStored('arrived'); return; }
+    setWorking(true);
+    setBoxError(null);
+    setBoxNotice(null);
+    const res = await markAmzShipmentBoxArrived(b.id, expectOf(b));
+    setWorking(false);
+    setConfirmStored(null);
+    setMenuOpen(false);
+    if (!res.success || !res.data) {
+      await rereadBoxes();
+      setBoxError(res.error || `Box ${b.id} couldn’t be marked arrived`);
+      return;
+    }
+    const { marked, short } = res.data;
+    setBoxNotice(marked === 0
+      ? `Nothing in Box ${b.id} was on order — nothing to mark.`
+      : `Marked ${marked} ${marked === 1 ? 'shoe' : 'shoes'} arrived in Order Status`
+        + (short.length > 0 ? ` · ${short.reduce((n, x) => n + x.boxed - x.marked, 0)} not on order` : '') + '.');
+    refocus();
+  }
+
   async function ship() {
     setShipping(true);
     setShipError(null);
@@ -666,7 +690,7 @@ function Packing({ initial, autoBack, onShipped }: {
             const on = view === b.id;
             const units = boxUnits(b);
             return (
-              <button key={b.id} type="button" onClick={() => { setView(b.id); setMenuOpen(false); setConfirmStored(null); setBoxError(null); refocus(); }}
+              <button key={b.id} type="button" onClick={() => { setView(b.id); setMenuOpen(false); setConfirmStored(null); setBoxError(null); setBoxNotice(null); refocus(); }}
                 className={listCard(on)}>
                 {b.locked
                   ? <CheckCircleIcon className={'h-5 w-5 ' + (on ? 'text-brand-600' : 'text-emerald-600')} aria-label="Packed" />
@@ -929,6 +953,12 @@ function Packing({ initial, autoBack, onShipped }: {
                                 ? `Delete Box ${shown.id}? Click again` + (boxes.some((x) => x.id > shown.id) ? ' (later boxes move down one)' : '')
                                 : 'Delete box'}
                             </button>
+                            <button type="button" onClick={() => markArrived(shown)} disabled={working}
+                              title="For shoes boxed without a Goods In scan — marks them arrived in Order Status, nothing else"
+                              className={MENU_ITEM + (confirmStored === 'arrived' ? 'bg-emerald-50 text-emerald-800' : 'text-slate-700')}>
+                              <ClipboardDocumentCheckIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                              {confirmStored === 'arrived' ? `Mark Box ${shown.id} arrived? Click again` : 'Mark arrived in Order Status'}
+                            </button>
                           </div>
                         </>
                       )}
@@ -941,6 +971,7 @@ function Packing({ initial, autoBack, onShipped }: {
               <p className="mb-2 text-xs text-slate-500">To change this box, pack or empty your box first — then Unpack loads it into yours.</p>
             )}
             {boxError && <div className="mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{boxError}</div>}
+            {boxNotice && !onMine && <div className="mb-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{boxNotice}</div>}
             <input
               ref={scanRef}
               autoFocus

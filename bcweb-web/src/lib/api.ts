@@ -3160,6 +3160,15 @@ export function deleteAmzShipmentBox(box: number, expect: AmzBoxExpect) {
   }));
 }
 
+// Mark a stored box's shoes ARRIVED in Order Status (orderstatus only — for a delivery boxed without a Goods In scan).
+// `short` = codes with fewer open order lines than units boxed.
+export interface AmzBoxArrived { marked: number; short: { code: string; boxed: number; marked: number }[] }
+export function markAmzShipmentBoxArrived(box: number, expect: AmzBoxExpect) {
+  return request<AmzBoxArrived>({ url: '/amz-shipment-box-arrived', method: 'POST', data: { box, expect } }, (b) => ({
+    marked: Number(b.marked) || 0, short: b.short || [],
+  }));
+}
+
 // =============================================================================================================================
 // Order sync — the "Update orders" button (Analytics -> Sales, Customer Orders, the dashboard tile; the LABEL is the legacy term,
 // this route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).
