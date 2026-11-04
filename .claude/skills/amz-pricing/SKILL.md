@@ -17,7 +17,10 @@ database — if that file is missing, stop and tell the owner.
 
 ```
 node scripts/amz-pricing-check.js IVES-WHITE                  # one style (part of the groupid is fine; it asks if it matches several)
-node scripts/amz-pricing-check.js --top 10                    # the 10 styles with the most Amazon pairs in 12 months
+node scripts/amz-pricing-check.js --due                       # THE WORK LIST: sizes Due on the Amazon screens today, top sellers now first
+  --all                                                       # with --due: OVERRIDE Due — parked sizes too ("PARKED to <date>"); sliders never
+  --due-on 2026-11-07                                         # with --due: what will be Due that day
+node scripts/amz-pricing-check.js --top 10                    # the 10 styles with the most Amazon pairs in 12 months (always the same styles — prefer --due)
   --push                                                      # Revenue Push (default: Lean on profit) — the owner says which, per style
   --report "C:\Users\UserPC\Downloads\BusinessReport-….csv"   # turns on the Buy Box check
   --to 2026-03-16                                             # judge as of a past day
@@ -26,7 +29,10 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
 
 ## Steps
 
-1. **Ask nothing first** — run it Lean for the style asked (Push only if the owner said "push").
+1. **Ask nothing first** — run it Lean for the style asked (Push only if the owner said "push"). Asked for "what needs doing" / "the
+   list" / "top candidates": run `--due`. The skill follows the team's **manual Due list** (owner, 2026-11-04: "same system as our
+   manual due dates") — a size decided on is parked, so the next run moves on. If `--due` is empty (the team has priced everything by
+   hand), say so and offer `--due --all` (the override — parked sizes too, shown "PARKED to <date>").
 2. **Ask for reports freely** (owner, 2026-11-04: "dont be afraid to ask for reports") — the Buy Box changed two of the first three
    suggestions. A standard pair of windows may be settled later (e.g. this year's window + the same window last year).
    If the output says **Buy Box NOT checked**, tell the owner the dates it prints ("Business Report wanted … for X to Y") and ask
@@ -48,7 +54,10 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
      Buy Box if it wasn't checked, another seller on that size.
    - **LEAVE / CAN'T TELL** — batch them in one line ("04, 08, 09 leave or can't tell yet — too new / under 5 expected").
    Show for each: price, window (from / days in stock), expected vs sold, Buy Box %, sister median, suggested price, £ kept a pair.
-4. If the owner agrees a price, set it with **Setting a price** below — or they set it themselves on the Amazon screens.
+4. If the owner agrees a price, set it with **Setting a price** below — or they set it themselves on the Amazon screens. A price set
+   here also parks the size for 7 days (`REVIEW_AFTER_PRICE_DAYS`, the earliest the new price can be judged).
+   **LEAVE** sizes the owner agrees to leave: park them with **Parking checked sizes** below (3 days, `REVIEW_AFTER_LEAVE_DAYS`), so
+   the Due list moves on. CAN'T TELL sizes are NOT parked — they stay Due for the team.
 5. If a verdict looks wrong to the owner, **that is the point of this phase** — note the size and why in memory
    `amz-size-pricing-standard` (a "verdict disagreements" list) so the rules can be tuned before a screen is built.
 
@@ -84,3 +93,16 @@ same as the Amazon pricing screens): one `amz_price_log` row. It never touches r
    press "I've uploaded" (so the check knows when the new price went live).
 6. Never set more sizes than the owner named, never re-run a `--commit` that already printed WRITTEN, and never write SQL by hand
    to change a price.
+
+## Parking checked sizes (WRITES — "leave")
+
+The Amazon screens' "mark reviewed" (THE shared write, `utils/amzReviewWrite.js`): the review date + one hold row per size. No price.
+
+1. **Only the codes the owner agreed to leave** ("yes, park the leaves" covers the LEAVE codes the check printed for that style —
+   nothing else).
+2. Dry run first, show the lines (each size's review date now → new; a later date already set is kept):
+   ```
+   node scripts/amz-review-set.js FLE030-IVES-WHITE-04 FLE030-IVES-WHITE-07 --by "Andreas" --note "Leave — in line with sisters (amz-pricing)"
+   ```
+   `--days N` (1–14) only if the owner gives another number; default 3.
+3. Then the same command with `--commit`. Report what it printed. Never park a size someone else is waiting on, never more than 50.

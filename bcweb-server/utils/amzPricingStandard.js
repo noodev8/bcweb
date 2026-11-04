@@ -42,7 +42,13 @@ THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number
      have the data available. Human and your judgement rather than a step rule") — a sell-by target (26 weeks / 90 days) was
      proposed and turned down. The data for that judgement is on every row: pairs a week at this price, weeks of stock left, the
      next 4 weeks' profit (FORECAST_WEEKS).
-  10. No review dates — a new price starts a new window, and the check says when there is enough evidence again.
+  10. The verdict itself ignores review dates — a new price starts a new window, and the check says when there is enough evidence
+      again. But WHICH sizes get checked follows the team's Amazon Due list (owner, 2026-11-04: "same system as our manual due
+      dates" — `--top` ranked by 12-month sales and showed the same Ives colours every time): `dueStyles` = the sizes the Amazon
+      screens call Due (FBA stock, review date passed or none, not in a live slider — routes/amz-all-list.js's predicate), and a
+      size the skill decides on is parked like a manual review: REVIEW_AFTER_PRICE_DAYS after a price, REVIEW_AFTER_LEAVE_DAYS
+      after a "leave" (owner: "use smaller windows ... amazon sales are way before 14 days"). A later review date already set is
+      kept. CAN'T TELL sizes are not parked by the skill — they stay Due for the team.
 
 IMPLEMENTATION CHOICES (not owner decisions — flagged so they can be revisited):
   - Units are GROSS orders (sales qty > 0). A return is dated when it comes back and books at £0, so it can't be placed against the
@@ -61,6 +67,9 @@ Exports:
   SETTINGS
   findStyles(db, text)                         -> groupids on Amazon matching the text
   topStyles(db, n, to)                         -> the n styles with the most Amazon pairs in the 12 months to `to`
+  dueStyles(db, { on, all })                   -> [{ groupid, codes, parked: { code: 'YYYY-MM-DD' } }] — styles with a size Due on
+                                                  the Amazon screens (rule 10); on = look ahead to that day; all = the OVERRIDE,
+                                                  parked sizes too — live sliders never
   readBusinessReport(db, file)                 -> Map code -> { buyBox, sessions, units } (MSKU -> code via amzfeed.sku)
   checkStyle(db, groupid, { to, mode, buyBox }) -> { style, sizes } — everything the script / a screen prints
   decide(row, mode)                            -> { verdict, reason, suggested, note } — THE verdict, pure
@@ -71,6 +80,7 @@ const { safeNumeric, LONDON_TODAY_SQL } = require('./sql');
 const { LIVE_DAY, REAL_CHANGE } = require('./sellSpeed');
 const { amzProfit, priceForProfit } = require('./amzProfit');
 const { readCsv } = require('./csv');
+const { inSliderSql } = require('./slider');
 
 const SETTINGS = Object.freeze({
   MIN_WINDOW_DAYS: 7,             // a price younger than this is "too new" (owner, 2026-11-04 — was 14)
@@ -89,6 +99,8 @@ const SETTINGS = Object.freeze({
   SAME_PRICE: 0.011,              // prices within 1p are one price
   FORECAST_WEEKS: 4,              // "a profit estimate inside a month" (owner) — shown, not a rule
   NUDGE_BAND: 0.02,               // a price within 2% of today's is the same price period (a nudge doesn't restart the window)
+  REVIEW_AFTER_PRICE_DAYS: 7,     // park a size the skill priced — MIN_WINDOW_DAYS, the earliest the new price can be judged (rule 10)
+  REVIEW_AFTER_LEAVE_DAYS: 3,     // park a size the skill checked and left — short: Amazon moves within days (owner, 2026-11-04)
 });
 
 const MODES = ['lean', 'push'];
@@ -143,6 +155,28 @@ async function topStyles(db, n, to) {
        AND EXISTS (SELECT 1 FROM amzfeed a JOIN skumap m2 ON m2.code = a.code WHERE m2.groupid = m.groupid)
      GROUP BY m.groupid ORDER BY pairs DESC LIMIT $2`,
     [to, n]
+  );
+  return r.rows;
+}
+
+// THE Amazon Due list, by style (rule 10). Same predicate as routes/amz-all-list.js's Due switch — FBA stock live or on its way in,
+// skumap.next_amz_price_review passed or none, not in a live Pricing Slider — so the skill and the screens mean the same by "Due".
+// Today, or a day AHEAD (`on`: what will be Due then — review dates have no history, so never a past day). `all` is the OVERRIDE
+// (owner, 2026-11-04: "we need to be able to override due when seeing the list" — the team prices by hand, so the Due list is
+// often empty while the top sellers still need a look): parked sizes come too, with their review date in `parked`, like the
+// screens' Due switch off. A live slider is never overridden — the slider owns that price. The status lists' 0-stock rows are left
+// out: no stock, no verdict.
+async function dueStyles(db, { on = null, all = false } = {}) {
+  const r = await db.query(
+    `SELECT m.groupid, array_agg(a.code ORDER BY a.code) AS codes,
+            COALESCE(jsonb_object_agg(a.code, m.next_amz_price_review::text)
+                       FILTER (WHERE m.next_amz_price_review > COALESCE($1::date, CURRENT_DATE)), '{}'::jsonb) AS parked
+     FROM amzfeed a JOIN skumap m ON m.code = a.code
+     WHERE (COALESCE(a.amzlive, 0) > 0 OR COALESCE(a.amztotal, 0) > 0)
+       AND ($2::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= COALESCE($1::date, CURRENT_DATE))
+       AND NOT ${inSliderSql('AMZ', 'm.code')}
+     GROUP BY m.groupid ORDER BY m.groupid`,
+    [on, all]
   );
   return r.rows;
 }
@@ -512,4 +546,4 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
   };
 }
 
-module.exports = { SETTINGS, MODES, findStyles, topStyles, readBusinessReport, checkStyle, decide };
+module.exports = { SETTINGS, MODES, findStyles, topStyles, dueStyles, readBusinessReport, checkStyle, decide };

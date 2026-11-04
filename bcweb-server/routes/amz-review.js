@@ -43,8 +43,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
-const { safeNumeric } = require('../utils/sql');
-const { AMZ_NOW_CTES } = require('../utils/slider');   // each SKU's current price: a newer logged price, else the feed (header)
+const { writeAmzReview } = require('../utils/amzReviewWrite');   // THE W-A2 write (shared with scripts/amz-review-set.js)
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -78,47 +77,11 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'INVALID_REVIEW_DAYS', message: 'reviewDays must be an integer >= 1' });
     }
 
-    // One parameterised set-based UPDATE (no string interpolation of the array), RETURNING the review date it set so the client can
-    // badge "parked until <date>" with the exact server date (avoids a JS-side UTC/BST day-shift — same care as utils/segmentDue.isoDate).
+    // The write returns the review date it set as text, so the client badges "parked until <date>" with the exact server date.
     const changedBy = req.user.display_name;
-    const result = await withTransaction(async (client) => {
-      const upd = await client.query(
-        `UPDATE skumap SET next_amz_price_review = CURRENT_DATE + $2::int
-         WHERE code = ANY($1::text[])
-         RETURNING code, to_char(next_amz_price_review, 'YYYY-MM-DD') AS next_review`,
-        [cleanCodes, reviewDays]
-      );
-
-      // HOLD audit rows (2026-08-31), one per SKU reviewed — new_price = old_price is what marks them as holds rather than moves.
-      // Until now an Amazon hold was recorded nowhere, so the Price Changes screen showed only moves; analytics-change-impact.js
-      // already renders an equal-price row as kind 'LEVEL'. See docs/hold-logging-spec.md.
-      //
-      // The held price is the SKU's CURRENT price — amz_now (a price logged since the last Amazon import), else amzfeed — never the
-      // feed alone, which lags an Apply or an unmarked upload and turned a hold into a price revert (header). amzfeed.amzprice is a
-      // VARCHAR on a READ ONLY feed table, so it goes through safeNumeric; a bare ::numeric would throw on the first junk row. A SKU
-      // with no readable price is still REVIEWED but writes no hold row: a hold on a price we cannot read is not a decision that can
-      // be scored, and NULL must never be logged as a 0.00 hold. Set-based (500-code cap) rather than a loop, per the no-N+1 rule.
-      //
-      // No google_pushed_at here — that column is Shopify-only. A hold at the feed price is kept out of the Seller Central upload file
-      // by the no-op guard in routes/amz-basket.js; a hold at a still-pending price carries that same price, so uploading it is right.
-      const ins = await client.query(
-        `WITH ${AMZ_NOW_CTES},
-         held AS (
-           SELECT a.code, COALESCE(n.price, ${safeNumeric('a.amzprice')}) AS price
-             FROM amzfeed a
-             LEFT JOIN amz_now n ON n.code = a.code
-            WHERE a.code = ANY($1::text[])
-         )
-         INSERT INTO amz_price_log
-            (log_date, code, old_price, new_price, notes, changed_by, changed_at)
-         SELECT CURRENT_DATE, code, price, price, $2, $3, now()
-           FROM held
-          WHERE price IS NOT NULL`,
-        [upd.rows.map((r) => r.code), note, changedBy]
-      );
-
-      return { rows: upd.rows, rowCount: upd.rowCount, logged: ins.rowCount };
-    });
+    // THE write lives in utils/amzReviewWrite.js (shared with the /amz-pricing skill, 2026-11-04) — the history of its rules (hold
+    // rows, held price = the CURRENT price, not the feed) stays in this header. keepLater false: the button sets the date it is given.
+    const result = await withTransaction((client) => writeAmzReview(client, { codes: cleanCodes, reviewDays, note, changedBy }));
 
     const nextReview = result.rows[0] ? result.rows[0].next_review : null;
 

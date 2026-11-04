@@ -12,5 +12,5 @@ House rules:
 
 | Skill | What it's for | Writes? | Calls | Reviewed |
 |---|---|---|---|---|
-| `/amz-pricing` | Amazon pricing standard — a verdict + suggested price per size, judged against its sister sizes; can set one price the owner agreed | Only an agreed price (one `amz_price_log` row → upload basket) | `bcweb-server/scripts/amz-pricing-check.js` (read only), `scripts/amz-price-set.js`; rules `utils/amzPricingStandard.js` | 2026-11-04 |
+| `/amz-pricing` | Amazon pricing standard — a verdict + suggested price per size, judged against its sister sizes; works the Amazon Due list (`--due`, `--all` to override); can set one price the owner agreed, or park checked sizes | Only an agreed price (one `amz_price_log` row → upload basket, + a 7-day review date) and agreed parks (review date + hold row) | `bcweb-server/scripts/amz-pricing-check.js` (read only), `scripts/amz-price-set.js`, `scripts/amz-review-set.js`; rules `utils/amzPricingStandard.js` | 2026-11-04 |
 | `/descriptions-review` | Shopify descriptions review — clean them and approve new/changed ones for the Google feed and eBay | Yes — approvals into `shopify_description` | `D:\projects\scripts\merchant-feed\descriptions.py` (scripts repo) | 2026-11-03 |

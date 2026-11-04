@@ -7,8 +7,11 @@ Purpose: Set ONE Amazon size's price the owner has agreed in conversation, throu
          2026-11-04 so a less capable AI agent running the skill can apply a price SAFELY (owner: "In future, we will give it to a lesser
          AI agent").
 
-WHAT IT WRITES: one amz_price_log row (old = today's live amzfeed price, new, note, changed_by). Nothing else — no review date, no
-Shopify, never amzfeed. Like every Amazon price here it is NOT live yet: it lands in the team upload basket (GET /amz-basket) and
+WHAT IT WRITES: one amz_price_log row (old = today's live amzfeed price, new, note, changed_by) AND the size's review date —
+skumap.next_amz_price_review = today + SETTINGS.REVIEW_AFTER_PRICE_DAYS (7: the earliest the standard can judge the new price), so the
+size leaves the Amazon Due list like a price set on the screens (owner, 2026-11-04: "same system as our manual due dates"). Set
+exactly, even over a later date: pricing a parked size is the owner's override, and the new price wants judging in 7 days. No Shopify,
+never amzfeed. Like every Amazon price here it is NOT live yet: it lands in the team upload basket (GET /amz-basket) and
 reaches Amazon only when someone downloads the Seller Central file, uploads it, and presses "I've uploaded".
 
 GUARDS (each refuses; the flag lets the owner override one on purpose):
@@ -67,8 +70,8 @@ async function main() {
   const o = args(process.argv.slice(2));
   const f = await pool.query(
     `SELECT a.code, a.sku, ${safeNumeric('a.amzprice')} AS price, a.amzlive, a.amztotal, a.fbafee, sk.cost, sk.tax,
-            ${safeNumeric('sk.rrp')} AS rrp
-     FROM amzfeed a LEFT JOIN skusummary sk ON sk.groupid = a.groupid WHERE a.code = $1`,
+            ${safeNumeric('sk.rrp')} AS rrp, m.next_amz_price_review::text AS next_review
+     FROM amzfeed a LEFT JOIN skusummary sk ON sk.groupid = a.groupid LEFT JOIN skumap m ON m.code = a.code WHERE a.code = $1`,
     [o.code]
   );
   if (!f.rows.length) throw new Error(`${o.code} is not on Amazon (no amzfeed row) — use the exact code, e.g. FLE030-IVES-WHITE-05`);
@@ -90,6 +93,7 @@ async function main() {
   console.log(`${o.code} (Amazon SKU ${r.sku}) · FBA live ${r.amzlive ?? '—'} / total ${r.amztotal ?? '—'}`);
   console.log(`  today ${money(now)} (keeps ${money(kept(now))} a pair)  →  ${money(o.price)} (keeps ${money(kept(o.price))} a pair)`);
   console.log(`  RRP ${money(rrp)} · walk-away ${money(walk)} · by ${o.by} · note "${o.note}"`);
+  console.log(`  review date → today + ${SETTINGS.REVIEW_AFTER_PRICE_DAYS} days${r.next_review ? ` (now ${r.next_review})` : ''}`);
 
   const refuse = [];
   if (now !== null && Math.abs(o.price - now) < 0.005) refuse.push('it is already today\'s price — nothing to change');
@@ -115,10 +119,10 @@ async function main() {
     return;
   }
   const w = await withTransaction((client) => writeAmzPrice(client, {
-    code: o.code, price: o.price, reviewDays: null, note: o.note, changedBy: o.by,
+    code: o.code, price: o.price, reviewDays: SETTINGS.REVIEW_AFTER_PRICE_DAYS, note: o.note, changedBy: o.by,
   }));
   if (w.error) throw new Error(`${w.error}: ${w.message}`);
-  console.log(`WRITTEN — amz_price_log id ${w.logId}${w.warnings.length ? ` · warnings: ${w.warnings.join(', ')}` : ''}.`);
+  console.log(`WRITTEN — amz_price_log id ${w.logId} · review ${w.nextReview ? 'set' : 'not set'}${w.warnings.length ? ` · warnings: ${w.warnings.join(', ')}` : ''}.`);
   console.log('Not on Amazon yet: it is in the team upload basket. Download the Seller Central file, upload it, then press "I\'ve uploaded".');
 }
 
