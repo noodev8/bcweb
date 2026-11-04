@@ -37,6 +37,10 @@ THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number
      Never above RRP. NEVER BELOW THE WALK-AWAY PRICE (the price keeping £3 a pair — amzProfit.priceForProfit, Simmer's bar): a cut
      that would go under it stops at it and says so; Lost Buy Box suggests NO price, only the walk-away ("worth chasing to £x, no
      lower" — owner: don't follow the Buy Box race to the bottom). The human always decides; nothing here writes.
+     NO STEP RULE for Lost Buy Box (owner, 2026-11-04: "Lets not do it at all. It muddys the water for now. Let the human decide but
+     have the data available. Human and your judgement rather than a step rule") — a sell-by target (26 weeks / 90 days) was
+     proposed and turned down. The data for that judgement is on every row: pairs a week at this price, weeks of stock left, the
+     next 4 weeks' profit (FORECAST_WEEKS).
   10. No review dates — a new price starts a new window, and the check says when there is enough evidence again.
 
 IMPLEMENTATION CHOICES (not owner decisions — flagged so they can be revisited):
@@ -81,6 +85,7 @@ const SETTINGS = Object.freeze({
   WALK_AWAY_PROFIT: 3,            // £ kept a pair at the walk-away price
   MIN_NORMAL_STYLE_PAIRS: 20,     // implementation choice: a normal share needs this many style pairs behind it
   SAME_PRICE: 0.011,              // prices within 1p are one price
+  FORECAST_WEEKS: 4,              // "a profit estimate inside a month" (owner) — shown, not a rule
   NUDGE_BAND: 0.02,               // a price within 2% of today's is the same price period (a nudge doesn't restart the window)
 });
 
@@ -180,31 +185,49 @@ async function readBusinessReport(db, file) {
  * THE verdict for one size row (as built by checkStyle). Returns { verdict, reason, suggested, note }.
  * suggested = the price to move to, or null (no move). note explains a cap / floor.
  */
-function decide(row, mode = 'lean') {
+/**
+ * The sister reading — selling (expected vs sold) × price position → a verdict, or a CAN'T TELL reason. Shared by the normal
+ * verdict and the Lost Buy Box line, so both read the sizes the same way.
+ */
+function sisterReading(row) {
   const S = SETTINGS;
-  const out = (verdict, reason, suggested = null, note = null) => ({ verdict, reason, suggested, note });
-  const P = row.price;
-  if (P === null) return out('CANT_TELL', 'no price known');
-
-  if (row.buyBox !== null && row.buyBox !== undefined && row.buyBox < S.BUY_BOX_MIN) {
-    return out('LOST_BUY_BOX', `Buy Box ${row.buyBox}% (under ${S.BUY_BOX_MIN}%) — another offer is winning`, null,
-      row.walkAway !== null ? `worth chasing down to £${row.walkAway.toFixed(2)}, no lower` : 'walk-away price unknown (no cost)');
-  }
-  if (row.priceAgeDays < S.MIN_WINDOW_DAYS) return out('CANT_TELL', `too new — price live ${row.priceAgeDays} days`);
-  if (row.normalShare === null) return out('CANT_TELL', 'no normal share yet (too few style sales in the 12 months before)');
-  if (row.expected < S.MIN_EXPECTED) return out('CANT_TELL', `expected ${row.expected.toFixed(1)} pairs (under ${S.MIN_EXPECTED})`);
-
+  if (row.priceAgeDays < S.MIN_WINDOW_DAYS) return { verdict: 'CANT_TELL', why: `too new — price live ${row.priceAgeDays} days` };
+  if (row.normalShare === null) return { verdict: 'CANT_TELL', why: 'no normal share yet (too few style sales in the 12 months before)' };
+  if (row.expected < S.MIN_EXPECTED) return { verdict: 'CANT_TELL', why: `expected ${row.expected.toFixed(1)} pairs (under ${S.MIN_EXPECTED})` };
   const ratio = row.sold / row.expected;
   const selling = ratio < S.UNDER_RATIO ? 'under' : ratio > S.OVER_RATIO ? 'over' : 'in line';
   const pos = row.position; // 'above' | 'level' | 'below' | null
   const med = row.sisterMedian;
+  const who = row.sisterGroup === 'contested' ? 'the contested sisters\' median' : 'the sister median';
   const why = `sold ${row.sold} of ${row.expected.toFixed(1)} expected (${selling})` +
-    (pos ? `, priced ${pos}${med !== null ? ` the sister median £${med.toFixed(2)}` : ''}` : ', no sister price to compare');
-
+    (pos ? `, priced ${pos}${med !== null ? ` ${who} £${med.toFixed(2)}` : ''}` : ', no sister price to compare');
   let verdict;
   if (selling === 'under') verdict = pos === 'above' ? 'TOO_HIGH' : pos ? 'NOT_PRICE' : 'CANT_TELL';
   else if (selling === 'over') verdict = 'ROOM_TO_GO_UP';
   else verdict = pos === 'below' ? 'ROOM_TO_GO_UP' : 'LEAVE';
+  return { verdict, why, selling, pos, med };
+}
+
+function decide(row, mode = 'lean') {
+  const S = SETTINGS;
+  const out = (verdict, reason, suggested = null, note = null, extra = {}) => ({ verdict, reason, suggested, note, ...extra });
+  const P = row.price;
+  if (P === null) return out('CANT_TELL', 'no price known');
+
+  if (row.buyBox !== null && row.buyBox !== undefined && row.buyBox < S.BUY_BOX_MIN) {
+    // Still no price suggested (the human decides), but the sizes are compared with each other: `sisterVerdict` says whether this
+    // one is pricing itself out on top of the competition (TOO_HIGH) or is in line with its contested sisters.
+    const sr = sisterReading(row);
+    return out('LOST_BUY_BOX',
+      `Buy Box ${row.buyBox}% (under ${S.BUY_BOX_MIN}%) — another offer is winning · against its sisters: ` +
+        `${sr.verdict === 'CANT_TELL' ? sr.why : `${sr.verdict.replace(/_/g, ' ').toLowerCase()} — ${sr.why}`}`,
+      null,
+      row.walkAway !== null ? `worth chasing down to £${row.walkAway.toFixed(2)}, no lower` : 'walk-away price unknown (no cost)',
+      { sisterVerdict: sr.verdict });
+  }
+  const sr = sisterReading(row);
+  if (!sr.selling) return out('CANT_TELL', sr.why);
+  const { verdict, why, pos, med } = sr;
 
   // The move, before caps.
   let target = null;
@@ -383,18 +406,30 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
     const expected = normalShare === null ? null : stylePairs * normalShare;
 
     const bb = buyBox ? buyBox.get(f.code) : null;
-    const sisters = [];
-    for (const o of base) {
-      if (o.f.code === f.code) continue;
-      const os = stockDay.get(o.f.code);
-      if (count(os, a, end) < winDays * S.SISTER_MIN_STOCK_SHARE) continue;
-      const obb = buyBox ? buyBox.get(o.f.code) : null;
-      if (obb && obb.buyBox < S.BUY_BOX_MIN) continue;
-      const op = priceDay.get(o.f.code);
-      let tot = 0; let n = 0;
-      for (let i = a; i <= end; i += 1) if (os[i] && op[i] !== null) { tot += op[i]; n += 1; }
-      if (n) sisters.push({ code: o.f.code, price: tot / n });
-    }
+    // Which sisters this size is compared with. A size HOLDING the Buy Box (or no report): the in-stock sisters that hold it too.
+    // A size that LOST it: the in-stock sisters that lost it too — same page, same competitors, so the comparison is fair (owner,
+    // 2026-11-04: "yes compare them against each other" — IVES-WHITE-05 at +£1.40 over the £39.99 sellers sold 0.4 a week while
+    // 06 at +80p sold 3.5, every size contested); none = every in-stock sister.
+    const lost = (x) => !!x && x.buyBox < S.BUY_BOX_MIN;
+    const thisLost = lost(bb);
+    const pick = (wantLost) => {
+      const list = [];
+      for (const o of base) {
+        if (o.f.code === f.code) continue;
+        const os = stockDay.get(o.f.code);
+        if (count(os, a, end) < winDays * S.SISTER_MIN_STOCK_SHARE) continue;
+        const obb = buyBox ? buyBox.get(o.f.code) : null;
+        if (wantLost !== null && lost(obb) !== wantLost) continue;
+        const op = priceDay.get(o.f.code);
+        let tot = 0; let n = 0;
+        for (let i = a; i <= end; i += 1) if (os[i] && op[i] !== null) { tot += op[i]; n += 1; }
+        if (n) list.push({ code: o.f.code, price: tot / n });
+      }
+      return list;
+    };
+    let sisters = pick(thisLost);
+    let sisterGroup = thisLost ? 'contested' : 'holding';
+    if (thisLost && !sisters.length) { sisters = pick(null); sisterGroup = 'all'; }
     const sisterMedian = sisters.length ? median(sisters.map((s) => s.price)) : null;
     let position = null;
     if (sisterMedian !== null && price !== null) {
@@ -425,19 +460,31 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
       sessions: bb ? bb.sessions : null,
       sisterMedian: sisterMedian === null ? null : r2(sisterMedian),
       sisters: sisters.map((s) => ({ code: s.code, price: r2(s.price) })),
+      sisterGroup,
       position,
       rrp: num(f.rrp),
       walkAway,
       stock,
       liveNow: live ? num(f.live) : null,
       units28,
-      coverWeeks: units28 > 0 && stock !== null ? Math.round((stock / (units28 / 4)) * 10) / 10 : null,
     };
     const d = decide(row, mode);
-    return { ...row, ...d, keptNow: keptAt(row.price), keptSuggested: keptAt(d.suggested) };
+    // SELL-OUT + A MONTH'S PROFIT at the CURRENT price (owner, 2026-11-04: "a calculation of time to run out of stock ... and a
+    // profit estimate inside a month" — the comfort check beside the verdict). Rate = pairs sold per in-stock week over the window
+    // (the price's own pace, not last month's); needs a week in stock. Month = FORECAST_WEEKS, capped at the stock held.
+    const keptNow = keptAt(row.price);
+    const rate = inStockDays >= 7 ? (sold / inStockDays) * 7 : null;
+    const weeksLeft = rate > 0 && stock !== null ? Math.round((stock / rate) * 10) / 10 : null;
+    const profitMonth = rate !== null && keptNow !== null && stock !== null
+      ? Math.round(Math.min(rate * S.FORECAST_WEEKS, stock) * keptNow) : null;
+    return {
+      ...row, ...d, keptNow, keptSuggested: keptAt(d.suggested),
+      ratePerWeek: rate === null ? null : Math.round(rate * 10) / 10, weeksLeft, profitMonth,
+    };
   });
 
   const stockAll = sizes.reduce((x, s) => x + (s.stock || 0), 0);
+  const profitMonth = sizes.reduce((x, s) => x + (s.profitMonth || 0), 0);
   const units28 = sum(styleDay, Math.max(0, end - 27), end);
   return {
     style: {
@@ -449,6 +496,7 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
       stock: stockAll,
       units28,
       coverWeeks: units28 > 0 ? Math.round((stockAll / (units28 / 4)) * 10) / 10 : null,
+      profitMonth,
       reportFrom: sizes.reduce((m, s) => (!m || s.windowFrom < m ? s.windowFrom : m), null),
     },
     sizes,

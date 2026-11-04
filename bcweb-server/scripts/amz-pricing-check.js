@@ -60,10 +60,10 @@ function printStyle(res) {
   console.log('');
   console.log(`=== ${st.groupid} — as of ${st.asOf} · ${st.mode === 'push' ? 'REVENUE PUSH' : 'LEAN on profit'} · ` +
     `FBA ${st.stock} pairs, ${st.units28} sold in 28 days, cover ${st.coverWeeks === null ? '—' : `${st.coverWeeks} wks`} · ` +
-    `Buy Box ${st.buyBoxChecked ? 'checked' : 'NOT checked'}`);
+    `Buy Box ${st.buyBoxChecked ? 'checked' : 'NOT checked'} · next 4 weeks' profit at today's prices ~£${st.profitMonth}`);
   console.log(pad('size', 6) + lpad('price', 8) + '  ' + pad('window', 24) + lpad('stock', 7) + lpad('share', 7) +
     lpad('exp', 6) + lpad('sold', 6) + lpad('BB%', 6) + lpad('median', 9) + '  ' + pad('verdict', 14) + lpad('suggest', 9) +
-    lpad('kept', 7) + lpad('walk', 8));
+    lpad('kept', 7) + lpad('walk', 8) + lpad('/wk', 6) + lpad('wks', 6) + lpad('£4wk', 7));
   for (const s of sizes) {
     const win = s.liveStart ? `${s.windowFrom}${s.startUncertain ? '~' : ''} ${s.inStockDays}/${s.windowDays}d` : '—';
     console.log(
@@ -72,7 +72,8 @@ function printStyle(res) {
       lpad(s.expected === null ? '—' : s.expected.toFixed(1), 6) + lpad(s.sold, 6) +
       lpad(s.buyBox === null ? '—' : Math.round(s.buyBox), 6) + lpad(money(s.sisterMedian), 9) + '  ' +
       pad(LABEL[s.verdict], 14) + lpad(s.suggested === null ? '' : money(s.suggested), 9) +
-      lpad(s.keptSuggested !== null ? money(s.keptSuggested) : money(s.keptNow), 7) + lpad(money(s.walkAway), 8)
+      lpad(s.keptSuggested !== null ? money(s.keptSuggested) : money(s.keptNow), 7) + lpad(money(s.walkAway), 8) +
+      lpad(s.ratePerWeek ?? '—', 6) + lpad(s.weeksLeft ?? '—', 6) + lpad(s.profitMonth === null ? '—' : `£${s.profitMonth}`, 7)
     );
     const extra = [s.reason, s.note].filter(Boolean).join(' · ');
     if (extra) console.log(`      ${extra}`);
@@ -104,6 +105,7 @@ async function main() {
       if (buyBox) console.log(`Business Report: ${buyBox.size} of our sizes read${buyBox.unknownSkus ? `, ${buyBox.unknownSkus} SKUs not on amzfeed skipped` : ''}.`);
       results.forEach(printStyle);
       console.log('\nkept = £ kept a pair at the suggested price (else today\'s) · walk = the £3-a-pair walk-away price · ~ = start date uncertain (price first seen in a sale)');
+      console.log('/wk = pairs a week at this price (in-stock weeks of the window) · wks = weeks of FBA stock at that pace · £4wk = profit over the next 4 weeks at today\'s price, capped at the stock');
     }
   } finally {
     await client.query('ROLLBACK').catch(() => {});

@@ -33,8 +33,13 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
    it — trust the owner's dates. (Business Reports retire at the end of 2026 for Custom Analytics; when that arrives, check its
    export has per-size Buy Box % before relying on it.) If they'd rather not, carry on and say the Buy Box wasn't checked.
 3. Report **one style at a time, only what needs a decision** (owner: one decision per message):
-   - **LOST BUY BOX** — another offer is shown most of the time. No price is suggested. Say the **walk-away price** ("worth chasing
-     down to £x, no lower") and that they should look at the competing offer on Amazon. Never suggest matching below the walk-away.
+   - **LOST BUY BOX** — another offer is shown most of the time. No price is suggested and there is **no step rule** (owner: "Human
+     and your judgement rather than a step rule") — give your judgement from the row: its **sister reading** ("against its sisters:
+     too high / leave …", compared with the other contested sizes — same page, same competitors), pairs a week, weeks of stock
+     left, the 4-week profit, and the **walk-away price** ("worth chasing down to £x, no lower"). A contested size that is also
+     too high against its sisters is the one pricing itself out (IVES-WHITE-05, 2026-11-04: +£1.40 over the £39.99 sellers sold
+     0.4 a week while 06 at +80p sold 3.5) — moving it to the price its sister sells at is a cautious first test. Never suggest
+     below the walk-away. The owner may paste the competing offers for learning — welcome, never required.
    - **TOO HIGH** — selling under, priced above its sisters → the suggested price (the sister median; Push: 3% under it).
    - **ROOM TO GO UP** — selling over, or in line while cheaper than its sisters → the suggested price.
    - **NOT PRICE** — selling under at a normal price. Say what to look at: stock (live vs total — reserved / transfers), the
