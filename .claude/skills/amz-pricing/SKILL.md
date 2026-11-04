@@ -1,17 +1,19 @@
 ---
 name: amz-pricing
-description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. READ ONLY. Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", or "should I move the price on <size>".
+description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. The check is read only; a price the owner agrees for a size can then be set (logged into the Amazon upload basket) with a guarded script. Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", or "should I move the price on <size>".
 ---
 
 # Amazon pricing standard (`/amz-pricing`)
 
 The rules live in `bcweb-server/utils/amzPricingStandard.js` (read its header — every number is a named `SETTINGS` value) and
-the owner's decisions in memory `amz-size-pricing-standard`. The script is **read only** (a READ ONLY transaction): nothing here
-changes a price. The owner (or the team) changes prices on the normal Amazon screens.
+the owner's decisions in memory `amz-size-pricing-standard` (if this machine has it — the util header holds the same rules). The
+**check** (`amz-pricing-check.js`) is read only. **Setting a price** (`amz-price-set.js`, below) writes — only ever for a size and
+price the owner has agreed in this conversation.
 
 ## Running it
 
-From `D:\projects\bcweb\bcweb-server`:
+From the repo's `bcweb-server` folder (`D:\projects\bcweb\bcweb-server` on the main PC). It needs `bcweb-server/.env` for the
+database — if that file is missing, stop and tell the owner.
 
 ```
 node scripts/amz-pricing-check.js IVES-WHITE                  # one style (part of the groupid is fine; it asks if it matches several)
@@ -46,7 +48,7 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
      Buy Box if it wasn't checked, another seller on that size.
    - **LEAVE / CAN'T TELL** — batch them in one line ("04, 08, 09 leave or can't tell yet — too new / under 5 expected").
    Show for each: price, window (from / days in stock), expected vs sold, Buy Box %, sister median, suggested price, £ kept a pair.
-4. If the owner agrees a price, they set it themselves (Amazon Pricing, Fast sellers, Amazon Order) — this skill does not write.
+4. If the owner agrees a price, set it with **Setting a price** below — or they set it themselves on the Amazon screens.
 5. If a verdict looks wrong to the owner, **that is the point of this phase** — note the size and why in memory
    `amz-size-pricing-standard` (a "verdict disagreements" list) so the rules can be tuned before a screen is built.
 
@@ -55,5 +57,30 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
 `window` = the start of the price period (`~` = uncertain: the price was first seen in a sale, so it went live some time after the
 last sign of the old price) and days in stock / window days · `share` = the size's normal share of the style (12 months before the
 window, in-stock days only) · `exp` / `sold` = gross pairs · `BB%` = our Buy Box % from the report · `median` = the sister sizes'
-median price over the window (sisters in stock half the window and holding the Buy Box) · `kept` = £ kept a pair at the suggested
-price, else today's · `walk` = the price keeping £3 a pair.
+median price over the window (sisters in stock half the window; a size holding the Buy Box is compared with sisters holding it,
+a Lost Buy Box size with the other contested sizes) · `kept` = £ kept a pair at the suggested price, else today's · `walk` = the
+price keeping £3 a pair · `/wk` = pairs a week at this price · `wks` = weeks of FBA stock at that pace · `£4wk` = profit over the
+next 4 weeks at today's price.
+
+## Setting a price (WRITES — follow every step)
+
+The only way this skill changes a price. It goes through THE shared Amazon price write (`utils/priceWrite.js → writeAmzPrice`, the
+same as the Amazon pricing screens): one `amz_price_log` row. It never touches review dates, Shopify, or `amzfeed`.
+
+1. **Only after the owner has said yes to THAT size at THAT price** in this conversation (e.g. "yes, 05 to 39.79"). A general "go
+   ahead", "looks good", or a yes to a different size is NOT an OK. One OK = one size. If unsure, ask: "Set FLE030-IVES-WHITE-05 to
+   £39.79 — yes?"
+2. **Dry run first**, and show the owner the lines it prints (today → new price, £ kept a pair, RRP, walk-away):
+   ```
+   node scripts/amz-price-set.js FLE030-IVES-WHITE-05 39.79 --by "Andreas" --note "Back under £40. Too high since 25 Aug: sold 16 v 42 expected (amz-pricing)"
+   ```
+   - **Exact code** — the full code from the check's output (e.g. `FLE030-IVES-WHITE-05`); price to the penny.
+   - **--by** = the OWNER'S name as they gave it (e.g. `Andreas`) — never your own name, never "Claude".
+   - **--note** = one short line: what and why, in the check's words, ending `(amz-pricing)`.
+3. **If it says REFUSED, stop.** Tell the owner the reason it printed. Add an override flag (`--big-move`, `--below-walk-away`,
+   `--above-rrp`, `--replace-pending`) only if the owner, told that reason, says to — never on your own.
+4. **Then the same command with `--commit`.** Report the log id it prints.
+5. **Tell the owner it is not on Amazon yet**: it is in the team upload basket — download the Seller Central file, upload it, then
+   press "I've uploaded" (so the check knows when the new price went live).
+6. Never set more sizes than the owner named, never re-run a `--commit` that already printed WRITTEN, and never write SQL by hand
+   to change a price.
