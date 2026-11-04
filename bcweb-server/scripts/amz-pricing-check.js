@@ -13,6 +13,7 @@ Usage:
                             N styles shown in full (default 10). A size decided on is parked (amz-price-set / amz-review-set), so
                             the next run moves on — the same rotation as the team's manual Due list (owner, 2026-11-04).
     --due-on YYYY-MM-DD     with --due: what will be Due on that day (look ahead; verdicts are still today's)
+    --grid                  with --due: one short row per size needing a decision — the glance view (owner, 2026-11-04)
     --all                   with --due: the OVERRIDE — parked sizes too (shown "PARKED to <date>"); live sliders never
 
 Options:
@@ -39,7 +40,7 @@ const LABEL = {
 };
 
 function args(argv) {
-  const o = { text: null, top: null, due: null, dueOn: null, all: false, mode: 'lean', report: null, to: null, json: false };
+  const o = { text: null, top: null, due: null, dueOn: null, all: false, grid: false, mode: 'lean', report: null, to: null, json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--push') o.mode = 'push';
@@ -50,6 +51,7 @@ function args(argv) {
     else if (a === '--to') o.to = argv[(i += 1)];
     else if (a === '--due-on') o.dueOn = argv[(i += 1)];
     else if (a === '--all') o.all = true;
+    else if (a === '--grid') o.grid = true;
     else if (!a.startsWith('--')) o.text = a;
     else throw new Error(`Unknown option ${a}`);
   }
@@ -130,6 +132,25 @@ function printDue(results, due, o, buyBox, parkedTo) {
     console.log(`Buy Box NOT checked — Business Report wanted (child item) for ${from} to ${rows[0].res.style.asOf}.`);
   }
   const shown = withAct.slice(0, o.due);
+  // --grid: ONE short row per size needing a decision (owner, 2026-11-04: "show results as a grid ... so I can glance and then ask
+  // for more detail") — the glance view; a style's full rows come from running it by name.
+  if (o.grid) {
+    console.log('');
+    console.log(pad('style', 26) + pad('size', 6) + lpad('price', 8) + lpad('BB%', 5) + lpad('sold/exp', 10) + lpad('median', 9) + '  ' +
+      pad('verdict', 14) + lpad('suggest', 9) + lpad('stock', 6) + lpad('/wk', 5) + lpad('wks', 6) + '  parked');
+    for (const r of shown) {
+      for (const s of r.act) {
+        console.log(pad(r.res.style.groupid.slice(0, 25), 26) + pad(s.size, 6) + lpad(money(s.price), 8) +
+          lpad(s.buyBox === null ? '—' : Math.round(s.buyBox), 5) +
+          lpad(`${s.sold}/${s.expected === null ? '—' : s.expected.toFixed(1)}`, 10) + lpad(money(s.sisterMedian), 9) + '  ' +
+          pad(LABEL[s.verdict], 14) + lpad(s.suggested === null ? '' : money(s.suggested), 9) + lpad(s.stock ?? '—', 6) +
+          lpad(s.ratePerWeek ?? '—', 5) + lpad(s.weeksLeft ?? '—', 6) + '  ' + (parkedTo.get(s.code) || ''));
+      }
+    }
+    const more = withAct.length - shown.length;
+    if (more > 0) console.log(`\n${more} more styles need a decision — --due ${withAct.length} --grid to see all.`);
+    return;
+  }
   for (const r of shown) {
     printStyle(r.res, new Set(r.act.map((s) => s.code)), parkedTo);
     if (r.leave.length) console.log(`  leave → park ${std.SETTINGS.REVIEW_AFTER_LEAVE_DAYS} days: ${r.leave.map((s) => s.code).join(' ')}`);

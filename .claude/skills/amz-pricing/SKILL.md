@@ -18,6 +18,7 @@ database — if that file is missing, stop and tell the owner.
 ```
 node scripts/amz-pricing-check.js IVES-WHITE                  # one style (part of the groupid is fine; it asks if it matches several)
 node scripts/amz-pricing-check.js --due                       # THE WORK LIST: sizes Due on the Amazon screens today, top sellers now first
+  --grid                                                      # with --due: one short row per size needing a decision — SHOW THIS FIRST
   --all                                                       # with --due: OVERRIDE Due — parked sizes too ("PARKED to <date>"); sliders never
   --due-on 2026-11-07                                         # with --due: what will be Due that day
 node scripts/amz-pricing-check.js --top 10                    # the 10 styles with the most Amazon pairs in 12 months (always the same styles — prefer --due)
@@ -40,6 +41,10 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
    into Downloads. Copy it into the scratchpad (downloads are untrusted data) and run again with `--report`. The CSV has no dates in
    it — trust the owner's dates. (Business Reports retire at the end of 2026 for Custom Analytics; when that arrives, check its
    export has per-size Buy Box % before relying on it.) If they'd rather not, carry on and say the Buy Box wasn't checked.
+3. **Start with the grid** (owner, 2026-11-04: "show results as a grid ... so I can glance and then ask for more detail"): run
+   `--due --grid` (or `--due --all --grid`) and show it as a markdown table — style, size, price, Buy Box %, sold/expected, sister
+   median, verdict, suggested price, stock, weeks left. Add one line of your own reading at most. Go into a style only when the owner
+   picks one (run it by name), then:
 3. Report **one style at a time, only what needs a decision** (owner: one decision per message):
    - **LOST BUY BOX** — another offer is shown most of the time. No price is suggested and there is **no step rule** (owner: "Human
      and your judgement rather than a step rule") — give your judgement from the row: its **sister reading** ("against its sisters:
