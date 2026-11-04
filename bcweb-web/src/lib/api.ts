@@ -5047,10 +5047,16 @@ export interface EbayListing {
   flags: EbayFlag[];
   not_listed: string[];   // codes of the style in stock but not on this BCWEB listing (flag size_not_listed)
   bcweb: boolean;         // made by BCWEB's List button — its sizes can be priced one by one
+  traffic: EbayTraffic | null;   // last 30 days, per LISTING (server utils/ebayTraffic.js); null = views couldn't be read
   lines: EbayListingLine[];
 }
+// eBay's traffic report for one listing (owner, 2026-11-04 — Views). views = listing page views; impressions = times shown to a buyer
+// (search, store, eBay pages); ctr = eBay's click-through % from search; sold = sales eBay counted. Per listing, never per size.
+export interface EbayTraffic { views: number | null; impressions: number | null; ctr: number | null; sold: number | null }
+export interface EbayTrafficInfo { days: number | null; from: string | null; to: string | null; updated: string | null; error: string | null }
 export interface EbayListingsSummary {
   listings: number; skipped: number; problems: number; checks: number; watchers: number;   // skipped = auctions (not shown)
+  views: number | null; impressions: number | null;   // totals over the traffic window; null = views couldn't be read
 }
 // The "Not on eBay" view (server routes/ebay-candidates.js, rules utils/ebayListingRules.js) — styles in stock not on eBay yet, each
 // with a readiness check. READ ONLY. missing = blocks listing; todo = the listing form will ask (material).
@@ -5122,9 +5128,9 @@ export function endEbayListing(itemId: string) {
 }
 
 export function getEbayListings() {
-  return request<{ read_at: string; truncated: boolean; summary: EbayListingsSummary; listings: EbayListing[] }>(
+  return request<{ read_at: string; truncated: boolean; summary: EbayListingsSummary; traffic: EbayTrafficInfo; listings: EbayListing[] }>(
     { url: '/ebay-listings', method: 'GET', timeout: 120000 },
-    (b) => ({ read_at: b.read_at, truncated: b.truncated === true, summary: b.summary, listings: (b.listings || []) as EbayListing[] })
+    (b) => ({ read_at: b.read_at, truncated: b.truncated === true, summary: b.summary, traffic: b.traffic || { days: null, from: null, to: null, updated: null, error: null }, listings: (b.listings || []) as EbayListing[] })
   );
 }
 

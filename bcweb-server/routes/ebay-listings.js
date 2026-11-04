@@ -43,9 +43,12 @@ Success Response:
                    "local": 1, "fba": 0, "sold_30d": 0, "last_sale": "2025-08-02" | null, "idle_days": 214 | null,
                    "own_price": 29.99 | null, "profit": -1.23, "flags": [] } ],
       "not_listed": [],                                  // in-stock codes not on this BCWEB listing (flag size_not_listed)
-      "bcweb": true                                      // made by BCWEB's List button — per-size prices allowed
-  } ]
+      "bcweb": true,                                     // made by BCWEB's List button — per-size prices allowed
+      "traffic": { "views": 41, "impressions": 2210, "ctr": 1.4, "sold": 0 } | null   // last 30 days, per LISTING (utils/ebayTraffic.js)
+  } ],
+  "traffic": { "days": 30, "from": "20261006", "to": "20261104", "updated": "…", "error": null | "why views couldn't be read" }
 }
+summary also carries views / impressions (totals, null when traffic couldn't be read). Views FAIL SOFT — the listings load without them.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -69,6 +72,7 @@ const { oldestHeldArrival, lastNetSales, idleSince } = require('../utils/onShelf
 const dayNo = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 const { ebayProfit } = require('../utils/ebayProfit');
 const { localStockWhere } = require('../utils/ebayListingRules');
+const { fetchTraffic } = require('../utils/ebayTraffic');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -88,6 +92,17 @@ router.get('/', async (req, res) => {
 
   try {
     const { listings, skipped, truncated } = read;
+
+    // VIEWS (owner, 2026-11-04) — eBay's traffic report for these listings, read alongside. FAILS SOFT: if it can't be read (most
+    // likely a token minted before the analytics scope), the listings still load and traffic.error says why.
+    let traffic = null;
+    let trafficError = null;
+    try {
+      traffic = await fetchTraffic(listings.map((l) => l.item_id));
+    } catch (err) {
+      trafficError = err.message;
+      logger.error('[ebay-listings] eBay traffic read failed:', err.message);
+    }
     const codes = [...new Set(listings.flatMap((l) => l.lines.map((x) => x.sku)).filter(Boolean))];
 
     // One query for every code on eBay: is it ours, which style, and what we hold.
@@ -155,7 +170,7 @@ router.get('/', async (req, res) => {
     ]);
     const today = todayQ.rows[0].today;
 
-    const summary = { listings: 0, skipped, problems: 0, checks: 0, watchers: 0 };
+    const summary = { listings: 0, skipped, problems: 0, checks: 0, watchers: 0, views: traffic ? 0 : null, impressions: traffic ? 0 : null };
     const out = listings.map((l) => {
       const lines = l.lines.map((x) => {
         const o = x.sku ? ours.get(x.sku) : null;
@@ -201,7 +216,9 @@ router.get('/', async (req, res) => {
 
       const rest = { ...l };
       delete rest.status;   // always 'Active' here
-      return { ...rest, flags, not_listed: notListed, bcweb: bcwebItems.has(l.item_id), lines };
+      const t = traffic ? (traffic.byItem.get(String(l.item_id)) || { views: 0, impressions: 0, ctr: null, sold: 0 }) : null;
+      if (t) { summary.views += t.views || 0; summary.impressions += t.impressions || 0; }
+      return { ...rest, flags, not_listed: notListed, bcweb: bcwebItems.has(l.item_id), traffic: t, lines };
     });
 
     // Problems first, then by our code (the screen leads with it).
@@ -209,7 +226,10 @@ router.get('/', async (req, res) => {
     const codeOf = (l) => (l.lines[0] && (l.lines[0].groupid || l.lines[0].sku)) || '';
     out.sort((a, b) => rank(a) - rank(b) || codeOf(a).localeCompare(codeOf(b)) || a.title.localeCompare(b.title));
 
-    return res.json({ return_code: 'SUCCESS', read_at: new Date().toISOString(), truncated, summary, listings: out });
+    const trafficInfo = traffic
+      ? { days: traffic.days, from: traffic.from, to: traffic.to, updated: traffic.updated, error: null }
+      : { days: null, from: null, to: null, updated: null, error: trafficError };
+    return res.json({ return_code: 'SUCCESS', read_at: new Date().toISOString(), truncated, summary, traffic: trafficInfo, listings: out });
   } catch (err) {
     logger.error('[ebay-listings] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the eBay listings' });

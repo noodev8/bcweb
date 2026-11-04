@@ -19,6 +19,8 @@ SCOPES — all asked for in ONE sign-in, so the consent never has to be repeated
   sell.account       read the business policies a listing needs  (postage / returns / payment)
   sell.finances      read the seller's transactions              (Month End's eBay block — added 2026-11-01, so a token minted
                                                                   before then must be re-minted; see utils/ebayAuth.js FINANCE_SCOPES)
+  sell.analytics.readonly  read the traffic report             (the eBay listings screen's Views column — added 2026-11-04, so a
+                                                                  token minted before then must be re-minted; ANALYTICS_SCOPES)
 
 The token is NEVER printed — it goes straight into the file. Copy the two lines to the VPS .env yourself, then pm2 restart.
 
@@ -44,7 +46,8 @@ const SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.account',
-  'https://api.ebay.com/oauth/api_scope/sell.finances'
+  'https://api.ebay.com/oauth/api_scope/sell.finances',
+  'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly'
 ];
 
 // Replace KEY=… in the .env text, or append it if the key isn't there yet.

@@ -98,6 +98,14 @@ const FINANCE_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.finances'
 ].join(' ');
 
+// The ANALYTICS token — the eBay listings screen's Views column (utils/ebayTraffic.js, 2026-11-04). Kept apart for the same reason as
+// FINANCE_SCOPES: sell.analytics.readonly was added to scripts/ebay-token.js on 2026-11-04, and a token minted before then can't be
+// swapped for it. Kept apart, only the Views column goes blank (with "run scripts/ebay-token.js") — the listings still load.
+const ANALYTICS_SCOPES = [
+  'https://api.ebay.com/oauth/api_scope',
+  'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly'
+].join(' ');
+
 function isUserConfigured() {
   return isConfigured() && Boolean(config.ebay.refreshToken);
 }
@@ -145,6 +153,7 @@ async function tokenFor(scopes) {
 
 const userToken = () => tokenFor(USER_SCOPES);
 const financeToken = () => tokenFor(FINANCE_SCOPES);
+const analyticsToken = () => tokenFor(ANALYTICS_SCOPES);
 
 function dropUserToken() {
   userCache.delete(USER_SCOPES);
@@ -154,4 +163,8 @@ function dropFinanceToken() {
   userCache.delete(FINANCE_SCOPES);
 }
 
-module.exports = { isConfigured, appToken, dropAppToken, isUserConfigured, userToken, dropUserToken, financeToken, dropFinanceToken };
+function dropAnalyticsToken() {
+  userCache.delete(ANALYTICS_SCOPES);
+}
+
+module.exports = { isConfigured, appToken, dropAppToken, isUserConfigured, userToken, dropUserToken, financeToken, dropFinanceToken, analyticsToken, dropAnalyticsToken };

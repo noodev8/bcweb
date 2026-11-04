@@ -12,7 +12,9 @@ WHAT A ROW SHOWS (kept plain — owner, 2026-11-01: "The screen is too busy"): o
 it); eBay's title as a TOOLTIP only; the brand in its own column; eBay's price beside our Shopify price; the profit one sale at eBay's price would book (THE EBY formula,
 Royal Mail even for FBA — server utils/ebayProfit.js); what eBay has available against our STOCK (column "Stock", was "Can sell") —
 ONE number, local sellable + FBA live (owner: "Just show what we can sell"; FBA pairs go on eBay, MCF ships them); sold on this
-SOLD 30D — our own eBay sales of the code in the last 30 days, net (owner, 2026-11-01; was eBay's since-listed count), watchers, the postage, and when it renews (Good 'Til Cancelled, monthly). No view counts: eBay only gives them with a permission the login lacks.
+SOLD 30D — our own eBay sales of the code in the last 30 days, net (owner, 2026-11-01; was eBay's since-listed count), watchers, VIEWS (owner, 2026-11-04 — eBay's traffic report, last 30 days, per LISTING; hover for times shown and the % of those that were viewed — views ÷ shown, not eBay's own click-through, which counts search only;
+server utils/ebayTraffic.js, needs the analytics permission on the eBay token — if it can't be read the listings still show, with a note
+saying why), the postage, and when it renews (Good 'Til Cancelled, monthly).
 FIXED PRICE ONLY (owner, 2026-11-01: "We are going to not use auction ... Fixed price only"): the server leaves auctions out and counts
 them; the screen says how many, to be dealt with by hand in Seller Hub.
 A variation listing (one listing per style, sizes inside — the planned Add) is one row with its sizes underneath on a click.
@@ -183,8 +185,12 @@ function OnEbay() {
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Figure label="Live listings" value={s.listings} sub={s.skipped > 0 ? `fixed price · ${s.skipped} auction${s.skipped === 1 ? '' : 's'} not shown (Seller Hub)` : 'fixed price'} />
             <Figure label="Needs a look" value={s.problems + s.checks} sub={`${s.problems} problem${s.problems === 1 ? '' : 's'} · ${s.checks} postage`} tone={s.problems > 0 ? 'red' : s.checks > 0 ? 'amber' : undefined} />
-            <Figure label="Watchers" value={s.watchers} sub="across all listings" />
+            <Figure label="Watchers" value={s.watchers}
+              sub={s.views !== null ? `${s.views.toLocaleString('en-GB')} views · shown ${(s.impressions ?? 0).toLocaleString('en-GB')} times · ${data.traffic?.days ?? 30} days` : 'across all listings'} />
           </div>
+          {data.traffic?.error && (
+            <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">Views couldn’t be read from eBay: {data.traffic.error}</div>
+          )}
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {([['all', 'All'], ['look', 'Needs a look'], ['slow', `Slow sizes (${SLOW_DAYS}d+)`]] as [Filter, string][]).map(([k, label]) => (
@@ -231,6 +237,7 @@ function OnEbay() {
                     <Th className="text-center" title="Our stock: local + FBA live">Stock</Th>
                     <Th className="text-center" title="Our eBay sales in the last 30 days (net)">Sold 30d</Th>
                     <Th className="text-center">Watch</Th>
+                    <Th className="text-center" title="Listing page views, last 30 days (eBay's traffic report — a day or two behind). Hover a number for times shown and how many of those were viewed.">Views</Th>
                     <Th className="text-left">Postage</Th>
                     <Th className="pr-3 text-left" title="Good 'Til Cancelled listings renew monthly">Renews</Th>
                   </tr>
@@ -246,7 +253,7 @@ function OnEbay() {
                         <ListingRow listing={l} multi={multi} opens={opens} isOpen={isOpen} onToggle={() => setOpen(isOpen ? null : l.item_id)} />
                         {isOpen && l.bcweb && (
                           <tr className="border-b border-slate-200 bg-slate-50">
-                            <td colSpan={11} className="px-4 pb-4 pt-1"><SizesPanel listing={l} /></td>
+                            <td colSpan={12} className="px-4 pb-4 pt-1"><SizesPanel listing={l} /></td>
                           </tr>
                         )}
                         {isOpen && !l.bcweb && multi && l.lines.map((x, i) => <SizeRow key={x.sku || i} line={x} />)}
@@ -318,7 +325,14 @@ function ListingRow({ listing: l, multi, opens, isOpen, onToggle }: { listing: E
   const service = l.postage.service ? (SERVICE[l.postage.service] || l.postage.service) : '—';
   const postageTitle = [l.postage.policy, l.postage.dispatch_days !== null ? `Dispatch ${l.postage.dispatch_days} day${l.postage.dispatch_days === 1 ? '' : 's'}` : null,
     l.returns.within ? `Returns ${l.returns.within}, ${(l.returns.paid_by || '').toLowerCase()} pays` : null].filter(Boolean).join(' · ');
-  const profit = multi ? null : one?.profit ?? null;
+  // Shopify is priced per STYLE, so every size of a variation listing shares one Shopify price — show it on the listing row.
+  // Profit differs per size (each size has its own eBay price): a single figure for one size, the range for several.
+  const shopifyPrices = l.lines.map((x) => x.shopify_price);
+  const profits = l.lines.map((x) => x.profit).filter((x): x is number => x !== null);
+  const profitLo = profits.length ? Math.min(...profits) : null;
+  const profitHi = profits.length ? Math.max(...profits) : null;
+  const profitText = profitLo === null || profitHi === null ? '—'
+    : profitLo === profitHi ? signedMoney(profitLo) : `${signedMoney(profitLo)} to ${signedMoney(profitHi)}`;
 
   return (
     <tr
@@ -341,12 +355,16 @@ function ListingRow({ listing: l, multi, opens, isOpen, onToggle }: { listing: E
       </td>
       <td className="whitespace-nowrap px-2 py-2 text-slate-600">{one?.brand || '—'}</td>
       <td className="whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums text-slate-800">{priceRange(l.lines.map((x) => x.ebay_price))}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-500">{multi ? '' : money(one?.shopify_price)}</td>
-      <td className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-700')}>{multi ? '' : signedMoney(profit)}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-500">{priceRange(shopifyPrices)}</td>
+      <td className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + (profitLo !== null && profitLo < 0 ? 'text-red-600' : 'text-slate-700')}>{profitText}</td>
       <td className={'px-2 py-2 text-center font-medium tabular-nums ' + (oversell ? 'text-red-600' : '')}>{sum('ebay_available')}</td>
       <td className="px-2 py-2 text-center tabular-nums">{sum('local') + sum('fba')}</td>
       <td className="px-2 py-2 text-center tabular-nums">{sum('sold_30d') || <span className="text-slate-300">·</span>}</td>
       <td className="px-2 py-2 text-center tabular-nums">{l.watchers || <span className="text-slate-300">·</span>}</td>
+      <td className="px-2 py-2 text-center tabular-nums"
+        title={l.traffic ? `Shown ${(l.traffic.impressions ?? 0).toLocaleString('en-GB')} times · ${l.traffic.impressions ? `${Math.round(((l.traffic.views ?? 0) / l.traffic.impressions) * 1000) / 10}% viewed` : 'none viewed'} · eBay counted ${l.traffic.sold ?? 0} sold` : undefined}>
+        {l.traffic ? (l.traffic.views || <span className="text-slate-300">·</span>) : <span className="text-slate-300">—</span>}
+      </td>
       <td className="whitespace-nowrap px-2 py-2" title={postageTitle}>
         <span className={l.postage.free ? 'text-emerald-700' : 'text-slate-700'}>{l.postage.free ? 'Free' : money(l.postage.cost)}</span>
         <span className="text-slate-500"> · {service}</span>
@@ -374,7 +392,7 @@ function SizeRow({ line: x }: { line: EbayListingLine }) {
       <td className={'px-2 py-1.5 text-center tabular-nums ' + (x.flags.includes('oversell') ? 'font-medium text-red-600' : '')}>{x.ebay_available}</td>
       <td className="px-2 py-1.5 text-center tabular-nums">{x.local + x.fba}</td>
       <td className="px-2 py-1.5 text-center tabular-nums">{x.sold_30d || <span className="text-slate-300">·</span>}</td>
-      <td colSpan={3} />
+      <td colSpan={4} />
     </tr>
   );
 }
