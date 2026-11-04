@@ -104,7 +104,7 @@ function YourAmzBox() {
       refocus();
       return;
     }
-    packedActiveBox(user, res.data.box);
+    packedActiveBox(user, res.data.box, '/goods-in');
     refocus();
   }
   return (

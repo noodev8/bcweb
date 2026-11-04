@@ -29,7 +29,10 @@ import { useSyncExternalStore } from 'react';
 
 export interface ActiveLine { code: string; qty: number; sku?: string; fnsku?: string; groupid?: string; title?: string }
 export interface ActiveDims { length: string; width: string; height: string; weight: string }
-// lastPacked = the number the last Pack gave this box, so Goods In can say it after going straight back there. Cleared by the next unit.
+// lastPacked = the number the last Pack gave this box. IN MEMORY ONLY, never in localStorage (owner, 2026-11-04: it "stays even if i
+// close the browser and return" — clear it when the screen is left, it's closed, or a new shoe is scanned). It belongs to ONE screen
+// (`packedOn`): AppShell calls forgetPackedOffScreen on every screen change, so it shows only on the screen that packed — or on Goods
+// In when that screen sends you straight back there (packedFor). A reload or a closed browser loses it with the page's memory.
 // refill = the stored box this one will replace when packed (see REFILL), with what the screen showed in it.
 export interface ActiveRefill { box: number; expect: { code: string; qty: number }[] }
 export interface ActiveBox { lines: ActiveLine[]; dims: ActiveDims; lastPacked: number | null; refill: ActiveRefill | null }
@@ -52,7 +55,8 @@ function parse(raw: string | null): ActiveBox {
     const refill = r && Number.isInteger(r.box) && Array.isArray(r.expect)
       ? { box: r.box, expect: r.expect.map((l: { code: unknown; qty: unknown }) => ({ code: String(l.code), qty: Number(l.qty) })) }
       : null;
-    return { lines, dims, lastPacked: Number.isInteger(v?.lastPacked) ? v.lastPacked : null, refill };
+    // A lastPacked stored by the old code is ignored (that was the number that stuck) — see packed below.
+    return { lines, dims, lastPacked: null, refill };
   } catch { return EMPTY; }
 }
 
@@ -63,14 +67,22 @@ function readRaw(user: string): string | null {
 // Blocked storage: kept in memory for this page so the screen still works until a reload.
 const memory = new Map<string, string>();
 function write(user: string, box: ActiveBox) {
-  const raw = JSON.stringify(box);
+  const raw = JSON.stringify({ ...box, lastPacked: null });  // lastPacked never reaches storage
   memory.set(user, raw);
   try { localStorage.setItem(keyOf(user), raw); } catch { /* memory only */ }
   window.dispatchEvent(new Event(EVENT));
 }
 
+// The last Pack's number, by user, and the screen (path) it shows on. Memory only — see lastPacked at the top.
+const packed = new Map<string, { box: number; on: string }>();
+function setPacked(user: string, p: { box: number; on: string } | null) {
+  if (p) packed.set(user, p);
+  else if (!packed.delete(user)) return;
+  window.dispatchEvent(new Event(EVENT));
+}
+
 export function readActiveBox(user: string): ActiveBox {
-  return parse(readRaw(user) ?? memory.get(user) ?? null);
+  return { ...parse(readRaw(user) ?? memory.get(user) ?? null), lastPacked: packed.get(user)?.box ?? null };
 }
 
 function update(user: string, fn: (b: ActiveBox) => ActiveBox) {
@@ -80,9 +92,8 @@ function update(user: string, fn: (b: ActiveBox) => ActiveBox) {
 // One unit in: EACH SCAN IS ITS OWN LINE (owner, 2026-10-19: "each scan is its own line"), on top — the newest scan first, as the box
 // shows it. Never merged here; Pack's route adds up repeated codes (routes/amz-shipment-pack.js).
 export function addToActiveBox(user: string, line: Omit<ActiveLine, 'qty'>) {
-  update(user, (b) => {
-    return { ...b, lines: [{ ...line, qty: 1 }, ...b.lines], lastPacked: null };
-  });
+  setPacked(user, null);
+  update(user, (b) => ({ ...b, lines: [{ ...line, qty: 1 }, ...b.lines] }));
 }
 
 // One unit out. Returns false when the box holds no such line (it was packed since, or already taken out).
@@ -107,13 +118,15 @@ export function emptyActiveBox(user: string) {
   update(user, (b) => ({ ...b, lines: [] }));
 }
 
-// After Pack: a fresh box, remembering the number just given.
-export function packedActiveBox(user: string, box: number) {
-  write(user, { lines: [], dims: NO_DIMS, lastPacked: box, refill: null });
+// After Pack: a fresh box, remembering the number just given — shown on this screen (`on` = its path).
+export function packedActiveBox(user: string, box: number, on: string) {
+  packed.set(user, { box, on });
+  write(user, { lines: [], dims: NO_DIMS, lastPacked: null, refill: null });
 }
 
 // Unpack (with its shoes) or Empty (none) on a stored box: this box becomes its refill. Only offered while this box is empty.
 export function startRefill(user: string, refill: ActiveRefill, lines: ActiveLine[], dims: ActiveDims) {
+  packed.delete(user);
   write(user, { lines, dims, lastPacked: null, refill });
 }
 
@@ -124,7 +137,21 @@ export function setRefill(user: string, refill: ActiveRefill | null) {
 }
 
 export function dismissPacked(user: string) {
-  update(user, (b) => ({ ...b, lastPacked: null }));
+  setPacked(user, null);
+}
+
+// Going straight to another screen that should still say the number (AMZ Shipment -> Goods In after packing): move it there first.
+export function packedFor(user: string, on: string) {
+  const p = packed.get(user);
+  if (p) packed.set(user, { ...p, on });
+}
+
+// AppShell, on every screen change: a number packed on another screen is forgotten — "cleared after the screen is left". Every user's,
+// since one browser is one bench. Safe to call twice (Strict Mode): it only ever clears.
+export function forgetPackedOffScreen(path: string) {
+  let changed = false;
+  for (const [user, p] of packed) if (p.on !== path) { packed.delete(user); changed = true; }
+  if (changed) window.dispatchEvent(new Event(EVENT));
 }
 
 
@@ -138,13 +165,14 @@ function subscribe(onChange: () => void) {
 }
 
 // Snapshots must be stable between changes: parsed once per distinct stored string.
-const cache = new Map<string, { raw: string | null; box: ActiveBox }>();
+const cache = new Map<string, { raw: string | null; lastPacked: number | null; box: ActiveBox }>();
 function snapshot(user: string): ActiveBox {
   const raw = readRaw(user) ?? memory.get(user) ?? null;
+  const lastPacked = packed.get(user)?.box ?? null;
   const hit = cache.get(user);
-  if (hit && hit.raw === raw) return hit.box;
-  const box = parse(raw);
-  cache.set(user, { raw, box });
+  if (hit && hit.raw === raw && hit.lastPacked === lastPacked) return hit.box;
+  const box = { ...parse(raw), lastPacked };
+  cache.set(user, { raw, lastPacked, box });
   return box;
 }
 

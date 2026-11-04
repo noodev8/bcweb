@@ -111,7 +111,7 @@ import { printFnskuLabel, printFnskuLabels, printFnskuTestStrip } from '@/lib/fn
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
-  useActiveBox, addToActiveBox, takeFromActiveBox, setActiveDims, emptyActiveBox, packedActiveBox, dismissPacked, startRefill, setRefill,
+  useActiveBox, addToActiveBox, takeFromActiveBox, setActiveDims, emptyActiveBox, packedActiveBox, packedFor, dismissPacked, startRefill, setRefill,
   activeUnits, type ActiveLine, type ActiveDims,
 } from '@/lib/amzActiveBox';
 
@@ -472,11 +472,11 @@ function Packing({ initial, autoBack, onShipped }: {
       setBoxError(`Not packed: ${res.error || 'error'}`);
       return;
     }
-    packedActiveBox(user, res.data.box);
+    packedActiveBox(user, res.data.box, '/amz-shipment');
     setHistory([]);
     setLastScan(null);
     setMenuOpen(false);
-    if (autoBack) { router.push('/goods-in'); return; }
+    if (autoBack) { packedFor(user, '/goods-in'); router.push('/goods-in'); return; }
     await rereadBoxes();
     setWorking(false);
     refocus();
@@ -1006,13 +1006,14 @@ function Packing({ initial, autoBack, onShipped }: {
           </div>
 
           {/* PACKED — the number the box was just given (owner, 2026-10-16: "then tell them their box num"). JUST THE NUMBER, huge, so
-              it gets written on the carton (owner, 2026-10-29: "get rid of the unneeded text"). Stays until closed or the next shoe goes in. */}
+              it gets written on the carton (owner, 2026-10-29: "get rid of the unneeded text"). Goes when closed, the next shoe goes in, or the
+              screen is left; never survives a closed browser (owner, 2026-11-04 — lib/amzActiveBox.ts, lastPacked). */}
           {onMine && mine.lastPacked !== null && (
             <div role="status" aria-label={`Packed as Box ${mine.lastPacked}`}
               className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-emerald-50 px-4 py-3">
               <CheckCircleIcon className="h-14 w-14 text-emerald-600" />
               <span className="flex-1 text-9xl font-bold leading-none tabular-nums text-emerald-900">{mine.lastPacked}</span>
-              <button type="button" onClick={() => router.push('/goods-in')}
+              <button type="button" onClick={() => { packedFor(user, '/goods-in'); router.push('/goods-in'); }}
                 className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 <InboxArrowDownIcon className="h-4 w-4" />Back to Goods In
               </button>

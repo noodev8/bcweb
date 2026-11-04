@@ -20,6 +20,7 @@ import CopyButton from '@/components/CopyButton';
 import { logScreenView } from '@/lib/api';
 import { HEADER_TABS, tabForPath } from '@/lib/headerNav';
 import { useUrlParam } from '@/lib/useUrlParam';
+import { forgetPackedOffScreen } from '@/lib/amzActiveBox';
 
 // The header bar is a FIXED four (lib/headerNav.ts). Pinning via a star beside the page title was tried on 2026-09-22 and removed on
 // 2026-09-23; the reasoning is in that file. Active state is by path prefix (longest match wins), and the active tab lifts to a
@@ -63,6 +64,9 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   const { ready, isAuthenticated, displayName, logout } = useAuth();
   // The header tab for wherever we are (drives the active highlight), or undefined on a screen that has none.
   const here = tabForPath(pathname);
+  // A "Packed — Box n" number goes when you leave the screen that packed it (lib/amzActiveBox.ts, lastPacked). Every logged-in page
+  // renders AppShell, so this is the one place that sees every screen change. Writes no data, fetches nothing.
+  useEffect(() => { forgetPackedOffScreen(pathname); }, [pathname]);
 
   /*
   BACK GOES WHERE YOU CAME FROM, NOT UP THE ROUTE TREE (owner, 2026-09-22 — "I went to Winners and then went back to the full
