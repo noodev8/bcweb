@@ -8,7 +8,8 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
          one line that anyone logged in can add, rate, check again and talk about, then order (manually, outside BCWEB) or drop.
 
          Deliberately loose — "an extended Google Docs specific for us":
-           - one line = one style: a name, an optional Amazon link/ASIN, an owner (who added it), a gut rating (Diamond / Good / Sketchy)
+           - one line = one style: a name, an optional Amazon link/ASIN, an owner (who added it), a gut rating (Diamond / Good / Sketchy —
+             HIDDEN since 2026-11-04, see SHOW_RATING)
            - CHECKS: rank / price / sellers typed by hand each time someone looks (no scraping, no API — owner's call). Size is optional
              because rank differs by size on the same listing; the line shows the latest check per size, History shows them all (rank
              changes are read by eye — owner)
@@ -28,7 +29,7 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon,
+  ArrowLeftIcon, ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,6 +50,14 @@ const RATINGS: { key: ProspectRating; label: string; on: string }[] = [
   { key: 'sketchy', label: 'Sketchy', on: 'border-amber-300 bg-amber-100 text-amber-800' },
 ];
 const RATING_ORDER: Record<string, number> = { diamond: 0, good: 1, sketchy: 2 };
+// RATINGS ARE HIDDEN (owner, 2026-11-04: "the tags - good, sketchy and diamond aren't being used. I tend to go through them all
+// anyway"). Of 40 lines, Diamond was never picked, and the list is small enough to read in full, so the row chip, the pickers and the
+// "Diamonds first" sort are off. The column stays and every save carries the stored rating through unchanged — true brings it all back.
+const SHOW_RATING = false;
+// The All | Mine switch is hidden too (owner, 2026-11-04) — the team works the whole list together.
+const SHOW_MINE = false;
+// And the sort menu (owner, 2026-11-04) — the list is always latest change first, as of opening / Refresh.
+const SHOW_SORT = false;
 
 const OUTCOMES: { key: ProspectOutcome; label: string; on: string }[] = [
   { key: 'ordered', label: 'Ordered', on: 'border-emerald-300 bg-emerald-100 text-emerald-800' },
@@ -114,12 +123,15 @@ function AmazonLink({ asin, label }: { asin: string; label: string }) {
 // LATEST CHANGE (owner, 2026-10-28: "Any change to it means it has been addressed. The bottom ones have been left") — the newest
 // of the line's add/edit, its last check and its last comment, and who made it. Sorts the list; the row shows who · day, the open
 // card adds the time. An edit from before updated_by existed has no name — falls back to the owner.
-function lastChangeBy(p: Prospect): { at: string; by: string } {
-  const lc = p.checks[p.checks.length - 1];
-  const ln = p.notes[p.notes.length - 1];
+// upTo (an ISO time) = only what had happened by then — the list sorts on that, so lines worked on this visit stay where they were
+// (2026-11-04). Its updated_at can't be dated back, so an edit made after upTo falls back to the line's other stamps.
+function lastChangeBy(p: Prospect, upTo?: string): { at: string; by: string } {
+  const by = (at: string | null | undefined) => !!at && (!upTo || at <= upTo);
+  const lc = p.checks.findLast((c) => by(c.checked_at));
+  const ln = p.notes.findLast((n) => by(n.created_at));
   const stamps = [
     { at: p.created_at, by: p.owner },
-    { at: p.updated_at, by: p.updated_by || p.owner },
+    { at: by(p.updated_at) ? p.updated_at : null, by: p.updated_by || p.owner },
     { at: lc?.checked_at, by: lc?.checked_by },
     { at: ln?.created_at, by: ln?.created_by },
   ];
@@ -127,18 +139,25 @@ function lastChangeBy(p: Prospect): { at: string; by: string } {
   // now()), and with > the name came from updated_by/owner instead of whoever typed the check or comment.
   return stamps.reduce<{ at: string; by: string }>((m, s) => (s.at && s.at >= m.at ? { at: s.at, by: s.by || '' } : m), { at: '', by: '' });
 }
-function lastChange(p: Prospect): string {
-  return lastChangeBy(p).at;
+function lastChange(p: Prospect, upTo?: string): string {
+  return lastChangeBy(p, upTo).at;
 }
 function fmtWhenTime(iso: string): string {
   const t = new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
   return `${fmtWhen(iso)} ${t}`;
 }
 
-function lastActivity(p: Prospect): string {
-  const last = p.checks.length ? p.checks[p.checks.length - 1].checked_at : null;
+function lastActivity(p: Prospect, upTo?: string): string {
+  const last = p.checks.findLast((c) => !upTo || c.checked_at <= upTo)?.checked_at;
   return last || p.created_at;
 }
+// Since the list was last sorted (page opened or Refresh): a line ADDED since is NEW (blue, at the top); a line CHANGED since gets a ✓
+// (green, with the time and who), and stays where it was.
+function sinceSort(p: Prospect, sortFrom: string): 'new' | 'done' | null {
+  if (p.created_at > sortFrom) return 'new';
+  return lastChange(p) > sortFrom ? 'done' : null;
+}
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
 
 export default function ProspectsPage() {
   const { displayName } = useAuth();
@@ -162,9 +181,16 @@ export default function ProspectsPage() {
   // reopening the page) brings the WHOLE list back. Not a delete — that is the open card's Delete, and it is for good.
   const [cut, setCut] = useState<Set<number>>(() => new Set());
   const [refreshing, setRefreshing] = useState(false);
+  // THE LIST STAYS PUT while you work (owner, 2026-11-04: "getting mixed up with the latest being moved to the top. And the new one
+  // moved to the top … want it obvious which one we are editing and which one we did"). The order is worked out from what had
+  // happened by sortFrom — when the page opened, or the last Refresh — so a line you check, comment on or edit keeps its place
+  // (tinted green with a ✓), and a line added since goes at the top tinted blue NEW. Refresh re-sorts everything and clears
+  // the marks.
+  const [sortFrom, setSortFrom] = useState(() => new Date().toISOString());
   async function onRefresh() {
     setRefreshing(true);
     await q.refresh();
+    setSortFrom(new Date().toISOString());
     setCut(new Set());
     setRefreshing(false);
   }
@@ -183,19 +209,24 @@ export default function ProspectsPage() {
     if (archive) {
       list.sort((a, b) => b.archived_at!.localeCompare(a.archived_at!));   // most recently decided first; the sort menu is hidden
     } else if (sort === 'latest') {
-      list.sort((a, b) => lastChange(b).localeCompare(lastChange(a)));
+      list.sort((a, b) => lastChange(b, sortFrom).localeCompare(lastChange(a, sortFrom)));
     } else if (sort === 'rating') {
       list.sort((a, b) => (RATING_ORDER[a.rating ?? ''] ?? 3) - (RATING_ORDER[b.rating ?? ''] ?? 3) || b.created_at.localeCompare(a.created_at));
     } else if (sort === 'stale') {
-      list.sort((a, b) => lastActivity(a).localeCompare(lastActivity(b)));   // longest since anyone looked, first
+      list.sort((a, b) => lastActivity(a, sortFrom).localeCompare(lastActivity(b, sortFrom)));   // longest since anyone looked, first
     }
-    // While a find is open the order holds (a check or comment would otherwise jump it to the top under your cursor); it
-    // re-sorts when the card closes, so the line you just worked on lands at the top.
+    // Lines added since sortFrom go first, newest on top, whatever the sort (a stable sort keeps the rest in order).
+    if (!archive) {
+      const added = (p: Prospect) => (p.created_at > sortFrom ? p.created_at : '');
+      list.sort((a, b) => added(b).localeCompare(added(a)));
+    }
+    // While a find is open the order also holds against a RATING change under the Diamonds sort (nothing else can move it now).
     if (frozen) list.sort((a, b) => (frozen.get(a.id) ?? -1) - (frozen.get(b.id) ?? -1));
     return list;   // 'newest' is the server's order
-  }, [inView, archive, mine, displayName, filter, sort, cut, frozen]);
+  }, [inView, archive, mine, displayName, filter, sort, cut, frozen, sortFrom]);
 
-  // The find just closed — once the list re-sorts, scroll to where it landed (the top, if it was changed). A ref, not state: the
+  // The find just closed — bring its row into view if the card collapsing left it off screen ('nearest': no jump when it is
+  // already in view — the list stays put now, 2026-11-04). A ref, not state: the
   // close render (openId → null, frozen → null) is the re-sort, so the effect on openId runs after exactly that commit. State
   // here meant a setState inside the effect to clear it (react-hooks/set-state-in-effect) and a wasted extra render.
   // setOpenId sits BELOW `shown` on purpose — declared above it, the closure read `shown` before its declaration and the React
@@ -210,7 +241,7 @@ export default function ProspectsPage() {
     const id = justClosedRef.current;
     if (id == null) return;
     justClosedRef.current = null;
-    document.getElementById(`prospect-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById(`prospect-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [openId]);
 
   // Reopen from the add form's "Tested before" warning: the line is back on the list, open, ready for a new check.
@@ -260,33 +291,44 @@ export default function ProspectsPage() {
             onDone={() => { setAdding(null); q.refresh(); }} onCancel={() => setAdding(null)} onReopened={onReopened} />
         )}
 
+        {/* THE ARCHIVE IS OUT OF THE WAY (owner, 2026-11-04: "active is our core. Make it less prominent and away somewhere") — no
+            Active | Archive switch any more: a quiet link under the list opens it, and in it a heading with Back to the list. */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            <button type="button" onClick={() => { setArchive(false); setOpenId(null); }} className={tabBtn(!archive)}>
-              Active · {activeCount}
-            </button>
-            <button type="button" onClick={() => { setArchive(true); setOpenId(null); }} className={tabBtn(archive)}
-              title="Decided lines (Ordered / Dropped), kept 6 months">
-              Archive · {rows.length - activeCount}
-            </button>
-          </div>
-          <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {inView.length}</button>
-            <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
-              Mine · {inView.filter((p) => p.owner === displayName).length}
-            </button>
-          </div>
-          {!archive && (
+          {archive && (
+            <>
+              <button type="button" onClick={() => { setArchive(false); setOpenId(null); }}
+                className={`${smallBtn} inline-flex items-center gap-1.5 py-1.5 text-sm`}>
+                <ArrowLeftIcon className="h-4 w-4" /> Back to the list
+              </button>
+              <span className="text-sm text-slate-600">
+                <span className="font-semibold text-slate-900">Archive · {rows.length - activeCount}</span>
+                {' '}— decided lines (Ordered / Dropped), deleted 6 months after archiving
+              </span>
+            </>
+          )}
+          {/* All | Mine HIDDEN (owner, 2026-11-04: "We don't use the All/Mine filter at all. We try and close the whole list") —
+              mine stays false; true on SHOW_MINE brings the switch back. */}
+          {SHOW_MINE && (
+            <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              <button type="button" onClick={() => setMine(false)} className={tabBtn(!mine)}>All · {inView.length}</button>
+              <button type="button" onClick={() => setMine(true)} className={tabBtn(mine)}>
+                Mine · {inView.filter((p) => p.owner === displayName).length}
+              </button>
+            </div>
+          )}
+          {/* Sort menu HIDDEN (owner, 2026-11-04: "This will not be true once a change is made and returned? Shall we just not use
+              it") — the list holds still while you work, so any sort is as of opening; one order, latest change first, bottom = left. */}
+          {SHOW_SORT && !archive && (
             <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={`${inputCls} bg-white`} aria-label="Sort">
               <option value="latest">Latest change first</option>
               <option value="newest">Newest first</option>
-              <option value="rating">Diamonds first</option>
+              {SHOW_RATING && <option value="rating">Diamonds first</option>}
               <option value="stale">Longest since checked</option>
             </select>
           )}
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter the list…"
             className={`${inputCls} w-52`} />
-          <button type="button" onClick={onRefresh} disabled={refreshing} title="Bring back every line cut with ×"
+          <button type="button" onClick={onRefresh} disabled={refreshing} title="Re-sort the list, clear the ✓ / NEW marks and bring back every line cut with ×"
             className={`${smallBtn} inline-flex items-center gap-1.5 py-1.5 text-sm`}>
             <ArrowPathIcon className={'h-4 w-4 ' + (refreshing ? 'animate-spin' : '')} /> Refresh
           </button>
@@ -306,7 +348,15 @@ export default function ProspectsPage() {
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {shown.map((p) => (p.id === openId
               ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
-              : <ProspectRow key={p.id} p={p} dim={openId != null} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
+              : <ProspectRow key={p.id} p={p} dim={openId != null} mark={archive ? null : sinceSort(p, sortFrom)} me={displayName} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
+          </div>
+        )}
+        {!archive && !q.isLoading && (
+          <div className="text-right">
+            <button type="button" onClick={() => { setArchive(true); setOpenId(null); }}
+              className="text-xs text-slate-400 hover:text-slate-700 hover:underline" title="Decided lines (Ordered / Dropped), kept 6 months">
+              Archive · {rows.length - activeCount}
+            </button>
           </div>
         )}
       </div>
@@ -398,10 +448,12 @@ function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
           {dup.data.have && <> — we already have it on Amazon as <span className="font-mono">{dup.data.have.groupid}</span></>}
         </div>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-slate-600">Rating</span>
-        <RatingChips value={rating} onChange={setRating} />
-      </div>
+      {SHOW_RATING && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-600">Rating</span>
+          <RatingChips value={rating} onChange={setRating} />
+        </div>
+      )}
       {/* RRP sits with what you see on Amazon (owner: "saves putting it as the notes"). It belongs to the find, not to a check, so on
           an edit — where there are no check fields — it is on its own. */}
       <div className="mt-3">
@@ -478,21 +530,39 @@ function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: Che
 
 // ---- One line --------------------------------------------------------------------------------------------------------------------
 // ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
-function ProspectRow({ p, dim, onOpen, onCut }: { p: Prospect; dim: boolean; onOpen: () => void; onCut: () => void }) {
+function ProspectRow({ p, dim, mark, me, onOpen, onCut }: {
+  p: Prospect; dim: boolean; mark: 'new' | 'done' | null; me: string | null | undefined; onOpen: () => void; onCut: () => void;
+}) {
+  const last = lastChangeBy(p);
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
   const rating = RATINGS.find((r) => r.key === p.rating);
   const sinceLook = daysAgo(lastActivity(p));
   const outcome = OUTCOMES.find((o) => o.key === p.outcome);   // archived lines only
   // The row is a button (opens the card), so × sits beside it rather than inside — a button can't hold another button.
   return (
-    <div id={`prospect-row-${p.id}`} className={'scroll-mt-4 flex items-center transition-opacity hover:bg-slate-50 ' + (dim ? 'opacity-40 hover:opacity-100' : '')}>
+    <div id={`prospect-row-${p.id}`} className={'scroll-mt-4 flex items-center border-l-4 transition-opacity '
+      + (mark === 'new' ? 'border-sky-400 bg-sky-50 hover:bg-sky-100 '
+        : mark === 'done' ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 '
+        : 'border-transparent hover:bg-slate-50 ')
+      + (dim ? 'opacity-40 hover:opacity-100' : '')}>
     <button type="button" onClick={onOpen}
       className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left text-sm">
       <ChevronRightIcon className="h-4 w-4 shrink-0 text-slate-400" />
-      <span className="w-20 shrink-0">
-        {rating && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${rating.on}`}>{rating.label}</span>}
-      </span>
+      {SHOW_RATING && (
+        <span className="w-20 shrink-0">
+          {rating && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${rating.on}`}>{rating.label}</span>}
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{p.name}</span>
+      {mark === 'new' && <span className="shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
+      {mark === 'done' && (
+        // Just the tick for your own (owner, 2026-11-04: "the tick is probably enough"); a colleague's change carries their name.
+        // Who and when are in the tooltip.
+        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white"
+          title={`Changed by ${last.by || '?'} at ${hhmm(last.at)}, since the list was sorted`}>
+          ✓{last.by && last.by !== me ? ` ${last.by}` : ''}
+        </span>
+      )}
       {p.have && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">DUPLICATE</span>}
       <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{latest?.rank ? `Rank ${latest.rank}` : ''}</span>
       <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
@@ -603,10 +673,12 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
         </div>
       </div>
 
-      <div className="mt-2">
-        <RatingChips value={p.rating} disabled={busy || archived}
-          onChange={(r) => run(() => saveProspect({ id: p.id, name: p.name, amazon: p.asin ?? '', rating: r }))} />
-      </div>
+      {SHOW_RATING && (
+        <div className="mt-2">
+          <RatingChips value={p.rating} disabled={busy || archived}
+            onChange={(r) => run(() => saveProspect({ id: p.id, name: p.name, amazon: p.asin ?? '', rating: r }))} />
+        </div>
+      )}
 
       {/* The latest check — earlier ones are in History. Sellers and size are hidden for now (owner, 2026-10-21); the columns stay. */}
       {latest && (
