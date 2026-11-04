@@ -37,11 +37,12 @@ router.post('/', async (req, res) => {
     if (!Number.isInteger(id) || id < 1) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'id is required' });
     }
-    // One statement, so no transaction wrapper is needed.
+    // One statement, so no transaction wrapper is needed. updated_by = who pressed Reopen (2026-11-04) — without it the list named
+    // the line's owner as the one who made the change.
     const upd = await query(`
-      UPDATE prospect SET archived_at = NULL, archived_by = NULL, outcome = NULL, updated_at = now()
+      UPDATE prospect SET archived_at = NULL, archived_by = NULL, outcome = NULL, updated_at = now(), updated_by = $2
        WHERE id = $1 AND archived_at IS NOT NULL
-    `, [id]);
+    `, [id, req.user.display_name]);
     if (upd.rowCount === 0) return res.json({ return_code: 'NOT_FOUND', message: 'That line is not in the archive any more' });
     return res.json({ return_code: 'SUCCESS' });
   } catch (err) {

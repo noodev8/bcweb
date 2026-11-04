@@ -63,8 +63,12 @@ const smallBtn = 'rounded-md border border-slate-300 bg-white px-2.5 py-1 text-x
 const primaryBtn = 'rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50';
 
 const DAY = 86400000;
+// CALENDAR days in Europe/London, not 24-hour blocks (fixed 2026-11-04): counting elapsed hours called a check typed at 9pm yesterday
+// "today" until 9pm today, and "yesterday" could be two calendar days back. Both dates are taken as London YYYY-MM-DD and differenced
+// at UTC midnight, so BST changes can't shift the count.
+const londonDay = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });   // en-CA = YYYY-MM-DD
 function daysAgo(iso: string): number {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / DAY);
+  return Math.round((Date.parse(londonDay(new Date())) - Date.parse(londonDay(new Date(iso)))) / DAY);
 }
 function fmtWhen(iso: string): string {
   const d = daysAgo(iso);
@@ -119,7 +123,9 @@ function lastChangeBy(p: Prospect): { at: string; by: string } {
     { at: lc?.checked_at, by: lc?.checked_by },
     { at: ln?.created_at, by: ln?.created_by },
   ];
-  return stamps.reduce<{ at: string; by: string }>((m, s) => (s.at && s.at > m.at ? { at: s.at, by: s.by || '' } : m), { at: '', by: '' });
+  // >= so a tie goes to the LATER stamp in the list: adding a check or comment also touches updated_at in the same transaction (same
+  // now()), and with > the name came from updated_by/owner instead of whoever typed the check or comment.
+  return stamps.reduce<{ at: string; by: string }>((m, s) => (s.at && s.at >= m.at ? { at: s.at, by: s.by || '' } : m), { at: '', by: '' });
 }
 function lastChange(p: Prospect): string {
   return lastChangeBy(p).at;

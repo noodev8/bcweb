@@ -49,9 +49,9 @@ router.post('/', async (req, res) => {
     const out = await withTransaction(async (client) => {
       // archived_at IS NULL: two people archiving at once — the second gets NOT_FOUND rather than a second outcome comment.
       const upd = await client.query(`
-        UPDATE prospect SET archived_at = now(), archived_by = $2, outcome = $3, updated_at = now()
+        UPDATE prospect SET archived_at = now(), archived_by = $2, outcome = $3, updated_at = now(), updated_by = $4
          WHERE id = $1 AND archived_at IS NULL
-      `, [id, req.user.display_name, outcome]);
+      `, [id, req.user.display_name, outcome, req.user.display_name]);   // $4 = updated_by: who archived it (2026-11-04)
       if (upd.rowCount === 0) return { error: 'NOT_FOUND', message: 'That line has already been archived or deleted' };
       await client.query(
         `INSERT INTO prospect_note (prospect_id, body, created_by) VALUES ($1, $2, $3)`,

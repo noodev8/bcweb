@@ -106,10 +106,19 @@ router.post('/', async (req, res) => {
         await purgeOldArchive(client);
         return { id: newId };
       }
+      // updated_at / updated_by move ONLY when a value really changed (2026-11-04): Save on an untouched form used to count as a
+      // change, jumping the line to the top as "changed today". Right-hand column names in an UPDATE read the OLD row.
       const upd = await client.query(
-        `UPDATE prospect SET name = $2, asin = $3, rating = $4, updated_at = now(), updated_by = $9,
+        `UPDATE prospect SET name = $2, asin = $3, rating = $4,
                 rrp = CASE WHEN $5::boolean THEN $6 ELSE rrp END,
-                cost = CASE WHEN $7::boolean THEN $8 ELSE cost END
+                cost = CASE WHEN $7::boolean THEN $8 ELSE cost END,
+                updated_at = CASE WHEN changed THEN now() ELSE updated_at END,
+                updated_by = CASE WHEN changed THEN $9 ELSE updated_by END
+           FROM (SELECT ($2::text, $3::text, $4::text,
+                         CASE WHEN $5::boolean THEN $6::text ELSE rrp::text END,
+                         CASE WHEN $7::boolean THEN $8::text ELSE cost::text END)
+                        IS DISTINCT FROM (name::text, asin::text, rating::text, rrp::text, cost::text) AS changed
+                   FROM prospect WHERE id = $1) AS c
           WHERE id = $1`, [id, name, asin, rating, hasRrp, rrp, hasCost, cost, req.user.display_name]
       );
       if (upd.rowCount === 0) return { error: 'NOT_FOUND', message: 'That line has been deleted' };
