@@ -14,8 +14,9 @@ at £41.29 last winter with 26–29 pairs at FBA and sold 3 while the style sold
 
 THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number is a named setting in SETTINGS):
   1. PRICE PER SIZE, JUDGED AGAINST THE STYLE (style = our groupid).
-  2. WINDOW = the size's CURRENT price period: from the day that price went live to `to` (today by default). Under 14 days = "too
-     new" (no verdict); over 12 weeks = judged on its last 12 weeks. Sisters are measured over exactly the same days, so the season
+  2. WINDOW = the size's CURRENT price period: from the day that price went live to `to` (today by default). Under 7 days = "too
+     new" (no verdict — owner, 2026-11-04, was 14: in peak season a size reaches 5 expected pairs in days and 14 sat on a clear
+     answer; in quiet months the 5-expected rule is what waits, so a busy weekend still can't decide it); over 12 weeks = judged on its last 12 weeks. Sisters are measured over exactly the same days, so the season
      cancels out. A NUDGE DOESN'T RESTART IT (owner, 2026-11-04): the period runs back for as long as the price stayed within 2% of
      today's — the team nudges sizes up ~30p a week while they keep selling ("if it continues selling, we continue getting bigger
      profit. That's the idea"), and a window restarted by every nudge never reached 14 days. A real move (> 2%) starts a new one.
@@ -72,7 +73,7 @@ const { amzProfit, priceForProfit } = require('./amzProfit');
 const { readCsv } = require('./csv');
 
 const SETTINGS = Object.freeze({
-  MIN_WINDOW_DAYS: 14,            // a price younger than this is "too new"
+  MIN_WINDOW_DAYS: 7,             // a price younger than this is "too new" (owner, 2026-11-04 — was 14)
   MAX_WINDOW_DAYS: 84,            // 12 weeks — an older price is judged on its last 12 weeks
   NORMAL_DAYS: 365,               // the normal share is measured over the 12 months before the window
   MIN_EXPECTED: 5,                // under 5 expected pairs = can't tell
