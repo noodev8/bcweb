@@ -147,17 +147,20 @@ function fmtWhenTime(iso: string): string {
   return `${fmtWhen(iso)} ${t}`;
 }
 
+// The newest check that HAS a rank (or a price) — a check typed with only one of the two leaves the other as it was (owner,
+// 2026-11-04: "if rank not entered, use previous one"). Read on screen only: History still shows each check exactly as typed.
+function latestWith(p: Prospect, key: 'rank' | 'price') {
+  return p.checks.findLast((c) => c[key] !== null && c[key] !== '') ?? null;
+}
+
 function lastActivity(p: Prospect, upTo?: string): string {
   const last = p.checks.findLast((c) => !upTo || c.checked_at <= upTo)?.checked_at;
   return last || p.created_at;
 }
-// Since the list was last sorted (page opened or Refresh): a line ADDED since is NEW (blue, at the top); a line CHANGED since gets a ✓
-// (green, with the time and who), and stays where it was.
-function sinceSort(p: Prospect, sortFrom: string): 'new' | 'done' | null {
-  if (p.created_at > sortFrom) return 'new';
-  return lastChange(p) > sortFrom ? 'done' : null;
+// A line ADDED since the list was last sorted (page opened or Refresh) is NEW — blue, at the top.
+function isNewSince(p: Prospect, sortFrom: string): boolean {
+  return p.created_at > sortFrom;
 }
-const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
 
 export default function ProspectsPage() {
   const { displayName } = useAuth();
@@ -183,14 +186,17 @@ export default function ProspectsPage() {
   const [refreshing, setRefreshing] = useState(false);
   // THE LIST STAYS PUT while you work (owner, 2026-11-04: "getting mixed up with the latest being moved to the top. And the new one
   // moved to the top … want it obvious which one we are editing and which one we did"). The order is worked out from what had
-  // happened by sortFrom — when the page opened, or the last Refresh — so a line you check, comment on or edit keeps its place
-  // (tinted green with a ✓), and a line added since goes at the top tinted blue NEW. Refresh re-sorts everything and clears
-  // the marks.
+  // happened by sortFrom — when the page opened, or the last Refresh — so a line you check, comment on or edit keeps its place, and a
+  // line added since goes at the top tinted blue NEW. ONE green ✓ sits on the line you last OPENED, changed or not (owner: "after a
+  // second change I can see BOTH ticks … have one tick and clear the rest … even if opened it only so I know what I'm looking
+  // through") — with the list still, everything above it is what you've been through. Refresh re-sorts and clears both marks.
   const [sortFrom, setSortFrom] = useState(() => new Date().toISOString());
+  const [lastOpened, setLastOpened] = useState<number | null>(null);
   async function onRefresh() {
     setRefreshing(true);
     await q.refresh();
     setSortFrom(new Date().toISOString());
+    setLastOpened(null);
     setCut(new Set());
     setRefreshing(false);
   }
@@ -235,6 +241,7 @@ export default function ProspectsPage() {
   function setOpenId(id: number | null) {
     if (id == null && openId != null) justClosedRef.current = openId;
     setOpenIdRaw(id);
+    if (id != null) setLastOpened(id);
     setFrozen(id == null ? null : new Map(shown.map((p, i) => [p.id, i])));
   }
   useEffect(() => {
@@ -348,7 +355,7 @@ export default function ProspectsPage() {
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {shown.map((p) => (p.id === openId
               ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
-              : <ProspectRow key={p.id} p={p} dim={openId != null} mark={archive ? null : sinceSort(p, sortFrom)} me={displayName} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
+              : <ProspectRow key={p.id} p={p} dim={openId != null} mark={archive ? null : p.id === lastOpened ? 'here' : isNewSince(p, sortFrom) ? 'new' : null} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
           </div>
         )}
         {!archive && !q.isLoading && (
@@ -530,11 +537,11 @@ function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: Che
 
 // ---- One line --------------------------------------------------------------------------------------------------------------------
 // ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
-function ProspectRow({ p, dim, mark, me, onOpen, onCut }: {
-  p: Prospect; dim: boolean; mark: 'new' | 'done' | null; me: string | null | undefined; onOpen: () => void; onCut: () => void;
+function ProspectRow({ p, dim, mark, onOpen, onCut }: {
+  p: Prospect; dim: boolean; mark: 'new' | 'here' | null; onOpen: () => void; onCut: () => void;
 }) {
-  const last = lastChangeBy(p);
-  const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;
+  const rankC = latestWith(p, 'rank');
+  const priceC = latestWith(p, 'price');
   const rating = RATINGS.find((r) => r.key === p.rating);
   const sinceLook = daysAgo(lastActivity(p));
   const outcome = OUTCOMES.find((o) => o.key === p.outcome);   // archived lines only
@@ -542,7 +549,7 @@ function ProspectRow({ p, dim, mark, me, onOpen, onCut }: {
   return (
     <div id={`prospect-row-${p.id}`} className={'scroll-mt-4 flex items-center border-l-4 transition-opacity '
       + (mark === 'new' ? 'border-sky-400 bg-sky-50 hover:bg-sky-100 '
-        : mark === 'done' ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 '
+        : mark === 'here' ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 '
         : 'border-transparent hover:bg-slate-50 ')
       + (dim ? 'opacity-40 hover:opacity-100' : '')}>
     <button type="button" onClick={onOpen}
@@ -555,17 +562,12 @@ function ProspectRow({ p, dim, mark, me, onOpen, onCut }: {
       )}
       <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{p.name}</span>
       {mark === 'new' && <span className="shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
-      {mark === 'done' && (
-        // Just the tick for your own (owner, 2026-11-04: "the tick is probably enough"); a colleague's change carries their name.
-        // Who and when are in the tooltip.
-        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white"
-          title={`Changed by ${last.by || '?'} at ${hhmm(last.at)}, since the list was sorted`}>
-          ✓{last.by && last.by !== me ? ` ${last.by}` : ''}
-        </span>
+      {mark === 'here' && (
+        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white" title="The line you last opened">✓</span>
       )}
       {p.have && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">DUPLICATE</span>}
-      <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{latest?.rank ? `Rank ${latest.rank}` : ''}</span>
-      <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{latest?.price ? fmtMoney(latest.price) : ''}</span>
+      <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{rankC ? `Rank ${rankC.rank}` : ''}</span>
+      <span className="hidden w-16 shrink-0 text-right tabular-nums text-slate-700 sm:block">{priceC ? fmtMoney(priceC.price!) : ''}</span>
       <span className="hidden w-24 shrink-0 text-right tabular-nums text-slate-500 md:block">
         {/* Profit a pair once there is one (cost + price typed), else RRP (owner, 2026-10-28). */}
         {p.return_on_cost ? <span className="font-medium text-slate-800">£{p.return_on_cost.profit.toFixed(2)}</span>
@@ -620,6 +622,8 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
   const [error, setError] = useState<string | null>(null);
 
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;   // checks arrive oldest first
+  const rankC = latestWith(p, 'rank');
+  const priceC = latestWith(p, 'price');
   const sinceLook = daysAgo(lastActivity(p));
   const archived = !!p.archived_at;
   const archivedAs = OUTCOMES.find((o) => o.key === p.outcome);
@@ -681,10 +685,19 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
       )}
 
       {/* The latest check — earlier ones are in History. Sellers and size are hidden for now (owner, 2026-10-21); the columns stay. */}
-      {latest && (
+      {/* Rank and price each from the newest check that has one; one carried from an earlier check says when in its tooltip. */}
+      {latest && (rankC || priceC) && (
         <div className="mt-3 flex flex-wrap items-baseline gap-x-2 text-sm text-slate-700">
-          {latest.rank !== null && <span>Rank <span className="font-semibold tabular-nums">{latest.rank}</span></span>}
-          {latest.price !== null && <span>{latest.rank !== null && '· '}{fmtMoney(latest.price)}</span>}
+          {rankC && (
+            <span title={rankC.id !== latest.id ? `Rank from ${rankC.checked_by}'s check, ${fmtWhen(rankC.checked_at)}` : undefined}>
+              Rank <span className="font-semibold tabular-nums">{rankC.rank}</span>
+            </span>
+          )}
+          {priceC && (
+            <span title={priceC.id !== latest.id ? `Price from ${priceC.checked_by}'s check, ${fmtWhen(priceC.checked_at)}` : undefined}>
+              {rankC && '· '}{fmtMoney(priceC.price!)}
+            </span>
+          )}
           <span className="text-xs text-slate-400">{latest.checked_by}, {fmtWhen(latest.checked_at)}</span>
         </div>
       )}
