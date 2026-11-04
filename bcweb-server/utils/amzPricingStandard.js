@@ -48,7 +48,8 @@ IMPLEMENTATION CHOICES (not owner decisions — flagged so they can be revisited
     price it sold at (the same choice as utils/sellSpeed.js's price steps). Business Report "Units ordered" is gross too.
   - A size's price on a day = the latest of: an amz_price_log real change by its LIVE day (utils/sellSpeed.js's rule), a size-history
     import row's price, a sale's price, and (when `to` is today) amzfeed's price. Same-day priority feed > history > log > sale (a
-    sale can go at the old price on the day of a change). Prices within 1p are the same price (39.98 / 39.99).
+    sale can go at the old price on the day of a change). Prices within 1p are the same price (39.98 / 39.99). A sale's price is
+    used ONLY before the size's first log row — after that the log is the record and odd sale prices (B2B, vouchers) are ignored.
   - When the current price is first seen in a SALE (no log row — the log starts Apr 2026), it went live some time after the last
     sign of the previous price. The window starts the day after that sign (the earliest it can have been live) and the row is
     marked `startUncertain`.
@@ -337,8 +338,15 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
 
   // Price events per size: [day, price, priority, source]. Same-day priority: feed 4 > history 3 > log 2 > sale 1.
   const events = new Map(amzCodes.map((c) => [c, []]));
+  // A sale's price stands in for the price ONLY before the size's first price-log row. Once the log covers a size, a sale is not a
+  // price: odd ones (a B2B price, a voucher — IVES-WHITE-05 sold at £42.12 and £36.21 inside its £41.09–41.69 run, Sep 2026)
+  // restarted the window and hid a Too high for weeks.
+  const firstLog = new Map();
+  for (const l of logR.rows) if (!firstLog.has(l.code) || l.d < firstLog.get(l.code)) firstLog.set(l.code, l.d);
   for (const s of salesR.rows) {
-    if (events.has(s.code) && num(s.soldprice) > 0) events.get(s.code).push([s.d, Number(s.soldprice), 1, 'sale']);
+    if (!events.has(s.code) || !(num(s.soldprice) > 0)) continue;
+    if (firstLog.has(s.code) && s.d >= firstLog.get(s.code)) continue;
+    events.get(s.code).push([s.d, Number(s.soldprice), 1, 'sale']);
   }
   for (const l of logR.rows) if (num(l.new_price) > 0) events.get(l.code).push([l.d, Number(l.new_price), 2, 'log']);
   for (const h of histR.rows) if (h.source === 'import' && num(h.price) > 0) events.get(h.code).push([h.d, Number(h.price), 3, 'history']);
