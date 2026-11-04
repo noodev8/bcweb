@@ -175,4 +175,5 @@ function sellSpeedFields(r) {
   };
 }
 
-module.exports = { SELL_SPEED_CTES, sellSpeedSelectSql, sellSpeedJoinSql, sellSpeedFields };
+// LIVE_DAY / REAL_CHANGE are also read by utils/amzPricingStandard.js (when a size's current price went live) — alias the log as l.
+module.exports = { SELL_SPEED_CTES, sellSpeedSelectSql, sellSpeedJoinSql, sellSpeedFields, LIVE_DAY, REAL_CHANGE };

@@ -33,32 +33,10 @@ Usage:
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const fs = require('fs');
 const { pool } = require('../database');
+const { readCsv } = require('../utils/csv');
 
 const WHO = 'Backfill';
 const CHUNK = 1000;
-
-/** RFC-4180 CSV (quoted fields, commas inside product titles, doubled quotes) -> array of objects keyed by the header. */
-function readCsv(file) {
-  const txt = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
-  const rows = [];
-  let field = '';
-  let row = [];
-  let quoted = false;
-  for (let i = 0; i < txt.length; i += 1) {
-    const ch = txt[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (txt[i + 1] === '"') { field += '"'; i += 1; } else quoted = false;
-      } else field += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',') { row.push(field); field = ''; }
-    else if (ch === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
-    else field += ch;
-  }
-  if (field || row.length) { row.push(field); rows.push(row); }
-  const header = rows.shift() || [];
-  return rows.filter((r) => r.length > 1).map((r) => Object.fromEntries(header.map((h, i) => [h, r[i]])));
-}
 
 const NEEDED = ['MSKU', 'Event Type', 'Quantity', 'Disposition', 'Date and Time'];
 
