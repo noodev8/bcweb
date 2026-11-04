@@ -53,8 +53,9 @@ anything else. Your box keeps a line per scan (src/lib/amzActiveBox.ts); a store
 per unit (unitRows).
 
 SCANNING. A barcode scanner types the code and presses Enter, so the scan box is just an input that commits on Enter and keeps focus —
-scan, scan, scan with no clicks. Every scan goes into YOUR BOX, whichever box is being looked at (the view switches back to it). The
-same code scanned twice is two lines (FIND IT IN 3 SECONDS). − takes that shoe out; Undo takes off the last scan made on this screen.
+scan, scan, scan with no clicks. Every scan goes into YOUR BOX. While a stored box is on show, a scan is REFUSED red (owner,
+2026-11-04: "if im on a packed box dont let me scan" — someone left on a packed box by mistake would think the shoe went into it);
+go back to your box first. The same code scanned twice is two lines (FIND IT IN 3 SECONDS). − takes that shoe out; Undo takes off the last scan made on this screen.
 
 SCAN CHECK (owner, 2026-10-02). Every scan is looked up (GET /amz-shipment-scan — our code, the EAN or the FNSKU all resolve to the
 product) BEFORE it goes in the box, and is refused if it isn't a product we know, or if Amazon hasn't given it an FNSKU ("it needs to have
@@ -357,14 +358,19 @@ function Packing({ initial, autoBack, onShipped }: {
     setConfirmEmpty(false);
     setConfirmStored(null);
     setBoxError(null);
+    setScanError(null);  // a "you're on Box N" refusal is answered by coming back
   }
 
   // SCAN CHECK (see the header): look the scan up, refuse it red if it's unknown or has no FNSKU, otherwise put it in your box under its
-  // real code. Always your box — if a packed box is on show, the view goes back to yours.
+  // real code. Always your box — and only while your box is on show: on a stored box the scan is refused (see SCANNING).
   async function onScan() {
     const raw = scan.trim().toUpperCase();
     setScan('');
     if (!raw) return;
+    if (shown) {
+      refuse({ scan: raw, message: `You’re on Box ${shown.id}, not your box. Go back to your box to scan. Not added.` });
+      return;
+    }
     let hit = scanCache.current.get(raw);
     if (!hit) {
       const res = await lookupAmzShipmentScan(raw);
@@ -384,7 +390,6 @@ function Packing({ initial, autoBack, onShipped }: {
     }
     const { code, sku, fnsku, groupid, title } = hit;
     addToActiveBox(user, { code, sku, fnsku, groupid, title });
-    if (!onMine) showMine();
     setHistory((h) => [...h, code]);
     // Scanned the FNSKU itself -> the shoe already wears its label; don't print another (see FNSKU LABELS in the header).
     const printed = printOn && raw !== fnsku.toUpperCase();
