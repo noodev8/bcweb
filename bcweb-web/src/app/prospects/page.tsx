@@ -187,11 +187,13 @@ export default function ProspectsPage() {
   // THE LIST STAYS PUT while you work (owner, 2026-11-04: "getting mixed up with the latest being moved to the top. And the new one
   // moved to the top … want it obvious which one we are editing and which one we did"). The order is worked out from what had
   // happened by sortFrom — when the page opened, or the last Refresh — so a line you check, comment on or edit keeps its place, and a
-  // line added since goes at the top tinted blue NEW. ONE green ✓ sits on the line you last OPENED, changed or not (owner: "after a
-  // second change I can see BOTH ticks … have one tick and clear the rest … even if opened it only so I know what I'm looking
-  // through") — with the list still, everything above it is what you've been through. Refresh re-sorts and clears both marks.
+  // line added since goes at the top tinted blue NEW. The line you last OPENED is tinted green (owner: "after a second change I can
+  // see BOTH ticks … have one tick and clear the rest … even if opened it only so I know what I'm looking through") — with the list
+  // still, everything above it is what you've been through — and it carries a ✓ only if it was CHANGED while open (owner: "The
+  // highlighted line is enough if not changed"). Changed = its latest change differs from when it was opened: both are server
+  // stamps, so the PC's clock doesn't matter. Refresh re-sorts and clears the marks.
   const [sortFrom, setSortFrom] = useState(() => new Date().toISOString());
-  const [lastOpened, setLastOpened] = useState<number | null>(null);
+  const [lastOpened, setLastOpened] = useState<{ id: number; stamp: string } | null>(null);
   async function onRefresh() {
     setRefreshing(true);
     await q.refresh();
@@ -241,7 +243,10 @@ export default function ProspectsPage() {
   function setOpenId(id: number | null) {
     if (id == null && openId != null) justClosedRef.current = openId;
     setOpenIdRaw(id);
-    if (id != null) setLastOpened(id);
+    if (id != null) {
+      const row = rows.find((r) => r.id === id);
+      setLastOpened({ id, stamp: row ? lastChange(row) : '' });
+    }
     setFrozen(id == null ? null : new Map(shown.map((p, i) => [p.id, i])));
   }
   useEffect(() => {
@@ -355,7 +360,9 @@ export default function ProspectsPage() {
           <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {shown.map((p) => (p.id === openId
               ? <ProspectCard key={p.id} p={p} onChanged={() => q.refresh()} onClose={() => setOpenId(null)} />
-              : <ProspectRow key={p.id} p={p} dim={openId != null} mark={archive ? null : p.id === lastOpened ? 'here' : isNewSince(p, sortFrom) ? 'new' : null} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
+              : <ProspectRow key={p.id} p={p} dim={openId != null} mark={archive ? null
+                : p.id === lastOpened?.id ? (lastChange(p) !== lastOpened.stamp ? 'changed' : 'here')
+                : isNewSince(p, sortFrom) ? 'new' : null} onOpen={() => setOpenId(p.id)} onCut={() => setCut((prev) => new Set(prev).add(p.id))} />))}
           </div>
         )}
         {!archive && !q.isLoading && (
@@ -538,7 +545,7 @@ function CheckFields({ value, onChange }: { value: CheckInput; onChange: (v: Che
 // ---- One line --------------------------------------------------------------------------------------------------------------------
 // ---- One find, closed: a single narrow row. Click it to open it (which closes any other). ------------------------------------------
 function ProspectRow({ p, dim, mark, onOpen, onCut }: {
-  p: Prospect; dim: boolean; mark: 'new' | 'here' | null; onOpen: () => void; onCut: () => void;
+  p: Prospect; dim: boolean; mark: 'new' | 'here' | 'changed' | null; onOpen: () => void; onCut: () => void;
 }) {
   const rankC = latestWith(p, 'rank');
   const priceC = latestWith(p, 'price');
@@ -549,7 +556,7 @@ function ProspectRow({ p, dim, mark, onOpen, onCut }: {
   return (
     <div id={`prospect-row-${p.id}`} className={'scroll-mt-4 flex items-center border-l-4 transition-opacity '
       + (mark === 'new' ? 'border-sky-400 bg-sky-50 hover:bg-sky-100 '
-        : mark === 'here' ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 '
+        : mark === 'here' || mark === 'changed' ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 '
         : 'border-transparent hover:bg-slate-50 ')
       + (dim ? 'opacity-40 hover:opacity-100' : '')}>
     <button type="button" onClick={onOpen}
@@ -562,8 +569,8 @@ function ProspectRow({ p, dim, mark, onOpen, onCut }: {
       )}
       <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{p.name}</span>
       {mark === 'new' && <span className="shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
-      {mark === 'here' && (
-        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white" title="The line you last opened">✓</span>
+      {mark === 'changed' && (
+        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white" title="Changed when you last opened it">✓</span>
       )}
       {p.have && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">DUPLICATE</span>}
       <span className="hidden w-24 shrink-0 tabular-nums text-slate-700 sm:block">{rankC ? `Rank ${rankC.rank}` : ''}</span>
