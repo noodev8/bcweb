@@ -41,7 +41,7 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '−£1', delta: -1 }, { label: '−50p', delta: -0.5 }, { label: '−30p', delta: -0.3 },
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
-const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 // Same look as Shopify's bulk bar (owner, 2026-09-24). The channel is still unmistakable once the bar opens: its banner carries the
 // Amazon logo and "Apply queues a Seller Central upload — no live change" (components/BulkActionBar CHANNEL_BANNER).
 const AMZ_TONE: BulkTone = {
@@ -382,7 +382,7 @@ function AmzFindContent() {
           channel="amazon"
           count={selected.size}
           nudges={AMZ_NUDGES}
-          reviewChips={AMZ_REVIEW_CHIPS}
+          reviewChips={REVIEW_PERIODS}
           tone={AMZ_TONE}
           busy={marking}
           progress={progress}

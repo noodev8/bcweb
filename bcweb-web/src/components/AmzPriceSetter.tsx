@@ -11,7 +11,7 @@ Purpose: The SKU-grain price control on the Amazon drill. Leaner than the Shopif
    Current: 37.99   FBA: 96 (+0)   Net margin ex VAT: 12.59 (40%)   floor 19.07   RRP 45.00
    New price:  [−£1][−50p][−30p]  [ 38.29 ]  [+30p][+50p][+£1]      <- big editable field; margin recalculates live
    Note:       [ optional — why the price is changing (saved to the price log) ]
-   Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days                <- single-select; None (default) = don't park (mirrors Shopify).
+   Review in:  (None)(3)(5)(7)(10) days — lib/reviewPeriods.ts                <- single-select; None (default) = don't park (mirrors Shopify).
    [ Apply price → basket ]   [ No change — just set review ]   [ Cancel ]
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
@@ -28,7 +28,7 @@ import ChannelBadge from '@/components/ChannelBadge';
 import { AmzDrillHeader } from '@/lib/api';
 
 // Park-period pills after an apply — the SAME day set as the Shopify setter (owner: keep the two drills identical). Raw days, None default.
-const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
 // history reports (matches the Shopify setter and the bulk bar). The amz_price_log column is untouched.

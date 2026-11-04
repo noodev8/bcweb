@@ -62,7 +62,7 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '−£1', delta: -1 }, { label: '−50p', delta: -0.5 }, { label: '−30p', delta: -0.3 },
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
-const AMZ_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
 const NO_SELECTION: Set<string> = new Set();
@@ -427,7 +427,7 @@ function SegmentContent() {
           channel="amazon"
           count={selected.size}
           nudges={AMZ_NUDGES}
-          reviewChips={AMZ_REVIEW_CHIPS}
+          reviewChips={REVIEW_PERIODS}
           tone={AMZ_TONE}
           busy={marking}
           progress={progress}

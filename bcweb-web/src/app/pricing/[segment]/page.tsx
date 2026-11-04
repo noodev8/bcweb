@@ -69,7 +69,7 @@ const SHP_NUDGES: Nudge[] = [
   { label: '−£1', delta: -1 }, { label: '−50p', delta: -0.5 },
   { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 }, { label: '+£2', delta: 2 },
 ];
-const SHP_REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial — see that module's header). Never mutated:
 // every toggle builds a new Set from the previous one.
@@ -465,7 +465,7 @@ function SegmentContent() {
           channel="shopify"
           count={selected.size}
           nudges={SHP_NUDGES}
-          reviewChips={SHP_REVIEW_CHIPS}
+          reviewChips={REVIEW_PERIODS}
           tone={SHP_TONE}
           busy={marking}
           progress={progress}

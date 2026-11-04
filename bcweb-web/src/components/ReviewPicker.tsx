@@ -11,7 +11,8 @@ Purpose: "Review in (None) 3 5 7 10 14 30 90 days  [Set review]  Clear review" �
 
 import { useState } from 'react';
 
-// The pricing screens' review periods (components/PriceSetter REVIEW_CHIPS), so they all read the same.
+// AMZ loaded / New Additions are to-do reviews, not pricing — they keep this longer list on purpose (the pricing screens were cut
+// to 3 · 5 · 7 · 10 on 2026-11-04, lib/reviewPeriods.ts; owner: leave these out "as they are not pricing").
 const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
 
 export default function ReviewPicker({ busy, disabled, canClear, onSet }: {

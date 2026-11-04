@@ -25,7 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import ChannelBadge from '@/components/ChannelBadge';
 
 // Same review day-set as the PriceSetter. No "None" here — snoozing a matched style needs a real period (like the setter's park action).
-const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 interface Props {
   groupid: string;

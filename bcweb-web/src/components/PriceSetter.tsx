@@ -10,7 +10,7 @@ Purpose: The reduced-typing price control. Layout mirrors the owner's desktop ap
    New price  current £36.95                                    <- current is a quiet note on the label line
                [-£1][-50p]  [ 37.95 ]  [+50p][+£1][+£2]        <- big editable field
    Note:       [ optional — why the price is changing (saved to the price log) ]
-   Review in:  (None)(3)(5)(7)(10)(14)(30)(90) days            <- single-select; None (default) = no review. No auto-suggested pick.
+   Review in:  (None)(3)(5)(7)(10) days — lib/reviewPeriods.ts            <- single-select; None (default) = no review. No auto-suggested pick.
    [ Apply price ]   [ No change — just set review ]   [ Cancel ]
 
 Rules, enforced here for UX and AGAIN on the server (never trust the client):
@@ -22,7 +22,7 @@ Rules, enforced here for UX and AGAIN on the server (never trust the client):
   - "No change — just set review" (park) needs a real period, so it's disabled while None is selected.
   - Note is optional and only enabled on a real price change; it's saved to the price_change_log row (was hardcoded blank before).
   - A price change REQUIRES a review period (chip). "No change — just set review" needs only a chip.
-  - Suggested review per move type: raise ~7, cut ~14, hold ~30 (suggest; user can change).
+  - Review periods: lib/reviewPeriods.ts (3 · 5 · 7 · 10 since 2026-11-04 — 14 / 30 / 90 taken out, owner). No suggested pick.
 =======================================================================================================================================
 */
 
@@ -30,7 +30,7 @@ import { useMemo, useState } from 'react';
 import ChannelBadge from '@/components/ChannelBadge';
 import { DrillHeader, SizeRow } from '@/lib/api';
 
-const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Core Birkenstock sizes — our at-a-glance "is the run intact?" guardrail. Full core = it'll sell through, so a raise is safe; a
 // gappy core is the classic "looks dead but it's just sold-out cores" trap before a cut (CLAUDE.md size-curve principle).

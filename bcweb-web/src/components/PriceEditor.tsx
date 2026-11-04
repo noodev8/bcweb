@@ -26,7 +26,7 @@ import ShopifyPushNote from '@/components/ShopifyPushNote';
 import GooglePushNote from '@/components/GooglePushNote';
 
 // Same review options as the pricing screen's PriceSetter (kept in sync deliberately).
-const REVIEW_CHIPS = [3, 5, 7, 10, 14, 30, 90];
+import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
 // history reports (matches the pricing setters + bulk bar, which write to the same price_change_log). The DB column is untouched.
