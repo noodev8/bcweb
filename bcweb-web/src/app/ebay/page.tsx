@@ -93,8 +93,15 @@ function signedMoney(v: number | null) {
 function londonTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
 }
-function londonDay(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+// '2 Nov' — short, so the listed and renew dates fit one column together (owner, 2026-11-04: "The dates can be together").
+function shortDay(iso: string) {
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+}
+
+// Whole London days since an ISO time (0 = today).
+function daysSince(iso: string) {
+  const day = (d: Date) => { const [y, m, dd] = d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' }).split('-').map(Number); return Date.UTC(y, m - 1, dd); };
+  return Math.round((day(new Date()) - day(new Date(iso))) / 86400000);
 }
 
 type View = 'on' | 'not';
@@ -239,7 +246,7 @@ function OnEbay() {
                     <Th className="text-center">Watch</Th>
                     <Th className="text-center" title="Listing page views, last 30 days (eBay's traffic report — a day or two behind). Hover a number for times shown and how many of those were viewed.">Views</Th>
                     <Th className="text-left">Postage</Th>
-                    <Th className="pr-3 text-left" title="Good 'Til Cancelled listings renew monthly">Renews</Th>
+                    <Th className="pr-3 text-left" title="When it went live on eBay → its next monthly renewal. Hover for days live.">Listed → Renews</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -370,7 +377,11 @@ function ListingRow({ listing: l, multi, opens, isOpen, onToggle }: { listing: E
         <span className="text-slate-500"> · {service}</span>
       </td>
       <td className="whitespace-nowrap py-2 pl-2 pr-3">
-        {l.ends ? <span className="text-slate-600">{londonDay(l.ends)}</span> : '—'}
+        {/* LISTED first (what the Views are measured against), the renewal after it in grey. */}
+        <span title={l.started ? `Live ${daysSince(l.started)} day${daysSince(l.started) === 1 ? '' : 's'}` : undefined}>
+          <span className="text-slate-700">{l.started ? shortDay(l.started) : '—'}</span>
+          <span className="text-slate-400"> → {l.ends ? shortDay(l.ends) : '—'}</span>
+        </span>
       </td>
     </tr>
   );
