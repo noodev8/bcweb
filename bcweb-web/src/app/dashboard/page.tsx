@@ -45,7 +45,6 @@ import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSkuHealth } from '@/lib/api';
-import { pairsSummary } from '@/lib/process';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -212,11 +211,12 @@ function Daily() {
   const due = useApiQuery('dashboard-pricing-due', () => getPricingDueCounts());
   // The new-sizes data New Additions lists (GET /process-overview).
   const overview = useApiQuery('process-overview', () => getProcessOverview());
-  // The % of new PAIRS (styles added in 90 days) bought and not sold — a score for the buying, to keep LOW (owner, 2026-10-27: "get
-  // better prospects that sell and keep this figure low"; "switch to pairs"). Every new style, due a review or not: the review date is
-  // New Additions' work list and doesn't enter it. lib/process.ts → pairsSummary, the same figure New Additions shows.
-  const soldPct = overview.data ? `${100 - pairsSummary(overview.data.rows).unsoldPct}%` : null;
-  const newStyles = overview.data ? overview.data.styles : null;
+  // PROSPECT PERFORMANCE (owner, 2026-11-05): of every SKU FIRST booked in on Goods In in the last 90 days, the % that has made a sale
+  // (any channel, eBay included). Once sold it is ticked off — buying or selling more changes nothing; new stock landing pulls it down
+  // on purpose ("tells me to slow down getting new stuff until the percentage is healthy"). Rules: bcweb-server/utils/processMap.js →
+  // NEW_SKUS_SQL. New Additions keeps its own style-based list and pairs strip.
+  const newSkus = overview.data ? overview.data.newSkus : null;
+  const soldPct = newSkus ? `${newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}%` : null;
   const prospects = overview.data ? overview.data.prospects : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
@@ -274,8 +274,8 @@ function Daily() {
           </div>
         </div>
 
-        <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newStyles === null ? 'Styles added in 90 days' : `${newStyles} styles added in 90 days`}>
-          <Big n={soldPct} unit="of new pairs sold" />
+        <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newSkus === null ? 'New SKUs arrived in 90 days' : `${newSkus.sold} of ${newSkus.total} new SKUs arrived in 90 days`}>
+          <Big n={soldPct} unit="have sold" />
         </DailyLink>
 
         <DailyLink href="/prospects" icon={LightBulbIcon} title="Prospects" sub="New products to look into">

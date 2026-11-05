@@ -123,9 +123,37 @@ const NEW_SIZES_SQL = `
             CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 
+// DAILY'S NEW STUFF FIGURE — PROSPECT PERFORMANCE (owner, 2026-11-05). A different list from NEW_SIZES_SQL on purpose:
+//   - IN: every SKU whose EARLIEST-EVER Goods In arrival (incoming_stock, read across ALL of it) is in the last NEW_DAYS days. The
+//     style's created date plays no part ("a new size added to an old style" counts from its own first arrival). A REBUY of a SKU first
+//     booked in before the window is OUT, however long ago — "anything that has arrived over 90 days is a different problem" (Slow /
+//     Clearance). Goods In starts 2024-12-31 and may be pruned to ~3 years; a SKU with no arrival on record that is bought again then
+//     counts as new — owner: "treat them as new when they are rebought".
+//   - SOLD: netted a sale on ANY channel (AMZ, SHP, CM3, EBY — eBay included, owner) ON OR AFTER that first arrival. Once sold it is
+//     ticked off for good: "a SKU arrives and is sold, it is notched off. We buy more, sell more is irrelevant."
+//   - Figure = sold ÷ in, shown as a %. New stock landing pulls it DOWN on purpose — the owner's signal to slow buying until it is
+//     healthy. Live, ~30ms over all of Goods In; nothing stored.
+const NEW_SKUS_SQL = `
+  WITH f AS (
+    SELECT code, MIN(arrival_date) AS first_in
+      FROM incoming_stock
+     GROUP BY code
+    HAVING MIN(arrival_date) >= (now() AT TIME ZONE 'Europe/London')::date - $1::int
+  ),
+  s AS (
+    SELECT f.code
+      FROM f JOIN sales x ON x.code = f.code AND x.solddate >= f.first_in
+     WHERE x.channel IN ('AMZ', 'SHP', 'CM3', 'EBY')
+     GROUP BY f.code
+    HAVING SUM(x.qty) > 0
+  )
+  SELECT (SELECT COUNT(*) FROM f)::int AS total, (SELECT COUNT(*) FROM s)::int AS sold
+`;
+
 module.exports = {
   NEW_DAYS,
   FIRST_REVIEW_DAYS,
   CHANNELS,
   NEW_SIZES_SQL,
+  NEW_SKUS_SQL,
 };

@@ -4949,6 +4949,8 @@ export interface ProcessSizeRow {
 export interface ProcessOverview {
   newDays: number;
   prospects: number;
+  // Daily's New stuff (2026-11-05): SKUs FIRST booked in on Goods In in 90 days, and how many have sold since (bcweb-server/utils/processMap.js → NEW_SKUS_SQL).
+  newSkus: { total: number; sold: number };
   styles: number;
   rows: ProcessSizeRow[];
 }
@@ -4985,7 +4987,7 @@ export function saveSkuHealth() {
 
 export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
-    newDays: b.newDays, prospects: b.prospects, styles: b.styles, rows: b.rows || [],
+    newDays: b.newDays, prospects: b.prospects, newSkus: b.newSkus || { total: 0, sold: 0 }, styles: b.styles, rows: b.rows || [],
   }));
 }
 // Review new styles for `reviewDays` days (0 = clear — back to due at created + 20 days). Writes skusummary.next_new_review.

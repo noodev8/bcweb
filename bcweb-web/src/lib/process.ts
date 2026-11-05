@@ -13,8 +13,9 @@ export const isSold = (r: ProcessSizeRow) => CHANNELS.some((c) => r.channels[c.i
 // Units sold on every channel together, net of returns (a channel that netted below 0 counts 0).
 export const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Math.max(r.channels[c.id].net, 0), 0);
 
-// New stuff's figure, in PAIRS (owner, 2026-10-27): pairs bought (Goods In) and sold, and unsold = bought − sold as a % of bought —
-// kept LOW by better prospects. Shared so Daily and New Additions show the same number. Nothing bought = 0%.
+// New Additions' figure strip, in PAIRS (owner, 2026-10-27): pairs bought (Goods In) and sold, and unsold = bought − sold as a % of bought —
+// kept LOW by better prospects. Nothing bought = 0%. Daily no longer reads it (2026-11-05: its New stuff is per SKU from first arrival,
+// bcweb-server/utils/processMap.js → NEW_SKUS_SQL); the strip stays on pairs until the owner discusses it.
 // A size's sales count only UP TO the pairs bought (owner, 2026-10-27): a test listing on placeholder stock (e.g. the old UKD-Tests rack, added on
 // Inventory, never through Goods In) that sells counts nothing until the real pair is ordered and booked in on Goods In — then it is
 // 1 bought, 1 sold. Without the cap the sale would count against 0 bought and flatter the figure.

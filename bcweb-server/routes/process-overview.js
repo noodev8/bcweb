@@ -7,6 +7,8 @@ Purpose: The new sizes and the prospects total, for the dashboard's Daily (New s
          Reports → New Additions (the list). Built 2026-10-25 for the Today screen (/process), which was removed 2026-10-26 — the
          route kept its name; its blocks, allowance, summary and clearance went with the screen.
            - prospects: one plain total of lines on the Prospects list (the Archive left out).
+           - newSkus: Daily's New stuff figure (2026-11-05) — SKUs FIRST booked in on Goods In in the last 90 days, and how many of
+             them have netted a sale since (any channel, eBay included). utils/processMap.js → NEW_SKUS_SQL.
            - NEW SIZES: every size of every style created in the last 90 days, with its sales on EACH channel (Amazon, Shopify, shop
              counter) and its stock. The rules live in utils/processMap.js — read its header.
            - Each size carries its STYLE's review (2026-10-27): reviewOn (the date set, or null), dueOn (that, or created + 20 days)
@@ -19,6 +21,7 @@ Success Response:
   "return_code": "SUCCESS",
   "newDays": 90,
   "prospects": 42,
+  "newSkus": { "total": 171, "sold": 43 },              // Daily's New stuff: sold ÷ total
   "styles": 30,                                         // new styles behind the sizes
   "rows": [
     { "code": "0051793-38", "groupid": "0051793", "title": "Arizona Black", "brand": "Birkenstock", "size": "38",
@@ -45,7 +48,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { NEW_DAYS, CHANNELS, NEW_SIZES_SQL } = require('../utils/processMap');
+const { NEW_DAYS, CHANNELS, NEW_SIZES_SQL, NEW_SKUS_SQL } = require('../utils/processMap');
 
 router.use(verifyToken);
 
@@ -53,9 +56,10 @@ const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
 router.get('/', async (req, res) => {
   try {
-    const [prospects, sizes] = await Promise.all([
+    const [prospects, sizes, newSkus] = await Promise.all([
       query(`SELECT COUNT(*)::int AS n FROM prospect WHERE archived_at IS NULL`),
       query(NEW_SIZES_SQL, [NEW_DAYS]),
+      query(NEW_SKUS_SQL, [NEW_DAYS]),
     ]);
 
     const styles = new Set();
@@ -82,6 +86,7 @@ router.get('/', async (req, res) => {
       return_code: 'SUCCESS',
       newDays: NEW_DAYS,
       prospects: prospects.rows[0].n,
+      newSkus: { total: newSkus.rows[0].total, sold: newSkus.rows[0].sold },
       styles: styles.size,
       rows,
     });
