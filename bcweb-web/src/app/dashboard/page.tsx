@@ -23,10 +23,8 @@ duplicates"). The page reads top to bottom in order of importance:
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
                   key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
      It replaced the /daily screen (that route now redirects here) and the Daily card that opened it — one home for the four.
-  1b. SKU HEALTH — a thin strip under Daily, OUTSIDE the band (owner, 2026-11-03: "put those SKU health figures on the dashboard
-     home page without it affecting the others. They just have to be the numbers and click to go to the screen"). The three live
-     numbers only (GET /sku-health-overview, the same SWR key as the screen); one link to /sku-health. Not a Daily job — kept out of
-     the band so the five jobs read as before. The Admin tile stays too.
+  1b. SKU HEALTH strip — REMOVED 2026-11-05 (owner: "Take it off the dashboard"; "688 skus sold just sounds like a lot more" than New
+     stuff's 25% — a whole-range count beside a new-arrivals % read as comparable). The screen stays on its Admin tile.
   2. SEARCH — the product lookup (components/ProductSearchBox). It sits ABOVE Daily, first on the page (owner, 2026-10-26).
   3. EVERYTHING ELSE — the menu, EVERY SCREEN ONCE (Sales is in Daily, so not here). Until 2026-10-26 screens were deliberately repeated across "mindset" groups
      and a second find-by-part row; the owner asked for no duplicates, so the two rows were merged into one set of groups, each
@@ -44,7 +42,8 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSkuHealth } from '@/lib/api';
+import { SKU_HEALTH } from '@/lib/features';
+import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList } from '@/lib/api';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -165,7 +164,8 @@ const GROUPS: Group[] = [
       { title: 'Update Amazon', subtitle: 'Load Seller Central reports', description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.', href: '/update-amazon', icon: ArrowUpTrayIcon },
       { title: 'Finance', subtitle: 'Close the month', description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.', href: '/finance', icon: CalculatorIcon },
       { title: 'Facebook', subtitle: 'Social post', description: 'Queue and publish the daily Facebook post.', href: '/social', icon: MegaphoneIcon },
-      { title: 'SKU health', subtitle: 'Sellers, stock and what has not sold', description: 'Three numbers: SKUs that sold in 90 days, SKUs in stock, and SKUs not sold in 12 months.', href: '/sku-health', icon: PresentationChartLineIcon },
+      // Hidden while SKU_HEALTH is false (lib/features.ts, owner 2026-11-05).
+      ...(SKU_HEALTH ? [{ title: 'SKU health', subtitle: 'Sellers, stock and what has not sold', description: 'Three numbers: SKUs that sold in 90 days, SKUs in stock, and SKUs not sold in 12 months.', href: '/sku-health', icon: PresentationChartLineIcon }] : []),
       { title: 'Log', subtitle: 'Who did what, and when', description: 'Every Goods In, stock adjustment, order sync and import. Search and filter by section or person.', href: '/analytics/activity-log', icon: DocumentMagnifyingGlassIcon },
     ],
   },
@@ -189,8 +189,6 @@ export default function DashboardPage() {
       <Daily />
 
       <AmzHistoryWarning />
-
-      <SkuHealthStrip />
 
       {/* Two rows of three; each row's panel opens directly under it. No heading (owner, 2026-11-01: remove "Everything else") —
           the first row keeps the gap below Daily that the heading used to give. */}
@@ -307,34 +305,6 @@ function AmzHistoryWarning() {
       <span className="font-semibold">No Amazon stock report for {h.daysSince} days</span>
       <span className="text-amber-800">Last {h.lastDay}. Import the FBA Inventory report on Update Amazon, or these days have no stock or price history.</span>
       <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-amber-600" />
-    </Link>
-  );
-}
-
-/* =====================================================================================================================================
-   SKU HEALTH — the three numbers, one link to the screen. Quiet on purpose (not a job). A count still loading or failed shows a dash.
-===================================================================================================================================== */
-function SkuHealthStrip() {
-  const live = useApiQuery('sku-health', getSkuHealth);
-  const h = live.data ?? null;
-  const n = (v: number | undefined) => (v === undefined ? '–' : v.toLocaleString('en-GB'));
-  const items: { label: string; v: number | undefined }[] = [
-    { label: 'sellers (90 days)', v: h?.sellers90 },
-    { label: 'in stock now', v: h?.inStock },
-    { label: 'not sold in 12 months', v: h?.notSold12m },
-  ];
-  return (
-    <Link
-      href="/sku-health"
-      className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition hover:border-brand-500 hover:shadow-md focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
-    >
-      <span className="font-semibold text-slate-900">SKU health</span>
-      {items.map((i) => (
-        <span key={i.label} className="text-slate-500">
-          <span className="text-lg font-semibold tabular-nums text-slate-900">{n(i.v)}</span> {i.label}
-        </span>
-      ))}
-      <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-slate-400" />
     </Link>
   );
 }

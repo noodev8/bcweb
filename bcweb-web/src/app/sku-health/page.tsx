@@ -7,28 +7,35 @@ Page: /sku-health — the Admin screen's three numbers (owner, 2026-11-03: "keep
   - Not sold in 12 months: SKUs in the size map with no sale in a year — the number to bring down. Not called "dead" on screen.
 
 Layout (owner, 2026-11-03: "too many numbers spread everywhere and not sure which dates im looking at"):
-  - One line under the title says the boxes are LIVE, with today's date, and whether this week has been saved.
-  - Each box: the live number, ONE comparison (against the last saved week, dated), and a small line of the saved weeks with the first
+  - One line under the title says the boxes are LIVE, with today's date.
+  - Each box: the live number, ONE comparison (against last week's Monday, dated), and a small line of the weeks with the first
     and last dates under it — the trend is read from the shape, not from a column of deltas.
   - The week-by-week figures are still there but folded away ("Show the weekly figures"), dates written out ("Mon 26 Oct 2026"),
     the change shown only as a small arrow and number in its own column, one metric per column group.
-Save snapshot writes THIS week's row (keyed on the Monday); pressing it again in the same week updates that row.
+NOTHING IS SAVED (owner, 2026-11-05: "Can this just be a snapshot when I look at it. Just feels unfinished"): the weekly figures for
+Sellers and Not sold in 12 months are worked out live from sales on every open (GET /sku-health-history), so there are never gaps. The
+Save button, its route and the sku_health_snapshot table it wrote are retired (the table is left in the DB, unused).
+In stock now is a LIVE NUMBER ONLY: no trend line, no "since last week", not in the weekly table — stock on hand can't be rebuilt for
+past dates.
 Kept off the Daily hero so staff are not confused. A failed load shows a message, never a broken page.
 =======================================================================================================================================
 */
 
 import { useState } from 'react';
 import AppShell from '@/components/AppShell';
-import { getSkuHealth, getSkuHealthHistory, saveSkuHealth, SkuHealthRow } from '@/lib/api';
+import { getSkuHealth, getSkuHealthHistory, SkuHealthRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
 type Key = 'sellers90' | 'inStock' | 'notSold12m';
+type HistoryKey = Exclude<Key, 'inStock'>;
 
-const METRICS: { key: Key; label: string; hint: string; goodWhenUp: boolean; goal: string }[] = [
-  { key: 'sellers90', label: 'Sellers (90 days)', hint: 'SKUs that sold in the last 90 days, any channel', goodWhenUp: true, goal: 'Aim: up' },
-  { key: 'inStock', label: 'In stock now', hint: 'SKUs with stock, locally or at FBA', goodWhenUp: true, goal: 'Aim: up' },
-  { key: 'notSold12m', label: 'Not sold in 12 months', hint: 'SKUs with no sale in a year', goodWhenUp: false, goal: 'Aim: down' },
+// history: false = live number only (see the header).
+const METRICS: { key: Key; label: string; hint: string; goodWhenUp: boolean; goal: string; history: boolean }[] = [
+  { key: 'sellers90', label: 'Sellers (90 days)', hint: 'SKUs that sold in the last 90 days, any channel', goodWhenUp: true, goal: 'Aim: up', history: true },
+  { key: 'inStock', label: 'In stock now', hint: 'SKUs with stock, locally or at FBA', goodWhenUp: true, goal: 'Aim: up', history: false },
+  { key: 'notSold12m', label: 'Not sold in 12 months', hint: 'SKUs with no sale in a year', goodWhenUp: false, goal: 'Aim: down', history: true },
 ];
+const HISTORY_METRICS = METRICS.filter((m) => m.history) as ((typeof METRICS)[number] & { key: HistoryKey })[];
 
 const fmt = (n: number) => n.toLocaleString('en-GB');
 
@@ -41,7 +48,7 @@ const longDate = (iso: string) =>
   dateOf(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const shortDate = (iso: string) => dateOf(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-// This week's Monday as YYYY-MM-DD (the key the Save button writes).
+// This week's Monday as YYYY-MM-DD (the weeks are keyed on Mondays).
 function thisMonday(): string {
   const t = new Date();
   const back = (t.getDay() + 6) % 7;
@@ -58,10 +65,10 @@ function Change({ d, goodWhenUp }: { d: number; goodWhenUp: boolean }) {
   return <span className={tone(d, goodWhenUp)}>{d > 0 ? '▲' : '▼'} {fmt(Math.abs(d))}</span>;
 }
 
-// A small line of the saved weeks, oldest left. Weeks with no figure (in stock before saving started) are skipped.
+// A small line of the weeks, oldest left.
 function Spark({ points, goodWhenUp }: { points: { date: string; v: number }[]; goodWhenUp: boolean }) {
   if (points.length < 2) {
-    return <p className="mt-4 text-xs text-slate-400">The trend line starts once a few weeks are saved.</p>;
+    return <p className="mt-4 text-xs text-slate-400">No weekly figures to draw.</p>;
   }
   const W = 300, H = 56, pad = 4;
   const vals = points.map((p) => p.v);
@@ -94,31 +101,15 @@ function Spark({ points, goodWhenUp }: { points: { date: string; v: number }[]; 
 export default function SkuHealthPage() {
   const live = useApiQuery('sku-health', getSkuHealth);
   const history = useApiQuery('sku-health-history', getSkuHealthHistory);
-  const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const [showWeeks, setShowWeeks] = useState(false);
 
   const d = live.data;
   const rows: SkuHealthRow[] = history.data ?? []; // newest first
   const oldestFirst = [...rows].reverse();
   const monday = thisMonday();
-  const thisWeek = rows.find((r) => r.date === monday) ?? null;
-  // The comparison for the live boxes: the newest saved week BEFORE this one (this week's own row is today's figure, near enough).
+  // The comparison for the live boxes: the newest week BEFORE this one (this week's own Monday is today's figure, near enough).
   const lastWeek = rows.find((r) => r.date < monday) ?? null;
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  async function onSave() {
-    setSaving(true);
-    setNote(null);
-    const r = await saveSkuHealth();
-    setSaving(false);
-    if (!r.success) {
-      setNote(r.error || 'Could not save the snapshot.');
-      return;
-    }
-    setNote(r.data?.updated ? 'This week’s row has been updated.' : 'This week saved.');
-    await Promise.all([live.refresh(), history.refresh()]);
-  }
 
   return (
     <AppShell title="SKU health" backHref="/dashboard?g=reports" backLabel="Dashboard">
@@ -127,22 +118,6 @@ export default function SkuHealthPage() {
         <p className="text-sm text-slate-600">
           <span className="font-medium text-slate-900">Live today</span> — {today}
         </p>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">
-            {note ??
-              (thisWeek
-                ? `This week (from ${shortDate(monday)}) saved${thisWeek.savedBy ? ` by ${thisWeek.savedBy}` : ''}`
-                : `This week (from ${shortDate(monday)}) not saved yet`)}
-          </span>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : thisWeek ? 'Update this week' : 'Save this week'}
-          </button>
-        </div>
       </div>
 
       {live.error ? (
@@ -151,10 +126,9 @@ export default function SkuHealthPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           {METRICS.map((m) => {
             const value = d?.[m.key];
-            const before = lastWeek?.[m.key];
-            const points = oldestFirst
-              .filter((r) => r[m.key] !== null)
-              .map((r) => ({ date: r.date, v: r[m.key] as number }));
+            const hk = m.history ? (m.key as HistoryKey) : null;
+            const before = hk ? lastWeek?.[hk] : undefined;
+            const points = hk ? oldestFirst.map((r) => ({ date: r.date, v: r[hk] })) : [];
             return (
               <div key={m.key} className="rounded-xl border border-slate-200 bg-white px-6 py-5">
                 <div className="flex items-baseline justify-between gap-2">
@@ -173,7 +147,11 @@ export default function SkuHealthPage() {
                     m.hint
                   )}
                 </div>
-                <Spark points={points} goodWhenUp={m.goodWhenUp} />
+                {m.history ? (
+                  <Spark points={points} goodWhenUp={m.goodWhenUp} />
+                ) : (
+                  <p className="mt-4 text-xs text-slate-400">Live figure only — no weekly history kept.</p>
+                )}
                 {before !== null && before !== undefined && lastWeek && (
                   <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-400">{m.hint}</div>
                 )}
@@ -184,8 +162,8 @@ export default function SkuHealthPage() {
       )}
 
       <p className="mt-3 text-xs text-slate-500">
-        Boxes are today&rsquo;s live figures. Each line is one point per week (the figure on that Monday); stock was not kept before
-        saving started, so its line begins with the first saved week.
+        Boxes are today&rsquo;s live figures. Each line is one point per week (the figure on that Monday). In stock is today&rsquo;s figure
+        only.
       </p>
 
       <div className="mt-8">
@@ -201,14 +179,14 @@ export default function SkuHealthPage() {
           (history.error ? (
             <p className="mt-2 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-red-700">{history.error.message}</p>
           ) : rows.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No weeks saved yet.</p>
+            <p className="mt-2 text-sm text-slate-500">No weekly figures.</p>
           ) : (
             <div className="mt-2 max-w-3xl overflow-x-auto rounded-xl border border-slate-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-600">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Week starting</th>
-                    {METRICS.map((m) => (
+                    {HISTORY_METRICS.map((m) => (
                       <th key={m.key} colSpan={2} className="px-4 py-2 text-right font-medium">
                         {m.label}
                       </th>
@@ -222,19 +200,16 @@ export default function SkuHealthPage() {
                       <tr key={r.date} className="border-t border-slate-100">
                         <td className="whitespace-nowrap px-4 py-1.5 text-slate-700">
                           {longDate(r.date)}
-                          {r.savedBy && r.savedBy !== 'backfill' && (
-                            <span className="ml-2 text-xs text-slate-400">saved by {r.savedBy}</span>
-                          )}
                         </td>
-                        {METRICS.map((m) => {
+                        {HISTORY_METRICS.map((m) => {
                           const v = r[m.key];
                           const p = prev?.[m.key];
                           return [
                             <td key={`${m.key}v`} className="py-1.5 pl-4 text-right tabular-nums text-slate-900">
-                              {v === null ? <span className="text-slate-300">–</span> : fmt(v)}
+                              {fmt(v)}
                             </td>,
                             <td key={`${m.key}d`} className="w-16 py-1.5 pl-2 pr-4 text-right text-xs tabular-nums">
-                              {v !== null && p !== null && p !== undefined ? (
+                              {p !== undefined ? (
                                 v === p ? (
                                   <span className="text-slate-300">·</span>
                                 ) : (

@@ -4965,24 +4965,17 @@ export function getSkuHealth() {
     sellers90: Number(b.sellers90 || 0), inStock: Number(b.inStock || 0), notSold12m: Number(b.notSold12m || 0),
   }));
 }
-// Saved weekly rows (GET /sku-health-history, newest first, max 52) and the Save button (POST /sku-health-save, one row per week).
+// Weekly figures (GET /sku-health-history, newest first, 53 Mondays) — worked out live from sales, nothing saved (2026-11-05).
+// In stock has no history (can't be rebuilt), so it isn't here.
 export interface SkuHealthRow {
   date: string;              // the week's Monday, YYYY-MM-DD
   sellers90: number;
-  inStock: number | null;    // null on back-filled weeks
   notSold12m: number;
-  savedBy: string | null;
 }
 export function getSkuHealthHistory() {
   return request<SkuHealthRow[]>({ url: '/sku-health-history', method: 'GET' }, (b) => (b.rows || []).map((r: any) => ({
-    date: r.date, sellers90: Number(r.sellers90 || 0), inStock: r.inStock === null ? null : Number(r.inStock),
-    notSold12m: Number(r.notSold12m || 0), savedBy: r.savedBy ?? null,
+    date: r.date, sellers90: Number(r.sellers90 || 0), notSold12m: Number(r.notSold12m || 0),
   })));
-}
-export function saveSkuHealth() {
-  return request<{ snapshotDate: string; updated: boolean }>({ url: '/sku-health-save', method: 'POST' }, (b) => ({
-    snapshotDate: b.snapshot.snapshotDate, updated: b.snapshot.updated === true,
-  }));
 }
 
 export function getProcessOverview() {

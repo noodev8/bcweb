@@ -29,3 +29,11 @@ export const AMZ_MATCH_UI = false;
  * and the nightly stock_daily job are all kept. Set true to bring both back, below the sitting list.
  */
 export const STOCK_SALES_FLOW = false;
+
+/*
+ * SKU health (/sku-health) — HIDDEN 2026-11-05 (owner: "Its confusing me. The whole screen. I think hide the whole screen until I know
+ * if I want it back"). With this false the Admin tile is not shown; the page, its two read-only routes (/sku-health-overview,
+ * /sku-health-history — worked out live from sales, nothing saved) are all kept and still open from the URL. Set true to bring the
+ * tile back. (Its dashboard strip was removed the same day; the old sku_health_snapshot table is unused.)
+ */
+export const SKU_HEALTH = false;
