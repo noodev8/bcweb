@@ -56,8 +56,7 @@ SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away an
          price log with the person and the note "Bulk New Additions ±x%". EACH CHANGED ITEM IS REVIEWED IN 3 DAYS, no choice (owner,
          2026-11-06 — so it drops off Due and isn't priced again before the move has had a chance; "Can we just set it to 3 days"),
          and a review date already LATER is kept ("keep the later date" — a deliberate long park isn't undone by a bulk move). Preview then Apply; under cost /
-         break-even and over RRP are flagged, never blocked. Sliders get no special handling (owner: they're being decommissioned) — a
-         bulk move takes a slider product out at its next Move, as any hand price does. components/BulkPercentPrice owns the control.
+         break-even and over RRP are flagged, never blocked. components/BulkPercentPrice owns the control.
 
 VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir= ?sel= ?cut=, read once into state and written back with
          router.replace from the handlers (never an effect). The back arrow reads ?from= / ?back=.
@@ -700,7 +699,7 @@ function DaysIn({ g }: { g: StyleGroup }) {
 // so the two prices beside it show at a glance whether a price has been moved off RRP (action taken) or not (action maybe needed).
 // THE PRICE COLUMNS, ONE STANDARD (owner, 2026-11-05: "Standardise the Shopify and Amazon columns. Both show the respective prices
 // (Amazon has a range). Dont show the due date"). The same plain price in both; a grey note when there's no price to show. Review dates
-// and Due / Slider notes were taken off — the Due switch still filters on them, and a tile's tooltip still says its Amazon review.
+// and Due notes were taken off — the Due switch still filters on them, and a tile's tooltip still says its Amazon review.
 const PRICE = 'tabular-nums font-medium text-slate-900';
 const NONE = 'text-xs text-slate-400';
 const gbp = (n: number) => `£${n.toFixed(2)}`;

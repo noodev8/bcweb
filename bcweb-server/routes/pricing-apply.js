@@ -27,8 +27,7 @@ Rules enforced here:
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
   - The write itself (the bounds, the hold rule, the UPDATE + INSERT) lives in utils/priceWrite.js → writeShopifyPrice since
-    2026-10-17, shared with the Pricing Slider so both write a Shopify price by the same rules. This route keeps the request
-    validation, the Shopify push and the response.
+    2026-10-17. This route keeps the request validation, the Shopify push and the response.
 =======================================================================================================================================
 Request Payload:
 {

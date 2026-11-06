@@ -17,7 +17,7 @@ Returns { rows: [{ code, next_review 'YYYY-MM-DD' }], rowCount, logged }. Run in
 */
 
 const { safeNumeric } = require('./sql');
-const { AMZ_NOW_CTES } = require('./slider');   // each SKU's current price: a newer logged price, else the feed
+const { AMZ_NOW_CTES } = require('./amzNow');   // each SKU's current price: a newer logged price, else the feed
 
 async function writeAmzReview(client, { codes, reviewDays, note, changedBy, keepLater = false }) {
   // GREATEST ignores NULL in Postgres, so an un-reviewed SKU simply gets CURRENT_DATE + reviewDays.

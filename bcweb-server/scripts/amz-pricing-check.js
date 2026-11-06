@@ -9,12 +9,12 @@ Usage:
     node scripts/amz-pricing-check.js <style text> [options]      e.g.  IVES-WHITE   or   FLE030-IVES-WHITE
     node scripts/amz-pricing-check.js --top 10 [options]           the 10 styles with the most Amazon pairs in 12 months
     node scripts/amz-pricing-check.js --due [N] [options]          THE WORK LIST: every size Due on the Amazon screens today (review
-                            date passed or none, FBA stock, not in a slider), sizes needing a decision first, most FBA pairs first;
+                            date passed or none, FBA stock), sizes needing a decision first, most FBA pairs first;
                             N styles shown in full (default 10). A size decided on is parked (amz-price-set / amz-review-set), so
                             the next run moves on — the same rotation as the team's manual Due list (owner, 2026-11-04).
     --due-on YYYY-MM-DD     with --due: what will be Due on that day (look ahead; verdicts are still today's)
     --grid                  with --due: one short row per size needing a decision — the glance view (owner, 2026-11-04)
-    --all                   with --due: the OVERRIDE — parked sizes too (shown "PARKED to <date>"); live sliders never
+    --all                   with --due: the OVERRIDE — parked sizes too (shown "PARKED to <date>")
 
 Options:
     --push                  Revenue Push suggestions (default Lean on profit)

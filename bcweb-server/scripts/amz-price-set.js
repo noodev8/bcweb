@@ -3,7 +3,7 @@
 Script: scripts/amz-price-set.js   (WRITES — one Amazon size's price, only with --commit; the /amz-pricing skill's "apply" step)
 =======================================================================================================================================
 Purpose: Set ONE Amazon size's price the owner has agreed in conversation, through THE shared Amazon price write
-         (utils/priceWrite.js → writeAmzPrice — the same W-A1 core as POST /amz-apply and the Pricing Slider; never a copy). Built
+         (utils/priceWrite.js → writeAmzPrice — the same W-A1 core as POST /amz-apply; never a copy). Built
          2026-11-04 so a less capable AI agent running the skill can apply a price SAFELY (owner: "In future, we will give it to a lesser
          AI agent").
 

@@ -379,19 +379,6 @@ app.use('/collection-styles', require('./routes/collection-styles'));           
 app.use('/collection-create', require('./routes/collection-create'));                 // POST: new collection tag (DB only; the owner builds the Shopify collection)
 app.use('/collection-tag-set', require('./routes/collection-tag-set'));               // POST: WRITES SHOPIFY TAGS + collection_member — tag / untag chosen styles
 
-// --- Pricing Slider (2026-10-17): groups that step a price down by a % of RRP every N days until each product sells. NO CRON — every
-// price move is a button press. The rules live in utils/slider.js; prices go through the normal W1 / W-A1 writes (utils/priceWrite.js).
-app.use('/slider-marks', require('./routes/slider-marks'));                 // GET: every product live in a slider — the pricing screens' badge — READ ONLY
-app.use('/slider-groups', require('./routes/slider-groups'));               // GET: every group + counts, due now, reaches floor by — READ ONLY
-app.use('/slider-group', require('./routes/slider-group'));                 // GET ?id: one group, its members with live numbers, its log — READ ONLY
-app.use('/slider-candidates', require('./routes/slider-candidates'));       // GET ?channel: every product that can join, for the add search — READ ONLY
-app.use('/slider-group-save', require('./routes/slider-group-save'));       // POST: create a group / edit its rules — WRITES slider_group
-app.use('/slider-group-state', require('./routes/slider-group-state'));     // POST: pause / resume / end / delete a group — WRITES
-app.use('/slider-add', require('./routes/slider-add'));                     // POST: put products in a group (no price change) — WRITES slider_member
-app.use('/slider-remove', require('./routes/slider-remove'));               // POST: take products out, price left as is — WRITES slider_member
-app.use('/slider-reset', require('./routes/slider-reset'));                 // POST: one product back to RRP + out — WRITES PRICES (W1 / W-A1)
-app.use('/slider-step', require('./routes/slider-step'));                   // POST: one product's next press (step / lift / hold / found…) — WRITES PRICES (W1)
-
 // --- Prospects (2026-10-21): the shared notepad of possible NEW products found on Amazon. Light on purpose; a delete is a real delete.
 // Nothing here touches our products or prices — the only link to our stock is the read-only DUPLICATE check (amzfeed ASINs).
 app.use('/prospect-list', require('./routes/prospect-list'));               // GET: every line + its checks, notes and "have it" — READ ONLY

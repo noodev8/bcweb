@@ -137,10 +137,10 @@ function amzProfit({ price, cost, fbafee, tax }) {
  * The lowest price at which a unit keeps £0 — amzProfit() solved for price at profit = 0, the Amazon counterpart of
  * shopifyProfit.priceForProfit(0, cost).
  *
- * Its one caller is the Pricing Slider's OPT-IN break-even floor (owner, 2026-10-17: "let the human choose but allow them their
- * protection"). That is not the legacy of_updateamzdatadb floor the NOT IN SCOPE note in the header dropped — nothing blocks on this; a
- * slider group only uses it when its break-even box is ticked. It is derived from the rate card above, never typed as a literal, so a rate
- * change moves it too. The /1.2 returns divisor drops out at profit = 0 (0 / 1.2 = 0), which is why it does not appear.
+ * No caller since the Pricing Slider (its opt-in break-even floor) was removed on 2026-11-06 — kept as the documented £0 case of
+ * priceForProfit below. It is not the legacy of_updateamzdatadb floor the NOT IN SCOPE note in the header dropped. It is derived
+ * from the rate card above, never typed as a literal, so a rate change moves it too. The /1.2 returns divisor drops out at profit = 0
+ * (0 / 1.2 = 0), which is why it does not appear.
  *
  * The algebra, with v = 1/6 when VAT applies (else 0):
  *     0 = p - v·p - cost - R·p - fee - D·(R·p + fee) - courier - wages

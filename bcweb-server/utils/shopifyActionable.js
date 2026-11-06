@@ -25,7 +25,6 @@ counts as outstanding here but shows "all done" on the list.
 */
 
 const { query } = require('../database');
-const { inSliderSql } = require('./slider');   // a live slider product reads as parked (owner, 2026-10-29)
 
 // The Shopify WINNERS bar, mirrored from routes/pricing-triage.js (MIN_UNITS / MIN_PROFIT) — see the LANDMINE above.
 const SHP_MIN_UNITS = 2;    // Shopify units sold in 30d before a style counts as moving
@@ -54,7 +53,6 @@ async function shopifyActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              ss.next_shopify_price_review AS review,
-             ${inSliderSql('SHP', 'ss.groupid')} AS in_slider,   -- a live slider product reads as parked (owner, 2026-10-29)
              ( COALESCE(s30.u30, 0) >= $1::int
                AND s30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in pricing-triage
              COALESCE(s30.u30, 0) = 0 AS loser
@@ -64,9 +62,9 @@ async function shopifyActionableByGroup(groupExpr) {
       WHERE ss.shopify = 1                           -- live on Shopify only
     ),
     act AS (
-      SELECT name, review, in_slider, COALESCE(winner, false) AS winner, loser,
+      SELECT name, review, COALESCE(winner, false) AS winner, loser,
              (COALESCE(winner, false) OR loser) AS actionable,
-             (review IS NULL OR review <= CURRENT_DATE) AND NOT in_slider AS due
+             (review IS NULL OR review <= CURRENT_DATE) AS due
       FROM cand
     )
     SELECT name,

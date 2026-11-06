@@ -52,7 +52,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, AdjustmentsHorizontalIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
+  RectangleStackIcon, ClockIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -103,7 +103,6 @@ const GROUPS: Group[] = [
     icon: TagIcon,
     tiles: [
       { title: 'Repricing', subtitle: 'Status, segment and campaign lists', description: 'Winners, steady, new and losers per channel, and the segment and campaign lists.', href: '/segments', icon: Squares2X2Icon },
-      { title: 'Pricing Slider', subtitle: 'Step prices down', description: 'Groups whose price steps down by a % of RRP every few days until each product sells, then holds.', href: '/slider', icon: AdjustmentsHorizontalIcon },
       { title: 'Shopify vs Amazon', subtitle: 'Shopify never under Amazon', description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread.', href: '/pricing/vs-amazon', icon: ScaleIcon },
       { title: 'Fast sellers', subtitle: 'Amazon sizes selling fast', description: 'Every Amazon size sold in 30 days, fastest first — room to push the price up.', href: '/amz/fast', icon: BoltIcon },
       { title: 'Collections', subtitle: 'Shopify collection tags', description: 'Put styles in Shopify collections, or take them out — up to 3 per style.', href: '/collections', icon: RectangleStackIcon },

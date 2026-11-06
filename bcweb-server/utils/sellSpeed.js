@@ -23,9 +23,9 @@ THE RULES (agreed with the owner 2026-10-22 — change them here and nowhere els
     sold-and-returned size off their lists.
   - THE PRICE is the last REAL change (new <> old) that went live on or before the sale day. Holds — a row re-logging the same price,
     ~30% of the log — are skipped: they re-confirm a price, they don't set one, and counting them would restart the clock on a price
-    that had been sitting for weeks. LIVE = uploaded_at when stamped (the price reaches Amazon through the upload file — the Pricing
-    Slider counts an Amazon move from the same moment), else changed_at (a row nobody marked uploaded; the nightly cron's "Claude" rows
-    for prices changed straight in Seller Central are live when logged), else log_date (old rows with no timestamps). London days.
+    that had been sitting for weeks. LIVE = uploaded_at when stamped (the price reaches Amazon through the upload
+    file), else changed_at (a row nobody marked uploaded; the nightly cron's "Claude" rows for prices changed straight in Seller Central
+    are live when logged), else log_date (old rows with no timestamps). London days.
     A change live ON the sale day counts only if the sale went at its new price rather than its old one — a log row has no time
     against the sale, and on 2026-10-22 2 of 8 same-day changes had come after the sale (sold at the old price).
     Known softness, accepted: a price set while the size was out of stock starts the clock before there was anything to sell, so it
@@ -37,7 +37,7 @@ THE RULES (agreed with the owner 2026-10-22 — change them here and nowhere els
   - Either count is null when there is nothing to measure from; never 0 by default.
 
 lastPriced (separate from the speed counts): the newest real change on ANY date — when, who, where (the note: "Amazon Order", "Fast
-sellers", a slider step...) and to what — so a screen can say "already priced" whichever screen did it.
+sellers", a bulk move...) and to what — so a screen can say "already priced" whichever screen did it.
 
 PRICE STEPS (owner, 2026-10-22 — the Fast sellers detail row): the size's last 3 real changes, each with how long it held and how many
 units sold at it — "did the last rise still sell? let it ride, or go again?". A step runs from its LIVE day (as THE PRICE above) to the

@@ -33,8 +33,6 @@ THE DETAIL ROW (owner, 2026-10-22, from a screenshot — "tidy it up without los
          each step's tooltip. What the first cut repeated from the row (last sold, price live, shipped) is gone; those dates are in the
          row's tooltips. A price Set here goes on top at once, as "queued".
 
-SLIDER: a size in a Pricing Slider carries its badge, and the price box the warning — pricing it here takes it out at the next Move.
-
 WHERE (owner, 2026-10-22): a tile in the dashboard's Pricing group, "for now — not through Amazon": no link on the /amz home, and no back
          link (the logo returns to the group, as for every dashboard tile). The route stays under /amz for the upload basket's provider.
 
@@ -52,8 +50,7 @@ import Link from 'next/link';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, MagnifyingGlassIcon, MinusIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
-import SliderBadge, { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
-import { getAmzFastSellers, applyAmzPrice, AmzFastRow, AmzFastLastPriced, AmzFastStep, SliderMark } from '@/lib/api';
+import { getAmzFastSellers, applyAmzPrice, AmzFastRow, AmzFastLastPriced, AmzFastStep } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
@@ -120,7 +117,6 @@ function sortValue(r: AmzFastRow, key: SortKey, queued: number | null, lastPrice
 export default function AmzFastSellersPage() {
   const { logout, displayName } = useAuth();
   const { add } = useAmzBasket();
-  const sliderMarks = useSliderMarks();
 
   // Manual only — see UPDATE in the header. Cached data is shown as it is until refresh() runs.
   const { data, error: loadError, isLoading, busy, refresh } = useApiQuery(['amz-fast-sellers'], () => getAmzFastSellers(), {
@@ -262,7 +258,6 @@ export default function AmzFastSellersPage() {
                 const here = setHere[r.code];
                 const queued = here?.price ?? r.queued_price;
                 const last = here?.last ?? r.last_priced;
-                const mark = sliderMarks.amz(r.code);
                 const isOpen = open === r.code;
                 return (
                   <Fragment key={r.code}>
@@ -271,7 +266,6 @@ export default function AmzFastSellersPage() {
                         <span className="inline-flex items-center gap-1">
                           {isOpen ? <ChevronDownIcon className="h-3 w-3 text-slate-400" /> : <ChevronRightIcon className="h-3 w-3 text-slate-400" />}
                           <span title={r.title || undefined}>{r.code}</span>
-                          <SliderBadge mark={mark} />
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{r.units_30d}</td>
@@ -323,7 +317,6 @@ export default function AmzFastSellersPage() {
                               row={r}
                               queued={queued}
                               nextReview={here?.nextReview ?? r.next_review}
-                              sliderMark={mark}
                               onSetPrice={(price) => onSetPrice(r, price)}
                             />
                             <PriceSteps steps={here?.steps ?? r.price_steps} />
@@ -411,10 +404,9 @@ interface PriceBoxProps {
   row: AmzFastRow;
   queued: number | null;
   nextReview: string | null;
-  sliderMark: SliderMark | null;
   onSetPrice: (price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
 }
-function PriceBox({ row, queued, nextReview, sliderMark, onSetPrice }: PriceBoxProps) {
+function PriceBox({ row, queued, nextReview, onSetPrice }: PriceBoxProps) {
   const current = queued ?? row.price;
   const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
   const [busy, setBusy] = useState(false);
@@ -444,7 +436,6 @@ function PriceBox({ row, queued, nextReview, sliderMark, onSetPrice }: PriceBoxP
   const stepBtn = 'flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40';
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <SliderWarning mark={sliderMark} />
       <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Amazon price</div>
       <div className="flex items-center gap-1.5">
         <button type="button" onClick={() => nudge(-0.1)} disabled={busy} aria-label="10p down" title="10p down" className={stepBtn}>

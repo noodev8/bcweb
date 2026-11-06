@@ -42,7 +42,6 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
-const { inSliderSql } = require('../utils/slider');   // a live slider product reads as parked (owner, 2026-10-29)
 const { safeNumeric } = require('../utils/sql');
 const { classifyDue, isoDate } = require('../utils/segmentDue');
 const { deriveShopify } = require('../utils/segmentDerived');
@@ -124,7 +123,6 @@ router.get('/', async (req, res) => {
         ),
         cand AS (
           SELECT ss.next_shopify_price_review AS review,
-                 ${inSliderSql('SHP', 'ss.groupid')} AS in_slider,   -- a live slider product reads as parked (owner, 2026-10-29)
                  ( COALESCE(s30.u30, 0) > 0
                    OR COALESCE(s90.u90, 0) = 0
                    OR stk.stock * (90 / 7.0) / NULLIF(s90.u90, 0) >= 26 ) AS actionable
@@ -136,7 +134,7 @@ router.get('/', async (req, res) => {
         )
         SELECT COUNT(*) FILTER (WHERE actionable)::int AS instock,
                COUNT(*) FILTER (WHERE actionable
-                                  AND (review IS NULL OR review <= CURRENT_DATE) AND NOT in_slider)::int AS outstanding,
+                                  AND (review IS NULL OR review <= CURRENT_DATE))::int AS outstanding,
                MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
         FROM cand
       `, [name]),
@@ -148,7 +146,7 @@ router.get('/', async (req, res) => {
       query(`
         SELECT COUNT(*)::int AS instock,
                COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE) AND NOT ${inSliderSql('AMZ', 'm.code')})::int AS outstanding,
+                                   OR m.next_amz_price_review <= CURRENT_DATE))::int AS outstanding,
                MIN(m.next_amz_price_review)
                  FILTER (WHERE m.next_amz_price_review > CURRENT_DATE) AS next_wake
         FROM amzfeed a

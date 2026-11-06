@@ -19,7 +19,7 @@ database — if that file is missing, stop and tell the owner.
 node scripts/amz-pricing-check.js IVES-WHITE                  # one style (part of the groupid is fine; it asks if it matches several)
 node scripts/amz-pricing-check.js --due                       # THE WORK LIST: sizes Due on the Amazon screens today, top sellers now first
   --grid                                                      # with --due: one short row per size needing a decision — SHOW THIS FIRST
-  --all                                                       # with --due: OVERRIDE Due — parked sizes too ("PARKED to <date>"); sliders never
+  --all                                                       # with --due: OVERRIDE Due — parked sizes too ("PARKED to <date>")
   --due-on 2026-11-07                                         # with --due: what will be Due that day
 node scripts/amz-pricing-check.js --top 10                    # the 10 styles with the most Amazon pairs in 12 months (always the same styles — prefer --due)
   --push                                                      # Revenue Push (default: Lean on profit) — the owner says which, per style

@@ -25,9 +25,8 @@ import, so minutes after an Apply (or after an upload nobody marked) it still sh
 the newest log row for the SKU, and once the import catches up it no longer matches the feed — so the basket's no-op guard lets it
 through as a real change and the next upload puts the OLD price back. It happened: 17659-23-44 was raised £50 -> £65.99 on 2 Oct, held
 3 minutes later (logged at £50), the £65.99 went up without "I've uploaded", and on 5 Oct the basket uploaded the £50 hold. The held
-price now comes from utils/slider.js → AMZ_NOW_CTES (a price logged since the last import — uploaded, or still pending in the basket
-— else the feed), the same "what is Amazon's price now" the Pricing Slider already relies on; that also stops a stale hold reading as
-"priced by hand" to a slider (offTrack).
+price now comes from utils/amzNow.js → AMZ_NOW_CTES (a price logged since the last import — uploaded, or still pending in the basket
+— else the feed).
 =======================================================================================================================================
 Request Payload:
 { "codes": ["FLE030-IVES-WHITE-38", "FLE030-IVES-WHITE-39"], "reviewDays": 14 }

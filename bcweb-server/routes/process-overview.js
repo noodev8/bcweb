@@ -25,9 +25,9 @@ Success Response:
     { "code": "GLB123-TAN-04", "groupid": "GLB123-TAN", "title": "…", "brand": "Lunar", "size": "04",
       "firstIn": "2026-09-11", "ageDays": 55, "daysLeft": 35,     // first Goods In arrival; 90 − age = days before it leaves the list
       "localStock": 0, "fbaStock": 1, "bought": 2, "onAmz": true,
-      "amzPrice": 39.99, "amzReview": null, "amzDue": true, "amzSlider": false,                       // Amazon, per size
+      "amzPrice": 39.99, "amzReview": null, "amzDue": true,                       // Amazon, per size
       "rrp": 49.95, "imagename": "glb123-tan.jpg",       // the style's RRP and picture (per style)
-      "shpLive": true, "shpPrice": 44.95, "shpReview": "2026-11-08", "shpDue": false, "shpSlider": false,   // Shopify, per style
+      "shpLive": true, "shpPrice": 44.95, "shpReview": "2026-11-08", "shpDue": false,   // Shopify, per style
       "net": 1,                                         // net units over every channel — sold = net > 0
       "channels": { "AMZ": { "net": 1, "sold": 1 }, "SHP": { … }, "CM3": { … }, "EBY": { … } } }
   ],
@@ -80,10 +80,10 @@ router.get('/', async (req, res) => {
         firstIn: r.first_in, ageDays, daysLeft: NEW_DAYS - ageDays,
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), bought: Number(r.bought),
         onAmz: r.on_amz === true, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
-        amzDue: r.amz_due === true, amzSlider: r.amz_slider === true,
+        amzDue: r.amz_due === true,
         rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
         shpLive: r.shp_live === true, shpPrice: money(r.shp_price), shpReview: r.shp_review || null,
-        shpDue: r.shp_due === true, shpSlider: r.shp_slider === true,
+        shpDue: r.shp_due === true,
         net, channels,
       };
     });

@@ -22,11 +22,11 @@ Purpose: THE NEW SKUS — prospect performance (owner, 2026-11-05: "I want to se
 
 PRICE DUE (owner, 2026-11-05, option A — New Additions' own "Look again" review, skusummary.next_new_review, was retired the same day:
 "one review date, one habit"). The pricing screens' own Due, read here:
-  - Shopify (per STYLE): live on Shopify (shopify = 1) with sellable local stock, next_shopify_price_review passed or none, not in a
-    live Pricing Slider — the Shopify Pricing home's predicate (routes/pricing-all-list.js).
-  - Amazon (per SIZE): an amzfeed listing with stock live or on its way (amztotal > 0), skumap.next_amz_price_review passed or none,
-    not in a live slider — routes/amz-all-list.js's predicate, less its 0-stock status rows (a size with nothing at Amazon can't be
-    sold there by a price).
+  - Shopify (per STYLE): live on Shopify (shopify = 1) with sellable local stock, next_shopify_price_review passed or none — the
+    Shopify Pricing home's predicate (routes/pricing-all-list.js).
+  - Amazon (per SIZE): an amzfeed listing with stock live or on its way (amztotal > 0), skumap.next_amz_price_review passed or none —
+    routes/amz-all-list.js's predicate, less its 0-stock status rows (a size with nothing at Amazon can't
+    be sold there by a price).
   A style is due on New Additions when it still has an UNSOLD new size and (Shopify is due OR an unsold size is due on Amazon) — sold
   sizes are ticked off, so they never make a style due. Worked out on the screen from these flags (bcweb-web/src/lib/process.ts).
 
@@ -44,7 +44,7 @@ two disagreed (owner: the tile said 25%, the screen another number on a differen
 */
 
 const { NEW_DAYS } = require('./portfolioStatus');
-const { inSliderSql, AMZ_NOW_CTES } = require('./slider');
+const { AMZ_NOW_CTES } = require('./amzNow');
 const { safeNumeric } = require('./sql');
 
 const CHANNELS = ['AMZ', 'SHP', 'CM3', 'EBY'];
@@ -104,15 +104,13 @@ const NEW_SKUS_SQL = `
          -- Amazon (per size)
          (a.code IS NOT NULL) AS on_amz,
          -- The CURRENT Amazon price: a change logged since the last import (uploaded, or still pending in the basket) beats the feed —
-         -- utils/slider.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
+         -- utils/amzNow.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
          -- the stale feed price.
          COALESCE(an.price, ${safeNumeric('a.amzprice')}) AS amz_price,
          ${safeNumeric('a.fbafee')} AS amz_fbafee,                         -- with cost: the Amazon break-even the bulk preview flags
          sz.next_amz_price_review::text AS amz_review,
          (a.code IS NOT NULL AND COALESCE(a.amztotal, 0) > 0
-           AND (sz.next_amz_price_review IS NULL OR sz.next_amz_price_review <= (SELECT d FROM today))
-           AND NOT ${inSliderSql('AMZ', 'sz.code')}) AS amz_due,
-         ${inSliderSql('AMZ', 'sz.code')} AS amz_slider,
+           AND (sz.next_amz_price_review IS NULL OR sz.next_amz_price_review <= (SELECT d FROM today))) AS amz_due,
          -- Shopify (per style — the same on each of its sizes)
          (COALESCE(ss.shopify, 0) = 1) AS shp_live,
          ${safeNumeric('ss.shopifyprice')} AS shp_price,
@@ -121,9 +119,7 @@ const NEW_SKUS_SQL = `
          ${safeNumeric('ss.cost')} AS cost,                                 -- the style's cost (the bulk preview's below-cost flags)
          ss.next_shopify_price_review::text AS shp_review,
          (COALESCE(ss.shopify, 0) = 1 AND COALESCE(sloc.qty, 0) > 0
-           AND (ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= (SELECT d FROM today))
-           AND NOT ${inSliderSql('SHP', 'sz.groupid')}) AS shp_due,
-         ${inSliderSql('SHP', 'sz.groupid')} AS shp_slider,
+           AND (ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= (SELECT d FROM today))) AS shp_due,
          COALESCE((SELECT json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units))
                      FROM sl WHERE sl.code = sz.code), '{}') AS sales
     FROM sz

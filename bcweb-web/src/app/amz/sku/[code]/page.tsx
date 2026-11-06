@@ -22,7 +22,6 @@ import DrillListNav from '@/components/DrillListNav';
 import CopyButton from '@/components/CopyButton';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
-import { SliderWarning, useSliderMarks } from '@/components/SliderBadge';
 import AmzHistory from '@/components/AmzHistory';
 import AmzSales from '@/components/AmzSales';
 import { getAmzDrill, applyAmzPrice, markAmzReviewed } from '@/lib/api';
@@ -93,7 +92,6 @@ function DrillContent() {
     () => getAmzDrill(code),
   );
   const error = loadError?.message ?? null;
-  const marks = useSliderMarks();
 
   function goBackToList() {
     router.push(backTo);
@@ -231,8 +229,6 @@ function DrillContent() {
           {/* Set-price control — kept high so the action is reachable without scrolling past the evidence below. The card's own
               channel banner labels it, so no separate heading. */}
           <section>
-            {/* In a Pricing Slider: say so before a price is set by hand — that takes it out of the slider (phase 4). */}
-            <SliderWarning mark={marks.amz(code)} />
             <AmzPriceSetter
               key={reloadKey}
               header={data.header}

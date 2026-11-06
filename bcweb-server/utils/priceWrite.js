@@ -3,14 +3,13 @@
 Module: utils/priceWrite.js
 =======================================================================================================================================
 Purpose: The DATABASE half of the two price writes, in one place, so every screen that sets a price writes it the same way:
-           writeShopifyPrice(client, …)  — W1   (routes/pricing-apply.js, and the Pricing Slider's reset / steps)
-           writeAmzPrice(client, …)      — W-A1 (routes/amz-apply.js, and the Pricing Slider's reset / steps)
+           writeShopifyPrice(client, …)  — W1   (routes/pricing-apply.js)
+           writeAmzPrice(client, …)      — W-A1 (routes/amz-apply.js, scripts/amz-price-set.js)
 
-WHY IT WAS PULLED OUT OF THE ROUTES (2026-10-17): the Pricing Slider moves prices too, and its own bookkeeping (slider_member)
-has to land in the SAME transaction as the price — a slider that believes it set £52.65 when the price never changed, or
-the reverse, is the drift this platform keeps paying for (see the order-sync banner for the worst case). Copying W1 into the slider
-routes would have been a second set of rules for the same write. So the routes keep what is theirs — reading and validating the request,
-pushing to Shopify after the commit, shaping the response — and call this for the write itself.
+WHY IT WAS PULLED OUT OF THE ROUTES (2026-10-17): it was first shared with the Pricing Slider (removed 2026-11-06), whose own
+bookkeeping had to land in the SAME transaction as the price; it stays shared because the /amz-pricing skill's scripts/amz-price-set.js
+sets an Amazon price through it too — one set of rules for the same write, never a copy. So the routes keep what is theirs — reading
+and validating the request, pushing to Shopify after the commit, shaping the response — and call this for the write itself.
 
 Both functions:
   - run on the CALLER'S transaction client (utils/transaction.js → withTransaction) so the caller can add its own rows to the same unit;

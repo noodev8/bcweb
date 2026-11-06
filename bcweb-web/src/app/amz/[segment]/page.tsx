@@ -44,7 +44,6 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import SliderBadge, { useSliderMarks } from '@/components/SliderBadge';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
@@ -481,7 +480,6 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
   });
   const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
-  const marks = useSliderMarks();
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full table-fixed text-sm">
@@ -541,17 +539,13 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>
                   {r.code}
                   {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
-                  {/* Pricing Slider badge (phase 4): pricing a slider size by hand takes it out of its slider. */}
-                  {marks.amz(r.code) && <span className="ml-2 font-sans"><SliderBadge mark={marks.amz(r.code)} /></span>}
                 </td>
                 <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}{r.fba_inbound > 0 && <span className="ml-1 text-xs font-normal text-sky-600" title="On its way into FBA">+{r.fba_inbound}</span>}</td>
                 <td className="whitespace-nowrap px-4 py-2">
                   {r.parked
-                    ? (marks.amz(r.code)   // a live slider product is parked by its slider, not a review date (owner, 2026-10-29)
-                      ? <span className="rounded bg-orange-50 px-1.5 py-0.5 text-xs font-medium text-orange-700" title="In a Pricing Slider — priced from its slider, not here">Slider</span>
-                      : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>)
+                    ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
                     : <span className="text-xs text-slate-400">Due</span>}
                 </td>
               </tr>

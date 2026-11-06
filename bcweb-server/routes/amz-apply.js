@@ -86,7 +86,7 @@ router.post('/', async (req, res) => {
 
     // INSERT the audit row AND (when a period was given) park the SKU in one transaction (spec §10.5A) — so a park can never land without
     // its log row, nor vice-versa. The write and its rules (BELOW_FLOOR / ABOVE_RRP flagged, never blocked; the NOT NULL old_price guard;
-    // never amzfeed) live in utils/priceWrite.js → writeAmzPrice since 2026-10-17, shared with the Pricing Slider. Its result carries
+    // never amzfeed) live in utils/priceWrite.js → writeAmzPrice since 2026-10-17 (shared with scripts/amz-price-set.js). Its result carries
     // amz_sku + RRP so the response gives the client's upload basket everything the Seller Central file needs without a second round-trip.
     const written = await withTransaction((client) =>
       writeAmzPrice(client, { code, price: rounded, reviewDays, note, changedBy }));
