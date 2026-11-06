@@ -158,9 +158,12 @@ const SIZE_TILE: Record<SizeState, string> = {
   old: 'bg-slate-100 text-slate-400',
 };
 // A TILE'S TOOLTIP, ONE SHORT FACT (owner, 2026-11-06: "Just show how many sold" — never "never sold", "Scary"): a counted size says
-// how many sold (net of returns, every channel, since it was first booked in — within the 90 days); an old size says only "Over 90
-// days" — it doesn't belong to this screen, so no count.
-const tileTitle = (t: RunSize) => (t.row ? `${unitsSold(t.row)} sold` : `Over ${DAYS} days`);
+// how many sold (net of returns, every channel, since it was first booked in — within the 90 days); any other size says only "Not
+// counted here" — it doesn't belong to this screen, so no count. GENERIC ON PURPOSE (owner, 2026-11-06): it was "Over 90 days", which
+// was wrong for a size put into stock WITHOUT a Goods In booking (L3882-00-39, added on 2 Nov straight into stock); "Not booked in"
+// was rejected — "give me different work to do when I should be focussing". Stock with no Goods In record is a data sweep, not this
+// screen's job.
+const tileTitle = (t: RunSize) => (t.row ? `${unitsSold(t.row)} sold` : 'Not counted here');
 
 // THE INTAKES — the 90 days in three 30-day bands by the SKU's FIRST arrival, newest first, each with its own Sold % (one figure
 // mixes stock that landed yesterday with stock that's had 80 days). Click a card to list the styles with a SKU in it.
