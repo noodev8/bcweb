@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), bought: Number(r.bought),
         onAmz: r.on_amz === true, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true, amzSlider: r.amz_slider === true,
-        rrp: money(r.rrp), imagename: r.imagename || null,
+        rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
         shpLive: r.shp_live === true, shpPrice: money(r.shp_price), shpReview: r.shp_review || null,
         shpDue: r.shp_due === true, shpSlider: r.shp_slider === true,
         net, channels,

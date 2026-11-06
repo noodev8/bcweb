@@ -47,7 +47,17 @@ PREV / NEXT ON THE DRILLS (owner, same day: "price navigation back and forth"): 
          list as it stands (components/DrillListNav) — Shopify: the styles in screen order (Due on: only Shopify-due ones); Amazon: the
          unsold, listed sizes in screen order (Due on: only Amazon-due ones) — and the drill steps through it with ‹ Prev · Next ›.
 
-VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir= ?sel=, read once into state and written back with
+SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away and we action whats left. A reset brings them all back"
+         … "change prices here in bulk. Increase or decrease by a percentage"). Each row has an × that hides it from the screen (?cut=,
+         nothing stored; Reset brings every row back). What's LEFT — after Due and the cuts — is what the bulk bar acts on, no ticks:
+           Shopify ± x%: every style left that is on Shopify and still has an unsold new size (a complete style is skipped) — W1, live.
+           Amazon ± x%: every UNSOLD, listed new size of the styles left (owner: "unsold sizes only") — W-A1, into the upload basket.
+         % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, no review
+         date touched, the normal price log with the person and the note "Bulk New Additions ±x%". Preview then Apply; under cost /
+         break-even and over RRP are flagged, never blocked. Sliders get no special handling (owner: they're being decommissioned) — a
+         bulk move takes a slider product out at its next Move, as any hand price does. components/BulkPercentPrice owns the control.
+
+VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir= ?sel= ?cut=, read once into state and written back with
          router.replace from the handlers (never an effect). The back arrow reads ?from= / ?back=.
 =======================================================================================================================================
 */
@@ -55,14 +65,16 @@ VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { CheckIcon } from '@heroicons/react/20/solid';
+import { CheckIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
+import BulkPercentPrice, { movePrice, type BulkPlan, type BulkPlanItem } from '@/components/BulkPercentPrice';
+import { useAuth } from '@/contexts/AuthContext';
 import { DueSwitch } from '@/components/ListViewControls';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
+import { applyAmzPrice, applyPrice, getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
 import { isSold, styleDue } from '@/lib/process';
 
 // Fixed 90-day window (server-side, NEW_DAYS) — a SKU leaves the list 90 days after its first Goods In arrival, sold or not.
@@ -196,9 +208,12 @@ function NewAdditionsPageInner() {
   // No sort = newest added first. A header click sorts by it, a second click flips it, a third goes back to newest first.
   const [sortBy, setSortBy] = useState<SortKey | null>(() => SORT_KEYS.find((k) => k === searchParams.get('sort')) ?? null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'desc' ? 'desc' : 'asc'));
+  // THE SOFT CUT — group ids hidden from the screen (?cut=a,b). Nothing stored; Reset (or a fresh visit) brings them all back.
+  const [cut, setCut] = useState<string[]>(() => (searchParams.get('cut') || '').split(',').filter(Boolean));
+  const { logout } = useAuth();
 
   // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
-  const viewUrl = (v: { due: boolean; show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string | null }) => {
+  const viewUrl = (v: { due: boolean; show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string | null; cut: string[] }) => {
     const q = new URLSearchParams();
     const from = searchParams.get('from');
     const back = searchParams.get('back');
@@ -209,19 +224,20 @@ function NewAdditionsPageInner() {
     if (v.band) q.set('band', v.band);
     if (v.sort) { q.set('sort', v.sort); if (v.dir === 'desc') q.set('dir', 'desc'); }
     if (v.sel) q.set('sel', v.sel);
+    if (v.cut.length) q.set('cut', v.cut.join(','));
     const qs = q.toString();
     return qs ? `${pathname}?${qs}` : pathname;
   };
-  const current = { due: dueOnly, show, band, sort: sortBy, dir: sortDir, sel: selected };
+  const current = { due: dueOnly, show, band, sort: sortBy, dir: sortDir, sel: selected, cut };
   const selfUrl = viewUrl(current);
   const setView = (patch: Partial<typeof current>) => {
     const next = { ...current, ...patch };
-    setDueOnly(next.due); setShow(next.show); setBand(next.band); setSortBy(next.sort); setSortDir(next.dir); setSelected(next.sel);
+    setDueOnly(next.due); setShow(next.show); setBand(next.band); setSortBy(next.sort); setSortDir(next.dir); setSelected(next.sel); setCut(next.cut);
     router.replace(viewUrl(next), { scroll: false });
   };
 
   // GET /process-overview under Daily's own key, so the tile and this screen share one fetch.
-  const { data, error: loadError, isLoading: loading } = useApiQuery('process-overview', () => getProcessOverview());
+  const { data, error: loadError, isLoading: loading, refresh } = useApiQuery('process-overview', () => getProcessOverview());
   const rows: ProcessSizeRow[] = data?.rows ?? NO_ROWS;
   const others: ProcessOtherSize[] = data?.others ?? NO_OTHERS;
   const error = loadError?.message ?? null;
@@ -316,14 +332,21 @@ function NewAdditionsPageInner() {
     </button>
   );
 
+  // WHAT'S ON SCREEN — the sorted list less the soft cuts. The drill lists and the bulk bar act on exactly this.
+  const visibleGroups = useMemo(() => {
+    const hidden = new Set(cut);
+    return sortedGroups.filter((g) => !hidden.has(g.groupid));
+  }, [sortedGroups, cut]);
+  const cutHere = sortedGroups.length - visibleGroups.length;
+
   // THE DRILL LISTS — saved on the click that opens a drill, so its ‹ Prev / Next › walks this screen's list as it stands.
   const openShopify = () => saveDrillList(SHP_LIST, {
     base: '/pricing/style/', from: selfUrl, label: LIST_LABEL,
-    keys: sortedGroups.filter((g) => g.sizes[0].shpLive && (!dueOnly || g.shpDue)).map((g) => g.groupid),
+    keys: visibleGroups.filter((g) => g.sizes[0].shpLive && (!dueOnly || g.shpDue)).map((g) => g.groupid),
   });
   const openAmazon = () => saveDrillList(AMZ_LIST, {
     base: '/amz/sku/', from: selfUrl, label: LIST_LABEL,
-    keys: sortedGroups.flatMap((g) => g.sizes.filter((r) => r.onAmz && !isSold(r) && (!dueOnly || r.amzDue)).map((r) => r.code)),
+    keys: visibleGroups.flatMap((g) => g.sizes.filter((r) => r.onAmz && !isSold(r) && (!dueOnly || r.amzDue)).map((r) => r.code)),
   });
   const shpHref = (groupid: string) => drillListHref(SHP_LIST, { base: '/pricing/style/', from: selfUrl }, groupid);
   const amzHref = (code: string) => drillListHref(AMZ_LIST, { base: '/amz/sku/', from: selfUrl }, code);
@@ -337,6 +360,65 @@ function NewAdditionsPageInner() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // THE BULK PLANS — which rows a ± x% move touches, off what's on screen (see the header).
+  const sign = (p: number) => (p > 0 ? `+${p}` : String(p));
+  const bulkNote = (p: number) => `Bulk New Additions ${sign(p)}%`;
+  const flagFor = (next: number, floor: number | null, rrp: number | null) =>
+    floor !== null && next < floor ? 'BELOW_COST' as const : rrp !== null && next > rrp ? 'ABOVE_RRP' as const : null;
+
+  const planShopify = (p: number): BulkPlan => {
+    const items: BulkPlanItem[] = [];
+    let offShopify = 0, complete = 0, noPrice = 0;
+    for (const g of visibleGroups) {
+      const r = g.sizes[0];
+      if (g.unsold === 0) { complete++; continue; }
+      if (!r.shpLive) { offShopify++; continue; }
+      if (r.shpPrice === null) { noPrice++; continue; }
+      const next = movePrice(r.shpPrice, p);
+      items.push({ key: g.groupid, label: g.groupid, now: r.shpPrice, next, flag: flagFor(next, r.cost, r.rrp) });
+    }
+    const why = [complete && `${complete} complete`, offShopify && `${offShopify} not on Shopify`, noPrice && `${noPrice} no price`].filter(Boolean);
+    return { items, skipped: why.length ? why.join(', ') : null };
+  };
+  const planAmazon = (p: number): BulkPlan => {
+    const items: BulkPlanItem[] = [];
+    let noPrice = 0;
+    for (const g of visibleGroups) {
+      for (const r of g.sizes) {
+        if (isSold(r) || !r.onAmz) continue;            // unsold, listed sizes only (owner)
+        if (r.amzPrice === null) { noPrice++; continue; }
+        const next = movePrice(r.amzPrice, p);
+        const floor = r.cost !== null && r.amzFbaFee !== null ? r.cost + r.amzFbaFee : null;   // the W-A1 break-even
+        items.push({ key: r.code, label: r.code, now: r.amzPrice, next, flag: flagFor(next, floor, r.rrp) });
+      }
+    }
+    return { items, skipped: noPrice ? `${noPrice} with no Amazon price` : null };
+  };
+
+  // THE WRITES — the shared W1 / W-A1 routes, one item at a time (every Shopify push and per-item bound runs). No review date.
+  const applyShopify = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
+    let ok = 0, failed = 0, notPushed = 0;
+    for (let i = 0; i < items.length; i++) {
+      const res = await applyPrice(items[i].key, items[i].next, null, bulkNote(p));
+      if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
+      if (res.success && res.data) { ok++; if (res.data.shopify && res.data.shopify.pushed === false) notPushed++; } else failed++;
+      onProgress(i + 1);
+    }
+    await refresh();
+    return `Changed ${ok} on Shopify${notPushed ? ` · ${notPushed} saved but didn't reach Shopify — open and re-Apply` : ''}${failed ? ` · ${failed} failed` : ''}`;
+  };
+  const applyAmazon = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
+    let ok = 0, failed = 0;
+    for (let i = 0; i < items.length; i++) {
+      const res = await applyAmzPrice(items[i].key, items[i].next, bulkNote(p));
+      if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
+      if (res.success) ok++; else failed++;
+      onProgress(i + 1);
+    }
+    await refresh();
+    return `Changed ${ok} on Amazon → upload basket${failed ? ` · ${failed} failed` : ''}`;
+  };
 
   const soldPct = pct(totals.sold, totals.skus);
 
@@ -415,6 +497,21 @@ function NewAdditionsPageInner() {
                 />
               </div>
 
+              {/* THE BULK BAR — what's on screen (less cuts) and Reset, then Shopify / Amazon ± x% on exactly those rows. */}
+              <div className="mb-3 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center gap-3 pt-1 text-sm text-slate-600">
+                  <span className="tabular-nums">{visibleGroups.length} style{visibleGroups.length === 1 ? '' : 's'}</span>
+                  {cutHere > 0 && (
+                    <button type="button" onClick={() => setView({ cut: [] })}
+                            className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
+                      Reset · {cutHere} hidden
+                    </button>
+                  )}
+                </div>
+                <BulkPercentPrice channel="shopify" plan={planShopify} apply={applyShopify} disabled={visibleGroups.length === 0} />
+                <BulkPercentPrice channel="amazon" plan={planAmazon} apply={applyAmazon} disabled={visibleGroups.length === 0} />
+              </div>
+
               {/* THE QUICK FILTERS — hidden (SHOW_FILTERS); their row only exists when they're shown. */}
               {SHOW_FILTERS && <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <div className="inline-flex flex-wrap rounded-lg border border-slate-200 bg-slate-100/70 p-0.5">
@@ -439,9 +536,9 @@ function NewAdditionsPageInner() {
               {/* overflow-clip keeps the rounded corners without a scroll box, which would trap the sticky header. w-fit: the table is only
                   as wide as its columns — at full width the Style column stretched and left a big gap before Brand (owner, 2026-11-05). */}
               <div className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white">
-                {sortedGroups.length === 0 ? (
+                {visibleGroups.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-slate-500">
-                    {dueOnly ? 'Nothing here is due a price look. Switch off Due to see the rest.' : 'No styles match this filter.'}
+                    {cutHere > 0 ? 'Every row is hidden — press Reset to bring them back.' : dueOnly ? 'Nothing here is due a price look. Switch off Due to see the rest.' : 'No styles match this filter.'}
                   </p>
                 ) : (
                   <table className="text-sm">
@@ -460,10 +557,11 @@ function NewAdditionsPageInner() {
                             title="The style's Shopify price — click it to price it">{sortBtn('shp', 'Shopify')}</th>
                         <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                             title="Amazon price range of the unsold sizes — click a white size tile to price it">{sortBtn('amz', 'Amazon')}</th>
+                        <th className="w-10 border-l border-slate-200 py-2.5"><span className="sr-only">Hide</span></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedGroups.map((g) => {
+                      {visibleGroups.map((g) => {
                         // Clicking a row SELECTS it for the product menu; clicking it again lets it go. No hover tint (owner, 2026-11-06) — only the
                         // selected row is tinted, so a hover can't be mistaken for a second selection.
                         const isSel = selected === g.groupid;
@@ -509,6 +607,14 @@ function NewAdditionsPageInner() {
                             </td>
                             <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               <AmazonCell g={g} />
+                            </td>
+                            {/* SOFT CUT — hide this row from the screen (and from the bulk bar). Reset brings it back. */}
+                            <td className="border-l border-slate-100 px-2 py-3 text-center align-top">
+                              <button type="button" aria-label={`Hide ${g.groupid}`}
+                                      onClick={(e) => { e.stopPropagation(); setView({ cut: [...cut, g.groupid], sel: selected === g.groupid ? null : selected }); }}
+                                      className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+                                <XMarkIcon className="h-4 w-4" />
+                              </button>
                             </td>
                           </tr>
                         );

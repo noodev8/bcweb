@@ -4942,8 +4942,11 @@ export interface ProcessSizeRow {
   bought: number;                // pairs booked in on Goods In (every arrival of the SKU)
   onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
   // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).
-  amzPrice: number | null; amzReview: string | null; amzDue: boolean; amzSlider: boolean;
+  amzPrice: number | null;       // the CURRENT Amazon price — a pending / uploaded change since the last import beats the feed
+  amzReview: string | null; amzDue: boolean; amzSlider: boolean;
   rrp: number | null;            // the style's RRP (per style) — read against the two prices
+  cost: number | null;           // the style's cost — New Additions' bulk preview flags a Shopify price below it
+  amzFbaFee: number | null;      // the size's FBA fee — with cost, the Amazon break-even the bulk preview flags
   imagename: string | null;      // the style's picture, a bare filename on images.brookfieldcomfort.com (per style)
   shpLive: boolean; shpPrice: number | null; shpReview: string | null; shpDue: boolean; shpSlider: boolean;
   net: number;                   // net units over every channel — sold = net > 0

@@ -44,7 +44,7 @@ two disagreed (owner: the tile said 25%, the screen another number on a differen
 */
 
 const { NEW_DAYS } = require('./portfolioStatus');
-const { inSliderSql } = require('./slider');
+const { inSliderSql, AMZ_NOW_CTES } = require('./slider');
 const { safeNumeric } = require('./sql');
 
 const CHANNELS = ['AMZ', 'SHP', 'CM3', 'EBY'];
@@ -59,7 +59,8 @@ const AMZ_BOUND_SQL = `COALESCE(l.deleted, 0) = 0 AND l.qty > 0
 
 // Every NEW SKU with its sales per channel since its first arrival, its stock and both channels' price due. No N+1.
 const NEW_SKUS_SQL = `
-  WITH today AS (SELECT (now() AT TIME ZONE 'Europe/London')::date AS d),
+  WITH ${AMZ_NOW_CTES},
+  today AS (SELECT (now() AT TIME ZONE 'Europe/London')::date AS d),
   f AS (
     SELECT i.code, MIN(i.arrival_date)::date AS first_in, SUM(GREATEST(i.quantity_added, 1)) AS bought
       FROM incoming_stock i
@@ -102,7 +103,11 @@ const NEW_SKUS_SQL = `
          COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock, sz.bought,
          -- Amazon (per size)
          (a.code IS NOT NULL) AS on_amz,
-         ${safeNumeric('a.amzprice')} AS amz_price,
+         -- The CURRENT Amazon price: a change logged since the last import (uploaded, or still pending in the basket) beats the feed —
+         -- utils/slider.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
+         -- the stale feed price.
+         COALESCE(an.price, ${safeNumeric('a.amzprice')}) AS amz_price,
+         ${safeNumeric('a.fbafee')} AS amz_fbafee,                         -- with cost: the Amazon break-even the bulk preview flags
          sz.next_amz_price_review::text AS amz_review,
          (a.code IS NOT NULL AND COALESCE(a.amztotal, 0) > 0
            AND (sz.next_amz_price_review IS NULL OR sz.next_amz_price_review <= (SELECT d FROM today))
@@ -113,6 +118,7 @@ const NEW_SKUS_SQL = `
          ${safeNumeric('ss.shopifyprice')} AS shp_price,
          ss.imagename,                                                     -- the style's picture (New Additions' thumbnail)
          ${safeNumeric('ss.rrp')} AS rrp,                                   -- the style's RRP (New Additions' RRP column)
+         ${safeNumeric('ss.cost')} AS cost,                                 -- the style's cost (the bulk preview's below-cost flags)
          ss.next_shopify_price_review::text AS shp_review,
          (COALESCE(ss.shopify, 0) = 1 AND COALESCE(sloc.qty, 0) > 0
            AND (ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= (SELECT d FROM today))
@@ -124,6 +130,7 @@ const NEW_SKUS_SQL = `
     LEFT JOIN skusummary ss ON ss.groupid = sz.groupid
     LEFT JOIN title t       ON t.groupid  = sz.groupid
     LEFT JOIN amzfeed a     ON a.code     = sz.code
+    LEFT JOIN amz_now an    ON an.code    = sz.code
     LEFT JOIN loc           ON loc.code   = sz.code
     LEFT JOIN fba           ON fba.code   = sz.code
     LEFT JOIN sloc          ON sloc.groupid = sz.groupid
