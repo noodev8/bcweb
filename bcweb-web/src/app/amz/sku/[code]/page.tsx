@@ -18,6 +18,7 @@ import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import AppShell from '@/components/AppShell';
+import DrillListNav from '@/components/DrillListNav';
 import CopyButton from '@/components/CopyButton';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzPriceSetter from '@/components/AmzPriceSetter';
@@ -34,9 +35,16 @@ import { useAmzBasket } from '@/contexts/AmzBasketContext';
 export default function AmzDrillPage() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
-      <DrillContent />
+      <KeyedDrill />
     </Suspense>
   );
+}
+
+// One drill per size: keyed on the route param so ‹ Prev / Next › (components/DrillListNav) — which moves between sizes on the SAME
+// route — starts each one fresh, never carrying a typed price, a notice or a review pick across to the next size.
+function KeyedDrill() {
+  const params = useParams<{ code: string }>();
+  return <DrillContent key={params.code} />;
 }
 
 function DrillContent() {
@@ -196,6 +204,9 @@ function DrillContent() {
       )}
 
       <AmzBasketBar />
+
+      {/* ‹ Prev · n of N · Next › when opened from a list that saved one (New Additions) — nothing otherwise. */}
+      <div className="mb-3 flex justify-end empty:hidden"><DrillListNav current={code} /></div>
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}

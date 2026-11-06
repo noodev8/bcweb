@@ -1,27 +1,26 @@
-// Shared by the dashboard's Daily (New stuff) and Reports → New Additions — both read GET /process-overview. The rules themselves are
-// server-side in bcweb-server/utils/processMap.js.
+// Shared by the dashboard's Daily (New stuff) and Reports → New Additions — both read GET /process-overview, the NEW SKUS (first
+// Goods In arrival in the last 90 days). The rules themselves are server-side in bcweb-server/utils/processMap.js.
 import type { ProcessChannel, ProcessSizeRow } from '@/lib/api';
 
 export const CHANNELS: { id: ProcessChannel; label: string }[] = [
   { id: 'AMZ', label: 'Amazon' },
   { id: 'SHP', label: 'Shopify' },
   { id: 'CM3', label: 'Shop' },
+  { id: 'EBY', label: 'eBay' },
 ];
 
-// Sold = netted a sale on any channel (sold one and it came back = not sold).
-export const isSold = (r: ProcessSizeRow) => CHANNELS.some((c) => r.channels[c.id].net > 0);
-// Units sold on every channel together, net of returns (a channel that netted below 0 counts 0).
-export const unitsSold = (r: ProcessSizeRow) => CHANNELS.reduce((n, c) => n + Math.max(r.channels[c.id].net, 0), 0);
+// Sold = netted a sale over every channel together since its first arrival (sold one and it came back = not sold) — the server's rule,
+// which also counts Daily's figure (row.net).
+export const isSold = (r: ProcessSizeRow) => r.net > 0;
+// Net units sold, never below 0 (a return of a pair sold before the window can't make it negative on screen).
+export const unitsSold = (r: ProcessSizeRow) => Math.max(r.net, 0);
 
-// New Additions' figure strip, in PAIRS (owner, 2026-10-27): pairs bought (Goods In) and sold, and unsold = bought − sold as a % of bought —
-// kept LOW by better prospects. Nothing bought = 0%. Daily no longer reads it (2026-11-05: its New stuff is per SKU from first arrival,
-// bcweb-server/utils/processMap.js → NEW_SKUS_SQL); the strip stays on pairs until the owner discusses it.
-// A size's sales count only UP TO the pairs bought (owner, 2026-10-27): a test listing on placeholder stock (e.g. the old UKD-Tests rack, added on
-// Inventory, never through Goods In) that sells counts nothing until the real pair is ordered and booked in on Goods In — then it is
-// 1 bought, 1 sold. Without the cap the sale would count against 0 bought and flatter the figure.
-export function pairsSummary(rows: ProcessSizeRow[]) {
-  let bought = 0, sold = 0;
-  for (const r of rows) { bought += r.bought; sold += Math.min(unitsSold(r), r.bought); }
-  const unsoldPct = bought > 0 ? Math.round((Math.max(bought - sold, 0) / bought) * 100) : 0;
-  return { bought, sold, unsoldPct };
+// PRICE DUE for a new style (owner, 2026-11-05, option A): it still has an UNSOLD new size, and Shopify is due (per style) or an unsold
+// size is due on Amazon. Sold sizes are ticked off, so they never make a style due.
+export function styleDue(sizes: ProcessSizeRow[]) {
+  const unsold = sizes.filter((r) => !isSold(r));
+  if (unsold.length === 0) return { due: false, shp: false, amz: 0 };
+  const shp = sizes[0].shpDue;
+  const amz = unsold.filter((r) => r.amzDue).length;
+  return { due: shp || amz > 0, shp, amz };
 }

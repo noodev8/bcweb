@@ -4926,34 +4926,39 @@ export function reopenProspect(id: number) {
   return request<null>({ url: '/prospect-reopen', method: 'POST', data: { id } }, () => null);
 }
 
-// ---- New sizes (GET /process-overview) — Daily's New stuff / Prospects counts and New Additions' list. Rules in
-// bcweb-server/utils/processMap.js. (The Today screen they were built for was removed 2026-10-26; the route kept its name.) -------
-export type ProcessChannel = 'AMZ' | 'SHP' | 'CM3';
+// ---- New SKUs (GET /process-overview) — Daily's New stuff / Prospects counts and New Additions' list (the same SKUs, 2026-11-05).
+// Rules in bcweb-server/utils/processMap.js. (The Today screen they were built for was removed 2026-10-26; the route kept its name.) ----
+export type ProcessChannel = 'AMZ' | 'SHP' | 'CM3' | 'EBY';
 export interface ProcessSizeChannel {
-  net: number;               // units NET of returns since the style was created
-  sold: number;              // positive units — what perUnit is averaged over
-  profit: number;            // £ earned on the positive rows
-  perUnit: number | null;    // null = nothing sold
+  net: number;               // units NET of returns since the SKU's first Goods In arrival
+  sold: number;              // positive units
 }
 export interface ProcessSizeRow {
-  code: string; groupid: string; title: string | null; brand: string | null; size: string; created: string;
+  code: string; groupid: string; title: string | null; brand: string | null; size: string;
+  firstIn: string;               // the SKU's EARLIEST-EVER Goods In arrival (YYYY-MM-DD)
+  ageDays: number;               // days since then (London date)
+  daysLeft: number;              // 90 − ageDays: days before it leaves the list (sold or not)
   localStock: number; fbaStock: number;
-  bought: number;                // pairs booked in on Goods In (incoming_stock) — exact, not stock + sold
-  onAmz: boolean;               // the size has an amzfeed listing (FBA, 0-stock ones too)
-  // The STYLE's review (repeated on each of its sizes): the date set (null = never reviewed), the date it is due — that, or created
-  // + 20 days — and whether that has come round (server date). Set by markNewAdditionsReview.
-  reviewOn: string | null; dueOn: string; due: boolean;
-  ageDays: number;               // days since the style was created (London date)
+  bought: number;                // pairs booked in on Goods In (every arrival of the SKU)
+  onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
+  // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).
+  amzPrice: number | null; amzReview: string | null; amzDue: boolean; amzSlider: boolean;
+  rrp: number | null;            // the style's RRP (per style) — read against the two prices
+  imagename: string | null;      // the style's picture, a bare filename on images.brookfieldcomfort.com (per style)
+  shpLive: boolean; shpPrice: number | null; shpReview: string | null; shpDue: boolean; shpSlider: boolean;
+  net: number;                   // net units over every channel — sold = net > 0
   channels: Record<ProcessChannel, ProcessSizeChannel>;
 }
 export interface ProcessOverview {
   newDays: number;
   prospects: number;
-  // Daily's New stuff (2026-11-05): SKUs FIRST booked in on Goods In in 90 days, and how many have sold since (bcweb-server/utils/processMap.js → NEW_SKUS_SQL).
-  newSkus: { total: number; sold: number };
+  newSkus: { total: number; sold: number };   // counted from rows by the server — Daily's figure
   styles: number;
   rows: ProcessSizeRow[];
+  others: ProcessOtherSize[];                 // the same styles' other sizes — New Additions' size run only, never counted
 }
+// A size of a listed style that is NOT a new SKU: first booked in before the 90 days (aged out), or never booked in but holding stock.
+export interface ProcessOtherSize { groupid: string; code: string; size: string; firstIn: string | null }
 // ---- SKU health (GET /sku-health-overview) — the Admin screen's three numbers. Rules in bcweb-server/routes/sku-health-overview.js.
 export interface SkuHealth {
   sellers90: number;     // SKUs with a sale on any channel in the last 90 days
@@ -4980,15 +4985,8 @@ export function getSkuHealthHistory() {
 
 export function getProcessOverview() {
   return request<ProcessOverview>({ url: '/process-overview', method: 'GET' }, (b) => ({
-    newDays: b.newDays, prospects: b.prospects, newSkus: b.newSkus || { total: 0, sold: 0 }, styles: b.styles, rows: b.rows || [],
+    newDays: b.newDays, prospects: b.prospects, newSkus: b.newSkus || { total: 0, sold: 0 }, styles: b.styles, rows: b.rows || [], others: b.others || [],
   }));
-}
-// Review new styles for `reviewDays` days (0 = clear — back to due at created + 20 days). Writes skusummary.next_new_review.
-export function markNewAdditionsReview(groupids: string[], reviewDays: number) {
-  return request<{ updated: number; nextReview: string | null }>(
-    { url: '/new-additions-review', method: 'POST', data: { groupids, reviewDays } },
-    (b) => ({ updated: Number(b.updated) || 0, nextReview: b.next_review ?? null })
-  );
 }
 // ---- The Google allowance (google_allowance) — Google spend per Shopify unit over 90 days, fixed, re-measured quarterly by button.
 // Shown on the Google Ads screen (components/GoogleAllowanceBar) since 2026-10-26. Rules in bcweb-server/utils/googleAllowance.js.

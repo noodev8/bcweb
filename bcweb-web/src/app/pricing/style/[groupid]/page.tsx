@@ -22,6 +22,7 @@ Purpose: The decision screen for one style (see CLAUDE.md, drill-down + set pric
 import { Suspense, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import DrillListNav from '@/components/DrillListNav';
 import ZoomableThumb from '@/components/ZoomableThumb';
 import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
@@ -39,9 +40,16 @@ import { useScopedState } from '@/lib/useScopedState';
 export default function DrillPage() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
-      <DrillContent />
+      <KeyedDrill />
     </Suspense>
   );
+}
+
+// One drill per style: keyed on the route param so ‹ Prev / Next › (components/DrillListNav) — which moves between styles on the SAME
+// route — starts each one fresh, never carrying a typed price, a notice or a review pick across to the next style.
+function KeyedDrill() {
+  const params = useParams<{ groupid: string }>();
+  return <DrillContent key={params.groupid} />;
 }
 
 function DrillContent() {
@@ -180,6 +188,8 @@ function DrillContent() {
       backLabel={backLabel}
       headerRight={thumb}
     >
+      {/* ‹ Prev · n of N · Next › when opened from a list that saved one (New Additions) — nothing otherwise. */}
+      <div className="mb-3 flex justify-end empty:hidden"><DrillListNav current={groupid} /></div>
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 

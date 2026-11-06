@@ -2,158 +2,147 @@
 =======================================================================================================================================
 Module: utils/processMap.js
 =======================================================================================================================================
-Purpose: The NEW SIZES — every size of every style created in the last NEW_DAYS (90, "each quarter"), with its sales on each channel
-         and its stock. Read by GET /process-overview for the dashboard's Daily (New stuff = new sizes not sold yet) and Reports →
-         New Additions. Built 2026-10-25 for the Today screen (/process, "a map of the business in blocks"); that screen was removed
-         2026-10-26 with its five-block grid (sold 2+ / once, thin / good), Unsold repricer lists and Clearance count — git history.
+Purpose: THE NEW SKUS — prospect performance (owner, 2026-11-05: "I want to see if we are shifting new products coming in, meaning our
+         prospects are performing"). Read by GET /process-overview for the dashboard's Daily (New stuff = sold ÷ new SKUs, a %) and
+         Reports → New Additions (the list behind that figure — owner, same day: the screen and the tile must count the same thing;
+         "our intention here is to get the 25% as high as possible"). ONE query, so the tile and the list can't drift.
 
-  Channels: AMZ Amazon · SHP Shopify (the website) · CM3 the shop counter — its OWN channel, never credited to Shopify (owner: the
-  shop sells at RRP, "unfair to give it to Shopify").
-  SOLD = units NET of returns (owner; the Winners / Simmer rule) — sold one and it came back = not sold.
-  £ = profit on the positive rows. sales.profit already carries the returns haircut (utils/shopifyProfit.js, utils/amzProfit.js), so
-  returns are NOT taken off the £ a second time. sales.profit is per UNIT (qty is occasionally 2 or 3), hence profit * qty.
+  IN: every SKU whose EARLIEST-EVER Goods In arrival (incoming_stock, read across ALL of it) is in the last NEW_DAYS (90) days. The
+      style's created date plays no part — a new size of an old style counts from its own first arrival. A REBUY of a SKU first booked
+      in before the window is OUT, however long ago ("anything that has arrived over 90 days is a different problem" — Slow /
+      Clearance). Goods In starts 2024-12-31 and may be pruned to ~3 years; a SKU with no arrival on record that is bought again then
+      counts as new (owner: "treat them as new when they are rebought"). A SKU never booked in (a test listing on placeholder stock)
+      is not on the list until it is.
+  SOLD: netted a sale on ANY channel — AMZ, SHP, CM3 (the shop counter), EBY (eBay, owner) — ON OR AFTER that first arrival, net of
+      returns (sold one and it came back = not sold). Once sold it is ticked off for good: "a SKU arrives and is sold, it is notched
+      off. We buy more, sell more is irrelevant." New stock landing pulls the % DOWN on purpose — the owner's signal to slow buying
+      until it is healthy; don't "fix" that with a maturity window (rejected).
+  DAYS LEFT: NEW_DAYS − days since first arrival. An unsold SKU that reaches 90 days leaves the list (and the % — it drops out of
+      both sides, so the % can rise without a sale); the screen sorts on it so a size is priced BEFORE it drops out.
 
-WHY "CREATED IN 90 DAYS" AND NOT THE NEW PORTFOLIO STATUS: utils/portfolioStatus.js uses the same 90 days (NEW_DAYS is imported, so
-the two windows can't drift), but there WINNERS and STEADY are tested first — and STEADY is "sold a unit in 3 months", so every new
-style that sells anything leaves NEW. Read through that status the list could only ever show not sold.
+PRICE DUE (owner, 2026-11-05, option A — New Additions' own "Look again" review, skusummary.next_new_review, was retired the same day:
+"one review date, one habit"). The pricing screens' own Due, read here:
+  - Shopify (per STYLE): live on Shopify (shopify = 1) with sellable local stock, next_shopify_price_review passed or none, not in a
+    live Pricing Slider — the Shopify Pricing home's predicate (routes/pricing-all-list.js).
+  - Amazon (per SIZE): an amzfeed listing with stock live or on its way (amztotal > 0), skumap.next_amz_price_review passed or none,
+    not in a live slider — routes/amz-all-list.js's predicate, less its 0-stock status rows (a size with nothing at Amazon can't be
+    sold there by a price).
+  A style is due on New Additions when it still has an UNSOLD new size and (Shopify is due OR an unsold size is due on Amazon) — sold
+  sizes are ticked off, so they never make a style due. Worked out on the screen from these flags (bcweb-web/src/lib/process.ts).
 
-REVIEW / DUE (owner, 2026-10-27: "add a review and due date to them as well ... these are products that need actions and easily
-inspected"). Each new STYLE carries skusummary.next_new_review (set by POST /new-additions-review, the pricing screens' "Review in N
-days"). A style never reviewed falls due FIRST_REVIEW_DAYS after it was created — 20, the owner's "that's when I'd expect something to
-happen and act on it if not" (it was New Additions' "20+ days live" filter, which the Due switch replaced). So:
-  due_on = COALESCE(next_new_review, created_on + FIRST_REVIEW_DAYS);  due = due_on <= today.
-Clearing a review puts the style back on that default. Computed here (server date, London) so Daily and the screen agree.
-ON AMAZON: a size is listed when it has an amzfeed row (every FBA listing, 0-stock ones too — the AMZ loaded rule, per size).
+  Channels on a row: AMZ Amazon · SHP Shopify (the website) · CM3 the shop counter — its OWN channel, never credited to Shopify (owner:
+  the shop sells at RRP, "unfair to give it to Shopify") · EBY eBay.
+  Stock: local = sellable localstock (#FREE — CLAUDE.md, never stockvariants), the stock Shopify and the shop both sell from;
+  fba = amzfeed.amzlive, Amazon's sellable FBA units, PLUS the Amazon-bound local units (LOCAL_SQL / AMZ_BOUND_SQL below).
+  Bought = pairs booked in on Goods In, SUM(GREATEST(quantity_added, 1)) — every arrival of the SKU, the first included.
+  Size = suffix after the last '-' (CLAUDE.md — not RIGHT(code,2)), sorted numerically where it is a number.
 
-BOUGHT (owner, 2026-10-27: New stuff measured in PAIRS — "switch to pairs, make units bought exact"): the pairs booked in on Goods In,
-SUM(GREATEST(quantity_added, 1)) from incoming_stock — one row per scanned pair, legacy rows can carry more; a cancelled scan deletes its
-row — the same count Stock Position calls bought. It is NOT stock + sold: units shipped to FBA but not yet live, sent back or written
-off are in bought and in neither of those, and stock that never came through Goods In (a manual add, e.g. the old UKD-Tests rack's placeholder
-pairs for a test listing) is in them but not in bought. Counted from the style's created_on, as sales are: a CODE CAN BE REUSED — the
-UKD test M163BT (created 2026-09-01) carried six Goods In rows from Dec 2024–Mar 2025, an earlier product under the same code.
-Daily's figure is unsold pairs = bought − sold, as a % of bought, with a size's sold capped at its bought (a sale off placeholder test
-stock counts once the real pair is booked in) — computed client-side, bcweb-web/src/lib/process.ts → pairsSummary.
+HISTORY: until 2026-11-05 the screen listed every size of every STYLE CREATED in 90 days with a pairs Sold % and its own review
+(next_new_review, left in the DB unused — migrations/20261027c_new_review.sql); Daily had moved to this SKU rule that morning and the
+two disagreed (owner: the tile said 25%, the screen another number on a different list). Git history has the style-based query.
 =======================================================================================================================================
 */
 
 const { NEW_DAYS } = require('./portfolioStatus');
+const { inSliderSql } = require('./slider');
+const { safeNumeric } = require('./sql');
 
-const CHANNELS = ['AMZ', 'SHP', 'CM3'];
+const CHANNELS = ['AMZ', 'SHP', 'CM3', 'EBY'];
 
-// A never-reviewed new style is due this many days after it was created (see REVIEW / DUE above).
-const FIRST_REVIEW_DAYS = 20;
-
-// Every size of every NEW style, with its sales per channel since the style was created and its stock. One query, no N+1.
-//   created_on is the London date of skusummary.created_at, so a sale booked on the creation day counts.
-//   Stock: local = sellable localstock (#FREE — CLAUDE.md, never stockvariants), the stock Shopify and the shop both sell from;
-//   fba = amzfeed.amzlive, Amazon's sellable FBA units, PLUS the Amazon-bound local units (LOCAL_SQL / AMZ_BOUND_SQL below).
-//   Size = suffix after the last '-' (CLAUDE.md — not RIGHT(code,2)), sorted numerically where it is a number.
-//   NEVER-STOCKED SIZES ARE LEFT OUT (owner, 2026-10-25): a size with no stock now AND no sale since creation is one we listed in the
-//   size run but never bought (the edge 36s/37s, UK 3s and 8s) — not unsold stock. Counting it swelled New and Unsold and pulled the
-//   Winner % down. A sold-out size has sales, so it stays.
 // AMAZON-BOUND local units count as FBA, not local (owner, 2026-10-26: "due for Pick and in location C3 Amazon") — the same split as
 // Amazon Order (routes/amazon-order-list.js): flagged allocated='amz' (due for Pick) or picked and staged on the C3-Amazon shelf
-// waiting for DPD. They sit in localstock until collected but are already on their way, so a size whose only stock is Amazon-bound
-// is AT FBA, not Local only. Both predicates on localstock alias `l`.
+// waiting for DPD. Both predicates on localstock alias `l`.
 const LOCAL_SQL = `l.ordernum = '#FREE' AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0
                    AND COALESCE(l.location, '') <> 'C3-Amazon' AND COALESCE(l.allocated, '') <> 'amz'`;
 const AMZ_BOUND_SQL = `COALESCE(l.deleted, 0) = 0 AND l.qty > 0
                        AND (l.allocated = 'amz' OR (l.ordernum = '#FREE' AND l.location = 'C3-Amazon'))`;
 
-const NEW_SIZES_SQL = `
-  WITH nw AS (
-    SELECT ss.groupid, ss.brand, (ss.created_at AT TIME ZONE 'Europe/London')::date AS created_on, ss.next_new_review
-      FROM skusummary ss
-     WHERE ss.created_at >= now() - make_interval(days => $1::int)
+// Every NEW SKU with its sales per channel since its first arrival, its stock and both channels' price due. No N+1.
+const NEW_SKUS_SQL = `
+  WITH today AS (SELECT (now() AT TIME ZONE 'Europe/London')::date AS d),
+  f AS (
+    SELECT i.code, MIN(i.arrival_date)::date AS first_in, SUM(GREATEST(i.quantity_added, 1)) AS bought
+      FROM incoming_stock i
+     GROUP BY i.code
+    HAVING MIN(i.arrival_date) >= (SELECT d FROM today) - $1::int
   ),
   sz AS (
-    SELECT m.code, nw.groupid, nw.brand, nw.created_on, nw.next_new_review, SUBSTRING(m.code FROM '[^-]*$') AS size
-      FROM nw JOIN skumap m ON m.groupid = nw.groupid
+    SELECT f.code, f.first_in, f.bought, COALESCE(m.groupid, f.code) AS groupid, m.next_amz_price_review,
+           SUBSTRING(f.code FROM '[^-]*$') AS size
+      FROM f LEFT JOIN skumap m ON m.code = f.code
   ),
   sl AS (
     SELECT x.code, x.channel,
-           SUM(x.qty)                                   AS net_units,
-           SUM(x.qty)            FILTER (WHERE x.qty > 0) AS sold_units,
-           SUM(x.profit * x.qty) FILTER (WHERE x.qty > 0) AS profit
-      FROM sz JOIN sales x ON x.code = sz.code AND x.solddate >= sz.created_on
-     WHERE x.channel IN ('AMZ', 'SHP', 'CM3')
+           SUM(x.qty)                                     AS net_units,
+           SUM(x.qty) FILTER (WHERE x.qty > 0)            AS sold_units
+      FROM sz JOIN sales x ON x.code = sz.code AND x.solddate >= sz.first_in
+     WHERE x.channel IN ('AMZ', 'SHP', 'CM3', 'EBY')
      GROUP BY x.code, x.channel
   ),
   loc AS (
-    SELECT l.code, SUM(l.qty) AS qty
-      FROM localstock l JOIN sz ON sz.code = l.code
-     WHERE ${LOCAL_SQL}
-     GROUP BY l.code
+    SELECT l.code, SUM(l.qty) AS qty FROM localstock l JOIN sz ON sz.code = l.code WHERE ${LOCAL_SQL} GROUP BY l.code
+  ),
+  -- The style's sellable local stock, ALL its sizes (new or not) — what Shopify sells, so what makes a Shopify price worth setting.
+  sloc AS (
+    SELECT l.groupid, SUM(l.qty) AS qty FROM localstock l
+     WHERE l.groupid IN (SELECT groupid FROM sz) AND ${LOCAL_SQL}
+     GROUP BY l.groupid
   ),
   fba AS (
     SELECT x.code, SUM(x.qty) AS qty FROM (
-      SELECT f.code, f.amzlive AS qty FROM amzfeed f JOIN sz ON sz.code = f.code
+      SELECT a.code, a.amzlive AS qty FROM amzfeed a JOIN sz ON sz.code = a.code
       UNION ALL
       SELECT l.code, l.qty FROM localstock l JOIN sz ON sz.code = l.code WHERE ${AMZ_BOUND_SQL}
     ) x
      GROUP BY x.code
-  ),
-  inc AS (
-    SELECT i.code, SUM(GREATEST(i.quantity_added, 1)) AS qty   -- BOUGHT, see the header
-      FROM incoming_stock i JOIN sz ON sz.code = i.code AND i.arrival_date >= sz.created_on
-     GROUP BY i.code
   )
-  SELECT sz.code, sz.groupid, sz.brand, sz.size, sz.created_on::text AS created_on,
-         t.shopifytitle AS title,
-         -- Dates as text, never a pg DATE (CLAUDE.md: BST day-shift).
-         sz.next_new_review::text                                                         AS review_on,
-         COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS})::text           AS due_on,
-         COALESCE(sz.next_new_review, sz.created_on + ${FIRST_REVIEW_DAYS}) <= (now() AT TIME ZONE 'Europe/London')::date AS due,
-         EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = sz.code)                            AS on_amz,
-         (now() AT TIME ZONE 'Europe/London')::date - sz.created_on                        AS age_days,
-         COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock, COALESCE(inc.qty, 0) AS bought,
-         COALESCE(json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units, 'profit', sl.profit))
-                    FILTER (WHERE sl.channel IS NOT NULL), '{}') AS sales
+  SELECT sz.code, sz.groupid, NULLIF(TRIM(ss.brand), '') AS brand, sz.size, t.shopifytitle AS title,
+         sz.first_in::text AS first_in,                                     -- text, never a pg DATE (CLAUDE.md: BST day-shift)
+         (SELECT d FROM today) - sz.first_in AS age_days,
+         COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock, sz.bought,
+         -- Amazon (per size)
+         (a.code IS NOT NULL) AS on_amz,
+         ${safeNumeric('a.amzprice')} AS amz_price,
+         sz.next_amz_price_review::text AS amz_review,
+         (a.code IS NOT NULL AND COALESCE(a.amztotal, 0) > 0
+           AND (sz.next_amz_price_review IS NULL OR sz.next_amz_price_review <= (SELECT d FROM today))
+           AND NOT ${inSliderSql('AMZ', 'sz.code')}) AS amz_due,
+         ${inSliderSql('AMZ', 'sz.code')} AS amz_slider,
+         -- Shopify (per style — the same on each of its sizes)
+         (COALESCE(ss.shopify, 0) = 1) AS shp_live,
+         ${safeNumeric('ss.shopifyprice')} AS shp_price,
+         ss.imagename,                                                     -- the style's picture (New Additions' thumbnail)
+         ${safeNumeric('ss.rrp')} AS rrp,                                   -- the style's RRP (New Additions' RRP column)
+         ss.next_shopify_price_review::text AS shp_review,
+         (COALESCE(ss.shopify, 0) = 1 AND COALESCE(sloc.qty, 0) > 0
+           AND (ss.next_shopify_price_review IS NULL OR ss.next_shopify_price_review <= (SELECT d FROM today))
+           AND NOT ${inSliderSql('SHP', 'sz.groupid')}) AS shp_due,
+         ${inSliderSql('SHP', 'sz.groupid')} AS shp_slider,
+         COALESCE((SELECT json_object_agg(sl.channel, json_build_object('net', sl.net_units, 'sold', sl.sold_units))
+                     FROM sl WHERE sl.code = sz.code), '{}') AS sales
     FROM sz
-    LEFT JOIN sl    ON sl.code = sz.code
-    LEFT JOIN loc   ON loc.code = sz.code
-    LEFT JOIN fba   ON fba.code = sz.code
-    LEFT JOIN inc   ON inc.code = sz.code
-    LEFT JOIN title t ON t.groupid = sz.groupid
-   GROUP BY sz.code, sz.groupid, sz.brand, sz.size, sz.created_on, sz.next_new_review, t.shopifytitle, loc.qty, fba.qty, inc.qty
-  -- Never stocked = left out (see above). A size booked in counts as stocked even with nothing held or sold now (e.g. all of it on
-  -- its way into FBA), so every bought pair is in the total.
-  HAVING COALESCE(loc.qty, 0) > 0 OR COALESCE(fba.qty, 0) > 0 OR COUNT(sl.channel) > 0 OR COALESCE(inc.qty, 0) > 0
-   ORDER BY sz.created_on DESC, sz.groupid,
-            CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
+    LEFT JOIN skusummary ss ON ss.groupid = sz.groupid
+    LEFT JOIN title t       ON t.groupid  = sz.groupid
+    LEFT JOIN amzfeed a     ON a.code     = sz.code
+    LEFT JOIN loc           ON loc.code   = sz.code
+    LEFT JOIN fba           ON fba.code   = sz.code
+    LEFT JOIN sloc          ON sloc.groupid = sz.groupid
+   ORDER BY sz.groupid, CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 
-// DAILY'S NEW STUFF FIGURE — PROSPECT PERFORMANCE (owner, 2026-11-05). A different list from NEW_SIZES_SQL on purpose:
-//   - IN: every SKU whose EARLIEST-EVER Goods In arrival (incoming_stock, read across ALL of it) is in the last NEW_DAYS days. The
-//     style's created date plays no part ("a new size added to an old style" counts from its own first arrival). A REBUY of a SKU first
-//     booked in before the window is OUT, however long ago — "anything that has arrived over 90 days is a different problem" (Slow /
-//     Clearance). Goods In starts 2024-12-31 and may be pruned to ~3 years; a SKU with no arrival on record that is bought again then
-//     counts as new — owner: "treat them as new when they are rebought".
-//   - SOLD: netted a sale on ANY channel (AMZ, SHP, CM3, EBY — eBay included, owner) ON OR AFTER that first arrival. Once sold it is
-//     ticked off for good: "a SKU arrives and is sold, it is notched off. We buy more, sell more is irrelevant."
-//   - Figure = sold ÷ in, shown as a %. New stock landing pulls it DOWN on purpose — the owner's signal to slow buying until it is
-//     healthy. Live, ~30ms over all of Goods In; nothing stored.
-const NEW_SKUS_SQL = `
-  WITH f AS (
-    SELECT code, MIN(arrival_date) AS first_in
-      FROM incoming_stock
-     GROUP BY code
-    HAVING MIN(arrival_date) >= (now() AT TIME ZONE 'Europe/London')::date - $1::int
-  ),
-  s AS (
-    SELECT f.code
-      FROM f JOIN sales x ON x.code = f.code AND x.solddate >= f.first_in
-     WHERE x.channel IN ('AMZ', 'SHP', 'CM3', 'EBY')
-     GROUP BY f.code
-    HAVING SUM(x.qty) > 0
-  )
-  SELECT (SELECT COUNT(*) FROM f)::int AS total, (SELECT COUNT(*) FROM s)::int AS sold
+// THE STYLE'S OTHER SIZES — for the size run only, never counted (owner, 2026-11-05, on Capri 4 Black showing one lone tile: "Show all
+// sizes and enable the sizes that still havnt sold"). Every size of a style on the list that is NOT a new SKU: first booked in before the
+// window (it has aged out, sold or not — Slow / Clearance's problem now) or never booked in but holding stock. A size never booked in
+// and holding nothing is one we never bought (the edge 36s / UK 8s) and stays hidden, as before. $1 = the new SKU codes.
+const OTHER_SIZES_SQL = `
+  SELECT m.groupid, m.code, SUBSTRING(m.code FROM '[^-]*$') AS size,
+         (SELECT MIN(i.arrival_date)::text FROM incoming_stock i WHERE i.code = m.code) AS first_in
+    FROM skumap m
+   WHERE m.groupid IN (SELECT groupid FROM skumap WHERE code = ANY($1::text[]))
+     AND NOT (m.code = ANY($1::text[]))
+     AND (EXISTS (SELECT 1 FROM incoming_stock i WHERE i.code = m.code)
+          OR EXISTS (SELECT 1 FROM localstock l WHERE l.code = m.code AND ${LOCAL_SQL})
+          OR EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = m.code AND COALESCE(a.amztotal, 0) > 0))
 `;
 
-module.exports = {
-  NEW_DAYS,
-  FIRST_REVIEW_DAYS,
-  CHANNELS,
-  NEW_SIZES_SQL,
-  NEW_SKUS_SQL,
-};
+module.exports = { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL };

@@ -16,9 +16,8 @@ duplicates"). The page reads top to bottom in order of importance:
                   OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
                   each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
-       New stuff  the % of new PAIRS (styles added in 90 days) bought on Goods In and not sold — a score for the buying, kept LOW by
-                  better prospects (owner, 2026-10-27; was a count of unsold sizes due a review) (GET /process-overview, the same data as New
-                  Additions' list). Opens New Additions.
+       New stuff  prospect performance: of the SKUs first booked in on Goods In in 90 days, the % sold since (any channel) — kept HIGH
+                  (owner, 2026-11-05) (GET /process-overview — the same rows New Additions lists, so the two agree). Opens New Additions.
        Prospects  finds on the list (same request). Opens Prospects.
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
                   key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
@@ -207,12 +206,12 @@ export default function DashboardPage() {
 ===================================================================================================================================== */
 function Daily() {
   const due = useApiQuery('dashboard-pricing-due', () => getPricingDueCounts());
-  // The new-sizes data New Additions lists (GET /process-overview).
+  // The new SKUs New Additions lists (GET /process-overview) — the tile's figure is counted from the same rows.
   const overview = useApiQuery('process-overview', () => getProcessOverview());
   // PROSPECT PERFORMANCE (owner, 2026-11-05): of every SKU FIRST booked in on Goods In in the last 90 days, the % that has made a sale
   // (any channel, eBay included). Once sold it is ticked off — buying or selling more changes nothing; new stock landing pulls it down
   // on purpose ("tells me to slow down getting new stuff until the percentage is healthy"). Rules: bcweb-server/utils/processMap.js →
-  // NEW_SKUS_SQL. New Additions keeps its own style-based list and pairs strip.
+  // NEW_SKUS_SQL. New Additions lists the same SKUs (2026-11-05).
   const newSkus = overview.data ? overview.data.newSkus : null;
   const soldPct = newSkus ? `${newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}%` : null;
   const prospects = overview.data ? overview.data.prospects : null;
