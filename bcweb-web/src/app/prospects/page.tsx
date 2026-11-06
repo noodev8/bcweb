@@ -42,7 +42,6 @@ import {
 } from '@/lib/api';
 
 const NO_ROWS: Prospect[] = [];
-const STALE_DAYS = 7;   // a line nobody has checked for this long is flagged "check again"
 
 const RATINGS: { key: ProspectRating; label: string; on: string }[] = [
   { key: 'diamond', label: '◆ Diamond', on: 'border-sky-300 bg-sky-100 text-sky-800' },
@@ -550,7 +549,6 @@ function ProspectRow({ p, dim, mark, onOpen, onCut }: {
   const rankC = latestWith(p, 'rank');
   const priceC = latestWith(p, 'price');
   const rating = RATINGS.find((r) => r.key === p.rating);
-  const sinceLook = daysAgo(lastActivity(p));
   const outcome = OUTCOMES.find((o) => o.key === p.outcome);   // archived lines only
   // The row is a button (opens the card), so × sits beside it rather than inside — a button can't hold another button.
   return (
@@ -595,8 +593,9 @@ function ProspectRow({ p, dim, mark, onOpen, onCut }: {
           </span>
         </>
       ) : (
-        <span className={`w-28 shrink-0 text-right text-xs ${sinceLook >= STALE_DAYS ? 'text-amber-700' : 'text-slate-400'}`}
-          title={sinceLook >= STALE_DAYS ? `Not checked for ${sinceLook} days` : `Added by ${p.owner}`}>
+        // Plain grey, always (owner, 2026-11-04: "drop it. Over complicating. the date is enough") — was amber after 7 days with no
+        // rank check, which read oddly beside a fresh comment or edit.
+        <span className="w-28 shrink-0 text-right text-xs text-slate-400" title={`Added by ${p.owner}`}>
           {lastChangeBy(p).by} · {fmtWhen(lastChange(p))}
         </span>
       )}
@@ -631,7 +630,6 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
   const latest = p.checks.length ? p.checks[p.checks.length - 1] : null;   // checks arrive oldest first
   const rankC = latestWith(p, 'rank');
   const priceC = latestWith(p, 'price');
-  const sinceLook = daysAgo(lastActivity(p));
   const archived = !!p.archived_at;
   const archivedAs = OUTCOMES.find((o) => o.key === p.outcome);
 
@@ -675,7 +673,7 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
                 {archivedAs && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${archivedAs.on}`}>{archivedAs.label}</span>}
                 archived by {p.archived_by} {fmtWhen(p.archived_at!)}
               </span>
-            ) : sinceLook >= STALE_DAYS && <span className="text-amber-700">not checked for {sinceLook} days</span>}
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
