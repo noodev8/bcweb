@@ -1541,6 +1541,37 @@ export function getSlowSizes() {
   );
 }
 
+// DEEP SELLERS (server: routes/analytics-deep-sizes.js, rules in utils/deepSizes.js) — sizes that sell (Range's green card) but hold
+// 3+ more than 90 days' worth at their 12-month pace.
+export interface DeepSize {
+  code: string;
+  groupid: string;
+  size: string;
+  title: string | null;
+  brand: string | null;
+  units: number;              // local + Amazon, one number
+  last_sale: string | null;   // YYYY-MM-DD, last NET sale
+  idle_days: number;
+  sold_12m: number;           // net of returns
+  sold_90d: number;           // net of returns
+  first_seen: string | null;  // earlier of first Goods In arrival / first sale; null = before the log
+  days_here: number | null;
+  keep: number;               // 90 days' worth at its pace, at least 1
+  over: number;               // units − keep
+  on_order: number;           // supplier lines not yet arrived
+  on_amazon: boolean;
+}
+export type DeepWayOut = 'shopify' | 'amazon' | 'off';
+export interface DeepStyle { groupid: string; imagename: string | null; units: number; deep_units: number; way_out: DeepWayOut }
+
+export function getDeepSizes() {
+  return request<{ today: string; rule: { range_days: number; new_days: number; min_over: number };
+    sizes: DeepSize[]; held: DeepSize[]; styles: DeepStyle[]; others: SlowOtherSize[] }>(
+    { url: '/analytics-deep-sizes', method: 'GET' },
+    (b) => ({ today: b.today, rule: b.rule, sizes: b.sizes || [], held: b.held || [], styles: b.styles || [], others: b.others || [] })
+  );
+}
+
 // Slow Sizes -> click a style (its own screen): every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
 export interface StyleSizeRow {
   code: string;

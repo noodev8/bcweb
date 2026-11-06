@@ -56,6 +56,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
 import StyleThumb from '@/components/StyleThumb';
+import ListTitle from '@/components/ListTitle';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getSlowSizes, type SlowSize } from '@/lib/api';
 import { SLOW_BANDS, slowBandFromUrl } from '@/lib/slowBands';
@@ -278,6 +279,10 @@ function SlowBoxBody() {
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.data && (
         <>
+          {/* THE TITLE — the card's name and colour (components/ListTitle; owner, 2026-11-06: title and colour on all four list screens). */}
+          <ListTitle tone={band} title={`No sale ${box.sub}`}
+            rule={band === 'cl' ? 'Every SKU we hold with no net sale for 9 months or more.' : `Every SKU we hold with no net sale for ${box.sub}.`} />
+
           {/* FILTERS — narrow the list. */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <select value={brand} onChange={(e) => setView({ brand: e.target.value, sel: [] })} aria-label="Brand"
@@ -307,10 +312,8 @@ function SlowBoxBody() {
               amazonOff={menuRow && isBirk(menuRow.brand) ? 'Birkenstock — not sold on Amazon' : undefined} />
           </div>
 
-          {/* THE BAR — which box, what's on screen, Cut and Refresh. (Park and the bulk price moves join it in the next pass.) */}
+          {/* THE BAR — what's on screen, Cut and Refresh (the box's name is the title now). (Park and the bulk price moves join it in the next pass.) */}
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600">
-            {/* The box's name as its card on Range says it (owner, 2026-11-06: the screen lost its "Slow movers" / "3–9 months" names). */}
-            <span className="font-medium text-slate-700">No sale {box.sub}</span>
             <span className="tabular-nums">
               {n(visible.length)} style{visible.length === 1 ? '' : 's'} · {n(visible.reduce((t, g) => t + g.stock, 0))} in stock
             </span>

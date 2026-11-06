@@ -61,7 +61,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
+  RectangleStackIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, Square3Stack3DIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -129,6 +129,9 @@ const GROUPS: Group[] = [
       { title: 'Add / Modify', subtitle: 'Edit or create a product', description: 'Find an existing product to edit, or create a new one.', href: '/products', icon: TagIcon },
       { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
       { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
+      // Deep sellers (2026-11-06, READ ONLY — a trial): sizes that sell but hold 3+ beyond 90 days' worth. Branches off Range's green
+      // card (which stays as it is); Range itself is on Daily, so this is its one place in the menu.
+      { title: 'Deep sellers', subtitle: 'Selling, but bought too deep', description: 'Sizes that sell but hold far more than 90 days’ worth — which way each can be pushed out.', href: '/analytics/deep-sizes', icon: Square3Stack3DIcon },
       // Slow movers LEFT THE MENU 2026-11-06 — it is on Daily now (the Range card), and a Daily screen is never repeated here.
       // eBay listings (2026-11-01) — read only for now: what's live on eBay, checked against our stock. Next to Slow movers: eBay is
       // where the clearance stock goes.
@@ -295,7 +298,7 @@ function Daily() {
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <CountLink href="/analytics/new-additions" label="New stuff" n={soldPct} unit={newSkus ? `${newSkus.sold} of ${newSkus.total} new` : 'new SKUs'} />
             <CountLink href="/analytics/slow-sizes" label="Range" n={rangePct}
-              unit={range ? `${range.counts.sold.sizes.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} SKUs` : 'SKUs we hold'} />
+              unit={range ? `${range.counts.sold.sizes.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} held` : 'held'} />
           </div>
         </div>
 

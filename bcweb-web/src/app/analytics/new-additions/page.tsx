@@ -80,6 +80,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
 import StyleThumb from '@/components/StyleThumb';
+import ListTitle from '@/components/ListTitle';
 import BulkPercentPrice, { movePrice, type BulkPlan, type BulkPlanItem } from '@/components/BulkPercentPrice';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
@@ -505,8 +506,13 @@ function NewAdditionsPageInner() {
 
       {!loading && !error && (
         <>
-          {/* THE SUMMARY — the whole 90 days. Sold % is Daily's New stuff figure, from the same rows. No page title — owner,
-              2026-10-26: the back link names the module. */}
+          {/* THE TITLE — name, colour (Range's grey "Not sold yet" card) and the rule (components/ListTitle; owner, 2026-11-06: title
+              and colour on all four list screens, "I'm starting to get confused which one I'm looking at" — replaces the 2026-10-26
+              "no page title"). */}
+          <ListTitle tone="new" title="New Additions"
+            rule="SKUs first booked in during the last 90 days. White sizes haven’t sold yet." />
+
+          {/* THE SUMMARY — the whole 90 days. Sold % is Daily's New stuff figure, from the same rows. */}
           <dl className="mb-4 flex flex-wrap divide-x divide-slate-200 rounded-lg border border-slate-200 bg-white text-sm">
             {[
               ['New SKUs', String(totals.skus)],
