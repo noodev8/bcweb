@@ -1527,13 +1527,16 @@ export interface SlowSize {
   on_shelf: string;           // oldest held pair's arrival, YYYY-MM-DD ('2024-12-31' = before the log)
   on_shelf_days: number;
   style_sold_12m: number;     // the whole style, net, last 12 months
-  clearance: boolean;         // idle 9+ calendar months — Slow Sizes' Clearance box = Process's Clearance card
+  sold_12m: number;           // THIS size, net, last 12 months
+  clearance: boolean;         // idle 9+ calendar months — Slow movers' Clearance box
 }
+// A size of a listed style that we DON'T hold (ever arrived on Goods In or ever sold) — a grey tile on Slow movers.
+export interface SlowOtherSize { groupid: string; code: string; size: string }
 
 export function getSlowSizes() {
-  return request<{ today: string; sizes: SlowSize[] }>(
+  return request<{ today: string; sizes: SlowSize[]; styles: { groupid: string; imagename: string | null }[]; others: SlowOtherSize[] }>(
     { url: '/analytics-slow-sizes', method: 'GET' },
-    (b) => ({ today: b.today, sizes: b.sizes || [] })
+    (b) => ({ today: b.today, sizes: b.sizes || [], styles: b.styles || [], others: b.others || [] })
   );
 }
 

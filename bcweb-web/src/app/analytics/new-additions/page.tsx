@@ -74,12 +74,12 @@ VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?show= ?band= ?sort= ?dir= ?sel
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
+import StyleThumb from '@/components/StyleThumb';
 import BulkPercentPrice, { movePrice, type BulkPlan, type BulkPlanItem } from '@/components/BulkPercentPrice';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
@@ -662,7 +662,7 @@ function NewAdditionsPageInner() {
                           >
                             <td className="w-[30rem] max-w-[30rem] py-3 pl-4 pr-3 align-top">
                               <div className="flex items-start gap-3">
-                              <div className={'shrink-0 ' + fade}><Thumb imagename={g.sizes[0].imagename} alt={g.title || g.groupid} /></div>
+                              <div className={'shrink-0 ' + fade}><StyleThumb imagename={g.sizes[0].imagename} alt={g.title || g.groupid} /></div>
                               <div className="min-w-0 flex-1">
                               {/* LED BY THE GROUP ID (owner, 2026-11-05: "Lead by GROUPID to see what it looks like") — the code large, the
                                   title small under it; brand in its own column. The "first in n days ago · x of y new sizes sold" words
@@ -744,20 +744,6 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
           </span>
         );
       })}
-    </div>
-  );
-}
-
-// THE ROW'S PICTURE — 56px, no taller than the group id + title + tiles, so it doesn't make the rows taller. Same image host as the
-// other screens. No image (or a broken one) = an empty box of the same size, so the group ids still line up down the list.
-const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
-function Thumb({ imagename, alt }: { imagename: string | null; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
-      {imagename && !failed && (
-        <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="56px" onError={() => setFailed(true)} className="object-contain" />
-      )}
     </div>
   );
 }

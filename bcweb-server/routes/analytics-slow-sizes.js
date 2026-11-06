@@ -24,6 +24,13 @@ ON SHELF = days since the OLDEST pair still held arrived (utils/onShelf.js — o
 NEVER SOLD: idle days = on shelf days (it has been waiting since its oldest pair arrived). Since 2026-10-15 these roll in with the rest
          (owner: "everything rolls as standard instead of putting text in") — no "before 2025" text, no separate top rank.
 
+NEVER SOLD, RESTOCKED ANYWAY (owner, 2026-11-06, Slow movers): a restock restarts a size's clock (the 2026-10-15 rule — a size that
+         SOLD has done its job, so its restock is the reorder process's business, not this screen's). A size that NEVER sold never did
+         its job: "I bought more before it even sell". So HERE ONLY its clock runs from its FIRST EVER Goods In arrival, not the restock
+         — idle_days / idle_from / clearance are recomputed from first_in (e.g. Rieker L7500-35, first in Aug 2025, restocked Sep
+         2026, never sold → No sale 9 months+), with no special mention on screen. Done in this route, NOT utils/onShelf.js, so the
+         size screen and eBay's clearance price (which read the util) are untouched until the owner asks.
+
 STOCK = the utils/financeStock.js definition at code grain (local #FREE not deleted + amzfeed.amztotal), LIVE — one number, no Amazon
          split, the same as Slow and Sell-through.
 
@@ -33,6 +40,13 @@ CLEARANCE (2026-10-26) = idle since on or before today minus 9 calendar months (
 STYLE SOLD (12M) = net units of the whole STYLE in the last 12 months (was 90 days until 2026-10-15 — owner: "shall we say a
          year ... its basically saying the style has sold this many in this time"), so a dead size in a selling style (the Milano case) can be told apart from a
          dead style (which Slow already lists).
+
+SLOW MOVERS AS STYLE ROWS (owner, 2026-11-06 — the handover from New stuff, New Additions' layout): the screen draws one row per
+         STYLE with every size as a tile, so three extra facts ride along — none changes who is on the list:
+           styles[]  = each listed style's picture (skusummary.imagename).
+           sold_12m  = THIS size's net units in the last 12 months (returns subtract), beside its stock ("8 in stock, 1 sold").
+           others[]  = the style's sizes we DON'T hold that have ever arrived on Goods In or ever sold — the grey tiles, so a dud size
+                       can be read against the run. (Never-stocked placeholders left out, as New Additions' OTHER_SIZES_SQL.)
 
          READ-ONLY. Requires auth.
 =======================================================================================================================================
@@ -52,8 +66,11 @@ Success Response:
       "on_shelf": "2025-03-11",                 // oldest held pair's arrival ('2024-12-31' = before the log)
       "on_shelf_days": 218,
       "style_sold_12m": 41,
+      "sold_12m": 3,                            // this size, net, last 12 months
       "clearance": true }                       // unsold 9 months (see CLEARANCE)
-  ]                                             // longest idle first; then most pairs
+  ],                                            // longest idle first; then most pairs
+  "styles": [ { "groupid": "1017722-BEND", "imagename": "1017722.jpg" | null } ],
+  "others": [ { "groupid": "1017722-BEND", "code": "1017722-BEND-40", "size": "40" } ]   // not held, ever arrived / sold
 }
 =======================================================================================================================================
 Return Codes:
@@ -66,6 +83,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/verifyToken');
+const { query } = require('../database');
 const { readSlowSizes } = require('../utils/slowSizes');
 const logger = require('../utils/logger');
 
@@ -75,11 +93,48 @@ router.get('/', async (req, res) => {
   try {
     const { today, cutoff, sizes } = await readSlowSizes();
 
+    // NEVER SOLD, RESTOCKED ANYWAY (see the header): run a never-sold size's clock from its FIRST arrival when a restock moved it later.
+    const neverSold = sizes.filter((x) => !x.last_sale).map((x) => x.code);
+    if (neverSold.length) {
+      const firstQ = await query(
+        `SELECT code, to_char(MIN(arrival_date), 'YYYY-MM-DD') AS d FROM incoming_stock
+          WHERE code = ANY($1::text[]) AND arrival_date IS NOT NULL GROUP BY code`, [neverSold]);
+      const firstIn = new Map(firstQ.rows.map((r) => [r.code, r.d]));
+      const dayNum = (v) => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+      for (const x of sizes) {
+        const f = !x.last_sale ? firstIn.get(x.code) : null;
+        if (f && f < x.on_shelf) {
+          x.idle_days = dayNum(today) - dayNum(f);
+          x.idle_from = 'arrival';
+          x.clearance = f <= cutoff;
+        }
+      }
+    }
+
     // Longest idle first, then longest on the shelf, then most pairs.
     sizes.sort((a, b) => b.idle_days - a.idle_days || b.on_shelf_days - a.on_shelf_days || b.units - a.units
       || a.code.localeCompare(b.code));
 
-    return res.json({ return_code: 'SUCCESS', today, cutoff, sizes });
+    // The extras for the style rows (see SLOW MOVERS AS STYLE ROWS) — three set queries, no N+1.
+    const codes = sizes.map((x) => x.code);
+    const groupids = [...new Set(sizes.map((x) => x.groupid))];
+    const [imgQ, soldQ, othersQ] = await Promise.all([
+      query(`SELECT groupid, NULLIF(TRIM(imagename), '') AS imagename FROM skusummary WHERE groupid = ANY($1::text[])`, [groupids]),
+      query(`SELECT code, SUM(qty)::int AS q FROM sales
+              WHERE code = ANY($1::text[]) AND solddate > (now() AT TIME ZONE 'Europe/London')::date - 365
+              GROUP BY code`, [codes]),
+      query(`SELECT DISTINCT m.groupid, m.code, SUBSTRING(m.code FROM '[^-]*$') AS size
+               FROM skumap m
+              WHERE m.groupid = ANY($1::text[]) AND m.code IS NOT NULL AND NOT (m.code = ANY($2::text[]))
+                AND (EXISTS (SELECT 1 FROM incoming_stock i WHERE i.code = m.code)
+                     OR EXISTS (SELECT 1 FROM sales s WHERE s.code = m.code))`, [groupids, codes]),
+    ]);
+    const sold = new Map(soldQ.rows.map((r) => [r.code, Math.max(Number(r.q) || 0, 0)]));
+    for (const x of sizes) x.sold_12m = sold.get(x.code) || 0;
+
+    return res.json({ return_code: 'SUCCESS', today, cutoff, sizes,
+      styles: imgQ.rows.map((r) => ({ groupid: r.groupid, imagename: r.imagename || null })),
+      others: othersQ.rows.map((r) => ({ groupid: r.groupid, code: r.code, size: r.size })) });
   } catch (err) {
     logger.error('[analytics-slow-sizes] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load slow sizes' });

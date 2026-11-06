@@ -120,7 +120,7 @@ const GROUPS: Group[] = [
       { title: 'Add / Modify', subtitle: 'Edit or create a product', description: 'Find an existing product to edit, or create a new one.', href: '/products', icon: TagIcon },
       { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
       { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
-      { title: 'Slow movers', subtitle: "Sizes that haven't sold", description: 'Every size held, by how long since it last sold.', href: '/analytics/slow-sizes', icon: ClockIcon },
+      { title: 'Slow movers', subtitle: "Sizes that haven't sold", description: 'Sizes not sold: new, 91 days – 9 months, 9 months+ — each opens its list.', href: '/analytics/slow-sizes', icon: ClockIcon },
       // eBay listings (2026-11-01) — read only for now: what's live on eBay, checked against our stock. Next to Slow movers: eBay is
       // where the clearance stock goes.
       { title: 'eBay listings', subtitle: "What's live on eBay", description: 'Every live eBay listing, read from eBay and checked against our stock and the postage rules.', href: '/ebay', icon: GlobeAltIcon },
