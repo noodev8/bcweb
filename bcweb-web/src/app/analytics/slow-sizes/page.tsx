@@ -3,39 +3,34 @@
 =======================================================================================================================================
 Page: /analytics/slow-sizes  (SLOW MOVERS — the FRONT screen; its Products & stock tile, and the "Sizes →" link on Slow)
 =======================================================================================================================================
-Purpose: WHAT DO I WORK ON (owner, 2026-11-06). Three counts of SIZES not sold, left to right the life of a size, each opening the
-         list it is worked from — the same way New stuff works ("I had a list of 90 day items that were sold and unsold so I worked on
-         the unsold"):
-
-           Not sold yet          New SKUs (first booked in on Goods In in the last 90 days — THE New stuff rule, GET /process-overview)
-                                 with no net sale since they arrived                                 -> New Additions
-           No sale 91 days – 9 months   held sizes 91 days to 9 months without a net sale            -> /analytics/slow-sizes/list?band=mid
-           No sale 9 months+            held sizes 9 months+ without a net sale                      -> /analytics/slow-sizes/list?band=cl
-         (lib/slowBands has the two Slow boxes; the handover from New stuff at 90 / 91 days is exact.)
+Purpose: WHAT DO I WORK ON (owner, 2026-11-06). Every SIZE we hold, split four ways, the slow parts each opening the list they are
+         worked from — the same way New stuff works ("I had a list of 90 day items that were sold and unsold so I worked on the unsold").
 
 SIZES, NOT ITEMS — ONE QUESTION. The same day this screen was briefly a stock REPORT: every item in stock (2,907) as a hero figure,
-         split first by size rules ("Selling", "Restocked") and then by each item's own age, with charts. Owner, after: "Why do I care?
-         and what can I do about it … Not sure what Im looking at here and it doesnt correspond … Maybe that figure was the catalyst and
-         red herring." Stock health by item age ("am I buying faster than I sell?") is a different question — Sell-through answers
-         it (utils/unitAge.js) — and it is NOT mixed in here. Every number on this screen is a count of sizes with a list behind it.
-         Git history has the report versions.
+         split by size rules and then by each item's own age, with charts. Owner, after: "Why do I care? and what can I do about it …
+         Maybe that figure was the catalyst and red herring." Stock health by item age is Sell-through's question (utils/unitAge.js)
+         and is NOT mixed in here. Git history has the report versions.
 
-THE LOOK: one flat row (data, not action cards — owner: "the cards look like action points"), the same format in all three parts,
-         the rule as the header (a link to the list — the "simple navigation"), then:
-           FOUR PARTS, left to right: Not sold yet · first 90 days | SOLD IN THE LAST 90 DAYS (owner, same day: the 41% "closes the
-           100% … give its own box" — every held size that sold at least once in 90 days, one pair counts; NOT "winners", which means
-           only the 12-month portfolio status; no list behind it, so no link; it also holds the few sizes that SOLD BEFORE and were
-           restocked in the last 90 days — done their job, the restock is the reorder process's business — with no special mention;
-           a never-sold size restocked anyway is dated from its first arrival by the server, so it lands in the slow parts) |
-           No sale 91 days – 9 months |
-           No sale 9 months+. Each shows:
-           the count of SIZES — the big number, the work — with its % OF EVERY SIZE WE HOLD (owner, same day, option A: "would there
-           be other percentages here that map to 100%?" — one base for all three; a line under the row names the base and "the other
-           n%" that sold in the last 90 days or were just restocked, so they visibly make 100%. New stuff's own Sold % (26%) stays on
-           Daily / New Additions, where it is the score; New stuff's part here counts only its unsold new SKUs we still hold)
-           "n in stock" under it — the units held in exactly those sizes (owner, same day: "Will units help…" then "Its under the same
-           headers?" — a separate units section was tried for minutes; same sizes, so same header). Local + Amazon, one number, the
-           Slow Sizes stock for all three. Never a grand total of all stock or units by item age (the red herring above).
+THE LAYOUT, top to bottom (one card):
+  1. THE SIZE RUN — the sizes we hold at each UK size, as tiles like a shoe's size run, the TOTAL only (owner, same day: "A size grid
+     … to help me get my head around the fact these are sizes … Especially to stop me about thinking of QTY", then "too much data …
+     No bar charts. And put it at the top. Just totals"). UK size = skumap.uksize (the route's `uk`), so EU and UK brands share one
+     line (Birkenstock EU 38 = UK 5); HALF SIZES ROLL UP to the next whole size (a glance, not exact), 13 and up folded into one
+     tile, a child size or none recorded = Other. A count of
+     SIZES, never qty. (A 100% column per size, split by part, with a legend and table, was tried for minutes — git history.)
+  2. THE TOTAL — "1,039 sizes" (every SKU we hold stock of), the units in them under it, CENTRED under the tiles as their sum
+     (owner: "put the big 1039 as a part of the chart"; no header — "sizes" by the number says it).
+  3. THE FOUR PARTS, left to right, adding back up to the total, each with its % OF EVERY SIZE WE HOLD as the big number ("at a
+     glance it shows the split"), then its count of sizes and the units in them (readable, not demoted):
+       Not sold yet · first 90 days  New stuff's unsold new SKUs that we hold (THE New stuff rule, GET /process-overview) -> New Additions
+       Sold in the last 90 days      every other held size that isn't slow — one pair counts; NOT "winners" (that word is the 12-month
+                                     status); it also holds the few that SOLD BEFORE and were restocked in 90 days (done their job —
+                                     the restock is the reorder process's business), no special mention, name held back on purpose
+                                     ("rabbit hole"); no list, so no link
+       No sale 91 days – 9 months    -> /analytics/slow-sizes/list?band=mid (lib/slowBands)
+       No sale 9 months+             -> /analytics/slow-sizes/list?band=cl  (a never-sold size restocked anyway is dated from its
+                                     FIRST arrival by the server, so it lands here)
+     New stuff's own Sold % (26% — a different base, the new SKUs) stays on Daily / New Additions. Units = local + Amazon, one number.
 
 READ-ONLY. Consumes GET /analytics-slow-sizes and GET /process-overview (Daily's own key, so New stuff's count is Daily's rows).
 =======================================================================================================================================
@@ -52,8 +47,40 @@ import { NEW_DAYS, SLOW_BANDS } from '@/lib/slowBands';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
-// A part of the row: its sizes, the units in them, the list it opens (null = no list).
-interface Part { key: string; head: string; sizes: number; units: number; href: string | null }
+type PartKey = 'new' | 'sold' | 'mid' | 'cl';
+const PART_ORDER: PartKey[] = ['new', 'sold', 'mid', 'cl'];
+// Each part's header — its rule.
+const PART_LABEL: Record<PartKey, string> = {
+  new: `Not sold yet · first ${NEW_DAYS} days`,
+  sold: `Sold in the last ${NEW_DAYS} days`,
+  mid: `No sale ${SLOW_BANDS[0].sub}`,
+  cl: `No sale ${SLOW_BANDS[1].sub}`,
+};
+
+// THE SIZE RUN's tiles — UK sizes BLENDED: every half size rolls UP to the next whole size (owner, same day: "All half sizes, roll up
+// to the next full size. Shortens the number of sizes … Dont have to be exact but it is a good glance" — so UK 5½ counts in 6), the
+// thin tail from 13 folded into one tile, then Other (a child size or none recorded).
+const TAIL_FROM = 13;
+const ukTile = (uk: string | null) => {
+  if (uk === null) return 'other';
+  const whole = Math.ceil(Number(uk));
+  return whole >= TAIL_FROM ? 'tail' : String(whole);
+};
+const ukLabel = (t: string) => (t === 'other' ? 'Other' : t === 'tail' ? `${TAIL_FROM}+` : t);
+const ukOrder = (t: string) => (t === 'other' ? 1e6 : t === 'tail' ? 1e5 : Number(t));
+
+// THE SHADE — each tile's % of its sizes that SOLD IN THE LAST 90 DAYS (sizes, never pairs), darker = more of that size selling
+// (owner, same day: "add the shade and the %"). Sequential, ONE hue (the dataviz method's blue ramp, steps 100 -> 600), in 10-point
+// steps so close values don't pretend to differ; ink flips to white from the 400 step. The % is printed too, so nothing is colour-only.
+const SHADES: { from: number; bg: string; ink: string; sub: string }[] = [
+  { from: 55, bg: '#184f95', ink: '#ffffff', sub: '#cde2fb' },
+  { from: 45, bg: '#256abf', ink: '#ffffff', sub: '#cde2fb' },
+  { from: 35, bg: '#3987e5', ink: '#ffffff', sub: '#e6f0fd' },
+  { from: 25, bg: '#6da7ec', ink: '#0b0b0b', sub: '#1c2b44' },
+  { from: 15, bg: '#9ec5f4', ink: '#0b0b0b', sub: '#33445e' },
+  { from: 0, bg: '#cde2fb', ink: '#0b0b0b', sub: '#52514e' },
+];
+const shadeFor = (pct: number) => SHADES.find((s) => pct >= s.from) ?? SHADES[SHADES.length - 1];
 
 export default function SlowMoversFrontPage() {
   return (
@@ -75,33 +102,38 @@ function SlowMoversFront() {
   const sq = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
   const nq = useApiQuery('process-overview', () => getProcessOverview());
 
-  // Each part: its SIZES — all of them sizes WE HOLD, so one base (every held size) gives percentages that add to 100% with "the
-  // rest" — and the UNITS held in exactly those sizes (local + Amazon, the Slow Sizes stock, one definition for all three). New stuff's
-  // part is its unsold new SKUs that are held (a new SKU with nothing left in stock isn't one of the sizes we hold).
   const view = useMemo(() => {
     if (!sq.data || !nq.data) return null;
     const sizes = sq.data.sizes;
-    const heldBy = new Map(sizes.map((s) => [s.code, s.units]));
-    const unsoldNew = nq.data.rows.filter((r) => !isSold(r) && (heldBy.get(r.code) ?? 0) > 0);
-    const unsoldNewCodes = new Set(unsoldNew.map((r) => r.code));
-    // SOLD = every other held size: not new-and-unsold, not slow. Nearly all sold in the last 90 days; the rest SOLD BEFORE and were
-    // restocked in the last 90 days — a size that sold has done its job, its restock is the reorder process's business (owner,
-    // 2026-11-06: "It has done its job here. restock is not this screens problem"), so it counts here with no special mention. (A
-    // size that NEVER sold and was restocked anyway is dated from its first arrival by the server, so it lands in the slow parts.)
-    // The box's name for the restocked few is held back on purpose (owner: "thats where I could go down a rabbit hole").
-    const sold = sizes.filter((s) => !unsoldNewCodes.has(s.code) && !SLOW_BANDS.some((b) => b.test(s)));
+    const held = new Set(sizes.map((s) => s.code));
+    const unsoldNew = new Set(nq.data.rows.filter((r) => !isSold(r) && held.has(r.code)).map((r) => r.code));
+    const partOf = (s: (typeof sizes)[number]): PartKey =>
+      unsoldNew.has(s.code) ? 'new' : SLOW_BANDS.find((b) => b.test(s))?.key ?? 'sold';
     const sum = (list: { units: number }[]) => list.reduce((t, s) => t + s.units, 0);
-    const parts: Part[] = [
-      { key: 'new', head: `Not sold yet · first ${NEW_DAYS} days`, sizes: unsoldNew.length,
-        units: unsoldNew.reduce((t, r) => t + (heldBy.get(r.code) ?? 0), 0),
-        href: `/analytics/new-additions?from=${self}&back=${encodeURIComponent('Slow movers')}` },
-      { key: 'sold', head: `Sold in the last ${NEW_DAYS} days`, sizes: sold.length, units: sum(sold), href: null },
-      ...SLOW_BANDS.map((b): Part => {
-        const mine = sizes.filter((s) => b.test(s));
-        return { key: b.key, head: `No sale ${b.sub}`, sizes: mine.length, units: sum(mine), href: `/analytics/slow-sizes/list?band=${b.key}&from=${self}` };
-      }),
-    ];
-    return { parts, held: sizes.length, heldUnits: sum(sizes) };
+    const hrefs: Record<PartKey, string | null> = {
+      new: `/analytics/new-additions?from=${self}&back=${encodeURIComponent('Slow movers')}`,
+      sold: null,
+      mid: `/analytics/slow-sizes/list?band=mid&from=${self}`,
+      cl: `/analytics/slow-sizes/list?band=cl&from=${self}`,
+    };
+    const parts = PART_ORDER.map((k) => {
+      const mine = sizes.filter((s) => partOf(s) === k);
+      return { key: k, head: PART_LABEL[k], sizes: mine.length, units: sum(mine), href: hrefs[k] };
+    });
+    // THE SIZE RUN — per UK size: the sizes held, and how many of them sold in the last 90 days (a last net sale on or after this day).
+    const [y, m, d] = sq.data.today.split('-').map(Number);
+    const soldSince = new Date(Date.UTC(y, m - 1, d - NEW_DAYS)).toISOString().slice(0, 10);
+    const runBy = new Map<string, { count: number; sold: number }>();
+    for (const s of sizes) {
+      const t = ukTile(s.uk);
+      const r = runBy.get(t) ?? { count: 0, sold: 0 };
+      r.count += 1;
+      if (s.last_sale && s.last_sale >= soldSince) r.sold += 1;
+      runBy.set(t, r);
+    }
+    const run = [...runBy.entries()].sort((a, b) => ukOrder(a[0]) - ukOrder(b[0]))
+      .map(([t, r]) => ({ t, label: ukLabel(t), count: r.count, pct: Math.round((r.sold / r.count) * 100) }));
+    return { parts, run, held: sizes.length, heldUnits: sum(sizes) };
   }, [sq.data, nq.data, self]);
   const pctOf = (v: number) => (view && view.held > 0 ? Math.round((v / view.held) * 100) : 0);
 
@@ -112,18 +144,38 @@ function SlowMoversFront() {
       {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {!view && !error && <p className="text-sm text-slate-400">Loading…</p>}
       {view && (
-        // THE BASE ON TOP (owner, same day: "promote the 1040 figure"; no header over it — "sizes" by the number says it), every size we hold and the units in
-        // them — then ONE ROW, ONE HEADER PER PART: the sizes and their share of that base (the big number), then the units held in
-        // exactly those sizes (owner: "Its under the same headers?"). A header with a list behind it is a link; Sold has no list (owner,
-        // same day: the 41% "closes the 100% … give its own box"). The parts add back up to the figure on top.
         <section className="rounded-lg border border-slate-200 bg-white">
           <div className="px-5 py-5">
-            <div>
+            {/* 1. THE SIZE RUN — sizes we hold per UK size, totals only. */}
+            {/* Centred (owner, same day: "center the grid on the screen"), with a caption saying what the numbers are — sizes HELD,
+                not sales (owner: "are those numbers the sales?"). */}
+            <div className="flex flex-wrap items-end justify-center gap-1.5">
+              <span className="mr-1 self-center text-xs font-medium text-slate-500">UK</span>
+              {view.run.map((r) => {
+                const sh = shadeFor(r.pct);
+                return (
+                  <div key={r.t} title={`UK ${r.label}: ${n(r.count)} sizes held · ${r.pct}% sold in the last ${NEW_DAYS} days`}
+                    className="flex min-w-[2.75rem] flex-col items-center rounded-md px-1.5 py-1" style={{ background: sh.bg }}>
+                    <span className="text-sm font-semibold" style={{ color: sh.ink }}>{r.label}</span>
+                    <span className="text-xs tabular-nums" style={{ color: sh.sub }}>{n(r.count)}</span>
+                    <span className="text-[11px] font-medium tabular-nums" style={{ color: sh.ink }}>{r.pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* 2. THE TOTAL — part of the chart (owner, same day: "put the big 1039 as a part of the chart"): centred directly under the
+                tiles, the sum they add up to, then the caption for the whole block. */}
+            <div className="mt-4 text-center">
               <span className="text-5xl font-semibold text-slate-900">{n(view.held)}</span>
               <span className="ml-2 text-lg text-slate-500">sizes</span>
+              <div className="mt-1 text-sm tabular-nums text-slate-600">{n(view.heldUnits)} in stock</div>
             </div>
-            <div className="mt-1 text-sm tabular-nums text-slate-600">{n(view.heldUnits)} in stock</div>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              sizes we hold at each UK size · % of them sold in the last {NEW_DAYS} days — darker = more selling
+            </p>
           </div>
+
+          {/* 3. THE FOUR PARTS — adding back up to the total; a part with a list behind it has a link header. */}
           <dl className="grid grid-cols-1 divide-y divide-slate-200 border-t border-slate-200 lg:grid-cols-4 lg:divide-x lg:divide-y-0">
             {view.parts.map((p) => (
               <div key={p.key} className="px-5 py-4">
@@ -133,10 +185,13 @@ function SlowMoversFront() {
                   ) : p.head}
                 </dt>
                 <dd className="mt-2">
-                  <span className="text-4xl font-semibold text-slate-900">{n(p.sizes)}</span>
-                  <span className="ml-1.5 text-sm text-slate-500">size{p.sizes === 1 ? '' : 's'} · {pctOf(p.sizes)}%</span>
+                  <span className="text-4xl font-semibold text-slate-900">{pctOf(p.sizes)}%</span>
                 </dd>
-                <dd className="mt-1 text-sm tabular-nums text-slate-600">{n(p.units)} in stock</dd>
+                <dd className="mt-1.5 text-slate-600">
+                  <span className="text-xl font-semibold text-slate-800">{n(p.sizes)}</span> size{p.sizes === 1 ? '' : 's'}
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="text-xl font-semibold text-slate-800">{n(p.units)}</span> in stock
+                </dd>
               </div>
             ))}
           </dl>

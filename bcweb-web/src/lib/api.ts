@@ -1528,6 +1528,7 @@ export interface SlowSize {
   on_shelf_days: number;
   style_sold_12m: number;     // the whole style, net, last 12 months
   sold_12m: number;           // THIS size, net, last 12 months
+  uk: string | null;          // UK size ("5.5"); null = child size or none recorded
   clearance: boolean;         // idle 9+ calendar months — Slow movers' Clearance box
 }
 // A size of a listed style that we DON'T hold (ever arrived on Goods In or ever sold) — a grey tile on Slow movers.

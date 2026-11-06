@@ -45,6 +45,8 @@ SLOW MOVERS AS STYLE ROWS (owner, 2026-11-06 — the handover from New stuff, Ne
          STYLE with every size as a tile, so three extra facts ride along — none changes who is on the list:
            styles[]  = each listed style's picture (skusummary.imagename).
            sold_12m  = THIS size's net units in the last 12 months (returns subtract), beside its stock ("8 in stock, 1 sold").
+           uk        = THIS size's UK size from skumap.uksize ("5.5" from "5.5 UK"; null for a child size or none) — the front
+                       screen's By size grid counts sizes per UK size, so EU and UK brands share one axis (Birkenstock EU 38 = UK 5).
            others[]  = the style's sizes we DON'T hold that have ever arrived on Goods In or ever sold — the grey tiles, so a dud size
                        can be read against the run. (Never-stocked placeholders left out, as New Additions' OTHER_SIZES_SQL.)
 
@@ -67,6 +69,7 @@ Success Response:
       "on_shelf_days": 218,
       "style_sold_12m": 41,
       "sold_12m": 3,                            // this size, net, last 12 months
+      "uk": "5.5" | null,                       // UK size (skumap.uksize); null = child size or none recorded
       "clearance": true }                       // unsold 9 months (see CLEARANCE)
   ],                                            // longest idle first; then most pairs
   "styles": [ { "groupid": "1017722-BEND", "imagename": "1017722.jpg" | null } ],
@@ -118,7 +121,7 @@ router.get('/', async (req, res) => {
     // The extras for the style rows (see SLOW MOVERS AS STYLE ROWS) — three set queries, no N+1.
     const codes = sizes.map((x) => x.code);
     const groupids = [...new Set(sizes.map((x) => x.groupid))];
-    const [imgQ, soldQ, othersQ] = await Promise.all([
+    const [imgQ, soldQ, othersQ, ukQ] = await Promise.all([
       query(`SELECT groupid, NULLIF(TRIM(imagename), '') AS imagename FROM skusummary WHERE groupid = ANY($1::text[])`, [groupids]),
       query(`SELECT code, SUM(qty)::int AS q FROM sales
               WHERE code = ANY($1::text[]) AND solddate > (now() AT TIME ZONE 'Europe/London')::date - 365
@@ -128,9 +131,15 @@ router.get('/', async (req, res) => {
               WHERE m.groupid = ANY($1::text[]) AND m.code IS NOT NULL AND NOT (m.code = ANY($2::text[]))
                 AND (EXISTS (SELECT 1 FROM incoming_stock i WHERE i.code = m.code)
                      OR EXISTS (SELECT 1 FROM sales s WHERE s.code = m.code))`, [groupids, codes]),
+      query(`SELECT DISTINCT ON (code) code, TRIM(uksize) AS uk FROM skumap WHERE code = ANY($1::text[]) ORDER BY code`, [codes]),
     ]);
     const sold = new Map(soldQ.rows.map((r) => [r.code, Math.max(Number(r.q) || 0, 0)]));
-    for (const x of sizes) x.sold_12m = sold.get(x.code) || 0;
+    // "5.5 UK" -> "5.5"; a child size ("8 UK Child") or anything else -> null (the grid's Other column).
+    const uk = new Map(ukQ.rows.map((r) => [r.code, (/^([0-9]+([.]5)?) UK$/.exec(r.uk || '') || [])[1] || null]));
+    for (const x of sizes) {
+      x.sold_12m = sold.get(x.code) || 0;
+      x.uk = uk.get(x.code) || null;
+    }
 
     return res.json({ return_code: 'SUCCESS', today, cutoff, sizes,
       styles: imgQ.rows.map((r) => ({ groupid: r.groupid, imagename: r.imagename || null })),
