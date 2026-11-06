@@ -192,13 +192,12 @@ function SlowMoversFront() {
               more complete"). Sold has no list behind it: the same card, not a link. */}
           <div className="grid grid-cols-1 gap-3 border-t border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
             {view.parts.map((p) => (
-              <PartCard key={p.key} href={p.href}>
-                <div className="text-sm font-medium text-slate-800">{p.head}</div>
-                <div className="mt-2 text-4xl font-semibold text-slate-900">{pctOf(p.sizes)}%</div>
-                <div className="mt-1.5 text-slate-600">
-                  <span className="text-xl font-semibold text-slate-800">{n(p.sizes)}</span> SKU{p.sizes === 1 ? '' : 's'}
-                  <span className="mx-1.5 text-slate-300">·</span>
-                  <span className="text-xl font-semibold text-slate-800">{n(p.units)}</span> in stock
+              <PartCard key={p.key} href={p.href} head={p.head} tone={PART_TONE[p.key]}>
+                <div className="text-4xl font-semibold">{pctOf(p.sizes)}%</div>
+                <div className="mt-1.5 opacity-90">
+                  <span className="text-xl font-semibold">{n(p.sizes)}</span> SKU{p.sizes === 1 ? '' : 's'}
+                  <span className="mx-1.5 opacity-60">·</span>
+                  <span className="text-xl font-semibold">{n(p.units)}</span> in stock
                 </div>
               </PartCard>
             ))}
@@ -209,16 +208,35 @@ function SlowMoversFront() {
   );
 }
 
-// A part's card: bordered, centred. With a list behind it the whole card is the link (a small arrow in the corner says so, and it lifts
-// on hover); without one it is the same card, inert.
-function PartCard({ href, children }: { href: string | null; children: ReactNode }) {
-  const card = 'relative flex flex-col items-center rounded-xl border border-slate-200 bg-white px-4 py-5 text-center';
-  if (!href) return <div className={card}>{children}</div>;
-  return (
-    <Link href={href}
-      className={card + ' outline-none transition hover:border-brand-500 hover:shadow-md focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100'}>
-      <ChevronRightIcon aria-hidden className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
+// THE CARDS' COLOURS (owner, 2026-11-06: "a red should be the clearance and the green are the ones selling. that kind of thing"; a
+// thin coloured edge with a faint tint "looks unfinished"): the four parts are STATES, healthy -> stuck, so a traffic light as a SOLID
+// HEADING BAND with the part's name in it (never colour alone), the figures on white below. NOT blue: on the size run above, darker blue
+// means MORE selling, so blue cards would say the opposite in the same colour.
+// SOLID fills, white text (owner, 2026-11-06): green = selling, red = clearance, and No sale 91 days – 9 months ORANGE — "just less than
+// clearance. Its getting to clearance"; grey = not judged yet.
+const PART_TONE: Record<PartKey, string> = {
+  new: 'border-slate-500 bg-slate-500 text-white',       // not judged yet
+  sold: 'border-emerald-600 bg-emerald-600 text-white',  // selling
+  mid: 'border-orange-500 bg-orange-500 text-white',     // getting to clearance
+  cl: 'border-red-600 bg-red-600 text-white',            // clearance
+};
+
+// A part's card: ONE CLOSED BOX in its colour — a coloured border all round and a light fill of the same colour (owner: the band
+// "feels like a dropdown. Close the box"), heading and figures centred inside. With a list behind it the whole card is the link
+// (a small arrow in the corner); without one it is the same card, inert.
+function PartCard({ href, head, tone, children }: { href: string | null; head: string; tone: string; children: ReactNode }) {
+  const card = `relative flex flex-col items-center rounded-xl border-2 px-4 py-5 text-center ${tone}`;
+  const body = (
+    <>
+      {href && <ChevronRightIcon aria-hidden className="absolute right-3 top-3 h-4 w-4 opacity-80" />}
+      <div className="mb-2 text-sm font-semibold">{head}</div>
       {children}
+    </>
+  );
+  if (!href) return <div className={card}>{body}</div>;
+  return (
+    <Link href={href} className={card + ' outline-none transition hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-300'}>
+      {body}
     </Link>
   );
 }
