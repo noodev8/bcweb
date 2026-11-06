@@ -273,7 +273,7 @@ function SlowBoxBody() {
     `/analytics/slow-sizes/${encodeURIComponent(groupid)}?from=${encodeURIComponent(`${selfUrl}#style-${groupid}`)}`;
 
   return (
-    <AppShell backHref={from ?? '/analytics/slow-sizes'} backLabel="Slow movers">
+    <AppShell backHref={from ?? '/analytics/slow-sizes'} backLabel="Range">
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.data && (
@@ -309,8 +309,8 @@ function SlowBoxBody() {
 
           {/* THE BAR — which box, what's on screen, Cut and Refresh. (Park and the bulk price moves join it in the next pass.) */}
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600">
-            <span className="font-medium text-slate-700">{box.label}</span>
-            <span className="text-xs text-slate-400">{box.sub}</span>
+            {/* The box's name as its card on Range says it (owner, 2026-11-06: the screen lost its "Slow movers" / "3–9 months" names). */}
+            <span className="font-medium text-slate-700">No sale {box.sub}</span>
             <span className="tabular-nums">
               {n(visible.length)} style{visible.length === 1 ? '' : 's'} · {n(visible.reduce((t, g) => t + g.stock, 0))} in stock
             </span>

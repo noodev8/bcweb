@@ -16,9 +16,17 @@ duplicates"). The page reads top to bottom in order of importance:
                   OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
                   each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
-       New stuff  prospect performance: of the SKUs first booked in on Goods In in 90 days, the % sold since (any channel) — kept HIGH
-                  (owner, 2026-11-05) (GET /process-overview — the same rows New Additions lists, so the two agree). Opens New Additions.
-       Prospects  finds on the list (same request). Opens Prospects.
+       Selling    ONE card, the two figures to keep AS HIGH AS POSSIBLE (owner, 2026-11-06: "25% as high as possible, and the longer
+                  term 40% as high as possible. Do one, will help the other" — and "combine the cards so not too much highlights"):
+                  New stuff — prospect performance: of the SKUs first booked in on Goods In in 90 days, the % sold since (any channel)
+                  (owner, 2026-11-05) (GET /process-overview — the same rows New Additions lists) -> New Additions;
+                  Range — of every size we hold, the % that sold in the last 90 days; new stock pulls it down until it sells (THE split,
+                  lib/slowBands → splitHeldSizes, same request as Slow movers) -> the Slow movers front screen.
+                  Selling a new SKU moves it into Range's sold part, so the first lifts the second. Range was tried as its own tile
+                  beside New stuff first (the 2026-11-05 SKU HEALTH lesson: a whole-range figure can read as comparable — the shared card
+                  and its heading say how they relate). Slow movers left the menu for it (no duplicates). CLEARANCE is NOT on Daily
+                  (owner: "Clearance is a different thought") — it is the Slow movers front screen's last part.
+       Prospects  finds on the list (same request as New stuff). Opens Prospects.
        AMZ loaded styles in stock with no size on Amazon, Birkenstock aside, still due a look (GET /amz-loaded-list, shared SWR
                   key with the screen). Opens /amz-loaded. Was a placeholder until the screen was built the same day.
      It replaced the /daily screen (that route now redirects here) and the Daily card that opened it — one home for the four.
@@ -36,13 +44,14 @@ re-opens that group on arrival (read from the URL, nothing remembered between vi
 =======================================================================================================================================
 */
 
-import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { useState, type ComponentType, type SVGProps } from 'react';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { SKU_HEALTH } from '@/lib/features';
-import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList } from '@/lib/api';
+import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSlowSizes } from '@/lib/api';
+import { splitHeldSizes } from '@/lib/slowBands';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -52,7 +61,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, ClockIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
+  RectangleStackIcon, LightBulbIcon, BoltIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -120,7 +129,7 @@ const GROUPS: Group[] = [
       { title: 'Add / Modify', subtitle: 'Edit or create a product', description: 'Find an existing product to edit, or create a new one.', href: '/products', icon: TagIcon },
       { title: 'Missing Images', subtitle: 'Products with one image', description: 'Every Shopify product with a single image, Winners and in-stock first.', href: '/images-missing', icon: PhotoIcon },
       { title: 'Stock Position', subtitle: 'Are we selling what we buy?', description: 'Stock in and out, 90-day stock against a year ago, stock held against stock sold.', href: '/analytics/stock-position', icon: ScaleIcon },
-      { title: 'Slow movers', subtitle: "Sizes that haven't sold", description: 'Sizes not sold: new, 91 days – 9 months, 9 months+ — each opens its list.', href: '/analytics/slow-sizes', icon: ClockIcon },
+      // Slow movers LEFT THE MENU 2026-11-06 — it is on Daily now (the Range card), and a Daily screen is never repeated here.
       // eBay listings (2026-11-01) — read only for now: what's live on eBay, checked against our stock. Next to Slow movers: eBay is
       // where the clearance stock goes.
       { title: 'eBay listings', subtitle: "What's live on eBay", description: 'Every live eBay listing, read from eBay and checked against our stock and the postage rules.', href: '/ebay', icon: GlobeAltIcon },
@@ -214,6 +223,13 @@ function Daily() {
   const newSkus = overview.data ? overview.data.newSkus : null;
   const soldPct = newSkus ? `${newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}%` : null;
   const prospects = overview.data ? overview.data.prospects : null;
+  // RANGE (owner, 2026-11-06 — "worth a look?", A TRIAL): of every size we hold, the % that sold in the last 90 days — Slow movers'
+  // Sold box, THE split (lib/slowBands → splitHeldSizes), the same request and key as that screen. Up only when sizes sell; new stock
+  // pulls it down until it sells, the same signal New stuff gives. Opens the Slow movers front screen. NB the 2026-11-05 SKU HEALTH strip
+  // was taken off for reading as comparable with New stuff — this tile is on trial for exactly that.
+  const slow = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
+  const range = slow.data && overview.data ? splitHeldSizes(slow.data.sizes, overview.data.rows) : null;
+  const rangePct = range ? `${range.held > 0 ? Math.round((range.counts.sold.sizes / range.held) * 100) : 0}%` : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
   const today = sales.data?.summary ?? null;
@@ -261,7 +277,7 @@ function Daily() {
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <Link
               href="/amazon-order"
-              className="flex flex-col rounded-lg border border-slate-200 px-3 py-2 outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+              className="flex flex-col rounded-lg border border-slate-200 px-3 py-2 text-center outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
             >
               <span className="block text-xs font-medium text-slate-500">Amazon</span>
               <span className="mt-auto block pt-1 text-sm font-medium text-brand-700">Open Amazon Order</span>
@@ -270,17 +286,34 @@ function Daily() {
           </div>
         </div>
 
-        <DailyLink href="/analytics/new-additions" icon={SparklesIcon} title="New stuff" sub={newSkus === null ? 'New SKUs arrived in 90 days' : `${newSkus.sold} of ${newSkus.total} new SKUs arrived in 90 days`}>
-          <Big n={soldPct} unit="have sold" />
-        </DailyLink>
+        {/* SELLING — the two figures to keep AS HIGH AS POSSIBLE, one card (owner, 2026-11-06: "25% as high as possible, and the
+            longer term 40% as high as possible. Do one, will help the other"): New stuff — of the new SKUs (first in 90 days) the %
+            sold -> New Additions; Range — of every size we hold the % sold in the last 90 days -> the Slow movers front screen. Selling
+            a new SKU moves it into the Range's sold part, so pushing the first lifts the second. */}
+        <div className="flex flex-col rounded-xl bg-white p-4">
+          <TileHead icon={SparklesIcon} title="Selling" sub="Both as high as possible" />
+          <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+            <CountLink href="/analytics/new-additions" label="New stuff" n={soldPct} unit={newSkus ? `${newSkus.sold} of ${newSkus.total} new` : 'new SKUs'} />
+            <CountLink href="/analytics/slow-sizes" label="Range" n={rangePct}
+              unit={range ? `${range.counts.sold.sizes.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} SKUs` : 'SKUs we hold'} />
+          </div>
+        </div>
 
-        <DailyLink href="/prospects" icon={LightBulbIcon} title="Prospects" sub="New products to look into">
-          <Big n={prospects} unit="on the list" />
-        </DailyLink>
+        {/* PROSPECTS and AMZ LOADED — one figure each, in the SAME inner box as the paired cards (owner, 2026-11-06: "align the 7 and 0
+            … to match the other boxes"), so every number on Daily sits at one height and size. */}
+        <div className="flex flex-col rounded-xl bg-white p-4">
+          <TileHead icon={LightBulbIcon} title="Prospects" sub="New products to look into" />
+          <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
+            <CountLink href="/prospects" label="On the list" n={prospects} unit="finds" />
+          </div>
+        </div>
 
-        <DailyLink href="/amz-loaded" icon={InboxStackIcon} title="AMZ loaded" sub="In stock, not on Amazon yet">
-          <Big n={amzLoadedDue} unit="styles to look at" />
-        </DailyLink>
+        <div className="flex flex-col rounded-xl bg-white p-4">
+          <TileHead icon={InboxStackIcon} title="AMZ loaded" sub="In stock, not on Amazon yet" />
+          <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
+            <CountLink href="/amz-loaded" label="To look at" n={amzLoadedDue} unit="styles" />
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -321,39 +354,18 @@ function TileHead({ icon: I, title, sub }: { icon: Icon; title: string; sub: str
   );
 }
 
-// A whole-tile link (New stuff, Prospects, AMZ loaded).
-function DailyLink({ href, icon, title, sub, children }: { href: string; icon: Icon; title: string; sub: string; children: ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col rounded-xl bg-white p-4 outline-none ring-brand-100 transition hover:ring-4 focus-visible:ring-4"
-    >
-      <TileHead icon={icon} title={title} sub={sub} />
-      <div className="mt-auto pt-4">{children}</div>
-    </Link>
-  );
-}
-
 function gbp(v: number) {
   return `${v < 0 ? '-' : ''}£${Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// The big figure on a tile. null = still loading or failed — a dash, never a 0 that isn't true.
-function Big({ n, unit }: { n: number | string | null; unit: string }) {
-  return (
-    <div>
-      <span className="text-4xl font-semibold tabular-nums leading-none text-slate-900">{n === null ? '–' : n}</span>
-      <span className="ml-2 text-sm text-slate-500">{unit}</span>
-    </div>
-  );
-}
 
 // One channel's count inside the Pricing tile — its own link.
-function CountLink({ href, label, n, unit }: { href: string; label: string; n: number | null; unit: string }) {
+// Every inner box on Daily is centred — label, figure, unit (owner, 2026-11-06: "center those inner values and text inside their box").
+function CountLink({ href, label, n, unit }: { href: string; label: string; n: number | string | null; unit: string }) {
   return (
     <Link
       href={href}
-      className="rounded-lg border border-slate-200 px-3 py-2 outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+      className="rounded-lg border border-slate-200 px-3 py-2 text-center outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
     >
       <span className="block text-xs font-medium text-slate-500">{label}</span>
       <span className="block text-3xl font-semibold tabular-nums leading-tight text-slate-900">{n === null ? '–' : n}</span>
