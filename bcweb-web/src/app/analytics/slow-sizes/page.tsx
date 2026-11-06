@@ -190,8 +190,13 @@ function SlowMoversFront() {
           {/* 3. THE FOUR PARTS — adding back up to the total. Each a complete card, centred like Daily's boxes, and THE WHOLE CARD is the
               link (owner, 2026-11-06: "make the card clickable instead of tapping on the text. And tidy up the cards to make them look
               more complete"). Sold has no list behind it: the same card, not a link. */}
-          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-            {view.parts.map((p) => (
+          {/* GROUPED BY WHICH WAY TO PUSH (owner, 2026-11-06: "3 tiles saying Push LOW and the one being push HIGH … on its own"): Sold
+              on its own at the left edge — push HIGH; the three not selling together — push LOW. */}
+          <div className="grid grid-cols-1 gap-8 border-t border-slate-200 bg-slate-100 p-5 lg:grid-cols-4">
+            {/* Each group its own panel (owner: "Make the separation a little more obvious" … "more"). */}
+            <div className="rounded-2xl border-2 border-emerald-300 bg-white p-3 lg:order-2">
+              <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-emerald-700">Push high ↑</div>
+              {view.parts.filter((p) => p.key === 'sold').map((p) => (
               <PartCard key={p.key} href={p.href} head={p.head} tone={PART_TONE[p.key]}>
                 <div className="text-4xl font-semibold">{pctOf(p.sizes)}%</div>
                 <div className="mt-1.5 opacity-90">
@@ -200,7 +205,23 @@ function SlowMoversFront() {
                   <span className="text-xl font-semibold">{n(p.units)}</span> in stock
                 </div>
               </PartCard>
-            ))}
+              ))}
+            </div>
+            <div className="rounded-2xl border-2 border-red-300 bg-white p-3 lg:col-span-3">
+              <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-red-700">Push low ↓</div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {view.parts.filter((p) => p.key !== 'sold').map((p) => (
+              <PartCard key={p.key} href={p.href} head={p.head} tone={PART_TONE[p.key]}>
+                <div className="text-4xl font-semibold">{pctOf(p.sizes)}%</div>
+                <div className="mt-1.5 opacity-90">
+                  <span className="text-xl font-semibold">{n(p.sizes)}</span> SKU{p.sizes === 1 ? '' : 's'}
+                  <span className="mx-1.5 opacity-60">·</span>
+                  <span className="text-xl font-semibold">{n(p.units)}</span> in stock
+                </div>
+              </PartCard>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       )}
