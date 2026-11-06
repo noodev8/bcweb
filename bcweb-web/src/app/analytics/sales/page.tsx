@@ -59,6 +59,7 @@ Guarded by AppShell. Consumes GET /analytics-sales, POST /order-sync, GET /order
 */
 
 import { Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { CheckBadgeIcon, MagnifyingGlassIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
@@ -890,9 +891,11 @@ function SaleRow({ r, selected, onSelect, money, pct, fmtDate }: {
       <td className="px-4 py-2.5">
         <span className={'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ' + chip.cls}>{chip.label}</span>
       </td>
-      <td className="px-4 py-2.5">
+      {/* The 56px picture sets the row height (owner, 2026-11-06: "same size as new-additions and increase the font/row size if needed"). */}
+      <td className="px-4 py-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs tracking-tight text-slate-900">{groupKey || '—'}</span>
+          <Thumb imagename={r.imagename} alt={r.productname || groupKey} />
+          <span title={r.productname || undefined} className="font-mono text-sm tracking-tight text-slate-900">{groupKey || '—'}</span>
           {/* No Qty column (owner 2026-07-27: it is 1 on ~every line). The rare non-1 line still says so, inline. */}
           {r.qty !== 1 && (
             <span className={'rounded px-1.5 py-0.5 text-xs font-medium ' + (isReturn ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600')}>
@@ -910,5 +913,19 @@ function SaleRow({ r, selected, onSelect, money, pct, fmtDate }: {
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{pct(r.onCostPct)}</td>
       <td className="px-4 py-2.5 whitespace-nowrap text-xs text-slate-400">{r.ordernum || '—'}</td>
     </tr>
+  );
+}
+
+// THE ROW'S PICTURE (owner, 2026-11-06: "show a small image on the sales screen") — on every line, 56px like New Additions (32 and 40px looked too small); the rows are taller
+// for it. Same image host as New Additions. No image (or a broken one) = an empty box of the same size, so the codes still line up.
+const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
+function Thumb({ imagename, alt }: { imagename: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+      {imagename && !failed && (
+        <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="56px" onError={() => setFailed(true)} className="object-contain" />
+      )}
+    </div>
   );
 }

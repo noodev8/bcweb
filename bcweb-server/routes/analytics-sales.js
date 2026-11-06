@@ -281,7 +281,9 @@ router.get('/', async (req, res) => {
         -- RRP is sales.rrp — stamped at booking (migrations/20260926b_sales_rrp.sql) — falling back to the style's CURRENT rrp only
         -- where the stamp is NULL (a writer that missed it, or junk at the time). s.* is listed first so this rrp replaces it.
         -- cost_now = the style's CURRENT cost (skusummary.cost — sales lines carry no cost stamp), for RETURN ON COST (see the header).
-        SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown, ${safeNumeric('sk.cost')} AS cost_now
+        -- style_image = the style's picture (skusummary.imagename), for the row's small thumbnail (owner, 2026-11-06).
+        SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown, ${safeNumeric('sk.cost')} AS cost_now,
+               sk.imagename AS style_image
         FROM sales s
         LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
         WHERE (
@@ -350,7 +352,7 @@ router.get('/', async (req, res) => {
       : await query(
           `${filterCte}
            SELECT solddate, ordertime, channel, code, SUBSTRING(code FROM '[^-]*$') AS size, groupid, productname, brand, ordernum,
-                  qty, soldprice, profit, rrp_shown AS rrp, cost_now
+                  qty, soldprice, profit, rrp_shown AS rrp, cost_now, style_image
            FROM f
            ORDER BY ${orderBy}
            LIMIT $${filterParams.length + 1}::int`,
@@ -383,6 +385,7 @@ router.get('/', async (req, res) => {
         size: r.size || null,
         groupid: r.groupid || null,
         productname: r.productname || null,
+        imagename: r.style_image || null,   // the style's picture file (skusummary.imagename) — the row's thumbnail
         // Stamped onto the sale line at booking time (orderSync copies skusummary.brand), so no join — and it stays right even if the
         // style is re-branded later. Nullable: legacy rows and some non-Shopify channels never had it set.
         brand: r.brand || null,

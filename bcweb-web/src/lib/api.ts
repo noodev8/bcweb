@@ -1917,6 +1917,7 @@ export interface SalesReportRow {
   size: string | null;       // EU size (RIGHT(code,2))
   groupid: string | null;    // style key
   productname: string | null;
+  imagename: string | null;  // the style's picture file (skusummary.imagename) — the row's small thumbnail
   brand: string | null;      // stamped on the sale line at booking; null on legacy rows
   rrp: number | null;        // RRP stamped on the sale at booking (sales.rrp), else the style's current RRP; null if neither
   ordernum: string | null;
