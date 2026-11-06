@@ -52,8 +52,10 @@ SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away an
          nothing stored; Reset brings every row back). What's LEFT — after Due and the cuts — is what the bulk bar acts on, no ticks:
            Shopify ± x%: every style left that is on Shopify and still has an unsold new size (a complete style is skipped) — W1, live.
            Amazon ± x%: every UNSOLD, listed new size of the styles left (owner: "unsold sizes only") — W-A1, into the upload basket.
-         % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, no review
-         date touched, the normal price log with the person and the note "Bulk New Additions ±x%". Preview then Apply; under cost /
+         % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, the normal
+         price log with the person and the note "Bulk New Additions ±x%". EACH CHANGED ITEM IS REVIEWED IN 3 DAYS, no choice (owner,
+         2026-11-06 — so it drops off Due and isn't priced again before the move has had a chance; "Can we just set it to 3 days"),
+         and a review date already LATER is kept ("keep the later date" — a deliberate long park isn't undone by a bulk move). Preview then Apply; under cost /
          break-even and over RRP are flagged, never blocked. Sliders get no special handling (owner: they're being decommissioned) — a
          bulk move takes a slider product out at its next Move, as any hand price does. components/BulkPercentPrice owns the control.
 
@@ -90,6 +92,14 @@ const SHOW_FILTERS = false;
 // THE INTAKE CARDS ARE HIDDEN too (owner, 2026-11-05: "Lets get rid of some noise. The 3 boxes and bars above the list can go"). Kept,
 // not deleted — flip to true to bring them back; while hidden a ?band= in an old link is ignored.
 const SHOW_INTAKES = false;
+// THE BULK PRICE CHANGE'S REVIEW — fixed, no choice (owner, 2026-11-06); a review already later is kept. See the header.
+const BULK_REVIEW_DAYS = 3;
+// Today in London as YYYY-MM-DD (en-CA formats as ISO), and n days on — date strings only, never a Date at local midnight (CLAUDE.md).
+const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+function addDaysIso(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 
 // The quick filters: how far through its sizes a style is.
 type Show = 'all' | 'none' | 'part' | 'done' | 'noamz';
@@ -364,6 +374,10 @@ function NewAdditionsPageInner() {
   // THE BULK PLANS — which rows a ± x% move touches, off what's on screen (see the header).
   const sign = (p: number) => (p > 0 ? `+${p}` : String(p));
   const bulkNote = (p: number) => `Bulk New Additions ${sign(p)}%`;
+  // THE REVIEW: 3 days, or null (leave it) when the item is already parked later than that — see the header.
+  const reviewOn = addDaysIso(londonToday(), BULK_REVIEW_DAYS);
+  const reviewFor = (current: string | null) => (current && current > reviewOn ? null : BULK_REVIEW_DAYS);
+  const reviewNote = `Each one reviewed in ${BULK_REVIEW_DAYS} days — one already reviewed later keeps its date.`;
   const flagFor = (next: number, floor: number | null, rrp: number | null) =>
     floor !== null && next < floor ? 'BELOW_COST' as const : rrp !== null && next > rrp ? 'ABOVE_RRP' as const : null;
 
@@ -376,10 +390,10 @@ function NewAdditionsPageInner() {
       if (!r.shpLive) { offShopify++; continue; }
       if (r.shpPrice === null) { noPrice++; continue; }
       const next = movePrice(r.shpPrice, p);
-      items.push({ key: g.groupid, label: g.groupid, now: r.shpPrice, next, flag: flagFor(next, r.cost, r.rrp) });
+      items.push({ key: g.groupid, label: g.groupid, now: r.shpPrice, next, flag: flagFor(next, r.cost, r.rrp), reviewDays: reviewFor(r.shpReview) });
     }
     const why = [complete && `${complete} complete`, offShopify && `${offShopify} not on Shopify`, noPrice && `${noPrice} no price`].filter(Boolean);
-    return { items, skipped: why.length ? why.join(', ') : null };
+    return { items, skipped: why.length ? why.join(', ') : null, reviewNote };
   };
   const planAmazon = (p: number): BulkPlan => {
     const items: BulkPlanItem[] = [];
@@ -390,17 +404,17 @@ function NewAdditionsPageInner() {
         if (r.amzPrice === null) { noPrice++; continue; }
         const next = movePrice(r.amzPrice, p);
         const floor = r.cost !== null && r.amzFbaFee !== null ? r.cost + r.amzFbaFee : null;   // the W-A1 break-even
-        items.push({ key: r.code, label: r.code, now: r.amzPrice, next, flag: flagFor(next, floor, r.rrp) });
+        items.push({ key: r.code, label: r.code, now: r.amzPrice, next, flag: flagFor(next, floor, r.rrp), reviewDays: reviewFor(r.amzReview) });
       }
     }
-    return { items, skipped: noPrice ? `${noPrice} with no Amazon price` : null };
+    return { items, skipped: noPrice ? `${noPrice} with no Amazon price` : null, reviewNote };
   };
 
-  // THE WRITES — the shared W1 / W-A1 routes, one item at a time (every Shopify push and per-item bound runs). No review date.
+  // THE WRITES — the shared W1 / W-A1 routes, one item at a time (every Shopify push and per-item bound runs), each with its review.
   const applyShopify = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
     let ok = 0, failed = 0, notPushed = 0;
     for (let i = 0; i < items.length; i++) {
-      const res = await applyPrice(items[i].key, items[i].next, null, bulkNote(p));
+      const res = await applyPrice(items[i].key, items[i].next, items[i].reviewDays, bulkNote(p));
       if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
       if (res.success && res.data) { ok++; if (res.data.shopify && res.data.shopify.pushed === false) notPushed++; } else failed++;
       onProgress(i + 1);
@@ -411,7 +425,7 @@ function NewAdditionsPageInner() {
   const applyAmazon = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
     let ok = 0, failed = 0;
     for (let i = 0; i < items.length; i++) {
-      const res = await applyAmzPrice(items[i].key, items[i].next, bulkNote(p));
+      const res = await applyAmzPrice(items[i].key, items[i].next, bulkNote(p), items[i].reviewDays);
       if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
       if (res.success) ok++; else failed++;
       onProgress(i + 1);

@@ -9,8 +9,10 @@ Purpose: The bulk price control for list screens where the job is PRICE (owner, 
 
 THE RULES (owner, 2026-11-06):
   - % OFF THE CURRENT PRICE, LEFT EXACT: −10% of £72.00 = £64.80, to the penny, no .99/.95 endings.
-  - A PRICE CHANGE ONLY: no review date is touched (no due-date interaction), the normal price log with the person (server-side) and an
-    AUTOMATIC note — the screen passes it (e.g. "Bulk New Additions -10%").
+  - THE NORMAL PRICE LOG with the person (server-side) and an AUTOMATIC note — the screen passes it (e.g. "Bulk New Additions -10%").
+  - A FIXED REVIEW, NO CHOICE (owner, 2026-11-06: "shall we not give the user yet another choice. Can we just set it to 3 days?" — first
+    it touched no date, then "we wont know and will keep changing the price"): the screen decides each item's reviewDays (3, or null to
+    KEEP a review already later — "keep the later date") and says so in `plan.reviewNote`, shown in the preview.
   - PREVIEW, THEN APPLY: the first press shows every row that will change, now → new, and FLAGS (never blocks — the price writes allow
     any price and flag it too) a price under cost / break-even or over RRP. Only Apply writes.
   - CUT FROM THE PREVIEW (owner, 2026-11-06: "can we cut from the preview too? its taking too long to cut them all"): an × on a preview
@@ -34,10 +36,12 @@ export interface BulkPlanItem {
   now: number;          // current price
   next: number;         // the new price, to the penny
   flag: BulkFlag;
+  reviewDays: number | null;   // the review to send with the write — null = leave the date (one already later is kept)
 }
 export interface BulkPlan {
   items: BulkPlanItem[];
   skipped: string | null;   // a plain note of what was left out and why, e.g. "3 not on Shopify"
+  reviewNote?: string;      // one line on the review the change sets, e.g. "Each one reviewed in 3 days (a later date is kept)"
 }
 
 const CHANNEL = {
@@ -132,6 +136,7 @@ export default function BulkPercentPrice({ channel, plan, apply, disabled }: {
             {above > 0 && <span className="font-medium text-amber-800">{above} above RRP</span>}
             {preview.plan.skipped && <span className="text-slate-500">· left out: {preview.plan.skipped}</span>}
             <span className="text-xs text-slate-500">{c.note}</span>
+            {preview.plan.reviewNote && <span className="w-full text-xs text-slate-600">{preview.plan.reviewNote}</span>}
           </div>
           {n === 0 ? (
             <p className="text-slate-600">{preview.dropped.length > 0 ? 'Every line is dropped — Cancel and start again.' : 'Nothing on the list to change.'}</p>
