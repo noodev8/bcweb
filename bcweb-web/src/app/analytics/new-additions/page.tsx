@@ -27,8 +27,14 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     listed sizes) — one standard, no review dates (owner, 2026-11-05).
   - THE STANDARD PRODUCT MENU (owner, 2026-11-06: "apply the standard navigation we have in other screens ... Sticks to the top and
     is acted on with a selected row"): ProductNavCards in a sticky bar, as on Inventory — CLICK A ROW TO SELECT IT (tinted, ?sel=),
-    the menu then goes to Product, Sales, Inventory, Shopify / Amazon Order and Price for it; greyed until a row is picked; Amazon
-    greyed for Birkenstock. Because the bar is sticky, the table header no longer is (two sticky bars fought for the top).
+    the menu then goes to Product, Sales, Inventory, Shopify / Amazon Order and Price for it; greyed until ONE row is picked (and
+    while several are — it acts on one style); Amazon greyed for Birkenstock.
+  - MULTI-SELECT LIKE WINDOWS (owner, 2026-11-06: "Allow multi select like windows (Shift and ctrl etc.) Have a cut button that does
+    a soft cut"): click = just that row (again = let it go), Ctrl/⌘-click = add / take off one, Shift-click = the range from the
+    last plain/Ctrl click, Ctrl+Shift-click = add the range, Ctrl+A = every row on screen, Esc = none (those two once you've clicked in the list). ?sel=a,b. The bulk bar's
+    CUT soft-cuts the selected rows (the same ?cut= as a row's ×); a PERMANENT REFRESH brings every cut row back, clears the selection
+    and reloads the data (owner, same day: no cut count, no "Reset · n hidden" — "just cut and have a permanent REFRESH").
+    Because the bar is sticky, the table header no longer is (two sticky bars fought for the top).
   - A SMALL PICTURE OF THE SHOE beside the group id (owner, same day: "directly in the list if it doesnt drag it" — 56px, no taller
     than the group id + title + tiles, so the rows don't grow). No picture = an empty box, so the codes still line up.
   - NO DROP-DOWN (owner, 2026-11-05: "the dropdown on each style isnt do much for me" — option A). The shortcuts straight to pricing
@@ -49,7 +55,7 @@ PREV / NEXT ON THE DRILLS (owner, same day: "price navigation back and forth"): 
 
 SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away and we action whats left. A reset brings them all back"
          … "change prices here in bulk. Increase or decrease by a percentage"). Each row has an × that hides it from the screen (?cut=,
-         nothing stored; Reset brings every row back). What's LEFT — after Due and the cuts — is what the bulk bar acts on, no ticks:
+         nothing stored; Refresh brings every row back). What's LEFT — after Due and the cuts — is what the bulk bar acts on, no ticks:
            Shopify ± x%: every style left that is on Shopify and still has an unsold new size (a complete style is skipped) — W1, live.
            Amazon ± x%: every UNSOLD, listed new size of the styles left (owner: "unsold sizes only") — W-A1, into the upload basket.
          % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, the normal
@@ -64,6 +70,7 @@ VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir
 */
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/20/solid';
@@ -213,16 +220,19 @@ function NewAdditionsPageInner() {
   const [dueOnly, setDueOnly] = useState(() => searchParams.get('due') === '1');
   const [show, setShow] = useState<Show>(() => (SHOW_FILTERS && SHOWS.find((s) => s.id === searchParams.get('show'))?.id) || 'all');
   const [band, setBand] = useState<BandId | null>(() => (SHOW_INTAKES && BANDS.find((b) => b.id === searchParams.get('band'))?.id) || null);
-  const [selected, setSelected] = useState<string | null>(() => searchParams.get('sel'));   // the row the product menu acts on
+  // THE SELECTION (?sel=a,b) — Windows-style multi-select (see the header). The product menu acts on it only when it is ONE row.
+  const [selected, setSelected] = useState<string[]>(() => (searchParams.get('sel') || '').split(',').filter(Boolean));
+  // The Shift-click anchor: the row of the last plain / Ctrl click. Not in the URL (a fresh visit anchors on the last selected row).
+  const [anchor, setAnchor] = useState<string | null>(() => (searchParams.get('sel') || '').split(',').filter(Boolean).pop() ?? null);
   // No sort = newest added first. A header click sorts by it, a second click flips it, a third goes back to newest first.
   const [sortBy, setSortBy] = useState<SortKey | null>(() => SORT_KEYS.find((k) => k === searchParams.get('sort')) ?? null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'desc' ? 'desc' : 'asc'));
-  // THE SOFT CUT — group ids hidden from the screen (?cut=a,b). Nothing stored; Reset (or a fresh visit) brings them all back.
+  // THE SOFT CUT — group ids hidden from the screen (?cut=a,b). Nothing stored; Refresh (or a fresh visit) brings them all back.
   const [cut, setCut] = useState<string[]>(() => (searchParams.get('cut') || '').split(',').filter(Boolean));
   const { logout } = useAuth();
 
   // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
-  const viewUrl = (v: { due: boolean; show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string | null; cut: string[] }) => {
+  const viewUrl = (v: { due: boolean; show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] }) => {
     const q = new URLSearchParams();
     const from = searchParams.get('from');
     const back = searchParams.get('back');
@@ -232,7 +242,7 @@ function NewAdditionsPageInner() {
     if (v.show !== 'all') q.set('show', v.show);
     if (v.band) q.set('band', v.band);
     if (v.sort) { q.set('sort', v.sort); if (v.dir === 'desc') q.set('dir', 'desc'); }
-    if (v.sel) q.set('sel', v.sel);
+    if (v.sel.length) q.set('sel', v.sel.join(','));
     if (v.cut.length) q.set('cut', v.cut.join(','));
     const qs = q.toString();
     return qs ? `${pathname}?${qs}` : pathname;
@@ -286,8 +296,9 @@ function NewAdditionsPageInner() {
     return groups;
   }, [rows, others]);
 
-  // The selected row's style — for the menu's Birkenstock check. Null when nothing is picked (or the pick has left the list).
-  const selectedGroup = useMemo(() => allGroups.find((g) => g.groupid === selected) ?? null, [allGroups, selected]);
+  // The ONE selected row the product menu acts on — null when none or several are picked. Its style is for the Birkenstock check.
+  const menuGroupid = selected.length === 1 ? selected[0] : null;
+  const selectedGroup = useMemo(() => allGroups.find((g) => g.groupid === menuGroupid) ?? null, [allGroups, menuGroupid]);
 
   // The summary line and the intakes — the whole window, whatever the filters (a number that moves when you flip a switch isn't a stat).
   const totals = useMemo(() => ({ skus: rows.length, sold: rows.filter(isSold).length }), [rows]);
@@ -347,6 +358,47 @@ function NewAdditionsPageInner() {
     return sortedGroups.filter((g) => !hidden.has(g.groupid));
   }, [sortedGroups, cut]);
   const cutHere = sortedGroups.length - visibleGroups.length;
+  // The selected rows that are ON SCREEN — what Cut acts on (a row hidden by Due or a cut can still sit in ?sel=).
+  const selectedHere = useMemo(() => {
+    const s = new Set(selected);
+    return visibleGroups.filter((g) => s.has(g.groupid)).map((g) => g.groupid);
+  }, [visibleGroups, selected]);
+
+  // A ROW CLICK — Windows rules (see the header). The range is in screen order, from the anchor (or this row, if the anchor has gone).
+  const clickRow = (e: ReactMouseEvent, groupid: string) => {
+    const add = e.ctrlKey || e.metaKey;
+    if (e.shiftKey) {
+      const ids = visibleGroups.map((g) => g.groupid);
+      const from = anchor ? ids.indexOf(anchor) : -1;
+      const to = ids.indexOf(groupid);
+      const range = from < 0 ? [groupid] : ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+      setView({ sel: add ? [...new Set([...selected, ...range])] : range });   // the anchor stays put
+      return;
+    }
+    setAnchor(groupid);
+    if (add) setView({ sel: selected.includes(groupid) ? selected.filter((x) => x !== groupid) : [...selected, groupid] });
+    else setView({ sel: selected.length === 1 && selected[0] === groupid ? [] : [groupid] });
+  };
+  // Shift / Ctrl-click would otherwise select the page's text across the rows.
+  const noTextSelect = (e: ReactMouseEvent) => { if (e.shiftKey || e.ctrlKey || e.metaKey) e.preventDefault(); };
+  // CUT — soft-cut the selected rows on screen (the same ?cut= as a row's ×). Refresh brings them back.
+  const cutSelected = () => {
+    const gone = new Set(selectedHere);
+    setView({ cut: [...cut, ...selectedHere], sel: selected.filter((x) => !gone.has(x)) });
+  };
+  // REFRESH — the whole screen: cuts gone, selection gone, data reloaded. Sort and Due are the view's settings and stay.
+  const refreshScreen = () => {
+    setAnchor(null);
+    setView({ cut: [], sel: [] });
+    void refresh();
+  };
+
+  // CTRL+A selects every row on screen, ESC clears. On the list itself (focusable, so a row click focuses it) — not the whole page,
+  // so Ctrl+A in the bulk % box still selects its text. No effect needed.
+  const onListKey = (e: ReactKeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); setView({ sel: visibleGroups.map((g) => g.groupid) }); }
+    else if (e.key === 'Escape') setView({ sel: [] });
+  };
 
   // THE DRILL LISTS — saved on the click that opens a drill, so its ‹ Prev / Next › walks this screen's list as it stands.
   const openShopify = () => saveDrillList(SHP_LIST, {
@@ -503,23 +555,30 @@ function NewAdditionsPageInner() {
                   scrolling under it don't show through. */}
               <div ref={menuRef} className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-1">
                 <ProductNavCards
-                  groupid={selected}
+                  groupid={menuGroupid}
                   from={selfUrl}
                   showProduct
                   amazonOff={selectedGroup && isBirk(selectedGroup.brand) ? 'Birkenstock — not sold on Amazon' : undefined}
                 />
               </div>
 
-              {/* THE BULK BAR — what's on screen (less cuts) and Reset, then Shopify / Amazon ± x% on exactly those rows. */}
+              {/* THE BULK BAR — what's on screen (less cuts), Cut and Refresh, then Shopify / Amazon ± x% on exactly those rows. */}
               <div className="mb-3 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-center gap-3 pt-1 text-sm text-slate-600">
                   <span className="tabular-nums">{visibleGroups.length} style{visibleGroups.length === 1 ? '' : 's'}</span>
-                  {cutHere > 0 && (
-                    <button type="button" onClick={() => setView({ cut: [] })}
-                            className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
-                      Reset · {cutHere} hidden
-                    </button>
-                  )}
+                  {/* CUT — the selected rows (Ctrl / Shift-click to pick several). Greyed with nothing picked. */}
+                  <button type="button" onClick={cutSelected} disabled={selectedHere.length === 0}
+                          title="Hide the selected rows — Ctrl / Shift-click to pick several, Ctrl+A for all, Esc for none"
+                          className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white">
+                    Cut
+                  </button>
+                  {/* REFRESH — always there (owner, 2026-11-06: "a permanent REFRESH button that refreshes the whole screen. Unselect any
+                      items with the refresh"): every cut row back, nothing selected, the data fetched again. No counts on either button. */}
+                  <button type="button" onClick={refreshScreen}
+                          title="Bring every cut row back, clear the selection and reload the list"
+                          className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
+                    Refresh
+                  </button>
                 </div>
                 <BulkPercentPrice channel="shopify" plan={planShopify} apply={applyShopify} disabled={visibleGroups.length === 0} />
                 <BulkPercentPrice channel="amazon" plan={planAmazon} apply={applyAmazon} disabled={visibleGroups.length === 0} />
@@ -548,10 +607,11 @@ function NewAdditionsPageInner() {
 
               {/* overflow-clip keeps the rounded corners without a scroll box, which would trap the sticky header. w-fit: the table is only
                   as wide as its columns — at full width the Style column stretched and left a big gap before Brand (owner, 2026-11-05). */}
-              <div className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white">
+              <div tabIndex={-1} onKeyDown={onListKey}
+                   className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white focus:outline-none">
                 {visibleGroups.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-slate-500">
-                    {cutHere > 0 ? 'Every row is hidden — press Reset to bring them back.' : dueOnly ? 'Nothing here is due a price look. Switch off Due to see the rest.' : 'No styles match this filter.'}
+                    {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.' : dueOnly ? 'Nothing here is due a price look. Switch off Due to see the rest.' : 'No styles match this filter.'}
                   </p>
                 ) : (
                   <table className="text-sm">
@@ -577,7 +637,7 @@ function NewAdditionsPageInner() {
                       {visibleGroups.map((g) => {
                         // Clicking a row SELECTS it for the product menu; clicking it again lets it go. No hover tint (owner, 2026-11-06) — only the
                         // selected row is tinted, so a hover can't be mistaken for a second selection.
-                        const isSel = selected === g.groupid;
+                        const isSel = selected.includes(g.groupid);
                         // COMPLETE = every new size has sold (owner, 2026-11-06, option C): the row FADES — like a grey tile, faded means
                         // sorted — with a green tick by the group id, so the eye goes to the rows still to work. It still selects as normal.
                         const done = g.unsold === 0;
@@ -585,7 +645,8 @@ function NewAdditionsPageInner() {
                         return (
                           <tr
                             key={g.groupid}
-                            onClick={() => setView({ sel: isSel ? null : g.groupid })}
+                            onMouseDown={noTextSelect}
+                            onClick={(e) => clickRow(e, g.groupid)}
                             aria-selected={isSel}
                             className={'cursor-pointer border-t border-slate-100 first:border-t-0 ' + (isSel ? 'bg-brand-50' : '')}
                           >
@@ -621,10 +682,10 @@ function NewAdditionsPageInner() {
                             <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               <AmazonCell g={g} />
                             </td>
-                            {/* SOFT CUT — hide this row from the screen (and from the bulk bar). Reset brings it back. */}
+                            {/* SOFT CUT — hide this row from the screen (and from the bulk bar). Refresh brings it back. */}
                             <td className="border-l border-slate-100 px-2 py-3 text-center align-top">
                               <button type="button" aria-label={`Hide ${g.groupid}`}
-                                      onClick={(e) => { e.stopPropagation(); setView({ cut: [...cut, g.groupid], sel: selected === g.groupid ? null : selected }); }}
+                                      onClick={(e) => { e.stopPropagation(); setView({ cut: [...cut, g.groupid], sel: selected.filter((x) => x !== g.groupid) }); }}
                                       className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
                                 <XMarkIcon className="h-4 w-4" />
                               </button>
