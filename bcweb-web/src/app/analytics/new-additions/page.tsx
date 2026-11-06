@@ -58,7 +58,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
-import { DueSwitch, fmtReviewDate } from '@/components/ListViewControls';
+import { DueSwitch } from '@/components/ListViewControls';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
@@ -148,6 +148,8 @@ const SHOW_TEST: Record<Show, (g: StyleGroup) => boolean> = {
 // else is faded grey — a new size that has sold (done, ticked off) and the style's other sizes (first in before the 90 days, or never
 // booked in but holding stock — not counted here). The tooltip says which. (Was green for sold — solid sold out / light still in stock
 // — and only the new sizes drawn, so Capri 4 Black showed one lone tile.)
+// Old sizes are NOT told apart (owner, 2026-11-06): a dashed outline for old sizes that never sold was tried and dropped — "too much
+// to absorb here … Just that it doesnt belong here"; the size is shown for completeness only.
 type SizeState = 'todo' | 'done' | 'old';
 const sizeState = (t: RunSize): SizeState => (!t.row ? 'old' : isSold(t.row) ? 'done' : 'todo');
 const SIZE_TILE: Record<SizeState, string> = {
@@ -155,19 +157,10 @@ const SIZE_TILE: Record<SizeState, string> = {
   done: 'bg-slate-100 text-slate-400',
   old: 'bg-slate-100 text-slate-400',
 };
-const tileTitle = (t: RunSize) => {
-  if (!t.row) {
-    return t.firstIn
-      ? `Not counted — first booked in ${shortDate(t.firstIn)}, over ${DAYS} days ago`
-      : 'Not counted — never booked in on Goods In';
-  }
-  const r = t.row;
-  const stock = `${r.localStock} here · ${r.fbaStock} at Amazon`;
-  if (isSold(r)) return `Sold ${unitsSold(r)} — ticked off · ${stock}`;
-  const amz = r.onAmz ? (r.amzPrice === null ? 'Amazon –' : `Amazon £${r.amzPrice.toFixed(2)}`) : 'not on Amazon';
-  const review = r.amzDue ? ' · due' : r.amzSlider ? ' · in a slider' : r.amzReview && r.amzReview > todayIso() ? ` · review ${fmtReviewDate(r.amzReview)}` : '';
-  return `Not sold yet · ${r.daysLeft} days left · ${stock} · ${amz}${review}${r.onAmz ? ' — click to price it on Amazon' : ''}`;
-};
+// A TILE'S TOOLTIP, ONE SHORT FACT (owner, 2026-11-06: "Just show how many sold" — never "never sold", "Scary"): a counted size says
+// how many sold (net of returns, every channel, since it was first booked in — within the 90 days); an old size says only "Over 90
+// days" — it doesn't belong to this screen, so no count.
+const tileTitle = (t: RunSize) => (t.row ? `${unitsSold(t.row)} sold` : `Over ${DAYS} days`);
 
 // THE INTAKES — the 90 days in three 30-day bands by the SKU's FIRST arrival, newest first, each with its own Sold % (one figure
 // mixes stock that landed yesterday with stock that's had 80 days). Click a card to list the styles with a SKU in it.
@@ -596,19 +589,5 @@ function AmazonCell({ g }: { g: StyleGroup }) {
   }
   if (!g.sizes.some((r) => r.onAmz)) return <span className={NONE}>Not on Amazon</span>;
   return <span className={NONE}>–</span>;   // listed, but no price in the feed
-}
-
-// Today in London as YYYY-MM-DD (en-CA formats as ISO) — only to tell a future review date from a past one.
-function todayIso() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
-}
-
-// '2026-09-19' -> '19 Sep'. Split on the hyphens rather than via Date (a 'YYYY-MM-DD' handed to Date shifts a day under BST).
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function shortDate(iso: string) {
-  const [, m, d] = iso.split('-');
-  const mi = Number(m) - 1;
-  if (!d || mi < 0 || mi > 11) return iso;
-  return `${Number(d)} ${MONTHS[mi]}`;
 }
 
