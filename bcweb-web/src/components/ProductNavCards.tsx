@@ -39,6 +39,7 @@ import Link from 'next/link';
 import { prettyPathLabel } from '@/lib/nav';
 import {
   ClipboardDocumentListIcon, BuildingStorefrontIcon, CurrencyPoundIcon, TagIcon, ArchiveBoxIcon, ChartBarIcon, ShoppingCartIcon, CubeIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 
 // One destination. `build` gets the selected groupid and the encoded origin, so a card's whole deep-link convention sits on one line
@@ -48,6 +49,7 @@ interface NavTarget {
   hint: string;                                   // tooltip — what the screen is FOR, since the label alone is just a module name
   icon: React.ComponentType<{ className?: string }>;
   build: (groupid: string, from: string, back: string) => string;
+  external?: boolean;                             // an OUTSIDE site: a plain <a> in a NEW tab, no onLeave (see SELLER CENTRAL below)
 }
 
 // The product page for this style (/product/<groupid>, its sizes) — offered only where asked for (showProduct), e.g. Reports → New.
@@ -118,6 +120,21 @@ const TARGETS: (NavTarget & { group: Group })[] = [
     icon: BuildingStorefrontIcon,
     build: (g, from) => `/amz/find?q=${encodeURIComponent(g)}&from=${from}`,
   },
+  // SELLER CENTRAL (owner, 2026-11-06: "go to the Amazon web page for a GROUPID to check pricing there directly"). Manage Inventory
+  // searched to the group id — our Amazon SKUs carry it (45973-24-38-2610), so every size shows, with Amazon's LIVE price, featured offer
+  // and lowest competing price (our screens know prices as of the last Update Amazon). A CHECK, not a price-setter: a price changed in
+  // Seller Central misses our price log and upload basket. The ONE card that opens a NEW TAB — an outside site; the same-tab rule (header)
+  // is about our own screens, and this way the list you were on stays put. Needs the user signed in to Seller Central in that browser.
+  // Labelled "Live" because "Seller Central" doesn't fit the one card width; the tooltip names it. Greyed with the Amazon group.
+  {
+    group: 'Amazon',
+    label: 'Live',
+    hint: 'Seller Central (new tab)',   // short (owner, 2026-11-06: "not too much tooltip text")
+    icon: ArrowTopRightOnSquareIcon,
+    external: true,
+    build: (g) =>
+      `https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=25&searchField=all&searchTerm=${encodeURIComponent(g)}&sort=date_created_desc&status=all`,
+  },
 ];
 
 interface Props {
@@ -179,6 +196,15 @@ export default function ProductNavCards({ groupid, from, showProduct, exclude, s
           <Icon className="h-4 w-4 text-slate-300" />
           {t.label}
         </span>
+      );
+    }
+    if (t.external) {
+      return (
+        <a key={key} href={t.build(groupid, encodedFrom, encodedBack)} target="_blank" rel="noopener noreferrer" title={t.hint}
+           className={compact ? `${BASE_COMPACT} ${ENABLED_COMPACT}` : `${BASE} ${ENABLED}`}>
+          <Icon className="h-4 w-4 text-brand-600" />
+          {t.label}
+        </a>
       );
     }
     return (
