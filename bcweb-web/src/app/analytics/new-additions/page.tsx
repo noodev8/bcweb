@@ -18,7 +18,7 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     first in 0–30 / 30–60 / 60–90 days ago (click one to list it).
   - ONE ROW PER STYLE with ALL its sizes as tiles (2026-11-05, flipped — see SizeState): white, outlined = a new size NOT SOLD YET,
     the only thing to work on; faded grey = sold (ticked off) or not new (first in before the window — not in the figure). The quick
-    filters are hidden for now (SHOW_FILTERS); the Due switch stays.
+    filters are hidden for now (SHOW_FILTERS); there is no Due switch (see the Review column below).
   - Each row is LED BY THE GROUP ID (large, monospace; the title small under it — owner, 2026-11-05, a trial), under a Style
     heading; then Brand in its own column. The table is only as wide as its columns (no big gap before Brand).
   - Columns: Days in (days since the style's first new size was booked in — owner, 2026-11-05, was Days left; an unsold size that
@@ -44,18 +44,21 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     tile's tooltip. The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
     the upload file) — git history.
 
-PRICE DUE, THE PRICING SCREENS' OWN (owner, 2026-11-05, option A): a style is due when it still has an unsold new size and Shopify is
-         due (per style) or an unsold size is due on Amazon — lib/process.ts → styleDue, from flags the server works out with the pricing
-         lists' predicates. Pricing it on the drill parks it here too. The Due switch is OFF by default (on 2026-11-05 nothing was due —
-         the team had priced every new line — and the screen opened empty); ?due=1 turns it on.
+NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long or short review dates on the other pricing screens,
+         "But here, I want to see them all regardless of when due" … "We can even remove due completely here"). Every row is always
+         listed; the Review column says how soon the style's next review is — the EARLIER of Shopify (the style's date, if it's on
+         Shopify) and the earliest unsold, listed Amazon size — as "now" (passed, today, or never set: the pricing screens read no date
+         as due) or "3d"; the tooltip splits it by channel. It sorts, soonest first, which is the "due within a week" view without a
+         filter. Blank on a complete style (nothing left to price) or one on neither channel. Display only — dates are set on the
+         drills / bulk bar as before. (The Due switch / ?due=1, option A of 2026-11-05, is gone — git history.)
 
 PREV / NEXT ON THE DRILLS (owner, same day: "price navigation back and forth"): opening a Shopify or Amazon drill from here saves the
-         list as it stands (components/DrillListNav) — Shopify: the styles in screen order (Due on: only Shopify-due ones); Amazon: the
-         unsold, listed sizes in screen order (Due on: only Amazon-due ones) — and the drill steps through it with ‹ Prev · Next ›.
+         list as it stands (components/DrillListNav) — Shopify: the styles on Shopify in screen order; Amazon: the unsold, listed sizes
+         in screen order — and the drill steps through it with ‹ Prev · Next ›.
 
 SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away and we action whats left. A reset brings them all back"
          … "change prices here in bulk. Increase or decrease by a percentage"). Each row has an × that hides it from the screen (?cut=,
-         nothing stored; Refresh brings every row back). What's LEFT — after Due and the cuts — is what the bulk bar acts on, no ticks:
+         nothing stored; Refresh brings every row back). What's LEFT after the cuts is what the bulk bar acts on, no ticks:
            Shopify ± x%: every style left that is on Shopify and still has an unsold new size (a complete style is skipped) — W1, live.
            Amazon ± x%: every UNSOLD, listed new size of the styles left (owner: "unsold sizes only") — W-A1, into the upload basket.
          % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, the normal
@@ -64,7 +67,7 @@ SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away an
          and a review date already LATER is kept ("keep the later date" — a deliberate long park isn't undone by a bulk move). Preview then Apply; under cost /
          break-even and over RRP are flagged, never blocked. components/BulkPercentPrice owns the control.
 
-VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir= ?sel= ?cut=, read once into state and written back with
+VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?show= ?band= ?sort= ?dir= ?sel= ?cut=, read once into state and written back with
          router.replace from the handlers (never an effect). The back arrow reads ?from= / ?back=.
 =======================================================================================================================================
 */
@@ -79,11 +82,10 @@ import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
 import BulkPercentPrice, { movePrice, type BulkPlan, type BulkPlanItem } from '@/components/BulkPercentPrice';
 import { useAuth } from '@/contexts/AuthContext';
-import { DueSwitch } from '@/components/ListViewControls';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { applyAmzPrice, applyPrice, getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
-import { isSold, styleDue } from '@/lib/process';
+import { isSold } from '@/lib/process';
 
 // Fixed 90-day window (server-side, NEW_DAYS) — a SKU leaves the list 90 days after its first Goods In arrival, sold or not.
 const DAYS = 90;
@@ -106,6 +108,9 @@ function addDaysIso(iso: string, days: number) {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
+// Days from today to a review date (both YYYY-MM-DD). No date = 0, due now — the pricing screens read a missing review as due.
+const isoDay = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+const daysTo = (review: string | null, today: string) => (review ? Math.round(isoDay(review) - isoDay(today)) : 0);
 
 // The quick filters: how far through its sizes a style is.
 type Show = 'all' | 'none' | 'part' | 'done' | 'noamz';
@@ -142,16 +147,18 @@ interface StyleGroup {
   daysLeft: number | null;                      // fewest days left of an UNSOLD size (null = all sold)
   firstIn: string; ageDays: number;             // the earliest first arrival among its new sizes
   unlisted: number;                             // unsold sizes with no Amazon listing
-  due: boolean; shpDue: boolean; amzDue: number;
+  shpIn: number | null; amzIn: number | null;   // days to the next review per channel (≤ 0 = now; null = not on it / nothing to price)
+  reviewIn: number | null;                      // the earlier of the two — the Review column / sort
   amzLow: number | null; amzHigh: number | null; // Amazon price range over the unsold listed sizes (the Amazon column / sort)
 }
 // THE COLUMN SORTS. null = nothing to sort on (goes last). Shopify by its price, Amazon by the low end of its range.
-type SortKey = 'style' | 'brand' | 'age' | 'rrp' | 'shp' | 'amz';
-const SORT_KEYS: SortKey[] = ['style', 'brand', 'age', 'rrp', 'shp', 'amz'];
+type SortKey = 'style' | 'brand' | 'age' | 'review' | 'rrp' | 'shp' | 'amz';
+const SORT_KEYS: SortKey[] = ['style', 'brand', 'age', 'review', 'rrp', 'shp', 'amz'];
 const SORT_VALUE: Record<SortKey, (g: StyleGroup) => number | string | null> = {
   style: (g) => g.groupid,
   brand: (g) => g.brand,
   age: (g) => g.ageDays,
+  review: (g) => (g.reviewIn === null ? null : Math.max(g.reviewIn, 0)),   // every "now" ties, then newest first
   rrp: (g) => g.sizes[0].rrp,
   shp: (g) => (g.sizes[0].shpLive ? g.sizes[0].shpPrice : null),
   amz: (g) => g.amzLow,
@@ -216,8 +223,6 @@ function NewAdditionsPageInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Due OFF by default here (see the header) — ?due=1 is the switch on.
-  const [dueOnly, setDueOnly] = useState(() => searchParams.get('due') === '1');
   const [show, setShow] = useState<Show>(() => (SHOW_FILTERS && SHOWS.find((s) => s.id === searchParams.get('show'))?.id) || 'all');
   const [band, setBand] = useState<BandId | null>(() => (SHOW_INTAKES && BANDS.find((b) => b.id === searchParams.get('band'))?.id) || null);
   // THE SELECTION (?sel=a,b) — Windows-style multi-select (see the header). The product menu acts on it only when it is ONE row.
@@ -232,13 +237,12 @@ function NewAdditionsPageInner() {
   const { logout } = useAuth();
 
   // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
-  const viewUrl = (v: { due: boolean; show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] }) => {
+  const viewUrl = (v: { show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] }) => {
     const q = new URLSearchParams();
     const from = searchParams.get('from');
     const back = searchParams.get('back');
     if (from) q.set('from', from);
     if (back) q.set('back', back);
-    if (v.due) q.set('due', '1');
     if (v.show !== 'all') q.set('show', v.show);
     if (v.band) q.set('band', v.band);
     if (v.sort) { q.set('sort', v.sort); if (v.dir === 'desc') q.set('dir', 'desc'); }
@@ -247,11 +251,11 @@ function NewAdditionsPageInner() {
     const qs = q.toString();
     return qs ? `${pathname}?${qs}` : pathname;
   };
-  const current = { due: dueOnly, show, band, sort: sortBy, dir: sortDir, sel: selected, cut };
+  const current = { show, band, sort: sortBy, dir: sortDir, sel: selected, cut };
   const selfUrl = viewUrl(current);
   const setView = (patch: Partial<typeof current>) => {
     const next = { ...current, ...patch };
-    setDueOnly(next.due); setShow(next.show); setBand(next.band); setSortBy(next.sort); setSortDir(next.dir); setSelected(next.sel); setCut(next.cut);
+    setShow(next.show); setBand(next.band); setSortBy(next.sort); setSortDir(next.dir); setSelected(next.sel); setCut(next.cut);
     router.replace(viewUrl(next), { scroll: false });
   };
 
@@ -263,6 +267,7 @@ function NewAdditionsPageInner() {
 
   // GROUP every new size under its style (the server sends them grouped, sizes in size order), and draw the style's other sizes with them.
   const allGroups = useMemo(() => {
+    const today = londonToday();
     const groups: StyleGroup[] = [];
     const byId = new Map<string, ProcessSizeRow[]>();
     for (const r of rows) {
@@ -282,14 +287,20 @@ function NewAdditionsPageInner() {
       ].sort(bySize);
       const unsoldSizes = sizes.filter((r) => !isSold(r));
       const first = sizes.reduce((a, r) => (r.firstIn < a.firstIn ? r : a), sizes[0]);
-      const d = styleDue(sizes);
+      // THE REVIEW (see the header): Shopify per style while it's on Shopify; Amazon = the earliest unsold, listed size. Nothing left
+      // to sell = nothing to price = blank.
+      const left = unsoldSizes.length > 0;
+      const shpIn = left && sizes[0].shpLive ? daysTo(sizes[0].shpReview, today) : null;
+      const amzDays = unsoldSizes.filter((r) => r.onAmz).map((r) => daysTo(r.amzReview, today));
+      const amzIn = amzDays.length ? Math.min(...amzDays) : null;
+      const both = [shpIn, amzIn].filter((x): x is number => x !== null);
       groups.push({
         groupid, title: sizes[0].title, brand: sizes[0].brand, sizes, run,
         sold: sizes.length - unsoldSizes.length, unsold: unsoldSizes.length,
         daysLeft: unsoldSizes.length ? Math.min(...unsoldSizes.map((r) => r.daysLeft)) : null,
         firstIn: first.firstIn, ageDays: first.ageDays,
         unlisted: unsoldSizes.filter((r) => !r.onAmz).length,
-        due: d.due, shpDue: d.shp, amzDue: d.amz,
+        shpIn, amzIn, reviewIn: both.length ? Math.min(...both) : null,
         ...amzRange(unsoldSizes.some((r) => r.onAmz) ? unsoldSizes : sizes),
       });
     }
@@ -307,23 +318,23 @@ function NewAdditionsPageInner() {
     return { ...b, skus: mine.length, sold: mine.filter(isSold).length };
   }), [rows]);
 
-  // The intake picked on a card, then Due, then the quick filter. The filter counts are of that view, so each says what its click will show.
-  const dueGroups = useMemo(() => {
+  // The intake picked on a card, then the quick filter. The filter counts are of that view, so each says what its click will show.
+  const bandGroups = useMemo(() => {
     const b = BANDS.find((x) => x.id === band);
-    return allGroups.filter((g) => (!b || g.sizes.some((r) => inBand(b, r.ageDays))) && (!dueOnly || g.due));
-  }, [allGroups, dueOnly, band]);
+    return b ? allGroups.filter((g) => g.sizes.some((r) => inBand(b, r.ageDays))) : allGroups;
+  }, [allGroups, band]);
   const showCounts = useMemo(() => {
     const c: Record<Show, number> = { all: 0, none: 0, part: 0, done: 0, noamz: 0 };
-    for (const g of dueGroups) for (const s of SHOWS) if (SHOW_TEST[s.id](g)) c[s.id] += 1;
+    for (const g of bandGroups) for (const s of SHOWS) if (SHOW_TEST[s.id](g)) c[s.id] += 1;
     return c;
-  }, [dueGroups]);
+  }, [bandGroups]);
 
   // THE ORDER: NEWEST ADDED AT THE TOP by default (owner, 2026-11-05: "Sort by newest added at the top" — added = the style's earliest
   // first Goods In arrival among its new sizes), and EVERY COLUMN SORTS (owner, same day: "Apply a sort on columns"). A row with
   // nothing to sort on (not on Shopify: no price; no Amazon price) goes last either way. Ties: newest first.
   const sortedGroups = useMemo(() => {
     const newest = (a: StyleGroup, b: StyleGroup) => b.firstIn.localeCompare(a.firstIn) || a.groupid.localeCompare(b.groupid);
-    const groups = dueGroups.filter(SHOW_TEST[show]);
+    const groups = bandGroups.filter(SHOW_TEST[show]);
     if (!sortBy) return groups.sort(newest);
     const val = SORT_VALUE[sortBy];
     return groups.sort((a, b) => {
@@ -332,7 +343,7 @@ function NewAdditionsPageInner() {
       const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
       return (sortDir === 'desc' ? -c : c) || newest(a, b);
     });
-  }, [dueGroups, show, sortBy, sortDir]);
+  }, [bandGroups, show, sortBy, sortDir]);
 
   // Header click: a new column sorts ascending, the same one flips to descending, a third click goes back to newest first.
   const toggleSort = (key: SortKey) => {
@@ -358,7 +369,7 @@ function NewAdditionsPageInner() {
     return sortedGroups.filter((g) => !hidden.has(g.groupid));
   }, [sortedGroups, cut]);
   const cutHere = sortedGroups.length - visibleGroups.length;
-  // The selected rows that are ON SCREEN — what Cut acts on (a row hidden by Due or a cut can still sit in ?sel=).
+  // The selected rows that are ON SCREEN — what Cut acts on (a cut row can still sit in ?sel=).
   const selectedHere = useMemo(() => {
     const s = new Set(selected);
     return visibleGroups.filter((g) => s.has(g.groupid)).map((g) => g.groupid);
@@ -386,7 +397,7 @@ function NewAdditionsPageInner() {
     const gone = new Set(selectedHere);
     setView({ cut: [...cut, ...selectedHere], sel: selected.filter((x) => !gone.has(x)) });
   };
-  // REFRESH — the whole screen: cuts gone, selection gone, data reloaded. Sort and Due are the view's settings and stay.
+  // REFRESH — the whole screen: cuts gone, selection gone, data reloaded. The sort is the view's setting and stays.
   const refreshScreen = () => {
     setAnchor(null);
     setView({ cut: [], sel: [] });
@@ -403,11 +414,11 @@ function NewAdditionsPageInner() {
   // THE DRILL LISTS — saved on the click that opens a drill, so its ‹ Prev / Next › walks this screen's list as it stands.
   const openShopify = () => saveDrillList(SHP_LIST, {
     base: '/pricing/style/', from: selfUrl, label: LIST_LABEL,
-    keys: visibleGroups.filter((g) => g.sizes[0].shpLive && (!dueOnly || g.shpDue)).map((g) => g.groupid),
+    keys: visibleGroups.filter((g) => g.sizes[0].shpLive).map((g) => g.groupid),
   });
   const openAmazon = () => saveDrillList(AMZ_LIST, {
     base: '/amz/sku/', from: selfUrl, label: LIST_LABEL,
-    keys: visibleGroups.flatMap((g) => g.sizes.filter((r) => r.onAmz && !isSold(r) && (!dueOnly || r.amzDue)).map((r) => r.code)),
+    keys: visibleGroups.flatMap((g) => g.sizes.filter((r) => r.onAmz && !isSold(r)).map((r) => r.code)),
   });
   const shpHref = (groupid: string) => drillListHref(SHP_LIST, { base: '/pricing/style/', from: selfUrl }, groupid);
   const amzHref = (code: string) => drillListHref(AMZ_LIST, { base: '/amz/sku/', from: selfUrl }, code);
@@ -510,11 +521,6 @@ function NewAdditionsPageInner() {
             <div className="flex items-end px-4 py-2 text-xs text-slate-400">
               first booked in on Goods In in the last {DAYS} days · sold on any channel since
             </div>
-            {/* THE DUE SWITCH lives in the summary strip (owner, 2026-11-06: "Due is taking too much space by itself" — it had a row of
-                its own once the filters and the tile legend went). */}
-            <div className="ml-auto flex items-center px-4 py-2">
-              <DueSwitch on={dueOnly} onChange={(v) => setView({ due: v })} />
-            </div>
           </dl>
 
           {/* THE INTAKES — Sold % per 30-day band of first arrival, newest first. Hidden (SHOW_INTAKES). */}
@@ -611,7 +617,7 @@ function NewAdditionsPageInner() {
                    className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white focus:outline-none">
                 {visibleGroups.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-slate-500">
-                    {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.' : dueOnly ? 'Nothing here is due a price look. Switch off Due to see the rest.' : 'No styles match this filter.'}
+                    {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.' : 'No styles match this filter.'}
                   </p>
                 ) : (
                   <table className="text-sm">
@@ -623,6 +629,10 @@ function NewAdditionsPageInner() {
                         <th className="w-24 border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
                             title={`Days since it was first booked in on Goods In — an unsold size leaves the list at ${DAYS}`}>
                           {sortBtn('age', 'Days in')}
+                        </th>
+                        <th className="w-24 border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
+                            title="Days to the next price review — the earlier of Shopify and Amazon (hover a row's figure for each)">
+                          {sortBtn('review', 'Review')}
                         </th>
                         <th className="w-24 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                             title="The style's RRP — read the Shopify and Amazon prices against it">{sortBtn('rrp', 'RRP')}</th>
@@ -673,6 +683,9 @@ function NewAdditionsPageInner() {
                             <td className={'border-l border-slate-100 py-3 pl-3 pr-4 text-right align-top tabular-nums ' + fade}>
                               <DaysIn g={g} />
                             </td>
+                            <td className="border-l border-slate-100 py-3 pl-3 pr-4 text-right align-top tabular-nums">
+                              <ReviewCell g={g} />
+                            </td>
                             <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               {g.sizes[0].rrp === null ? <span className={NONE}>–</span> : <span className="tabular-nums text-slate-500">{gbp(g.sizes[0].rrp)}</span>}
                             </td>
@@ -706,7 +719,7 @@ function NewAdditionsPageInner() {
 }
 
 // THE SIZE RUN — every size of the style as a tile (see SizeState). A WHITE tile listed on Amazon is a link to that size's Amazon drill
-// (Prev / Next walks the unsold listed sizes of this list; a blue ring = due a price look); a white tile with no listing is plain and
+// (Prev / Next walks the unsold listed sizes of this list; its blue "due" ring went with the Due switch, 2026-11-06); a white tile with no listing is plain and
 // not a link (the amber "not on Amazon" dot was removed — owner, 2026-11-05). No tooltip (owner, 2026-11-06).
 function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string) => string; onAmz: () => void }) {
   const tile = 'relative flex h-6 w-9 items-center justify-center rounded text-[11px] tabular-nums ';
@@ -719,7 +732,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
           return (
             <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`}
                   onClick={(e) => { e.stopPropagation(); onAmz(); }}
-                  className={tile + SIZE_TILE.todo + (r.amzDue ? ' ring-2 ring-brand-500' : '') +
+                  className={tile + SIZE_TILE.todo +
                     ' transition hover:bg-brand-50 hover:ring-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'}>
               {t.size}
             </Link>
@@ -756,11 +769,19 @@ function DaysIn({ g }: { g: StyleGroup }) {
   return <span className="text-slate-700">{g.ageDays}</span>;
 }
 
+// REVIEW (owner, 2026-11-06 — see the header): "now" or "3d" to the earlier channel's review, plain like Days in; the tooltip splits it.
+const inWords = (d: number) => (d <= 0 ? 'now' : `in ${d} day${d === 1 ? '' : 's'}`);
+function ReviewCell({ g }: { g: StyleGroup }) {
+  if (g.reviewIn === null) return <span className={NONE}>–</span>;
+  const tip = [g.shpIn !== null && `Shopify ${inWords(g.shpIn)}`, g.amzIn !== null && `Amazon ${inWords(g.amzIn)}`].filter(Boolean).join(' · ');
+  return <span title={tip} className="text-slate-700">{g.reviewIn <= 0 ? 'now' : `${g.reviewIn}d`}</span>;
+}
+
 // THE RRP COLUMN (owner, 2026-11-05: "just an extra RRP column that covers both. Leave the prices there") — the style's RRP, grey,
 // so the two prices beside it show at a glance whether a price has been moved off RRP (action taken) or not (action maybe needed).
 // THE PRICE COLUMNS, ONE STANDARD (owner, 2026-11-05: "Standardise the Shopify and Amazon columns. Both show the respective prices
 // (Amazon has a range). Dont show the due date"). The same plain price in both; a grey note when there's no price to show. Review dates
-// and Due notes were taken off — the Due switch still filters on them, and a tile's tooltip still says its Amazon review.
+// and Due notes were taken off — the Review column (ReviewCell) says how soon, once, for both channels.
 const PRICE = 'tabular-nums font-medium text-slate-900';
 const NONE = 'text-xs text-slate-400';
 const gbp = (n: number) => `£${n.toFixed(2)}`;

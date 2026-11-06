@@ -14,13 +14,4 @@ export const CHANNELS: { id: ProcessChannel; label: string }[] = [
 export const isSold = (r: ProcessSizeRow) => r.net > 0;
 // Net units sold, never below 0 (a return of a pair sold before the window can't make it negative on screen).
 export const unitsSold = (r: ProcessSizeRow) => Math.max(r.net, 0);
-
-// PRICE DUE for a new style (owner, 2026-11-05, option A): it still has an UNSOLD new size, and Shopify is due (per style) or an unsold
-// size is due on Amazon. Sold sizes are ticked off, so they never make a style due.
-export function styleDue(sizes: ProcessSizeRow[]) {
-  const unsold = sizes.filter((r) => !isSold(r));
-  if (unsold.length === 0) return { due: false, shp: false, amz: 0 };
-  const shp = sizes[0].shpDue;
-  const amz = unsold.filter((r) => r.amzDue).length;
-  return { due: shp || amz > 0, shp, amz };
-}
+// (styleDue — New Additions' Due switch — went with the switch on 2026-11-06; git history.)
