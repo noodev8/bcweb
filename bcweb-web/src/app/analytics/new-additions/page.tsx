@@ -22,7 +22,7 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
   - Each row is LED BY THE GROUP ID (large, monospace; the title small under it — owner, 2026-11-05, a trial), under a Style
     heading; then Brand in its own column. The table is only as wide as its columns (no big gap before Brand).
   - Columns: Days in (days since the style's first new size was booked in — owner, 2026-11-05, was Days left; an unsold size that
-    reaches 90 drops out of the % without selling, so amber from 60, red from 75 while anything is unsold). Newest added at the top by default; every column sorts (a
+    reaches 90 drops out of the % without selling; plain, no colours — owner, 2026-11-06). Newest added at the top by default; every column sorts (a
     third click goes back to newest first) — ?sort= ?dir=), Shopify (the style's price) and Amazon (the price range of the unsold
     listed sizes) — one standard, no review dates (owner, 2026-11-05).
   - THE STANDARD PRODUCT MENU (owner, 2026-11-06: "apply the standard navigation we have in other screens ... Sticks to the top and
@@ -52,7 +52,7 @@ VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir
 =======================================================================================================================================
 */
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -62,7 +62,7 @@ import { DueSwitch } from '@/components/ListViewControls';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
-import { isSold, styleDue, unitsSold } from '@/lib/process';
+import { isSold, styleDue } from '@/lib/process';
 
 // Fixed 90-day window (server-side, NEW_DAYS) — a SKU leaves the list 90 days after its first Goods In arrival, sold or not.
 const DAYS = 90;
@@ -157,13 +157,9 @@ const SIZE_TILE: Record<SizeState, string> = {
   done: 'bg-slate-100 text-slate-400',
   old: 'bg-slate-100 text-slate-400',
 };
-// A TILE'S TOOLTIP, ONE SHORT FACT (owner, 2026-11-06: "Just show how many sold" — never "never sold", "Scary"): a counted size says
-// how many sold (net of returns, every channel, since it was first booked in — within the 90 days); any other size says only "Not
-// counted here" — it doesn't belong to this screen, so no count. GENERIC ON PURPOSE (owner, 2026-11-06): it was "Over 90 days", which
-// was wrong for a size put into stock WITHOUT a Goods In booking (L3882-00-39, added on 2 Nov straight into stock); "Not booked in"
-// was rejected — "give me different work to do when I should be focussing". Stock with no Goods In record is a data sweep, not this
-// screen's job.
-const tileTitle = (t: RunSize) => (t.row ? `${unitsSold(t.row)} sold` : 'Not counted here');
+// NO TOOLTIP ON A TILE (owner, 2026-11-06: "not feeling the size hover. Lets try without any hover text at all"). Tried and dropped
+// the same day, in order: a full line (sold / days left / stock / Amazon price / review), "n sold", "Over 90 days", "Not counted
+// here". The colour is the whole message: white = still to sell (a link to its Amazon drill when listed), grey = nothing to do here.
 
 // THE INTAKES — the 90 days in three 30-day bands by the SKU's FIRST arrival, newest first, each with its own Sold % (one figure
 // mixes stock that landed yesterday with stock that's had 80 days). Click a card to list the styles with a SKU in it.
@@ -331,6 +327,16 @@ function NewAdditionsPageInner() {
   const shpHref = (groupid: string) => drillListHref(SHP_LIST, { base: '/pricing/style/', from: selfUrl }, groupid);
   const amzHref = (code: string) => drillListHref(AMZ_LIST, { base: '/amz/sku/', from: selfUrl }, code);
 
+  // THE MENU'S HEIGHT, for the sticky table header to sit under it. Measured by a callback ref + ResizeObserver (the menu wraps on a
+  // narrow screen) — no effect needed; React runs the returned cleanup when the element goes.
+  const [menuH, setMenuH] = useState(0);
+  const menuRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setMenuH(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const soldPct = pct(totals.sold, totals.skus);
 
   return (
@@ -399,7 +405,7 @@ function NewAdditionsPageInner() {
             <>
               {/* THE PRODUCT MENU — sticky, acts on the selected row (see the header). Same bar as Inventory's; the page background so rows
                   scrolling under it don't show through. */}
-              <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-1">
+              <div ref={menuRef} className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-1">
                 <ProductNavCards
                   groupid={selected}
                   from={selfUrl}
@@ -438,7 +444,8 @@ function NewAdditionsPageInner() {
                   </p>
                 ) : (
                   <table className="text-sm">
-                    <thead className="bg-slate-50 text-xs text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]">
+                    {/* THE HEADER STICKS TOO (owner, 2026-11-06), just under the sticky product menu — its top is the menu's measured height. */}
+                    <thead className="sticky z-10 bg-slate-50 text-xs text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]" style={{ top: menuH }}>
                       <tr>
                         <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">{sortBtn('style', 'Style')}</th>
                         <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">{sortBtn('brand', 'Brand')}</th>
@@ -512,7 +519,7 @@ function NewAdditionsPageInner() {
 
 // THE SIZE RUN — every size of the style as a tile (see SizeState). A WHITE tile listed on Amazon is a link to that size's Amazon drill
 // (Prev / Next walks the unsold listed sizes of this list; a blue ring = due a price look); a white tile with no listing is plain and
-// not a link (the amber "not on Amazon" dot was removed — owner, 2026-11-05). Everything a tile knows is in its tooltip (tileTitle).
+// not a link (the amber "not on Amazon" dot was removed — owner, 2026-11-05). No tooltip (owner, 2026-11-06).
 function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string) => string; onAmz: () => void }) {
   const tile = 'relative flex h-6 w-9 items-center justify-center rounded text-[11px] tabular-nums ';
   return (
@@ -522,7 +529,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
         const r = t.row;
         if (state === 'todo' && r && r.onAmz) {
           return (
-            <Link key={t.code} href={amzHref(t.code)} title={tileTitle(t)}
+            <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`}
                   onClick={(e) => { e.stopPropagation(); onAmz(); }}
                   className={tile + SIZE_TILE.todo + (r.amzDue ? ' ring-2 ring-brand-500' : '') +
                     ' transition hover:bg-brand-50 hover:ring-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'}>
@@ -531,7 +538,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
           );
         }
         return (
-          <span key={t.code} title={tileTitle(t)} onClick={(e) => e.stopPropagation()} className={tile + SIZE_TILE[state]}>
+          <span key={t.code} onClick={(e) => e.stopPropagation()} className={tile + SIZE_TILE[state]}>
             {t.size}
           </span>
         );
@@ -555,12 +562,10 @@ function Thumb({ imagename, alt }: { imagename: string | null; alt: string }) {
 }
 
 // DAYS IN (owner, 2026-11-05: "switch days left to days added" — was Days left, 90 − this): days since the style's first new size was
-// booked in. Still flags the end of the window while something is unsold — amber from 60, red from 75 (an unsold size leaves the list,
-// and the %, at 90); grey once every new size has sold.
+// booked in. PLAIN, NO COLOURS (owner, 2026-11-06: "dont have the colours. Keep them all normal") — amber/red for unsold sizes near 90
+// days, and grey once all sold, were tried and taken off.
 function DaysIn({ g }: { g: StyleGroup }) {
-  const n = g.ageDays;
-  const tone = g.unsold === 0 ? 'text-slate-400' : n >= 75 ? 'text-rose-600 font-semibold' : n >= 60 ? 'text-amber-700 font-medium' : 'text-slate-700';
-  return <span className={tone}>{n}</span>;
+  return <span className="text-slate-700">{g.ageDays}</span>;
 }
 
 // THE RRP COLUMN (owner, 2026-11-05: "just an extra RRP column that covers both. Leave the prices there") — the style's RRP, grey,
