@@ -81,9 +81,8 @@ function daysAgo(iso: string): number {
 function fmtWhen(iso: string): string {
   const d = daysAgo(iso);
   if (d <= 0) return 'today';
-  if (d === 1) return 'yesterday';
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+  // Always days, never a date (owner, 2026-11-06: "ALL as days so I can compare easier") — 'yesterday' is 1d ago for the same reason.
+  return `${d}d ago`;
 }
 // Rank / price / sellers are free text, shown as typed. A plain number gets a £ in front when it's a price.
 const fmtMoney = (t: string) => (/^[0-9]+([.][0-9]+)?$/.test(t) ? `£${t}` : t);
@@ -767,11 +766,17 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
             </tr>
           </thead>
           <tbody>
-            {[...p.checks].reverse().map((c) => (
+            {/* A check with no price shows the last price typed before it, looking the same as a typed one (owner, 2026-11-06: the price was unchanged, only
+                the rank moved). Display only — nothing is written to the DB, so a blank stays blank on record. */}
+            {p.checks.map((c, i) => ({ c, carried: c.price === null ? [...p.checks.slice(0, i)].reverse().find((e) => e.price !== null)?.price ?? null : null }))
+              .reverse().map(({ c, carried }) => (
               <tr key={c.id} className="border-b border-slate-100 text-slate-700 last:border-0">
                 <td className="py-1 pr-3 whitespace-nowrap">{fmtWhen(c.checked_at)}</td>
                 <td className="py-1 pr-3 text-right tabular-nums">{c.rank ?? ''}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{c.price !== null ? fmtMoney(c.price) : ''}</td>
+                <td className="py-1 pr-3 text-right tabular-nums">
+                  {c.price !== null ? fmtMoney(c.price)
+                    : carried !== null ? fmtMoney(carried) : ''}
+                </td>
                 <td className="py-1 pr-3">{c.checked_by}</td>
                 <td className="py-1 text-right">
                   {!archived && (
