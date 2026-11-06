@@ -33,7 +33,13 @@ THE LIST = NEW ADDITIONS' LAYOUT (owner, same day: "the same style layout but di
 THE LIST RULE IS UNCHANGED — no net sale for 91+ days (the idle clock, utils/onShelf.js: since the later of the last NET sale and the
          oldest held pair's arrival; never sold = since it arrived; before the log = 31 Dec 2024). A list, not a rule beyond that.
 
-READ ONLY FOR NOW. The actions come in the second pass (owner decisions, 2026-11-06): Park (its OWN per-size date — never the pricing
+CLEARANCE DECISIONS (?band=cl only; owner, 2026-11-06 — the decision layer shared with Deep sellers, components/ListDecision +
+         lib/listDecisions): an Action column (a dash until an action is chosen by hand: Shopify 50%, eBay, Amazon, Job lot, Other shop,
+         CM3 shop, Harvest), To decide (default) | All (?view=all), and the decide bar acting on the selected rows. A decided style is To
+         decide again when its look-again date arrives or its qty in stock in 9-month+ sizes grows. Choosing an action records it and
+         nothing else. The 91 days – 9 months list is unchanged.
+
+READ ONLY FOR NOW (bar the Clearance decisions). The actions come in the second pass (owner decisions, 2026-11-06): Park (its OWN per-size date — never the pricing
          review dates — always with a date) and a bulk Amazon ±% / last sold price and Shopify ±% move, each taking the size off the
          list until its date; parked sizes then leave the list behind an "n parked" link. Clearance keeps this read-only list until
          its own tools are designed.
@@ -58,7 +64,9 @@ import ProductNavCards from '@/components/ProductNavCards';
 import StyleThumb from '@/components/StyleThumb';
 import ListTitle from '@/components/ListTitle';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSlowSizes, type SlowSize } from '@/lib/api';
+import { getListDecisions, getSlowSizes, type ListDecision, type SlowSize } from '@/lib/api';
+import { DecisionBar, DecisionCell, DecisionViewSwitch } from '@/components/ListDecision';
+import { isDue } from '@/lib/listDecisions';
 import { SLOW_BANDS, slowBandFromUrl } from '@/lib/slowBands';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -76,6 +84,7 @@ const monthOf = (date: string) => {
 interface Tile { code: string; size: string; slow: SlowSize | null; white: boolean }
 interface StyleRow {
   groupid: string; title: string | null; brand: string | null; imagename: string | null;
+  decision: ListDecision | undefined; due: boolean; measure: number;   // Clearance decisions (?band=cl); due = true elsewhere
   white: SlowSize[]; run: Tile[];
   longest: SlowSize;                  // the white size waiting longest — the Days cell
   stock: number; sold: number; styleSold: number;
@@ -119,6 +128,7 @@ function SlowBoxBody() {
   const from = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null;
   const band = slowBandFromUrl(sp.get('band')) ?? 'mid';
   const box = SLOW_BANDS.find((b) => b.key === band) ?? SLOW_BANDS[0];
+  const isCl = band === 'cl';
 
   const list = (k: string) => (sp.get(k) || '').split(',').filter(Boolean);
   const [brand, setBrand] = useState(() => sp.get('brand') ?? '');
@@ -129,9 +139,10 @@ function SlowBoxBody() {
   const [selected, setSelected] = useState<string[]>(() => list('sel'));
   const [anchor, setAnchor] = useState<string | null>(() => list('sel').pop() ?? null);
   const [cut, setCut] = useState<string[]>(() => list('cut'));
+  const [view, setViewMode] = useState<'todo' | 'all'>(() => (sp.get('view') === 'all' ? 'all' : 'todo'));
 
-  type View = { brand: string; q: string; ns: boolean; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] };
-  const current: View = { brand, q: search, ns: neverOnly, sort: sortBy, dir: sortDir, sel: selected, cut };
+  type View = { brand: string; q: string; ns: boolean; view: 'todo' | 'all'; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] };
+  const current: View = { brand, q: search, ns: neverOnly, view, sort: sortBy, dir: sortDir, sel: selected, cut };
   const viewUrl = (v: View) => {
     const q = new URLSearchParams();
     q.set('band', band);
@@ -139,6 +150,7 @@ function SlowBoxBody() {
     if (v.brand) q.set('brand', v.brand);
     if (v.q.trim()) q.set('q', v.q.trim());
     if (v.ns) q.set('ns', '1');
+    if (isCl && v.view === 'all') q.set('view', 'all');
     if (v.sort) { q.set('sort', v.sort); q.set('dir', v.dir); }
     if (v.sel.length) q.set('sel', v.sel.join(','));
     if (v.cut.length) q.set('cut', v.cut.join(','));
@@ -147,13 +159,23 @@ function SlowBoxBody() {
   const selfUrl = viewUrl(current);
   const setView = (patch: Partial<View>) => {
     const v = { ...current, ...patch };
-    setBrand(v.brand); setSearch(v.q); setNeverOnly(v.ns); setSortBy(v.sort); setSortDir(v.dir);
+    setBrand(v.brand); setSearch(v.q); setNeverOnly(v.ns); setViewMode(v.view); setSortBy(v.sort); setSortDir(v.dir);
     setSelected(v.sel); setCut(v.cut);
     router.replace(viewUrl(v), { scroll: false });
   };
 
   const q = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
   const all = q.data?.sizes;
+  // CLEARANCE DECISIONS — fetched on the red list only (null key = no fetch on 91 days – 9 months).
+  const dq = useApiQuery(isCl ? 'list-decisions-clearance' : null, () => getListDecisions('clearance'));
+  const decisions = useMemo(() => new Map((dq.data?.decisions ?? []).map((d) => [d.groupid, d])), [dq.data]);
+  const today = dq.data?.today ?? null;
+  // THE MEASURE per style = its qty in stock across ALL its 9-month+ sizes (never the filtered ones), the number the server saved.
+  const measureOf = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of all ?? []) if (s.clearance) m.set(s.groupid, (m.get(s.groupid) || 0) + s.units);
+    return m;
+  }, [all]);
 
   // FILTERS (see header) — at size grain.
   const passes = useCallback((s: SlowSize) => {
@@ -193,14 +215,18 @@ function SlowBoxBody() {
         ...(othersBy.get(groupid) ?? []),
       ].sort(bySize);
       const longest = white.reduce((a, s) => (s.idle_days > a.idle_days ? s : a), white[0]);
+      const decision = isCl ? decisions.get(groupid) : undefined;
+      const measure = measureOf.get(groupid) || 0;
+      const due = !isCl || (today ? isDue(decision, measure, today) : !decision);
       out.push({
+        decision, due, measure,
         groupid, title: white[0].title, brand: white[0].brand, imagename: img.get(groupid) ?? null, white, run, longest,
         stock: white.reduce((t, s) => t + s.units, 0), sold: white.reduce((t, s) => t + s.sold_12m, 0),
         styleSold: white[0].style_sold_12m,
       });
     }
     return out;
-  }, [q.data, box, passes]);
+  }, [q.data, box, passes, isCl, decisions, measureOf, today]);
 
   // THE ORDER: longest wait first by default; a header click sorts by it (text A–Z / numbers biggest first), again flips, a third
   // goes back to the default. Ties: longest wait, then group id.
@@ -230,8 +256,10 @@ function SlowBoxBody() {
   );
 
   // WHAT'S ON SCREEN — the sorted rows less the soft cuts.
-  const visible = useMemo(() => { const h = new Set(cut); return sorted.filter((g) => !h.has(g.groupid)); }, [sorted, cut]);
-  const cutHere = sorted.length - visible.length;
+  const inView = useMemo(() => (!isCl || view === 'all' ? sorted : sorted.filter((g) => g.due)), [sorted, view, isCl]);
+  const todoCount = useMemo(() => sorted.filter((g) => g.due).length, [sorted]);
+  const visible = useMemo(() => { const h = new Set(cut); return inView.filter((g) => !h.has(g.groupid)); }, [inView, cut]);
+  const cutHere = inView.length - visible.length;
   const selectedHere = useMemo(() => { const s = new Set(selected); return visible.filter((g) => s.has(g.groupid)).map((g) => g.groupid); }, [visible, selected]);
   const menuGroupid = selected.length === 1 ? selected[0] : null;
   const menuRow = visible.find((g) => g.groupid === menuGroupid) ?? null;
@@ -258,7 +286,8 @@ function SlowBoxBody() {
     else if (e.key === 'Escape') setView({ sel: [] });
   };
   const cutSelected = () => { const gone = new Set(selectedHere); setView({ cut: [...cut, ...selectedHere], sel: selected.filter((x) => !gone.has(x)) }); };
-  const refreshScreen = () => { setAnchor(null); setView({ cut: [], sel: [] }); void q.refresh(); };
+  const refreshScreen = () => { setAnchor(null); setView({ cut: [], sel: [] }); void q.refresh(); if (isCl) void dq.refresh(); };
+  const decidedSelected = selectedHere.filter((g) => decisions.has(g)).length;
 
   // The product menu's height, for the sticky table header to sit under it (callback ref + ResizeObserver — no effect).
   const [menuH, setMenuH] = useState(0);
@@ -314,6 +343,7 @@ function SlowBoxBody() {
 
           {/* THE BAR — what's on screen, Cut and Refresh (the box's name is the title now). (Park and the bulk price moves join it in the next pass.) */}
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600">
+            {isCl && <DecisionViewSwitch view={view} todo={todoCount} all={sorted.length} onChange={(v) => setView({ view: v, sel: [] })} />}
             <span className="tabular-nums">
               {n(visible.length)} style{visible.length === 1 ? '' : 's'} · {n(visible.reduce((t, g) => t + g.stock, 0))} in stock
             </span>
@@ -326,13 +356,21 @@ function SlowBoxBody() {
               className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
               Refresh
             </button>
+            {isCl && (
+              <>
+                <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+                <DecisionBar list="clearance" selected={selectedHere} decidedSelected={decidedSelected}
+                  spring={dq.data?.spring ?? null} today={today} onDone={() => { void dq.refresh(); }} />
+              </>
+            )}
           </div>
 
           <div tabIndex={-1} onKeyDown={onListKey}
             className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white focus:outline-none">
             {visible.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-500">
-                {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.' : 'Nothing here with these filters.'}
+                {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.'
+                  : isCl && view === 'todo' && sorted.length ? 'Nothing left to decide. All shows every style and its decision.' : 'Nothing here with these filters.'}
               </p>
             ) : (
               <table className="text-sm">
@@ -340,6 +378,7 @@ function SlowBoxBody() {
                   <tr>
                     <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">{sortBtn('style', 'Style')}</th>
                     <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">{sortBtn('brand', 'Brand')}</th>
+                    {isCl && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium" title="The action chosen for this style's 9-month+ sizes">Action</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
                       title="Days without a sale — the longest-waiting white size, and the month it last sold">{sortBtn('days', 'Days')}</th>
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
@@ -369,6 +408,11 @@ function SlowBoxBody() {
                         <td className="border-l border-slate-100 py-3 pl-3 pr-4 align-top text-slate-700">
                           {g.brand || <span className="text-slate-300">–</span>}
                         </td>
+                        {isCl && (
+                          <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top">
+                            <DecisionCell list="clearance" d={g.decision} due={g.due} measureNow={g.measure} today={today} />
+                          </td>
+                        )}
                         <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 text-right align-top tabular-nums">
                           <LastSold s={g.longest} />
                         </td>

@@ -46,7 +46,7 @@ import { ChevronRightIcon } from '@heroicons/react/20/solid';
 import { usePathname, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getProcessOverview, getSlowSizes } from '@/lib/api';
+import { getDeepSizes, getProcessOverview, getSlowSizes } from '@/lib/api';
 import { NEW_DAYS, SLOW_BANDS, splitHeldSizes, type SlowPartKey } from '@/lib/slowBands';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -108,6 +108,9 @@ function SlowMoversFront() {
 
   const sq = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
   const nq = useApiQuery('process-overview', () => getProcessOverview());
+  // DEEP SELLERS — the one door to that screen (owner, 2026-11-06: "we navigate to the new screen from the range screen"). Same key as
+  // the screen itself, so opening it after this is instant. Its count is the deep SKUs (utils/deepSizes.js), every one a green size.
+  const dq = useApiQuery('analytics-deep-sizes', () => getDeepSizes());
 
   const view = useMemo(() => {
     if (!sq.data || !nq.data) return null;
@@ -206,6 +209,15 @@ function SlowMoversFront() {
                 </div>
               </PartCard>
               ))}
+              {/* DEEP SELLERS — branches off the green card, which stays as it is (owner): its sizes sell, but were bought too deep.
+                  A plain link under the card with the screen's violet dot (components/ListTitle), not another card. */}
+              <Link href={`/analytics/deep-sizes?from=${self}`}
+                className="mt-3 flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-violet-600" />
+                <span className="font-semibold">Deep sellers</span>
+                {dq.data && <span className="tabular-nums text-slate-500">· {n(dq.data.sizes.length)} SKUs bought too deep</span>}
+                <ChevronRightIcon aria-hidden className="h-4 w-4 text-slate-400" />
+              </Link>
             </div>
             <div className="rounded-2xl border-2 border-red-300 bg-white p-3 lg:col-span-3">
               <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-red-700">Push low ↓</div>

@@ -84,4 +84,25 @@ async function readSlowSizes() {
   return { today, cutoff, sizes };
 }
 
-module.exports = { readSlowSizes };
+// NEVER SOLD, RESTOCKED ANYWAY (owner, 2026-11-06 — read routes/analytics-slow-sizes.js's header): a never-sold size's clock runs from its
+// FIRST ever Goods In arrival when a restock moved it later, so it lands in Range's slow lists. Mutates `sizes` (idle_days / idle_from /
+// clearance). NOT applied inside readSlowSizes on purpose: the size screen and eBay's clearance price read the util and stay as they
+// were. Called by GET /analytics-slow-sizes (Range) and by the Clearance decisions (utils/listDecision.js), so both see the same list.
+async function datedFromFirstArrival(sizes, today, cutoff) {
+  const neverSold = sizes.filter((x) => !x.last_sale).map((x) => x.code);
+  if (!neverSold.length) return;
+  const firstQ = await query(
+    `SELECT code, to_char(MIN(arrival_date), 'YYYY-MM-DD') AS d FROM incoming_stock
+      WHERE code = ANY($1::text[]) AND arrival_date IS NOT NULL GROUP BY code`, [neverSold]);
+  const firstIn = new Map(firstQ.rows.map((r) => [r.code, r.d]));
+  for (const x of sizes) {
+    const f = !x.last_sale ? firstIn.get(x.code) : null;
+    if (f && f < x.on_shelf) {
+      x.idle_days = day(today) - day(f);
+      x.idle_from = 'arrival';
+      x.clearance = f <= cutoff;
+    }
+  }
+}
+
+module.exports = { readSlowSizes, datedFromFirstArrival };

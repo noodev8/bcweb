@@ -29,7 +29,9 @@ NEVER SOLD, RESTOCKED ANYWAY (owner, 2026-11-06, Slow movers): a restock restart
          its job: "I bought more before it even sell". So HERE ONLY its clock runs from its FIRST EVER Goods In arrival, not the restock
          — idle_days / idle_from / clearance are recomputed from first_in (e.g. Rieker L7500-35, first in Aug 2025, restocked Sep
          2026, never sold → No sale 9 months+), with no special mention on screen. Done in this route, NOT utils/onShelf.js, so the
-         size screen and eBay's clearance price (which read the util) are untouched until the owner asks.
+         size screen and eBay's clearance price (which read the util) are untouched until the owner asks. (The code is
+         utils/slowSizes.js → datedFromFirstArrival since 2026-11-06, so the Clearance decisions see the same list; readSlowSizes
+         itself still doesn't apply it.)
 
 STOCK = the utils/financeStock.js definition at code grain (local #FREE not deleted + amzfeed.amztotal), LIVE — one number, no Amazon
          split, the same as Slow and Sell-through.
@@ -87,7 +89,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
-const { readSlowSizes } = require('../utils/slowSizes');
+const { readSlowSizes, datedFromFirstArrival } = require('../utils/slowSizes');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -97,22 +99,8 @@ router.get('/', async (req, res) => {
     const { today, cutoff, sizes } = await readSlowSizes();
 
     // NEVER SOLD, RESTOCKED ANYWAY (see the header): run a never-sold size's clock from its FIRST arrival when a restock moved it later.
-    const neverSold = sizes.filter((x) => !x.last_sale).map((x) => x.code);
-    if (neverSold.length) {
-      const firstQ = await query(
-        `SELECT code, to_char(MIN(arrival_date), 'YYYY-MM-DD') AS d FROM incoming_stock
-          WHERE code = ANY($1::text[]) AND arrival_date IS NOT NULL GROUP BY code`, [neverSold]);
-      const firstIn = new Map(firstQ.rows.map((r) => [r.code, r.d]));
-      const dayNum = (v) => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
-      for (const x of sizes) {
-        const f = !x.last_sale ? firstIn.get(x.code) : null;
-        if (f && f < x.on_shelf) {
-          x.idle_days = dayNum(today) - dayNum(f);
-          x.idle_from = 'arrival';
-          x.clearance = f <= cutoff;
-        }
-      }
-    }
+    // The rule lives in utils/slowSizes.js → datedFromFirstArrival, shared with the Clearance decisions (utils/listDecision.js).
+    await datedFromFirstArrival(sizes, today, cutoff);
 
     // Longest idle first, then longest on the shelf, then most pairs.
     sizes.sort((a, b) => b.idle_days - a.idle_days || b.on_shelf_days - a.on_shelf_days || b.units - a.units

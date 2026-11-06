@@ -1572,6 +1572,39 @@ export function getDeepSizes() {
   );
 }
 
+// LIST DECISIONS — the action chosen BY HAND for a style on Deep sellers or Clearance (server: utils/listDecision.js; routes
+// list-decisions / list-decision-set / list-decision-clear). Wording and the To decide test: lib/listDecisions.ts.
+export type DecisionList = 'deep' | 'clearance';
+export interface ListDecision {
+  groupid: string;
+  action: string;
+  look_again: string;         // YYYY-MM-DD
+  measure: number;            // the style's measure when decided (deep: qty over; clearance: qty in stock in its 9-month+ sizes)
+  decided_at: string;         // ISO timestamp
+  decided_by: string | null;
+}
+
+export function getListDecisions(list: DecisionList) {
+  return request<{ today: string; spring: string; decisions: ListDecision[] }>(
+    { url: '/list-decisions', method: 'GET', params: { list } },
+    (b) => ({ today: b.today, spring: b.spring, decisions: b.decisions || [] })
+  );
+}
+
+export function setListDecision(body: { list: DecisionList; groupids: string[]; action: string; days?: number; spring?: boolean }) {
+  return request<{ saved: number; look_again: string; skipped: string[] }>(
+    { url: '/list-decision-set', method: 'POST', data: body },
+    (b) => ({ saved: b.saved || 0, look_again: b.look_again, skipped: b.skipped || [] })
+  );
+}
+
+export function clearListDecision(body: { list: DecisionList; groupids: string[] }) {
+  return request<{ cleared: number }>(
+    { url: '/list-decision-clear', method: 'POST', data: body },
+    (b) => ({ cleared: b.cleared || 0 })
+  );
+}
+
 // Slow Sizes -> click a style (its own screen): every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
 export interface StyleSizeRow {
   code: string;

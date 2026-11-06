@@ -26,7 +26,10 @@ THE LIST = Range's list layout (../slow-sizes/list/page.tsx):
 
 FILTERS: Brand, Way out, a search box (code, title, brand; every word must match). ?brand= ?way= ?q=
 
-READ ONLY. Actions come after the owner has seen it ("we might divert after test and screen view").
+DECISIONS (owner, 2026-11-06; shared with Clearance, components/ListDecision + lib/listDecisions): the Action column shows the server's
+         way_out as a pale SUGGESTION until an action is chosen by hand (Shopify price, Amazon price, Off-channel or HARVEST, by hand
+         only), which shows solid with when it comes back. To decide (default) | All (?view=all). A decided style is To decide again
+         when its look-again date arrives or its qty over grows. Choosing an action records it; no price moves from here yet.
 
 WORDING: "in stock" / "qty", never "pairs" on screen (the owner reads "pairs" as a count of sizes).
 
@@ -44,7 +47,9 @@ import ProductNavCards from '@/components/ProductNavCards';
 import StyleThumb from '@/components/StyleThumb';
 import ListTitle from '@/components/ListTitle';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getDeepSizes, type DeepSize, type DeepWayOut } from '@/lib/api';
+import { getDeepSizes, getListDecisions, type DeepSize, type DeepWayOut, type ListDecision } from '@/lib/api';
+import { DecisionBar, DecisionCell, DecisionViewSwitch } from '@/components/ListDecision';
+import { LIST_ACTIONS, isDue } from '@/lib/listDecisions';
 import { prettyPathLabel } from '@/lib/nav';
 
 const n = (v: number) => v.toLocaleString('en-GB');
@@ -58,11 +63,14 @@ const WAY_OUT: Record<DeepWayOut, { label: string; tip: string; cls: string }> =
   off: { label: 'Off-channel', cls: 'bg-slate-100 text-slate-700 ring-slate-300',
     tip: 'No price lever (the style sells in its other sizes): job lot, personal / CM3 shop sales, another shop on sale-or-return' },
 };
-const WAYS: DeepWayOut[] = ['shopify', 'amazon', 'off'];
+const ACTIONS = LIST_ACTIONS.deep;                                        // the hand-picked actions (Harvest included)
+const actionIndex = (key: string) => { const i = ACTIONS.findIndex((a) => a.key === key); return i < 0 ? ACTIONS.length : i; };
 
 interface Tile { code: string; size: string; s: DeepSize | null; white: boolean }
 interface StyleRow {
   groupid: string; title: string | null; brand: string | null; imagename: string | null; way: DeepWayOut;
+  decision: ListDecision | undefined; due: boolean; measure: number;
+  act: string;                        // the effective action: the decision if there is one, else the suggestion
   white: DeepSize[]; run: Tile[];
   over: number; stock: number; sold90: number; sold12: number;
 }
@@ -71,7 +79,7 @@ const SORT_KEYS: SortKey[] = ['style', 'brand', 'way', 'over', 'stock', 'sold90'
 const SORT_VALUE: Record<SortKey, (g: StyleRow) => number | string> = {
   style: (g) => g.groupid,
   brand: (g) => (g.brand || '').toLowerCase(),
-  way: (g) => WAYS.indexOf(g.way),
+  way: (g) => actionIndex(g.act),
   over: (g) => g.over,
   stock: (g) => g.stock,
   sold90: (g) => g.sold90,
@@ -107,7 +115,8 @@ function DeepSizesBody() {
 
   const list = (k: string) => (sp.get(k) || '').split(',').filter(Boolean);
   const [brand, setBrand] = useState(() => sp.get('brand') ?? '');
-  const [way, setWay] = useState<DeepWayOut | ''>(() => WAYS.find((w) => w === sp.get('way')) ?? '');
+  const [way, setWay] = useState<string>(() => ACTIONS.find((a) => a.key === sp.get('way'))?.key ?? '');
+  const [view, setViewMode] = useState<'todo' | 'all'>(() => (sp.get('view') === 'all' ? 'all' : 'todo'));
   const [search, setSearch] = useState(() => sp.get('q') ?? '');
   const [sortBy, setSortBy] = useState<SortKey | null>(() => SORT_KEYS.find((k) => k === sp.get('sort')) ?? null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (sp.get('dir') === 'asc' ? 'asc' : 'desc'));
@@ -115,13 +124,14 @@ function DeepSizesBody() {
   const [anchor, setAnchor] = useState<string | null>(() => list('sel').pop() ?? null);
   const [cut, setCut] = useState<string[]>(() => list('cut'));
 
-  type View = { brand: string; way: DeepWayOut | ''; q: string; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] };
-  const current: View = { brand, way, q: search, sort: sortBy, dir: sortDir, sel: selected, cut };
+  type View = { brand: string; way: string; view: 'todo' | 'all'; q: string; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] };
+  const current: View = { brand, way, view, q: search, sort: sortBy, dir: sortDir, sel: selected, cut };
   const viewUrl = (v: View) => {
     const q = new URLSearchParams();
     if (from) q.set('from', from);
     if (v.brand) q.set('brand', v.brand);
     if (v.way) q.set('way', v.way);
+    if (v.view === 'all') q.set('view', 'all');
     if (v.q.trim()) q.set('q', v.q.trim());
     if (v.sort) { q.set('sort', v.sort); q.set('dir', v.dir); }
     if (v.sel.length) q.set('sel', v.sel.join(','));
@@ -132,12 +142,21 @@ function DeepSizesBody() {
   const selfUrl = viewUrl(current);
   const setView = (patch: Partial<View>) => {
     const v = { ...current, ...patch };
-    setBrand(v.brand); setWay(v.way); setSearch(v.q); setSortBy(v.sort); setSortDir(v.dir);
+    setBrand(v.brand); setWay(v.way); setViewMode(v.view); setSearch(v.q); setSortBy(v.sort); setSortDir(v.dir);
     setSelected(v.sel); setCut(v.cut);
     router.replace(viewUrl(v), { scroll: false });
   };
 
   const q = useApiQuery('analytics-deep-sizes', () => getDeepSizes());
+  const dq = useApiQuery('list-decisions-deep', () => getListDecisions('deep'));
+  const decisions = useMemo(() => new Map((dq.data?.decisions ?? []).map((d) => [d.groupid, d])), [dq.data]);
+  const today = dq.data?.today ?? null;
+  // THE MEASURE per style = its qty over across ALL its deep sizes (never the filtered ones), the number the server saved.
+  const measureOf = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of q.data?.sizes ?? []) m.set(s.groupid, (m.get(s.groupid) || 0) + s.over);
+    return m;
+  }, [q.data]);
 
   // FILTERS (see header) — brand and way out per style, the search at size grain over the deep sizes.
   const passes = useCallback((s: DeepSize) => {
@@ -172,7 +191,11 @@ function DeepSizesBody() {
     for (const [groupid, white] of whiteBy) {
       const st = styleOf.get(groupid);
       const w: DeepWayOut = st?.way_out ?? 'off';
-      if (way && w !== way) continue;
+      const decision = decisions.get(groupid);
+      const act = decision?.action ?? w;
+      if (way && act !== way) continue;
+      const measure = measureOf.get(groupid) || 0;
+      const due = today ? isDue(decision, measure, today) : !decision;
       const isWhite = new Set(white.map((s) => s.code));
       const run = [
         ...(heldBy.get(groupid) ?? []).map((s): Tile => ({ code: s.code, size: s.size, s, white: isWhite.has(s.code) })),
@@ -181,11 +204,12 @@ function DeepSizesBody() {
       const sum = (f: (s: DeepSize) => number) => white.reduce((t, s) => t + f(s), 0);
       out.push({
         groupid, title: white[0].title, brand: white[0].brand, imagename: st?.imagename ?? null, way: w, white, run,
+        decision, due, measure, act,
         over: sum((s) => s.over), stock: sum((s) => s.units), sold90: sum((s) => s.sold_90d), sold12: sum((s) => s.sold_12m),
       });
     }
     return out;
-  }, [q.data, passes, way]);
+  }, [q.data, passes, way, decisions, measureOf, today]);
 
   // THE ORDER: most over first by default; a header click sorts by it, again flips, a third goes back to the default.
   const sorted = useMemo(() => {
@@ -214,8 +238,10 @@ function DeepSizesBody() {
   );
 
   // WHAT'S ON SCREEN — the sorted rows less the soft cuts.
-  const visible = useMemo(() => { const h = new Set(cut); return sorted.filter((g) => !h.has(g.groupid)); }, [sorted, cut]);
-  const cutHere = sorted.length - visible.length;
+  const inView = useMemo(() => (view === 'all' ? sorted : sorted.filter((g) => g.due)), [sorted, view]);
+  const todoCount = useMemo(() => sorted.filter((g) => g.due).length, [sorted]);
+  const visible = useMemo(() => { const h = new Set(cut); return inView.filter((g) => !h.has(g.groupid)); }, [inView, cut]);
+  const cutHere = inView.length - visible.length;
   const selectedHere = useMemo(() => { const s = new Set(selected); return visible.filter((g) => s.has(g.groupid)).map((g) => g.groupid); }, [visible, selected]);
   const menuGroupid = selected.length === 1 ? selected[0] : null;
   const menuRow = visible.find((g) => g.groupid === menuGroupid) ?? null;
@@ -242,7 +268,8 @@ function DeepSizesBody() {
     else if (e.key === 'Escape') setView({ sel: [] });
   };
   const cutSelected = () => { const gone = new Set(selectedHere); setView({ cut: [...cut, ...selectedHere], sel: selected.filter((x) => !gone.has(x)) }); };
-  const refreshScreen = () => { setAnchor(null); setView({ cut: [], sel: [] }); void q.refresh(); };
+  const refreshScreen = () => { setAnchor(null); setView({ cut: [], sel: [] }); void q.refresh(); void dq.refresh(); };
+  const decidedSelected = selectedHere.filter((g) => decisions.has(g)).length;
 
   // The product menu's height, for the sticky table header to sit under it (callback ref + ResizeObserver — no effect).
   const [menuH, setMenuH] = useState(0);
@@ -276,10 +303,10 @@ function DeepSizesBody() {
               <option value="">All brands</option>
               {brands.map((b) => <option key={b} value={b}>{b}</option>)}
             </select>
-            <select value={way} onChange={(e) => setView({ way: (e.target.value as DeepWayOut | ''), sel: [] })} aria-label="Action"
+            <select value={way} onChange={(e) => setView({ way: e.target.value, sel: [] })} aria-label="Action"
               className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700">
               <option value="">Every action</option>
-              {WAYS.map((w) => <option key={w} value={w}>{WAY_OUT[w].label}</option>)}
+              {ACTIONS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
             </select>
             <input type="search" value={search} placeholder="Search code, title or brand"
               onChange={(e) => setView({ q: e.target.value, sel: [] })}
@@ -300,6 +327,7 @@ function DeepSizesBody() {
 
           {/* THE BAR — what's on screen, Cut and Refresh. */}
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600">
+            <DecisionViewSwitch view={view} todo={todoCount} all={sorted.length} onChange={(v) => setView({ view: v, sel: [] })} />
             <span className="tabular-nums">
               {n(visible.length)} style{visible.length === 1 ? '' : 's'} · {n(visible.reduce((t, g) => t + g.white.length, 0))} SKUs ·{' '}
               {n(visible.reduce((t, g) => t + g.stock, 0))} in stock ·{' '}
@@ -314,13 +342,17 @@ function DeepSizesBody() {
               className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
               Refresh
             </button>
+            <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+            <DecisionBar list="deep" selected={selectedHere} decidedSelected={decidedSelected}
+              spring={dq.data?.spring ?? null} today={today} onDone={() => { void dq.refresh(); }} />
           </div>
 
           <div tabIndex={-1} onKeyDown={onListKey}
             className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white focus:outline-none">
             {visible.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-500">
-                {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.' : 'Nothing here with these filters.'}
+                {cutHere > 0 ? 'Every row is cut — press Refresh to bring them back.'
+                  : view === 'todo' && sorted.length ? 'Nothing left to decide. All shows every style and its decision.' : 'Nothing here with these filters.'}
               </p>
             ) : (
               <table className="text-sm">
@@ -357,7 +389,7 @@ function DeepSizesBody() {
                         </td>
                         <td className={`${td} text-slate-700`}>{g.brand || <span className="text-slate-300">–</span>}</td>
                         <td className={`${td} whitespace-nowrap`}>
-                          <span title={wo.tip} className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${wo.cls}`}>{wo.label}</span>
+                          <DecisionCell list="deep" d={g.decision} due={g.due} measureNow={g.measure} today={today} suggestion={wo} />
                         </td>
                         <td className={`${td} text-right font-semibold tabular-nums text-slate-900`}>{n(g.over)}</td>
                         <td className={`${td} text-right tabular-nums text-slate-700`}>{n(g.stock)}</td>

@@ -365,6 +365,9 @@ app.use('/analytics-stock-sales', require('./routes/analytics-stock-sales'));   
 app.use('/analytics-stock-sitting', require('./routes/analytics-stock-sitting'));   // GET: READ ONLY
 app.use('/analytics-slow-sizes', require('./routes/analytics-slow-sizes'));       // GET: READ ONLY
 app.use('/analytics-deep-sizes', require('./routes/analytics-deep-sizes'));       // GET: READ ONLY — deep sellers (utils/deepSizes.js)
+app.use('/list-decisions', require('./routes/list-decisions'));                   // GET: READ ONLY — Deep sellers / Clearance decisions
+app.use('/list-decision-set', require('./routes/list-decision-set'));             // POST: WRITES list_decision (+ bclog)
+app.use('/list-decision-clear', require('./routes/list-decision-clear'));         // POST: WRITES list_decision (delete, + bclog)
 app.use('/analytics-style-sizes', require('./routes/analytics-style-sizes'));       // GET: READ ONLY
 // Sell-through: the unit ledger — pairs in, out and held, each pair dated oldest-sells-first (utils/unitAge.js, nothing stored).
 app.use('/analytics-sell-through', require('./routes/analytics-sell-through'));     // GET: READ ONLY
