@@ -55,6 +55,7 @@ VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?due= ?show= ?band= ?sort= ?dir
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { CheckIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
@@ -466,6 +467,10 @@ function NewAdditionsPageInner() {
                         // Clicking a row SELECTS it for the product menu; clicking it again lets it go. No hover tint (owner, 2026-11-06) — only the
                         // selected row is tinted, so a hover can't be mistaken for a second selection.
                         const isSel = selected === g.groupid;
+                        // COMPLETE = every new size has sold (owner, 2026-11-06, option C): the row FADES — like a grey tile, faded means
+                        // sorted — with a green tick by the group id, so the eye goes to the rows still to work. It still selects as normal.
+                        const done = g.unsold === 0;
+                        const fade = done ? 'opacity-50' : '';
                         return (
                           <tr
                             key={g.groupid}
@@ -475,31 +480,34 @@ function NewAdditionsPageInner() {
                           >
                             <td className="w-[30rem] max-w-[30rem] py-3 pl-4 pr-3 align-top">
                               <div className="flex items-start gap-3">
-                              <Thumb imagename={g.sizes[0].imagename} alt={g.title || g.groupid} />
+                              <div className={'shrink-0 ' + fade}><Thumb imagename={g.sizes[0].imagename} alt={g.title || g.groupid} /></div>
                               <div className="min-w-0 flex-1">
                               {/* LED BY THE GROUP ID (owner, 2026-11-05: "Lead by GROUPID to see what it looks like") — the code large, the
                                   title small under it; brand in its own column. The "first in n days ago · x of y new sizes sold" words
                                   were taken off (owner, same day: cut them down) — the order and Days in say the age, the white tiles
                                   say what's unsold. NO TOOLTIP on the group id (owner, same day: it showed across the whole row). */}
-                              <div className="truncate font-mono text-base font-semibold text-slate-900">{g.groupid}</div>
-                              <div className="mt-0.5 truncate text-xs text-slate-500"><span title={g.title || undefined}>{g.title || 'Untitled'}</span></div>
-                              <SizeRun g={g} amzHref={amzHref} onAmz={openAmazon} />
+                              <div className="flex items-center gap-1.5">
+                                <span className={'truncate font-mono text-base font-semibold text-slate-900 ' + fade}>{g.groupid}</span>
+                                {done && <CheckIcon className="h-5 w-5 shrink-0 text-emerald-600" aria-label="Every new size sold" />}
+                              </div>
+                              <div className={'mt-0.5 truncate text-xs text-slate-500 ' + fade}><span title={g.title || undefined}>{g.title || 'Untitled'}</span></div>
+                              <div className={fade}><SizeRun g={g} amzHref={amzHref} onAmz={openAmazon} /></div>
                               </div>
                               </div>
                             </td>
-                            <td className="border-l border-slate-100 py-3 pl-3 pr-4 align-top text-slate-700">
+                            <td className={'border-l border-slate-100 py-3 pl-3 pr-4 align-top text-slate-700 ' + fade}>
                               {g.brand || <span className="text-slate-300">–</span>}
                             </td>
-                            <td className="border-l border-slate-100 py-3 pl-3 pr-4 text-right align-top tabular-nums">
+                            <td className={'border-l border-slate-100 py-3 pl-3 pr-4 text-right align-top tabular-nums ' + fade}>
                               <DaysIn g={g} />
                             </td>
-                            <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top">
+                            <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               {g.sizes[0].rrp === null ? <span className={NONE}>–</span> : <span className="tabular-nums text-slate-500">{gbp(g.sizes[0].rrp)}</span>}
                             </td>
-                            <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top">
+                            <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               <ShopifyCell g={g} href={shpHref(g.groupid)} onOpen={openShopify} />
                             </td>
-                            <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top">
+                            <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               <AmazonCell g={g} />
                             </td>
                           </tr>
