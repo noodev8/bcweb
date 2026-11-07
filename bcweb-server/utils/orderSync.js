@@ -25,7 +25,8 @@ THE RUN
                  didn't take is retried next run. Not on the button's line (owner: the total of new orders only) — its own bclog row.
     4  ORDER SOURCES  AFTER the commit: where each Shopify order of the last 3 days came from (Google paid / Google free / AI /
                  Email / Direct …) into shopify_order_source (utils/orderSource.js, 2026-11-07 — measuring sales we didn't pay Google
-                 for). Read-only on Shopify, never fails the run, no bclog row (it runs every few minutes).
+                 for). Read-only on Shopify, never fails the run, no bclog row (it runs every few minutes). Rows older than
+                 2 years are deleted as it goes (owner, 2026-11-07).
 
 HISTORY: until 2026-11-01 the Shopify half also ran from cron as C:\scripts\orders\update_orders.py (a Python twin of these rules)
 and eBay had its own cron script, timed 5 minutes apart because the Python took no lock. Both retired: this is the only copy.
@@ -44,7 +45,7 @@ SCOPE NOTE — phases E and F reach outside customer orders:
 const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
-const { recordOrderSources } = require('./orderSource');
+const { recordOrderSources, purgeOldSources } = require('./orderSource');
 const logger = require('./logger');
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -366,7 +367,8 @@ async function runOrderSync({ by }) {
   try {
     const since = new Date(Date.now() - 3 * 864e5).toISOString();
     const s = await recordOrderSources({ since });
-    result.orderSources = { read: s.read, recorded: s.recorded };
+    const purged = await purgeOldSources();   // keeps 2 years (owner, 2026-11-07)
+    result.orderSources = { read: s.read, recorded: s.recorded, purged };
   } catch (err) {
     result.orderSources = { error: err.message };
     logger.error(`[orderSync] order sources not recorded (orders are saved): ${err.message}`);

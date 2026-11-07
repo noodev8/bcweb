@@ -27,7 +27,8 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
 - **Order sources (step 4, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
   `referring_site` + the GraphQL customer journey) and upserted into `shopify_order_source` with its `came_from`
   (Google paid / Google free / AI / Email / Direct … — THE rule is `utils/orderSource.js → cameFrom`). Re-reading 3 days
-  picks up a journey Shopify fills in late. Read-only on Shopify, caught, **never fails the run**, no bclog row. History:
+  picks up a journey Shopify fills in late. Read-only on Shopify, caught, **never fails the run**, no bclog row.
+  **Keeps 2 years** (owner, 2026-11-07): older rows are deleted by the same step (`purgeOldSources`). History:
   `scripts/shopify-order-source-backfill.js` (dry run by default). Why: measuring Shopify sales we didn't pay Google for
   (docs/seo/PLAN.md) — Shopify's own Analytics call paid Shopping clicks "Google / SEO"; the landing URL's gclid doesn't lie.
 

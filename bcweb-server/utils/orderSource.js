@@ -195,4 +195,17 @@ async function recordOrderSources({ since, until, write = true } = {}) {
   return { read, recorded, tally };
 }
 
-module.exports = { cameFrom, landingOf, recordOrderSources };
+/*
+ * purgeOldSources() -> rows deleted
+ * KEEP 2 YEARS (owner, 2026-11-07: "keep 2 years" — "lets make sure we dont overfill data"). Two years is the least that still
+ * compares a month with the same month last year, which the sessions / free-sales target needs. Run by Update Orders after it records
+ * (so no cron); a backfill further back than 2 years is trimmed on the next run.
+ */
+const KEEP_YEARS = 2;
+async function purgeOldSources() {
+  const r = await query(`DELETE FROM shopify_order_source WHERE created_at < now() - make_interval(years => $1)`, [KEEP_YEARS]);
+  if (r.rowCount) logger.info(`[orderSource] purged ${r.rowCount} order sources older than ${KEEP_YEARS} years`);
+  return r.rowCount;
+}
+
+module.exports = { cameFrom, landingOf, recordOrderSources, purgeOldSources, KEEP_YEARS };
