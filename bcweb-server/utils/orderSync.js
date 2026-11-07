@@ -27,6 +27,8 @@ THE RUN
                  Email / Direct …) into shopify_order_source (utils/orderSource.js, 2026-11-07 — measuring sales we didn't pay Google
                  for). Read-only on Shopify, never fails the run, no bclog row (it runs every few minutes). Rows older than
                  2 years are deleted as it goes (owner, 2026-11-07).
+    5  VISITS    AFTER the commit: Shopify's sessions per day by source for the last 3 days into shopify_sessions_daily
+                 (utils/shopifySessions.js — the 20 → 30 visits target), each run replacing those days; 2 years kept. Never fails the run.
 
 HISTORY: until 2026-11-01 the Shopify half also ran from cron as C:\scripts\orders\update_orders.py (a Python twin of these rules)
 and eBay had its own cron script, timed 5 minutes apart because the Python took no lock. Both retired: this is the only copy.
@@ -46,6 +48,7 @@ const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
 const { recordOrderSources, purgeOldSources } = require('./orderSource');
+const { recordSessions, purgeOldSessions } = require('./shopifySessions');
 const logger = require('./logger');
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -372,6 +375,19 @@ async function runOrderSync({ by }) {
   } catch (err) {
     result.orderSources = { error: err.message };
     logger.error(`[orderSync] order sources not recorded (orders are saved): ${err.message}`);
+  }
+
+  // ---- 5. SHOPIFY VISITS PER DAY (after the commit — never fails the run) -----------------------------------------------------
+  // shopify_sessions_daily (utils/shopifySessions.js, owner 2026-11-07 — the 20 → 30 visits a day target): the last 3 days re-read
+  // each run (Shopify revises recent days; today is partial until it's over), then anything over 2 years purged. Read-only on Shopify.
+  try {
+    const d = new Date(Date.now() - 2 * 864e5);
+    const since = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const s = await recordSessions({ since });
+    result.sessions = { days: s.days, sessions: s.sessions, purged: await purgeOldSessions() };
+  } catch (err) {
+    result.sessions = { error: err.message };
+    logger.error(`[orderSync] Shopify visits not recorded (orders are saved): ${err.message}`);
   }
   return result;
 }

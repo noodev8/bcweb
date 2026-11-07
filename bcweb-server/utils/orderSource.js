@@ -208,4 +208,4 @@ async function purgeOldSources() {
   return r.rowCount;
 }
 
-module.exports = { cameFrom, landingOf, recordOrderSources, purgeOldSources, KEEP_YEARS };
+module.exports = { cameFrom, landingOf, recordOrderSources, purgeOldSources, KEEP_YEARS, AI_RE };

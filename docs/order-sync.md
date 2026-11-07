@@ -22,7 +22,14 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
            bclog row                   section 'Order Sync', workstation = user or 'cron'
 3 EBAY STOCK  after the commit: utils/ebayStockSync.js — new sizes added, then eBay quantities in step with our stock
 4 ORDER SOURCES  after the commit: utils/orderSource.js — where each Shopify order of the last 3 days came from
+5 VISITS         after the commit: utils/shopifySessions.js — Shopify sessions per day by source, last 3 days replaced
 ```
+
+- **Visits (step 5, 2026-11-07).** Shopify's sessions report (ShopifyQL, `read_reports` on the "bcweb-fulfill" Dev
+  Dashboard app) for the last 3 days, grouped by day × referrer × utm, replaces those days in `shopify_sessions_daily`
+  with a `came_from` on the same labels as the orders. Keeps 2 years. Caught, **never fails the run**. History:
+  `scripts/shopify-sessions-backfill.js` (dry run by default). Paid vs free Google only from 2026-11-08 (the Google Ads
+  final URL suffix); before that "Google (paid or free?)".
 
 - **Order sources (step 4, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
   `referring_site` + the GraphQL customer journey) and upserted into `shopify_order_source` with its `came_from`

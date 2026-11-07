@@ -50,9 +50,18 @@ the page landed on. Update Orders records the last 3 days every run; history by
 7 Nov (web orders): Unknown 31%, **Google paid 30%**, Direct 14%, Google (paid or
 free?) 12%, **Google free 7% (13 orders, £830)**, Email 4%, AI 1%.
 
-**Next steps (agreed order, one at a time):** 2. a Google Ads final URL suffix (owner,
-in Google Ads) before ads go back on · 3. sessions a day recorded in bcweb (Shopify needs
-`read_reports` added to the app, else GA4) · 4. one figure on Daily.
+**Step 2 — DONE 2026-11-07 (owner):** Google Ads account Final URL suffix
+`utm_source=google&utm_medium=cpc&utm_campaign={campaignid}`, auto-tagging left on. From
+2026-11-08 Shopify labels paid visits cpc, so untagged Google visits are free ones.
+
+**Step 3 — BUILT 2026-11-07: Shopify visits per day recorded in bcweb.** Owner chose
+SHOPIFY's count (GA4 counts ~2×; the 20 → 30 target is Shopify's). `read_reports` added
+to the "bcweb-fulfill" Dev Dashboard app; `shopify_sessions_daily` (migration
+`20261107b_…`), THE rule `utils/shopifySessions.js → sessionCameFrom` (the order labels),
+Update Orders step 5 (last 3 days each run), 2 years kept, backfill script. History:
+2 years = 121,969 visits; 1–6 Nov 2026 (ads off) 13–39 a day, Oct (ads on) 60–110.
+
+**Next:** 4. one figure on Daily (visits a day vs 30, and free sales).
 
 The old scoreboard (trailing-12 free Google clicks, `weekly.js`) stays as SEO's own
 diagnostic — the early sign. Sales and sessions are the proof.

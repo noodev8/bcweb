@@ -177,4 +177,7 @@ const royalMailTracking = (number) => ({
 });
 const FBA_TRACKING = { number: 'AMZCourier' };
 
-module.exports = { isConfigured, findOrder, fulfil, royalMailTracking, FBA_TRACKING };
+// accessToken is also used by utils/shopifySessions.js: since 2026-11-07 this app ("bcweb-fulfill" in the Dev Dashboard) also carries
+// read_reports, so Shopify's sessions report (ShopifyQL) is read on the same 24h token — new permissions go on this Dev Dashboard
+// app, not on the legacy shpat_ apps (owner).
+module.exports = { isConfigured, accessToken, findOrder, fulfil, royalMailTracking, FBA_TRACKING };
