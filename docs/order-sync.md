@@ -21,7 +21,15 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
            F  housekeeping             six statements
            bclog row                   section 'Order Sync', workstation = user or 'cron'
 3 EBAY STOCK  after the commit: utils/ebayStockSync.js — new sizes added, then eBay quantities in step with our stock
+4 ORDER SOURCES  after the commit: utils/orderSource.js — where each Shopify order of the last 3 days came from
 ```
+
+- **Order sources (step 4, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
+  `referring_site` + the GraphQL customer journey) and upserted into `shopify_order_source` with its `came_from`
+  (Google paid / Google free / AI / Email / Direct … — THE rule is `utils/orderSource.js → cameFrom`). Re-reading 3 days
+  picks up a journey Shopify fills in late. Read-only on Shopify, caught, **never fails the run**, no bclog row. History:
+  `scripts/shopify-order-source-backfill.js` (dry run by default). Why: measuring Shopify sales we didn't pay Google for
+  (docs/seo/PLAN.md) — Shopify's own Analytics call paid Shopping clicks "Google / SEO"; the landing URL's gclid doesn't lie.
 
 - **eBay stock (step 3, 2026-11-01).** After the orders are saved, every size on a live BCWEB eBay listing
   (`ebay_listing_size`) gets our Stock (local `#FREE` + FBA live) sent to eBay, **only where it differs from the

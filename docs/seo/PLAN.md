@@ -6,10 +6,56 @@ what's ruled out). `CHANGELOG.md` logs every change + expectation + outcome. The
 current work lists are the auto-generated `collection-priorities.md` /
 `product-priorities.md`.
 
-## The goal, in one line
+## The goal (owner, 2026-11-07 — replaces "more free clicks")
 
-More **free** clicks from Google, so we lean less on paid. It's free, it compounds,
-and it doesn't stop when you stop paying. (Full philosophy: README.)
+**More Shopify sales we didn't pay Google for.** Sales need visits (for now — AI
+recommendations may change that), so the working target is visits:
+
+> **Shopify sessions: from ~20 a day to 30** — a team target, SEO one part of it
+> (owner: "one target among others and I want to stay organised and targeted").
+
+Why it is worth the effort at all: the size-6 blog reached #1 on Google. Something
+moved, so moving product pages (which sell) may be possible. "If nothing moved, I
+wouldn't bother."
+
+**Measuring — our own data first, Google's second** (owner). With Google Ads switched
+off (late Oct 2026) the baseline is clean: ~20 visits a day, roughly one sale a day.
+When ads go back on they will distort it, so attribution has to be recorded, not guessed.
+
+What our own data can and can't say (checked 2026-11-07):
+- **Every Shopify order records where the buyer came from** (Shopify's
+  `customerJourneySummary.lastVisit`: Google, direct, email, ChatGPT…, and the landing
+  page). 60 days to 7 Nov: 191 web orders — "Google / SEO" 77, unknown 61, direct 40,
+  email 8, **ChatGPT 2**, Bing 1.
+- **But Shopify can't tell a paid Google Shopping click from a free Google visit** — it
+  strips the landing URL's markers (no gclid / srsltid on any of the 77), and labels
+  every Google arrival "SEO". Ads ran to at least 30 Oct, so most of those 77 were
+  probably PAID. Fix before ads go back on: a tracking suffix on the Google Ads account
+  (e.g. `utm_source=google&utm_medium=cpc`) so paid clicks are labelled paid.
+- **Daily sessions from Shopify need a permission we don't have**: the `read_reports`
+  scope (plus Shopify's "protected customer data" level 2) on the app's token. GA4 has
+  sessions already (Google's count — second opinion).
+- **Better (checked the same day): Shopify's REST order field `landing_site` keeps the
+  FULL landing URL with its markers** — gclid / gad_source = paid ad, srsltid = Google's
+  free listings — so OUR data can split paid from free after all, for the orders where a
+  landing URL was recorded. Roughly a third of web orders have none (tracking declined)
+  and stay Unknown.
+
+**Step 1 — BUILT 2026-11-07: every Shopify order's source recorded in bcweb.**
+`shopify_order_source` (migration `20261107_shopify_order_source.sql`), THE rule in
+`utils/orderSource.js → cameFrom`: Google paid / Google free / Google (paid or free?) /
+AI / Email / Other search / Social / Other site / Direct / Unknown / Not online, plus
+the page landed on. Update Orders records the last 3 days every run; history by
+`scripts/shopify-order-source-backfill.js` (dry run by default). First read, 60 days to
+7 Nov (web orders): Unknown 31%, **Google paid 30%**, Direct 14%, Google (paid or
+free?) 12%, **Google free 7% (13 orders, £830)**, Email 4%, AI 1%.
+
+**Next steps (agreed order, one at a time):** 2. a Google Ads final URL suffix (owner,
+in Google Ads) before ads go back on · 3. sessions a day recorded in bcweb (Shopify needs
+`read_reports` added to the app, else GA4) · 4. one figure on Daily.
+
+The old scoreboard (trailing-12 free Google clicks, `weekly.js`) stays as SEO's own
+diagnostic — the early sign. Sales and sessions are the proof.
 
 ## The framework — the grid
 

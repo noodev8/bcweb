@@ -145,4 +145,5 @@ async function fetchUnfulfilledOrders() {
   return { orders, pages, truncated };
 }
 
-module.exports = { isConfigured, fetchUnfulfilledOrders, parseNextLink };
+// shopifyRestGet + requireConfig are also used by utils/orderSource.js (where each order's buyer came from) — same token, same backoff.
+module.exports = { isConfigured, fetchUnfulfilledOrders, parseNextLink, shopifyRestGet, requireConfig };
