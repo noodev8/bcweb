@@ -61,7 +61,9 @@ to the "bcweb-fulfill" Dev Dashboard app; `shopify_sessions_daily` (migration
 Update Orders step 5 (last 3 days each run), 2 years kept, backfill script. History:
 2 years = 121,969 visits; 1–6 Nov 2026 (ads off) 13–39 a day, Oct (ads on) 60–110.
 
-**Next:** 4. one figure on Daily (visits a day vs 30, and free sales).
+**Not on Daily yet (owner, 2026-11-07):** "I dont want it on the daily card yet. I want to
+work on it first." The visits / free-sales figure stays off Daily until the owner has
+worked on it.
 
 The old scoreboard (trailing-12 free Google clicks, `weekly.js`) stays as SEO's own
 diagnostic — the early sign. Sales and sessions are the proof.
