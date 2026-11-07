@@ -248,6 +248,8 @@ app.use('/google-allowance-measure', require('./routes/google-allowance-measure'
 app.use('/google-allowance-accept', require('./routes/google-allowance-accept'));     // POST: make the shown figure the one in force — WRITES google_allowance
 // SEO work list (2026-11-07): Birkenstock styles with their description length, Google searches (Search Console) and profit — READ ONLY
 app.use('/seo-styles', require('./routes/seo-styles'));
+// SEO tracker (2026-11-07): the main SEO page — free sales, visits vs the 30 a day target, AI, Google's view, by month — READ ONLY
+app.use('/seo-tracker', require('./routes/seo-tracker'));
 
 // Writes. google-ads-assign is the ONLY write this module makes to product data — it sets skusummary.googlecampaign and nothing
 // else (a style is pulled out of Google by assigning it 'pause', never by touching googlestatus). Bulk is one transaction rather

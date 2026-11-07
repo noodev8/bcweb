@@ -8,14 +8,24 @@ Purpose: Shopify's visits per day, by where they came from, kept in bcweb (shopi
 
 Source: Shopify's sessions report through ShopifyQL (GraphQL shopifyqlQuery), on the "bcweb-fulfill" Dev Dashboard app's token
         (utils/shopifyFulfil.js → accessToken; read_reports added 2026-11-07). READ ONLY on Shopify. One query returns every
-        (day × referrer_source × referrer_name × utm_source × utm_medium) with its sessions — ~5 rows a day.
+        (day × referrer_source × referrer_name × utm_source × utm_medium × traffic_type) with its sessions — a few rows a day.
+
+HUMAN VISITS ONLY (WHERE human_or_bot_session = 'human'): that is what Shopify's Home "Sessions" shows (checked 2026-11-07: Home 6
+        today = human 6; the report's total was 22 with 16 bots). The first version counted bots too and ran ~⅓ high — the owner's
+        "about 20 a day" was the human count.
+
+PAID vs FREE from Shopify's own traffic_type (paid / organic / direct …), which it sets from the ad click itself — so the split holds
+        for the PAST too (Oct 2025 human Google visits: 1,254 paid, 467 organic), not only from the Google Ads final URL suffix
+        (2026-11-08, PAID_SPLIT_FROM, now only the fallback when traffic_type is missing).
 
 THE RULE — sessionCameFrom(row), the same labels as an order's came_from (utils/orderSource.js), first match wins:
-  utm_medium cpc|ppc|paid… → 'Google paid' (utm_source google or none) / 'Other paid'
+  utm_medium cpc|ppc|paid… → 'Google paid' (Google, or no other source named) / 'Other paid'
   AI (utm_source or referrer chatgpt / perplexity / gemini / copilot / claude …) → 'AI'
-  utm_medium email|newsletter, or referrer_source email → 'Email'
-  referrer_source search + google → 'Google free' from PAID_SPLIT_FROM on (the Google Ads final URL suffix marks paid clicks cpc);
-                                    before it, paid and free are mixed → 'Google (paid or free?)'
+  utm_medium email|newsletter, or referrer_source email → 'Email'   (before the next line: Shopify labels newsletter visits 'paid')
+  traffic_type 'paid' → 'Google paid' (Google, or no other source named — Google Ads is the only ad account; a paid visit with its
+                                    referrer hidden arrives as "direct + paid") / 'Other paid'
+  referrer_source search + google → 'Google free' (traffic_type organic; or no traffic_type from PAID_SPLIT_FROM on) — with no
+                                    traffic_type before then → 'Google (paid or free?)'
   referrer_source search (anyone else) → 'Other search' · social → 'Social' · direct → 'Direct' (a utm_source we don't know → 'Other site')
   anything else (unknown / blank) → 'Unknown'
 
@@ -43,11 +53,16 @@ function sessionCameFrom(r) {
   const rn = (r.referrer_name || '').toLowerCase();
   const us = (r.utm_source || '').toLowerCase();
   const um = (r.utm_medium || '').toLowerCase();
-  if (/^(cpc|ppc|paid|paidsearch|paid_search|shopping_ads)$/.test(um)) return (!us || /google/.test(us)) ? 'Google paid' : 'Other paid';
+  const tt = (r.traffic_type || '').toLowerCase();
+  const google = (!us || /google/.test(us)) && (!rn || /google/.test(rn));
+  if (/^(cpc|ppc|paid|paidsearch|paid_search|shopping_ads)$/.test(um)) return google ? 'Google paid' : 'Other paid';
   if (AI_RE.test(us) || AI_RE.test(rn)) return 'AI';
+  // Email BEFORE Shopify's paid label: Shopify marks newsletter visits (utm_medium=email) traffic_type 'paid' too — checked
+  // 2026-11-07, Email fell from ~1,900 to 28 when the paid label came first.
   if (/email|newsletter/.test(um) || rs === 'email') return 'Email';
+  if (tt === 'paid') return google ? 'Google paid' : 'Other paid';
   if (rs === 'search') {
-    if (/google/.test(rn)) return r.day >= PAID_SPLIT_FROM ? 'Google free' : 'Google (paid or free?)';
+    if (/google/.test(rn)) return (tt === 'organic' || r.day >= PAID_SPLIT_FROM) ? 'Google free' : 'Google (paid or free?)';
     return 'Other search';
   }
   if (rs === 'social') return 'Social';
@@ -77,13 +92,15 @@ async function shopifyql(q) {
  */
 async function recordSessions({ since, until, write = true }) {
   if (!isConfigured()) throw new Error('Shopify sessions need SHOPIFY_FULFIL_CLIENT_ID / _SECRET (the bcweb-fulfill app) in bcweb-server/.env');
-  const rows = await shopifyql(`FROM sessions SHOW sessions GROUP BY day, referrer_source, referrer_name, utm_source, utm_medium `
+  // Human visits only — what Shopify's Home "Sessions" shows (see the header).
+  const rows = await shopifyql(`FROM sessions SHOW sessions WHERE human_or_bot_session = 'human' `
+    + `GROUP BY day, referrer_source, referrer_name, utm_source, utm_medium, traffic_type `
     + `SINCE ${since} UNTIL ${until || 'today'} ORDER BY day LIMIT 10000`);
   const clean = rows.map((r) => {
     const x = {
       day: String(r.day).slice(0, 10),
       referrer_source: r.referrer_source || '', referrer_name: r.referrer_name || '',
-      utm_source: r.utm_source || '', utm_medium: r.utm_medium || '',
+      utm_source: r.utm_source || '', utm_medium: r.utm_medium || '', traffic_type: r.traffic_type || '',
       sessions: Number(r.sessions) || 0,
     };
     return { ...x, came_from: sessionCameFrom(x) };
@@ -101,9 +118,9 @@ async function recordSessions({ since, until, write = true }) {
     if (!clean.length) return;
     // One insert for the window (unnest of parallel arrays) — a 2-year backfill month is a few hundred rows.
     await client.query(
-      `INSERT INTO shopify_sessions_daily (day, referrer_source, referrer_name, utm_source, utm_medium, sessions, came_from)
-       SELECT * FROM unnest($1::date[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[])`,
-      ['day', 'referrer_source', 'referrer_name', 'utm_source', 'utm_medium', 'sessions', 'came_from'].map((k) => clean.map((r) => r[k])),
+      `INSERT INTO shopify_sessions_daily (day, referrer_source, referrer_name, utm_source, utm_medium, traffic_type, sessions, came_from)
+       SELECT * FROM unnest($1::date[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::int[], $8::text[])`,
+      ['day', 'referrer_source', 'referrer_name', 'utm_source', 'utm_medium', 'traffic_type', 'sessions', 'came_from'].map((k) => clean.map((r) => r[k])),
     );
   });
   return out;

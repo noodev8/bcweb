@@ -159,8 +159,8 @@ const GROUPS: Group[] = [
       { title: 'Google Ads', subtitle: 'Shopping campaigns and spend', description: 'Sort products into Shopping campaigns — spend, profit after ad spend.', href: '/google-ads', icon: CursorArrowRaysIcon },
       { title: 'Ad Efficiency', subtitle: 'What survives Google spend', description: "How much of each month's Shopify profit survived Google ad spend.", href: '/analytics/ad-efficiency', icon: ScaleIcon },
       { title: 'Ad Daily', subtitle: 'Spend vs sales, day by day', description: 'Google spend against Shopify sales, day by day over a fortnight.', href: '/analytics/ad-daily', icon: SunIcon },
-      // SEO (2026-11-07): free Google clicks — what to work on, one row per Birkenstock style. READ ONLY.
-      { title: 'SEO work list', subtitle: 'Free Google clicks', description: 'Birkenstock styles: description length, Google searches and profit — what to work on.', href: '/seo', icon: MagnifyingGlassIcon },
+      // SEO (2026-11-07): the tracker first (free sales, visits vs 30 a day), then its Birkenstock work list. READ ONLY.
+      { title: 'SEO', subtitle: 'Sales we didn’t pay Google for', description: 'Free sales and visits against last year, then the Birkenstock work list.', href: '/seo', icon: MagnifyingGlassIcon },
     ],
   },
   {

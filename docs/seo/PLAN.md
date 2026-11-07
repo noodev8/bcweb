@@ -58,8 +58,24 @@ free?) 12%, **Google free 7% (13 orders, £830)**, Email 4%, AI 1%.
 SHOPIFY's count (GA4 counts ~2×; the 20 → 30 target is Shopify's). `read_reports` added
 to the "bcweb-fulfill" Dev Dashboard app; `shopify_sessions_daily` (migration
 `20261107b_…`), THE rule `utils/shopifySessions.js → sessionCameFrom` (the order labels),
-Update Orders step 5 (last 3 days each run), 2 years kept, backfill script. History:
-2 years = 121,969 visits; 1–6 Nov 2026 (ads off) 13–39 a day, Oct (ads on) 60–110.
+Update Orders step 5 (last 3 days each run), 2 years kept, backfill script.
+**Corrected the same day: HUMAN visits only** (owner: "We are only on 6 today" — Shopify's
+Home counts humans; the first fill included bots and ran ~⅓ high: 22 vs 6 that day), and
+**Shopify's own paid / organic label** (`traffic_type`) kept per row, so PAST Google visits
+split into paid and free too (migration `20261107c`, refilled). 2 years = 113,583 human
+visits: Google paid 64%, Direct 21%, **Google free 12%**, Email 2%, AI 286 visits. 1–6 Nov
+2026 (ads off): 28, 21, 19, 19, 8, 21 a day — the owner's "about 20".
+
+**The SEO TRACKER (built 2026-11-07) — the main SEO page, `/seo`** (owner: "What I would
+really want is a SEO tracker … see if we are motivated to continue"); the Birkenstock work
+list moved one click on, to `/seo/styles`. Purchases first, then visits, Google last, each
+against the same days a year earlier (364 days back): FREE SALES = everything not paid
+(owner's choice — `utils/orderSource.js → NOT_FREE`) for 28 days and the year so far;
+Shopify sessions (a day / 28 days / orders per 100 visits); AI; Search Console; where sales
+and visits came from; month by month. **No target on screen** (owner: "Dont indicate a
+target on that screen … Just a number. We can set our targets internally").
+First read: free sales −13% (28d) / −10% (year so far) — mostly Direct falling (≈15% of
+web orders in 2025 → ≈8%), while Google free (+30% Jan–Oct) and AI (0 → 16 orders) rose.
 
 **Not on Daily yet (owner, 2026-11-07):** "I dont want it on the daily card yet. I want to
 work on it first." The visits / free-sales figure stays off Daily until the owner has

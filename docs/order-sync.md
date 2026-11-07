@@ -27,9 +27,9 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
 
 - **Visits (step 5, 2026-11-07).** Shopify's sessions report (ShopifyQL, `read_reports` on the "bcweb-fulfill" Dev
   Dashboard app) for the last 3 days, grouped by day × referrer × utm, replaces those days in `shopify_sessions_daily`
-  with a `came_from` on the same labels as the orders. Keeps 2 years. Caught, **never fails the run**. History:
-  `scripts/shopify-sessions-backfill.js` (dry run by default). Paid vs free Google only from 2026-11-08 (the Google Ads
-  final URL suffix); before that "Google (paid or free?)".
+  with a `came_from` on the same labels as the orders. **Human visits only** (what Shopify's Home shows — bots excluded)
+  and Shopify's own `traffic_type` (paid / organic) per row, so paid vs free Google holds for past days too. Keeps 2 years.
+  Caught, **never fails the run**. History: `scripts/shopify-sessions-backfill.js` (dry run by default).
 
 - **Order sources (step 4, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
   `referring_site` + the GraphQL customer journey) and upserted into `shopify_order_source` with its `came_from`

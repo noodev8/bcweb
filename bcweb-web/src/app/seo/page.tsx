@@ -1,215 +1,249 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /seo — SEO work list (owner, 2026-11-07; a tile in the dashboard's Google group)
+Page: /seo — SEO TRACKER (owner, 2026-11-07; the "SEO" tile in the dashboard's Google group)
 =======================================================================================================================================
-Purpose: what to work on for free Google clicks. The owner asked for a screen "to help communicate my questions to you and to help me
-understand what to work on" — the WORK LIST first, ONE ROW PER STYLE (Arizona, Madrid, Gizeh…, all its colour pages added together),
-because the idea being tested is to write a style's description once and use it on every colour (docs/seo/PLAN.md).
+Purpose: "is it working, and are we motivated to continue?" — before the Birkenstock work list (/seo/styles, one click on). Owner:
+"ultimately we want purchases, and then probably visits before the purchase". The goal (docs/seo/PLAN.md): more Shopify sales we
+didn't pay Google for. (The team's visits target is kept internally — never shown here.)
 
-Why the Words column leads the explanation: the 165 live Birkenstock pages carry ~87 words, mostly Birkenstock's own marketing copy
-that other retailers use word-for-word; the one page of ours that climbed to #1 (the size-6 blog) had 490 words of our own clear answer.
-
-Columns (Search Console, last 28 days to its last complete day; profit from sales):
-  Pages · Words (median description length) · Searches (times a page was shown on Google) · Clicks · Position (average place on
-  Google, lower is better — a diagnostic, never the score) · Profit 12m (Shopify, net of returns).
-Sorted by profit by default; every column header sorts. Click a style: its pages (each opens on the shop in a new tab) and the
-searches its pages showed for. READ ONLY — nothing on this screen changes anything. Server: GET /seo-styles.
+Order of the page = order of importance:
+  1. FREE SALES — every sale not from an ad (owner's choice: Google free, AI, other search, Direct, Email, Social, Other site; THE
+     list is utils/orderSource.js → NOT_FREE). Last 28 days and the YEAR SO FAR, each against the same days a year earlier.
+  2. VISITS — Shopify sessions (owner chose them over GA4's ~2×): a day over the last 7 days, as a plain number — NO TARGET on screen
+     (owner: "We can set our targets internally"); 28 days vs a year earlier; orders per 100 visits.
+  3. AI — the fastest-growing source, year so far vs last year.
+  4. GOOGLE'S VIEW — Search Console free clicks / position, an early sign, never the score.
+  5. Where sales and visits came from (28 days) and MONTH BY MONTH, this year beside last. Plain tables — no charts (owner, on Range:
+     "No bar charts … Just totals").
+Our own data first (shopify_order_source, shopify_sessions_daily), Google's last. Colour only as small up/down text. READ ONLY.
+Server: GET /seo-tracker.
 =======================================================================================================================================
 */
 
-import { Fragment, useMemo, useState } from 'react';
-import { ChevronRightIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+import { ChevronRightIcon } from '@heroicons/react/20/solid';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getSeoStyles, type SeoStyleRow } from '@/lib/api';
-
-type SortKey = 'style' | 'pages' | 'words' | 'impressions' | 'clicks' | 'position' | 'profit';
-
-const COLS: { key: SortKey; label: string; title: string; align: 'left' | 'right' }[] = [
-  { key: 'style', label: 'Style', title: 'Birkenstock style — all its colour pages together', align: 'left' },
-  { key: 'pages', label: 'Pages', title: 'Product pages live on the shop (one per colour / width)', align: 'right' },
-  { key: 'words', label: 'Words', title: 'Typical description length (median across its pages)', align: 'right' },
-  { key: 'impressions', label: 'Searches', title: 'Times one of its pages was shown on Google, last 28 days', align: 'right' },
-  { key: 'clicks', label: 'Clicks', title: 'Times someone clicked through from Google, last 28 days', align: 'right' },
-  { key: 'position', label: 'Position', title: 'Average place on Google (1 = top). Lower is better', align: 'right' },
-  { key: 'profit', label: 'Profit 12m', title: 'Shopify profit over 12 months, net of returns', align: 'right' },
-];
+import { getSeoTracker } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
-const pos = (v: number | null) => (v == null ? '—' : v.toFixed(1));
-const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB')}`;
-// '2026-11-04' → '4 Nov' (text, never a Date — CLAUDE.md BST day-shift)
-const day = (s: string | null) => {
-  if (!s) return '—';
-  const [, m, d] = s.split('-').map(Number);
-  return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`;
+const gbp = (v: number) => `£${n(v)}`;
+const day = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]} ${y}`;
 };
 
-export default function SeoPage() {
-  const q = useApiQuery('seo-styles', () => getSeoStyles());
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'profit', desc: true });
-  const [openStyle, setOpenStyle] = useState<string | null>(null);
-
-  const rows = useMemo(() => {
-    const list = [...(q.data?.rows ?? [])];
-    const { key, desc } = sort;
-    list.sort((a, b) => {
-      if (key === 'style') return desc ? b.style.localeCompare(a.style) : a.style.localeCompare(b.style);
-      // Blanks (no searches → no position, no description → no words) always sink to the bottom.
-      const av = a[key]; const bv = b[key];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      return desc ? (bv as number) - (av as number) : (av as number) - (bv as number);
-    });
-    return list;
-  }, [q.data, sort]);
-
-  function sortBy(key: SortKey) {
-    // First click: biggest first — except Style (A–Z) and Position (best, i.e. lowest, first).
-    setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: !(key === 'style' || key === 'position') }));
-  }
-
+// "▲ 12%" / "▼ 8%" against last year. `lowerIsBetter` for position.
+function Change({ now, ly, lowerIsBetter = false }: { now: number | null; ly: number | null; lowerIsBetter?: boolean }) {
+  if (now == null || ly == null || ly === 0) return <span className="text-xs text-slate-400">no figure last year</span>;
+  const pct = Math.round(((now - ly) / ly) * 100);
+  if (pct === 0) return <span className="text-xs text-slate-500">same as last year</span>;
+  const good = lowerIsBetter ? pct < 0 : pct > 0;
   return (
-    <AppShell title="SEO work list">
-      {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
-      {q.isLoading && <p className="text-sm text-slate-400">Loading… (reading Google Search Console)</p>}
-
-      {q.data && (
-        <>
-          <div className="mb-4 text-sm text-slate-500">
-            <p>
-              Birkenstock styles, all their colour pages together. Google figures are the last {q.data.window_days} days to{' '}
-              {day(q.data.data_to)}; descriptions as fetched from Shopify on {day(q.data.descriptions_fetched)}.
-            </p>
-            <p className="mt-0.5">Click a style for its pages and what people searched. Nothing here changes anything.</p>
-          </div>
-
-          <div className="overflow-clip rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-white text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]">
-                <tr>
-                  {COLS.map((c) => (
-                    <th key={c.key} title={c.title} className={'px-3 py-2.5 font-medium ' + (c.align === 'right' ? 'text-right' : 'pl-4 text-left')}>
-                      <button type="button" onClick={() => sortBy(c.key)} className="uppercase tracking-wide hover:text-slate-800">
-                        {c.label}{sort.key === c.key ? (sort.desc ? ' ↓' : ' ↑') : ''}
-                      </button>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const isOpen = openStyle === r.style;
-                  return (
-                    <Fragment key={r.style}>
-                      <tr
-                        onClick={() => setOpenStyle(isOpen ? null : r.style)}
-                        aria-expanded={isOpen}
-                        className={'cursor-pointer border-b border-slate-100 ' + (isOpen ? 'bg-slate-50' : 'hover:bg-slate-50')}
-                      >
-                        <td className="py-2 pl-4 pr-3">
-                          <div className="flex items-center gap-1 font-semibold text-slate-900">
-                            <ChevronRightIcon className={'h-4 w-4 shrink-0 text-slate-400 transition-transform ' + (isOpen ? 'rotate-90' : '')} />
-                            {r.style.charAt(0) + r.style.slice(1).toLowerCase()}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.pages}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.words ?? '—'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{n(r.impressions)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.clicks || <span className="text-slate-300">·</span>}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pos(r.position)}</td>
-                        <td className="px-3 py-2 pr-4 text-right font-medium tabular-nums text-slate-800">{gbp(r.profit)}</td>
-                      </tr>
-                      {isOpen && (
-                        <tr className="border-b border-slate-200 bg-slate-50">
-                          <td colSpan={COLS.length} className="px-4 pb-4 pt-1">
-                            <StylePanel row={r} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </AppShell>
+    <span className={'text-xs font-medium ' + (good ? 'text-emerald-700' : 'text-rose-700')}>
+      {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}% on last year
+    </span>
   );
 }
 
-// THE DROP-DOWN for one style: its pages (most searched first) and the searches they showed for.
-function StylePanel({ row }: { row: SeoStyleRow }) {
+function Card({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
   return (
-    <div className="grid gap-6 rounded-lg border border-slate-200 bg-white p-4 lg:grid-cols-2">
-      <div className="min-w-0">
-        <p className="mb-1.5 text-sm font-medium text-slate-700">Its pages</p>
-        <table className="w-full text-sm">
-          <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-            <tr className="border-b border-slate-200">
-              <th className="py-1.5 pr-3 text-left font-medium">Page</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Words</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Searches</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Clicks</th>
-              <th className="py-1.5 text-right font-medium">Position</th>
-            </tr>
-          </thead>
-          <tbody>
-            {row.page_list.map((p) => (
-              <tr key={p.handle} className="border-b border-slate-100 last:border-0">
-                <td className="whitespace-nowrap py-1.5 pr-3">
-                  <a
-                    href={`https://brookfieldcomfort.com/products/${p.handle}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={p.handle}
-                    className="flex items-center gap-1 text-slate-700 hover:text-brand-700"
-                  >
-                    <span className="font-mono text-[13px] font-medium">{p.groupid}</span>
-                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                  </a>
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{p.words ?? '—'}</td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{p.impressions ? n(p.impressions) : <span className="text-slate-300">·</span>}</td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{p.clicks || <span className="text-slate-300">·</span>}</td>
-                <td className="py-1.5 text-right tabular-nums">{pos(p.position)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="min-w-0">
-        <p className="mb-1.5 text-sm font-medium text-slate-700">What people searched</p>
-        {row.queries.length === 0 ? (
-          <p className="text-sm text-slate-400">No named searches in the last 28 days (Google hides rare ones).</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-              <tr className="border-b border-slate-200">
-                <th className="py-1.5 pr-3 text-left font-medium">Search</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Shown</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Clicks</th>
-                <th className="py-1.5 text-right font-medium">Position</th>
-              </tr>
-            </thead>
-            <tbody>
-              {row.queries.map((s) => (
-                <tr key={s.query} className="border-b border-slate-100 last:border-0">
-                  <td className="max-w-0 truncate py-1.5 pr-3 text-slate-700" title={s.query}>{s.query}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{n(s.impressions)}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{s.clicks || <span className="text-slate-300">·</span>}</td>
-                  <td className="py-1.5 text-right tabular-nums">{pos(s.position)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p className="mt-2 text-xs text-slate-400">Searches add up across all its pages. Google hides rare searches, so these won’t sum to the page totals.</p>
-      </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
+      <div className="mt-3">{children}</div>
     </div>
+  );
+}
+
+// A big figure with last year's beside it.
+function Figure({ label, now, ly, nowRaw, lyRaw, lowerIsBetter }: {
+  label: string; now: string; ly: string; nowRaw: number | null; lyRaw: number | null; lowerIsBetter?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-3xl font-semibold tabular-nums text-slate-900">{now}</p>
+      <p className="text-sm tabular-nums text-slate-500">last year {ly}</p>
+      <Change now={nowRaw} ly={lyRaw} lowerIsBetter={lowerIsBetter} />
+    </div>
+  );
+}
+
+export default function SeoTrackerPage() {
+  const q = useApiQuery('seo-tracker', () => getSeoTracker());
+  const t = q.data;
+
+  return (
+    <AppShell title="SEO tracker">
+      {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
+      {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+
+      {t && (
+        <div className="space-y-5">
+          <p className="text-sm text-slate-500">
+            Sales and visits we didn’t pay Google for — each against the same days a year earlier, so the seasons don’t mislead.
+            Figures to {day(t.sales.d28.now.to)}.
+          </p>
+
+          {/* 1. FREE SALES — the one that matters. */}
+          <Card title="Free sales" sub="Every sale not from an ad — Google free, AI, other search, direct, email, social, other sites">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Figure
+                label="Last 28 days"
+                now={`${n(t.sales.d28.now.orders)} orders · ${gbp(t.sales.d28.now.gbp)}`}
+                ly={`${n(t.sales.d28.ly.orders)} · ${gbp(t.sales.d28.ly.gbp)}`}
+                nowRaw={t.sales.d28.now.gbp} lyRaw={t.sales.d28.ly.gbp}
+              />
+              <Figure
+                label={`Year so far (from ${day(t.sales.ytd.now.from)})`}
+                now={`${n(t.sales.ytd.now.orders)} orders · ${gbp(t.sales.ytd.now.gbp)}`}
+                ly={`${n(t.sales.ytd.ly.orders)} · ${gbp(t.sales.ytd.ly.gbp)}`}
+                nowRaw={t.sales.ytd.now.gbp} lyRaw={t.sales.ytd.ly.gbp}
+              />
+            </div>
+            {t.sales.unknown_share != null && (
+              <p className="mt-4 text-xs text-slate-400">
+                Not counted: paid ads, and orders we can’t trace ({Math.round(t.sales.unknown_share * 100)}% of web orders in the last
+                28 days — the shopper declined tracking).
+              </p>
+            )}
+          </Card>
+
+          {/* 2. VISITS — the step before a sale. */}
+          {/* Just the number — no target on screen (owner, 2026-11-07: "Dont indicate a target on that screen … We can set our targets
+              internally"). */}
+          <Card title="Visits" sub="Shopify sessions">
+            <div className="grid gap-6 sm:grid-cols-3">
+              <div>
+                <p className="text-sm text-slate-500">A day, last 7 days</p>
+                <p className="text-3xl font-semibold tabular-nums text-slate-900">{t.visits.avg7.toFixed(0)}</p>
+              </div>
+              <Figure label="Last 28 days" now={n(t.visits.d28.now)} ly={n(t.visits.d28.ly)} nowRaw={t.visits.d28.now} lyRaw={t.visits.d28.ly} />
+              <Figure
+                label="Orders per 100 visits (28 days)"
+                now={t.visits.per100.now == null ? '—' : t.visits.per100.now.toFixed(1)}
+                ly={t.visits.per100.ly == null ? '—' : t.visits.per100.ly.toFixed(1)}
+                nowRaw={t.visits.per100.now} lyRaw={t.visits.per100.ly}
+              />
+            </div>
+            <p className="mt-4 text-xs text-slate-400">
+              Paid and free Google visits can be told apart from {day(t.paid_split_from)}, when the Google Ads tracking code was set.
+            </p>
+          </Card>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* 3. AI */}
+            <Card title="AI (ChatGPT and others)" sub={`Year so far, from ${day(t.ai.ytd.from)}`}>
+              <div className="grid grid-cols-2 gap-6">
+                <Figure label="Visits" now={n(t.ai.ytd.now.visits)} ly={n(t.ai.ytd.ly.visits)} nowRaw={t.ai.ytd.now.visits} lyRaw={t.ai.ytd.ly.visits} />
+                <Figure
+                  label="Orders"
+                  now={`${n(t.ai.ytd.now.orders)} · ${gbp(t.ai.ytd.now.gbp)}`}
+                  ly={`${n(t.ai.ytd.ly.orders)} · ${gbp(t.ai.ytd.ly.gbp)}`}
+                  nowRaw={t.ai.ytd.now.orders} lyRaw={t.ai.ytd.ly.orders}
+                />
+              </div>
+              <p className="mt-4 text-xs text-slate-400">Google’s own AI summaries count as Google, not here.</p>
+            </Card>
+
+            {/* 4. GOOGLE'S VIEW */}
+            <Card title="Google’s view" sub={t.google ? `Search Console, free results only — 28 days to ${day(t.google.to)}` : 'Search Console'}>
+              {t.google ? (
+                <div className="grid grid-cols-2 gap-6">
+                  <Figure label="Free clicks" now={n(t.google.now.clicks)} ly={n(t.google.ly.clicks)} nowRaw={t.google.now.clicks} lyRaw={t.google.ly.clicks} />
+                  <Figure
+                    label="Average position"
+                    now={t.google.now.position == null ? '—' : t.google.now.position.toFixed(1)}
+                    ly={t.google.ly.position == null ? '—' : t.google.ly.position.toFixed(1)}
+                    nowRaw={t.google.now.position} lyRaw={t.google.ly.position} lowerIsBetter
+                  />
+                </div>
+              ) : <p className="text-sm text-slate-400">Search Console couldn’t be read just now.</p>}
+              <p className="mt-4 text-xs text-slate-400">An early sign only — sales and visits above are the score.</p>
+            </Card>
+          </div>
+
+          {/* 5. WHERE FROM (28 days) */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card title="Where sales came from" sub="Last 28 days">
+              <table className="w-full text-sm">
+                <tbody>
+                  {t.sales.by_source.map((r) => (
+                    <tr key={r.came_from} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 pr-3 text-slate-700">
+                        {r.came_from}
+                        {r.free && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">free</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{n(r.orders)}</td>
+                      <td className="py-1.5 text-right tabular-nums text-slate-500">{gbp(r.gbp)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+            <Card title="Where visits came from" sub="Last 28 days">
+              <table className="w-full text-sm">
+                <tbody>
+                  {t.visits.by_source.map((r) => (
+                    <tr key={r.came_from} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 pr-3 text-slate-700">{r.came_from}</td>
+                      <td className="py-1.5 text-right tabular-nums">{n(r.visits)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+
+          {/* MONTH BY MONTH — this year beside last. */}
+          <Card title="Month by month" sub="Free sales and all visits, this year beside last year">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-slate-200">
+                    <th className="py-1.5 pr-3 text-left font-medium">Month</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Free orders</th>
+                    <th className="py-1.5 pr-3 text-right font-medium text-slate-400">last year</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Free £</th>
+                    <th className="py-1.5 pr-3 text-right font-medium text-slate-400">last year</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Visits</th>
+                    <th className="py-1.5 text-right font-medium text-slate-400">last year</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.months.map((m) => (
+                    <tr key={m.month} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 pr-3 text-slate-700">{m.label}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{m.now ? n(m.now.orders) : ''}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums text-slate-400">{n(m.ly.orders)}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{m.now ? gbp(m.now.gbp) : ''}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums text-slate-400">{gbp(m.ly.gbp)}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{m.now ? n(m.now.visits) : ''}</td>
+                      <td className="py-1.5 text-right tabular-nums text-slate-400">{n(m.ly.visits)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs text-slate-400">This month runs to yesterday, so it is short of a full month.</p>
+          </Card>
+
+          {/* On to the work. */}
+          <Link
+            href="/seo/styles"
+            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-400 hover:bg-slate-50"
+          >
+            <span>
+              <span className="block font-semibold text-slate-900">Work list — Birkenstock styles</span>
+              <span className="block text-sm text-slate-500">What to work on: each style’s pages, description length, Google searches and profit.</span>
+            </span>
+            <ChevronRightIcon className="h-5 w-5 text-slate-400" />
+          </Link>
+        </div>
+      )}
+    </AppShell>
   );
 }

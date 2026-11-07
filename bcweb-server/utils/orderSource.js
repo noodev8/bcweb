@@ -208,4 +208,12 @@ async function purgeOldSources() {
   return r.rowCount;
 }
 
-module.exports = { cameFrom, landingOf, recordOrderSources, purgeOldSources, KEEP_YEARS, AI_RE };
+/*
+ * NOT FREE — the came_from labels that do NOT count as a free sale / visit. Everything else is free (owner, 2026-11-07, the SEO
+ * tracker's headline: "everything not paid" — Google free, AI, other search, Direct, Email, Social, Other site; chosen over "search /
+ * AI only", knowing Direct and Email move with repeat customers and the newsletter). Unknown and "Google (paid or free?)" can't be
+ * proved free, so they're left out, not guessed. THE copy — the tracker and anything else that says "free" reads this.
+ */
+const NOT_FREE = ['Google paid', 'Other paid', 'Google (paid or free?)', 'Unknown', 'Not online'];
+
+module.exports = { cameFrom, landingOf, recordOrderSources, purgeOldSources, KEEP_YEARS, AI_RE, NOT_FREE };

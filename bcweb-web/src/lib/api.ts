@@ -456,6 +456,32 @@ export function getSeoStyles(refresh = false) {
   );
 }
 
+// SEO TRACKER (2026-11-07) — the main SEO page: free sales (everything not paid), Shopify visits (no target shown), AI, Google's view,
+// month by month; each against the same period a year earlier. READ ONLY. Server: routes/seo-tracker.js.
+export interface SeoOrders { orders: number; gbp: number; from: string; to: string }
+export interface SeoTrackerMonth { month: number; label: string; now: { orders: number; gbp: number; visits: number } | null; ly: { orders: number; gbp: number; visits: number } }
+export interface SeoTracker {
+  today: string; paid_split_from: string;
+  sales: {
+    d28: { now: SeoOrders; ly: SeoOrders }; ytd: { now: SeoOrders; ly: SeoOrders };
+    by_source: { came_from: string; orders: number; gbp: number; free: boolean }[];
+    unknown_share: number | null;
+  };
+  visits: {
+    avg7: number;
+    d28: { now: number; ly: number; from: string; to: string };
+    per100: { now: number | null; ly: number | null };
+    by_source: { came_from: string; visits: number }[];
+  };
+  ai: { ytd: { now: { visits: number; orders: number; gbp: number }; ly: { visits: number; orders: number; gbp: number }; from: string; to: string } };
+  google: { to: string; now: { clicks: number; impressions: number; position: number | null }; ly: { clicks: number; impressions: number; position: number | null } } | null;
+  months: SeoTrackerMonth[];
+}
+export function getSeoTracker() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return request<SeoTracker>({ url: '/seo-tracker', method: 'GET' }, ({ return_code, ...rest }) => rest as SeoTracker);
+}
+
 // Mark styles looked at for `reviewDays` days (0 = clear the date, due again).
 export function markAmzLoadedReview(groupids: string[], reviewDays: number) {
   return request<{ updated: number; nextReview: string | null }>(
