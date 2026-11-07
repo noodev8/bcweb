@@ -211,7 +211,7 @@ if missed.
   (`STANDARD`, `BIRK-WINNER`, `IVES`). Already upserts idempotently on
   `(snapshot_date, campaign)`.
 - `google_stock_track` — daily stock/sales/ad snapshot. *(Dropped 2026-10-09 — see §6.6.)*
-- `C:\scripts\seo\weekly.py` reads `google_campaign_daily.clicks` for paid-vs-organic.
+- `bcweb-server/scripts/seo/weekly.js` (was `C:\scripts\seo\weekly.py`, moved 2026-11-07) reads `google_campaign_daily.clicks` for paid-vs-organic.
   Our writes are the same shape, so it is unaffected.
 
 ---

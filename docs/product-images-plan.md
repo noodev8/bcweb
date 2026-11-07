@@ -80,5 +80,5 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
 
 ## Useful
 
-- Live single-image audit: `python C:\scripts\seo\find_single_image_groupids.py --csv out.csv`.
+- Live single-image audit: `python C:\scripts\archive\seo\find_single_image_groupids.py --csv out.csv` (archived with the Python SEO folder 2026-11-07; still runs).
 - Shopify token can't read the Files library (`read_files` missing) — not needed for this plan.

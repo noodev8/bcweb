@@ -433,6 +433,29 @@ export interface AmzLoadedRow {
 export function getAmzLoadedList() {
   return request<AmzLoadedRow[]>({ url: '/amz-loaded-list', method: 'GET', params: { parked: 'include' } }, (b) => b.rows || []);
 }
+// SEO WORK LIST (2026-11-07) — one row per Birkenstock style: its product pages, description length, Google searches (Search
+// Console, 28 days) and 12-month Shopify profit; plus its pages and top searches for the drop-down. READ ONLY.
+// Server: routes/seo-styles.js.
+export interface SeoSearch { query: string; impressions: number; clicks: number; position: number | null }
+export interface SeoPage {
+  handle: string; groupid: string;
+  words: number | null;                     // words in its Shopify description (null = not fetched yet)
+  impressions: number; clicks: number; position: number | null; profit: number;
+}
+export interface SeoStyleRow {
+  style: string; pages: number;
+  words: number | null;                     // median across its pages
+  impressions: number; clicks: number; position: number | null; profit: number;
+  page_list: SeoPage[]; queries: SeoSearch[];
+}
+export interface SeoStyles { data_to: string; window_days: number; descriptions_fetched: string | null; rows: SeoStyleRow[] }
+export function getSeoStyles(refresh = false) {
+  return request<SeoStyles>(
+    { url: '/seo-styles', method: 'GET', params: refresh ? { refresh: 1 } : undefined },
+    (b) => ({ data_to: b.data_to, window_days: Number(b.window_days) || 28, descriptions_fetched: b.descriptions_fetched ?? null, rows: b.rows || [] })
+  );
+}
+
 // Mark styles looked at for `reviewDays` days (0 = clear the date, due again).
 export function markAmzLoadedReview(groupids: string[], reviewDays: number) {
   return request<{ updated: number; nextReview: string | null }>(
