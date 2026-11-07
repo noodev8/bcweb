@@ -108,8 +108,8 @@ function SlowMoversFront() {
 
   const sq = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
   const nq = useApiQuery('process-overview', () => getProcessOverview());
-  // DEEP SELLERS — the one door to that screen (owner, 2026-11-06: "we navigate to the new screen from the range screen"). Same key as
-  // the screen itself, so opening it after this is instant. Its count is the deep SKUs (utils/deepSizes.js), every one a green size.
+  // DEEP SELLERS — the green card opens that screen (see hrefs.sold). Same key as the screen itself, so opening it after this is
+  // instant. Its count, on the card, is the deep SKUs (utils/deepSizes.js), every one a green size.
   const dq = useApiQuery('analytics-deep-sizes', () => getDeepSizes());
 
   const view = useMemo(() => {
@@ -120,7 +120,9 @@ function SlowMoversFront() {
     const sum = (list: { units: number }[]) => list.reduce((t, s) => t + s.units, 0);
     const hrefs: Record<PartKey, string | null> = {
       new: `/analytics/new-additions?from=${self}&back=${encodeURIComponent('Range')}`,
-      sold: null,
+      // The green card opens DEEP SELLERS (owner, 2026-11-06: a link under it "feels like a bolt on ... We cant go there by clicking
+      // the green?"): every card opens its work list, and the green card's work is the sizes that sell but were bought too deep.
+      sold: `/analytics/deep-sizes?from=${self}`,
       mid: `/analytics/slow-sizes/list?band=mid&from=${self}`,
       cl: `/analytics/slow-sizes/list?band=cl&from=${self}`,
     };
@@ -192,7 +194,7 @@ function SlowMoversFront() {
 
           {/* 3. THE FOUR PARTS — adding back up to the total. Each a complete card, centred like Daily's boxes, and THE WHOLE CARD is the
               link (owner, 2026-11-06: "make the card clickable instead of tapping on the text. And tidy up the cards to make them look
-              more complete"). Sold has no list behind it: the same card, not a link. */}
+              more complete"). Sold opens Deep sellers (its work: the sizes bought too deep). */}
           {/* GROUPED BY WHICH WAY TO PUSH (owner, 2026-11-06: "3 tiles saying Push LOW and the one being push HIGH … on its own"): Sold
               on its own at the left edge — push HIGH; the three not selling together — push LOW. */}
           <div className="grid grid-cols-1 gap-8 border-t border-slate-200 bg-slate-100 p-5 lg:grid-cols-4">
@@ -207,17 +209,14 @@ function SlowMoversFront() {
                   <span className="mx-1.5 opacity-60">·</span>
                   <span className="text-xl font-semibold">{n(p.units)}</span> in stock
                 </div>
+                {/* What the click opens: the deep sellers among them (utils/deepSizes.js). */}
+                {dq.data && (
+                  <div className="mt-3 border-t border-white/30 pt-2 text-sm">
+                    <span className="font-semibold">{n(dq.data.sizes.length)}</span> bought too deep
+                  </div>
+                )}
               </PartCard>
               ))}
-              {/* DEEP SELLERS — branches off the green card, which stays as it is (owner): its sizes sell, but were bought too deep.
-                  A plain link under the card with the screen's violet dot (components/ListTitle), not another card. */}
-              <Link href={`/analytics/deep-sizes?from=${self}`}
-                className="mt-3 flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
-                <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-violet-600" />
-                <span className="font-semibold">Deep sellers</span>
-                {dq.data && <span className="tabular-nums text-slate-500">· {n(dq.data.sizes.length)} SKUs bought too deep</span>}
-                <ChevronRightIcon aria-hidden className="h-4 w-4 text-slate-400" />
-              </Link>
             </div>
             <div className="rounded-2xl border-2 border-red-300 bg-white p-3 lg:col-span-3">
               <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-red-700">Push low ↓</div>
@@ -258,7 +257,9 @@ const PART_TONE: Record<PartKey, string> = {
 // "feels like a dropdown. Close the box"), heading and figures centred inside. With a list behind it the whole card is the link
 // (a small arrow in the corner); without one it is the same card, inert.
 function PartCard({ href, head, tone, children }: { href: string | null; head: string; tone: string; children: ReactNode }) {
-  const card = `relative flex flex-col items-center rounded-xl border-2 px-4 py-5 text-center ${tone}`;
+  // ONE HEIGHT for all four (owner, 2026-11-06: "keep the card heights the same"): tall enough for the green card's extra
+  // "bought too deep" line, content centred, so the cards also hold still while that count loads.
+  const card = `relative flex min-h-[11.5rem] flex-col items-center justify-center rounded-xl border-2 px-4 py-5 text-center ${tone}`;
   const body = (
     <>
       {href && <ChevronRightIcon aria-hidden className="absolute right-3 top-3 h-4 w-4 opacity-80" />}
